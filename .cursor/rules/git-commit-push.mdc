@@ -1,0 +1,10 @@
+---
+description: After code changes, commit and push to origin
+alwaysApply: true
+---
+
+# Git commit and push
+
+When you complete a task that modifies project files (not only advice or read-only exploration), **commit the changes with a clear message and push to `origin`** on the current branch (usually `main`), unless the user explicitly asks not to use git or there is no remote.
+
+If there is nothing new to commit, say so briefly.
