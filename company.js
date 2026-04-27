@@ -1692,6 +1692,9 @@ function createAndMountMessenger() {
     df.setAttribute("project-id", dialogflowConfig.projectId || "qabot01");
     df.setAttribute("location", dialogflowConfig.location || "us-central1");
     df.setAttribute("agent-id", dialogflowConfig.agentId || "05ce7add-9025-4534-990c-fd7a25dadde1");
+    if (typeof dialogflowConfig.oauthClientId === "string" && dialogflowConfig.oauthClientId.trim()) {
+        df.setAttribute("oauth-client-id", dialogflowConfig.oauthClientId.trim());
+    }
     df.setAttribute("language-code", getChatLanguageCode(activeLanguage));
     df.setAttribute("max-query-length", "-1");
     df.setAttribute("url-allowlist", "*");
