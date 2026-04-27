@@ -4,11 +4,6 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Wellness Center</title>
-  <!-- Local chat assets: paths are relative to this HTML file (repo root = same folder as wellness.html). -->
-  <!-- Path: company.css -->
-  <link rel="stylesheet" href="company.css" />
-  <!-- Path: https://www.gstatic.com/dialogflow-console/fast/df-messenger/prod/v1/df-messenger.js -->
-  <script src="https://www.gstatic.com/dialogflow-console/fast/df-messenger/prod/v1/df-messenger.js"></script>
   <style>
     body {
       font-family: Arial, sans-serif;
@@ -84,7 +79,7 @@
 <section>
   <h2>Welcome</h2>
   <p>We provide holistic wellness services to improve your mind and body.</p>
-  <button type="button" id="book-appointment">Book Appointment</button>
+  <button type="button" onclick="alert('Booking feature coming soon!')">Book Appointment</button>
 </section>
 
 <section id="services">
@@ -115,14 +110,7 @@
   <p>© 2026 Wellness Center</p>
 </footer>
 
-<!-- Path: company.config.js (must load before company.js) -->
-<script src="company.config.js"></script>
-<!-- Path: company.js -->
-<script src="company.js"></script>
-<script>
-  document.getElementById("book-appointment").addEventListener("click", function () {
-    alert("Booking feature coming soon!");
-  });
-</script>
+<!-- Chat widget: one script — loads company.css, df-messenger, company.config.js, company.js. Change botid or path if your site root differs. -->
+<script src="public/widget/company-loader.js?botid=0001"></script>
 </body>
 </html>

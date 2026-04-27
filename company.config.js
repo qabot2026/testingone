@@ -12,8 +12,10 @@
  * The in-chat form DOM is injected by `company.js`.
  * If you host files under different names or folders, update every `<link>` / `<script src>` in your HTML to match.
  *
- * Two ways to ship:
- * - **Split (dev / myweb.html):** `company.css` + `company.config.js` + `company.js` (three files; bump `?v=` on each deploy).
+ * Three ways to ship:
+ * - **Split (dev):** `company.css` + `company.config.js` + `company.js` (three tags; bump `?v=` on each deploy).
+ * - **One-line embed:** `<script src="public/widget/company-loader.js?botid=0001"></script>` — loads CSS, gstatic
+ *   `df-messenger`, then this file, then `company.js`. Optional `?botid=` sets `window.COMPANY_EMBED_BOT_ID` for your own routing.
  * - **Single JS bundle:** run `python scripts/build_widget_bundle.py` and load `dist/company-widget.bundle.js` plus `dist/company.css`
  *   (see `embed-bundle.html`). The bundle is generated from this file + `company.js` — edit only `static/*`, then rebuild.
  *

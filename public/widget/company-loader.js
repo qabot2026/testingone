@@ -1,13 +1,27 @@
+/**
+ * One-line embed: <script src="public/widget/company-loader.js?botid=0001"></script>
+ * Sets window.COMPANY_EMBED_BOT_ID when ?botid= is present (read in company.config.js if you branch configs).
+ * Loads: ../.. /company.css, gstatic df-messenger, company.config.js, company.js
+ */
 (function () {
-  // `document.currentScript` is null for `async` scripts in many browsers — resolve URL explicitly.
-  var cur = document.currentScript;
-  var src = (cur && cur.src) || "";
-  if (!src) {
+  function getLoaderSrc() {
+    var cur = document.currentScript;
+    if (cur && cur.src) {
+      return cur.src;
+    }
     var nodes = document.querySelectorAll("script[src*='company-loader.js']");
     var last = nodes.length ? nodes[nodes.length - 1] : null;
-    if (last && last.src) src = last.src;
+    return last && last.src ? last.src : "";
   }
-  if (!src) return;
+  var src = getLoaderSrc();
+  if (!src) {
+    return;
+  }
+  var url = new URL(src);
+  var botId = (url.searchParams.get("botid") || "").trim();
+  if (botId) {
+    window.COMPANY_EMBED_BOT_ID = botId;
+  }
   var base = new URL("../..", src);
   var link = document.createElement("link");
   link.rel = "stylesheet";
