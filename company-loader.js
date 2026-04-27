@@ -1,19 +1,20 @@
 /**
- * One-line embed (absolute URLs for GitHub Pages):
- *   <script src="https://qabot2026.github.io/testingone/company-loader.js?botid=0001&v=3"></script>
- * Bump COMPANY_BUNDLE_VERSION and &v= after any asset change.
+ * One-line embed (optional — if this fails, use the 4 static tags in wellness.html):
+ *   <script src="https://qabot2026.github.io/testingone/company-loader.js?botid=0001&v=4"></script>
+ * Bump COMPANY_BUNDLE_VERSION and &v= on each deploy of assets.
  *
- * - Waits for document.body before loading (3rd-party pages often put the tag in <head> — without this,
- *   company.js can run when body is still null; direct <script> tags at the end of <body> avoid that).
- * - Loads company.js without async so order matches a direct, synchronous <script> reference.
- * - If the host uses CSP, script-src must allow: this loader host, gstatic, dialogflow, googleapis
- *   (or use direct <link>/<script> tags in HTML instead of this loader; some strict policies block
- *   dynamically created scripts to third-party hosts).
- * Change COMPANY_ASSET_BASE if you move the site.
+ * Dynamic <script> tags default to async in many browsers; this file sets async=false
+ * on each script so load order matches pasted <script src> tags.
+ * Waits for document.body. Some strict CSPs block createElement("script") to gstatic:
+ * use direct tags on those sites.
  */
 (function () {
+  if (window.__COMPANY_WIDGET_LOADER_RAN) {
+    return;
+  }
+  window.__COMPANY_WIDGET_LOADER_RAN = true;
   var COMPANY_ASSET_BASE = "https://qabot2026.github.io/testingone/";
-  var COMPANY_BUNDLE_VERSION = "3";
+  var COMPANY_BUNDLE_VERSION = "4";
 
   function withBust(u) {
     var sep = u.indexOf("?") === -1 ? "?" : "&";
@@ -39,10 +40,24 @@
   }
   var base = COMPANY_ASSET_BASE.replace(/\/?$/, "/");
 
+  function setSync(el) {
+    el.async = false;
+    if ("defer" in el) {
+      el.defer = false;
+    }
+  }
+
+  function onScriptError(label, e) {
+    if (window.console && console.error) {
+      console.error("[company-loader] failed to load " + label, e && e.type ? e.type : e);
+    }
+  }
+
   function injectAll() {
     if (!document.body) {
       return;
     }
+
     if (!document.getElementById("company-widget-company-css")) {
       var link = document.createElement("link");
       link.id = "company-widget-company-css";
@@ -50,15 +65,21 @@
       link.href = withBust(base + "company.css");
       document.head.appendChild(link);
     }
+
     var s0 = document.createElement("script");
+    setSync(s0);
     s0.src = "https://www.gstatic.com/dialogflow-console/fast/df-messenger/prod/v1/df-messenger.js";
+    s0.onerror = onScriptError.bind(null, "df-messenger.js");
     s0.onload = function () {
       var s1 = document.createElement("script");
+      setSync(s1);
       s1.src = withBust(base + "company.config.js");
+      s1.onerror = onScriptError.bind(null, "company.config.js");
       s1.onload = function () {
         var s2 = document.createElement("script");
+        setSync(s2);
         s2.src = withBust(base + "company.js");
-        // No async: same execution semantics as a normal blocking <script src="company.js"> after config.
+        s2.onerror = onScriptError.bind(null, "company.js");
         document.body.appendChild(s2);
       };
       document.body.appendChild(s1);

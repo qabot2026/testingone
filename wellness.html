@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Wellness Center</title>
   <link rel="canonical" href="https://qabot2026.github.io/testingone/wellness.html" />
+  <link rel="stylesheet" href="https://qabot2026.github.io/testingone/company.css?v=4" />
+  <script src="https://www.gstatic.com/dialogflow-console/fast/df-messenger/prod/v1/df-messenger.js"></script>
   <style>
     body {
       font-family: Arial, sans-serif;
@@ -111,7 +113,12 @@
   <p>© 2026 Wellness Center</p>
 </footer>
 
-<!-- https://qabot2026.github.io/testingone/wellness.html — chat embed; bump &v= when you change the widget bundle (see company-loader.js). -->
-<script src="https://qabot2026.github.io/testingone/company-loader.js?botid=0001&v=3"></script>
+<!-- Chat: static tags = same order as local dev (reliable on GitHub + 3rd party). order: config before company.js -->
+<script src="https://qabot2026.github.io/testingone/company.config.js?v=4"></script>
+<script src="https://qabot2026.github.io/testingone/company.js?v=4"></script>
+<!--
+  Optional one-line embed (may fail on strict CSP; use the 4 lines above if so):
+  <script src="https://qabot2026.github.io/testingone/company-loader.js?botid=0001&v=4"></script>
+-->
 </body>
 </html>
