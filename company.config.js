@@ -26,7 +26,14 @@ window.COMPANY_CHAT_UI_CONFIG = {
   // COMMON (shared: agent, form field defs, theme, …)
   // =========================
   common: {
-    // Project + Agent settings (Dialogflow CX).
+    // Project + Agent (Dialogflow CX). `location` must match the agent region in Google Cloud.
+    // If the bubble appears but the agent does not answer on a live site: Dialogflow CX → Manage →
+    // Integrations → Dialogflow CX Messenger → use Unauthenticated API and add the site origin to
+    // allowed domains (e.g. https://qabot2026.github.io). Local dev needs its own allowlist entry
+    // (e.g. http://127.0.0.1:4567) when domain restriction is on.
+    // For authenticated Messenger, set `oauthClientId` and configure OAuth in Google Cloud.
+    // In-chat forms POST to your API (see getApiEndpoint in company.js); static GitHub Pages has no
+    // backend until you add one and set meta `dfchat-api-base-url` or `window.COMPANY_API_BASE_URL`.
     dialogflow: {
       projectId: "qabot01",
       location: "us-central1",
