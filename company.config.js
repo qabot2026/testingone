@@ -13,10 +13,10 @@
  * If you host files under different names or folders, update every `<link>` / `<script src>` in your HTML to match.
  *
  * Three ways to ship:
- * - **Recommended (one line in HTML):** `https://qabot2026.github.io/testingone/company-loader.js?botid=0001&v=6` — loads CSS + df-messenger in
- *   `<head>`, then `company.config.js` + `company.js` at end of `<body>` (same as static tags).
- *   `df-messenger`, then this file, then `company.js`. Bump `&v=` and `COMPANY_BUNDLE_VERSION` in `company-loader.js` when you change assets.
- * - **Split (no loader):** same three URLs as above (and gstatic df-messenger) as separate `<link>` / `<script src>` tags.
+ * - **One line (recommended):** `https://qabot2026.github.io/testingone/company-loader.js?botid=0001&v=7` — mounts an **iframe** to
+ *   `chat-frame.html` (static CSS + df-messenger + config + company inside; no script injection in the host).
+ *   Bump `?v=` in the URL and `IFRAME_VERSION` in `company-loader.js` when you change assets.
+ * - **Split (no loader):** same GitHub + gstatic URLs as separate `<link>` / `<script src>` tags (or open `chat-frame.html` source as a template).
  * - **Single JS bundle:** run `python scripts/build_widget_bundle.py` and load `dist/company-widget.bundle.js` plus `dist/company.css`
  *   (see `embed-bundle.html`). The bundle is generated from this file + `company.js` — edit only `static/*`, then rebuild.
  *
