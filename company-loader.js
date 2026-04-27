@@ -1,117 +1,92 @@
 /**
- * One line in the page (everything else is inside this file):
- *   <script src="https://qabot2026.github.io/testingone/company-loader.js?botid=0001&v=6"></script>
- * Bump COMPANY_BUNDLE_VERSION and ?v= when you change any asset.
+ * One line on ANY site (parent page only needs this script; no gstatic/Dialogflow in *parent* CSP):
+ *   <script src="https://qabot2026.github.io/testingone/company-loader.js?botid=0001&v=7"></script>
  *
- * Injects the same order as a working static page:
- *   <head> company.css, df-messenger.js
- *   <body> ... your content ... then company.config.js, company.js
+ * This does NOT inject third-party <script> tags. It adds one <iframe> to chat-frame.html
+ * on the same host. The iframe is a normal static HTML page (same 4 resources that work when pasted).
+ * Bump IFRAME_VERSION and ?v= on deploy.
  */
 (function () {
-  if (window.__COMPANY_WIDGET_LOADER_RAN) {
+  if (window.__COMPANY_WIDGET_IFRAME_MOUNTED) {
     return;
   }
-  window.__COMPANY_WIDGET_LOADER_RAN = true;
-  var COMPANY_ASSET_BASE = "https://qabot2026.github.io/testingone/";
-  var COMPANY_BUNDLE_VERSION = "6";
+  window.__COMPANY_WIDGET_IFRAME_MOUNTED = true;
 
-  function withBust(u) {
-    var sep = u.indexOf("?") === -1 ? "?" : "&";
-    return u + sep + "v=" + encodeURIComponent(COMPANY_BUNDLE_VERSION);
-  }
+  var CHAT_HOST = "https://qabot2026.github.io/testingone/";
+  var IFRAME_VERSION = "7";
 
-  function getLoaderSrc() {
+  function getLoaderQuery() {
     var cur = document.currentScript;
     if (cur && cur.src) {
-      return cur.src;
+      try {
+        return new URL(cur.src).searchParams;
+      } catch (e) {
+        return new URLSearchParams();
+      }
     }
     var nodes = document.querySelectorAll("script[src*='company-loader.js']");
     var last = nodes.length ? nodes[nodes.length - 1] : null;
-    return last && last.src ? last.src : "";
-  }
-  var src = getLoaderSrc();
-  var u = src ? new URL(src) : null;
-  if (u) {
-    var bot = (u.searchParams.get("botid") || "").trim();
-    if (bot) {
-      window.COMPANY_EMBED_BOT_ID = bot;
+    if (last && last.src) {
+      try {
+        return new URL(last.src).searchParams;
+      } catch (e2) {
+        return new URLSearchParams();
+      }
     }
+    return new URLSearchParams();
   }
-  var base = COMPANY_ASSET_BASE.replace(/\/?$/, "/");
+  var q = getLoaderQuery();
+  var bot = (q.get("botid") || "").trim();
 
-  function beforeSrc(el) {
-    el.removeAttribute("async");
-    el.removeAttribute("defer");
-    el.async = false;
-    el.defer = false;
-  }
-
-  function logErr(label) {
-    if (window.console && console.error) {
-      console.error("[company-loader] failed: " + label);
-    }
+  var frameUrl = CHAT_HOST + "chat-frame.html?v=" + encodeURIComponent(IFRAME_VERSION);
+  if (bot) {
+    frameUrl += "&botid=" + encodeURIComponent(bot);
   }
 
-  function injectAll() {
-    if (!document.body || !document.head) {
+  function mount() {
+    if (!document.body) {
       return;
     }
-    var head = document.head;
-    var body = document.body;
-
-    if (!document.getElementById("company-widget-company-css")) {
-      var link = document.createElement("link");
-      link.id = "company-widget-company-css";
-      link.rel = "stylesheet";
-      link.href = withBust(base + "company.css");
-      head.appendChild(link);
+    if (document.getElementById("company-chat-widget-iframe")) {
+      return;
     }
-
-    var sDf = document.createElement("script");
-    sDf.setAttribute("data-company-widget", "df-messenger");
-    beforeSrc(sDf);
-    sDf.onerror = function () {
-      logErr("df-messenger");
-    };
-    sDf.onload = function () {
-      var sCfg = document.createElement("script");
-      sCfg.setAttribute("data-company-widget", "company.config");
-      beforeSrc(sCfg);
-      sCfg.onerror = function () {
-        logErr("company.config.js");
-      };
-      sCfg.onload = function () {
-        var sCo = document.createElement("script");
-        sCo.setAttribute("data-company-widget", "company.js");
-        beforeSrc(sCo);
-        sCo.onerror = function () {
-          logErr("company.js");
-        };
-        sCo.src = withBust(base + "company.js");
-        body.appendChild(sCo);
-      };
-      sCfg.src = withBust(base + "company.config.js");
-      body.appendChild(sCfg);
-    };
-    sDf.src = "https://www.gstatic.com/dialogflow-console/fast/df-messenger/prod/v1/df-messenger.js";
-    head.appendChild(sDf);
+    var f = document.createElement("iframe");
+    f.id = "company-chat-widget-iframe";
+    f.title = "Chat";
+    f.setAttribute("src", frameUrl);
+    f.setAttribute("referrerpolicy", "strict-origin-when-cross-origin");
+    /* Full-height strip on the right; matches typical right-docked chat. */
+    f.style.cssText = [
+      "position:fixed",
+      "top:0",
+      "right:0",
+      "bottom:0",
+      "width:min(100vw, 520px)",
+      "height:100%",
+      "max-width:100vw",
+      "border:0",
+      "z-index:2147483000",
+      "pointer-events:auto",
+      "background:transparent"
+    ].join(";");
+    document.body.appendChild(f);
   }
 
   if (document.body) {
-    injectAll();
+    mount();
   } else if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", injectAll, { once: true });
+    document.addEventListener("DOMContentLoaded", mount, { once: true });
   } else {
     var n = 0;
-    (function wait() {
-      if (document.body && document.head) {
-        injectAll();
+    (function w() {
+      if (document.body) {
+        mount();
         return;
       }
       if (n++ > 200) {
         return;
       }
-      setTimeout(wait, 0);
+      setTimeout(w, 0);
     })();
   }
 })();
