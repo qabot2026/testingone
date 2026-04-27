@@ -69,7 +69,6 @@
 
     var sDf = document.createElement("script");
     sDf.setAttribute("data-company-widget", "df-messenger");
-    sDf.setAttribute("crossorigin", "anonymous");
     beforeSrc(sDf);
     sDf.onerror = function () {
       logErr("df-messenger");
@@ -77,7 +76,6 @@
     sDf.onload = function () {
       var sCfg = document.createElement("script");
       sCfg.setAttribute("data-company-widget", "company.config");
-      sCfg.setAttribute("crossorigin", "anonymous");
       beforeSrc(sCfg);
       sCfg.onerror = function () {
         logErr("company.config.js");
@@ -85,7 +83,6 @@
       sCfg.onload = function () {
         var sCo = document.createElement("script");
         sCo.setAttribute("data-company-widget", "company.js");
-        sCo.setAttribute("crossorigin", "anonymous");
         beforeSrc(sCo);
         sCo.onerror = function () {
           logErr("company.js");
