@@ -1,7 +1,8 @@
 /**
- * One-line embed: <script src="public/widget/company-loader.js?botid=0001"></script>
- * Sets window.COMPANY_EMBED_BOT_ID when ?botid= is present (read in company.config.js if you branch configs).
- * Loads: ../.. /company.css, gstatic df-messenger, company.config.js, company.js
+ * One-line embed (same folder as company.css, company.config.js, company.js):
+ *   <script src="company-loader.js?botid=0001"></script>
+ * Sets window.COMPANY_EMBED_BOT_ID when ?botid= is present (see company.config.js).
+ * Loads: company.css, gstatic df-messenger, company.config.js, company.js
  */
 (function () {
   function getLoaderSrc() {
@@ -22,7 +23,7 @@
   if (botId) {
     window.COMPANY_EMBED_BOT_ID = botId;
   }
-  var base = new URL("../..", src);
+  var base = new URL(".", src);
   var link = document.createElement("link");
   link.rel = "stylesheet";
   link.href = new URL("company.css", base).href;
