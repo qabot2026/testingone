@@ -1,7 +1,14 @@
 (function () {
+  // `document.currentScript` is null for `async` scripts in many browsers — resolve URL explicitly.
   var cur = document.currentScript;
-  if (!cur || !cur.src) return;
-  var base = new URL("../..", cur.src);
+  var src = (cur && cur.src) || "";
+  if (!src) {
+    var nodes = document.querySelectorAll("script[src*='company-loader.js']");
+    var last = nodes.length ? nodes[nodes.length - 1] : null;
+    if (last && last.src) src = last.src;
+  }
+  if (!src) return;
+  var base = new URL("../..", src);
   var link = document.createElement("link");
   link.rel = "stylesheet";
   link.href = new URL("company.css", base).href;
