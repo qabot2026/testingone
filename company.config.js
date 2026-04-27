@@ -17,8 +17,8 @@
  *   `https://qabot2026.github.io/testingone/company.css` +
  *   `https://qabot2026.github.io/testingone/company.config.js` +
  *   `https://qabot2026.github.io/testingone/company.js` (bump `?v=` on each deploy).
- * - **One-line embed:** `<script src="https://qabot2026.github.io/testingone/company-loader.js?botid=0001"></script>` — loads CSS, gstatic
- *   `df-messenger`, then this file, then `company.js`. Optional `?botid=` sets `window.COMPANY_EMBED_BOT_ID`. Edit `COMPANY_ASSET_BASE` in `company-loader.js` if the site moves.
+ * - **One-line embed:** `https://qabot2026.github.io/testingone/company-loader.js?botid=0001&v=2` — loads CSS, gstatic
+ *   `df-messenger`, then this file, then `company.js` with `?v=` to avoid stale 304 cache. Bump `&v=` and `COMPANY_BUNDLE_VERSION` in `company-loader.js` when you change assets.
  * - **Single JS bundle:** run `python scripts/build_widget_bundle.py` and load `dist/company-widget.bundle.js` plus `dist/company.css`
  *   (see `embed-bundle.html`). The bundle is generated from this file + `company.js` — edit only `static/*`, then rebuild.
  *
