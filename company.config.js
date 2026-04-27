@@ -13,7 +13,8 @@
  * If you host files under different names or folders, update every `<link>` / `<script src>` in your HTML to match.
  *
  * Three ways to ship:
- * - **Recommended (one line in HTML):** `https://qabot2026.github.io/testingone/company-loader.js?botid=0001&v=5` — loads CSS, gstatic
+ * - **Recommended (one line in HTML):** `https://qabot2026.github.io/testingone/company-loader.js?botid=0001&v=6` — loads CSS + df-messenger in
+ *   `<head>`, then `company.config.js` + `company.js` at end of `<body>` (same as static tags).
  *   `df-messenger`, then this file, then `company.js`. Bump `&v=` and `COMPANY_BUNDLE_VERSION` in `company-loader.js` when you change assets.
  * - **Split (no loader):** same three URLs as above (and gstatic df-messenger) as separate `<link>` / `<script src>` tags.
  * - **Single JS bundle:** run `python scripts/build_widget_bundle.py` and load `dist/company-widget.bundle.js` plus `dist/company.css`
