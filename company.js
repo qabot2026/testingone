@@ -72,6 +72,9 @@ const CHAT_ACTION_BAR_GLOBAL_RIGHT_PX = 10;
 const CHAT_MESSAGELIST_CONFIG = COMMON_CONFIG.chatMessageList && typeof COMMON_CONFIG.chatMessageList === "object"
     ? COMMON_CONFIG.chatMessageList
     : {};
+const CHAT_PANEL_CONFIG = COMMON_CONFIG.chatPanel && typeof COMMON_CONFIG.chatPanel === "object"
+    ? COMMON_CONFIG.chatPanel
+    : {};
 /** @see common.chatMessageList.showScrollbar in `static/company.config.js` */
 const SHOW_MESSAGELIST_SCROLLBAR = typeof CHAT_MESSAGELIST_CONFIG.showScrollbar === "boolean"
     ? CHAT_MESSAGELIST_CONFIG.showScrollbar
@@ -79,6 +82,8 @@ const SHOW_MESSAGELIST_SCROLLBAR = typeof CHAT_MESSAGELIST_CONFIG.showScrollbar 
 const MESSAGE_LIST_SCROLLBAR_STYLE_ID = "dfchat-messagelist-scrollbar-style";
 /** Message list pane corners (per-corner longhands; optional `common.chatMessageList.paneBorderRadius` in company.config.js) */
 const MESSAGE_LIST_SQUARE_PANE_STYLE_ID = "dfchat-messagelist-square-pane";
+/** Open whitish chat card (`.chat-wrapper`); optional `common.chatPanel.borderRadius` in company.config.js */
+const CHAT_PANEL_CORNERS_STYLE_ID = "dfchat-chat-panel-corners";
 const PERSONA_IMAGE_GUARD_STYLE_ID = "dfchat-persona-image-guard";
 /** Dialogflow “jump to bottom” / scroll-hint UI; mirrored onto `df-messenger-chat-bubble` :host. */
 const DF_MESSENGER_CHAT_SCROLL_JUMP_VAR_KEYS = [
@@ -115,6 +120,11 @@ const POWERED_BY_CONFIG = COMMON_CONFIG.poweredBy && typeof COMMON_CONFIG.powere
     ? COMMON_CONFIG.poweredBy
     : {};
 const IS_POWERED_BY_ENABLED = isFeatureEnabledFromConfig(POWERED_BY_CONFIG, false);
+/** When true, POSTs session metadata to `getApiEndpoint("/chat-client-context")`. Static hosts have no route — set `enabled: false` in config. Default true keeps same-origin API behavior for existing backends. */
+const CLIENT_CONTEXT_CAPTURE_CONFIG = FEATURES_CONFIG.clientContextCapture && typeof FEATURES_CONFIG.clientContextCapture === "object"
+    ? FEATURES_CONFIG.clientContextCapture
+    : {};
+const IS_CLIENT_CONTEXT_CAPTURE_ENABLED = isFeatureEnabledFromConfig(CLIENT_CONTEXT_CAPTURE_CONFIG, true);
 const POWERED_BY_PREFIX = typeof POWERED_BY_CONFIG.prefix === "string" ? POWERED_BY_CONFIG.prefix : "Powered by ";
 const POWERED_BY_VALUE = typeof POWERED_BY_CONFIG.value === "string" && POWERED_BY_CONFIG.value.trim()
     ? POWERED_BY_CONFIG.value.trim()
@@ -210,6 +220,74 @@ function readMessageListPaneBorderRadiusConfig() {
 }
 
 const MESSAGE_LIST_PANE_BORDER_RADIUS = readMessageListPaneBorderRadiusConfig();
+
+/**
+ * Per-corner radii for the open **chat panel** (`.chat-wrapper` in the bubble shadow), not individual bubbles.
+ * @see common.chatPanel.borderRadius in `static/company.config.js`
+ */
+function readChatPanelBorderRadiusConfig() {
+    const raw = CHAT_PANEL_CONFIG.borderRadius && typeof CHAT_PANEL_CONFIG.borderRadius === "object"
+        ? CHAT_PANEL_CONFIG.borderRadius
+        : null;
+    if (!raw) {
+        return null;
+    }
+    const one = (key) => sanitizeMessagePaneRadius(typeof raw[key] === "string" ? raw[key] : "", "0");
+    return {
+        topLeft: one("topLeft"),
+        topRight: one("topRight"),
+        bottomLeft: one("bottomLeft"),
+        bottomRight: one("bottomRight")
+    };
+}
+
+const CHAT_PANEL_BORDER_RADIUS = readChatPanelBorderRadiusConfig();
+
+function getChatPanelBorderRadiusCss() {
+    const r = CHAT_PANEL_BORDER_RADIUS;
+    if (!r) {
+        return "";
+    }
+    /* DF injects: `.chat-wrapper{border-radius:var(--df-messenger-chat-border-radius)}` (see gstatic df-messenger.js). Shorthand + longhands beat var(); order vs constructed styles is not reliable — we also set inline in applyChatPanelBorderRadiusToElements. */
+    const quad = `${r.topLeft} ${r.topRight} ${r.bottomRight} ${r.bottomLeft}`;
+    return `/* company.js: whitish open chat *panel* (not message bubbles) */
+.chat-wrapper,
+.min-chat-wrapper,
+df-messenger-chat {
+  border-radius: ${quad} !important;
+  border-top-left-radius: ${r.topLeft} !important;
+  border-top-right-radius: ${r.topRight} !important;
+  border-bottom-right-radius: ${r.bottomRight} !important;
+  border-bottom-left-radius: ${r.bottomLeft} !important;
+}
+`;
+}
+
+/**
+ * Inline `border-radius` on the real panel nodes so it wins over Dialogflow’s constructed stylesheets
+ * (which can load after our injected style tag in the same shadow root).
+ * @param {Element | null} dfMessenger
+ */
+function applyChatPanelBorderRadiusToElements(dfMessenger) {
+    if (!dfMessenger || !CHAT_PANEL_BORDER_RADIUS) {
+        return;
+    }
+    const r = CHAT_PANEL_BORDER_RADIUS;
+    const quad = `${r.topLeft} ${r.topRight} ${r.bottomRight} ${r.bottomLeft}`;
+    // Only under this messenger’s shadow tree (do not use `document` from collectSearchRoots — a host page could use `.chat-wrapper` too).
+    const roots = collectShadowRootsUnderHost(dfMessenger);
+    for (const root of roots) {
+        if (!root || !root.querySelectorAll) {
+            continue;
+        }
+        for (const el of root.querySelectorAll(".chat-wrapper, .min-chat-wrapper, df-messenger-chat")) {
+            if (!el || !el.style) {
+                continue;
+            }
+            el.style.setProperty("border-radius", quad, "important");
+        }
+    }
+}
 
 /** Conic gradient similar to Instagram story rings (orange → pink → purple → blue). */
 const CHAT_BUBBLE_STORY_RING_GRADIENT = "conic-gradient(from 200deg at 50% 50%, #f09433 0%, #e6683c 14%, #dc2743 28%, #cc2366 42%, #bc1888 56%, #833ab4 70%, #515bd4 84%, #fcb045 100%)";
@@ -1614,9 +1692,6 @@ function createAndMountMessenger() {
     df.setAttribute("project-id", dialogflowConfig.projectId || "qabot01");
     df.setAttribute("location", dialogflowConfig.location || "us-central1");
     df.setAttribute("agent-id", dialogflowConfig.agentId || "05ce7add-9025-4534-990c-fd7a25dadde1");
-    if (typeof dialogflowConfig.oauthClientId === "string" && dialogflowConfig.oauthClientId.trim()) {
-        df.setAttribute("oauth-client-id", dialogflowConfig.oauthClientId.trim());
-    }
     df.setAttribute("language-code", getChatLanguageCode(activeLanguage));
     df.setAttribute("max-query-length", "-1");
     df.setAttribute("url-allowlist", "*");
@@ -1707,6 +1782,20 @@ function createAndMountMessenger() {
     scheduleUserInputVerticalNudge(df);
     scheduleFooterInputBoxShadowOverrides(df);
     scheduleChatMessageListScrollbarReapply(df);
+    // Message list shadow often mounts *after* df-messenger-loaded / first reapplies; re-inject pane radius when panel opens and on short delays (MO on df-messenger may not see inner shadow mutations).
+    window.addEventListener("df-chat-open-changed", () => {
+        if (activeDfMessenger !== df) {
+            return;
+        }
+        scheduleChatMessageListScrollbarReapply(df);
+        [50, 200, 500, 1200].forEach((ms) => {
+            window.setTimeout(() => {
+                if (activeDfMessenger === df) {
+                    scheduleChatMessageListScrollbarReapply(df);
+                }
+            }, ms);
+        });
+    });
     scheduleSyncChatActionBarPosition();
     window.setTimeout(scheduleSyncChatActionBarPosition, 120);
     applyDeviceChatbotVisibility(COMPANY_UI_CONFIG, df);
@@ -6611,6 +6700,9 @@ function initializeContactForm() {
 }
 
 function initializeClientContextCapture() {
+    if (!IS_CLIENT_CONTEXT_CAPTURE_ENABLED) {
+        return;
+    }
     const endpoint = getApiEndpoint(CHAT_CLIENT_CONTEXT_ENDPOINT);
     const clientContext = getClientContext();
 
@@ -8908,7 +9000,15 @@ df-messenger-message-list {
   border-bottom-left-radius: ${r.bottomLeft} !important;
   border-bottom-right-radius: ${r.bottomRight} !important;
 }
-#message-list {
+#message-list,
+#messageList {
+  border-top-left-radius: ${r.topLeft} !important;
+  border-top-right-radius: ${r.topRight} !important;
+  border-bottom-left-radius: ${r.bottomLeft} !important;
+  border-bottom-right-radius: ${r.bottomRight} !important;
+}
+/* DF sometimes nests the strip under .chat-wrapper only (same shadow). */
+.chat-wrapper .message-list-wrapper {
   border-top-left-radius: ${r.topLeft} !important;
   border-top-right-radius: ${r.topRight} !important;
   border-bottom-left-radius: ${r.bottomLeft} !important;
@@ -9098,9 +9198,11 @@ function applyChatMessageListScrollbarToMessenger(dfMessenger) {
             };
             rem(MESSAGE_LIST_SCROLLBAR_STYLE_ID);
             rem(MESSAGE_LIST_SQUARE_PANE_STYLE_ID);
+            rem(CHAT_PANEL_CORNERS_STYLE_ID);
         }
     }
     clearMessageListScrollbarHiding(roots);
+    const panelCornersCss = getChatPanelBorderRadiusCss();
     for (const root of roots) {
         if (!root || !(root instanceof ShadowRoot) || typeof root.appendChild !== "function") {
             continue;
@@ -9109,6 +9211,12 @@ function applyChatMessageListScrollbarToMessenger(dfMessenger) {
         styleSq.id = MESSAGE_LIST_SQUARE_PANE_STYLE_ID;
         styleSq.textContent = getMessageListPaneSquareCornersCss();
         root.appendChild(styleSq);
+        if (panelCornersCss) {
+            const stylePl = document.createElement("style");
+            stylePl.id = CHAT_PANEL_CORNERS_STYLE_ID;
+            stylePl.textContent = panelCornersCss;
+            root.appendChild(stylePl);
+        }
     }
     if (SHOW_MESSAGELIST_SCROLLBAR) {
         return;
@@ -9155,6 +9263,7 @@ function applyChatMessageListScrollbarToMessenger(dfMessenger) {
             // ignore
         }
     }
+    applyChatPanelBorderRadiusToElements(dfMessenger);
 }
 
 function scheduleChatMessageListScrollbarReapply(dfMessenger) {

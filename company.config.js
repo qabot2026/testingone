@@ -26,14 +26,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
   // COMMON (shared: agent, form field defs, theme, …)
   // =========================
   common: {
-    // Project + Agent (Dialogflow CX). `location` must match the agent region in Google Cloud.
-    // If the bubble appears but the agent does not answer on a live site: Dialogflow CX → Manage →
-    // Integrations → Dialogflow CX Messenger → use Unauthenticated API and add the site origin to
-    // allowed domains (e.g. https://qabot2026.github.io). Local dev needs its own allowlist entry
-    // (e.g. http://127.0.0.1:4567) when domain restriction is on.
-    // For authenticated Messenger, set `oauthClientId` and configure OAuth in Google Cloud.
-    // In-chat forms POST to your API (see getApiEndpoint in company.js); static GitHub Pages has no
-    // backend until you add one and set meta `dfchat-api-base-url` or `window.COMPANY_API_BASE_URL`.
+    // Project + Agent settings (Dialogflow CX).
     dialogflow: {
       projectId: "qabot01",
       location: "us-central1",
@@ -102,6 +95,12 @@ window.COMPANY_CHAT_UI_CONFIG = {
       restartChat: {
         enabled: true,
         label: "Restart"
+      },
+
+      // POST telemetry to `/chat-client-context` on your API base (see `dfchat-api-base-url`). Static sites
+      // (GitHub Pages, host-my-page, etc.) have no backend — turn off to avoid 404 in the Network tab.
+      clientContextCapture: {
+        enabled: false
       }
     },
     // Language + Restart pill (next to Send). All values are pixels. Tune after you set `chatLayout.side`
@@ -246,7 +245,24 @@ window.COMPANY_CHAT_UI_CONFIG = {
     //   Omitted keys default to "0" (sharp corners on that middle panel). Whole-card roundness: `dfMessengerTheme["--df-messenger-chat-border-radius"]`.
     chatMessageList: {
       showScrollbar: false,
-      // paneBorderRadius: { topLeft: "0", topRight: "0", bottomLeft: "0", bottomRight: "0" }
+      // Top of the message strip: straight; bottom matches whole-card radius (see dfMessengerTheme "--df-messenger-chat-border-radius").
+      paneBorderRadius: {
+        topLeft: "0",
+        topRight: "0",
+        bottomLeft: "20px",
+        bottomRight: "20px"
+      }
+    },
+
+    // **Open chat card** (the whitish panel: title + message area + input). Google sets one var `--df-messenger-chat-border-radius` on the whole card; we override the panel shell in shadow (`.chat-wrapper`) per corner.
+    // Omit this block to keep the default all-around radius from `dfMessengerTheme`.
+    chatPanel: {
+      borderRadius: {
+        topLeft: "0",
+        topRight: "0",
+        bottomLeft: "20px",
+        bottomRight: "20px"
+      }
     },
 
     // -------------------------------------------------------------------------
