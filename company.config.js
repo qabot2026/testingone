@@ -15,7 +15,9 @@
  * Three ways to ship:
  * - **One line (recommended):** `https://qabot2026.github.io/testingone/company-loader.js?botid=0001&v=7` — mounts an **iframe** to
  *   `chat-frame.html` (static CSS + df-messenger + config + company inside; no script injection in the host).
- *   Bump `?v=` on the loader URL and `IFRAME_VERSION` inside `company-loader.js` after iframe/layout changes (`?dock=left`|`right`).
+ *   Host page iframe edge = `company-loader.js` **`?dock=right`|`left`** (default **right**) or **`window.COMPANY_LOADER_IFRAME_DOCK`**.
+ *   `common.chatLayout.sideDesk` docks the bubble *inside the iframe*. Use **same** side unless you deliberately split.
+ *   Bump loader `?v=` + `IFRAME_VERSION` in company-loader.js after edits.
  * - **Split (no loader):** same GitHub + gstatic URLs as separate `<link>` / `<script src>` tags (or open `chat-frame.html` source as a template).
  * - **Single JS bundle:** run `python scripts/build_widget_bundle.py` and load `dist/company-widget.bundle.js` plus `dist/company.css`
  *   (see `embed-bundle.html`). The bundle is generated from this file + `company.js` — edit only `static/*`, then rebuild.
@@ -245,12 +247,9 @@ window.COMPANY_CHAT_UI_CONFIG = {
       "--dfchat-border": "#dbe5ec"
     },
 
-    // Where the chat bubble + “Hi” strip sit horizontally.
-    // - Optional `sideMob` / `sideDesk`: phones vs wide screens (preferred).
-    // - Fallback `side`: applies to both when per-device keys are omitted.
-    // Match edges in desk/mob `bubblePosition` + launcherStrip `position`:
-    // - right → `rightPx` + `bottomPx` (set `leftPx: null`) — typical bottom-right on desktop.
-    // - left  → `leftPx` + `bottomPx` (set `rightPx: null`).
+    // Bubble + launcher strip **inside the chat iframe**. `desk`/`mob.bubblePosition` + launcher strips must match the same edge:
+    // - right → desk `bubblePosition.rightPx`, `launcherStrip.position.rightPx`; left → `.leftPx` (other edge null).
+    // **Hosting page sidebar:** `company-loader.js` ALSO pins the iframe strip on host left/right (`?dock=left|right`; default **right`). Keep `dock` aligned with desk side or the widget floats on one screen edge while the bubble hugs the opposite inside the frame.
     chatLayout: {
       sideDesk: "right",
       sideMob: "left"
@@ -547,8 +546,8 @@ window.COMPANY_CHAT_UI_CONFIG = {
       widthPx: 500,
       heightPx: 640,
 
-      // Left + bottom (`sideDesk: "left"` — set `rightPx: null`).
-      bubblePosition: { leftPx: 10, bottomPx: 20, rightPx: null, topPx: null },
+      // Right + bottom (matches sideDesk:right + launcher strip below).
+      bubblePosition: { rightPx: 10, bottomPx: 20, leftPx: null, topPx: null },
 
       // This is the correct knob for the bubble–chat gap: Dialogflow v1 uses it in the chat-bubble
       // shadow (not window height). Set on both the outer host and the bubble; use config here or
@@ -566,7 +565,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
     },
 
     launcherStrip: {
-      // Same edge as the bubble (bottom-left when `sideDesk: "left"`).
+      // Same edge as the bubble (bottom-right here when sideDesk:right).
       enabled: true,
       text: "👋Hey, how are you?😊",
       // Word-by-word reveal; full line finishes in this many ms (0 = show full text at once).
@@ -574,7 +573,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
       // After this many ms from load, replaces `text` (typing animation is cancelled mid-flight if needed).
       swapTextDelayMs: 10000,
       swapText: "Chat with us",
-      position: { leftPx: 10, bottomPx: 96, rightPx: null, topPx: null },
+      position: { rightPx: 10, bottomPx: 96, leftPx: null, topPx: null },
       style: { fontSizePx: 13, paddingYpx: 10, paddingXpx: 14, maxWidthPx: 260 }
     },
 
@@ -585,7 +584,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
       sendLabel: "Send",
       gapAboveBubblePx: 5,
       gapBelowGreetingPx: 8,
-      position: { leftPx: 10, rightPx: null, topPx: null },
+      position: { rightPx: 10, leftPx: null, topPx: null },
       fallbackBottomPx: 54,
       style: { fontSizePx: 14, maxWidthPx: 300 }
     },
