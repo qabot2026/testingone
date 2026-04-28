@@ -9327,7 +9327,7 @@ df-messenger-messages::-webkit-scrollbar,
 }
 
 /**
- * Find nodes that are actually doing vertical scrolling (so ::-webkit rules apply) and are not the composer.
+ * Find nodes that are actually doing vertical scrolling (so ::-webkit rules apply) and not the composer.
  */
 function markMessageListScrollablesInRoots(roots) {
     for (const root of roots) {
