@@ -93,7 +93,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
       // - Changing language = same conversation language + chat UI (not the host page), unless
       //   you set `autoTranslateHostPage: true` to also Google-translate the rest of the page.
       multiLanguage: {
-        enabled: true,
+        enabled: false,
         defaultLanguage: "en",
         autoTranslateHostPage: false
         // Composer hint (`placeholder-text`). Keys = same `code` values as below. Optional: add `inputPlaceholder` on each language row to override only that row.
@@ -111,7 +111,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
 
       // Restart button in footer.
       restartChat: {
-        enabled: true,
+        enabled: false,
         label: "Restart"
       },
 
@@ -541,7 +541,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
     showChatbot: true,
 
     chatWindow: {
-      widthPx: 500,
+      widthPx: 420,
       heightPx: 640,
 
       // right + bottom (matches `common.chatLayout.side: "right"`).
@@ -621,7 +621,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
       /* JS subtracts this from open chat height so the Dialogflow titlebar row is not clipped (optional; default 48 in code). */
       titlebarChromeReservePx: 40,
       minWidthPx: 260,
-      minHeightPx: 200,
+      minHeightPx: 250,
 
       bubblePosition: { rightPx: 12, bottomPx: 10, leftPx: null, topPx: null },
 
