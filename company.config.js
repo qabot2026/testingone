@@ -542,7 +542,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
 
     chatWindow: {
       widthPx: 420,
-      heightPx: 550,
+      heightPx: 450,
 
       // right + bottom (matches `common.chatLayout.side: "right"`).
       bubblePosition: { rightPx: 10, bottomPx: 20, leftPx: null, topPx: null },
