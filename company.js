@@ -5553,6 +5553,12 @@ function applyFooterInputBoxShadowOverrides(dfMessenger) {
     if (decl.length > 0) {
         cssParts.push(`.input-box-wrapper { ${decl.join(" ")} }`);
     }
+    // Shadow on the input container (textarea wrapper) instead of the whole footer strip.
+    cssParts.push(
+        ".input-element-wrapper {"
+        + " box-shadow: 0 8px 18px -16px rgba(15, 23, 42, 0.55) !important;"
+        + " }"
+    );
     if (Number.isFinite(cfg.sendOffsetYpx) && Math.round(cfg.sendOffsetYpx) !== 0) {
         cssParts.push(`.send-icon-button-wrapper { transform: translateY(var(--df-messenger-send-icon-offset-y, 0px)) !important; }`);
     }

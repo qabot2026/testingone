@@ -93,7 +93,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
       // - Changing language = same conversation language + chat UI (not the host page), unless
       //   you set `autoTranslateHostPage: true` to also Google-translate the rest of the page.
       multiLanguage: {
-        enabled: true,
+        enabled: false,
         defaultLanguage: "en",
         autoTranslateHostPage: false
         // Composer hint (`placeholder-text`). Keys = same `code` values as below. Optional: add `inputPlaceholder` on each language row to override only that row.
@@ -111,7 +111,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
 
       // Restart button in footer.
       restartChat: {
-        enabled: true,
+        enabled: false,
         label: "Restart"
       },
 
@@ -571,7 +571,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
       // Word-by-word reveal; full line finishes in this many ms (0 = show full text at once).
       typingDurationMs: 1000,
       // After this many ms from load, replaces `text` (typing animation is cancelled mid-flight if needed).
-      swapTextDelayMs: 10000,
+      swapTextDelayMs: 1000000,
       swapText: "Chat with us",
       position: { rightPx: 10, bottomPx: 96, leftPx: null, topPx: null },
       style: { fontSizePx: 13, paddingYpx: 10, paddingXpx: 14, maxWidthPx: 260 }
