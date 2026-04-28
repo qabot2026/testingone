@@ -541,8 +541,8 @@ window.COMPANY_CHAT_UI_CONFIG = {
     showChatbot: true,
 
     chatWindow: {
-      widthPx: 420,
-      heightPx: 640,
+      widthPx: 220,
+      heightPx: 600,
 
       // right + bottom (matches `common.chatLayout.side: "right"`).
       bubblePosition: { rightPx: 10, bottomPx: 20, leftPx: null, topPx: null },
