@@ -83,7 +83,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
       }
     },
 
-    // Features ON / OFF — each block should include `enabled: true` or `false`.
+    // Features ON / OFF — each block should include `enabled: true` or `false`
     features: {
       // --- Languages (simple mental model) ---
       // - ON  → user can switch language in the chat (picker / buttons next to Send).

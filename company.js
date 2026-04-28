@@ -42,7 +42,7 @@ const AUTO_START_SENDREQUEST_POLL_MS = 120;
 const AUTO_START_SENDREQUEST_POLL_MAX_MS = 20000;
 const LANGUAGE_STORAGE_KEY = "company_ui_language";
 if (typeof window === "object" && window != null && typeof window.COMPANY_CHAT_UI_CONFIG === "undefined") {
-    // eslint-disable-next-line no-console
+    // eslint-disable-next-line  no-console
     console.error(
         "Company: static/company.config.js did not run (script order or a syntax error in that file). UI features and chat layout are disabled until it loads."
     );

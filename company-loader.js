@@ -7,7 +7,7 @@
  * Bump IFRAME_VERSION and ?v= on deploy.
  *
  * iframe `chat-frame.html` URL uses the **same origin as this script**, so localhost and GitHub Pages
- * both pull `company.js` / `company.config.js` next to `company-loader.js` (no pinned stale CDN copies).
+ * both pull `company.js` / `company.config.js` next to `company-loader.js`  (no pinned stale CDN copies).
  */
 (function () {
   if (window.__COMPANY_WIDGET_IFRAME_MOUNTED) {

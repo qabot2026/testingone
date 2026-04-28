@@ -16,7 +16,7 @@
   --dfchat-border: #dbe5ec;
 }
 
-/* `company.config.js` → applyDfMessengerThemeConfig sets `common.dfMessengerTheme` vars on this node as
+/* `company.config.js` →  applyDfMessengerThemeConfig sets `common.dfMessengerTheme` vars on this node as
    **inline** styles, so a rule in this file such as `df-messenger { --df-messenger-chat-border-radius: 8px; }`
    usually loses.
    - **Whitish open chat card** (the panel shell): Google applies `border-radius: var(--df-messenger-chat-border-radius)`
