@@ -10,6 +10,8 @@ let activeDfMessenger = null;
 let activeBubbleNode = null;
 let hasAutoStartedConversation = false;
 let isChatWindowOpen = false;
+/** Set from `df-chat-open-changed` only (+ cleared when expand goes false); used so we do not hide the launcher from unreliable `expand` alone. */
+let isDfChatDetailOpenForLauncher = false;
 /** Agent replies while the chat panel is closed; shown on the launcher bubble until the user opens chat. */
 let bubbleUnreadCount = 0;
 let isMessengerLoaded = false;
@@ -873,7 +875,7 @@ const originalTextNodeContent = new Map();
 const originalElementAttributes = new Map();
 const googleTranslationCache = new Map();
 
-const COMPANY_JS_BUILD_TAG = "20260428-09";
+const COMPANY_JS_BUILD_TAG = "20260428-10";
 const COMPANY_DEBUG_QUERY_FLAG = "dfchatDebug";
 let debugMountAttemptSeq = 0;
 let debugBadgeLastRenderAt = 0;
@@ -5908,13 +5910,15 @@ function hideLauncherBubble(dfMessenger) {
     return found;
 }
 
-/** Desktop: launcher stays visible behind/under the expanded panel behaviour; phones hide the bubble while open (close via header ×). */
+/** Phones only: hide launcher after Dialogflow confirms open via `df-chat-open-changed`; desktop never auto-hides. */
 function syncLauncherBubbleWithChatState(dfMessenger) {
     if (!dfMessenger) {
         return false;
     }
-    const expanded = !!(isChatWindowOpen || (typeof isChatExpanded === "function" && isChatExpanded(dfMessenger)));
-    if (isMobileViewport() && expanded) {
+    if (!isMobileViewport()) {
+        return ensureBubbleVisible(dfMessenger);
+    }
+    if (isDfChatDetailOpenForLauncher) {
         return hideLauncherBubble(dfMessenger);
     }
     return ensureBubbleVisible(dfMessenger);
@@ -6741,7 +6745,9 @@ function initializeChatStateSync(dfMessenger) {
     }
 
     window.addEventListener("df-chat-open-changed", (event) => {
-        isChatWindowOpen = !!(event && event.detail && event.detail.isOpen);
+        const openFromEvent = !!(event && event.detail && event.detail.isOpen);
+        isChatWindowOpen = openFromEvent;
+        isDfChatDetailOpenForLauncher = openFromEvent;
         syncLauncherBubbleWithChatState(dfMessenger);
         reflowMobileChatLayout();
         if (isChatWindowOpen) {
@@ -6841,6 +6847,12 @@ function initializeChatStateSync(dfMessenger) {
     observer.observe(dfMessenger, {
         attributes: true,
         attributeFilter: ["expand"]
+    });
+
+    window.addEventListener("resize", () => {
+        if (activeDfMessenger === dfMessenger) {
+            syncLauncherBubbleWithChatState(dfMessenger);
+        }
     });
 }
 
