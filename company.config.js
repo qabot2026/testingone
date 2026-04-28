@@ -15,9 +15,7 @@
  * Three ways to ship:
  * - **One line (recommended):** `https://qabot2026.github.io/testingone/company-loader.js?botid=0001&v=7` — mounts an **iframe** to
  *   `chat-frame.html` (static CSS + df-messenger + config + company inside; no script injection in the host).
- *   Host page iframe edge = `company-loader.js` **`?dock=right`|`left`** (default **right**) or **`window.COMPANY_LOADER_IFRAME_DOCK`**.
- *   `common.chatLayout.sideDesk` docks the bubble *inside the iframe*. Use **same** side unless you deliberately split.
- *   Bump loader `?v=` + `IFRAME_VERSION` in company-loader.js after edits.
+ *   Bump `?v=` in the URL and `IFRAME_VERSION` in `company-loader.js` when you change assets.
  * - **Split (no loader):** same GitHub + gstatic URLs as separate `<link>` / `<script src>` tags (or open `chat-frame.html` source as a template).
  * - **Single JS bundle:** run `python scripts/build_widget_bundle.py` and load `dist/company-widget.bundle.js` plus `dist/company.css`
  *   (see `embed-bundle.html`). The bundle is generated from this file + `company.js` — edit only `static/*`, then rebuild.
@@ -247,12 +245,12 @@ window.COMPANY_CHAT_UI_CONFIG = {
       "--dfchat-border": "#dbe5ec"
     },
 
-    // Bubble + launcher strip **inside the chat iframe**. `desk`/`mob.bubblePosition` + launcher strips must match the same edge:
-    // - right → desk `bubblePosition.rightPx`, `launcherStrip.position.rightPx`; left → `.leftPx` (other edge null).
-    // **Hosting page sidebar:** `company-loader.js` ALSO pins the iframe strip on host left/right (`?dock=left|right`; default **right`). Keep `dock` aligned with desk side or the widget floats on one screen edge while the bubble hugs the opposite inside the frame.
+    // Where the chat bubble + “Hi” strip sit: "right" | "left" (one switch for both).
+    // Use matching edges everywhere below:
+    // - "right" → `rightPx` + `bottomPx` (set `leftPx: null` on desktop/mobile bubble + both launcherStrips)
+    // - "left"  → `leftPx` + `bottomPx` (set `rightPx: null`)
     chatLayout: {
-      sideDesk: "right",
-      sideMob: "left"
+      side: "right"
     },
 
     // Message list (conversation) scrollbar inside the open chat card.
@@ -546,7 +544,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
       widthPx: 500,
       heightPx: 640,
 
-      // Right + bottom (matches sideDesk:right + launcher strip below).
+      // right + bottom (matches `common.chatLayout.side: "right"`).
       bubblePosition: { rightPx: 10, bottomPx: 20, leftPx: null, topPx: null },
 
       // This is the correct knob for the bubble–chat gap: Dialogflow v1 uses it in the chat-bubble
@@ -565,7 +563,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
     },
 
     launcherStrip: {
-      // Same edge as the bubble (bottom-right here when sideDesk:right).
+      // “Hi” strip: same edge as the bubble ( here = bottom-right )
       enabled: true,
       text: "👋Hey, how are you?😊",
       // Word-by-word reveal; full line finishes in this many ms (0 = show full text at once).
@@ -599,7 +597,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
       sideInsetPx: 15,
       maxCardHeightPx: 300,
       showSubtitle: true,
-      /* Max width when the form is docked in the chat window. */
+      /* Max width when the form is docked in the chat window (right-docked chat = grows to the left). */
       formDockMaxWidthPx: 420
     }
   },
@@ -625,7 +623,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
       minWidthPx: 260,
       minHeightPx: 200,
 
-      bubblePosition: { leftPx: 12, bottomPx: 10, rightPx: null, topPx: null },
+      bubblePosition: { rightPx: 12, bottomPx: 10, leftPx: null, topPx: null },
 
       // Optional: set only the bubble–window gap: `chatWindowOffsetPx: 10` (see desk).
 
@@ -639,13 +637,13 @@ window.COMPANY_CHAT_UI_CONFIG = {
     },
 
     launcherStrip: {
-      // Same edge as the bubble (`sideMob: "left"` → bottom-left)
+      // Same edge as the bubble (bottom-right on mobile)
       enabled: true,
       text: "Hello, how are you?",
       typingDurationMs: 2000,
       swapTextDelayMs: 10000,
       swapText: "Chat with us",
-      position: { leftPx: 12, bottomPx: 86, rightPx: null, topPx: null },
+      position: { rightPx: 12, bottomPx: 86, leftPx: null, topPx: null },
       style: { fontSizePx: 13, paddingYpx: 10, paddingXpx: 14, maxWidthPx: null }
     },
 
@@ -655,7 +653,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
       sendLabel: "Send",
       gapAboveBubblePx: 5,
       gapBelowGreetingPx: 8,
-      position: { leftPx: 12, rightPx: null, topPx: null },
+      position: { rightPx: 12, leftPx: null, topPx: null },
       fallbackBottomPx: 48,
       style: { fontSizePx: 14, maxWidthPx: 300 }
     },
