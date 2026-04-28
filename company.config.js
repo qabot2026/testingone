@@ -615,12 +615,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
     chatWindow: {
       horizontalInsetPx: 12,
       topInsetPx: 26,
-      // Host/bubble margin from viewport bottom when launcher is visible.
-      bottomInsetPx: 8,
-      /* When the panel is open (launcher hidden), tighter bottom gap so the window can sit lower. */
-      bottomInsetWhenChatOpenPx: 4,
-      /* Extra viewport height while the panel is open (reclaims space where the bubble was). Set in company.js. */
-      extraHeightWhenChatOpenPx: 36,
+      bottomInsetPx: 10,
       /* Extra space below the system safe area / status bar. */
       safeAreaTopReservePx: 56,
       /* JS subtracts this from open chat height so the Dialogflow titlebar row is not clipped (optional; default 48 in code). */
@@ -628,12 +623,12 @@ window.COMPANY_CHAT_UI_CONFIG = {
       minWidthPx: 260,
       minHeightPx: 200,
 
-      bubblePosition: { rightPx: 12, bottomPx: 8, leftPx: null, topPx: null },
+      bubblePosition: { rightPx: 12, bottomPx: 10, leftPx: null, topPx: null },
 
       // Optional: set only the bubble–window gap: `chatWindowOffsetPx: 10` (see desk).
 
       // Add to the panel height; optional, separate from `chatWindowOffsetPx`.
-      extraHeightTowardBubblePx: 28
+      extraHeightTowardBubblePx: 20
     },
 
     autoOpenChat: {
