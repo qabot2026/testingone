@@ -53,6 +53,8 @@ window.COMPANY_CHAT_UI_CONFIG = {
     // `mode: "image"` hides the thread-side bot avatar (no duplicate of the persona image). `threadAvatarSizePx` applies when `mode` is `emojiTime`.
     botPersona: {
       mode: "image",
+      // Added to 250px baseline — higher = user persona label rows sit farther right.
+      userPersonaShiftRightPx: 24,
       threadAvatarSizePx: 28,
       emojiTime: {
         label: "🤖",
@@ -64,7 +66,10 @@ window.COMPANY_CHAT_UI_CONFIG = {
         widthPx: 32,
         heightPx: 32,
         showTime: true,
-        timeZone: "Asia/Kolkata"
+        timeZone: "Asia/Kolkata",
+        // Persona row: nudge avatar/time down and pull the reply bubble closer (px).
+        offsetDownPx: 6,
+        tightenBelowPx: 8
       }
     },
 
@@ -248,12 +253,12 @@ window.COMPANY_CHAT_UI_CONFIG = {
     //   Omitted keys default to "0" (sharp corners on that middle panel). Whole-card roundness: `dfMessengerTheme["--df-messenger-chat-border-radius"]`.
     chatMessageList: {
       showScrollbar: false,
-      // Top of the message strip: straight; bottom matches whole-card radius (see dfMessengerTheme "--df-messenger-chat-border-radius").
+      // Top of the message strip: straight; bottom edges square (meets composer with a straight seam).
       paneBorderRadius: {
         topLeft: "0",
         topRight: "0",
-        bottomLeft: "20px",
-        bottomRight: "20px"
+        bottomLeft: "0",
+        bottomRight: "0"
       }
     },
 
