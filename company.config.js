@@ -15,7 +15,7 @@
  * Three ways to ship:
  * - **One line (recommended):** `https://qabot2026.github.io/testingone/company-loader.js?botid=0001&v=7` — mounts an **iframe** to
  *   `chat-frame.html` (static CSS + df-messenger + config + company inside; no script injection in the host).
- *   Bump `?v=` in the URL and `IFRAME_VERSION` in `company-loader.js` when you change assets.
+ *   Bump `?v=` on the loader URL and `IFRAME_VERSION` inside `company-loader.js` after iframe/layout changes (`?dock=left`|`right`).
  * - **Split (no loader):** same GitHub + gstatic URLs as separate `<link>` / `<script src>` tags (or open `chat-frame.html` source as a template).
  * - **Single JS bundle:** run `python scripts/build_widget_bundle.py` and load `dist/company-widget.bundle.js` plus `dist/company.css`
  *   (see `embed-bundle.html`). The bundle is generated from this file + `company.js` — edit only `static/*`, then rebuild.
@@ -245,12 +245,15 @@ window.COMPANY_CHAT_UI_CONFIG = {
       "--dfchat-border": "#dbe5ec"
     },
 
-    // Where the chat bubble + “Hi” strip sit: "right" | "left" (one switch for both).
-    // Use matching edges everywhere below:
-    // - "right" → `rightPx` + `bottomPx` (set `leftPx: null` on desktop/mobile bubble + both launcherStrips)
-    // - "left"  → `leftPx` + `bottomPx` (set `rightPx: null`)
+    // Where the chat bubble + “Hi” strip sit horizontally.
+    // - Optional `sideMob` / `sideDesk`: phones vs wide screens (preferred).
+    // - Fallback `side`: applies to both when per-device keys are omitted.
+    // Match edges in desk/mob `bubblePosition` + launcherStrip `position`:
+    // - right → `rightPx` + `bottomPx` (set `leftPx: null`) — typical bottom-right on desktop.
+    // - left  → `leftPx` + `bottomPx` (set `rightPx: null`).
     chatLayout: {
-      side: "left"
+      sideDesk: "left",
+      sideMob: "left"
     },
 
     // Message list (conversation) scrollbar inside the open chat card.
@@ -544,8 +547,8 @@ window.COMPANY_CHAT_UI_CONFIG = {
       widthPx: 500,
       heightPx: 640,
 
-      // right + bottom (matches `common.chatLayout.side: "right"`).
-      bubblePosition: { rightPx: 10, bottomPx: 20, leftPx: null, topPx: null },
+      // Left + bottom (`sideDesk: "left"` — set `rightPx: null`).
+      bubblePosition: { leftPx: 10, bottomPx: 20, rightPx: null, topPx: null },
 
       // This is the correct knob for the bubble–chat gap: Dialogflow v1 uses it in the chat-bubble
       // shadow (not window height). Set on both the outer host and the bubble; use config here or
@@ -563,7 +566,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
     },
 
     launcherStrip: {
-      // “Hi” strip: same edge as the bubble ( here = bottom-right )
+      // Same edge as the bubble (bottom-left when `sideDesk: "left"`).
       enabled: true,
       text: "👋Hey, how are you?😊",
       // Word-by-word reveal; full line finishes in this many ms (0 = show full text at once).
@@ -571,7 +574,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
       // After this many ms from load, replaces `text` (typing animation is cancelled mid-flight if needed).
       swapTextDelayMs: 10000,
       swapText: "Chat with us",
-      position: { rightPx: 10, bottomPx: 96, leftPx: null, topPx: null },
+      position: { leftPx: 10, bottomPx: 96, rightPx: null, topPx: null },
       style: { fontSizePx: 13, paddingYpx: 10, paddingXpx: 14, maxWidthPx: 260 }
     },
 
@@ -582,7 +585,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
       sendLabel: "Send",
       gapAboveBubblePx: 5,
       gapBelowGreetingPx: 8,
-      position: { rightPx: 10, leftPx: null, topPx: null },
+      position: { leftPx: 10, rightPx: null, topPx: null },
       fallbackBottomPx: 54,
       style: { fontSizePx: 14, maxWidthPx: 300 }
     },
@@ -597,7 +600,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
       sideInsetPx: 15,
       maxCardHeightPx: 300,
       showSubtitle: true,
-      /* Max width when the form is docked in the chat window (right-docked chat = grows to the left). */
+      /* Max width when the form is docked in the chat window. */
       formDockMaxWidthPx: 420
     }
   },
@@ -623,7 +626,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
       minWidthPx: 260,
       minHeightPx: 200,
 
-      bubblePosition: { rightPx: 12, bottomPx: 10, leftPx: null, topPx: null },
+      bubblePosition: { leftPx: 12, bottomPx: 10, rightPx: null, topPx: null },
 
       // Optional: set only the bubble–window gap: `chatWindowOffsetPx: 10` (see desk).
 
@@ -637,13 +640,13 @@ window.COMPANY_CHAT_UI_CONFIG = {
     },
 
     launcherStrip: {
-      // Same edge as the bubble (bottom-right on mobile)
+      // Same edge as the bubble (`sideMob: "left"` → bottom-left)
       enabled: true,
       text: "Hello, how are you?",
       typingDurationMs: 2000,
       swapTextDelayMs: 10000,
       swapText: "Chat with us",
-      position: { rightPx: 12, bottomPx: 86, leftPx: null, topPx: null },
+      position: { leftPx: 12, bottomPx: 86, rightPx: null, topPx: null },
       style: { fontSizePx: 13, paddingYpx: 10, paddingXpx: 14, maxWidthPx: null }
     },
 
@@ -653,7 +656,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
       sendLabel: "Send",
       gapAboveBubblePx: 5,
       gapBelowGreetingPx: 8,
-      position: { rightPx: 12, leftPx: null, topPx: null },
+      position: { leftPx: 12, rightPx: null, topPx: null },
       fallbackBottomPx: 48,
       style: { fontSizePx: 14, maxWidthPx: 300 }
     },

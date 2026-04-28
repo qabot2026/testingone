@@ -4,7 +4,7 @@
  *
  * This does NOT inject third-party <script> tags. It adds one <iframe> to chat-frame.html
  * on the same host. The iframe is a normal static HTML page (same 4 resources that work when pasted).
- * Bump IFRAME_VERSION and ?v= on deploy.
+ * Bump IFRAME_VERSION and ?v= on deploy. Optional `dock=left` (default) or `dock=right` for iframe edge.
  *
  * iframe `chat-frame.html` URL uses the **same origin as this script**, so localhost and GitHub Pages
  * both pull `company.js` / `company.config.js` next to `company-loader.js` (no pinned stale CDN copies).
@@ -35,7 +35,7 @@
   }
 
   var CHAT_HOST = chatHostFromLoaderSrc() || "https://qabot2026.github.io/testingone/";
-  var IFRAME_VERSION = "8";
+  var IFRAME_VERSION = "9";
 
   function getLoaderQuery() {
     var cur = document.currentScript;
@@ -59,6 +59,8 @@
   }
   var q = getLoaderQuery();
   var bot = (q.get("botid") || "").trim();
+  /** Where the iframe strip sits on the host page: "left" (default) | "right". Overrides old hard-coded right edge. */
+  var dockSide = ((q.get("dock") || "left").trim().toLowerCase());
 
   var frameUrl = CHAT_HOST + "chat-frame.html?v=" + encodeURIComponent(IFRAME_VERSION);
   if (bot) {
@@ -77,12 +79,16 @@
     f.title = "Chat";
     f.setAttribute("src", frameUrl);
     f.setAttribute("referrerpolicy", "strict-origin-when-cross-origin");
-    /* Full-height strip on the right; matches typical right-docked chat. */
+    /* Full-height strip on the LEFT (default) or RIGHT — parent page placement; inside, company.js docks the bubble per chatLayout. */
+    var dockRight = dockSide === "right";
+    var horiz = dockRight
+      ? ["right:0", "left:auto"]
+      : ["left:0", "right:auto"];
     f.style.cssText = [
       "position:fixed",
       "top:0",
-      "right:0",
-      "bottom:0",
+      "bottom:0"
+    ].concat(horiz).concat([
       "width:min(100vw, 520px)",
       "height:100%",
       "max-width:100vw",
@@ -90,7 +96,7 @@
       "z-index:2147483000",
       "pointer-events:auto",
       "background:transparent"
-    ].join(";");
+    ]).join(";");
     document.body.appendChild(f);
   }
 

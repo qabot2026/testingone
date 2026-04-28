@@ -873,7 +873,7 @@ const originalTextNodeContent = new Map();
 const originalElementAttributes = new Map();
 const googleTranslationCache = new Map();
 
-const COMPANY_JS_BUILD_TAG = "20260428-08";
+const COMPANY_JS_BUILD_TAG = "20260428-14";
 const COMPANY_DEBUG_QUERY_FLAG = "dfchatDebug";
 let debugMountAttemptSeq = 0;
 let debugBadgeLastRenderAt = 0;
@@ -5096,7 +5096,8 @@ function normalizeChatHorizontalDock(value) {
 }
 
 /**
- * Single "left" / "right" control for the chat widget + hello strip. Reads `common.chatLayout.side` first, then per-viewport `chatWindow.horizontalDock` (legacy).
+ * Single "left" / "right" control for the chat widget + hello strip.
+ * Prefer `common.chatLayout.sideMob` / `sideDesk` (viewport-specific), then shared `side`, then legacy `chatWindow.horizontalDock`.
  * @param {object} [config]
  * @returns {"left"|"right"}
  */
@@ -5105,10 +5106,18 @@ function resolveChatLayoutSide(config) {
     const cl = c && c.common && c.common.chatLayout && typeof c.common.chatLayout === "object"
         ? c.common.chatLayout
         : null;
-    if (cl && (cl.side === "left" || cl.side === "right")) {
-        return cl.side;
-    }
     const isMobile = isMobileViewport();
+    if (cl) {
+        if (isMobile && (cl.sideMob === "left" || cl.sideMob === "right")) {
+            return cl.sideMob;
+        }
+        if (!isMobile && (cl.sideDesk === "left" || cl.sideDesk === "right")) {
+            return cl.sideDesk;
+        }
+        if (cl.side === "left" || cl.side === "right") {
+            return cl.side;
+        }
+    }
     const devBlock = getDeviceSection(c, isMobile);
     const cwin = devBlock.chatWindow && typeof devBlock.chatWindow === "object" ? devBlock.chatWindow : null;
     if (cwin && (cwin.horizontalDock === "left" || cwin.horizontalDock === "right")) {
@@ -5271,27 +5280,30 @@ function applyFixedCornerToMessengerForDock(dfMessenger, bubblePos, horizontalDo
     const hIn = typeof insets.horizontalInset === "number" && Number.isFinite(insets.horizontalInset) ? insets.horizontalInset : 20;
     const bIn = typeof insets.bottomInset === "number" && Number.isFinite(insets.bottomInset) ? insets.bottomInset : 20;
     const pinTop = typeof b.topPx === "number" && typeof b.bottomPx !== "number";
+    const imp = "important";
 
     if (dock === "right") {
         const r = typeof b.rightPx === "number" && Number.isFinite(b.rightPx) ? b.rightPx : hIn;
-        dfMessenger.style.setProperty("right", `${r}px`);
-        dfMessenger.style.setProperty("left", "auto");
+        dfMessenger.style.setProperty("right", `${r}px`, imp);
+        dfMessenger.style.setProperty("left", "auto", imp);
     } else {
         const l = typeof b.leftPx === "number" && Number.isFinite(b.leftPx) ? b.leftPx : hIn;
-        dfMessenger.style.setProperty("left", `${l}px`);
-        dfMessenger.style.setProperty("right", "auto");
+        dfMessenger.style.setProperty("left", `${l}px`, imp);
+        dfMessenger.style.setProperty("right", "auto", imp);
     }
 
     if (pinTop) {
         const tIn = typeof insets.topInset === "number" && Number.isFinite(insets.topInset) ? insets.topInset : 20;
         const t = typeof b.topPx === "number" && Number.isFinite(b.topPx) ? b.topPx : tIn;
-        dfMessenger.style.setProperty("top", `${t}px`);
-        dfMessenger.style.removeProperty("bottom");
+        dfMessenger.style.setProperty("top", `${t}px`, imp);
+        dfMessenger.style.setProperty("bottom", "auto", imp);
     } else {
         const bot = typeof b.bottomPx === "number" && Number.isFinite(b.bottomPx) ? b.bottomPx : bIn;
-        dfMessenger.style.setProperty("bottom", `${bot}px`);
-        dfMessenger.style.removeProperty("top");
+        dfMessenger.style.setProperty("bottom", `${bot}px`, imp);
+        dfMessenger.style.setProperty("top", "auto", imp);
     }
+    /* Dialogflow’s bundle can use margin auto on the host and read as horizontally centered. */
+    dfMessenger.style.setProperty("margin", "0", imp);
 }
 
 /** So desktop `--df-messenger-chat-window-width` is never wider than the viewport. */
@@ -6606,11 +6618,28 @@ function initializeMobileChatLayout(dfMessenger, config) {
     };
 
     applyLayout();
+    /* Dialogflow occasionally reapplies stylesheet rules on the host after first paint — re-pin corner on wide viewports. */
+    [160, 500, 1200].forEach((delay) => {
+        window.setTimeout(() => {
+            if (activeDfMessenger === dfMessenger && !isMobileViewport()) {
+                applyLayout();
+            }
+        }, delay);
+    });
     window.addEventListener("resize", applyLayout);
     window.addEventListener("df-messenger-loaded", () => {
         if (activeDfMessenger === dfMessenger) {
             applyLayout();
             scheduleChatMessageListScrollbarReapply(dfMessenger);
+            if (!isMobileViewport()) {
+                [80, 400].forEach((delay) => {
+                    window.setTimeout(() => {
+                        if (activeDfMessenger === dfMessenger) {
+                            applyLayout();
+                        }
+                    }, delay);
+                });
+            }
         }
     });
 

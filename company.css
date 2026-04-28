@@ -29,8 +29,7 @@
 df-messenger {
   position: fixed;
   bottom: 20px;
-  right: 10px;
-  left: auto;
+  /* Horizontal inset: company.js (`applyFixedCornerToMessengerForDock`) from chatLayout + bubblePosition — avoid fixed right/left here or they fight left-docked desktops. */
   z-index: 999;
   overflow: visible;
   box-sizing: border-box;
