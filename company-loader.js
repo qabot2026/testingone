@@ -5,9 +5,6 @@
  * This does NOT inject third-party <script> tags. It adds one <iframe> to chat-frame.html
  * on the same host. The iframe is a normal static HTML page (same 4 resources that work when pasted).
  * Bump IFRAME_VERSION and ?v= on deploy.
- * Host page iframe strip (which screen edge — NOT the bubble inside chat-frame.html):
- *   `?dock=right`|`left`; or preset `window.COMPANY_LOADER_IFRAME_DOCK='left'` before this script (see company.config chatLayout).
- * Default when omitted: **right**, to pair with usual `chatLayout.sideDesk: 'right'`.
  *
  * iframe `chat-frame.html` URL uses the **same origin as this script**, so localhost and GitHub Pages
  * both pull `company.js` / `company.config.js` next to `company-loader.js` (no pinned stale CDN copies).
@@ -38,7 +35,7 @@
   }
 
   var CHAT_HOST = chatHostFromLoaderSrc() || "https://qabot2026.github.io/testingone/";
-  var IFRAME_VERSION = "10";
+  var IFRAME_VERSION = "8";
 
   function getLoaderQuery() {
     var cur = document.currentScript;
@@ -62,22 +59,6 @@
   }
   var q = getLoaderQuery();
   var bot = (q.get("botid") || "").trim();
-  /** Where the iframe strip sits on the *host* viewport: "left" | "right" (default matches common chatLayout.sideDesk right). */
-  var dockParam = q.get("dock");
-  var dockSide;
-  if (dockParam !== null && String(dockParam).trim()) {
-    dockSide = String(dockParam).trim().toLowerCase();
-  } else if (
-    typeof window.COMPANY_LOADER_IFRAME_DOCK === "string"
-    && window.COMPANY_LOADER_IFRAME_DOCK.trim()
-  ) {
-    dockSide = window.COMPANY_LOADER_IFRAME_DOCK.trim().toLowerCase();
-  } else {
-    dockSide = "right";
-  }
-  if (dockSide !== "left" && dockSide !== "right") {
-    dockSide = "right";
-  }
 
   var frameUrl = CHAT_HOST + "chat-frame.html?v=" + encodeURIComponent(IFRAME_VERSION);
   if (bot) {
@@ -96,16 +77,12 @@
     f.title = "Chat";
     f.setAttribute("src", frameUrl);
     f.setAttribute("referrerpolicy", "strict-origin-when-cross-origin");
-    /* Parent page: iframe strip on left or right edge; INSIDE iframe, bubble follows common.chatLayout (sideDesk/sideMob). */
-    var dockRight = dockSide === "right";
-    var horiz = dockRight
-      ? ["right:0", "left:auto"]
-      : ["left:0", "right:auto"];
+    /* Full-height strip on the right; matches typical right-docked chat. */
     f.style.cssText = [
       "position:fixed",
       "top:0",
-      "bottom:0"
-    ].concat(horiz).concat([
+      "right:0",
+      "bottom:0",
       "width:min(100vw, 520px)",
       "height:100%",
       "max-width:100vw",
@@ -113,7 +90,7 @@
       "z-index:2147483000",
       "pointer-events:auto",
       "background:transparent"
-    ]).join(";");
+    ].join(";");
     document.body.appendChild(f);
   }
 
