@@ -41,7 +41,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
       title: "Chat Support",
       subtitle: "🟢 We are online to assist you",
       chatIconUrl: "https://storage.googleapis.com/companybucket/Images/cat.png",
-      chatTitleIconUrl: "https://storage.googleapis.com/companybucket/Images/cat.png",
+      chatTitleIconUrl: "https://storage.googleapis.com/companybucket/Images/cat-icon.png",
       // Base label (no trailing dots): while the agent types, the UI cycles Typing. / Typing.. / Typing...
       botWritingText: "Typing",
       botWritingDotsIntervalMs: 480,
@@ -70,7 +70,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
         timeZone: "Asia/Kolkata"
       },
       image: {
-        url: "https://storage.googleapis.com/companybucket/Images/cat.png",
+        url: "https://storage.googleapis.com/companybucket/Images/cat-icon.png",
         widthPx: 32,
         heightPx: 32,
         showTime: true,
@@ -80,29 +80,6 @@ window.COMPANY_CHAT_UI_CONFIG = {
         tightenBelowPx: 8,
         // ≤768px: shift bot persona img + time left (translateX) without affecting desktop.
         mobileNudgeLeftPx: 14
-      }
-    },
-
-    // Line above each **user** message — avatar + clock on the **user** side (mirror of bot persona).
-    // `mode: "image"` = logo + separate time chip; `emojiTime` = compact text strip (same as bot emoji mode).
-    // Horizontal alignment uses `justify-content: flex-end`; vertical gap uses `tightenBelowPx` (pull toward the bubble).
-    userPersona: {
-      enabled: true,
-      mode: "image",
-      emojiTime: {
-        label: "🙂 User",
-        showTime: true,
-        timeZone: "Asia/Kolkata"
-      },
-      image: {
-        url: "https://storage.googleapis.com/companybucket/Images/cat.png",
-        widthPx: 28,
-        heightPx: 28,
-        showTime: true,
-        timeZone: "Asia/Kolkata",
-        offsetDownPx: 6,
-        tightenBelowPx: 14,
-        mobileNudgeRightPx: 10
       }
     },
 
@@ -116,7 +93,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
       // - Changing language = same conversation language + chat UI (not the host page), unless
       //   you set `autoTranslateHostPage: true` to also Google-translate the rest of the page.
       multiLanguage: {
-        enabled: false,
+        enabled: true,
         defaultLanguage: "en",
         autoTranslateHostPage: false
         // Composer hint (`placeholder-text`). Keys = same `code` values as below. Optional: add `inputPlaceholder` on each language row to override only that row.
@@ -134,7 +111,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
 
       // Restart button in footer.
       restartChat: {
-        enabled: false,
+        enabled: true,
         label: "Restart"
       },
 
@@ -193,6 +170,8 @@ window.COMPANY_CHAT_UI_CONFIG = {
     footerInputBox: {
       // Composer inset vs chat card (top right bottom left). Omit `sendButtonWrapperPx` to use Dialogflow’s default Send.
       padding: "8px 10px 6px 10px",
+      // Nudge the Send icon wrapper (negative = up).
+      sendOffsetYpx: -3,
       // Or omit `padding` and set all four:
       // paddingTopPx: 19,
       // paddingRightPx: 0,
@@ -564,7 +543,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
     showChatbot: true,
 
     chatWindow: {
-      widthPx: 320,
+      widthPx: 400,
       heightPx: 450,
 
       // right + bottom (matches `common.chatLayout.side: "right"`).
@@ -644,7 +623,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
       /* JS subtracts this from open chat height so the Dialogflow titlebar row is not clipped (optional; default 48 in code). */
       titlebarChromeReservePx: 40,
       minWidthPx: 260,
-      minHeightPx: 250,
+      minHeightPx: 200,
 
       bubblePosition: { rightPx: 12, bottomPx: 10, leftPx: null, topPx: null },
 
@@ -665,7 +644,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
       text: "Hello, how are you?",
       typingDurationMs: 2000,
       swapTextDelayMs: 10000,
-      swapText: "Chat with us",
+      swapText: "🤖Chat with us",
       position: { rightPx: 12, bottomPx: 86, leftPx: null, topPx: null },
       style: { fontSizePx: 13, paddingYpx: 10, paddingXpx: 14, maxWidthPx: null }
     },
