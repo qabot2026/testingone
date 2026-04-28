@@ -83,12 +83,27 @@ window.COMPANY_CHAT_UI_CONFIG = {
       }
     },
 
-    // Line above each **user** message: label + clock (same visual family as bot persona). Layout nudges stay on `botPersona`.
+    // Line above each **user** message — avatar + clock on the **user** side (mirror of bot persona).
+    // `mode: "image"` = logo + separate time chip; `emojiTime` = compact text strip (same as bot emoji mode).
+    // Horizontal alignment uses `justify-content: flex-end`; vertical gap uses `tightenBelowPx` (pull toward the bubble).
     userPersona: {
       enabled: true,
-      label: "🙂 User",
-      showTime: true,
-      timeZone: "Asia/Kolkata"
+      mode: "image",
+      emojiTime: {
+        label: "🙂 User",
+        showTime: true,
+        timeZone: "Asia/Kolkata"
+      },
+      image: {
+        url: "https://storage.googleapis.com/companybucket/Images/cat.png",
+        widthPx: 28,
+        heightPx: 28,
+        showTime: true,
+        timeZone: "Asia/Kolkata",
+        offsetDownPx: 6,
+        tightenBelowPx: 14,
+        mobileNudgeRightPx: 10
+      }
     },
 
     // Features ON / OFF — each block should include `enabled: true` or `false`.

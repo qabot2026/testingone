@@ -160,7 +160,11 @@ const CHAT_BUBBLE_LAUNCHER_CONFIG = readChatBubbleLauncherConfig();
 const PERSONA_MARKER_BOT = "dfchat-persona-bot";
 const PERSONA_MARKER_BOT_TIME = "dfchat-persona-bot-time";
 const PERSONA_MARKER_USER = "dfchat-persona-user";
+/** Fragment on user avatar `<img>` URL (`![](url#…)`), mirrored on `dfchat-bot-persona`. */
 const PERSONA_URL_MARKER_BOT_IMG = "dfchat-bot-persona";
+/** User-side avatar marker (paired with `#dfchat-persona-user-time` clock chip). */
+const PERSONA_URL_MARKER_USER_IMG = "dfchat-user-persona";
+const PERSONA_MARKER_USER_TIME = "dfchat-persona-user-time";
 
 function readBotPersonaConfig() {
     const raw = COMMON_CONFIG.botPersona && typeof COMMON_CONFIG.botPersona === "object"
@@ -229,22 +233,55 @@ function readBotPersonaConfig() {
 }
 
 /**
- * Caption strip above user messages (`df-user-input-entered` / `df-request-sent`).
- * @returns {{ enabled: boolean, label: string, showTime: boolean, timeZone: string }}
+ * User persona above each user message (`common.userPersona`): `emojiTime` caption or `image` + clock (like bot).
+ * @returns {{ enabled: boolean, mode: string, emojiTime: object, image: object }}
  */
 function readUserPersonaConfig() {
     const raw = COMMON_CONFIG.userPersona && typeof COMMON_CONFIG.userPersona === "object"
         ? COMMON_CONFIG.userPersona
         : {};
+    const emojiTimeRaw = raw.emojiTime && typeof raw.emojiTime === "object" ? raw.emojiTime : {};
+    const imageRaw = raw.image && typeof raw.image === "object" ? raw.image : {};
+    const explicitMode = raw.mode === "emojiTime" || raw.mode === "image"
+        ? raw.mode
+        : "";
+    const hasImageUrl = typeof imageRaw.url === "string" && imageRaw.url.trim().length > 0;
+    const mode = explicitMode || (hasImageUrl ? "image" : "emojiTime");
+    const defImg = BOT_PERSONA_CONFIG.image && typeof BOT_PERSONA_CONFIG.image === "object"
+        ? BOT_PERSONA_CONFIG.image
+        : {};
     return {
         enabled: raw.enabled !== false,
-        label: typeof raw.label === "string" && raw.label.trim()
-            ? raw.label.trim()
-            : "🙂 User",
-        showTime: raw.showTime !== false,
-        timeZone: typeof raw.timeZone === "string" && raw.timeZone.trim()
-            ? raw.timeZone.trim()
-            : "Asia/Kolkata"
+        mode,
+        emojiTime: {
+            label: typeof emojiTimeRaw.label === "string" && emojiTimeRaw.label.trim()
+                ? emojiTimeRaw.label.trim()
+                : "🙂 User",
+            showTime: emojiTimeRaw.showTime !== false,
+            timeZone: typeof emojiTimeRaw.timeZone === "string" && emojiTimeRaw.timeZone.trim()
+                ? emojiTimeRaw.timeZone.trim()
+                : "Asia/Kolkata"
+        },
+        image: {
+            url: typeof imageRaw.url === "string" && imageRaw.url.trim()
+                ? imageRaw.url.trim()
+                : (typeof defImg.url === "string" ? defImg.url : ""),
+            widthPx: typeof imageRaw.widthPx === "number" && Number.isFinite(imageRaw.widthPx) ? imageRaw.widthPx : 28,
+            heightPx: typeof imageRaw.heightPx === "number" && Number.isFinite(imageRaw.heightPx) ? imageRaw.heightPx : 28,
+            showTime: imageRaw.showTime !== false,
+            timeZone: typeof imageRaw.timeZone === "string" && imageRaw.timeZone.trim()
+                ? imageRaw.timeZone.trim()
+                : "Asia/Kolkata",
+            offsetDownPx: typeof imageRaw.offsetDownPx === "number" && Number.isFinite(imageRaw.offsetDownPx) && imageRaw.offsetDownPx >= 0
+                ? imageRaw.offsetDownPx
+                : 6,
+            tightenBelowPx: typeof imageRaw.tightenBelowPx === "number" && Number.isFinite(imageRaw.tightenBelowPx) && imageRaw.tightenBelowPx >= 0
+                ? imageRaw.tightenBelowPx
+                : 14,
+            mobileNudgeRightPx: typeof imageRaw.mobileNudgeRightPx === "number" && Number.isFinite(imageRaw.mobileNudgeRightPx) && imageRaw.mobileNudgeRightPx >= 0
+                ? imageRaw.mobileNudgeRightPx
+                : 10
+        }
     };
 }
 
@@ -252,6 +289,9 @@ function readUserPersonaConfig() {
  * @returns {string} e.g. "274px" (narrow viewports subtract `userPersonaMobileNudgeLeftPx`; wide viewports add `userPersonaShiftRightDeskExtraPx`).
  */
 function cssUserPersonaMarginLeft() {
+    if (USER_PERSONA_CONFIG.mode === "image") {
+        return "0px";
+    }
     let base = 250 + Math.max(0, BOT_PERSONA_CONFIG.userPersonaShiftRightPx ?? 24);
     const trim = BOT_PERSONA_CONFIG.userPersonaMobileNudgeLeftPx ?? 28;
     const deskExtra = Math.max(0, Math.min(120, BOT_PERSONA_CONFIG.userPersonaShiftRightDeskExtraPx ?? 0));
@@ -265,6 +305,10 @@ function cssUserPersonaMarginLeft() {
 
 /** User persona baseline pull is −6px; config adds extra upward nudge (more negative margin-top). */
 function cssUserPersonaMarginTop() {
+    if (USER_PERSONA_CONFIG.mode === "image") {
+        const d = Math.max(0, USER_PERSONA_CONFIG.image.offsetDownPx ?? 6);
+        return `-${2 + d}px`;
+    }
     const extra = Math.max(0, Math.min(32, BOT_PERSONA_CONFIG.userPersonaNudgeUpPx ?? 6));
     return `-${6 + extra}px`;
 }
@@ -8892,21 +8936,44 @@ function renderUserPersona(dfMessenger) {
     }
 
     lastUserPersonaRenderAt = now;
-    renderPersona(ms, "user");
+    renderUserPersonaMarkdown(ms);
 }
 
-function renderPersona(dfMessenger, personaType) {
-    if (personaType === "bot") {
-        renderBotPersona(dfMessenger);
+function renderUserPersonaMarkdown(dfMessenger) {
+    const cfg = USER_PERSONA_CONFIG;
+    const nonce = `user-${Date.now()}-${personaSequence += 1}`;
+    if (cfg.mode === "emojiTime") {
+        const et = cfg.emojiTime;
+        const timeLabel = et.showTime ? getPersonaTimeLabel(et.timeZone) : "";
+        dfMessenger.renderCustomText(
+            createPersonaBadgeMarkdown(et.label, timeLabel, nonce, PERSONA_MARKER_USER, true),
+            true
+        );
+        schedulePersonaShadowFix(dfMessenger);
         return;
     }
-    const u = USER_PERSONA_CONFIG;
-    const timeLabel = u.showTime ? getPersonaTimeLabel(u.timeZone) : "";
-    const nonce = `${personaType}-${Date.now()}-${personaSequence += 1}`;
-    dfMessenger.renderCustomText(
-        createPersonaBadgeMarkdown(u.label, timeLabel, nonce, PERSONA_MARKER_USER),
-        true
-    );
+    const img = cfg.image;
+    const baseUrl = typeof img.url === "string" && img.url.trim() ? img.url.split("#")[0].trim() : "";
+    if (!baseUrl) {
+        const et = cfg.emojiTime;
+        const timeLabel = et.showTime ? getPersonaTimeLabel(et.timeZone) : "";
+        dfMessenger.renderCustomText(
+            createPersonaBadgeMarkdown(et.label, timeLabel, nonce, PERSONA_MARKER_USER, true),
+            true
+        );
+        schedulePersonaShadowFix(dfMessenger);
+        return;
+    }
+    if (img.showTime !== false) {
+        const timeUrl = createUserPersonaTimeDataUrl(img, nonce);
+        dfMessenger.renderCustomText(
+            `![](${baseUrl}#${PERSONA_URL_MARKER_USER_IMG}) ![](${timeUrl})`,
+            true
+        );
+    } else {
+        dfMessenger.renderCustomText(`![](${baseUrl}#${PERSONA_URL_MARKER_USER_IMG})`, true);
+    }
+    schedulePersonaShadowFix(dfMessenger);
 }
 
 function renderBotPersona(dfMessenger) {
@@ -9005,6 +9072,17 @@ function createBotPersonaTimeDataUrl(imageCfg, nonce) {
     return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
 }
 
+function createUserPersonaTimeDataUrl(imageCfg, nonce) {
+    const timeLabel = getPersonaTimeLabel(imageCfg.timeZone);
+    const width = Math.max(72, Math.round(timeLabel.length * 5.5 + 16));
+    const desc = `${PERSONA_MARKER_USER_TIME}|${nonce}`;
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="28" viewBox="0 0 ${width} 28">
+<desc>${escapeXml(desc)}</desc>
+<text x="8" y="19" font-family="${PERSONA_FONT_FAMILY}" font-size="${PERSONA_FONT_SIZE}" font-weight="${PERSONA_FONT_WEIGHT}" fill="${PERSONA_TEXT_COLOR}" opacity="0.84">${escapeXml(timeLabel)}</text>
+</svg>`;
+    return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+}
+
 function getPersonaImageGuardCss() {
     const cfg = BOT_PERSONA_CONFIG;
     const img = cfg.image;
@@ -9013,6 +9091,12 @@ function getPersonaImageGuardCss() {
     const personaDown = cfg.mode === "image" ? `${img.offsetDownPx}px` : "0px";
     const mobY = `${cfg.mode === "image" ? img.offsetDownPx : 0}`;
     const mobX = `${img.mobileNudgeLeftPx}`;
+    const uCfg = USER_PERSONA_CONFIG;
+    const uImg = uCfg.mode === "image" ? uCfg.image : null;
+    const uW = uImg ? `${uImg.widthPx}px` : "28px";
+    const uH = uImg ? `${uImg.heightPx}px` : "28px";
+    const uDown = uImg ? `${uImg.offsetDownPx}px` : "0px";
+    const uMobR = uImg ? uImg.mobileNudgeRightPx : 0;
     return `
 img[src*="dfchat-bot-persona"],
 img[src*="%23dfchat-bot-persona"] {
@@ -9057,6 +9141,38 @@ img[src*="dfchat-persona-bot|"] {
   vertical-align: middle !important;
   box-sizing: border-box !important;
 }
+${uCfg.mode === "image" && uImg ? `
+img[src*="dfchat-user-persona"],
+img[src*="%23dfchat-user-persona"] {
+  width: ${uW} !important;
+  height: ${uH} !important;
+  max-width: ${uW} !important;
+  max-height: ${uH} !important;
+  object-fit: contain !important;
+  display: inline-block !important;
+  vertical-align: middle !important;
+  box-sizing: border-box !important;
+  transform: translateY(${uDown}) !important;
+}
+img[src*="dfchat-persona-user-time"] {
+  height: 28px !important;
+  width: auto !important;
+  max-width: min(220px, 100%) !important;
+  max-height: 28px !important;
+  display: inline-block !important;
+  vertical-align: middle !important;
+  object-fit: contain !important;
+  box-sizing: border-box !important;
+  transform: translateY(${uDown}) !important;
+}
+@media (max-width: ${MOBILE_CHAT_BREAKPOINT_PX}px) {
+img[src*="dfchat-user-persona"],
+img[src*="%23dfchat-user-persona"],
+img[src*="dfchat-persona-user-time"] {
+  transform: translateY(${uDown}) translateX(${uMobR}px) !important;
+}
+}
+` : ""}
 ${BOT_PERSONA_CONFIG.mode === "emojiTime" ? `
 /* .entry:has(img) cannot see into df-messenger-utterance shadow — class set in applyBotEmojiPersonaCaptionChrome */
 .entry.bot.dfchat-bot-emoji-caption-entry:not(:first-child) {
@@ -9688,6 +9804,8 @@ function decoratePersonaMessages(dfMessenger) {
         const personaImages = root.querySelectorAll(
             [
                 `img[src*='#${PERSONA_URL_MARKER_BOT_IMG}']`,
+                `img[src*='#${PERSONA_URL_MARKER_USER_IMG}']`,
+                `img[src*='${PERSONA_MARKER_USER_TIME}']`,
                 `img[src*='${PERSONA_MARKER_BOT_TIME}']`,
                 `img[src*='${PERSONA_MARKER_USER}|']`,
                 `img[src*='${PERSONA_MARKER_BOT}|']`,
@@ -9723,6 +9841,14 @@ function decoratePersonaMessages(dfMessenger) {
 function getPersonaType(imageNode) {
     const source = imageNode && imageNode.getAttribute ? imageNode.getAttribute("src") || "" : "";
     if (source.includes(USER_PERSONA_TOKEN)) {
+        return "user";
+    }
+
+    if (source.includes(PERSONA_MARKER_USER_TIME)) {
+        return "user";
+    }
+
+    if (source.includes(`#${PERSONA_URL_MARKER_USER_IMG}`) || source.includes(`%23${PERSONA_URL_MARKER_USER_IMG}`)) {
         return "user";
     }
 
@@ -9800,7 +9926,38 @@ function stylePersonaContainer(container, imageNode, personaType) {
     imageNode.style.opacity = PERSONA_OPACITY;
 
     const src = imageNode.getAttribute("src") || "";
-    if (personaType === "bot" && BOT_PERSONA_CONFIG.mode === "image") {
+    if (personaType === "user" && USER_PERSONA_CONFIG.mode === "image") {
+        const { widthPx, heightPx, showTime } = USER_PERSONA_CONFIG.image;
+        const isUserAv = src.includes(`#${PERSONA_URL_MARKER_USER_IMG}`) || src.includes(`%23${PERSONA_URL_MARKER_USER_IMG}`);
+        const isUserTime = src.includes(PERSONA_MARKER_USER_TIME);
+        imageNode.style.display = "inline-block";
+        imageNode.style.verticalAlign = "middle";
+        if (isUserAv) {
+            imageNode.style.height = `${heightPx}px`;
+            imageNode.style.width = `${widthPx}px`;
+            imageNode.style.objectFit = "contain";
+            if (showTime) {
+                imageNode.style.marginRight = "6px";
+            }
+        } else if (isUserTime) {
+            imageNode.style.height = "28px";
+            imageNode.style.width = "auto";
+        } else {
+            const hPx = showTime ? Math.max(heightPx, 28) : heightPx;
+            imageNode.style.height = `${hPx}px`;
+            imageNode.style.width = "auto";
+            imageNode.style.objectFit = "contain";
+        }
+    } else if (personaType === "user" && USER_PERSONA_CONFIG.mode === "emojiTime") {
+        imageNode.style.display = "inline-block";
+        imageNode.style.verticalAlign = "middle";
+        imageNode.style.height = "28px";
+        imageNode.style.width = "auto";
+        imageNode.style.objectFit = "contain";
+        if (USER_PERSONA_CONFIG.emojiTime.showTime) {
+            imageNode.style.marginRight = "6px";
+        }
+    } else if (personaType === "bot" && BOT_PERSONA_CONFIG.mode === "image") {
         const { widthPx, heightPx, showTime } = BOT_PERSONA_CONFIG.image;
         const isCat = src.includes(`#${PERSONA_URL_MARKER_BOT_IMG}`);
         const isTime = src.includes(PERSONA_MARKER_BOT_TIME);
@@ -9840,13 +9997,16 @@ function stylePersonaContainer(container, imageNode, personaType) {
     }
 
     if (personaType === "user") {
+        const uImgRow = USER_PERSONA_CONFIG.mode === "image";
         imageNode.style.marginLeft = cssUserPersonaMarginLeft();
-        imageNode.style.marginRight = "-14px";
+        imageNode.style.marginRight = uImgRow ? "0px" : "-14px";
         imageNode.style.marginTop = cssUserPersonaMarginTop();
         imageNode.style.marginBottom = "0px";
     }
 
     const isBotEmojiCaption = personaType === "bot" && BOT_PERSONA_CONFIG.mode === "emojiTime";
+    const isUserImageStrip = personaType === "user" && USER_PERSONA_CONFIG.mode === "image";
+    const userTighten = isUserImageStrip ? (4 + (USER_PERSONA_CONFIG.image.tightenBelowPx ?? 14)) : 0;
 
     while (current && current !== document.body && depth < 3) {
         current.dataset.companyPersonaStyled = personaType;
@@ -9863,9 +10023,9 @@ function stylePersonaContainer(container, imageNode, personaType) {
             current.style.marginBottom = PERSONA_VERTICAL_PULL;
             if (personaType === "user") {
                 current.style.marginLeft = cssUserPersonaMarginLeft();
-                current.style.marginRight = "-14px";
+                current.style.marginRight = isUserImageStrip ? "4px" : "-14px";
                 current.style.marginTop = cssUserPersonaMarginTop();
-                current.style.marginBottom = "0px";
+                current.style.marginBottom = isUserImageStrip ? `-${userTighten}px` : "0px";
                 current.style.textAlign = "right";
             }
         }
@@ -9877,9 +10037,9 @@ function stylePersonaContainer(container, imageNode, personaType) {
             current.style.maxWidth = "100%";
             current.style.justifyContent = "flex-end";
             current.style.marginLeft = cssUserPersonaMarginLeft();
-            current.style.marginRight = "-14px";
+            current.style.marginRight = isUserImageStrip ? "4px" : "-14px";
             current.style.marginTop = cssUserPersonaMarginTop();
-            current.style.marginBottom = "0px";
+            current.style.marginBottom = isUserImageStrip ? `-${userTighten}px` : "0px";
             current.style.alignSelf = "flex-end";
             current.style.justifySelf = "end";
             current.style.textAlign = "right";
