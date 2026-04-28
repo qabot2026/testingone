@@ -42,7 +42,9 @@ window.COMPANY_CHAT_UI_CONFIG = {
       subtitle: "🟢 We are online to assist you",
       chatIconUrl: "https://storage.googleapis.com/companybucket/Images/cat.png",
       chatTitleIconUrl: "https://storage.googleapis.com/companybucket/Images/cat.png",
-      botWritingText: "🤖 Typing...",
+      // Base label (no trailing dots): while the agent types, the UI cycles Typing. / Typing.. / Typing...
+      botWritingText: "Typing",
+      botWritingDotsIntervalMs: 480,
       // `false` to leave Dialogflow’s default (arrow/locale) title dismiss; default true = always ×, all languages.
       forceCloseIconX: true,
       // Optional public URL (https://…) for the **collapse** (title) icon. If unset, a built-in X SVG (data URL) is used.
@@ -55,6 +57,8 @@ window.COMPANY_CHAT_UI_CONFIG = {
       mode: "image",
       // Added to 250px baseline — higher = user persona label rows sit farther right.
       userPersonaShiftRightPx: 24,
+      // ≤768px: subtract this many px from computed user persona margin-left (moves strip left on phones).
+      userPersonaMobileNudgeLeftPx: 28,
       threadAvatarSizePx: 28,
       emojiTime: {
         label: "🤖",
@@ -71,7 +75,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
         offsetDownPx: 6,
         tightenBelowPx: 8,
         // ≤768px: shift bot persona img + time left (translateX) without affecting desktop.
-        mobileNudgeLeftPx: 8
+        mobileNudgeLeftPx: 14
       }
     },
 

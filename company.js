@@ -155,10 +155,15 @@ function readBotPersonaConfig() {
     const userPersonaShiftRightPx = typeof raw.userPersonaShiftRightPx === "number" && Number.isFinite(raw.userPersonaShiftRightPx) && raw.userPersonaShiftRightPx >= 0
         ? raw.userPersonaShiftRightPx
         : 24;
+    /** On narrow viewports, subtract from computed user persona `margin-left` to move strip left. */
+    const userPersonaMobileNudgeLeftPx = typeof raw.userPersonaMobileNudgeLeftPx === "number" && Number.isFinite(raw.userPersonaMobileNudgeLeftPx) && raw.userPersonaMobileNudgeLeftPx >= 0
+        ? raw.userPersonaMobileNudgeLeftPx
+        : 28;
     return {
         mode,
         threadAvatarSizePx,
         userPersonaShiftRightPx,
+        userPersonaMobileNudgeLeftPx,
         emojiTime: {
             label: typeof emojiTime.label === "string" ? emojiTime.label : "🤖",
             showTime: emojiTime.showTime !== false,
@@ -187,17 +192,21 @@ function readBotPersonaConfig() {
             /** Narrow viewports: translate bot persona imgs left by this many px (`translateX(-n)`). */
             mobileNudgeLeftPx: typeof image.mobileNudgeLeftPx === "number" && Number.isFinite(image.mobileNudgeLeftPx) && image.mobileNudgeLeftPx >= 0
                 ? image.mobileNudgeLeftPx
-                : 8
+                : 14
         }
     };
 }
 
 /**
- * @returns {string} e.g. "274px"
+ * @returns {string} e.g. "274px" (narrow viewports subtract `userPersonaMobileNudgeLeftPx`).
  */
 function cssUserPersonaMarginLeft() {
-    const n = BOT_PERSONA_CONFIG.userPersonaShiftRightPx ?? 24;
-    return `${250 + Math.max(0, n)}px`;
+    let base = 250 + Math.max(0, BOT_PERSONA_CONFIG.userPersonaShiftRightPx ?? 24);
+    const trim = BOT_PERSONA_CONFIG.userPersonaMobileNudgeLeftPx ?? 28;
+    if (typeof isMobileViewport === "function" && isMobileViewport()) {
+        base = Math.max(0, base - trim);
+    }
+    return `${base}px`;
 }
 
 /** Safe CSS border-radius for the floating launcher (blocks odd characters). */
@@ -564,12 +573,82 @@ function buildChatBubbleLauncherInjectedCss(cfg) {
         + `}`;
 }
 
-function resolveBotWritingTextFromConfig() {
+/** @type {number|null} */
+let botWritingDotsTimerId = null;
+let botWritingDotsPhase = 0;
+let botWritingDotsWasTyping = false;
+
+/**
+ * Strips trailing dots so we can append animated "." / ".." / "..." (see `tickBotWritingDots`).
+ * @returns {string}
+ */
+function getBotWritingTextBase() {
     const raw = HEADER_CONFIG.botWritingText;
     if (typeof raw === "string" && raw.trim()) {
-        return raw.trim();
+        return raw.trim().replace(/\.+$/, "").trim() || "Typing";
     }
-    return "🤖 Typing...";
+    return "Typing";
+}
+
+function readBotWritingDotsIntervalMs() {
+    const t = HEADER_CONFIG.botWritingDotsIntervalMs;
+    return typeof t === "number" && Number.isFinite(t) && t >= 200 && t <= 5000 ? t : 480;
+}
+
+/** Idle label when the agent is not typing (matches previous static `...` look). */
+function resolveBotWritingTextFromConfig() {
+    return `${getBotWritingTextBase()}...`;
+}
+
+/**
+ * Cycles `bot-writing-text` through Typing. / Typing.. / Typing... while `.typing-message` is in the tree.
+ */
+function tickBotWritingDots() {
+    const ms = activeDfMessenger;
+    if (!ms || typeof ms.querySelector !== "function") {
+        return;
+    }
+    const bubble = ms.querySelector("df-messenger-chat-bubble");
+    if (!bubble || typeof bubble.setAttribute !== "function") {
+        return;
+    }
+    let typing = false;
+    try {
+        const roots = collectSearchRoots(ms);
+        for (let i = 0; i < roots.length; i++) {
+            const r = roots[i];
+            if (r && r.querySelector && r.querySelector(".typing-message")) {
+                typing = true;
+                break;
+            }
+        }
+    } catch {
+        typing = false;
+    }
+    const base = getBotWritingTextBase();
+    if (typing) {
+        if (!botWritingDotsWasTyping) {
+            botWritingDotsPhase = 0;
+        }
+        botWritingDotsWasTyping = true;
+        const dots = ".".repeat(botWritingDotsPhase + 1);
+        bubble.setAttribute("bot-writing-text", `${base}${dots}`);
+        botWritingDotsPhase = (botWritingDotsPhase + 1) % 3;
+    } else {
+        botWritingDotsWasTyping = false;
+        botWritingDotsPhase = 0;
+        bubble.setAttribute("bot-writing-text", resolveBotWritingTextFromConfig());
+    }
+}
+
+function restartBotWritingDotsTimer() {
+    if (botWritingDotsTimerId !== null) {
+        window.clearInterval(botWritingDotsTimerId);
+        botWritingDotsTimerId = null;
+    }
+    botWritingDotsPhase = 0;
+    botWritingDotsWasTyping = false;
+    botWritingDotsTimerId = window.setInterval(tickBotWritingDots, readBotWritingDotsIntervalMs());
 }
 
 function applyBotWritingTextToChatBubble(host) {
@@ -775,7 +854,7 @@ const originalTextNodeContent = new Map();
 const originalElementAttributes = new Map();
 const googleTranslationCache = new Map();
 
-const COMPANY_JS_BUILD_TAG = "20260428-04";
+const COMPANY_JS_BUILD_TAG = "20260428-06";
 const COMPANY_DEBUG_QUERY_FLAG = "dfchatDebug";
 let debugMountAttemptSeq = 0;
 let debugBadgeLastRenderAt = 0;
@@ -1706,6 +1785,12 @@ function initializeHardActionBar() {
 }
 
 function createAndMountMessenger() {
+    if (botWritingDotsTimerId !== null) {
+        window.clearInterval(botWritingDotsTimerId);
+        botWritingDotsTimerId = null;
+    }
+    botWritingDotsPhase = 0;
+    botWritingDotsWasTyping = false;
     if (closeIconXIntervalId) {
         window.clearInterval(closeIconXIntervalId);
         closeIconXIntervalId = null;
@@ -1769,6 +1854,8 @@ function createAndMountMessenger() {
     applyBotWritingTextToChatBubble(bubble);
     scheduleChatInputPlaceholderRefresh(df);
     document.body.appendChild(df);
+
+    restartBotWritingDotsTimer();
 
     applyDfMessengerThemeConfig(df, COMPANY_UI_CONFIG);
     applyBotPersonaToMessenger(df, bubble);
