@@ -69,7 +69,9 @@ window.COMPANY_CHAT_UI_CONFIG = {
         timeZone: "Asia/Kolkata",
         // Persona row: nudge avatar/time down and pull the reply bubble closer (px).
         offsetDownPx: 6,
-        tightenBelowPx: 8
+        tightenBelowPx: 8,
+        // ≤768px: shift bot persona img + time left (translateX) without affecting desktop.
+        mobileNudgeLeftPx: 8
       }
     },
 

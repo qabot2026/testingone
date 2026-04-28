@@ -183,6 +183,10 @@ function readBotPersonaConfig() {
             /** Extra pull toward the reply bubble (adds to base −4px margin under persona row). */
             tightenBelowPx: typeof image.tightenBelowPx === "number" && Number.isFinite(image.tightenBelowPx) && image.tightenBelowPx >= 0
                 ? image.tightenBelowPx
+                : 8,
+            /** Narrow viewports: translate bot persona imgs left by this many px (`translateX(-n)`). */
+            mobileNudgeLeftPx: typeof image.mobileNudgeLeftPx === "number" && Number.isFinite(image.mobileNudgeLeftPx) && image.mobileNudgeLeftPx >= 0
+                ? image.mobileNudgeLeftPx
                 : 8
         }
     };
@@ -771,7 +775,7 @@ const originalTextNodeContent = new Map();
 const originalElementAttributes = new Map();
 const googleTranslationCache = new Map();
 
-const COMPANY_JS_BUILD_TAG = "20260428-03";
+const COMPANY_JS_BUILD_TAG = "20260428-04";
 const COMPANY_DEBUG_QUERY_FLAG = "dfchatDebug";
 let debugMountAttemptSeq = 0;
 let debugBadgeLastRenderAt = 0;
@@ -8849,6 +8853,8 @@ function getPersonaImageGuardCss() {
     const catW = cfg.mode === "image" ? `${img.widthPx}px` : "32px";
     const catH = cfg.mode === "image" ? `${img.heightPx}px` : "32px";
     const personaDown = cfg.mode === "image" ? `${img.offsetDownPx}px` : "0px";
+    const mobY = `${cfg.mode === "image" ? img.offsetDownPx : 0}`;
+    const mobX = `${img.mobileNudgeLeftPx}`;
     return `
 img[src*="dfchat-bot-persona"],
 img[src*="%23dfchat-bot-persona"] {
@@ -8872,6 +8878,15 @@ img[src*="dfchat-persona-bot-time"] {
   object-fit: contain !important;
   box-sizing: border-box !important;
   transform: translateY(${cfg.mode === "image" ? personaDown : "0px"}) !important;
+}
+@media (max-width: ${MOBILE_CHAT_BREAKPOINT_PX}px) {
+img[src*="dfchat-bot-persona"],
+img[src*="%23dfchat-bot-persona"] {
+  transform: translateY(${mobY}px) translateX(-${mobX}px) !important;
+}
+img[src*="dfchat-persona-bot-time"] {
+  transform: translateY(${mobY}px) translateX(-${mobX}px) !important;
+}
 }
 img[src*="dfchat-persona-user|"],
 img[src*="dfchat-persona-bot|"] {
