@@ -83,6 +83,14 @@ window.COMPANY_CHAT_UI_CONFIG = {
       }
     },
 
+    // Line above each **user** message: label + clock (same visual family as bot persona). Layout nudges stay on `botPersona`.
+    userPersona: {
+      enabled: true,
+      label: "🙂 User",
+      showTime: true,
+      timeZone: "Asia/Kolkata"
+    },
+
     // Features ON / OFF — each block should include `enabled: true` or `false`.
     features: {
       // --- Languages (simple mental model) ---
@@ -541,7 +549,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
     showChatbot: true,
 
     chatWindow: {
-      widthPx: 280,
+      widthPx: 320,
       heightPx: 450,
 
       // right + bottom (matches `common.chatLayout.side: "right"`).

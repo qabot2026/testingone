@@ -155,6 +155,7 @@ const HEADER_CONFIG = COMMON_CONFIG.header && typeof COMMON_CONFIG.header === "o
 /** When not `false` (default in config), the chat **title** dismiss control is always ×, never an arrow, all languages. */
 const IS_FORCE_TITLEBAR_CLOSE_X_ENABLED = HEADER_CONFIG.forceCloseIconX !== false;
 const BOT_PERSONA_CONFIG = readBotPersonaConfig();
+const USER_PERSONA_CONFIG = readUserPersonaConfig();
 const CHAT_BUBBLE_LAUNCHER_CONFIG = readChatBubbleLauncherConfig();
 const PERSONA_MARKER_BOT = "dfchat-persona-bot";
 const PERSONA_MARKER_BOT_TIME = "dfchat-persona-bot-time";
@@ -224,6 +225,26 @@ function readBotPersonaConfig() {
                 ? image.mobileNudgeLeftPx
                 : 14
         }
+    };
+}
+
+/**
+ * Caption strip above user messages (`df-user-input-entered` / `df-request-sent`).
+ * @returns {{ enabled: boolean, label: string, showTime: boolean, timeZone: string }}
+ */
+function readUserPersonaConfig() {
+    const raw = COMMON_CONFIG.userPersona && typeof COMMON_CONFIG.userPersona === "object"
+        ? COMMON_CONFIG.userPersona
+        : {};
+    return {
+        enabled: raw.enabled !== false,
+        label: typeof raw.label === "string" && raw.label.trim()
+            ? raw.label.trim()
+            : "🙂 User",
+        showTime: raw.showTime !== false,
+        timeZone: typeof raw.timeZone === "string" && raw.timeZone.trim()
+            ? raw.timeZone.trim()
+            : "Asia/Kolkata"
     };
 }
 
@@ -8858,6 +8879,9 @@ function getScreenResolution() {
 }
 
 function renderUserPersona(dfMessenger) {
+    if (!USER_PERSONA_CONFIG.enabled) {
+        return;
+    }
     const ms = dfMessenger && dfMessenger === activeDfMessenger ? dfMessenger : activeDfMessenger;
     if (!ms || typeof ms.renderCustomText !== "function") {
         return;
@@ -8868,16 +8892,21 @@ function renderUserPersona(dfMessenger) {
     }
 
     lastUserPersonaRenderAt = now;
-    renderPersona(ms, "user", "🙂User");
+    renderPersona(ms, "user");
 }
 
-function renderPersona(dfMessenger, personaType, label) {
+function renderPersona(dfMessenger, personaType) {
     if (personaType === "bot") {
         renderBotPersona(dfMessenger);
         return;
     }
+    const u = USER_PERSONA_CONFIG;
+    const timeLabel = u.showTime ? getPersonaTimeLabel(u.timeZone) : "";
     const nonce = `${personaType}-${Date.now()}-${personaSequence += 1}`;
-    dfMessenger.renderCustomText(createPersonaBadgeMarkdown(label, getIstTimeLabel(), nonce, PERSONA_MARKER_USER), true);
+    dfMessenger.renderCustomText(
+        createPersonaBadgeMarkdown(u.label, timeLabel, nonce, PERSONA_MARKER_USER),
+        true
+    );
 }
 
 function renderBotPersona(dfMessenger) {
