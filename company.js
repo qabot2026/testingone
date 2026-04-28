@@ -159,11 +159,16 @@ function readBotPersonaConfig() {
     const userPersonaMobileNudgeLeftPx = typeof raw.userPersonaMobileNudgeLeftPx === "number" && Number.isFinite(raw.userPersonaMobileNudgeLeftPx) && raw.userPersonaMobileNudgeLeftPx >= 0
         ? raw.userPersonaMobileNudgeLeftPx
         : 28;
+    /** Extra px toward the previous message (adds to baseline −6px margin-top on the user persona row). */
+    const userPersonaNudgeUpPx = typeof raw.userPersonaNudgeUpPx === "number" && Number.isFinite(raw.userPersonaNudgeUpPx) && raw.userPersonaNudgeUpPx >= 0 && raw.userPersonaNudgeUpPx <= 32
+        ? raw.userPersonaNudgeUpPx
+        : 6;
     return {
         mode,
         threadAvatarSizePx,
         userPersonaShiftRightPx,
         userPersonaMobileNudgeLeftPx,
+        userPersonaNudgeUpPx,
         emojiTime: {
             label: typeof emojiTime.label === "string" ? emojiTime.label : "🤖",
             showTime: emojiTime.showTime !== false,
@@ -207,6 +212,12 @@ function cssUserPersonaMarginLeft() {
         base = Math.max(0, base - trim);
     }
     return `${base}px`;
+}
+
+/** User persona baseline pull is −6px; config adds extra upward nudge (more negative margin-top). */
+function cssUserPersonaMarginTop() {
+    const extra = Math.max(0, Math.min(32, BOT_PERSONA_CONFIG.userPersonaNudgeUpPx ?? 6));
+    return `-${6 + extra}px`;
 }
 
 /** Safe CSS border-radius for the floating launcher (blocks odd characters). */
@@ -854,7 +865,7 @@ const originalTextNodeContent = new Map();
 const originalElementAttributes = new Map();
 const googleTranslationCache = new Map();
 
-const COMPANY_JS_BUILD_TAG = "20260428-06";
+const COMPANY_JS_BUILD_TAG = "20260428-07";
 const COMPANY_DEBUG_QUERY_FLAG = "dfchatDebug";
 let debugMountAttemptSeq = 0;
 let debugBadgeLastRenderAt = 0;
@@ -9771,7 +9782,7 @@ function stylePersonaContainer(container, imageNode, personaType) {
     if (personaType === "user") {
         imageNode.style.marginLeft = cssUserPersonaMarginLeft();
         imageNode.style.marginRight = "-14px";
-        imageNode.style.marginTop = "-6px";
+        imageNode.style.marginTop = cssUserPersonaMarginTop();
         imageNode.style.marginBottom = "0px";
     }
 
@@ -9793,7 +9804,7 @@ function stylePersonaContainer(container, imageNode, personaType) {
             if (personaType === "user") {
                 current.style.marginLeft = cssUserPersonaMarginLeft();
                 current.style.marginRight = "-14px";
-                current.style.marginTop = "-6px";
+                current.style.marginTop = cssUserPersonaMarginTop();
                 current.style.marginBottom = "0px";
                 current.style.textAlign = "right";
             }
@@ -9807,7 +9818,7 @@ function stylePersonaContainer(container, imageNode, personaType) {
             current.style.justifyContent = "flex-end";
             current.style.marginLeft = cssUserPersonaMarginLeft();
             current.style.marginRight = "-14px";
-            current.style.marginTop = "-6px";
+            current.style.marginTop = cssUserPersonaMarginTop();
             current.style.marginBottom = "0px";
             current.style.alignSelf = "flex-end";
             current.style.justifySelf = "end";

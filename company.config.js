@@ -59,6 +59,8 @@ window.COMPANY_CHAT_UI_CONFIG = {
       userPersonaShiftRightPx: 16,
       // ≤768px: subtract this many px from computed user persona margin-left (moves strip left on phones).
       userPersonaMobileNudgeLeftPx: 38,
+      // Extra pull upward (adds to baseline −6px margin-top); desktop and mobile.
+      userPersonaNudgeUpPx: 8,
       threadAvatarSizePx: 28,
       emojiTime: {
         label: "🤖",
