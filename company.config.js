@@ -539,7 +539,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
   // DESK (wide viewport)
   // =========================
   desk: {
-    // One switch: show floating bubble + chat window (false = hidden on desktop only).
+    // One switch: show floating bubble + chat window (false = hidden on desktop only)
     showChatbot: true,
 
     chatWindow: {
@@ -683,4 +683,3 @@ window.COMPANY_CHAT_UI_CONFIG = {
 
   // (Colors moved to COMMON section above)
 };
-
