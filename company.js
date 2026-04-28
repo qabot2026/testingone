@@ -30,6 +30,26 @@ const CONTACT_FORM_OPEN_ACTION = "open_form";
 const CONTACT_FORM_ENDPOINT = "/contact-form-submissions";
 const API_BASE_URL_META_NAME = "dfchat-api-base-url";
 const MOBILE_CHAT_BREAKPOINT_PX = 768;
+/**
+ * `company-loader.js` iframe is max ~520px wide, so innerWidth is always ≤768 even on desktop.
+ * The loader appends `hostvp=m|d` from the parent `matchMedia('(max-width: 768px)')` so desk/mob layout
+ * matches the real viewport, not the iframe width.
+ */
+(function initEmbedHostViewportHintFromQuery() {
+    if (typeof window === "undefined" || !window || !window.location) {
+        return;
+    }
+    try {
+        var hp = new URLSearchParams(window.location.search || "").get("hostvp");
+        if (hp === "d") {
+            window.__COMPANY_EMBED_HOST_IS_MOBILE = false;
+        } else if (hp === "m") {
+            window.__COMPANY_EMBED_HOST_IS_MOBILE = true;
+        }
+    } catch (_e) {
+        /* ignore */
+    }
+})();
 /** Extra `nudgeRight` for Language / Restart + Powered by on small viewports only (see company.config.js mobile layout). */
 const MOBILE_FOOTER_ICONS_NUDGE_RIGHT_EXTRA_PX = 30;
 /** Shift "Powered by" right so it does not cover Language / Restart (`setPoweredByStripGeometry` deltaLeft). */
@@ -6661,6 +6681,9 @@ function initializeMobileChatLayout(dfMessenger, config) {
 }
 
 function isMobileViewport() {
+    if (typeof window !== "undefined" && window && typeof window.__COMPANY_EMBED_HOST_IS_MOBILE === "boolean") {
+        return window.__COMPANY_EMBED_HOST_IS_MOBILE;
+    }
     return window.innerWidth <= MOBILE_CHAT_BREAKPOINT_PX;
 }
 

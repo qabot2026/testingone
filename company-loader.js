@@ -4,7 +4,7 @@
  *
  * This does NOT inject third-party <script> tags. It adds one <iframe> to chat-frame.html
  * on the same host. The iframe is a normal static HTML page (same 4 resources that work when pasted).
- * Bump IFRAME_VERSION and ?v= on deploy.
+ * Bump IFRAME_VERSION and ?v= on deploy (cache-bust).
  *
  * iframe `chat-frame.html` URL uses the **same origin as this script**, so localhost and GitHub Pages
  * both pull `company.js` / `company.config.js` next to `company-loader.js` (no pinned stale CDN copies).
@@ -35,7 +35,7 @@
   }
 
   var CHAT_HOST = chatHostFromLoaderSrc() || "https://qabot2026.github.io/testingone/";
-  var IFRAME_VERSION = "8";
+  var IFRAME_VERSION = "9";
 
   function getLoaderQuery() {
     var cur = document.currentScript;
@@ -60,7 +60,20 @@
   var q = getLoaderQuery();
   var bot = (q.get("botid") || "").trim();
 
-  var frameUrl = CHAT_HOST + "chat-frame.html?v=" + encodeURIComponent(IFRAME_VERSION);
+  var hostVp = "d";
+  try {
+    hostVp =
+      window.matchMedia && window.matchMedia("(max-width: 768px)").matches ? "m" : "d";
+  } catch (e2) {
+    hostVp = window.innerWidth <= 768 ? "m" : "d";
+  }
+
+  var frameUrl =
+    CHAT_HOST +
+    "chat-frame.html?v=" +
+    encodeURIComponent(IFRAME_VERSION) +
+    "&hostvp=" +
+    encodeURIComponent(hostVp);
   if (bot) {
     frameUrl += "&botid=" + encodeURIComponent(bot);
   }
