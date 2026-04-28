@@ -568,9 +568,10 @@ html.dfchat-host-scroll-locked body {
 @media (max-width: 768px) {
   df-messenger {
     /* Left/right: `company.js` from common.chatLayout.side + bubblePosition (do not set both here). */
-    bottom: 10px;
+    bottom: 8px;
     --df-messenger-chat-window-width: calc(100vw - 24px);
-    --df-messenger-chat-window-height: calc(100dvh - 24px);
+    /* Before `company.js` sets inline height: sit lower and use more viewport. */
+    --df-messenger-chat-window-height: calc(100dvh - 14px);
     --df-messenger-chat-border-radius: 20px;
     --df-messenger-input-padding: 29px 8px 16px 8px;
   }

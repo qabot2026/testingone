@@ -873,7 +873,7 @@ const originalTextNodeContent = new Map();
 const originalElementAttributes = new Map();
 const googleTranslationCache = new Map();
 
-const COMPANY_JS_BUILD_TAG = "20260428-08";
+const COMPANY_JS_BUILD_TAG = "20260428-09";
 const COMPANY_DEBUG_QUERY_FLAG = "dfchatDebug";
 let debugMountAttemptSeq = 0;
 let debugBadgeLastRenderAt = 0;
@@ -881,6 +881,8 @@ let debugBadgePendingLines = null;
 let debugBadgeTimer = null;
 let debugLogLines = [];
 let bubbleVisibilityTimer = null;
+/** Re-applies mob `chatWindow` sizing when expand toggles (e.g. extra height when launcher is hidden). Assigned in `initializeMobileChatLayout`. */
+let reflowMobileChatLayout = () => {};
 /** Single poller from `ensureCloseIconIsX` (avoid stacking intervals on language / remount). */
 let closeIconXIntervalId = null;
 /** While the chat **panel** is open: keeps the titlebar dismiss control as × (Dialogflow can re-inject an arrow). */
@@ -1886,7 +1888,7 @@ function createAndMountMessenger() {
             if (activeDfMessenger !== df) {
                 return;
             }
-            ensureBubbleVisible(df);
+            syncLauncherBubbleWithChatState(df);
             applyChatBubbleLauncherCircleStyle(df);
         }, ms);
     });
@@ -5866,6 +5868,58 @@ function ensureBubbleVisible(dfMessenger) {
     return found;
 }
 
+/** Hides the floating launcher bubble (while the chat panel fills the overlay on phones). */
+function hideLauncherBubble(dfMessenger) {
+    const roots = collectSearchRoots(dfMessenger);
+    let found = false;
+
+    for (const root of roots) {
+        if (!root || !root.querySelectorAll) {
+            continue;
+        }
+
+        const candidates = root.querySelectorAll(
+            "df-messenger-chat-bubble, [data-testid*='bubble'], [class*='bubble']"
+        );
+
+        for (const node of candidates) {
+            if (!node || typeof node.style === "undefined") {
+                continue;
+            }
+
+            node.setAttribute?.("hidden", "");
+            node.style.setProperty("display", "none", "important");
+            node.style.setProperty("visibility", "hidden", "important");
+            node.style.setProperty("opacity", "0", "important");
+            node.style.pointerEvents = "none";
+            found = true;
+        }
+    }
+
+    if (activeBubbleNode) {
+        activeBubbleNode.setAttribute?.("hidden", "");
+        activeBubbleNode.style.setProperty("display", "none", "important");
+        activeBubbleNode.style.setProperty("visibility", "hidden", "important");
+        activeBubbleNode.style.setProperty("opacity", "0", "important");
+        activeBubbleNode.style.pointerEvents = "none";
+        found = true;
+    }
+
+    return found;
+}
+
+/** Desktop: launcher stays visible behind/under the expanded panel behaviour; phones hide the bubble while open (close via header ×). */
+function syncLauncherBubbleWithChatState(dfMessenger) {
+    if (!dfMessenger) {
+        return false;
+    }
+    const expanded = !!(isChatWindowOpen || (typeof isChatExpanded === "function" && isChatExpanded(dfMessenger)));
+    if (isMobileViewport() && expanded) {
+        return hideLauncherBubble(dfMessenger);
+    }
+    return ensureBubbleVisible(dfMessenger);
+}
+
 function startBubbleVisibilityWatcher(dfMessenger) {
     if (bubbleVisibilityTimer) {
         window.clearInterval(bubbleVisibilityTimer);
@@ -5876,7 +5930,7 @@ function startBubbleVisibilityWatcher(dfMessenger) {
         if (activeDfMessenger !== dfMessenger) {
             return;
         }
-        ensureBubbleVisible(dfMessenger);
+        syncLauncherBubbleWithChatState(dfMessenger);
         applyChatBubbleLauncherCircleStyle(dfMessenger);
         // Only while the launcher is showing — polling stack sync here was re-syncing Language/Restart every ~1.2s during open chat.
         const chatOpen = isChatWindowOpen || (dfMessenger && isChatExpanded(dfMessenger));
@@ -6566,17 +6620,28 @@ function initializeMobileChatLayout(dfMessenger, config) {
         const titlebarExtra = typeof mobileConfig.titlebarChromeReservePx === "number" && Number.isFinite(mobileConfig.titlebarChromeReservePx)
             ? mobileConfig.titlebarChromeReservePx
             : 48;
+        const chatExpanded = isChatExpanded(dfMessenger);
+        const bottomInsetWhenOpen = typeof mobileConfig.bottomInsetWhenChatOpenPx === "number" && Number.isFinite(mobileConfig.bottomInsetWhenChatOpenPx)
+            ? mobileConfig.bottomInsetWhenChatOpenPx
+            : null;
+        const bottomForLayout = chatExpanded && bottomInsetWhenOpen !== null ? bottomInsetWhenOpen : bottomInset;
+        const heightOpenBonus = chatExpanded
+            && typeof mobileConfig.extraHeightWhenChatOpenPx === "number"
+            && Number.isFinite(mobileConfig.extraHeightWhenChatOpenPx)
+            ? mobileConfig.extraHeightWhenChatOpenPx
+            : 0;
         const availableWidth = Math.max(minWidth, Math.floor(viewportWidth - horizontalInset * 2));
         const availableHeight = Math.max(
             minHeight,
             Math.floor(
                 viewportHeight
                     - topInset
-                    - bottomInset
+                    - bottomForLayout
                     - safeTopReserve
                     - safeInsetTop
                     - titlebarExtra
                     + mobileExtraH
+                    + heightOpenBonus
             )
         );
 
@@ -6587,14 +6652,14 @@ function initializeMobileChatLayout(dfMessenger, config) {
         const mobileBubble = coalesceBubblePositionForChatSide(
             rawMb,
             mobileDock,
-            { leftPx: horizontalInset, rightPx: horizontalInset, bottomPx: bottomInset, topPx: null }
+            { leftPx: horizontalInset, rightPx: horizontalInset, bottomPx: bottomForLayout, topPx: null }
         );
 
         applyFixedCornerToMessengerForDock(
             dfMessenger,
             mobileBubble,
             mobileDock,
-            { horizontalInset, bottomInset, topInset }
+            { horizontalInset, bottomInset: bottomForLayout, topInset }
         );
         setDfMessengerChatBubbleAnchorFromDock(dfMessenger, mobileDock, mobileBubble);
 
@@ -6606,6 +6671,12 @@ function initializeMobileChatLayout(dfMessenger, config) {
     };
 
     applyLayout();
+    reflowMobileChatLayout = () => {
+        if (activeDfMessenger !== dfMessenger) {
+            return;
+        }
+        applyLayout();
+    };
     window.addEventListener("resize", applyLayout);
     window.addEventListener("df-messenger-loaded", () => {
         if (activeDfMessenger === dfMessenger) {
@@ -6671,7 +6742,8 @@ function initializeChatStateSync(dfMessenger) {
 
     window.addEventListener("df-chat-open-changed", (event) => {
         isChatWindowOpen = !!(event && event.detail && event.detail.isOpen);
-        ensureBubbleVisible(dfMessenger);
+        syncLauncherBubbleWithChatState(dfMessenger);
+        reflowMobileChatLayout();
         if (isChatWindowOpen) {
             if (activeDfMessenger === dfMessenger && IS_FORCE_TITLEBAR_CLOSE_X_ENABLED) {
                 ensureCloseIconIsX(dfMessenger);
@@ -6741,6 +6813,8 @@ function initializeChatStateSync(dfMessenger) {
     const observer = new MutationObserver(() => {
         const wasOpen = isChatWindowOpen;
         isChatWindowOpen = isChatExpanded(dfMessenger);
+        syncLauncherBubbleWithChatState(dfMessenger);
+        reflowMobileChatLayout();
         if (isChatWindowOpen) {
             resetBubbleUnreadBadge();
         }
