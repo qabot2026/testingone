@@ -93,7 +93,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
       // - Changing language = same conversation language + chat UI (not the host page), unless
       //   you set `autoTranslateHostPage: true` to also Google-translate the rest of the page.
       multiLanguage: {
-        enabled: false,
+        enabled: true,
         defaultLanguage: "en",
         autoTranslateHostPage: false
         // Composer hint (`placeholder-text`). Keys = same `code` values as below. Optional: add `inputPlaceholder` on each language row to override only that row.
@@ -111,7 +111,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
 
       // Restart button in footer.
       restartChat: {
-        enabled: false,
+        enabled: true,
         label: "Restart"
       },
 
@@ -198,7 +198,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
     // - marginPx: optional uniform CSS margin (px) on the fixed strip; 0 = none.
     // -------------------------------------------------------------------------
     poweredBy: {
-      enabled: false,
+      enabled: true,
       prefix: "⚡by ",
       value: "demo",
       linkUrl: "https://www.google.com",
@@ -252,7 +252,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
     // - right → `rightPx` + `bottomPx` (set `leftPx: null`) — typical bottom-right on desktop.
     // - left  → `leftPx` + `bottomPx` (set `rightPx: null`).
     chatLayout: {
-      sideDesk: "left",
+      sideDesk: "right",
       sideMob: "left"
     },
 
