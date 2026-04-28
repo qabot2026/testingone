@@ -541,7 +541,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
     showChatbot: true,
 
     chatWindow: {
-      widthPx: 420,
+      widthPx: 380,
       heightPx: 450,
 
       // right + bottom (matches `common.chatLayout.side: "right"`).
