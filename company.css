@@ -18,9 +18,14 @@
 
 /* `company.config.js` → applyDfMessengerThemeConfig sets `common.dfMessengerTheme` vars on this node as
    **inline** styles, so a rule in this file such as `df-messenger { --df-messenger-chat-border-radius: 8px; }`
-   usually loses. To reduce the whole chat card radius, either change the value in company.config.js
-   (dfMessengerTheme) or add `!important` here. For only the message list, use
-   `common.chatMessageList.paneBorderRadius` in company.config.js. */
+   usually loses.
+   - **Whitish open chat card** (the panel shell): Google applies `border-radius: var(--df-messenger-chat-border-radius)`
+     on `.chat-wrapper` *inside* shadow DOM. Per-corner (e.g. flat top, round bottom) is handled in
+     `company.js` from `common.chatPanel.borderRadius` (injected CSS + inline on those nodes) — this file
+     does not see `.chat-wrapper`.
+   - **Message list strip** (middle of the card): `common.chatMessageList.paneBorderRadius` in company.config.js.
+   - For an even radius on the **whole** card, change `dfMessengerTheme["--df-messenger-chat-border-radius"]` in
+     company.config.js. */
 df-messenger {
   position: fixed;
   bottom: 20px;
@@ -38,9 +43,9 @@ df-messenger {
   --df-messenger-font-color: var(--dfchat-text);
   --df-messenger-primary-color: #0284c7;
 
-  --df-messenger-message-bot-background: linear-gradient(165deg, #e0f2fe 0%, #bae6fd 45%, #7dd3fc 100%);
+  --df-messenger-message-bot-background: linear-gradient(168deg, #e8f6ff 0%, #bae6fd 100%);
   --df-messenger-message-bot-font-color: #0c4a6e;
-  --df-messenger-message-user-background: linear-gradient(140deg, #0369a1, #0ea5e9);
+  --df-messenger-message-user-background: linear-gradient(145deg, #0284c7 0%, #0ea5e9 100%);
   --df-messenger-message-user-font-color: #f0f9ff;
 
   --df-messenger-message-stack-spacing: 6px;
@@ -50,6 +55,10 @@ df-messenger {
   --df-messenger-input-background: var(--dfchat-surface);
   --df-messenger-input-box-background: var(--dfchat-surface);
   --df-messenger-input-font-color: var(--dfchat-text);
+  /* Text field shell (textarea wrapper inside user-input) — Dialogflow `.input-element-wrapper` */
+  --df-messenger-input-box-border-radius: 12px;
+  --df-messenger-input-box-border: 1px solid rgba(148, 197, 224, 0.95);
+  --df-messenger-input-box-focus-border: 1px solid rgba(2, 132, 199, 0.9);
   /* 29px top, 8px sides, 16px bottom */
   --df-messenger-input-padding: 29px 8px 16px 8px;
 
@@ -58,18 +67,24 @@ df-messenger {
   --df-messenger-chips-border-radius: 999px;
   --df-messenger-button-border: 1px solid rgba(14, 165, 233, 0.45);
 
-  --df-messenger-chat-border: 1px solid rgba(14, 165, 233, 0.38);
-  /* Layered shadow: sky-blue accent (matches company.config.js dfMessengerTheme) */
+  /* Omit outer stroke — full box-border draws harsh vertical rails beside the curved title bar; rely on shadows */
+  --df-messenger-chat-border: none;
+  /* Raised card: inset highlight + modest blurs (lighter GPU than oversized glows) */
   --df-messenger-chat-box-shadow:
-    0 0 0 1px rgba(14, 165, 233, 0.12),
-    0 4px 6px -2px rgba(15, 23, 42, 0.05),
-    0 16px 32px -8px rgba(15, 23, 42, 0.1),
-    0 28px 64px -12px rgba(15, 23, 42, 0.16),
-    0 0 80px -16px rgba(14, 165, 233, 0.2);
-  --df-messenger-chat-border-radius: 20px;
+    inset 0 1px 0 rgba(255, 255, 255, 0.75),
+    inset 0 -1px 0 rgba(15, 23, 42, 0.04),
+    0 1px 3px rgba(15, 23, 42, 0.05),
+    0 10px 28px -6px rgba(15, 23, 42, 0.1),
+    0 20px 40px -14px rgba(14, 165, 233, 0.12);
+  --df-messenger-chat-border-radius: 22px;
   /* Chat window size is controlled from `static/company.config.js` */
 
-  --df-messenger-titlebar-background: linear-gradient(120deg, #0369a1 0%, #0284c7 35%, #0ea5e9 70%, #38bdf8 100%);
+  /* Top sheen + angled base = raised title strip (Messenger only exposes bg + borders here, no titlebar shadow var) */
+  --df-messenger-titlebar-background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.38) 0%, rgba(255, 255, 255, 0.1) 24%, transparent 46%),
+    linear-gradient(168deg, #38bdf8 0%, #0284c7 42%, #075985 100%);
+  --df-messenger-titlebar-border: none;
+  --df-messenger-titlebar-border-bottom: 1px solid rgba(4, 58, 90, 0.55);
   --df-messenger-titlebar-font-color: #f0f9ff;
   --df-messenger-titlebar-subtitle-font-color: #bae6fd;
   --df-messenger-titlebar-title-line-height: 36px;
@@ -77,12 +92,12 @@ df-messenger {
   --df-messenger-titlebar-icon-width: 50px;
 
   --df-messenger-chat-bubble-icon-size: 64px;
-  --df-messenger-chat-bubble-background: linear-gradient(150deg, #0369a1 0%, #0284c7 45%, #0ea5e9 100%);
+  --df-messenger-chat-bubble-background: linear-gradient(160deg, #0ea5e9 0%, #0284c7 48%, #0369a1 100%);
   --df-messenger-chat-icon-radius: 50%;
 
-  /* Panel fill: subtle vertical wash (overridden by config when present) */
-  --df-messenger-chat-background: linear-gradient(180deg, #f0f9ff 0%, #e0f2fe 42%, #f8fafc 100%);
-  --df-messenger-input-border-top: 1px solid rgba(14, 165, 233, 0.28);
+  /* Panel: airy, low-stop gradient */
+  --df-messenger-chat-background: linear-gradient(180deg, #fbfdff 0%, #f0f9ff 100%);
+  --df-messenger-input-border-top: 1px solid rgba(14, 165, 233, 0.2);
 }
 
 /* Smaller titlebar on phones so the header stays on-screen with the open panel. */

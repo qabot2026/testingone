@@ -750,7 +750,7 @@ const originalTextNodeContent = new Map();
 const originalElementAttributes = new Map();
 const googleTranslationCache = new Map();
 
-const COMPANY_JS_BUILD_TAG = "20260426-03";
+const COMPANY_JS_BUILD_TAG = "20260428-01";
 const COMPANY_DEBUG_QUERY_FLAG = "dfchatDebug";
 let debugMountAttemptSeq = 0;
 let debugBadgeLastRenderAt = 0;
@@ -3032,6 +3032,69 @@ function clearLauncherStripTypingTimers(stripElement) {
 }
 
 /**
+ * @param {HTMLElement} stripElement
+ */
+function clearLauncherStripSwapTimer(stripElement) {
+    if (!stripElement || typeof stripElement._companyLauncherSwapTimer !== "number") {
+        return;
+    }
+    window.clearTimeout(stripElement._companyLauncherSwapTimer);
+    stripElement._companyLauncherSwapTimer = null;
+}
+
+/**
+ * Parses delay for launcher strip swap (allows numeric strings from tooling).
+ * @param {unknown} raw
+ * @returns {number}
+ */
+function readLauncherStripSwapDelayMs(raw) {
+    if (typeof raw === "number" && Number.isFinite(raw) && raw > 0) {
+        return raw;
+    }
+    if (typeof raw === "string" && raw.trim()) {
+        const n = parseInt(raw.trim(), 10);
+        if (Number.isFinite(n) && n > 0) {
+            return n;
+        }
+    }
+    return 0;
+}
+
+/**
+ * After `swapTextDelayMs`, replaces typing text with `swapText`. Always reads **`window.COMPANY_CHAT_UI_CONFIG`**
+ * at schedule time and when the timer fires (avoids stale `COMPANY_UI_CONFIG` / deploy skew). Desk + mob via `readLauncherStripConfig`.
+ * @param {HTMLElement} stripElement
+ */
+function scheduleLauncherStripTextSwap(stripElement) {
+    clearLauncherStripSwapTimer(stripElement);
+    if (!stripElement) {
+        return;
+    }
+    const stripConfig = readLauncherStripConfig(readCompanyUiConfig());
+    if (!stripConfig || typeof stripConfig !== "object") {
+        return;
+    }
+    const ms = readLauncherStripSwapDelayMs(stripConfig.swapTextDelayMs);
+    if (ms <= 0) {
+        return;
+    }
+    stripElement._companyLauncherSwapTimer = window.setTimeout(() => {
+        stripElement._companyLauncherSwapTimer = null;
+        if (!stripElement.isConnected) {
+            return;
+        }
+        const cfg = readLauncherStripConfig(readCompanyUiConfig());
+        const label = cfg && typeof cfg.swapText === "string" ? cfg.swapText.trim() : "";
+        if (!label) {
+            return;
+        }
+        clearLauncherStripTypingTimers(stripElement);
+        stripElement.textContent = label;
+        stripElement.setAttribute("aria-label", label);
+    }, ms);
+}
+
+/**
  * Reveal `fullText` one word at a time; last word appears at `durationMs` (linear spacing).
  * @param {HTMLElement} stripElement
  * @param {string} fullText
@@ -3098,11 +3161,13 @@ function initializeLauncherStrip(dfMessenger, bubbleNode, config) {
     if (existing) {
         existing.setAttribute("aria-label", text);
         clearLauncherStripTypingTimers(existing);
+        clearLauncherStripSwapTimer(existing);
         existing.textContent = "";
         existing.style.display = isChatWindowOpen ? "none" : "block";
         applyLauncherStripPosition(existing, stripConfig);
         applyLauncherStripStyle(existing, stripConfig);
         startLauncherStripWordReveal(existing, text, typingDurationMs);
+        scheduleLauncherStripTextSwap(existing);
         window.setTimeout(() => {
             scheduleLauncherStripsStackSync(dfMessenger);
         }, typingDurationMs + 150);
@@ -3122,6 +3187,7 @@ function initializeLauncherStrip(dfMessenger, bubbleNode, config) {
     applyLauncherStripStyle(strip, stripConfig);
     document.body.appendChild(strip);
     startLauncherStripWordReveal(strip, text, typingDurationMs);
+    scheduleLauncherStripTextSwap(strip);
 
     const openChat = () => {
         openChatWindow(dfMessenger, bubbleNode);
