@@ -163,12 +163,17 @@ function readBotPersonaConfig() {
     const userPersonaNudgeUpPx = typeof raw.userPersonaNudgeUpPx === "number" && Number.isFinite(raw.userPersonaNudgeUpPx) && raw.userPersonaNudgeUpPx >= 0 && raw.userPersonaNudgeUpPx <= 32
         ? raw.userPersonaNudgeUpPx
         : 6;
+    /** Wide viewports only: added to computed margin-left (mobile path ignores this; use `userPersonaMobileNudgeLeftPx` for phones). */
+    const userPersonaShiftRightDeskExtraPx = typeof raw.userPersonaShiftRightDeskExtraPx === "number" && Number.isFinite(raw.userPersonaShiftRightDeskExtraPx) && raw.userPersonaShiftRightDeskExtraPx >= 0 && raw.userPersonaShiftRightDeskExtraPx <= 120
+        ? raw.userPersonaShiftRightDeskExtraPx
+        : 0;
     return {
         mode,
         threadAvatarSizePx,
         userPersonaShiftRightPx,
         userPersonaMobileNudgeLeftPx,
         userPersonaNudgeUpPx,
+        userPersonaShiftRightDeskExtraPx,
         emojiTime: {
             label: typeof emojiTime.label === "string" ? emojiTime.label : "🤖",
             showTime: emojiTime.showTime !== false,
@@ -203,13 +208,16 @@ function readBotPersonaConfig() {
 }
 
 /**
- * @returns {string} e.g. "274px" (narrow viewports subtract `userPersonaMobileNudgeLeftPx`).
+ * @returns {string} e.g. "274px" (narrow viewports subtract `userPersonaMobileNudgeLeftPx`; wide viewports add `userPersonaShiftRightDeskExtraPx`).
  */
 function cssUserPersonaMarginLeft() {
     let base = 250 + Math.max(0, BOT_PERSONA_CONFIG.userPersonaShiftRightPx ?? 24);
     const trim = BOT_PERSONA_CONFIG.userPersonaMobileNudgeLeftPx ?? 28;
+    const deskExtra = Math.max(0, Math.min(120, BOT_PERSONA_CONFIG.userPersonaShiftRightDeskExtraPx ?? 0));
     if (typeof isMobileViewport === "function" && isMobileViewport()) {
         base = Math.max(0, base - trim);
+    } else {
+        base += deskExtra;
     }
     return `${base}px`;
 }
@@ -865,7 +873,7 @@ const originalTextNodeContent = new Map();
 const originalElementAttributes = new Map();
 const googleTranslationCache = new Map();
 
-const COMPANY_JS_BUILD_TAG = "20260428-07";
+const COMPANY_JS_BUILD_TAG = "20260428-08";
 const COMPANY_DEBUG_QUERY_FLAG = "dfchatDebug";
 let debugMountAttemptSeq = 0;
 let debugBadgeLastRenderAt = 0;

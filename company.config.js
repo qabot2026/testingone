@@ -57,10 +57,12 @@ window.COMPANY_CHAT_UI_CONFIG = {
       mode: "image",
       // Added to 250px baseline — higher = user persona label rows sit farther right.
       userPersonaShiftRightPx: 16,
+      // Wide viewports only: extra margin-left px (does not change the mobile formula below).
+      userPersonaShiftRightDeskExtraPx: 10,
       // ≤768px: subtract this many px from computed user persona margin-left (moves strip left on phones).
       userPersonaMobileNudgeLeftPx: 38,
       // Extra pull upward (adds to baseline −6px margin-top); desktop and mobile.
-      userPersonaNudgeUpPx: 8,
+      userPersonaNudgeUpPx: 4,
       threadAvatarSizePx: 28,
       emojiTime: {
         label: "🤖",
