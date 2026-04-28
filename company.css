@@ -104,14 +104,14 @@ df-messenger {
 @media (max-width: 768px) {
   df-messenger {
     /* `!important` wins over `dfMessengerTheme` inline props on the same host */
-    --df-messenger-font-size: 13px !important;
-    --df-messenger-message-font-size: 13px !important;
-    --df-messenger-input-font-size: 14px !important;
-    --df-messenger-chips-font-size: 12px !important;
+    --df-messenger-font-size: 12px !important;
+    --df-messenger-message-font-size: 12px !important;
+    --df-messenger-input-font-size: 13px !important;
+    --df-messenger-chips-font-size: 11px !important;
     --df-messenger-titlebar-padding: 0 6px 0 6px;
-    --df-messenger-titlebar-title-font-size: 13px !important;
+    --df-messenger-titlebar-title-font-size: 12px !important;
     --df-messenger-titlebar-title-line-height: 1.2;
-    --df-messenger-titlebar-subtitle-font-size: 10px !important;
+    --df-messenger-titlebar-subtitle-font-size: 9px !important;
     --df-messenger-titlebar-subtitle-line-height: 1.25;
     --df-messenger-titlebar-icon-height: 32px;
     --df-messenger-titlebar-icon-width: 32px;
