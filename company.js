@@ -7905,6 +7905,18 @@ function scheduleInjectInlineGalleryCarousel(dfMessenger, urls, messages, option
                 "border:1px solid rgba(148,163,184,0.35)",
                 "box-sizing:border-box"
             ].join(";");
+            // Attach directly (mobile reliability); don’t rely only on the global bind pass.
+            img.dataset.dfchatLightboxBound = "1";
+            img.addEventListener("click", (e) => {
+                e.preventDefault?.();
+                e.stopPropagation?.();
+                e.stopImmediatePropagation?.();
+                try {
+                    openImageLightbox(list, i, "");
+                } catch {
+                    /* ignore */
+                }
+            }, true);
 
             cell.appendChild(img);
             track.appendChild(cell);
@@ -8103,6 +8115,17 @@ function updateInlineGalleryWrapUnderTrack(wrapEl, urls, options, messageText) {
                 "border:1px solid rgba(148,163,184,0.35)",
                 "box-sizing:border-box"
             ].join(";");
+            img.dataset.dfchatLightboxBound = "1";
+            img.addEventListener("click", (e) => {
+                e.preventDefault?.();
+                e.stopPropagation?.();
+                e.stopImmediatePropagation?.();
+                try {
+                    openImageLightbox(urls, i, "");
+                } catch {
+                    /* ignore */
+                }
+            }, true);
 
             cell.appendChild(img);
             track.appendChild(cell);
