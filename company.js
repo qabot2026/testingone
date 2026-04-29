@@ -7397,13 +7397,23 @@ function openImageLightbox(srcs, index, alt) {
     // Align the lightbox close button with the chat titlebar close button (same screen position).
     try {
         if (closeBtn) {
+            const baseTopPx = 14 + (typeof getEnvSafeAreaInsetTopPx === "function" ? getEnvSafeAreaInsetTopPx() : 0);
+            const baseRightPx = 14;
+            let topPx = baseTopPx;
+            let rightPx = baseRightPx;
             const r = findChatCloseButtonRect(activeDfMessenger);
-            if (r) {
-                const topPx = Math.max(8, Math.round(r.top));
-                const rightPx = Math.max(8, Math.round(window.innerWidth - r.right));
-                closeBtn.style.top = `${topPx}px`;
-                closeBtn.style.right = `${rightPx}px`;
+            // If detection picks the wrong button (often lower on mobile), fall back to top-right.
+            if (r && Number.isFinite(r.top) && Number.isFinite(r.right)) {
+                const detectedTop = Math.round(r.top);
+                const detectedRightInset = Math.round(window.innerWidth - r.right);
+                const looksLikeTopRight = detectedTop >= 0 && detectedTop <= (baseTopPx + 30) && detectedRightInset >= 0 && detectedRightInset <= 40;
+                if (looksLikeTopRight) {
+                    topPx = Math.max(8, detectedTop);
+                    rightPx = Math.max(8, detectedRightInset);
+                }
             }
+            closeBtn.style.top = `${topPx}px`;
+            closeBtn.style.right = `${rightPx}px`;
         }
     } catch {
         /* ignore */
