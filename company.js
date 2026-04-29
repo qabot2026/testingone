@@ -7050,6 +7050,9 @@ const VIDEO_LIGHTBOX_PANEL_ID = "dfchat-video-lightbox-panel";
 const VIDEO_LIGHTBOX_IFRAME_ID = "dfchat-video-lightbox-iframe";
 const VIDEO_LIGHTBOX_CLOSE_ID = "dfchat-video-lightbox-close";
 
+const LIGHTBOX_MOBILE_TOP_INSET_STYLE_ID = "dfchat-lightbox-mobile-top-inset";
+const LIGHTBOX_MOBILE_TOP_INSET_PX = 50;
+
 /** @type {string[]} */
 let imageLightboxSrcs = [];
 let imageLightboxIndex = 0;
@@ -7238,6 +7241,7 @@ function ensureLightboxImageObserver(dfMessenger) {
 }
 
 function ensureImageLightboxMounted() {
+    ensureLightboxMobileTopInsetStyle();
     if (document.getElementById(IMAGE_LIGHTBOX_ID)) {
         return;
     }
@@ -7377,6 +7381,28 @@ function ensureImageLightboxMounted() {
     });
 }
 
+function ensureLightboxMobileTopInsetStyle() {
+    if (document.getElementById(LIGHTBOX_MOBILE_TOP_INSET_STYLE_ID)) {
+        return;
+    }
+    const style = document.createElement("style");
+    style.id = LIGHTBOX_MOBILE_TOP_INSET_STYLE_ID;
+    style.textContent = `
+@media (max-width: ${MOBILE_CHAT_BREAKPOINT_PX}px) {
+  #${IMAGE_LIGHTBOX_ID},
+  #${VIDEO_LIGHTBOX_ID} {
+    top: ${LIGHTBOX_MOBILE_TOP_INSET_PX}px !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    height: calc(100dvh - ${LIGHTBOX_MOBILE_TOP_INSET_PX}px) !important;
+    inset: auto !important;
+  }
+}
+`.trim();
+    (document.head || document.documentElement).appendChild(style);
+}
+
 function openImageLightbox(srcs, index, alt) {
     ensureImageLightboxMounted();
     const overlay = document.getElementById(IMAGE_LIGHTBOX_ID);
@@ -7421,6 +7447,7 @@ function closeImageLightbox() {
 }
 
 function ensureVideoLightboxMounted() {
+    ensureLightboxMobileTopInsetStyle();
     if (document.getElementById(VIDEO_LIGHTBOX_ID)) {
         return;
     }
