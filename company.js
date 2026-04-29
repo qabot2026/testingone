@@ -6413,20 +6413,12 @@ function runTitlebarCloseXSync(dfMessenger) {
     let changed = false;
 
     if (headerHost) {
-        // Mobile can render multiple header controls (e.g. close + back/chevron).
-        // Only force the SINGLE right-most "dismiss" control to × to avoid duplicate close buttons.
-        const candidates = getHeaderTitlebarCloseButtonCandidates(headerHost);
-        const primary = candidates && candidates.length ? candidates[0] : null;
-        if (primary) {
-            replaceCloseButtonWithXGlyph(primary, closeTapPx, closeFontPx);
+        for (const b of getHeaderTitlebarCloseButtonCandidates(headerHost)) {
+            replaceCloseButtonWithXGlyph(b, closeTapPx, closeFontPx);
             changed = true;
         }
         const sub = headerHost.querySelectorAll("button, [role='button'], df-icon-button");
         for (const button of sub) {
-            // Only re-apply to the same primary node; never touch other header buttons.
-            if (primary && button !== primary) {
-                continue;
-            }
             if (tryApplyCloseXInHeaderContext(button, headerHost, closeTapPx, closeFontPx)) {
                 changed = true;
             }
@@ -6962,7 +6954,6 @@ function initializeChatStateSync(dfMessenger) {
         clearFooterScrollParentListeners();
         releaseHostPageScrollLockForOpenChat();
         stopCloseXWhileChatOpenMonitor();
-        removeAnyOpenDfchatLightboxesFromDom();
         // When the panel closes, dismiss any open (or scheduled) inline form (contact / appointment / upload) so it
         // does not float without the chat. Restart also clears the form (see restartChatSession).
         window.setTimeout(() => {
@@ -6973,7 +6964,6 @@ function initializeChatStateSync(dfMessenger) {
     document.addEventListener("click", (event) => {
         if (didUserCloseChat(event)) {
             window.setTimeout(() => {
-                removeAnyOpenDfchatLightboxesFromDom();
                 closeForm();
             }, 0);
         }
@@ -6987,7 +6977,6 @@ function initializeChatStateSync(dfMessenger) {
         }
         if (!isChatWindowOpen) {
             window.setTimeout(() => {
-                removeAnyOpenDfchatLightboxesFromDom();
                 closeForm();
             }, 0);
         }
@@ -7422,39 +7411,6 @@ function closeImageLightbox() {
     imageLightboxIndex = 0;
     if (overlay) {
         overlay.style.display = "none";
-    }
-    try {
-        document.documentElement.style.overflow = "";
-        document.body.style.overflow = "";
-    } catch {
-        /* ignore */
-    }
-}
-
-function removeAnyOpenDfchatLightboxesFromDom() {
-    try {
-        closeVideoLightbox();
-    } catch {
-        /* ignore */
-    }
-    try {
-        closeImageLightbox();
-    } catch {
-        /* ignore */
-    }
-    // Do NOT remove nodes from DOM (can race with open/bind on mobile Safari).
-    // Closing them (display:none + clearing src) is enough to prevent orphaned × controls.
-    try {
-        const imgLb = document.getElementById(IMAGE_LIGHTBOX_ID);
-        if (imgLb) {
-            imgLb.style.display = "none";
-        }
-        const vidLb = document.getElementById(VIDEO_LIGHTBOX_ID);
-        if (vidLb) {
-            vidLb.style.display = "none";
-        }
-    } catch {
-        /* ignore */
     }
     try {
         document.documentElement.style.overflow = "";
@@ -7905,18 +7861,6 @@ function scheduleInjectInlineGalleryCarousel(dfMessenger, urls, messages, option
                 "border:1px solid rgba(148,163,184,0.35)",
                 "box-sizing:border-box"
             ].join(";");
-            // Attach directly (mobile reliability); don’t rely only on the global bind pass.
-            img.dataset.dfchatLightboxBound = "1";
-            img.addEventListener("click", (e) => {
-                e.preventDefault?.();
-                e.stopPropagation?.();
-                e.stopImmediatePropagation?.();
-                try {
-                    openImageLightbox(list, i, "");
-                } catch {
-                    /* ignore */
-                }
-            }, true);
 
             cell.appendChild(img);
             track.appendChild(cell);
@@ -8115,17 +8059,6 @@ function updateInlineGalleryWrapUnderTrack(wrapEl, urls, options, messageText) {
                 "border:1px solid rgba(148,163,184,0.35)",
                 "box-sizing:border-box"
             ].join(";");
-            img.dataset.dfchatLightboxBound = "1";
-            img.addEventListener("click", (e) => {
-                e.preventDefault?.();
-                e.stopPropagation?.();
-                e.stopImmediatePropagation?.();
-                try {
-                    openImageLightbox(urls, i, "");
-                } catch {
-                    /* ignore */
-                }
-            }, true);
 
             cell.appendChild(img);
             track.appendChild(cell);
