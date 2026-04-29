@@ -95,7 +95,21 @@ window.COMPANY_CHAT_UI_CONFIG = {
       multiLanguage: {
         enabled: true,
         defaultLanguage: "en",
-        autoTranslateHostPage: false
+        autoTranslateHostPage: false,
+        // Optional: exact phrase overrides applied BEFORE Google translate.
+        // Use this when the client wants a specific string, not a machine translation.
+        // Keys are the original English phrases (exact match, trimmed).
+        // Example: "We have following robots" → Marathi custom line.
+        translationOverridesByLanguage: {
+          hi: {
+            "We have following robots": "नीचे का देख लो",
+            "help":"सह्याता"
+          },
+          mr: {
+            "We have following robots": "खालचे बागून घ्या लवकर",
+            "help":"साथ"
+          }
+        },
         // Composer hint (`placeholder-text`). Keys = same `code` values as below. Optional: add `inputPlaceholder` on each language row to override only that row.
         // inputPlaceholderByLanguage: {
         //   en: "Ask something in English…",
@@ -137,9 +151,20 @@ window.COMPANY_CHAT_UI_CONFIG = {
          * later intents that repeat the identical payload will not duplicate the carousel. Fix for fulfillment
          * echoing `open_gallery`. Cleared when the user uses **Restart**.
          */
-        suppressRepeatedOpenGalleryUrls: true
+        suppressRepeatedOpenGalleryUrls: true,
+        // Optional translations for option chips under `open_gallery` / `open_video` payloads.
+        // Key = option `value` lowercased (e.g. "location"). Values are labels by language code.
+        optionLabelByLanguage: {
+          location: { en: "Location", hi: "स्थान", mr: "स्थान" },
+          robots: { en: "Robots", hi: "रोबोट", mr: "रोबोट" },
+          robot: { en: "Robot", hi: "रोबोट", mr: "रोबोट" },
+          live: { en: "Live", hi: "लाइव", mr: "लाइव्ह" },
+          Animal: { en: "Animal", hi: "जानवर", mr: "प्राणी" },
+          video: { en: "Video", hi: "वीडियो", mr: "व्हिडिओ" }
+        }
       }
     },
+
     // Language + Restart pill (next to Send). All values are pixels. Tune after you set `chatLayout.side`
     // (right-docked chat usually keeps Send on the right; nudges only move the pill, not the bubble).
     // nudgeUpPx: **positive** moves Language/Restart **up** (fixed `top` and inline `translateY`). **Negative**
@@ -333,6 +358,48 @@ window.COMPANY_CHAT_UI_CONFIG = {
             { id: "c-name", name: "name", type: "text", required: true, icon: "user", i18nPlaceholder: "namePlaceholder", i18nSummaryLabel: "summaryNameLabel", autocomplete: "name" },
             { id: "c-mobile", name: "mobile", type: "tel", required: true, icon: "phone", i18nPlaceholder: "mobilePlaceholder", i18nSummaryLabel: "summaryMobileLabel", autocomplete: "tel", inputMode: "tel" },
             { id: "c-email", name: "email", type: "email", required: true, icon: "email", validateAs: "email", i18nPlaceholder: "emailPlaceholder", i18nSummaryLabel: "summaryEmailLabel", autocomplete: "email" }
+          ]
+        },
+        // Feedback: rating + message (open from Dialogflow with `form_id`: `"feedback"`)
+        feedback: {
+          titleByLanguage: {
+            en: "Feedback",
+            hi: "फीडबैक",
+            mr: "अभिप्राय"
+          },
+          subtitleByLanguage: {
+            en: "Tell us how we did.",
+            hi: "आपका अनुभव कैसा रहा?",
+            mr: "तुमचा अनुभव कसा होता?"
+          },
+          showSubtitle: true,
+          maxCardHeightPx: 300,
+          chatSummaryFieldNames: ["rating", "message"],
+          fields: [
+            {
+              id: "f-rating",
+              name: "rating",
+              type: "select",
+              required: true,
+              icon: "star",
+              placeholderByLanguage: { en: "Rating (1-5)", hi: "रेटिंग (1-5)", mr: "रेटिंग (1-5)" },
+              options: [
+                { label: "1", value: "1" },
+                { label: "2", value: "2" },
+                { label: "3", value: "3" },
+                { label: "4", value: "4" },
+                { label: "5", value: "5" }
+              ]
+            },
+            {
+              id: "f-message",
+              name: "message",
+              type: "textarea",
+              required: true,
+              icon: "message",
+              rows: 3,
+              placeholderByLanguage: { en: "Write your feedback…", hi: "अपना फीडबैक लिखें…", mr: "तुमचा अभिप्राय लिहा…" }
+            }
           ]
         },
         // Appointment: date and time (open from Dialogflow with `form_id`: `"appointment"`)
@@ -559,7 +626,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
   // =========================
   desk: {
     // One switch: show floating bubble + chat window (false = hidden on desktop only)
-    showChatbot: false,
+    showChatbot: true,
 
     chatWindow: {
       widthPx: 400,
@@ -619,7 +686,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
       maxCardHeightPx: 300,
       showSubtitle: true,
       /* Max width when the form is docked in the chat window (right-docked chat = grows to the left). */
-      formDockMaxWidthPx: 420
+      formDockMaxWidthPx: 380
     }
   },
 
@@ -694,7 +761,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
       sideInsetPx: 15,
       maxCardHeightPx: 300,
       showSubtitle: true,
-      formDockMaxWidthPx: 340,
+      formDockMaxWidthPx: 300,
       insetLeftPx: 30,
       insetRightPx: 20
     }

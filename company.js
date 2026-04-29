@@ -4111,6 +4111,7 @@ const CONTACT_FORM_SVG_ICONS = {
     phone: '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>',
     email: '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>',
     message: '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>',
+    star: '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>',
     url: '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>',
     calendar: '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>',
     clock: '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12,6 12,12 16,14"/></svg>',
@@ -4833,6 +4834,47 @@ function buildContactFormFieldRow(field) {
         }
         if (required) {
             control.setAttribute("required", "");
+        }
+    } else if (t === "select") {
+        control = document.createElement("select");
+        control.id = field.id;
+        control.className = "dfchat-contact-form__control";
+        control.name = typeof field.name === "string" ? field.name : field.id;
+        if (required) {
+            control.setAttribute("required", "");
+        }
+
+        /** @type {Array<{ label: string, value: string }>} */
+        const opts = Array.isArray(field.options)
+            ? field.options
+                .map((o) => ({
+                    label: String(o && o.label != null ? o.label : "").trim(),
+                    value: String(o && o.value != null ? o.value : "").trim()
+                }))
+                .filter((o) => o.label && o.value)
+            : [];
+
+        const placeholderText =
+            pl0 != null
+                ? pl0
+                : (field.placeholderByLanguage && typeof field.placeholderByLanguage === "object"
+                    ? pickContactFormLocalizedLine(field.placeholderByLanguage, activeLanguage)
+                    : null);
+
+        if (placeholderText) {
+            const ph = document.createElement("option");
+            ph.value = "";
+            ph.textContent = placeholderText;
+            ph.disabled = true;
+            ph.selected = true;
+            control.appendChild(ph);
+        }
+
+        for (const o of opts) {
+            const op = document.createElement("option");
+            op.value = o.value;
+            op.textContent = o.label;
+            control.appendChild(op);
         }
     } else if (t === "file") {
         control = document.createElement("input");
@@ -8078,7 +8120,8 @@ function scheduleInjectInlineGalleryCarousel(dfMessenger, urls, messages, option
                 }
                 const chip = document.createElement("button");
                 chip.type = "button";
-                chip.textContent = label;
+                chip.setAttribute("data-dfchat-opt-key", value.toLowerCase());
+                chip.textContent = resolveInlineOptionLabel(label, value, activeLanguage);
                 chip.style.cssText = [
                     "appearance:none",
                     "-webkit-appearance:none",
@@ -8275,7 +8318,8 @@ function updateInlineGalleryWrapUnderTrack(wrapEl, urls, options, messageText) {
                 }
                 const chip = document.createElement("button");
                 chip.type = "button";
-                chip.textContent = label;
+                chip.setAttribute("data-dfchat-opt-key", value.toLowerCase());
+                chip.textContent = resolveInlineOptionLabel(label, value, activeLanguage);
                 chip.style.cssText = [
                     "appearance:none",
                     "-webkit-appearance:none",
@@ -8663,7 +8707,8 @@ function scheduleInjectInlineVideoPlayer(dfMessenger, embedHttpsUrl, options, me
                 }
                 const chip = document.createElement("button");
                 chip.type = "button";
-                chip.textContent = label;
+                chip.setAttribute("data-dfchat-opt-key", value.toLowerCase());
+                chip.textContent = resolveInlineOptionLabel(label, value, activeLanguage);
                 chip.style.cssText = [
                     "appearance:none",
                     "-webkit-appearance:none",
@@ -10130,6 +10175,7 @@ function applyLanguage(languageCode) {
 
     applyContactFormHeaderFromConfig();
     syncLauncherInputStripI18n();
+    refreshInlineSyntheticOptionButtonLabels();
     scheduleDomTranslationRefresh();
     // `applyDomTranslation` can run after this and touch `placeholder`; snap composer back to config.
     [450, 1100, 2200].forEach((delay) => {
@@ -10148,6 +10194,62 @@ function applyLanguage(languageCode) {
             }
         }, d);
     });
+}
+
+function readInlineOptionLabelByLanguageMap() {
+    try {
+        const feats = COMMON_CONFIG && typeof COMMON_CONFIG.features === "object" ? COMMON_CONFIG.features : null;
+        const ig = feats && typeof feats.inlineGallery === "object" ? feats.inlineGallery : null;
+        const map = ig && typeof ig.optionLabelByLanguage === "object" ? ig.optionLabelByLanguage : null;
+        return map && typeof map === "object" ? map : null;
+    } catch {
+        return null;
+    }
+}
+
+function resolveInlineOptionLabel(label, value, lang) {
+    const fallback = typeof label === "string" && label.trim() ? label.trim() : (typeof value === "string" ? value.trim() : "");
+    const key = typeof value === "string" ? value.trim().toLowerCase() : "";
+    if (!key) {
+        return fallback;
+    }
+    const map = readInlineOptionLabelByLanguageMap();
+    if (!map) {
+        return fallback;
+    }
+    const row = map[key];
+    if (!row || typeof row !== "object") {
+        return fallback;
+    }
+    const t = pickContactFormLocalizedLine(row, lang);
+    return t != null ? t : fallback;
+}
+
+function refreshInlineSyntheticOptionButtonLabels() {
+    const map = readInlineOptionLabelByLanguageMap();
+    if (!map) {
+        return;
+    }
+    const nodes = document.querySelectorAll(
+        `.${DFCHAT_INLINE_GALLERY_CLASS} button[data-dfchat-opt-key], .${DFCHAT_INLINE_VIDEO_CLASS} button[data-dfchat-opt-key]`
+    );
+    for (const node of nodes) {
+        if (!node || typeof node.getAttribute !== "function") {
+            continue;
+        }
+        const key = (node.getAttribute("data-dfchat-opt-key") || "").trim().toLowerCase();
+        if (!key) {
+            continue;
+        }
+        const row = map[key];
+        if (!row || typeof row !== "object") {
+            continue;
+        }
+        const next = pickContactFormLocalizedLine(row, activeLanguage);
+        if (next != null) {
+            node.textContent = next;
+        }
+    }
 }
 
 function initializeChatLanguageDropdown(dfMessenger) {
@@ -11094,11 +11196,114 @@ function googleTranslateTargetLanguageCode(code) {
     return s;
 }
 
+function readTranslationOverridesForLanguage(targetLanguage) {
+    try {
+        const feats = MULTI_LANGUAGE_CONFIG && typeof MULTI_LANGUAGE_CONFIG === "object" ? MULTI_LANGUAGE_CONFIG : null;
+        const map = feats && typeof feats.translationOverridesByLanguage === "object"
+            ? feats.translationOverridesByLanguage
+            : null;
+        if (!map || typeof map !== "object") {
+            return null;
+        }
+        const tl = googleTranslateTargetLanguageCode(targetLanguage);
+        const row = map[tl];
+        return row && typeof row === "object" ? row : null;
+    } catch {
+        return null;
+    }
+}
+
+function translateOverrideIfAny(sourceText, targetLanguage) {
+    const s = typeof sourceText === "string" ? sourceText.trim() : "";
+    if (!s) {
+        return null;
+    }
+    const overrides = readTranslationOverridesForLanguage(targetLanguage);
+    if (!overrides) {
+        return null;
+    }
+    // 1) Exact match
+    const vExact = overrides[s];
+    if (typeof vExact === "string" && vExact.trim()) {
+        return vExact.trim();
+    }
+    return null;
+}
+
+function escapeRegExp(s) {
+    return String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Replace matching override phrases with stable tokens so Google Translate does NOT translate them,
+ * then re-insert the override text after translation.
+ * @returns {{ text: string, tokenMap: Record<string, string> }}
+ */
+function applyTranslationOverrideTokens(sourceText, targetLanguage) {
+    const s0 = typeof sourceText === "string" ? sourceText : "";
+    const overrides = readTranslationOverridesForLanguage(targetLanguage);
+    if (!overrides) {
+        return { text: s0, tokenMap: {} };
+    }
+    let text = s0;
+    /** @type {Record<string, string>} */
+    const tokenMap = {};
+    try {
+        const keys = Object.keys(overrides)
+            .filter((k) => typeof k === "string" && k.trim())
+            .sort((a, b) => b.length - a.length);
+        let tokenSeq = 0;
+        for (const rawKey of keys) {
+            const key = rawKey.trim();
+            if (!key) {
+                continue;
+            }
+            const replacement = overrides[rawKey];
+            if (typeof replacement !== "string" || !replacement.trim()) {
+                continue;
+            }
+            const re = new RegExp(escapeRegExp(key), "gi");
+            if (!re.test(text)) {
+                continue;
+            }
+            const token = `\uE000DFOVR${tokenSeq += 1}\uE001`;
+            tokenMap[token] = replacement.trim();
+            text = text.replace(re, token);
+        }
+    } catch {
+        return { text: s0, tokenMap: {} };
+    }
+    return { text, tokenMap };
+}
+
+function restoreTranslationOverrideTokens(translatedText, tokenMap) {
+    let out = typeof translatedText === "string" ? translatedText : "";
+    const keys = tokenMap && typeof tokenMap === "object" ? Object.keys(tokenMap) : [];
+    if (keys.length === 0) {
+        return out;
+    }
+    for (const token of keys) {
+        const val = tokenMap[token];
+        if (typeof val !== "string") {
+            continue;
+        }
+        out = out.split(token).join(val);
+    }
+    return out;
+}
+
 async function translateTextUsingGoogle(sourceText, targetLanguage) {
     const tl = googleTranslateTargetLanguageCode(targetLanguage);
-    const cacheKey = `${tl}::${sourceText}`;
+    const exactOverride = translateOverrideIfAny(sourceText, tl);
+    if (exactOverride != null) {
+        return exactOverride;
+    }
+
+    const tokenized = applyTranslationOverrideTokens(sourceText, tl);
+    const cacheKey = `${tl}::${tokenized.text}`;
     if (googleTranslationCache.has(cacheKey)) {
-        return googleTranslationCache.get(cacheKey);
+        const cached = googleTranslationCache.get(cacheKey);
+        return restoreTranslationOverrideTokens(cached, tokenized.tokenMap);
     }
 
     try {
@@ -11107,23 +11312,23 @@ async function translateTextUsingGoogle(sourceText, targetLanguage) {
             sl: "auto",
             tl,
             dt: "t",
-            q: sourceText
+            q: tokenized.text
         });
         const endpoint = `${GOOGLE_TRANSLATE_ENDPOINT}?${queryParams.toString()}`;
         const response = await fetch(endpoint, { method: "GET" });
 
         if (!response.ok) {
-            googleTranslationCache.set(cacheKey, sourceText);
-            return sourceText;
+            googleTranslationCache.set(cacheKey, tokenized.text);
+            return restoreTranslationOverrideTokens(sourceText, tokenized.tokenMap);
         }
 
         const payload = await response.json();
-        const translatedText = extractGoogleTranslatedText(payload) || sourceText;
+        const translatedText = extractGoogleTranslatedText(payload) || tokenized.text;
         googleTranslationCache.set(cacheKey, translatedText);
-        return translatedText;
+        return restoreTranslationOverrideTokens(translatedText, tokenized.tokenMap);
     } catch {
-        googleTranslationCache.set(cacheKey, sourceText);
-        return sourceText;
+        googleTranslationCache.set(cacheKey, tokenized.text);
+        return restoreTranslationOverrideTokens(sourceText, tokenized.tokenMap);
     }
 }
 

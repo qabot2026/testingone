@@ -583,14 +583,14 @@ html.dfchat-host-scroll-locked body {
   bottom: 6px;
   z-index: 1000;
   /* 5px tighter on each side vs before (32px → 42px total horizontal margin) */
-  width: min(340px, calc(100vw - 42px));
+  width: min(300px, calc(100vw - 82px));
   display: none;
 }
 
 /* Undocked: wider panel on large screens (keep in sync with `desk.form.formDockMaxWidthPx`). */
 @media (min-width: 769px) {
   .dfchat-contact-form {
-    width: min(420px, calc(100vw - 42px));
+    width: min(380px, calc(100vw - 82px));
   }
 }
 
