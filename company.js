@@ -7278,7 +7278,7 @@ function ensureImageLightboxMounted() {
     closeBtn.textContent = "×";
     closeBtn.style.cssText = [
         "position:absolute",
-        "top:24px",
+        "top:44px",
         "right:14px",
         "width:44px",
         "height:44px",
