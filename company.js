@@ -6962,6 +6962,7 @@ function initializeChatStateSync(dfMessenger) {
         clearFooterScrollParentListeners();
         releaseHostPageScrollLockForOpenChat();
         stopCloseXWhileChatOpenMonitor();
+        removeAnyOpenDfchatLightboxesFromDom();
         // When the panel closes, dismiss any open (or scheduled) inline form (contact / appointment / upload) so it
         // does not float without the chat. Restart also clears the form (see restartChatSession).
         window.setTimeout(() => {
@@ -6972,6 +6973,7 @@ function initializeChatStateSync(dfMessenger) {
     document.addEventListener("click", (event) => {
         if (didUserCloseChat(event)) {
             window.setTimeout(() => {
+                removeAnyOpenDfchatLightboxesFromDom();
                 closeForm();
             }, 0);
         }
@@ -6985,6 +6987,7 @@ function initializeChatStateSync(dfMessenger) {
         }
         if (!isChatWindowOpen) {
             window.setTimeout(() => {
+                removeAnyOpenDfchatLightboxesFromDom();
                 closeForm();
             }, 0);
         }
@@ -7419,6 +7422,36 @@ function closeImageLightbox() {
     imageLightboxIndex = 0;
     if (overlay) {
         overlay.style.display = "none";
+    }
+    try {
+        document.documentElement.style.overflow = "";
+        document.body.style.overflow = "";
+    } catch {
+        /* ignore */
+    }
+}
+
+function removeAnyOpenDfchatLightboxesFromDom() {
+    try {
+        closeVideoLightbox();
+    } catch {
+        /* ignore */
+    }
+    try {
+        closeImageLightbox();
+    } catch {
+        /* ignore */
+    }
+    // Hard-remove nodes so no orphaned close buttons remain after chat minimize on mobile.
+    try {
+        [IMAGE_LIGHTBOX_ID, VIDEO_LIGHTBOX_ID].forEach((id) => {
+            const el = document.getElementById(id);
+            if (el && el.parentNode) {
+                el.parentNode.removeChild(el);
+            }
+        });
+    } catch {
+        /* ignore */
     }
     try {
         document.documentElement.style.overflow = "";
