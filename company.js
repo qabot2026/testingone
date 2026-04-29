@@ -7348,6 +7348,17 @@ function ensureImageLightboxMounted() {
         e.stopPropagation?.();
         e.stopImmediatePropagation?.();
         closeImageLightbox();
+        // If user tapped the top-right while the lightbox is open, they usually mean "close chat".
+        // The lightbox button visually overlaps the chat close button, so close the chat too.
+        try {
+            const ms = activeDfMessenger;
+            const chatClose = findChatCloseButton(ms);
+            if (chatClose && typeof chatClose.click === "function") {
+                chatClose.click();
+            }
+        } catch {
+            /* ignore */
+        }
     });
     prevBtn.addEventListener("click", (e) => {
         e.preventDefault?.();
