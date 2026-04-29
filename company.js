@@ -11288,6 +11288,9 @@ function getScreenResolution() {
 }
 
 function renderUserPersona(dfMessenger) {
+    if (!USER_PERSONA_CONFIG || USER_PERSONA_CONFIG.enabled === false) {
+        return;
+    }
     const ms = dfMessenger && dfMessenger === activeDfMessenger ? dfMessenger : activeDfMessenger;
     if (!ms || typeof ms.renderCustomText !== "function") {
         return;
@@ -11298,16 +11301,18 @@ function renderUserPersona(dfMessenger) {
     }
 
     lastUserPersonaRenderAt = now;
-    renderPersona(ms, "user", "🙂User");
-}
-
-function renderPersona(dfMessenger, personaType, label) {
-    if (personaType === "bot") {
-        renderBotPersona(dfMessenger);
-        return;
-    }
-    const nonce = `${personaType}-${Date.now()}-${personaSequence += 1}`;
-    dfMessenger.renderCustomText(createPersonaBadgeMarkdown(label, getIstTimeLabel(), nonce, PERSONA_MARKER_USER), true);
+    const cfg = USER_PERSONA_CONFIG;
+    const label = cfg.mode === "emojiTime"
+        ? (cfg.emojiTime && typeof cfg.emojiTime.label === "string" ? cfg.emojiTime.label : "You")
+        : "You";
+    const timeLabel = cfg.mode === "emojiTime" && cfg.emojiTime && cfg.emojiTime.showTime !== false
+        ? getPersonaTimeLabel(cfg.emojiTime.timeZone)
+        : getIstTimeLabel();
+    const nonce = `user-${Date.now()}-${personaSequence += 1}`;
+    // Use the same compact badge style as bot persona captions.
+    // Render as markdown (bot-side) so DF reliably parses `![](data:...)`, then we restyle + move it to user side.
+    ms.renderCustomText(createPersonaBadgeMarkdown(label, timeLabel, nonce, PERSONA_MARKER_USER, true), true);
+    schedulePersonaShadowFix(ms);
 }
 
 function renderBotPersona(dfMessenger) {
@@ -12200,6 +12205,14 @@ function stylePersonaContainer(container, imageNode, personaType) {
     imageNode.style.filter = `blur(${PERSONA_SOFT_BLUR})`;
     imageNode.style.opacity = PERSONA_OPACITY;
 
+    if (personaType === "user") {
+        try {
+            forcePersonaToUserSide(imageNode);
+        } catch {
+            /* ignore */
+        }
+    }
+
     const src = imageNode.getAttribute("src") || "";
     if (personaType === "bot" && BOT_PERSONA_CONFIG.mode === "image") {
         const { widthPx, heightPx, showTime } = BOT_PERSONA_CONFIG.image;
@@ -12313,6 +12326,40 @@ function stylePersonaContainer(container, imageNode, personaType) {
 
         current = current.parentElement;
         depth += 1;
+    }
+}
+
+function forcePersonaToUserSide(imageNode) {
+    let el = imageNode;
+    for (let i = 0; el && i < 36; i += 1) {
+        const p = getComposedParentElement(el);
+        if (!p) {
+            break;
+        }
+        try {
+            if (p.classList) {
+                // Dialogflow typically renders customText on the bot side by default; re-tag as user side.
+                if (p.classList.contains("entry") && p.classList.contains("bot")) {
+                    p.classList.remove("bot");
+                    p.classList.add("user");
+                }
+                if (p.classList.contains("message") && p.classList.contains("bot-message")) {
+                    p.classList.remove("bot-message");
+                    p.classList.add("user-message");
+                }
+            }
+            if (p.style) {
+                p.style.setProperty("justify-content", "flex-end", "important");
+                p.style.setProperty("text-align", "right", "important");
+            }
+        } catch {
+            /* ignore */
+        }
+        el = p;
+        const tag = p.tagName ? p.tagName.toUpperCase() : "";
+        if (tag === "DF-MESSENGER-MESSAGE-LIST" || tag === "DF-MESSENGER-CHAT") {
+            break;
+        }
     }
 }
 
