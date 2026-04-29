@@ -159,7 +159,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
           robots: { en: "Robots", hi: "रोबोट", mr: "रोबोट" },
           robot: { en: "Robot", hi: "रोबोट", mr: "रोबोट" },
           live: { en: "Live", hi: "लाइव", mr: "लाइव्ह" },
-          Animal: { en: "Animal", hi: "जानवर", mr: "प्राणी" },
+          animal: { en: "Animal", hi: "जानवर", mr: "प्राणी" },
           video: { en: "Video", hi: "वीडियो", mr: "व्हिडिओ" }
         }
       }
