@@ -437,6 +437,172 @@ function collectDfResponseMessagesForUnread(event) {
     return [];
 }
 
+/**
+ * Gallery / video: **only `queryResult.responseMessages`** — this DetectIntent fulfillment list is scoped
+ * to the current webhook response. **`detail.data.messages`** is a Messenger UI mirror that commonly
+ * re-attaches previously rendered payloads, which made `open_gallery` appear on every subsequent intent.
+ *
+ * Dedupes object refs shared between **`raw`** and **`data`** `queryResult.responseMessages`.
+ *
+ * @param {Event | null | undefined} event
+ */
+function mergeCxResponseEnvelopeForGallery(event) {
+    /** @type {unknown[]} */
+    const out = [];
+    const seenObj = new WeakSet();
+    const detail = event && event.detail;
+    const add = /** @param {unknown[] | null | undefined} a */ (a) => {
+        if (!Array.isArray(a) || a.length === 0) {
+            return;
+        }
+        for (let i = 0; i < a.length; i += 1) {
+            const item = a[i];
+            if (item != null && typeof item === "object") {
+                /** @type {object} */
+                const obj = /** @type {object} */ (item);
+                if (seenObj.has(obj)) {
+                    continue;
+                }
+                seenObj.add(obj);
+            }
+            out.push(item);
+        }
+    };
+
+    add(
+        detail
+        && detail.raw
+        && detail.raw.queryResult
+        && detail.raw.queryResult.responseMessages
+    );
+    add(
+        detail
+        && detail.data
+        && detail.data.queryResult
+        && detail.data.queryResult.responseMessages
+    );
+
+    return out;
+}
+
+/**
+ * Only CX response messages carrying a **`payload`** (or Messenger `customPayload`) can produce
+ * `extractPayload(...)`. Checking this avoids needless work on plain text blobs.
+ *
+ * @param {unknown} message
+ * @returns {boolean}
+ */
+function messageHasFulfillmentPayload(message) {
+    if (!message || typeof message !== "object") {
+        return false;
+    }
+    /** @type {Record<string, unknown>} */
+    const m = /** @type {Record<string, unknown>} */ (message);
+    return (Object.prototype.hasOwnProperty.call(m, "payload") && m.payload != null)
+        || (Object.prototype.hasOwnProperty.call(m, "customPayload") && m.customPayload != null);
+}
+
+/**
+ * CX may expose intent under **`queryResult.intent`** or **`queryResult.match.intent`**.
+ * @param {Record<string, unknown> | null} qr
+ * @returns {string}
+ */
+function extractIntentDisplayNameFromQueryResult(qr) {
+    if (!qr || typeof qr !== "object") {
+        return "";
+    }
+    /** @param {unknown} node */
+    const fromIntentLike = (node) => {
+        if (!node || typeof node !== "object") {
+            return "";
+        }
+        /** @type {{ displayName?: string, name?: string }} */
+        const it = /** @type {{ displayName?: string, name?: string }} */ (node);
+        if (typeof it.displayName === "string" && it.displayName.trim()) {
+            return it.displayName.trim();
+        }
+        if (typeof it.name === "string" && it.name.trim()) {
+            return it.name.trim();
+        }
+        return "";
+    };
+    const direct = fromIntentLike(qr.intent);
+    if (direct) {
+        return direct;
+    }
+    const qrWithMatch =
+        qr && qr.match !== undefined && qr.match !== null && typeof qr.match === "object"
+            ? /** @type {Record<string, unknown>} */ (qr.match)
+            : null;
+    if (qrWithMatch && qrWithMatch.intent !== undefined) {
+        return fromIntentLike(qrWithMatch.intent);
+    }
+    return "";
+}
+
+/**
+ * @param {Event | null | undefined} event
+ * @returns {string}
+ */
+function getIntentDisplayNameFromDfEvent(event) {
+    const d = event && event.detail;
+    const qr =
+        (d && d.raw && d.raw.queryResult)
+        || (d && d.data && d.data.queryResult)
+        || null;
+    /** @type {Record<string, unknown> | null} */
+    const qro = qr && typeof qr === "object" ? /** @type {Record<string, unknown>} */ (qr) : null;
+    return extractIntentDisplayNameFromQueryResult(qro);
+}
+
+/**
+ * `COMPANY_CHAT_UI_CONFIG.common.features.inlineGallery`:
+ * - If **`features.inlineGallery` is omitted** → allow gallery/video whenever fulfillment sends payloads.
+ * - **`allowGalleryOnAnyIntent: true`** (default) → same — no intent filter.
+ * - **`allowGalleryOnAnyIntent: false`** → require a substring match on **`restrictToIntentDisplayNames`**
+ *   vs CX intent display name (`match.intent` or `intent` on `queryResult`).
+ *
+ * @param {Event | null | undefined} event
+ * @returns {boolean}
+ */
+function passesInlineRichMediaIntentGate(event) {
+    const cfg = readCompanyUiConfig();
+    const common =
+        cfg && typeof cfg === "object" && /** @type {Record<string, unknown>} */ (cfg).common && typeof /** @type {Record<string, unknown>} */ (cfg).common === "object"
+            ? /** @type {Record<string, unknown>} */ (/** @type {unknown} */ (cfg)).common
+            : null;
+    const feats =
+        common && typeof common.features === "object"
+            ? /** @type {Record<string, unknown>} */ (common.features)
+            : null;
+    const ig =
+        feats && typeof feats.inlineGallery === "object"
+            ? /** @type {Record<string, unknown>} */ (feats.inlineGallery)
+            : null;
+
+    if (!ig) {
+        return true;
+    }
+
+    if (ig.allowGalleryOnAnyIntent !== false) {
+        return true;
+    }
+
+    const restriction = Array.isArray(ig.restrictToIntentDisplayNames) ? ig.restrictToIntentDisplayNames : [];
+    const hay = getIntentDisplayNameFromDfEvent(event).toLowerCase();
+
+    if (restriction.length === 0 || !hay) {
+        return false;
+    }
+    for (let i = 0; i < restriction.length; i += 1) {
+        const needle = String(restriction[i] || "").trim().toLowerCase();
+        if (needle && hay.includes(needle)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 function countAgentMessagesForUnread(event) {
     const messages = collectDfResponseMessagesForUnread(event);
     let n = 0;
@@ -1611,6 +1777,7 @@ function runCompanyDomReadyInit() {
     if (!IS_MULTI_LANGUAGE_ENABLED) {
         activeLanguage = DEFAULT_LANGUAGE;
     }
+    attachImageLightboxClickHandler();
     ensureComposerHeaderCollapseBehavior();
     // Mount chat before the inline form and other UI — if form init throws, the bubble should still show.
     runMessengerMountWhenCustomElementReady();
@@ -1911,6 +2078,7 @@ function createAndMountMessenger() {
     initializeMobileChatLayout(df, COMPANY_UI_CONFIG);
     initializeChatStateSync(df);
     attachPersonaHandlers(df);
+    // Lightbox is handled via a global click handler (shadow-DOM safe composedPath checks).
     ensureChatActionBar();
     ensurePoweredByStrip();
     scheduleUserInputVerticalNudge(df);
@@ -3607,15 +3775,60 @@ function syncLauncherInputStripI18n() {
     }
 }
 
-function sendUserTextViaDfMessenger(dfMessenger, text) {
+function sendUserTextViaDfMessenger(dfMessenger, text, shouldRenderCustomTextNow) {
     const t = (text || "").trim();
     if (!t || !dfMessenger) {
         return;
     }
+    const renderCustom =
+        typeof shouldRenderCustomTextNow === "boolean"
+            ? shouldRenderCustomTextNow
+            : true;
+
+    /**
+     * Dialogflow's `sendQuery/sendRequest` sometimes does not render the user bubble immediately.
+     * When `renderCustom` is false, we schedule a fallback render after a short delay
+     * (only if the message text is not already present in the transcript).
+     */
+    function messageListAlreadyContainsText(ml, needle) {
+        try {
+            if (!ml || !needle || typeof needle !== "string") {
+                return false;
+            }
+            const children = ml.children ? Array.from(ml.children) : [];
+            const tail = children.slice(Math.max(0, children.length - 6));
+            for (let i = 0; i < tail.length; i += 1) {
+                const el = tail[i];
+                if (!el || typeof el.textContent !== "string") {
+                    continue;
+                }
+                if (el.textContent.includes(needle)) {
+                    return true;
+                }
+            }
+        } catch {
+            /* ignore */
+        }
+        return false;
+    }
+
     try {
         // Programmatic `sendQuery` / `sendRequest` does not always add a user bubble; mirror in-chat UX.
-        if (typeof dfMessenger.renderCustomText === "function") {
+        if (renderCustom && typeof dfMessenger.renderCustomText === "function") {
             dfMessenger.renderCustomText(t, false);
+        }
+        const shouldFallbackRender = !renderCustom && typeof dfMessenger.renderCustomText === "function";
+        if (shouldFallbackRender) {
+            window.setTimeout(() => {
+                try {
+                    const ml = findMessengerMessageListRoot(dfMessenger);
+                    if (!messageListAlreadyContainsText(ml, t)) {
+                        dfMessenger.renderCustomText(t, false);
+                    }
+                } catch {
+                    /* ignore */
+                }
+            }, 650);
         }
         if (typeof dfMessenger.sendQuery === "function") {
             const r = dfMessenger.sendQuery(t);
@@ -6791,6 +7004,22 @@ function initializeChatStateSync(dfMessenger) {
 function didUserCloseChat(event) {
     const eventPath = typeof event.composedPath === "function" ? event.composedPath() : [];
 
+    // Ignore clicks inside the fullscreen image / video overlays; never treat them as closing the chat.
+    for (const node of eventPath) {
+        if (!node) {
+            continue;
+        }
+        if (typeof node.id === "string" && (node.id === IMAGE_LIGHTBOX_ID || node.id === VIDEO_LIGHTBOX_ID)) {
+            return false;
+        }
+        if (typeof node.getAttribute === "function") {
+            const idAttr = node.getAttribute("id");
+            if (idAttr === IMAGE_LIGHTBOX_ID || idAttr === VIDEO_LIGHTBOX_ID) {
+                return false;
+            }
+        }
+    }
+
     return eventPath.some((node) => {
         if (!node || typeof node.getAttribute !== "function") {
             return false;
@@ -6804,6 +7033,2169 @@ function didUserCloseChat(event) {
             || /close|collapse|minimize/.test(dataTestId)
             || /close|collapse|minimize/.test(textContent);
     });
+}
+
+// ---------------------------------------------------------------------------
+// Image lightbox (fullscreen overlay) for rich HTML image carousels.
+// ---------------------------------------------------------------------------
+
+const IMAGE_LIGHTBOX_ID = "dfchat-image-lightbox";
+const IMAGE_LIGHTBOX_IMG_ID = "dfchat-image-lightbox-img";
+const IMAGE_LIGHTBOX_CLOSE_ID = "dfchat-image-lightbox-close";
+const IMAGE_LIGHTBOX_PREV_ID = "dfchat-image-lightbox-prev";
+const IMAGE_LIGHTBOX_NEXT_ID = "dfchat-image-lightbox-next";
+
+const VIDEO_LIGHTBOX_ID = "dfchat-video-lightbox";
+const VIDEO_LIGHTBOX_PANEL_ID = "dfchat-video-lightbox-panel";
+const VIDEO_LIGHTBOX_IFRAME_ID = "dfchat-video-lightbox-iframe";
+const VIDEO_LIGHTBOX_CLOSE_ID = "dfchat-video-lightbox-close";
+
+/** @type {string[]} */
+let imageLightboxSrcs = [];
+let imageLightboxIndex = 0;
+
+function setImageLightboxIndex(nextIndex) {
+    if (!Array.isArray(imageLightboxSrcs) || imageLightboxSrcs.length === 0) {
+        return;
+    }
+    const overlay = document.getElementById(IMAGE_LIGHTBOX_ID);
+    const img = document.getElementById(IMAGE_LIGHTBOX_IMG_ID);
+    const prev = document.getElementById(IMAGE_LIGHTBOX_PREV_ID);
+    const next = document.getElementById(IMAGE_LIGHTBOX_NEXT_ID);
+    if (!overlay || !img) {
+        return;
+    }
+    const n = imageLightboxSrcs.length;
+    const i = ((nextIndex % n) + n) % n;
+    imageLightboxIndex = i;
+    img.src = imageLightboxSrcs[i];
+    if (prev) {
+        prev.style.display = n > 1 ? "grid" : "none";
+    }
+    if (next) {
+        next.style.display = n > 1 ? "grid" : "none";
+    }
+}
+
+function stepImageLightbox(delta) {
+    if (!imageLightboxSrcs || imageLightboxSrcs.length <= 1) {
+        return;
+    }
+    setImageLightboxIndex(imageLightboxIndex + delta);
+}
+
+function isInShadowHostChain(el, tagNameLower) {
+    try {
+        let cur = el;
+        while (cur) {
+            if (cur.tagName && String(cur.tagName).toLowerCase() === tagNameLower) {
+                return true;
+            }
+            const root = cur.getRootNode && cur.getRootNode();
+            cur = root && root.host ? root.host : null;
+        }
+    } catch {
+        /* ignore */
+    }
+    return false;
+}
+
+/**
+ * Same-document “parent”, then crossing a shadow boundary to the shadow host (`… -> host`).
+ * @param {Element} elem
+ * @returns {Element | null}
+ */
+function composedParentElement(elem) {
+    if (!elem || !(elem instanceof Element)) {
+        return null;
+    }
+    if (elem.parentElement) {
+        return elem.parentElement;
+    }
+    const r =
+        typeof elem.getRootNode === "function"
+            ? /** @type {Node} */ (elem.getRootNode())
+            : null;
+    return r instanceof ShadowRoot && r.host instanceof Element ? r.host : null;
+}
+
+/**
+ * True only for the floating launcher FAB chrome (`.bubble`), not the expanded chat transcript.
+ * `isInShadowHostChain(..., "df-messenger-chat-bubble")` is too broad: bot messages often live under
+ * that custom element, which broke lightbox for inline gallery and other chat images.
+ * @param {Node | null | undefined} el
+ * @returns {boolean}
+ */
+function isInsideMessengerLauncherBubbleGraphic(el) {
+    if (!(el instanceof Element)) {
+        return false;
+    }
+    try {
+        /** @type {Element | null} */
+        let cur = /** @type {Element} */ (el);
+        while (cur) {
+            if (cur.classList && cur.classList.contains("bubble")) {
+                return true;
+            }
+            cur = composedParentElement(cur);
+        }
+    } catch {
+        /* ignore */
+    }
+    return false;
+}
+
+function bindLightboxToMessengerImages(dfMessenger) {
+    const ms = dfMessenger || activeDfMessenger;
+    if (!ms) {
+        return;
+    }
+    const roots = collectSearchRoots(ms);
+    for (const root of roots) {
+        if (!root || typeof root.querySelectorAll !== "function") {
+            continue;
+        }
+        let imgs;
+        try {
+            imgs = root.querySelectorAll("img");
+        } catch {
+            continue;
+        }
+        for (const img of imgs) {
+            if (!img || img.dataset?.dfchatLightboxBound === "1") {
+                continue;
+            }
+            const src = img.getAttribute ? (img.getAttribute("src") || "") : "";
+            if (!src) {
+                continue;
+            }
+            // Never bind inside widget chrome (launcher FAB, header, footer input).
+            if (isInsideMessengerLauncherBubbleGraphic(img)
+                || isInShadowHostChain(img, "df-messenger-header")
+                || isInShadowHostChain(img, "df-messenger-user-input")) {
+                continue;
+            }
+            if (src.includes("dfchat-")) {
+                continue;
+            }
+            // Bind for any chat message image (rich content, HTML payload, markdown image, etc.).
+            // (We avoid restricting by attributes because CX HTML sanitizer can strip them.)
+            img.dataset.dfchatLightboxBound = "1";
+            img.style.cursor = "zoom-in";
+            img.addEventListener("click", (e) => {
+                e.preventDefault?.();
+                e.stopPropagation?.();
+                // Safety: never open for launcher FAB / chrome even if bound somehow.
+                if (isInsideMessengerLauncherBubbleGraphic(img)
+                    || isInShadowHostChain(img, "df-messenger-header")
+                    || isInShadowHostChain(img, "df-messenger-user-input")) {
+                    return;
+                }
+                // Find siblings in the same row/container to enable prev/next.
+                const parent = img.parentElement;
+                let srcs = [];
+                if (parent && typeof parent.querySelectorAll === "function") {
+                    try {
+                        srcs = Array.from(parent.querySelectorAll("img"))
+                            .map((el) => (el.getAttribute ? (el.getAttribute("src") || "") : ""))
+                            .filter((u) => u && !u.includes("dfchat-"));
+                    } catch {
+                        srcs = [];
+                    }
+                }
+                if (!srcs.length) {
+                    srcs = [src];
+                }
+                const idx = Math.max(0, srcs.indexOf(src));
+                openImageLightbox(srcs, idx, img.getAttribute ? img.getAttribute("alt") : "");
+            }, true);
+        }
+    }
+}
+
+function ensureLightboxImageObserver(dfMessenger) {
+    const ms = dfMessenger || activeDfMessenger;
+    if (!ms || ms._dfchatLightboxMO) {
+        return;
+    }
+    try {
+        let scheduled = false;
+        const mo = new MutationObserver(() => {
+            if (scheduled) {
+                return;
+            }
+            scheduled = true;
+            window.requestAnimationFrame(() => {
+                scheduled = false;
+                bindLightboxToMessengerImages(ms);
+            });
+        });
+        mo.observe(ms, { childList: true, subtree: true });
+        ms._dfchatLightboxMO = mo;
+    } catch {
+        /* ignore */
+    }
+}
+
+function ensureImageLightboxMounted() {
+    if (document.getElementById(IMAGE_LIGHTBOX_ID)) {
+        return;
+    }
+    const overlay = document.createElement("div");
+    overlay.id = IMAGE_LIGHTBOX_ID;
+    overlay.setAttribute("role", "dialog");
+    overlay.setAttribute("aria-modal", "true");
+    overlay.style.cssText = [
+        "position:fixed",
+        "inset:0",
+        "display:none",
+        "align-items:center",
+        "justify-content:center",
+        "padding:18px",
+        "background:rgba(2, 6, 23, 0.72)",
+        "backdrop-filter:blur(2px)",
+        "z-index:2147483647"
+    ].join(";");
+
+    const img = document.createElement("img");
+    img.id = IMAGE_LIGHTBOX_IMG_ID;
+    img.alt = "";
+    img.style.cssText = [
+        "max-width:min(96vw, 1100px)",
+        "max-height:92vh",
+        "width:auto",
+        "height:auto",
+        "display:block",
+        "border-radius:14px",
+        "box-shadow:0 24px 80px rgba(0,0,0,0.55)",
+        "background:#fff"
+    ].join(";");
+
+    const closeBtn = document.createElement("button");
+    closeBtn.id = IMAGE_LIGHTBOX_CLOSE_ID;
+    closeBtn.type = "button";
+    closeBtn.setAttribute("aria-label", "Dismiss");
+    closeBtn.textContent = "×";
+    closeBtn.style.cssText = [
+        "position:absolute",
+        "top:14px",
+        "right:14px",
+        "width:44px",
+        "height:44px",
+        "border-radius:999px",
+        "border:1px solid rgba(255,255,255,0.22)",
+        "background:rgba(15,23,42,0.55)",
+        "color:#fff",
+        "font-size:28px",
+        "line-height:1",
+        "display:grid",
+        "place-items:center",
+        "cursor:pointer"
+    ].join(";");
+
+    const mkArrow = (id, label, dir) => {
+        const b = document.createElement("button");
+        b.id = id;
+        b.type = "button";
+        b.setAttribute("aria-label", label);
+        b.textContent = dir;
+        b.style.cssText = [
+            "position:absolute",
+            "top:50%",
+            "transform:translateY(-50%)",
+            id === IMAGE_LIGHTBOX_PREV_ID ? "left:12px" : "right:12px",
+            "width:46px",
+            "height:46px",
+            "border-radius:999px",
+            "border:1px solid rgba(255,255,255,0.22)",
+            "background:rgba(15,23,42,0.55)",
+            "color:#fff",
+            "font-size:22px",
+            "display:grid",
+            "place-items:center",
+            "cursor:pointer"
+        ].join(";");
+        return b;
+    };
+    const prevBtn = mkArrow(IMAGE_LIGHTBOX_PREV_ID, "Previous image", "‹");
+    const nextBtn = mkArrow(IMAGE_LIGHTBOX_NEXT_ID, "Next image", "›");
+
+    overlay.appendChild(img);
+    overlay.appendChild(closeBtn);
+    overlay.appendChild(prevBtn);
+    overlay.appendChild(nextBtn);
+    document.body.appendChild(overlay);
+
+    overlay.addEventListener("click", (e) => {
+        e.preventDefault?.();
+        e.stopPropagation?.();
+        e.stopImmediatePropagation?.();
+        // Click outside the image closes.
+        if (e.target === overlay) {
+            closeImageLightbox();
+        }
+    });
+
+    closeBtn.addEventListener("click", (e) => {
+        e.preventDefault?.();
+        e.stopPropagation?.();
+        e.stopImmediatePropagation?.();
+        closeImageLightbox();
+    });
+    prevBtn.addEventListener("click", (e) => {
+        e.preventDefault?.();
+        e.stopPropagation?.();
+        e.stopImmediatePropagation?.();
+        stepImageLightbox(-1);
+    });
+    nextBtn.addEventListener("click", (e) => {
+        e.preventDefault?.();
+        e.stopPropagation?.();
+        e.stopImmediatePropagation?.();
+        stepImageLightbox(1);
+    });
+
+    document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") {
+            const videoOverlay = document.getElementById(VIDEO_LIGHTBOX_ID);
+            if (videoOverlay && videoOverlay.style.display === "flex") {
+                closeVideoLightbox();
+                return;
+            }
+            closeImageLightbox();
+            return;
+        }
+        const overlay = document.getElementById(IMAGE_LIGHTBOX_ID);
+        if (!overlay || overlay.style.display === "none") {
+            return;
+        }
+        if (e.key === "ArrowLeft") {
+            stepImageLightbox(-1);
+        } else if (e.key === "ArrowRight") {
+            stepImageLightbox(1);
+        }
+    });
+}
+
+function openImageLightbox(srcs, index, alt) {
+    ensureImageLightboxMounted();
+    const overlay = document.getElementById(IMAGE_LIGHTBOX_ID);
+    const img = document.getElementById(IMAGE_LIGHTBOX_IMG_ID);
+    if (!overlay || !img) {
+        return;
+    }
+    imageLightboxSrcs = Array.isArray(srcs) ? srcs.filter(Boolean) : [];
+    imageLightboxIndex = Number.isFinite(index) ? index : 0;
+    if (imageLightboxSrcs.length === 0) {
+        return;
+    }
+    img.alt = typeof alt === "string" ? alt : "";
+    setImageLightboxIndex(imageLightboxIndex);
+    img.alt = typeof alt === "string" ? alt : "";
+    overlay.style.display = "flex";
+    try {
+        document.documentElement.style.overflow = "hidden";
+        document.body.style.overflow = "hidden";
+    } catch {
+        /* ignore */
+    }
+}
+
+function closeImageLightbox() {
+    const overlay = document.getElementById(IMAGE_LIGHTBOX_ID);
+    const img = document.getElementById(IMAGE_LIGHTBOX_IMG_ID);
+    if (img) {
+        img.removeAttribute("src");
+    }
+    imageLightboxSrcs = [];
+    imageLightboxIndex = 0;
+    if (overlay) {
+        overlay.style.display = "none";
+    }
+    try {
+        document.documentElement.style.overflow = "";
+        document.body.style.overflow = "";
+    } catch {
+        /* ignore */
+    }
+}
+
+function ensureVideoLightboxMounted() {
+    if (document.getElementById(VIDEO_LIGHTBOX_ID)) {
+        return;
+    }
+    const overlay = document.createElement("div");
+    overlay.id = VIDEO_LIGHTBOX_ID;
+    overlay.setAttribute("role", "dialog");
+    overlay.setAttribute("aria-modal", "true");
+    overlay.setAttribute("aria-label", "Video");
+    overlay.style.cssText = [
+        "position:fixed",
+        "inset:0",
+        "display:none",
+        "flex-direction:column",
+        "align-items:center",
+        "justify-content:center",
+        "padding:16px",
+        "background:rgba(2, 6, 23, 0.78)",
+        "backdrop-filter:blur(3px)",
+        "z-index:2147483646",
+        "box-sizing:border-box"
+    ].join(";");
+
+    const panel = document.createElement("div");
+    panel.id = VIDEO_LIGHTBOX_PANEL_ID;
+    panel.style.cssText = [
+        "position:relative",
+        "width:min(96vw, 1100px)",
+        "max-width:100%"
+    ].join(";");
+
+    const ratio = document.createElement("div");
+    ratio.style.cssText = [
+        "position:relative",
+        "width:100%",
+        "padding-bottom:56.25%",
+        "height:0",
+        "overflow:hidden",
+        "border-radius:14px",
+        "background:#000",
+        "box-shadow:0 24px 80px rgba(0,0,0,0.55)"
+    ].join(";");
+
+    const iframe = document.createElement("iframe");
+    iframe.id = VIDEO_LIGHTBOX_IFRAME_ID;
+    iframe.setAttribute("title", "YouTube video (fullscreen)");
+    iframe.setAttribute("allowfullscreen", "");
+    iframe.setAttribute(
+        "allow",
+        [
+            "accelerometer",
+            "autoplay",
+            "clipboard-write",
+            "encrypted-media",
+            "gyroscope",
+            "picture-in-picture",
+            "web-share",
+            "fullscreen",
+        ].join("; ")
+    );
+    iframe.style.cssText = [
+        "position:absolute",
+        "inset:0",
+        "width:100%",
+        "height:100%",
+        "border:0",
+        "display:block"
+    ].join(";");
+
+    ratio.appendChild(iframe);
+
+    const closeBtn = document.createElement("button");
+    closeBtn.id = VIDEO_LIGHTBOX_CLOSE_ID;
+    closeBtn.type = "button";
+    closeBtn.setAttribute("aria-label", "Close video");
+    closeBtn.textContent = "×";
+    closeBtn.style.cssText = [
+        "width:44px",
+        "height:44px",
+        "border-radius:999px",
+        "border:1px solid rgba(255,255,255,0.22)",
+        "background:rgba(15,23,42,0.55)",
+        "color:#fff",
+        "font-size:28px",
+        "line-height:1",
+        "display:grid",
+        "place-items:center",
+        "cursor:pointer",
+        "flex:0 0 auto"
+    ].join(";");
+
+    const ctr = document.createElement("div");
+    ctr.style.cssText = [
+        "display:flex",
+        "width:100%",
+        "justify-content:flex-end",
+        "marginBottom:12px",
+        "box-sizing:border-box"
+    ].join(";");
+    ctr.appendChild(closeBtn);
+    panel.appendChild(ctr);
+    panel.appendChild(ratio);
+    overlay.appendChild(panel);
+    document.body.appendChild(overlay);
+
+    overlay.addEventListener("click", (e) => {
+        e.preventDefault?.();
+        if (/** @type {Node} */ (e.target) === overlay) {
+            closeVideoLightbox();
+        }
+    });
+    closeBtn.addEventListener("click", (e) => {
+        e.preventDefault?.();
+        e.stopPropagation?.();
+        closeVideoLightbox();
+    });
+}
+
+/**
+ * Same embed URL as inline player — opens fullscreen-style overlay inside the page (not exiting chat).
+ * @param {string} embedHttpsUrl
+ */
+function openVideoLightbox(embedHttpsUrl) {
+    const src = typeof embedHttpsUrl === "string" ? embedHttpsUrl.trim() : "";
+    if (!src || !/^https:\/\/www\.youtube\.com\/embed\//i.test(src)) {
+        return;
+    }
+    ensureVideoLightboxMounted();
+    /** @type {HTMLElement | null} */
+    const overlay = document.getElementById(VIDEO_LIGHTBOX_ID);
+    /** @type {HTMLIFrameElement | null} */
+    const iframe = /** @type {HTMLIFrameElement | null} */ (document.getElementById(VIDEO_LIGHTBOX_IFRAME_ID));
+
+    /** @type {HTMLElement | null} */
+    const imageLb = document.getElementById(IMAGE_LIGHTBOX_ID);
+    try {
+        if (imageLb && imageLb.style.display === "flex") {
+            closeImageLightbox();
+        }
+    } catch {
+        /* ignore */
+    }
+
+    if (!overlay || !iframe) {
+        return;
+    }
+
+    try {
+        const embedUrl = new URL(src);
+        if (!embedUrl.searchParams.get("autoplay")) {
+            embedUrl.searchParams.set("autoplay", "1");
+        }
+        iframe.src = embedUrl.toString();
+    } catch {
+        iframe.src = src;
+    }
+    overlay.style.display = "flex";
+
+    try {
+        document.documentElement.style.overflow = "hidden";
+        document.body.style.overflow = "hidden";
+    } catch {
+        /* ignore */
+    }
+}
+
+/**
+ * Inline video wrappers are under `df-messenger` shadow DOM — `document.querySelectorAll` misses them,
+ * which broke restoring the chat iframe after closing the fullscreen panel.
+ *
+ * @returns {HTMLElement[]}
+ */
+function queryInlineVideoWrapsAwaitingLightboxRestore() {
+    /** @type {HTMLElement[]} */
+    const out = [];
+    /** @type {HTMLElement | null} */
+    const ms =
+        (typeof activeDfMessenger !== "undefined" && activeDfMessenger)
+            ? activeDfMessenger
+            : (typeof document !== "undefined" ? /** @type {HTMLElement | null} */ (document.querySelector("df-messenger"))
+                : null);
+    /** @type {Array<Document | ShadowRoot>} */
+    const roots = ms ? collectSearchRoots(ms) : (typeof document !== "undefined" ? [document] : []);
+    for (let ri = 0; ri < roots.length; ri += 1) {
+        const root = roots[ri];
+        if (!root || typeof root.querySelectorAll !== "function") {
+            continue;
+        }
+        let nodes;
+        try {
+            nodes = root.querySelectorAll(".dfchat-inline-video[data-dfc-await-restore]");
+        } catch {
+            continue;
+        }
+        nodes.forEach((node) => {
+            if (node instanceof HTMLElement) {
+                out.push(node);
+            }
+        });
+    }
+    return out;
+}
+
+function closeVideoLightbox() {
+    /** @type {HTMLIFrameElement | null} */
+    const iframe = /** @type {HTMLIFrameElement | null} */ (document.getElementById(VIDEO_LIGHTBOX_IFRAME_ID));
+    /** @type {HTMLElement | null} */
+    const overlay = document.getElementById(VIDEO_LIGHTBOX_ID);
+
+    if (iframe) {
+        iframe.removeAttribute("src");
+        try {
+            iframe.src = "";
+        } catch {
+            /* ignore */
+        }
+    }
+    if (overlay) {
+        overlay.style.display = "none";
+    }
+
+    /** Resume inline embed if the user expanded from chat (avoids two players at once). */
+    try {
+        queryInlineVideoWrapsAwaitingLightboxRestore().forEach((wrap) => {
+            const emb = wrap.dataset ? wrap.dataset.dfcYtEmbed : "";
+            const el =
+                typeof wrap.querySelector === "function" ? wrap.querySelector("iframe") : null;
+            if (emb && el instanceof HTMLIFrameElement) {
+                el.src = emb;
+            }
+            if (wrap.dataset && wrap.dataset.dfcAwaitRestore !== undefined) {
+                delete wrap.dataset.dfcAwaitRestore;
+            }
+        });
+    } catch {
+        /* ignore */
+    }
+
+    try {
+        /** Don’t unblock scroll if image lightbox is still supposed to dim the page */
+
+        /** @type {HTMLElement | null} */
+        const imageLb = document.getElementById(IMAGE_LIGHTBOX_ID);
+        if (!imageLb || imageLb.style.display !== "flex") {
+            document.documentElement.style.overflow = "";
+            document.body.style.overflow = "";
+        }
+    } catch {
+        /* ignore */
+    }
+}
+
+const DFCHAT_INLINE_GALLERY_CLASS = "dfchat-inline-gallery";
+const DFCHAT_INLINE_VIDEO_CLASS = "dfchat-inline-video";
+
+/**
+ * Locate the Messenger scroll pane so we can append a horizontally scrollable carousel.
+ * @param {HTMLElement | null | undefined} dfMessenger
+ * @returns {HTMLElement | null}
+ */
+function findMessengerMessageListRoot(dfMessenger) {
+    const ms =
+        dfMessenger
+        || (typeof activeDfMessenger !== "undefined" ? activeDfMessenger : null)
+        || (typeof document !== "undefined" ? document.querySelector("df-messenger") : null);
+    if (!ms) {
+        return null;
+    }
+    const roots = collectSearchRoots(ms);
+    for (let ri = 0; ri < roots.length; ri += 1) {
+        const root = roots[ri];
+        if (!root || typeof root.querySelector !== "function") {
+            continue;
+        }
+        /** @type {HTMLElement | null} */
+        let el =
+            root.querySelector("#message-list")
+            || root.querySelector('[data-testid="message-list"]')
+            || root.querySelector("df-message-list")
+            ;
+        try {
+            if (!el && root.getElementById) {
+                el = /** @type {HTMLElement | null} */ (root.getElementById("message-list"));
+            }
+        } catch {
+            /* ignore */
+        }
+        if (el) {
+            return el;
+        }
+    }
+    return null;
+}
+
+/**
+ * @param {Element | null | undefined} el
+ * @returns {boolean}
+ */
+function isDfchatInlineSyntheticRow(el) {
+    return !!(el
+        && el instanceof Element
+        && el.classList
+        && (el.classList.contains(DFCHAT_INLINE_GALLERY_CLASS) || el.classList.contains(DFCHAT_INLINE_VIDEO_CLASS)));
+}
+
+/**
+ * Place gallery between visible bot rows when possible:
+ * - if there are at least 2 real rows, insert before the last one
+ * - otherwise append at the end
+ *
+ * @param {HTMLElement} messageList
+ * @returns {Element | null}
+ */
+function resolveGalleryInsertBeforeByCxOrder(messageList) {
+    const realRows = Array.from(messageList.children).filter((el) => !isDfchatInlineSyntheticRow(el));
+    if (realRows.length < 2) {
+        return null;
+    }
+    return /** @type {Element} */ (realRows[realRows.length - 1]);
+}
+
+/**
+ * Append a horizontal image strip inside the chat transcript (`open_gallery`).
+ * Uses inline styles because Dialogflow Messenger lives under shadow DOM (external CSS rarely applies).
+ * @param {HTMLElement | null | undefined} dfMessenger
+ * @param {string[]} urls
+ * @param {unknown[]} [messages]
+ */
+function scheduleInjectInlineGalleryCarousel(dfMessenger, urls, messages, options, messageText) {
+    const list = Array.isArray(urls)
+        ? urls
+            .map((u) => String(u || "").trim())
+            .filter((u) => u.startsWith("https://") || u.startsWith("http://"))
+        : [];
+    if (list.length === 0) {
+        return;
+    }
+
+    // Turn-local sequence token so delayed timers from previous turns don't inject stale gallery.
+    const injectSeq = (dfchatInlineGalleryInjectSeq += 1);
+
+    let injected = false;
+    /** @type {ReturnType<typeof setTimeout>[] | undefined} */
+    let pendingTimers;
+    /** @type {HTMLElement | null} */
+    let msResolved =
+        dfMessenger
+        || (typeof activeDfMessenger !== "undefined" ? activeDfMessenger : null)
+        || (typeof document !== "undefined" ? document.querySelector("df-messenger") : null);
+
+    /** @returns {HTMLElement | null} */
+    function listRoot() {
+        return findMessengerMessageListRoot(msResolved);
+    }
+
+    /** @returns {void} */
+    function tryAppend() {
+        if (injectSeq !== dfchatInlineGalleryInjectSeq) {
+            return;
+        }
+        if (injected) {
+            return;
+        }
+        const ml = listRoot();
+        if (!ml || typeof ml.appendChild !== "function") {
+            return;
+        }
+
+        // Replace: remove any previously injected inline gallery so only the latest is visible.
+        try {
+            const children = Array.isArray(ml.children) ? Array.from(ml.children) : [];
+            for (let i = 0; i < children.length; i += 1) {
+                const el = children[i];
+                if (el && el instanceof HTMLElement && el.classList && el.classList.contains(DFCHAT_INLINE_GALLERY_CLASS)) {
+                    try {
+                        el.remove();
+                    } catch {
+                        /* ignore */
+                    }
+                }
+            }
+        } catch {
+            /* ignore */
+        }
+        dfchatLastInlineGalleryWrapEl = null;
+
+        const wrap = document.createElement("div");
+        wrap.className = DFCHAT_INLINE_GALLERY_CLASS;
+        wrap.setAttribute("data-dfchat-no-translate", "true");
+        wrap.style.cssText = [
+            "box-sizing:border-box",
+            "margin:8px 0 10px",
+            "padding:0 2px",
+            "width:100%",
+            "max-width:100%"
+        ].join(";");
+
+        const track = document.createElement("div");
+        track.className = `${DFCHAT_INLINE_GALLERY_CLASS}__track`;
+        track.style.cssText = [
+            "display:flex",
+            "flex-direction:row",
+            "flex-wrap:nowrap",
+            "gap:10px",
+            "overflow-x:auto",
+            "overflow-y:hidden",
+            "-webkit-overflow-scrolling:touch",
+            "scroll-snap-type:x mandatory",
+            "scrollbar-width:thin",
+            "padding:2px 0 8px",
+            "box-sizing:border-box",
+            "max-width:100%"
+        ].join(";");
+
+        for (let i = 0; i < list.length; i += 1) {
+            const cell = document.createElement("div");
+            cell.style.cssText = [
+                "flex:0 0 auto",
+                "scroll-snap-align:start",
+                "width:min(76vw,200px)",
+                "max-width: min(76vw,200px)",
+                "box-sizing:border-box"
+            ].join(";");
+
+            const img = document.createElement("img");
+            img.src = list[i];
+            img.alt = "";
+            img.setAttribute("draggable", "false");
+            img.loading = i < 3 ? "eager" : "lazy";
+            img.decoding = "async";
+            img.style.cssText = [
+                "display:block",
+                "width:100%",
+                "height:126px",
+                "object-fit:cover",
+                "border-radius:10px",
+                "cursor:zoom-in",
+                "background:rgba(148,163,184,0.18)",
+                "border:1px solid rgba(148,163,184,0.35)",
+                "box-sizing:border-box"
+            ].join(";");
+
+            cell.appendChild(img);
+            track.appendChild(cell);
+        }
+
+        wrap.appendChild(track);
+
+        const opts = Array.isArray(options) ? options : [];
+        const msg = typeof messageText === "string" ? messageText.trim() : "";
+        // Optional message + opt-in buttons directly below the image strip.
+        if (msg) {
+            const messageEl = document.createElement("div");
+            messageEl.textContent = msg;
+            messageEl.style.cssText = [
+                "width:100%",
+                "box-sizing:border-box",
+                "color:#000",
+                "font-size:13px",
+                "line-height:1.35",
+                "margin:6px 0 -2px",
+                "padding:0 2px"
+            ].join(";");
+            wrap.appendChild(messageEl);
+        }
+        if (opts.length > 0) {
+            const chips = document.createElement("div");
+            chips.style.cssText = [
+                "display:flex",
+                "flex-wrap:wrap",
+                "gap:8px",
+                "margin-top:10px",
+                "padding:0 2px",
+                "box-sizing:border-box",
+                "width:100%"
+            ].join(";");
+
+            const ms = msResolved || activeDfMessenger;
+            for (let oi = 0; oi < opts.length; oi += 1) {
+                const opt = opts[oi];
+                const label = String(opt && opt.label ? opt.label : "").trim();
+                const value = String(opt && opt.value ? opt.value : "").trim();
+                if (!label || !value) {
+                    continue;
+                }
+                const chip = document.createElement("button");
+                chip.type = "button";
+                chip.textContent = label;
+                chip.style.cssText = [
+                    "appearance:none",
+                    "-webkit-appearance:none",
+                    "border:1px solid rgba(148,163,184,0.48)",
+                    "border-radius:999px",
+                    "background:#fff",
+                    "color:#000",
+                    "padding:7px 12px",
+                    "font-size:13px",
+                    "line-height:1.2",
+                    "cursor:pointer",
+                    "pointer-events:auto"
+                ].join(";");
+                chip.addEventListener("click", (e) => {
+                    e.preventDefault?.();
+                    e.stopPropagation?.();
+                    if (!ms) {
+                        return;
+                    }
+                    try {
+                        removeDfchatLastInlineGalleryIfPresent();
+                        removeDfchatLastInlineVideoIfPresent();
+                    } catch {
+                        /* ignore */
+                    }
+                    sendUserTextViaDfMessenger(ms, value, true);
+                });
+                chips.appendChild(chip);
+            }
+            if (chips.childElementCount > 0) {
+                wrap.appendChild(chips);
+            }
+        }
+
+        const beforeNode = resolveGalleryInsertBeforeByCxOrder(ml);
+        if (beforeNode && beforeNode.parentNode === ml && typeof ml.insertBefore === "function") {
+            ml.insertBefore(wrap, beforeNode);
+        } else {
+            ml.appendChild(wrap);
+        }
+        dfchatLastInlineGalleryWrapEl = wrap;
+
+        injected = true;
+        try {
+            ml.scrollTop = ml.scrollHeight;
+        } catch {
+            /* ignore */
+        }
+        const host = msResolved;
+        try {
+            if (host && typeof requestAnimationFrame === "function") {
+                requestAnimationFrame(() => bindLightboxToMessengerImages(host));
+            }
+        } catch {
+            /* ignore */
+        }
+        if (Array.isArray(pendingTimers)) {
+            for (let ti = 0; ti < pendingTimers.length; ti += 1) {
+                clearTimeout(pendingTimers[ti]);
+            }
+            pendingTimers = undefined;
+        }
+    }
+
+    const delaysMs = [72, 180, 400, 800, 1600];
+
+    delaysMs.forEach((delayMs) => {
+        const tid = window.setTimeout(() => {
+            tryAppend();
+        }, delayMs);
+        if (!pendingTimers) {
+            pendingTimers = [];
+        }
+        pendingTimers.push(tid);
+    });
+
+    window.setTimeout(() => {
+        if (!injected) {
+            try {
+                openImageLightbox(list, 0, "");
+            } catch {
+                /* ignore */
+            }
+        }
+    }, 1750);
+}
+
+/**
+ * Update an existing inline gallery wrap:
+ * - rebuild thumbnails from `urls`
+ * - rebuild message + option buttons
+ * (Used when dedupe blocks reinjection, but we still want the newest gallery content.)
+ *
+ * @param {HTMLElement} wrapEl
+ * @param {string[]} urls Normalized HTTPS URLs
+ * @param {Array<{label: string, value: string}> | null | undefined} options
+ * @param {string | null | undefined} messageText
+ * @returns {void}
+ */
+function updateInlineGalleryWrapUnderTrack(wrapEl, urls, options, messageText) {
+    try {
+        const track = wrapEl.querySelector(`.${DFCHAT_INLINE_GALLERY_CLASS}__track`);
+        if (!track) {
+            return;
+        }
+
+        // Remove everything except the track, then rebuild track cells.
+        const children = Array.from(wrapEl.children);
+        for (let i = 0; i < children.length; i += 1) {
+            const ch = children[i];
+            if (ch && ch !== track) {
+                try {
+                    ch.remove();
+                } catch {
+                    /* ignore */
+                }
+            }
+        }
+        try {
+            track.innerHTML = "";
+        } catch {
+            /* ignore */
+        }
+
+        for (let i = 0; i < urls.length; i += 1) {
+            const cell = document.createElement("div");
+            cell.style.cssText = [
+                "flex:0 0 auto",
+                "scroll-snap-align:start",
+                "width:min(76vw,200px)",
+                "max-width: min(76vw,200px)",
+                "box-sizing:border-box"
+            ].join(";");
+
+            const img = document.createElement("img");
+            img.src = urls[i];
+            img.alt = "";
+            img.setAttribute("draggable", "false");
+            img.loading = i < 3 ? "eager" : "lazy";
+            img.decoding = "async";
+            img.style.cssText = [
+                "display:block",
+                "width:100%",
+                "height:126px",
+                "object-fit:cover",
+                "border-radius:10px",
+                "cursor:zoom-in",
+                "background:rgba(148,163,184,0.18)",
+                "border:1px solid rgba(148,163,184,0.35)",
+                "box-sizing:border-box"
+            ].join(";");
+
+            cell.appendChild(img);
+            track.appendChild(cell);
+        }
+
+        const opts = Array.isArray(options) ? options : [];
+        const msg = typeof messageText === "string" ? messageText.trim() : "";
+
+        if (msg) {
+            const messageEl = document.createElement("div");
+            messageEl.textContent = msg;
+            messageEl.style.cssText = [
+                "width:100%",
+                "box-sizing:border-box",
+                "color:#000",
+                "font-size:13px",
+                "line-height:1.35",
+                "margin:6px 0 -2px",
+                "padding:0 2px"
+            ].join(";");
+            wrapEl.appendChild(messageEl);
+        }
+
+        if (opts.length > 0) {
+            const chips = document.createElement("div");
+            chips.style.cssText = [
+                "display:flex",
+                "flex-wrap:wrap",
+                "gap:8px",
+                "margin-top:10px",
+                "padding:0 2px",
+                "box-sizing:border-box",
+                "width:100%"
+            ].join(";");
+
+            const ms = activeDfMessenger;
+            for (let oi = 0; oi < opts.length; oi += 1) {
+                const opt = opts[oi];
+                const label = String(opt && opt.label ? opt.label : "").trim();
+                const value = String(opt && opt.value ? opt.value : "").trim();
+                if (!label || !value) {
+                    continue;
+                }
+                const chip = document.createElement("button");
+                chip.type = "button";
+                chip.textContent = label;
+                chip.style.cssText = [
+                    "appearance:none",
+                    "-webkit-appearance:none",
+                    "border:1px solid rgba(148,163,184,0.48)",
+                    "border-radius:999px",
+                    "background:#fff",
+                    "color:#000",
+                    "padding:7px 12px",
+                    "font-size:13px",
+                    "line-height:1.2",
+                    "cursor:pointer",
+                    "pointer-events:auto"
+                ].join(";");
+                chip.addEventListener("click", (e) => {
+                    e.preventDefault?.();
+                    e.stopPropagation?.();
+                    if (!ms) {
+                        return;
+                    }
+                    try {
+                        removeDfchatLastInlineGalleryIfPresent();
+                        removeDfchatLastInlineVideoIfPresent();
+                    } catch {
+                        /* ignore */
+                    }
+                    sendUserTextViaDfMessenger(ms, value, true);
+                });
+                chips.appendChild(chip);
+            }
+
+            if (chips.childElementCount > 0) {
+                wrapEl.appendChild(chips);
+            }
+        }
+    } catch {
+        /* ignore */
+    }
+}
+
+/**
+ * When dedupe blocks reinjection, we still want the existing gallery to be moved
+ * near the latest bot rows and updated with new message/options.
+ * @param {HTMLElement | null | undefined} dfMessenger
+ * @param {Array<{label: string, value: string}> | null | undefined} options
+ * @param {string | null | undefined} messageText
+ * @returns {void}
+ */
+function scheduleEnsureExistingInlineGalleryPosition(dfMessenger, urls, options, messageText) {
+    let moved = false;
+    let msResolved =
+        dfMessenger
+        || (typeof activeDfMessenger !== "undefined" ? activeDfMessenger : null)
+        || (typeof document !== "undefined" ? document.querySelector("df-messenger") : null);
+
+    function listRoot() {
+        return findMessengerMessageListRoot(msResolved);
+    }
+
+    const delaysMs = [72, 180, 400, 800, 1600];
+    delaysMs.forEach((delayMs) => {
+        window.setTimeout(() => {
+            if (moved) {
+                return;
+            }
+            if (!dfchatLastInlineGalleryWrapEl || !dfchatLastInlineGalleryWrapEl.isConnected) {
+                return;
+            }
+            const ml = listRoot();
+            if (!ml) {
+                return;
+            }
+
+            updateInlineGalleryWrapUnderTrack(dfchatLastInlineGalleryWrapEl, urls, options, messageText);
+
+            const beforeNode = resolveGalleryInsertBeforeByCxOrder(ml);
+            if (beforeNode && beforeNode.parentNode === ml && typeof ml.insertBefore === "function") {
+                ml.insertBefore(dfchatLastInlineGalleryWrapEl, beforeNode);
+            } else if (typeof ml.appendChild === "function") {
+                ml.appendChild(dfchatLastInlineGalleryWrapEl);
+            }
+            moved = true;
+        }, delayMs);
+    });
+}
+
+/**
+ * Turn a YouTube watch / shorts / embed URL into an `https://www.youtube.com/embed/…` URL for iframes.
+ * @param {string} raw
+ * @returns {string} Empty if not a supported YouTube link.
+ */
+function normalizeYoutubeVideoEmbedUrl(raw) {
+    if (!raw || typeof raw !== "string") {
+        return "";
+    }
+    const s = raw.trim();
+    if (!s) {
+        return "";
+    }
+    try {
+        const u = new URL(s, "https://www.youtube.com");
+        const host = u.hostname.replace(/^www\./i, "").toLowerCase();
+
+        if (host === "youtu.be") {
+            const id = u.pathname.replace(/^\//, "").split(/[/?#]/)[0];
+            if (id && /^[\w-]{11}$/.test(id)) {
+                return `https://www.youtube.com/embed/${encodeURIComponent(id)}?rel=0&modestbranding=1`;
+            }
+            return "";
+        }
+
+        if (host === "youtube.com" || host === "youtube-nocookie.com" || host === "m.youtube.com") {
+            const embedM = u.pathname.match(/\/embed\/([\w-]{11})/);
+            if (embedM && embedM[1]) {
+                return `https://www.youtube.com/embed/${encodeURIComponent(embedM[1])}?rel=0&modestbranding=1`;
+            }
+            const shortsM = u.pathname.match(/\/shorts\/([\w-]{11})/);
+            if (shortsM && shortsM[1]) {
+                return `https://www.youtube.com/embed/${encodeURIComponent(shortsM[1])}?rel=0&modestbranding=1`;
+            }
+            const v = u.searchParams.get("v");
+            if (v && /^[\w-]{11}$/.test(v)) {
+                return `https://www.youtube.com/embed/${encodeURIComponent(v)}?rel=0&modestbranding=1`;
+            }
+        }
+    } catch {
+        /* ignore */
+    }
+    return "";
+}
+
+/**
+ * @param {unknown} v
+ * @returns {string}
+ */
+function unwrapPayloadStringField(v) {
+    if (v == null) {
+        return "";
+    }
+    if (typeof v === "string") {
+        return v.trim();
+    }
+    if (typeof v === "object" && v != null && typeof /** @type {{ stringValue?: string }} */ (v).stringValue === "string") {
+        return String(/** @type {{ stringValue?: string }} */ (v).stringValue).trim();
+    }
+    return String(v).trim();
+}
+
+/**
+ * @param {unknown} rawOptions
+ * @returns {Array<{label: string, value: string}>}
+ */
+function normalizeOpenVideoOptions(rawOptions) {
+    if (!Array.isArray(rawOptions) || rawOptions.length === 0) {
+        return [];
+    }
+    /** @type {Array<{label: string, value: string}>} */
+    const out = [];
+    for (let i = 0; i < rawOptions.length; i += 1) {
+        const item = rawOptions[i];
+        if (typeof item === "string") {
+            const t = item.trim();
+            if (t) {
+                out.push({ label: t, value: t });
+            }
+            continue;
+        }
+        if (!item || typeof item !== "object") {
+            continue;
+        }
+        /** @type {Record<string, unknown>} */
+        const o = /** @type {Record<string, unknown>} */ (item);
+        const label = unwrapPayloadStringField(
+            Object.prototype.hasOwnProperty.call(o, "label") ? o.label
+                : Object.prototype.hasOwnProperty.call(o, "title") ? o.title
+                    : Object.prototype.hasOwnProperty.call(o, "text") ? o.text
+                        : ""
+        );
+        const value = unwrapPayloadStringField(
+            Object.prototype.hasOwnProperty.call(o, "value") ? o.value
+                : Object.prototype.hasOwnProperty.call(o, "payload") ? o.payload
+                    : Object.prototype.hasOwnProperty.call(o, "query") ? o.query
+                        : label
+        );
+        if (!label && !value) {
+            continue;
+        }
+        out.push({
+            label: label || value,
+            value: value || label
+        });
+    }
+    return out;
+}
+
+/**
+ * @param {unknown} raw
+ * @returns {string}
+ */
+function normalizeOpenVideoMessage(raw) {
+    if (raw == null) {
+        return "";
+    }
+    // Accept plain string or common protobuf-ish { stringValue }.
+    const t = unwrapPayloadStringField(raw);
+    return typeof t === "string" ? t.trim() : "";
+}
+
+/**
+ * Inline YouTube embed in the chat transcript (`open_video`).
+ * @param {HTMLElement | null | undefined} dfMessenger
+ * @param {string} embedHttpsUrl
+ * @param {Array<{label: string, value: string}>} [options]
+ * @param {string} [messageText]
+ */
+function scheduleInjectInlineVideoPlayer(dfMessenger, embedHttpsUrl, options, messageText) {
+    const src = typeof embedHttpsUrl === "string" ? embedHttpsUrl.trim() : "";
+    if (!src || !/^https:\/\/www\.youtube\.com\/embed\//i.test(src)) {
+        return;
+    }
+
+    // Turn-local sequence token so delayed timers from previous turns don't inject stale video.
+    const injectSeq = (dfchatInlineVideoInjectSeq += 1);
+
+    let injected = false;
+    /** @type {ReturnType<typeof setTimeout>[] | undefined} */
+    let pendingTimers;
+    /** @type {HTMLElement | null} */
+    let msResolved =
+        dfMessenger
+        || (typeof activeDfMessenger !== "undefined" ? activeDfMessenger : null)
+        || (typeof document !== "undefined" ? document.querySelector("df-messenger") : null);
+
+    /** @returns {HTMLElement | null} */
+    function listRoot() {
+        return findMessengerMessageListRoot(msResolved);
+    }
+
+    /** @returns {void} */
+    function tryAppend() {
+        if (injectSeq !== dfchatInlineVideoInjectSeq) {
+            return;
+        }
+        if (injected) {
+            return;
+        }
+        const ml = listRoot();
+        if (!ml || typeof ml.appendChild !== "function") {
+            return;
+        }
+
+        // Replace: remove any previously injected inline video so only the "current" one is visible.
+        try {
+            if (ml.children && typeof ml.children.length === "number") {
+                const children = Array.from(ml.children);
+                for (let i = 0; i < children.length; i += 1) {
+                    const el = children[i];
+                    if (el && el instanceof HTMLElement && el.classList && el.classList.contains(DFCHAT_INLINE_VIDEO_CLASS)) {
+                        try {
+                            el.remove();
+                        } catch {
+                            /* ignore */
+                        }
+                    }
+                }
+            }
+        } catch {
+            /* ignore */
+        }
+        dfchatLastInlineVideoWrapEl = null;
+
+        const wrap = document.createElement("div");
+        wrap.className = DFCHAT_INLINE_VIDEO_CLASS;
+        wrap.setAttribute("data-dfchat-no-translate", "true");
+        wrap.dataset.dfcYtEmbed = src;
+        wrap.style.cssText = [
+            "box-sizing:border-box",
+            "margin:8px 0 12px",
+            "padding:0 2px",
+            "width:100%",
+            "max-width:100%"
+        ].join(";");
+
+        const actions = document.createElement("div");
+        actions.style.cssText = [
+            "display:flex",
+            "width:100%",
+            "justify-content:flex-end",
+            "align-items:center",
+            "gap:8px",
+            "marginBottom:8px",
+            "padding:0 2px",
+            "box-sizing:border-box"
+        ].join(";");
+
+        const expandBtn = document.createElement("button");
+        expandBtn.type = "button";
+        expandBtn.setAttribute("aria-label", "Fullscreen");
+        expandBtn.setAttribute("data-dfchat-video-expand-inline", "1");
+        expandBtn.textContent = "⛶";
+        expandBtn.title = "Open larger";
+        expandBtn.style.cssText = [
+            "appearance:none",
+            "-webkit-appearance:none",
+            "padding:6px 12px",
+            "border-radius:999px",
+            "border:1px solid rgba(148,163,184,0.45)",
+            "background:rgba(15,23,42,0.45)",
+            "color:rgba(248,250,252,0.95)",
+            "font-size:14px",
+            "line-height:1.15",
+            "cursor:pointer",
+            "pointer-events:auto"
+        ].join(";");
+        expandBtn.addEventListener("click", (e) => {
+            e.preventDefault?.();
+            e.stopPropagation?.();
+            e.stopImmediatePropagation?.();
+            try {
+                wrap.dataset.dfcAwaitRestore = "1";
+                iframe.removeAttribute("src");
+                iframe.setAttribute("src", "about:blank");
+                openVideoLightbox(src);
+            } catch {
+                /* ignore */
+            }
+        });
+
+        actions.appendChild(expandBtn);
+        wrap.appendChild(actions);
+
+        const ratio = document.createElement("div");
+        ratio.style.cssText = [
+            "position:relative",
+            "width:100%",
+            "max-width:100%",
+            "padding-bottom:56.25%",
+            "height:0",
+            "overflow:hidden",
+            "border-radius:12px",
+            "background:rgba(15,23,42,0.35)",
+            "border:1px solid rgba(148,163,184,0.35)"
+        ].join(";");
+
+        const iframe = document.createElement("iframe");
+        iframe.setAttribute("title", "YouTube video");
+        iframe.setAttribute("allowfullscreen", "");
+        iframe.setAttribute(
+            "allow",
+            "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen"
+        );
+        iframe.setAttribute("loading", "lazy");
+        iframe.setAttribute("referrerpolicy", "strict-origin-when-cross-origin");
+        iframe.style.cssText = [
+            "position:absolute",
+            "inset:0",
+            "width:100%",
+            "height:100%",
+            "border:0",
+            "display:block"
+        ].join(";");
+        iframe.src = src;
+
+        ratio.appendChild(iframe);
+        wrap.appendChild(ratio);
+
+        const opts = Array.isArray(options) ? options : [];
+        const msg = typeof messageText === "string" ? messageText.trim() : "";
+        if (opts.length > 0) {
+            const chips = document.createElement("div");
+            chips.style.cssText = [
+                "display:flex",
+                "flex-wrap:wrap",
+                "gap:8px",
+                "margin-top:10px",
+                "padding:0 2px",
+                "box-sizing:border-box",
+                "width:100%"
+            ].join(";");
+            for (let oi = 0; oi < opts.length; oi += 1) {
+                const opt = opts[oi];
+                const label = String(opt && opt.label ? opt.label : "").trim();
+                const value = String(opt && opt.value ? opt.value : "").trim();
+                if (!label || !value) {
+                    continue;
+                }
+                const chip = document.createElement("button");
+                chip.type = "button";
+                chip.textContent = label;
+                chip.style.cssText = [
+                    "appearance:none",
+                    "-webkit-appearance:none",
+                    "border:1px solid rgba(148,163,184,0.48)",
+                    "border-radius:999px",
+                    "background:#fff",
+                    "color:#000",
+                    "padding:7px 12px",
+                    "font-size:13px",
+                    "line-height:1.2",
+                    "cursor:pointer",
+                    "pointer-events:auto"
+                ].join(";");
+                chip.addEventListener("click", (e) => {
+                    e.preventDefault?.();
+                    e.stopPropagation?.();
+                    const ms = msResolved || activeDfMessenger;
+                    if (!ms) {
+                        return;
+                    }
+                    try {
+                        removeDfchatLastInlineGalleryIfPresent();
+                        removeDfchatLastInlineVideoIfPresent();
+                    } catch {
+                        /* ignore */
+                    }
+                    sendUserTextViaDfMessenger(ms, value, true);
+                });
+                chips.appendChild(chip);
+            }
+            // If message text exists, render it above the option buttons.
+            if (msg) {
+                const messageEl = document.createElement("div");
+                messageEl.textContent = msg;
+                messageEl.style.cssText = [
+                    "width:100%",
+                    "box-sizing:border-box",
+                    "color:#000",
+                    "font-size:13px",
+                    "line-height:1.35",
+                    "margin:6px 0 -2px",
+                    "padding:0 2px"
+                ].join(";");
+                wrap.appendChild(messageEl);
+            }
+            if (chips.childElementCount > 0) {
+                wrap.appendChild(chips);
+            }
+        } else if (msg) {
+            // If no options but message exists, still show the prompt under the video.
+            const messageEl = document.createElement("div");
+            messageEl.textContent = msg;
+            messageEl.style.cssText = [
+                "width:100%",
+                "box-sizing:border-box",
+                "color:#000",
+                "font-size:13px",
+                "line-height:1.35",
+                "margin:6px 0 -2px",
+                "padding:0 2px"
+            ].join(";");
+            wrap.appendChild(messageEl);
+        }
+
+        ml.appendChild(wrap);
+        dfchatLastInlineVideoWrapEl = wrap;
+
+        injected = true;
+        try {
+            ml.scrollTop = ml.scrollHeight;
+        } catch {
+            /* ignore */
+        }
+        if (Array.isArray(pendingTimers)) {
+            for (let ti = 0; ti < pendingTimers.length; ti += 1) {
+                clearTimeout(pendingTimers[ti]);
+            }
+            pendingTimers = undefined;
+        }
+    }
+
+    const delaysMs = [72, 180, 400, 800, 1600];
+
+    delaysMs.forEach((delayMs) => {
+        const tid = window.setTimeout(() => {
+            tryAppend();
+        }, delayMs);
+        if (!pendingTimers) {
+            pendingTimers = [];
+        }
+        pendingTimers.push(tid);
+    });
+}
+
+/**
+ * First `open_video` custom payload from merged CX fulfillment messages (`extractPayload`).
+ * Intent gate applied in callers.
+ *
+ * @param {unknown[]} messages
+ * @returns {{ embed: string, options: Array<{label: string, value: string}>, messageText: string } | null}
+ */
+function extractFirstOpenYoutubeEmbedFromCxMessages(messages) {
+    if (!Array.isArray(messages) || messages.length === 0) {
+        return null;
+    }
+    for (let vx = 0; vx < messages.length; vx += 1) {
+        const vm = messages[vx];
+        if (!messageHasFulfillmentPayload(vm)) {
+            continue;
+        }
+        /** @type {Record<string, unknown> | null} */
+        let pl = null;
+        try {
+            pl = extractPayload(/** @type {unknown} */ (vm));
+        } catch {
+            pl = null;
+        }
+        let av =
+            /** @type {Record<string, unknown> | null} */ (pl) && Object.prototype.hasOwnProperty.call(pl, "action")
+                ? /** @type {unknown} */ (/** @type {Record<string, unknown>} */ (pl).action)
+                : null;
+        if (typeof av === "object" && av != null && typeof /** @type {{ stringValue?: string }} */ (av).stringValue === "string") {
+            av = /** @type {{ stringValue?: string }} */ (av).stringValue;
+        }
+        const actionStrVid = typeof av === "string" ? av.trim().toLowerCase() : "";
+        if (!pl || actionStrVid !== "open_video") {
+            continue;
+        }
+        const rawUrl =
+            Object.prototype.hasOwnProperty.call(pl, "url")
+                ? pl.url
+                : Object.prototype.hasOwnProperty.call(pl, "video_url")
+                    ? pl.video_url
+                    : Object.prototype.hasOwnProperty.call(pl, "videoUrl")
+                        ? pl.videoUrl
+                        : null;
+        const pageUrl = unwrapPayloadStringField(rawUrl);
+        const embed = normalizeYoutubeVideoEmbedUrl(pageUrl);
+        if (embed) {
+            const rawOptions =
+                Object.prototype.hasOwnProperty.call(pl, "options") ? pl.options
+                    : Object.prototype.hasOwnProperty.call(pl, "option") ? pl.option
+                        : Object.prototype.hasOwnProperty.call(pl, "chips") ? pl.chips
+                            : null;
+            const options = normalizeOpenVideoOptions(rawOptions);
+            const rawMessage =
+                Object.prototype.hasOwnProperty.call(pl, "message") ? pl.message
+                    : Object.prototype.hasOwnProperty.call(pl, "text") ? pl.text
+                        : Object.prototype.hasOwnProperty.call(pl, "prompt") ? pl.prompt
+                            : Object.prototype.hasOwnProperty.call(pl, "subtitle") ? pl.subtitle
+                                : Object.prototype.hasOwnProperty.call(pl, "description") ? pl.description
+                                    : Object.prototype.hasOwnProperty.call(pl, "caption") ? pl.caption
+                                        : null;
+            const messageText = normalizeOpenVideoMessage(rawMessage);
+            return { embed, options, messageText };
+        }
+    }
+    return null;
+}
+
+/**
+ * Remove the last inline iframe when this turn does not ship `open_video` (or gate blocks rich media).
+ *
+ * @param {unknown[]} messages
+ * @param {Event | null | undefined} event
+ * @returns {void}
+ */
+function pruneStaleInlineVideoForCxResponse(messages, event) {
+    try {
+        const videoPayload = extractFirstOpenYoutubeEmbedFromCxMessages(messages);
+        const hasPayload = !!(videoPayload && videoPayload.embed);
+        const gateOk = passesInlineRichMediaIntentGate(event);
+        if (hasPayload && gateOk) {
+            return;
+        }
+        removeDfchatLastInlineVideoIfPresent();
+    } catch {
+        /* ignore */
+    }
+}
+
+/**
+ * `{ "action": "open_video", "url": "https://www.youtube.com/watch?v=…" }` → inline iframe in chat (YouTube only).
+ *
+ * Same merge envelope as gallery: use `mergeCxResponseEnvelopeForGallery(event)`.
+ *
+ * @param {unknown[]} messages
+ * @param {Event | null | undefined} [event]
+ */
+function tryOpenVideoFromBotResponseMessages(messages, event) {
+    try {
+        if (!Array.isArray(messages) || messages.length === 0) {
+            return;
+        }
+        if (!passesInlineRichMediaIntentGate(event)) {
+            return;
+        }
+        const videoPayload = extractFirstOpenYoutubeEmbedFromCxMessages(messages);
+        if (!videoPayload || !videoPayload.embed) {
+            return;
+        }
+        scheduleInjectInlineVideoPlayer(activeDfMessenger, videoPayload.embed, videoPayload.options, videoPayload.messageText);
+    } catch (e) {
+        if (typeof console !== "undefined" && typeof console.warn === "function") {
+            console.warn("[company.js] Video payload skipped (never breaks bot replies)", e);
+        }
+    }
+}
+
+/**
+ * Base64(JSON.stringify(url[])) — same encoding as wellness.html iframe ?p=
+ */
+function decodeDfGalleryBase64Param(pRaw) {
+    if (!pRaw || typeof pRaw !== "string") {
+        return [];
+    }
+    let s = String(pRaw).replace(/[\s\u200b\ufeff]/g, "").trim();
+    try {
+        s = decodeURIComponent(s);
+    } catch {
+        /* ignore */
+    }
+    let b64 = s.replace(/-/g, "+").replace(/_/g, "/");
+    while (b64.length % 4) {
+        b64 += "=";
+    }
+    try {
+        const jsonStr = atob(b64);
+        const j = JSON.parse(jsonStr);
+        if (!Array.isArray(j)) {
+            return [];
+        }
+        return j.map((x) => String(x).trim()).filter((u) => u.length > 0);
+    } catch {
+        return [];
+    }
+}
+
+function extractGalleryUrlsFromHtmlString(html) {
+    if (!html || typeof html !== "string") {
+        return [];
+    }
+    const out = [];
+    const seen = {};
+
+    /** iframe src=?p=… or img=… (Messenger often blocks nested iframes; we still parse URLs) */
+    const iframeMatch = /<iframe[^>]*\ssrc\s*=\s*["']([^"'>\s]+)["']/gi;
+    let m;
+    while ((m = iframeMatch.exec(html)) !== null) {
+        try {
+            const u = new URL(m[1], "https://local.invalid/");
+            const pEnc = u.searchParams.get("p");
+            if (pEnc) {
+                for (const uu of decodeDfGalleryBase64Param(pEnc)) {
+                    if (uu && !seen[uu]) {
+                        seen[uu] = 1;
+                        out.push(uu);
+                    }
+                }
+            }
+            for (const im of u.searchParams.getAll("img")) {
+                const t = String(im).trim();
+                if (t && !seen[t]) {
+                    seen[t] = 1;
+                    out.push(t);
+                }
+            }
+        } catch {
+            /* ignore */
+        }
+    }
+
+    const imgRe = /<img[^>]*\ssrc\s*=\s*["']([^"']+)["']/gi;
+    while ((m = imgRe.exec(html)) !== null) {
+        const u = String(m[1] || "").trim();
+        if (u && !seen[u]) {
+            seen[u] = 1;
+            out.push(u);
+        }
+    }
+    return out;
+}
+
+/**
+ * Dedupe URLs for `open_gallery` payloads. Explicit `open_gallery` stays the gate (no HTML scraping).
+ * @param {string[]} urls
+ * @returns {string[]}
+ */
+function normalizeOpenGalleryUrlList(urls) {
+    if (!Array.isArray(urls)) {
+        return [];
+    }
+    const out = [];
+    const seen = {};
+    for (let i = 0; i < urls.length; i += 1) {
+        const t = String(urls[i] || "").trim();
+        if (!t || seen[t]) {
+            continue;
+        }
+        if (!t.startsWith("http://") && !t.startsWith("https://")) {
+            continue;
+        }
+        seen[t] = true;
+        out.push(t);
+    }
+    return out;
+}
+
+/** @type {Set<string>} */
+let dfchatOpenGalleryUrlSetSignaturesSeen = new Set();
+
+/** Most recent `.dfchat-inline-gallery` node we appended (for stale-DOM prune on non-gallery turns). */
+/** @type {HTMLElement | null} */
+let dfchatLastInlineGalleryWrapEl = null;
+
+/** Most recent `.dfchat-inline-video` node we appended (for stale-DOM prune on non-video turns). */
+/** @type {HTMLElement | null} */
+let dfchatLastInlineVideoWrapEl = null;
+
+/** Invalidate pending inline-video append attempts between turns. */
+let dfchatInlineVideoInjectSeq = 0;
+
+/** Invalidate pending inline-gallery append attempts between turns. */
+let dfchatInlineGalleryInjectSeq = 0;
+
+function clearOpenGalleryUrlDedupeState() {
+    dfchatOpenGalleryUrlSetSignaturesSeen = new Set();
+    dfchatLastInlineGalleryWrapEl = null;
+    dfchatLastInlineVideoWrapEl = null;
+}
+
+/**
+ * Detach the last inline gallery strip if still connected (e.g. user moved to a non-gallery intent).
+ * @returns {void}
+ */
+function removeDfchatLastInlineGalleryIfPresent() {
+    const el = dfchatLastInlineGalleryWrapEl;
+    dfchatLastInlineGalleryWrapEl = null;
+    // Invalidate any older scheduled inject timers for this turn.
+    dfchatInlineGalleryInjectSeq += 1;
+    if (!el) {
+        return;
+    }
+    try {
+        if (typeof el.remove === "function") {
+            el.remove();
+        } else if (el.parentNode) {
+            el.parentNode.removeChild(el);
+        }
+    } catch {
+        /* ignore */
+    }
+    // Same URL set can show again after a non-gallery turn removed the strip; otherwise dedupe blocks forever.
+    try {
+        dfchatOpenGalleryUrlSetSignaturesSeen.clear();
+    } catch {
+        /* ignore */
+    }
+}
+
+/**
+ * Detach the last inline YouTube block when the bot reply is plain text / another intent.
+ * @returns {void}
+ */
+function removeDfchatLastInlineVideoIfPresent() {
+    const el = dfchatLastInlineVideoWrapEl;
+    dfchatLastInlineVideoWrapEl = null;
+    // Invalidate any older scheduled inject timers for this turn.
+    dfchatInlineVideoInjectSeq += 1;
+    if (!el) {
+        return;
+    }
+    try {
+        if (typeof el.remove === "function") {
+            el.remove();
+        } else if (el.parentNode) {
+            el.parentNode.removeChild(el);
+        }
+    } catch {
+        /* ignore */
+    }
+}
+
+/**
+ * Stable key for `{ open_gallery, urls: [...] }` so stale repeated payloads skip a second carousel.
+ * @param {string[]} normalizedHttpsUrls Output of `normalizeOpenGalleryUrlList`.
+ * @returns {string}
+ */
+function openGalleryUrlSetSignature(normalizedHttpsUrls) {
+    if (!normalizedHttpsUrls || normalizedHttpsUrls.length === 0) {
+        return "";
+    }
+    return normalizedHttpsUrls
+        .slice()
+        .map((u) => String(u || "").trim())
+        .sort()
+        .join("\u0001");
+}
+
+/**
+ * Honors `COMMON.features.inlineGallery.suppressRepeatedOpenGalleryUrls` (default true): same URL set twice
+ * in one session skips the duplicate (common when fulfillment echoes `open_gallery` after the first gallery intent).
+ *
+ * @param {string[]} normalizedHttpsUrls
+ * @returns {boolean}
+ */
+function shouldScheduleInlineGalleryCarouselForNormalizedUrls(normalizedHttpsUrls) {
+    const cfg = readCompanyUiConfig();
+    const common =
+        cfg && typeof cfg === "object" && /** @type {Record<string, unknown>} */ (cfg).common && typeof /** @type {Record<string, unknown>} */ (cfg).common === "object"
+            ? /** @type {Record<string, unknown>} */ (cfg).common
+            : null;
+    const feats =
+        common && typeof common.features === "object"
+            ? /** @type {Record<string, unknown>} */ (common.features)
+            : null;
+    const ig =
+        feats && typeof feats.inlineGallery === "object"
+            ? /** @type {Record<string, unknown>} */ (feats.inlineGallery)
+            : /** @type {Record<string, unknown> | null} */ (null);
+    const suppress =
+        !ig
+        || typeof ig.suppressRepeatedOpenGalleryUrls === "undefined"
+        || ig.suppressRepeatedOpenGalleryUrls !== false;
+    if (!suppress) {
+        return true;
+    }
+    const sig = openGalleryUrlSetSignature(normalizedHttpsUrls);
+    if (!sig) {
+        return false;
+    }
+    // If dedupe state survived but no inline gallery is currently mounted, reopen for this turn.
+    try {
+        const hasMountedInlineGallery =
+            !!(dfchatLastInlineGalleryWrapEl
+                && dfchatLastInlineGalleryWrapEl.isConnected);
+        if (!hasMountedInlineGallery && dfchatOpenGalleryUrlSetSignaturesSeen.size > 0) {
+            dfchatOpenGalleryUrlSetSignaturesSeen.clear();
+        }
+    } catch {
+        /* ignore */
+    }
+    if (dfchatOpenGalleryUrlSetSignaturesSeen.has(sig)) {
+        return false;
+    }
+    dfchatOpenGalleryUrlSetSignaturesSeen.add(sig);
+    return true;
+}
+
+/**
+ * First `open_gallery` custom payload from merged CX fulfillment messages (`extractPayload`).
+ * Dedupe/intent gates are applied elsewhere.
+ *
+ * @param {unknown[]} messages
+ * @returns {{ urls: string[], options: Array<{label: string, value: string}>, messageText: string } | null}
+ */
+function extractFirstOpenGalleryNormalizedUrlsFromCxMessages(messages) {
+    if (!Array.isArray(messages) || messages.length === 0) {
+        return null;
+    }
+    /** Fast path — same protobuf → JSON flattening as Contact form / language (extractPayload). */
+    for (let gx = 0; gx < messages.length; gx += 1) {
+        const cand = messages[gx];
+        if (!messageHasFulfillmentPayload(cand)) {
+            continue;
+        }
+        /** @type {Record<string, unknown> | null} */
+        let pl = null;
+        try {
+            pl = extractPayload(/** @type {unknown} */ (cand));
+        } catch {
+            pl = null;
+        }
+        const act =
+            pl && typeof /** @type {{ action?: unknown }} */ (pl).action !== "undefined"
+                ? /** @type {{ action?: unknown }} */ (pl).action
+                : null;
+        const actionStr =
+            typeof act === "string"
+                ? act.trim().toLowerCase()
+                : act != null && typeof act === "object" && typeof /** @type {{ stringValue?: string }} */ (act).stringValue === "string"
+                    ? /** @type {{ stringValue?: string }} */ (act).stringValue.trim().toLowerCase()
+                    : "";
+        if (!pl || actionStr !== "open_gallery") {
+            continue;
+        }
+        /** @type {unknown} */
+        const rawUrls = Object.prototype.hasOwnProperty.call(pl, "urls") ? pl.urls : null;
+        /** @type {string[]} */
+        const list = [];
+        if (Array.isArray(rawUrls)) {
+            for (let uidx = 0; uidx < rawUrls.length; uidx += 1) {
+                const rawU = rawUrls[uidx];
+                const s =
+                    rawU != null && typeof rawU === "object" && typeof rawU.stringValue === "string"
+                        ? rawU.stringValue
+                        : typeof rawU === "string"
+                            ? rawU
+                            : "";
+                const t = String(s).trim();
+                if (t.startsWith("http://") || t.startsWith("https://")) {
+                    list.push(t);
+                }
+            }
+        }
+        const allowed = normalizeOpenGalleryUrlList(list);
+        if (allowed.length > 0) {
+            const rawOptions =
+                Object.prototype.hasOwnProperty.call(pl, "options") ? pl.options
+                    : Object.prototype.hasOwnProperty.call(pl, "option") ? pl.option
+                        : Object.prototype.hasOwnProperty.call(pl, "chips") ? pl.chips
+                            : null;
+            const options = normalizeOpenVideoOptions(rawOptions);
+
+            const rawMessage =
+                Object.prototype.hasOwnProperty.call(pl, "message") ? pl.message
+                    : Object.prototype.hasOwnProperty.call(pl, "text") ? pl.text
+                        : Object.prototype.hasOwnProperty.call(pl, "prompt") ? pl.prompt
+                            : Object.prototype.hasOwnProperty.call(pl, "subtitle") ? pl.subtitle
+                                : Object.prototype.hasOwnProperty.call(pl, "description") ? pl.description
+                                    : Object.prototype.hasOwnProperty.call(pl, "caption") ? pl.caption
+                                        : null;
+            const messageText = normalizeOpenVideoMessage(rawMessage);
+
+            return { urls: allowed, options, messageText };
+        }
+    }
+    return null;
+}
+
+/**
+ * Drop the previous inline strip when this turn has no allowed `open_gallery` (or intent gate blocks it),
+ * so plain-text turns do not keep the last carousel visible.
+ *
+ * @param {unknown[]} messages Merged CX `responseMessages` (see `mergeCxResponseEnvelopeForGallery`).
+ * @param {Event | null | undefined} event
+ * @returns {void}
+ */
+function pruneStaleInlineGalleryForCxResponse(messages, event) {
+    try {
+        const payload = extractFirstOpenGalleryNormalizedUrlsFromCxMessages(messages);
+        const hasPayload = !!(payload && payload.urls && payload.urls.length > 0);
+        const gateOk = passesInlineRichMediaIntentGate(event);
+        if (hasPayload && gateOk) {
+            return;
+        }
+        removeDfchatLastInlineGalleryIfPresent();
+    } catch {
+        /* ignore */
+    }
+}
+
+/**
+ * Walk webhook / CX payloads for gallery data (no iframe embedding required inside Messenger).
+ *
+ * Only `{ "action": "open_gallery", "urls": ["https://…", …] }` — no richContent / HTML `<img>` fallback.
+ *
+ * @param {unknown[]} messages
+ * @param {Event | null | undefined} [event]
+ */
+function tryOpenGalleryFromBotResponseMessages(messages, event) {
+    try {
+        if (!Array.isArray(messages) || messages.length === 0) {
+            return;
+        }
+        if (!passesInlineRichMediaIntentGate(event)) {
+            return;
+        }
+        const payload = extractFirstOpenGalleryNormalizedUrlsFromCxMessages(messages);
+        if (!payload || !payload.urls || payload.urls.length === 0) {
+            return;
+        }
+        const shouldInject = shouldScheduleInlineGalleryCarouselForNormalizedUrls(payload.urls);
+        if (!shouldInject) {
+            // Dedupe blocked reinjection: still move/update existing gallery so it appears in the right place.
+            scheduleEnsureExistingInlineGalleryPosition(
+                activeDfMessenger,
+                payload.urls,
+                payload.options,
+                payload.messageText
+            );
+            return;
+        }
+
+        scheduleInjectInlineGalleryCarousel(
+            activeDfMessenger,
+            payload.urls,
+            messages,
+            payload.options,
+            payload.messageText
+        );
+    } catch (e) {
+        if (typeof console !== "undefined" && typeof console.warn === "function") {
+            console.warn("[company.js] Gallery payload skipped (never breaks bot replies)", e);
+        }
+    }
+}
+
+function attachImageLightboxClickHandler() {
+    if (window.__dfchatImageLightboxBound === true) {
+        return;
+    }
+    window.__dfchatImageLightboxBound = true;
+
+    document.addEventListener("click", (event) => {
+        const path = event && typeof event.composedPath === "function" ? event.composedPath() : [];
+        /** @type {HTMLElement | null} */
+        let img = null;
+        for (const node of path) {
+            if (node && typeof node.tagName === "string" && node.tagName.toLowerCase() === "img") {
+                img = /** @type {HTMLElement} */ (node);
+                break;
+            }
+        }
+        const t = img || (event && event.target);
+        if (!t || typeof t.tagName !== "string" || t.tagName.toLowerCase() !== "img") {
+            return;
+        }
+        // Only inside the messenger UI (works with shadow DOM retargeting).
+        const inMessenger = path.some((n) => n && typeof n.tagName === "string" && n.tagName.toLowerCase() === "df-messenger")
+            || (!!t.closest && !!t.closest("df-messenger"));
+        if (!inMessenger) {
+            return;
+        }
+        // Never open for the launcher FAB only (not expanded chat — that lives under df-messenger-chat-bubble too).
+        if (isInsideMessengerLauncherBubbleGraphic(t)) {
+            return;
+        }
+
+        // If the payload links to wellness.html or legacy image-viewer URLs, intercept and open the in-page lightbox
+        // so the chat stays open and the conversation is not reset.
+        for (const node of path) {
+            if (!node || typeof node.tagName !== "string" || node.tagName.toLowerCase() !== "a") {
+                continue;
+            }
+            const href = typeof node.getAttribute === "function" ? (node.getAttribute("href") || "") : "";
+            if (!href || !/(?:image-viewer|wellness)\.html/i.test(href)) {
+                continue;
+            }
+            try {
+                const u = new URL(href, window.location.href);
+                const imgs = u.searchParams.getAll("img").filter(Boolean);
+                const iRaw = u.searchParams.get("i");
+                const idx = iRaw != null ? Math.max(0, parseInt(iRaw, 10) || 0) : 0;
+                if (imgs.length > 0) {
+                    event.preventDefault?.();
+                    event.stopPropagation?.();
+                    event.stopImmediatePropagation?.();
+                    openImageLightbox(imgs, idx, "");
+                    return;
+                }
+            } catch {
+                /* ignore */
+            }
+        }
+
+        const src = (t.getAttribute && t.getAttribute("src")) || "";
+        if (!src) {
+            return;
+        }
+        // Skip marker images / internal assets.
+        if (src.includes("dfchat-")) {
+            return;
+        }
+        // Only open for your gallery images (prevents random UI icons).
+        if (!/storage\.googleapis\.com\/companybucket\/Images\//i.test(src)) {
+            return;
+        }
+        // Try to treat the clicked image as part of a carousel row.
+        /** @type {HTMLElement | null} */
+        let row = null;
+        for (const node of path) {
+            if (!node || typeof node.querySelectorAll !== "function") {
+                continue;
+            }
+            try {
+                const imgs = node.querySelectorAll("img");
+                if (imgs && imgs.length >= 2) {
+                    row = /** @type {HTMLElement} */ (node);
+                    break;
+                }
+            } catch {
+                /* ignore */
+            }
+        }
+        let srcs = [];
+        if (row) {
+            try {
+                srcs = Array.from(row.querySelectorAll("img"))
+                    .map((el) => (el && el.getAttribute ? el.getAttribute("src") : "") || "")
+                    .filter((u) => u && !u.includes("dfchat-"));
+            } catch {
+                srcs = [];
+            }
+        }
+        if (!srcs || srcs.length === 0) {
+            srcs = [src];
+        }
+        const idx = Math.max(0, srcs.indexOf(src));
+        event.preventDefault?.();
+        event.stopPropagation?.();
+        openImageLightbox(srcs, idx, t.getAttribute ? t.getAttribute("alt") : "");
+    }, true);
 }
 
 function isChatExpanded(dfMessenger) {
@@ -6851,6 +9243,12 @@ function attachPersonaHandlers(dfMessenger) {
         const messages = event.detail && event.detail.data && Array.isArray(event.detail.data.messages)
             ? event.detail.data.messages
             : [];
+
+        const cxResponseMessagesMerged = mergeCxResponseEnvelopeForGallery(event);
+        pruneStaleInlineGalleryForCxResponse(cxResponseMessagesMerged, event);
+        tryOpenGalleryFromBotResponseMessages(cxResponseMessagesMerged, event);
+        pruneStaleInlineVideoForCxResponse(cxResponseMessagesMerged, event);
+        tryOpenVideoFromBotResponseMessages(cxResponseMessagesMerged, event);
 
         const requestedLanguage = extractLanguageFromResponse(event);
         if (requestedLanguage) {
@@ -7983,6 +10381,11 @@ function isUsableFooterHost(host) {
 }
 
 function restartChatSession() {
+    try {
+        clearOpenGalleryUrlDedupeState();
+    } catch {
+        /* ignore */
+    }
     closeForm();
     const wasOpen = !!isChatWindowOpen || (activeDfMessenger && isChatExpanded(activeDfMessenger));
     const previousMessenger = activeDfMessenger;

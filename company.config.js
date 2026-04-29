@@ -119,6 +119,25 @@ window.COMPANY_CHAT_UI_CONFIG = {
       // (GitHub Pages, host-my-page, etc.) have no backend — turn off to avoid 404 in the Network tab.
       clientContextCapture: {
         enabled: false
+      },
+
+      /**
+       * Inline image carousel (`open_gallery`) + inline YouTube (`open_video`).
+       *
+       * - **`allowGalleryOnAnyIntent: true`** (default) — show whenever fulfillment sends payloads (recommended
+       *   with merge limited to **`queryResult.responseMessages`** only — not `detail.data.messages`).
+       * - **`allowGalleryOnAnyIntent: false`** — only when the CX intent display name matches a substring in
+       *   **`restrictToIntentDisplayNames`**. Use if the webhook incorrectly sends `open_gallery` on every turn.
+       */
+      inlineGallery: {
+        allowGalleryOnAnyIntent: true,
+        restrictToIntentDisplayNames: [],
+        /**
+         * If true (default), the same `{ "urls": […] }` set opens the carousel **once per chat tab** —
+         * later intents that repeat the identical payload will not duplicate the carousel. Fix for fulfillment
+         * echoing `open_gallery`. Cleared when the user uses **Restart**.
+         */
+        suppressRepeatedOpenGalleryUrls: true
       }
     },
     // Language + Restart pill (next to Send). All values are pixels. Tune after you set `chatLayout.side`
@@ -169,7 +188,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
     // -------------------------------------------------------------------------
     footerInputBox: {
       // Composer inset vs chat card (top right bottom left). Omit `sendButtonWrapperPx` to use Dialogflow’s default Send.
-      padding: "8px 10px 6px 10px",
+      padding: "8px 10px 30px 10px",
       // Nudge the Send icon wrapper (negative = up).
       sendOffsetYpx: -3,
       // Or omit `padding` and set all four:
