@@ -7381,6 +7381,7 @@ function openImageLightbox(srcs, index, alt) {
     ensureImageLightboxMounted();
     const overlay = document.getElementById(IMAGE_LIGHTBOX_ID);
     const img = document.getElementById(IMAGE_LIGHTBOX_IMG_ID);
+    const closeBtn = /** @type {HTMLElement | null} */ (document.getElementById(IMAGE_LIGHTBOX_CLOSE_ID));
     if (!overlay || !img) {
         return;
     }
@@ -7393,6 +7394,20 @@ function openImageLightbox(srcs, index, alt) {
     setImageLightboxIndex(imageLightboxIndex);
     img.alt = typeof alt === "string" ? alt : "";
     overlay.style.display = "flex";
+    // Align the lightbox close button with the chat titlebar close button (same screen position).
+    try {
+        if (closeBtn) {
+            const r = findChatCloseButtonRect(activeDfMessenger);
+            if (r) {
+                const topPx = Math.max(8, Math.round(r.top));
+                const rightPx = Math.max(8, Math.round(window.innerWidth - r.right));
+                closeBtn.style.top = `${topPx}px`;
+                closeBtn.style.right = `${rightPx}px`;
+            }
+        }
+    } catch {
+        /* ignore */
+    }
     try {
         document.documentElement.style.overflow = "hidden";
         document.body.style.overflow = "hidden";
