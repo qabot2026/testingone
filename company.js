@@ -1040,6 +1040,8 @@ const originalElementAttributes = new Map();
 const googleTranslationCache = new Map();
 
 const COMPANY_JS_BUILD_TAG = "20260428-08";
+/** Nudge Dialogflow chat title-bar close control inward (px). Positive moves it left in LTR. */
+const TITLEBAR_CLOSE_NUDGE_LEFT_PX = 30;
 const COMPANY_DEBUG_QUERY_FLAG = "dfchatDebug";
 let debugMountAttemptSeq = 0;
 let debugBadgeLastRenderAt = 0;
@@ -6318,6 +6320,7 @@ function replaceCloseButtonWithXGlyph(button, closeTapPx, closeFontPx) {
     if (button.dataset) {
         button.dataset.companyCloseIcon = "x";
     }
+    applyTitlebarCloseButtonNudge(button);
 }
 
 /**
@@ -6426,6 +6429,28 @@ function runTitlebarCloseXSync(dfMessenger) {
     }
 
     return changed;
+}
+
+/**
+ * Move the primary title-bar close control slightly away from the right edge (helps avoid accidental lightbox hits on some builds).
+ * @param {Element} button
+ */
+function applyTitlebarCloseButtonNudge(button) {
+    if (!button || !button.style) {
+        return;
+    }
+    const n = Number(TITLEBAR_CLOSE_NUDGE_LEFT_PX);
+    if (!Number.isFinite(n) || n === 0) {
+        return;
+    }
+    const rtl = document.documentElement && document.documentElement.getAttribute("dir") === "rtl";
+    try {
+        // Prefer transform (doesn't fight flex layout sizing as much as large margins).
+        button.style.setProperty("transform", rtl ? `translateX(${n}px)` : `translateX(-${n}px)`, "important");
+        button.style.setProperty("transform-origin", "center", "important");
+    } catch {
+        /* ignore */
+    }
 }
 
 function startCloseXWhileChatOpenMonitor(dfMessenger) {
@@ -9099,6 +9124,16 @@ function attachImageLightboxClickHandler() {
 
     document.addEventListener("click", (event) => {
         const path = event && typeof event.composedPath === "function" ? event.composedPath() : [];
+        // Closing/minimizing chat can include an <img> in composedPath — never treat that as a gallery/lightbox tap.
+        try {
+            if (didUserCloseChat(event)) {
+                closeImageLightbox();
+                closeVideoLightbox();
+                return;
+            }
+        } catch {
+            /* ignore */
+        }
         /** @type {HTMLElement | null} */
         let img = null;
         for (const node of path) {
