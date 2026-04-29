@@ -9099,15 +9099,6 @@ function attachImageLightboxClickHandler() {
 
     document.addEventListener("click", (event) => {
         const path = event && typeof event.composedPath === "function" ? event.composedPath() : [];
-        // CRITICAL: closing/collapsing the chat must never trigger the lightbox.
-        // The close control can be (or contain) an <img> in the composedPath; treat those clicks as "not an image click".
-        try {
-            if (didUserCloseChat(event)) {
-                return;
-            }
-        } catch {
-            /* ignore */
-        }
         /** @type {HTMLElement | null} */
         let img = null;
         for (const node of path) {
