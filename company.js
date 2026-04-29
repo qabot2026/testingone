@@ -7820,6 +7820,48 @@ const DFCHAT_INLINE_GALLERY_CLASS = "dfchat-inline-gallery";
 const DFCHAT_INLINE_VIDEO_CLASS = "dfchat-inline-video";
 
 /**
+ * Remove ALL injected inline galleries across messenger roots.
+ * (The message-list shadow root can remount; removing only from the "current" list can miss older nodes.)
+ * @param {HTMLElement | null | undefined} dfMessenger
+ */
+function removeAllDfchatInlineGalleries(dfMessenger) {
+    const ms =
+        dfMessenger
+        || (typeof activeDfMessenger !== "undefined" ? activeDfMessenger : null)
+        || (typeof document !== "undefined" ? document.querySelector("df-messenger") : null);
+    /** @type {Array<Document | ShadowRoot | HTMLElement>} */
+    const roots = ms ? collectSearchRoots(ms) : [];
+    if (typeof document !== "undefined") {
+        roots.push(document);
+    }
+    for (const root of roots) {
+        if (!root || typeof root.querySelectorAll !== "function") {
+            continue;
+        }
+        let nodes = [];
+        try {
+            nodes = Array.from(root.querySelectorAll(`.${DFCHAT_INLINE_GALLERY_CLASS}`));
+        } catch {
+            nodes = [];
+        }
+        for (const el of nodes) {
+            try {
+                el.remove?.();
+            } catch {
+                try {
+                    if (el && el.parentNode) {
+                        el.parentNode.removeChild(el);
+                    }
+                } catch {
+                    /* ignore */
+                }
+            }
+        }
+    }
+    dfchatLastInlineGalleryWrapEl = null;
+}
+
+/**
  * Locate the Messenger scroll pane so we can append a horizontally scrollable carousel.
  * @param {HTMLElement | null | undefined} dfMessenger
  * @returns {HTMLElement | null}
@@ -7933,22 +7975,7 @@ function scheduleInjectInlineGalleryCarousel(dfMessenger, urls, messages, option
         }
 
         // Replace: remove any previously injected inline gallery so only the latest is visible.
-        try {
-            const children = Array.isArray(ml.children) ? Array.from(ml.children) : [];
-            for (let i = 0; i < children.length; i += 1) {
-                const el = children[i];
-                if (el && el instanceof HTMLElement && el.classList && el.classList.contains(DFCHAT_INLINE_GALLERY_CLASS)) {
-                    try {
-                        el.remove();
-                    } catch {
-                        /* ignore */
-                    }
-                }
-            }
-        } catch {
-            /* ignore */
-        }
-        dfchatLastInlineGalleryWrapEl = null;
+        removeAllDfchatInlineGalleries(msResolved);
 
         const wrap = document.createElement("div");
         wrap.className = DFCHAT_INLINE_GALLERY_CLASS;
@@ -8973,22 +9000,10 @@ function clearOpenGalleryUrlDedupeState() {
  * @returns {void}
  */
 function removeDfchatLastInlineGalleryIfPresent() {
-    const el = dfchatLastInlineGalleryWrapEl;
-    dfchatLastInlineGalleryWrapEl = null;
     // Invalidate any older scheduled inject timers for this turn.
     dfchatInlineGalleryInjectSeq += 1;
-    if (!el) {
-        return;
-    }
-    try {
-        if (typeof el.remove === "function") {
-            el.remove();
-        } else if (el.parentNode) {
-            el.parentNode.removeChild(el);
-        }
-    } catch {
-        /* ignore */
-    }
+    // Remove ALL connected galleries (shadow roots can remount; "last" pointer can go stale).
+    removeAllDfchatInlineGalleries(activeDfMessenger);
     // Same URL set can show again after a non-gallery turn removed the strip; otherwise dedupe blocks forever.
     try {
         dfchatOpenGalleryUrlSetSignaturesSeen.clear();
