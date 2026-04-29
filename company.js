@@ -6413,19 +6413,12 @@ function runTitlebarCloseXSync(dfMessenger) {
     let changed = false;
 
     if (headerHost) {
-        // Mobile can render multiple header controls. Only force the SINGLE right-most dismiss button to ×
-        // so we don't create multiple "×" buttons (which makes close feel broken).
-        const candidates = getHeaderTitlebarCloseButtonCandidates(headerHost);
-        const primary = candidates && candidates.length ? candidates[0] : null;
-        if (primary) {
-            replaceCloseButtonWithXGlyph(primary, closeTapPx, closeFontPx);
+        for (const b of getHeaderTitlebarCloseButtonCandidates(headerHost)) {
+            replaceCloseButtonWithXGlyph(b, closeTapPx, closeFontPx);
             changed = true;
         }
         const sub = headerHost.querySelectorAll("button, [role='button'], df-icon-button");
         for (const button of sub) {
-            if (primary && button !== primary) {
-                continue;
-            }
             if (tryApplyCloseXInHeaderContext(button, headerHost, closeTapPx, closeFontPx)) {
                 changed = true;
             }
@@ -6961,6 +6954,17 @@ function initializeChatStateSync(dfMessenger) {
         clearFooterScrollParentListeners();
         releaseHostPageScrollLockForOpenChat();
         stopCloseXWhileChatOpenMonitor();
+        // When chat closes, also dismiss any open media overlays so nothing is left on-screen.
+        try {
+            closeVideoLightbox();
+        } catch {
+            /* ignore */
+        }
+        try {
+            closeImageLightbox();
+        } catch {
+            /* ignore */
+        }
         // When the panel closes, dismiss any open (or scheduled) inline form (contact / appointment / upload) so it
         // does not float without the chat. Restart also clears the form (see restartChatSession).
         window.setTimeout(() => {
@@ -6983,6 +6987,17 @@ function initializeChatStateSync(dfMessenger) {
             resetBubbleUnreadBadge();
         }
         if (!isChatWindowOpen) {
+            // Keep chat close in sync with any open overlays.
+            try {
+                closeVideoLightbox();
+            } catch {
+                /* ignore */
+            }
+            try {
+                closeImageLightbox();
+            } catch {
+                /* ignore */
+            }
             window.setTimeout(() => {
                 closeForm();
             }, 0);
@@ -7285,7 +7300,7 @@ function ensureImageLightboxMounted() {
     closeBtn.textContent = "×";
     closeBtn.style.cssText = [
         "position:absolute",
-        "top:44px",
+        "top:14px",
         "right:14px",
         "width:44px",
         "height:44px",
@@ -7388,7 +7403,6 @@ function openImageLightbox(srcs, index, alt) {
     ensureImageLightboxMounted();
     const overlay = document.getElementById(IMAGE_LIGHTBOX_ID);
     const img = document.getElementById(IMAGE_LIGHTBOX_IMG_ID);
-    const closeBtn = /** @type {HTMLElement | null} */ (document.getElementById(IMAGE_LIGHTBOX_CLOSE_ID));
     if (!overlay || !img) {
         return;
     }
@@ -7401,30 +7415,6 @@ function openImageLightbox(srcs, index, alt) {
     setImageLightboxIndex(imageLightboxIndex);
     img.alt = typeof alt === "string" ? alt : "";
     overlay.style.display = "flex";
-    // Align the lightbox close button with the chat titlebar close button (same screen position).
-    try {
-        if (closeBtn) {
-            const baseTopPx = 14 + (typeof getEnvSafeAreaInsetTopPx === "function" ? getEnvSafeAreaInsetTopPx() : 0);
-            const baseRightPx = 14;
-            let topPx = baseTopPx;
-            let rightPx = baseRightPx;
-            const r = findChatCloseButtonRect(activeDfMessenger);
-            // If detection picks the wrong button (often lower on mobile), fall back to top-right.
-            if (r && Number.isFinite(r.top) && Number.isFinite(r.right)) {
-                const detectedTop = Math.round(r.top);
-                const detectedRightInset = Math.round(window.innerWidth - r.right);
-                const looksLikeTopRight = detectedTop >= 0 && detectedTop <= (baseTopPx + 30) && detectedRightInset >= 0 && detectedRightInset <= 40;
-                if (looksLikeTopRight) {
-                    topPx = Math.max(8, detectedTop);
-                    rightPx = Math.max(8, detectedRightInset);
-                }
-            }
-            closeBtn.style.top = `${topPx}px`;
-            closeBtn.style.right = `${rightPx}px`;
-        }
-    } catch {
-        /* ignore */
-    }
     try {
         document.documentElement.style.overflow = "hidden";
         document.body.style.overflow = "hidden";
