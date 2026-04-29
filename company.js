@@ -9131,6 +9131,16 @@ function attachImageLightboxClickHandler() {
 
     document.addEventListener("click", (event) => {
         const path = event && typeof event.composedPath === "function" ? event.composedPath() : [];
+        // If this click is intended to close/collapse/minimize the chat, do not treat it as an image click.
+        // (The close icon in df-messenger titlebar can be/contain an <img> in the composedPath, which would
+        // otherwise open the lightbox with no meaningful image.)
+        try {
+            if (didUserCloseChat(event)) {
+                return;
+            }
+        } catch {
+            /* ignore */
+        }
         /** @type {HTMLElement | null} */
         let img = null;
         for (const node of path) {
