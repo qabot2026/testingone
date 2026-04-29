@@ -1040,8 +1040,6 @@ const originalElementAttributes = new Map();
 const googleTranslationCache = new Map();
 
 const COMPANY_JS_BUILD_TAG = "20260428-08";
-/** Nudge Dialogflow chat title-bar close control inward (px). Positive moves it left in LTR. */
-const TITLEBAR_CLOSE_NUDGE_LEFT_PX = 30;
 const COMPANY_DEBUG_QUERY_FLAG = "dfchatDebug";
 let debugMountAttemptSeq = 0;
 let debugBadgeLastRenderAt = 0;
@@ -1779,6 +1777,9 @@ function runCompanyDomReadyInit() {
     if (!IS_MULTI_LANGUAGE_ENABLED) {
         activeLanguage = DEFAULT_LANGUAGE;
     }
+    window.addEventListener("resize", () => {
+        syncMobileLightboxParkStateFromChat();
+    }, { passive: true });
     attachImageLightboxClickHandler();
     ensureComposerHeaderCollapseBehavior();
     // Mount chat before the inline form and other UI — if form init throws, the bubble should still show.
@@ -6415,20 +6416,9 @@ function runTitlebarCloseXSync(dfMessenger) {
     let changed = false;
 
     if (headerHost) {
-        const candidates = getHeaderTitlebarCloseButtonCandidates(headerHost);
-        for (const b of candidates) {
+        for (const b of getHeaderTitlebarCloseButtonCandidates(headerHost)) {
             replaceCloseButtonWithXGlyph(b, closeTapPx, closeFontPx);
             changed = true;
-        }
-        // Move only the primary dismiss control (sorted rightmost in LTR) inward — not every header chrome button.
-        try {
-            const primary = candidates.length > 0 ? candidates[0] : null;
-            if (primary) {
-                applyTitlebarCloseButtonNudge(primary);
-                changed = true;
-            }
-        } catch {
-            /* ignore */
         }
         const sub = headerHost.querySelectorAll("button, [role='button'], df-icon-button");
         for (const button of sub) {
@@ -6439,28 +6429,6 @@ function runTitlebarCloseXSync(dfMessenger) {
     }
 
     return changed;
-}
-
-/**
- * Move the primary title-bar close control slightly away from the right edge (helps avoid accidental lightbox hits on some builds).
- * @param {Element} button
- */
-function applyTitlebarCloseButtonNudge(button) {
-    if (!button || !button.style) {
-        return;
-    }
-    const n = Number(TITLEBAR_CLOSE_NUDGE_LEFT_PX);
-    if (!Number.isFinite(n) || n === 0) {
-        return;
-    }
-    const rtl = document.documentElement && document.documentElement.getAttribute("dir") === "rtl";
-    try {
-        // Prefer transform (doesn't fight flex layout sizing as much as large margins).
-        button.style.setProperty("transform", rtl ? `translateX(${n}px)` : `translateX(-${n}px)`, "important");
-        button.style.setProperty("transform-origin", "center", "important");
-    } catch {
-        /* ignore */
-    }
 }
 
 function startCloseXWhileChatOpenMonitor(dfMessenger) {
@@ -6982,6 +6950,7 @@ function initializeChatStateSync(dfMessenger) {
                 startMobileFooterChromeLayoutLoop();
                 applyHostPageScrollLockForOpenChat();
             }
+            syncMobileLightboxParkStateFromChat();
             return;
         }
 
@@ -6994,10 +6963,12 @@ function initializeChatStateSync(dfMessenger) {
         window.setTimeout(() => {
             closeForm();
         }, 0);
+        syncMobileLightboxParkStateFromChat();
     });
 
     document.addEventListener("click", (event) => {
         if (didUserCloseChat(event)) {
+            suppressDfchatLightboxAfterChatDismiss();
             window.setTimeout(() => {
                 closeForm();
             }, 0);
@@ -7028,6 +6999,7 @@ function initializeChatStateSync(dfMessenger) {
             releaseHostPageScrollLockForOpenChat();
         }
         scheduleSyncChatActionBarPosition();
+        syncMobileLightboxParkStateFromChat();
     });
 
     observer.observe(dfMessenger, {
@@ -7062,12 +7034,58 @@ function didUserCloseChat(event) {
 
         const ariaLabel = (node.getAttribute("aria-label") || "").toLowerCase();
         const dataTestId = (node.getAttribute("data-testid") || "").toLowerCase();
-        const textContent = typeof node.textContent === "string" ? node.textContent.toLowerCase() : "";
+        // Never scan full subtree textContent on large hosts (e.g. df-messenger) — it contains all messages
+        // and matches "close" inside words like "closest", or any reply mentioning "close".
+        if (/\b(close|collapse|minimize)\b/i.test(ariaLabel) || /\b(close|collapse|minimize)\b/i.test(dataTestId)) {
+            return true;
+        }
 
-        return /close|collapse|minimize/.test(ariaLabel)
-            || /close|collapse|minimize/.test(dataTestId)
-            || /close|collapse|minimize/.test(textContent);
+        const tag = typeof node.tagName === "string" ? node.tagName.toLowerCase() : "";
+        const isSmallControl = tag === "button" || tag === "df-icon-button" || tag === "svg" || tag === "path";
+        if (isSmallControl && typeof node.textContent === "string") {
+            const trimmed = node.textContent.replace(/\s+/g, " ").trim().toLowerCase();
+            if (trimmed.length > 0 && trimmed.length <= 48) {
+                if (/\b(close|collapse|minimize)\b/.test(trimmed)) {
+                    return true;
+                }
+                if (trimmed === "×" || trimmed === "✕") {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     });
+}
+
+/** True when the click path includes the real title/header strip (collapse/×). Omit broad tags (e.g. chat-header) that can wrap chips/carousels. */
+function isClickInMessengerChatTitlebar(eventPath) {
+    if (!Array.isArray(eventPath)) {
+        return false;
+    }
+    for (const node of eventPath) {
+        if (!node || typeof node.tagName !== "string") {
+            continue;
+        }
+        const tag = node.tagName.toLowerCase();
+        if (
+            tag === "df-messenger-header"
+            || tag === "df-messenger-header-controls"
+            || tag === "df-messenger-titlebar"
+        ) {
+            return true;
+        }
+        try {
+            if (typeof node.getAttribute === "function") {
+                if (node.getAttribute("data-dfchat-native-close-override") === "1") {
+                    return true;
+                }
+            }
+        } catch {
+            /* ignore */
+        }
+    }
+    return false;
 }
 
 // ---------------------------------------------------------------------------
@@ -7084,6 +7102,67 @@ const VIDEO_LIGHTBOX_ID = "dfchat-video-lightbox";
 const VIDEO_LIGHTBOX_PANEL_ID = "dfchat-video-lightbox-panel";
 const VIDEO_LIGHTBOX_IFRAME_ID = "dfchat-video-lightbox-iframe";
 const VIDEO_LIGHTBOX_CLOSE_ID = "dfchat-video-lightbox-close";
+
+/** Block stray lightbox/chrome after dismiss; works on desktop + mobile. */
+const DFCHAT_LIGHTBOX_SUPPRESS_AFTER_CLOSE_MS = 1500;
+let dfchatLightboxSuppressUntilMs = 0;
+
+function ensureMobileLightboxParkStyle() {
+    if (!document.head && !document.documentElement) {
+        return;
+    }
+    if (document.getElementById("dfchat-mobile-lb-park-style")) {
+        return;
+    }
+    const tag = document.createElement("style");
+    tag.id = "dfchat-mobile-lb-park-style";
+    tag.textContent = `
+html.dfchat-mobile-lb-off #${IMAGE_LIGHTBOX_ID},
+html.dfchat-mobile-lb-off #${VIDEO_LIGHTBOX_ID} {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+`.trim();
+    (document.head || document.documentElement).appendChild(tag);
+}
+
+function suppressDfchatLightboxAfterChatDismiss() {
+    ensureMobileLightboxParkStyle();
+    try {
+        document.documentElement.classList.add("dfchat-mobile-lb-off");
+    } catch {
+        /* ignore */
+    }
+    try {
+        closeImageLightbox();
+        closeVideoLightbox();
+    } catch {
+        /* ignore */
+    }
+    dfchatLightboxSuppressUntilMs = Date.now() + DFCHAT_LIGHTBOX_SUPPRESS_AFTER_CLOSE_MS;
+}
+
+function dfchatLightboxShouldStayClosed() {
+    // Only block opens briefly after a dismiss (close chat / park). Do not gate on isChatExpanded here —
+    // that flag can desync and block carousel/gallery opens while the panel is visually open.
+    return Date.now() < dfchatLightboxSuppressUntilMs;
+}
+
+function syncMobileLightboxParkStateFromChat() {
+    ensureMobileLightboxParkStyle();
+    const ms = activeDfMessenger || document.querySelector("df-messenger");
+    const expanded = ms && isChatExpanded(ms);
+    if (expanded) {
+        try {
+            document.documentElement.classList.remove("dfchat-mobile-lb-off");
+        } catch {
+            /* ignore */
+        }
+        return;
+    }
+    suppressDfchatLightboxAfterChatDismiss();
+}
 
 /** @type {string[]} */
 let imageLightboxSrcs = [];
@@ -7218,6 +7297,18 @@ function bindLightboxToMessengerImages(dfMessenger) {
             img.dataset.dfchatLightboxBound = "1";
             img.style.cursor = "zoom-in";
             img.addEventListener("click", (e) => {
+                const ep = typeof e.composedPath === "function" ? e.composedPath() : [];
+                try {
+                    if (didUserCloseChat(e) || isClickInMessengerChatTitlebar(ep)) {
+                        suppressDfchatLightboxAfterChatDismiss();
+                        return;
+                    }
+                } catch {
+                    /* ignore */
+                }
+                if (dfchatLightboxShouldStayClosed()) {
+                    return;
+                }
                 e.preventDefault?.();
                 e.stopPropagation?.();
                 // Safety: never open for launcher FAB / chrome even if bound somehow.
@@ -7413,6 +7504,15 @@ function ensureImageLightboxMounted() {
 }
 
 function openImageLightbox(srcs, index, alt) {
+    ensureMobileLightboxParkStyle();
+    if (dfchatLightboxShouldStayClosed()) {
+        return;
+    }
+    try {
+        document.documentElement.classList.remove("dfchat-mobile-lb-off");
+    } catch {
+        /* ignore */
+    }
     ensureImageLightboxMounted();
     const overlay = document.getElementById(IMAGE_LIGHTBOX_ID);
     const img = document.getElementById(IMAGE_LIGHTBOX_IMG_ID);
@@ -7581,6 +7681,15 @@ function openVideoLightbox(embedHttpsUrl) {
     const src = typeof embedHttpsUrl === "string" ? embedHttpsUrl.trim() : "";
     if (!src || !/^https:\/\/www\.youtube\.com\/embed\//i.test(src)) {
         return;
+    }
+    ensureMobileLightboxParkStyle();
+    if (dfchatLightboxShouldStayClosed()) {
+        return;
+    }
+    try {
+        document.documentElement.classList.remove("dfchat-mobile-lb-off");
+    } catch {
+        /* ignore */
     }
     ensureVideoLightboxMounted();
     /** @type {HTMLElement | null} */
@@ -9134,11 +9243,11 @@ function attachImageLightboxClickHandler() {
 
     document.addEventListener("click", (event) => {
         const path = event && typeof event.composedPath === "function" ? event.composedPath() : [];
-        // Closing/minimizing chat can include an <img> in composedPath — never treat that as a gallery/lightbox tap.
+        ensureMobileLightboxParkStyle();
         try {
-            if (didUserCloseChat(event)) {
-                closeImageLightbox();
-                closeVideoLightbox();
+            // Dismiss our overlays only — never block the native collapse/close handler on df-messenger.
+            if (didUserCloseChat(event) || isClickInMessengerChatTitlebar(path)) {
+                suppressDfchatLightboxAfterChatDismiss();
                 return;
             }
         } catch {
@@ -9202,11 +9311,7 @@ function attachImageLightboxClickHandler() {
         if (src.includes("dfchat-")) {
             return;
         }
-        // Only open for your gallery images (prevents random UI icons).
-        if (!/storage\.googleapis\.com\/companybucket\/Images\//i.test(src)) {
-            return;
-        }
-        // Try to treat the clicked image as part of a carousel row.
+        // Try to treat the clicked image as part of a carousel row (detect before URL allowlist).
         /** @type {HTMLElement | null} */
         let row = null;
         for (const node of path) {
@@ -9235,6 +9340,11 @@ function attachImageLightboxClickHandler() {
         }
         if (!srcs || srcs.length === 0) {
             srcs = [src];
+        }
+        const fromCarouselRow = !!(row && srcs.length >= 2);
+        const fromApprovedBucket = /storage\.googleapis\.com\/companybucket\/Images\//i.test(src);
+        if (!fromCarouselRow && !fromApprovedBucket) {
+            return;
         }
         const idx = Math.max(0, srcs.indexOf(src));
         event.preventDefault?.();
