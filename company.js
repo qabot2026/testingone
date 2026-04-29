@@ -6320,7 +6320,6 @@ function replaceCloseButtonWithXGlyph(button, closeTapPx, closeFontPx) {
     if (button.dataset) {
         button.dataset.companyCloseIcon = "x";
     }
-    applyTitlebarCloseButtonNudge(button);
 }
 
 /**
@@ -6416,9 +6415,20 @@ function runTitlebarCloseXSync(dfMessenger) {
     let changed = false;
 
     if (headerHost) {
-        for (const b of getHeaderTitlebarCloseButtonCandidates(headerHost)) {
+        const candidates = getHeaderTitlebarCloseButtonCandidates(headerHost);
+        for (const b of candidates) {
             replaceCloseButtonWithXGlyph(b, closeTapPx, closeFontPx);
             changed = true;
+        }
+        // Move only the primary dismiss control (sorted rightmost in LTR) inward — not every header chrome button.
+        try {
+            const primary = candidates.length > 0 ? candidates[0] : null;
+            if (primary) {
+                applyTitlebarCloseButtonNudge(primary);
+                changed = true;
+            }
+        } catch {
+            /* ignore */
         }
         const sub = headerHost.querySelectorAll("button, [role='button'], df-icon-button");
         for (const button of sub) {
