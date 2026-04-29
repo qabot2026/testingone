@@ -93,7 +93,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
       // - Changing language = same conversation language + chat UI (not the host page), unless
       //   you set `autoTranslateHostPage: true` to also Google-translate the rest of the page.
       multiLanguage: {
-        enabled: false,
+        enabled: true,
         defaultLanguage: "en",
         autoTranslateHostPage: false
         // Composer hint (`placeholder-text`). Keys = same `code` values as below. Optional: add `inputPlaceholder` on each language row to override only that row.
@@ -111,7 +111,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
 
       // Restart button in footer.
       restartChat: {
-        enabled: false,
+        enabled: true,
         label: "Restart"
       },
 
@@ -559,7 +559,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
   // =========================
   desk: {
     // One switch: show floating bubble + chat window (false = hidden on desktop only)
-    showChatbot: true,
+    showChatbot: false,
 
     chatWindow: {
       widthPx: 400,
