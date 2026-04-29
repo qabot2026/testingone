@@ -6413,12 +6413,19 @@ function runTitlebarCloseXSync(dfMessenger) {
     let changed = false;
 
     if (headerHost) {
-        for (const b of getHeaderTitlebarCloseButtonCandidates(headerHost)) {
-            replaceCloseButtonWithXGlyph(b, closeTapPx, closeFontPx);
+        // Mobile can render multiple header controls. Only force the SINGLE right-most dismiss button to ×
+        // so we don't create multiple "×" buttons (which makes close feel broken).
+        const candidates = getHeaderTitlebarCloseButtonCandidates(headerHost);
+        const primary = candidates && candidates.length ? candidates[0] : null;
+        if (primary) {
+            replaceCloseButtonWithXGlyph(primary, closeTapPx, closeFontPx);
             changed = true;
         }
         const sub = headerHost.querySelectorAll("button, [role='button'], df-icon-button");
         for (const button of sub) {
+            if (primary && button !== primary) {
+                continue;
+            }
             if (tryApplyCloseXInHeaderContext(button, headerHost, closeTapPx, closeFontPx)) {
                 changed = true;
             }
