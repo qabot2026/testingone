@@ -7442,14 +7442,17 @@ function removeAnyOpenDfchatLightboxesFromDom() {
     } catch {
         /* ignore */
     }
-    // Hard-remove nodes so no orphaned close buttons remain after chat minimize on mobile.
+    // Do NOT remove nodes from DOM (can race with open/bind on mobile Safari).
+    // Closing them (display:none + clearing src) is enough to prevent orphaned × controls.
     try {
-        [IMAGE_LIGHTBOX_ID, VIDEO_LIGHTBOX_ID].forEach((id) => {
-            const el = document.getElementById(id);
-            if (el && el.parentNode) {
-                el.parentNode.removeChild(el);
-            }
-        });
+        const imgLb = document.getElementById(IMAGE_LIGHTBOX_ID);
+        if (imgLb) {
+            imgLb.style.display = "none";
+        }
+        const vidLb = document.getElementById(VIDEO_LIGHTBOX_ID);
+        if (vidLb) {
+            vidLb.style.display = "none";
+        }
     } catch {
         /* ignore */
     }
