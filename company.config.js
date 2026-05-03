@@ -650,6 +650,12 @@ window.COMPANY_CHAT_UI_CONFIG = {
       delayMs: 5000
     },
 
+    // Composer microphone: speech-to-text in the Dialogflow textarea (Chrome/Edge/Safari; needs https or localhost).
+    // Separate from mob — tune per device without affecting the other.
+    speechToText: {
+      enabled: true
+    },
+
     launcherStrip: {
       // “Hi” strip: same edge as the bubble ( here = bottom-right )
       enabled: true,
@@ -722,6 +728,10 @@ window.COMPANY_CHAT_UI_CONFIG = {
     autoOpenChat: {
       enabled: true,
       delayMs: 5000
+    },
+
+    speechToText: {
+      enabled: true
     },
 
     launcherStrip: {

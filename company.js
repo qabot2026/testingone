@@ -95,6 +95,9 @@ const FOOTER_INPUT_BOX_CONFIG = COMMON_CONFIG.footerInputBox && typeof COMMON_CO
     ? COMMON_CONFIG.footerInputBox
     : {};
 const FOOTER_INPUT_BOX_STYLE_ID = "dfchat-footer-input-box-overrides";
+const COMPOSER_SPEECH_MIC_STYLE_ID = "dfchat-composer-speech-mic-style";
+const COMPOSER_SPEECH_WRAP_CLASS = "dfchat-composer-speech-wrap";
+const COMPOSER_SPEECH_BTN_SELECTOR = "[data-dfchat-composer-speech-mic=\"true\"]";
 /** Keeps the closed launcher `.bubble` circular when Dialogflow rebuilds shadow DOM. */
 const CHAT_BUBBLE_LAUNCHER_STYLE_ID = "dfchat-chat-bubble-launcher-circle";
 const CHAT_BUBBLE_UNREAD_BADGE_ID = "dfchat-bubble-unread-badge";
@@ -2086,6 +2089,8 @@ function createAndMountMessenger() {
     ensurePoweredByStrip();
     scheduleUserInputVerticalNudge(df);
     scheduleFooterInputBoxShadowOverrides(df);
+    ensureComposerSpeechMicResizeObserver();
+    scheduleComposerSpeechMicAttach(df);
     scheduleChatMessageListScrollbarReapply(df);
     // Message list shadow often mounts *after* df-messenger-loaded / first reapplies; re-inject pane radius when panel opens and on short delays (MO on df-messenger may not see inner shadow mutations).
     window.addEventListener("df-chat-open-changed", () => {
@@ -2093,10 +2098,12 @@ function createAndMountMessenger() {
             return;
         }
         scheduleChatMessageListScrollbarReapply(df);
+        scheduleComposerSpeechMicAttach(df);
         [50, 200, 500, 1200].forEach((ms) => {
             window.setTimeout(() => {
                 if (activeDfMessenger === df) {
                     scheduleChatMessageListScrollbarReapply(df);
+                    scheduleComposerSpeechMicAttach(df);
                 }
             }, ms);
         });
@@ -3778,9 +3785,284 @@ function syncLauncherInputStripI18n() {
     }
 }
 
+/** Dedupes overlapping `df-user-input-entered` + `df-request-sent` triggers for typed “restart”. */
+let restartFromUserPhraseTimerId = null;
+
+function extractDfUserInputEnteredText(event) {
+    try {
+        const d = event && event.detail;
+        if (!d) {
+            return "";
+        }
+        if (typeof d.input === "string") {
+            return d.input;
+        }
+        if (typeof d.message === "string") {
+            return d.message;
+        }
+        const data = d.data && typeof d.data === "object" ? d.data : null;
+        if (data && typeof data.input === "string") {
+            return data.input;
+        }
+        if (data && data.queryInput && typeof data.queryInput.text === "object"
+            && typeof data.queryInput.text.text === "string") {
+            return data.queryInput.text.text;
+        }
+    } catch {
+        /* ignore */
+    }
+    return "";
+}
+
+/** Normalizes a single-turn “command-style” phrase (restart, language name, …). */
+function normalizeWholeMessageIntentPhrase(raw) {
+    let s = String(raw || "")
+        .trim()
+        .toLowerCase()
+        .replace(/^[`'"“”‘’«»\s()[\]{}]+/g, "")
+        .replace(/[`'"“”‘’«»\s.!?,;:)+]+$/g, "")
+        .trim();
+    s = s.replace(/\s+/g, " ").trim();
+    return s.replace(/-/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function stripTrailingCourtesyWholeMessage(raw) {
+    let s = String(raw || "").trim();
+    if (!s) {
+        return s;
+    }
+    s = s.replace(/\s*,\s*(please|pls|thanks|thank you)\s*[!?.]*\s*$/i, "").trim();
+    s = s.replace(/\s+(please|pls|thanks|thank you)\s*[!?.]*\s*$/i, "").trim();
+    return s;
+}
+
+/** Cached: normalized spoken phrase → `enabledLanguages` code (normalized). Built from codes, labels, `nativeLabel`, autonyms. */
+let chatLanguageFlowAliasMapCache = null;
+
+function getChatLanguageFlowAliasMap() {
+    if (chatLanguageFlowAliasMapCache) {
+        return chatLanguageFlowAliasMapCache;
+    }
+    /** @type {Map<string, string>} */
+    const map = new Map();
+    /**
+     * @param {string} phrase
+     * @param {string} code
+     */
+    function alias(phrase, code) {
+        const key = normalizeWholeMessageIntentPhrase(phrase);
+        if (key.length < 2) {
+            return;
+        }
+        if (!map.has(key)) {
+            map.set(key, code);
+        }
+    }
+
+    try {
+        for (let i = 0; i < CHAT_LANGUAGE_OPTIONS.length; i += 1) {
+            const opt = CHAT_LANGUAGE_OPTIONS[i];
+            if (!opt || typeof opt !== "object") {
+                continue;
+            }
+            const resolved = normalizeLanguage(resolveToSupportedLanguageCode(opt.code ? String(opt.code) : ""));
+            if (!resolved || !SUPPORTED_LANGUAGES.includes(resolved)) {
+                continue;
+            }
+            const variants = [];
+            variants.push(resolved);
+            const baseOnly = resolved.split(/[-_]/)[0];
+            if (baseOnly && baseOnly !== resolved) {
+                variants.push(baseOnly);
+            }
+            const gloss = typeof opt.label === "string" && opt.label.trim() ? opt.label.trim() : "";
+            if (gloss) {
+                variants.push(gloss);
+            }
+            const display = getLanguageOptionDisplayLabel(opt);
+            if (display && typeof display === "string" && display.trim()) {
+                variants.push(display.trim());
+            }
+            const seenPhrase = new Set();
+            for (let v = 0; v < variants.length; v += 1) {
+                const piece = variants[v];
+                seenPhrase.add(piece);
+            }
+            for (const piece of seenPhrase) {
+                alias(piece, resolved);
+                const n = normalizeWholeMessageIntentPhrase(piece);
+                if (n.length < 3) {
+                    continue;
+                }
+                alias(`${n} language`, resolved);
+                alias(`speak ${n}`, resolved);
+                alias(`talk in ${n}`, resolved);
+                alias(`switch to ${n}`, resolved);
+                alias(`change to ${n}`, resolved);
+                alias(`show in ${n}`, resolved);
+                alias(`use ${n}`, resolved);
+                alias(`in ${n}`, resolved);
+                alias(`${n} please`, resolved);
+            }
+        }
+        /** Roman-keyboard typos (“hinid”) when the gloss language is enabled. */
+        const flowTyposToBaseLang = [["hinid", "hi"], ["hendi", "hi"]];
+        for (let ti = 0; ti < flowTyposToBaseLang.length; ti += 1) {
+            const typo = flowTyposToBaseLang[ti][0];
+            const baseGuess = flowTyposToBaseLang[ti][1];
+            const rTypo = normalizeLanguage(resolveToSupportedLanguageCode(baseGuess));
+            if (rTypo && SUPPORTED_LANGUAGES.includes(rTypo)) {
+                alias(typo, rTypo);
+            }
+        }
+    } catch {
+        /* ignore */
+    }
+    chatLanguageFlowAliasMapCache = map;
+    return chatLanguageFlowAliasMapCache;
+}
+
+/**
+ * Whole-message language switch (“hindi”, “marathi”, “speak english”, …) when multiLanguage is enabled.
+ * @param {string} text
+ * @returns {string} Resolved language code, or ""
+ */
+function tryResolveSupportedLanguageFromUserFlowPhrase(text) {
+    if (!IS_MULTI_LANGUAGE_ENABLED) {
+        return "";
+    }
+    const prepared = normalizeWholeMessageIntentPhrase(stripTrailingCourtesyWholeMessage(text));
+    if (!prepared) {
+        return "";
+    }
+    const map = getChatLanguageFlowAliasMap();
+    const hit = map.get(prepared);
+    return typeof hit === "string" && hit ? normalizeLanguage(hit) : "";
+}
+
+/**
+ * Clears the messenger composer — `preventDefault` on consumed flow phrases leaves text in the box otherwise.
+ */
+function clearMessengerComposerText(dfMessenger) {
+    const ms = dfMessenger || activeDfMessenger;
+    if (!ms) {
+        return;
+    }
+    try {
+        const roots = collectSearchRoots(ms);
+        for (let ri = 0; ri < roots.length; ri += 1) {
+            const root = roots[ri];
+            if (!root || typeof root.querySelectorAll !== "function") {
+                continue;
+            }
+            const hosts = root.querySelectorAll("df-messenger-user-input");
+            for (let hi = 0; hi < hosts.length; hi += 1) {
+                const h = hosts[hi];
+                const sr = h && h.shadowRoot;
+                if (!sr) {
+                    continue;
+                }
+                const ta = sr.querySelector("textarea");
+                if (ta && "value" in ta) {
+                    ta.value = "";
+                    ta.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+                }
+                const inp = sr.querySelector("input[type=\"text\"], input[type=\"search\"], input:not([type])");
+                if (inp && "value" in inp) {
+                    inp.value = "";
+                    inp.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+                }
+                const editable = sr.querySelector("[contenteditable=\"true\"]");
+                if (editable) {
+                    editable.textContent = "";
+                    editable.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+                }
+            }
+        }
+    } catch {
+        /* ignore */
+    }
+}
+
+/** Dialogflow can re-apply the draft string once after `preventDefault` — clear a few times. */
+function scheduleClearMessengerComposerAfterFlowCommand(dfMessenger) {
+    const ms = dfMessenger || activeDfMessenger;
+    if (!ms) {
+        return;
+    }
+    [0, 45, 160, 380].forEach((delayMs) => {
+        window.setTimeout(() => clearMessengerComposerText(ms), delayMs);
+    });
+}
+
+/**
+ * Whole-message phrases that map to `enabledLanguages` (“hindi”, “speak marathi”, …).
+ * Applies `applyLanguage`, optionally `preventDefault` so Dialogflow never sees command text.
+ * @param {string} userText
+ * @param {Event | null} [optionalEventForPreventDefault]
+ * @param {Element | null} [dfMessengerForComposer] Messenger whose composer to clear (default `activeDfMessenger`).
+ * @returns {boolean} true if the utterance was consumed.
+ */
+function consumeLanguageSwitchFromUserFlowPhrase(userText, optionalEventForPreventDefault, dfMessengerForComposer) {
+    if (!IS_MULTI_LANGUAGE_ENABLED) {
+        return false;
+    }
+    const target = tryResolveSupportedLanguageFromUserFlowPhrase(userText);
+    if (!target) {
+        return false;
+    }
+    try {
+        if (optionalEventForPreventDefault && typeof optionalEventForPreventDefault.preventDefault === "function") {
+            optionalEventForPreventDefault.preventDefault();
+        }
+    } catch {
+        /* ignore */
+    }
+    if (normalizeLanguage(activeLanguage) !== normalizeLanguage(target)) {
+        applyLanguage(target);
+    }
+    scheduleClearMessengerComposerAfterFlowCommand(dfMessengerForComposer || activeDfMessenger);
+    return true;
+}
+
+/** Whole-message intents that reopen the bot like footer Restart (`common.features.restartChat`). */
+const USER_RESTART_CHAT_PHRASE_SET = new Set([
+    "restart",
+    "re start",
+    "reset",
+    "start again",
+    "fresh chat"
+]);
+
+/** True when the whole message matches a restart / reset alias (typed in chat). */
+function isUserTypingRestartChatCommand(text) {
+    const n = normalizeWholeMessageIntentPhrase(text);
+    return n.length > 0 && USER_RESTART_CHAT_PHRASE_SET.has(n);
+}
+
+function scheduleRestartChatSessionFromUserPhrase() {
+    if (!IS_RESTART_CHAT_ENABLED) {
+        return;
+    }
+    if (restartFromUserPhraseTimerId !== null) {
+        return;
+    }
+    restartFromUserPhraseTimerId = window.setTimeout(() => {
+        restartFromUserPhraseTimerId = null;
+        restartChatSession();
+    }, 0);
+}
+
 function sendUserTextViaDfMessenger(dfMessenger, text, shouldRenderCustomTextNow) {
     const t = (text || "").trim();
     if (!t || !dfMessenger) {
+        return;
+    }
+    if (IS_RESTART_CHAT_ENABLED && isUserTypingRestartChatCommand(t)) {
+        scheduleRestartChatSessionFromUserPhrase();
+        return;
+    }
+    if (consumeLanguageSwitchFromUserFlowPhrase(t, null, dfMessenger)) {
         return;
     }
     const renderCustom =
@@ -5703,6 +5985,337 @@ function removeFooterInputBoxShadowOverrides(dfMessenger) {
             }
         }
     }
+}
+
+// -----------------------------------------------------------------------------
+// Composer speech-to-text (Web Speech API) — toggle per desk/mob (`speechToText.enabled`).
+// -----------------------------------------------------------------------------
+
+/**
+ * @param {boolean} mobile
+ * @returns {Record<string, unknown> | null}
+ */
+function readSpeechToTextConfigForViewport(mobile) {
+    const sec = getDeviceSection(COMPANY_UI_CONFIG, mobile);
+    if (!sec || typeof sec !== "object") {
+        return null;
+    }
+    return sec.speechToText && typeof sec.speechToText === "object" ? sec.speechToText : null;
+}
+
+/** True when **this** viewport’s `desk.speechToText` / `mob.speechToText` has `{ enabled: true }`. */
+function isComposerSpeechToTextEnabledForViewport() {
+    const cfg = readSpeechToTextConfigForViewport(isMobileViewport());
+    if (!cfg) {
+        return false;
+    }
+    return isFeatureEnabledFromConfig(cfg, false);
+}
+
+function getSpeechRecognitionConstructor() {
+    /* global SpeechRecognition webkitSpeechRecognition */
+    const w = typeof window !== "undefined" ? window : null;
+    if (!w) {
+        return null;
+    }
+    return w.SpeechRecognition || w.webkitSpeechRecognition || null;
+}
+
+/** BCP-47 hint for recognition (best-effort vs `activeLanguage`). */
+function localeForComposerSpeechRecognition() {
+    try {
+        const base = (normalizeLanguage(activeLanguage).split(/[-_]/)[0] || "en").toLowerCase();
+        if (base === "hi") {
+            return "hi-IN";
+        }
+        if (base === "mr") {
+            return "mr-IN";
+        }
+        return "en-US";
+    } catch {
+        return "en-US";
+    }
+}
+
+function getComposerSpeechMicIconSvgHtml() {
+    return "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" width=\"20\" height=\"20\""
+        + " fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\""
+        + " aria-hidden=\"true\"><path d=\"M12 14a3 3 0 0 0 3-3V5a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3Z\"/>"
+        + "<path d=\"M19 11a7 7 0 0 1-14 0M12 18v3\"/></svg>";
+}
+
+/** Single active Web Speech dictate session (`SpeechRecognition`). */
+let composerSpeechSession = {
+    recognition: null,
+    button: null,
+    textarea: null,
+    snapshot: ""
+};
+
+function stopComposerSpeechRecognition() {
+    if (composerSpeechSession.recognition) {
+        try {
+            composerSpeechSession.recognition.onresult = null;
+            composerSpeechSession.recognition.onerror = null;
+            composerSpeechSession.recognition.onend = null;
+            composerSpeechSession.recognition.stop();
+        } catch {
+            try {
+                composerSpeechSession.recognition.abort();
+            } catch {
+                /* ignore */
+            }
+        }
+        composerSpeechSession.recognition = null;
+    }
+    if (composerSpeechSession.button) {
+        composerSpeechSession.button.removeAttribute("data-listening");
+        composerSpeechSession.button.setAttribute("aria-pressed", "false");
+    }
+    composerSpeechSession.button = null;
+    composerSpeechSession.textarea = null;
+    composerSpeechSession.snapshot = "";
+}
+
+/**
+ * @param {HTMLTextAreaElement} textarea
+ * @param {HTMLButtonElement} btn
+ */
+function startComposerSpeechRecognition(textarea, btn) {
+    const Ctor = getSpeechRecognitionConstructor();
+    if (!Ctor || !textarea || !btn) {
+        return;
+    }
+    stopComposerSpeechRecognition();
+    const snapshot = typeof textarea.value === "string" ? textarea.value : "";
+    composerSpeechSession.textarea = textarea;
+    composerSpeechSession.button = btn;
+    composerSpeechSession.snapshot = snapshot;
+
+    const rec = new Ctor();
+    composerSpeechSession.recognition = rec;
+    rec.continuous = false;
+    rec.interimResults = true;
+    rec.lang = localeForComposerSpeechRecognition();
+
+    /** @type {string} */
+    let committed = "";
+
+    btn.setAttribute("data-listening", "true");
+    btn.setAttribute("aria-pressed", "true");
+
+    rec.onresult = (event) => {
+        try {
+            const ta = composerSpeechSession.textarea;
+            if (!ta) {
+                return;
+            }
+            let interim = "";
+            for (let i = event.resultIndex; i < event.results.length; i += 1) {
+                const row = event.results[i];
+                const piece = row && row[0] && typeof row[0].transcript === "string" ? row[0].transcript : "";
+                if (row.isFinal) {
+                    committed += piece;
+                } else {
+                    interim += piece;
+                }
+            }
+            const base = composerSpeechSession.snapshot;
+            ta.value = base + committed + interim;
+            ta.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+        } catch {
+            /* ignore */
+        }
+    };
+    rec.onerror = () => {
+        stopComposerSpeechRecognition();
+    };
+    rec.onend = () => {
+        stopComposerSpeechRecognition();
+    };
+    try {
+        rec.start();
+    } catch {
+        stopComposerSpeechRecognition();
+    }
+}
+
+/**
+ * @param {Event} ev
+ */
+function onComposerSpeechMicButtonClick(ev) {
+    const btn = ev.currentTarget;
+    if (!btn || !(btn instanceof HTMLButtonElement)) {
+        return;
+    }
+    const root = typeof btn.getRootNode === "function" ? btn.getRootNode() : null;
+    const sr = root && root.nodeType === Node.DOCUMENT_FRAGMENT_NODE ? root : null;
+    if (!sr) {
+        return;
+    }
+    const textarea = sr.querySelector("textarea");
+    if (!textarea) {
+        return;
+    }
+    if (composerSpeechSession.recognition && composerSpeechSession.button === btn) {
+        stopComposerSpeechRecognition();
+        return;
+    }
+    startComposerSpeechRecognition(textarea, btn);
+}
+
+function ensureComposerSpeechMicShadowStyle(shadowRoot) {
+    if (!shadowRoot || typeof shadowRoot.getElementById !== "function") {
+        return;
+    }
+    let tag = shadowRoot.getElementById(COMPOSER_SPEECH_MIC_STYLE_ID);
+    if (!tag) {
+        tag = document.createElement("style");
+        tag.id = COMPOSER_SPEECH_MIC_STYLE_ID;
+        shadowRoot.appendChild(tag);
+    }
+    tag.textContent = `.input-box-wrapper.dfchat-has-composer-speech-mic { gap: 6px !important; }
+.${COMPOSER_SPEECH_WRAP_CLASS} { display: flex !important; align-items: center !important; flex-shrink: 0 !important; }
+${COMPOSER_SPEECH_BTN_SELECTOR} {
+  flex-shrink: 0 !important; width: 40px !important; height: 40px !important; margin: 0 !important; padding: 0 !important;
+  border: none !important; border-radius: 10px !important; background: transparent !important; color: #0369a1 !important;
+  cursor: pointer !important; display: grid !important; place-items: center !important; line-height: 0 !important;
+}
+${COMPOSER_SPEECH_BTN_SELECTOR}:hover { background: rgba(14, 165, 233, 0.12) !important; }
+${COMPOSER_SPEECH_BTN_SELECTOR}[data-listening="true"] { color: #dc2626 !important; background: rgba(248, 113, 113, 0.15) !important; }`;
+}
+
+function removeComposerSpeechMicsInsideMessenger(dfMessenger) {
+    if (!dfMessenger) {
+        return;
+    }
+    const roots = collectSearchRoots(dfMessenger);
+    for (let ri = 0; ri < roots.length; ri += 1) {
+        const root = roots[ri];
+        if (!root || typeof root.querySelectorAll !== "function") {
+            continue;
+        }
+        const hosts = root.querySelectorAll("df-messenger-user-input");
+        for (let hi = 0; hi < hosts.length; hi += 1) {
+            const host = hosts[hi];
+            const sr = host && host.shadowRoot;
+            if (!sr) {
+                continue;
+            }
+            const wraps = sr.querySelectorAll(`.${COMPOSER_SPEECH_WRAP_CLASS}`);
+            wraps.forEach((w) => {
+                if (w && w.parentNode) {
+                    w.parentNode.removeChild(w);
+                }
+            });
+            const box = sr.querySelector(".input-box-wrapper");
+            if (box && box.classList) {
+                box.classList.remove("dfchat-has-composer-speech-mic");
+            }
+            const staleStyle = sr.getElementById && sr.getElementById(COMPOSER_SPEECH_MIC_STYLE_ID);
+            if (staleStyle && staleStyle.parentNode) {
+                staleStyle.parentNode.removeChild(staleStyle);
+            }
+        }
+    }
+}
+
+/** Mount or remove microphone next to Dialogflow textarea (inside `df-messenger-user-input` shadow roots). */
+function applyComposerSpeechMicToMessenger(dfMessenger) {
+    if (!dfMessenger) {
+        return;
+    }
+    if (!isComposerSpeechToTextEnabledForViewport()) {
+        stopComposerSpeechRecognition();
+        removeComposerSpeechMicsInsideMessenger(dfMessenger);
+        return;
+    }
+    if (!getSpeechRecognitionConstructor()) {
+        removeComposerSpeechMicsInsideMessenger(dfMessenger);
+        return;
+    }
+    const roots = collectSearchRoots(dfMessenger);
+    for (let ri = 0; ri < roots.length; ri += 1) {
+        const root = roots[ri];
+        if (!root || typeof root.querySelectorAll !== "function") {
+            continue;
+        }
+        const hosts = root.querySelectorAll("df-messenger-user-input");
+        for (let hi = 0; hi < hosts.length; hi += 1) {
+            const host = hosts[hi];
+            const sr = host && host.shadowRoot;
+            if (!sr || typeof sr.querySelector !== "function") {
+                continue;
+            }
+            const box = sr.querySelector(".input-box-wrapper");
+            if (!box || !box.appendChild || !box.insertBefore || !box.classList) {
+                continue;
+            }
+            ensureComposerSpeechMicShadowStyle(sr);
+            let wrap = sr.querySelector(`.${COMPOSER_SPEECH_WRAP_CLASS}`);
+            let btn = wrap ? wrap.querySelector(COMPOSER_SPEECH_BTN_SELECTOR) : null;
+            if (!wrap) {
+                wrap = document.createElement("div");
+                wrap.className = COMPOSER_SPEECH_WRAP_CLASS;
+                wrap.setAttribute("data-dfchat-no-translate", "true");
+                btn = document.createElement("button");
+                btn.type = "button";
+                btn.setAttribute("data-dfchat-composer-speech-mic", "true");
+                btn.setAttribute("data-dfchat-no-translate", "true");
+                btn.setAttribute("aria-label", "Dictate message");
+                btn.setAttribute("title", "Speak to type");
+                btn.setAttribute("aria-pressed", "false");
+                btn.innerHTML = getComposerSpeechMicIconSvgHtml();
+                btn.addEventListener("click", onComposerSpeechMicButtonClick);
+                wrap.appendChild(btn);
+                const inputElWrap = sr.querySelector(".input-element-wrapper");
+                if (inputElWrap && inputElWrap.parentNode === box) {
+                    box.insertBefore(wrap, inputElWrap);
+                } else {
+                    box.insertBefore(wrap, box.firstChild || null);
+                }
+            }
+            box.classList.add("dfchat-has-composer-speech-mic");
+        }
+    }
+}
+
+function scheduleComposerSpeechMicAttach(dfMessenger) {
+    if (!dfMessenger) {
+        return;
+    }
+    const run = () => applyComposerSpeechMicToMessenger(dfMessenger);
+    run();
+    [120, 400, 900, 1700, 3200].forEach((ms) => {
+        window.setTimeout(() => {
+            if (activeDfMessenger === dfMessenger || dfMessenger.isConnected) {
+                run();
+            }
+        }, ms);
+    });
+}
+
+let composerSpeechMicResizeHooked = false;
+/** @type {number | null} */
+let composerSpeechMicResizeDebouncerId = null;
+
+function ensureComposerSpeechMicResizeObserver() {
+    if (composerSpeechMicResizeHooked) {
+        return;
+    }
+    composerSpeechMicResizeHooked = true;
+    window.addEventListener("resize", () => {
+        if (composerSpeechMicResizeDebouncerId !== null) {
+            window.clearTimeout(composerSpeechMicResizeDebouncerId);
+            composerSpeechMicResizeDebouncerId = null;
+        }
+        composerSpeechMicResizeDebouncerId = window.setTimeout(() => {
+            composerSpeechMicResizeDebouncerId = null;
+            if (activeDfMessenger) {
+                scheduleComposerSpeechMicAttach(activeDfMessenger);
+            }
+        }, 160);
+    });
 }
 
 /**
@@ -7860,6 +8473,7 @@ function closeVideoLightbox() {
 
 const DFCHAT_INLINE_GALLERY_CLASS = "dfchat-inline-gallery";
 const DFCHAT_INLINE_VIDEO_CLASS = "dfchat-inline-video";
+const DFCHAT_INLINE_CARD_CAROUSEL_CLASS = "dfchat-inline-card-carousel";
 
 /**
  * Remove ALL injected inline galleries across messenger roots.
@@ -9020,6 +9634,9 @@ function normalizeOpenGalleryUrlList(urls) {
 /** @type {Set<string>} */
 let dfchatOpenGalleryUrlSetSignaturesSeen = new Set();
 
+/** @type {Set<string>} */
+let dfchatOpenCardCarouselSignaturesSeen = new Set();
+
 /** Most recent `.dfchat-inline-gallery` node we appended (for stale-DOM prune on non-gallery turns). */
 /** @type {HTMLElement | null} */
 let dfchatLastInlineGalleryWrapEl = null;
@@ -9028,16 +9645,25 @@ let dfchatLastInlineGalleryWrapEl = null;
 /** @type {HTMLElement | null} */
 let dfchatLastInlineVideoWrapEl = null;
 
+/** Most recent `.dfchat-inline-card-carousel` node we appended (for stale-DOM prune on non-carousel turns). */
+/** @type {HTMLElement | null} */
+let dfchatLastInlineCardCarouselWrapEl = null;
+
 /** Invalidate pending inline-video append attempts between turns. */
 let dfchatInlineVideoInjectSeq = 0;
 
 /** Invalidate pending inline-gallery append attempts between turns. */
 let dfchatInlineGalleryInjectSeq = 0;
 
+/** Invalidate pending inline-card-carousel append attempts between turns. */
+let dfchatInlineCardCarouselInjectSeq = 0;
+
 function clearOpenGalleryUrlDedupeState() {
     dfchatOpenGalleryUrlSetSignaturesSeen = new Set();
     dfchatLastInlineGalleryWrapEl = null;
     dfchatLastInlineVideoWrapEl = null;
+    dfchatOpenCardCarouselSignaturesSeen = new Set();
+    dfchatLastInlineCardCarouselWrapEl = null;
 }
 
 /**
@@ -9052,6 +9678,34 @@ function removeDfchatLastInlineGalleryIfPresent() {
     // Same URL set can show again after a non-gallery turn removed the strip; otherwise dedupe blocks forever.
     try {
         dfchatOpenGalleryUrlSetSignaturesSeen.clear();
+    } catch {
+        /* ignore */
+    }
+}
+
+/**
+ * Detach the last inline card carousel when the bot reply is plain text / another intent.
+ * @returns {void}
+ */
+function removeDfchatLastInlineCardCarouselIfPresent() {
+    const el = dfchatLastInlineCardCarouselWrapEl;
+    dfchatLastInlineCardCarouselWrapEl = null;
+    // Invalidate any older scheduled inject timers for this turn.
+    dfchatInlineCardCarouselInjectSeq += 1;
+    if (!el) {
+        return;
+    }
+    try {
+        if (typeof el.remove === "function") {
+            el.remove();
+        } else if (el.parentNode) {
+            el.parentNode.removeChild(el);
+        }
+    } catch {
+        /* ignore */
+    }
+    try {
+        dfchatOpenCardCarouselSignaturesSeen.clear();
     } catch {
         /* ignore */
     }
@@ -9295,6 +9949,422 @@ function tryOpenGalleryFromBotResponseMessages(messages, event) {
     }
 }
 
+/**
+ * @typedef {{ id: string, title: string, subtitle: string, imageUrl: string, ctaLabel: string, ctaValue: string }} InlineCardCarouselCard
+ */
+
+/**
+ * @param {unknown} rawCards
+ * @returns {InlineCardCarouselCard[]}
+ */
+function normalizeOpenCardCarouselCards(rawCards) {
+    if (!Array.isArray(rawCards) || rawCards.length === 0) {
+        return [];
+    }
+    /** @type {InlineCardCarouselCard[]} */
+    const out = [];
+    for (let i = 0; i < rawCards.length; i += 1) {
+        const row = rawCards[i];
+        if (!row || typeof row !== "object") {
+            continue;
+        }
+        /** @type {Record<string, unknown>} */
+        const r = /** @type {Record<string, unknown>} */ (row);
+        const id = unwrapPayloadStringField(r.id || r.key || r.card_id || r.cardId || `${i + 1}`);
+        const title = unwrapPayloadStringField(r.title || r.name || r.heading || "");
+        const subtitle = unwrapPayloadStringField(r.subtitle || r.description || r.text || "");
+        const imageUrl = unwrapPayloadStringField(r.imageUrl || r.image_url || r.image || r.img || "");
+        const ctaLabel = unwrapPayloadStringField(r.ctaLabel || r.cta_label || r.button || r.buttonLabel || "Select");
+        const ctaValue = unwrapPayloadStringField(r.ctaValue || r.cta_value || r.value || r.query || title);
+        if (!title && !subtitle && !imageUrl) {
+            continue;
+        }
+        out.push({
+            id: id || `${i + 1}`,
+            title,
+            subtitle,
+            imageUrl,
+            ctaLabel,
+            ctaValue
+        });
+    }
+    return out;
+}
+
+/**
+ * @param {InlineCardCarouselCard[]} cards
+ * @returns {string}
+ */
+function openCardCarouselSignature(cards) {
+    if (!cards || cards.length === 0) {
+        return "";
+    }
+    return cards
+        .slice(0, 8)
+        .map((c) => `${String(c.id || "").trim()}\u0002${String(c.title || "").trim()}`)
+        .join("\u0001");
+}
+
+/**
+ * Extract the first `{ action: "open_card_carousel", cards: [...] }` payload from merged CX fulfillment messages.
+ *
+ * @param {unknown[]} messages
+ * @returns {{ cards: InlineCardCarouselCard[], messageText: string } | null}
+ */
+function extractFirstOpenCardCarouselFromCxMessages(messages) {
+    if (!Array.isArray(messages) || messages.length === 0) {
+        return null;
+    }
+    for (let cx = 0; cx < messages.length; cx += 1) {
+        const cand = messages[cx];
+        if (!messageHasFulfillmentPayload(cand)) {
+            continue;
+        }
+        /** @type {Record<string, unknown> | null} */
+        let pl = null;
+        try {
+            pl = extractPayload(/** @type {unknown} */ (cand));
+        } catch {
+            pl = null;
+        }
+        const actionStr = unwrapPayloadStringField(pl && Object.prototype.hasOwnProperty.call(pl, "action") ? pl.action : "").toLowerCase();
+        if (!pl || actionStr !== "open_card_carousel") {
+            continue;
+        }
+        const rawCards = Object.prototype.hasOwnProperty.call(pl, "cards")
+            ? pl.cards
+            : Object.prototype.hasOwnProperty.call(pl, "items")
+                ? pl.items
+                : Object.prototype.hasOwnProperty.call(pl, "list")
+                    ? pl.list
+                    : null;
+        const cards = normalizeOpenCardCarouselCards(rawCards);
+        if (cards.length === 0) {
+            continue;
+        }
+        const rawMessage =
+            Object.prototype.hasOwnProperty.call(pl, "message") ? pl.message
+                : Object.prototype.hasOwnProperty.call(pl, "text") ? pl.text
+                    : Object.prototype.hasOwnProperty.call(pl, "prompt") ? pl.prompt
+                        : Object.prototype.hasOwnProperty.call(pl, "subtitle") ? pl.subtitle
+                            : Object.prototype.hasOwnProperty.call(pl, "description") ? pl.description
+                                : null;
+        const messageText = normalizeOpenVideoMessage(rawMessage);
+        return { cards, messageText };
+    }
+    return null;
+}
+
+/**
+ * @param {HTMLElement | null | undefined} dfMessenger
+ * @param {InlineCardCarouselCard[]} cards
+ * @param {string | null | undefined} messageText
+ * @returns {void}
+ */
+function scheduleInjectInlineCardCarousel(dfMessenger, cards, messageText) {
+    const injectSeq = (dfchatInlineCardCarouselInjectSeq += 1);
+    let injected = false;
+    /** @type {number[] | undefined} */
+    let pendingTimers = undefined;
+
+    const list = Array.isArray(cards) ? cards.slice(0, 12) : [];
+    const msg = typeof messageText === "string" ? messageText.trim() : "";
+
+    function tryAppend() {
+        if (injected) {
+            return;
+        }
+        if (injectSeq !== dfchatInlineCardCarouselInjectSeq) {
+            return;
+        }
+        const msResolved =
+            dfMessenger
+            || (typeof activeDfMessenger !== "undefined" ? activeDfMessenger : null)
+            || (typeof document !== "undefined" ? document.querySelector("df-messenger") : null);
+        const ml = findMessengerMessageListRoot(msResolved);
+        if (!ml) {
+            return;
+        }
+
+        try {
+            removeDfchatLastInlineCardCarouselIfPresent();
+        } catch {
+            /* ignore */
+        }
+
+        const wrap = document.createElement("div");
+        wrap.className = DFCHAT_INLINE_CARD_CAROUSEL_CLASS;
+        wrap.style.cssText = [
+            "width:100%",
+            "box-sizing:border-box",
+            "margin:10px 0 0",
+            "padding:0 10px 10px",
+            "pointer-events:auto"
+        ].join(";");
+
+        if (msg) {
+            const messageEl = document.createElement("div");
+            messageEl.textContent = msg;
+            messageEl.style.cssText = [
+                "width:100%",
+                "box-sizing:border-box",
+                "color:#000",
+                "font-size:13px",
+                "line-height:1.35",
+                "margin:0 0 8px",
+                "padding:0 2px"
+            ].join(";");
+            wrap.appendChild(messageEl);
+        }
+
+        const track = document.createElement("div");
+        track.className = `${DFCHAT_INLINE_CARD_CAROUSEL_CLASS}__track`;
+        track.style.cssText = [
+            "display:flex",
+            "gap:10px",
+            "overflow-x:auto",
+            "overflow-y:hidden",
+            "scroll-snap-type:x mandatory",
+            "padding:2px 2px 6px",
+            "box-sizing:border-box",
+            "width:100%",
+            "-webkit-overflow-scrolling:touch"
+        ].join(";");
+
+        const ms = msResolved || activeDfMessenger;
+
+        for (let i = 0; i < list.length; i += 1) {
+            const c = list[i];
+
+            const cell = document.createElement("div");
+            cell.style.cssText = [
+                "flex:0 0 auto",
+                "scroll-snap-align:start",
+                "width:min(80vw,260px)",
+                "max-width:min(80vw,260px)",
+                "box-sizing:border-box"
+            ].join(";");
+
+            const card = document.createElement("button");
+            card.type = "button";
+            card.setAttribute("data-dfchat-card-id", String(c.id || ""));
+            card.style.cssText = [
+                "appearance:none",
+                "-webkit-appearance:none",
+                "border:1px solid rgba(148,163,184,0.35)",
+                "border-radius:14px",
+                "background:#ffffff",
+                "padding:0",
+                "margin:0",
+                "width:100%",
+                "text-align:left",
+                "cursor:pointer",
+                "pointer-events:auto",
+                "box-shadow:0 10px 26px rgba(15,23,42,0.08)",
+                "overflow:hidden"
+            ].join(";");
+
+            if (c.imageUrl) {
+                const img = document.createElement("img");
+                img.src = c.imageUrl;
+                img.alt = "";
+                img.loading = i < 3 ? "eager" : "lazy";
+                img.decoding = "async";
+                img.setAttribute("draggable", "false");
+                img.style.cssText = [
+                    "display:block",
+                    "width:100%",
+                    "height:120px",
+                    "object-fit:cover",
+                    "background:rgba(148,163,184,0.18)"
+                ].join(";");
+                card.appendChild(img);
+            }
+
+            const body = document.createElement("div");
+            body.style.cssText = [
+                "padding:10px 12px 12px",
+                "box-sizing:border-box"
+            ].join(";");
+
+            if (c.title) {
+                const t = document.createElement("div");
+                t.textContent = c.title;
+                t.style.cssText = [
+                    "font:700 13px/1.25 Manrope, Segoe UI, system-ui, sans-serif",
+                    "color:#0f172a",
+                    "margin:0 0 4px"
+                ].join(";");
+                body.appendChild(t);
+            }
+            if (c.subtitle) {
+                const s = document.createElement("div");
+                s.textContent = c.subtitle;
+                s.style.cssText = [
+                    "font:600 12px/1.25 Manrope, Segoe UI, system-ui, sans-serif",
+                    "color:rgba(15,23,42,0.68)",
+                    "margin:0 0 10px"
+                ].join(";");
+                body.appendChild(s);
+            }
+
+            const cta = document.createElement("div");
+            cta.textContent = c.ctaLabel || "Select";
+            cta.style.cssText = [
+                "display:inline-flex",
+                "align-items:center",
+                "justify-content:center",
+                "padding:8px 10px",
+                "border-radius:10px",
+                "background:linear-gradient(135deg,#0369a1,#0284c7)",
+                "color:#f0f9ff",
+                "font:800 12px/1 Manrope, Segoe UI, system-ui, sans-serif",
+                "width:100%",
+                "box-sizing:border-box"
+            ].join(";");
+            body.appendChild(cta);
+
+            card.appendChild(body);
+
+            card.addEventListener("click", (e) => {
+                e.preventDefault?.();
+                e.stopPropagation?.();
+
+                const clickPayload = {
+                    action: "card_carousel_click",
+                    clicked: c,
+                    cards: list.map((x) => ({
+                        id: x.id,
+                        title: x.title,
+                        subtitle: x.subtitle,
+                        imageUrl: x.imageUrl,
+                        ctaLabel: x.ctaLabel,
+                        ctaValue: x.ctaValue
+                    }))
+                };
+
+                try {
+                    if (window.parent && window.parent !== window) {
+                        window.parent.postMessage({ type: "dfchat_card_carousel_click", payload: clickPayload }, "*");
+                    }
+                } catch {
+                    /* ignore */
+                }
+                try {
+                    window.dispatchEvent(new CustomEvent("dfchat-card-carousel-click", { detail: clickPayload }));
+                } catch {
+                    /* ignore */
+                }
+
+                if (ms && c.ctaValue) {
+                    try {
+                        removeDfchatLastInlineGalleryIfPresent();
+                        removeDfchatLastInlineVideoIfPresent();
+                    } catch {
+                        /* ignore */
+                    }
+                    sendUserTextViaDfMessenger(ms, c.ctaValue, true);
+                }
+            });
+
+            cell.appendChild(card);
+            track.appendChild(cell);
+        }
+
+        wrap.appendChild(track);
+
+        const beforeNode = resolveGalleryInsertBeforeByCxOrder(ml);
+        if (beforeNode && beforeNode.parentNode === ml && typeof ml.insertBefore === "function") {
+            ml.insertBefore(wrap, beforeNode);
+        } else {
+            ml.appendChild(wrap);
+        }
+        dfchatLastInlineCardCarouselWrapEl = wrap;
+
+        injected = true;
+        try {
+            ml.scrollTop = ml.scrollHeight;
+        } catch {
+            /* ignore */
+        }
+
+        if (Array.isArray(pendingTimers)) {
+            for (let ti = 0; ti < pendingTimers.length; ti += 1) {
+                clearTimeout(pendingTimers[ti]);
+            }
+            pendingTimers = undefined;
+        }
+    }
+
+    const delaysMs = [72, 180, 400, 800, 1600];
+    delaysMs.forEach((delayMs) => {
+        const tid = window.setTimeout(() => {
+            tryAppend();
+        }, delayMs);
+        if (!pendingTimers) {
+            pendingTimers = [];
+        }
+        pendingTimers.push(tid);
+    });
+}
+
+/**
+ * Drop the previous inline card carousel when this turn has no allowed `open_card_carousel`,
+ * so plain-text turns do not keep the last carousel visible.
+ *
+ * @param {unknown[]} messages Merged CX `responseMessages` (see `mergeCxResponseEnvelopeForGallery`).
+ * @param {Event | null | undefined} event
+ * @returns {void}
+ */
+function pruneStaleInlineCardCarouselForCxResponse(messages, event) {
+    try {
+        const payload = extractFirstOpenCardCarouselFromCxMessages(messages);
+        const hasPayload = !!(payload && payload.cards && payload.cards.length > 0);
+        const gateOk = passesInlineRichMediaIntentGate(event);
+        if (hasPayload && gateOk) {
+            return;
+        }
+        removeDfchatLastInlineCardCarouselIfPresent();
+    } catch {
+        /* ignore */
+    }
+}
+
+/**
+ * Walk webhook / CX payloads for card-carousel data.
+ *
+ * Only `{ "action": "open_card_carousel", "cards": [ ... ] }`.
+ *
+ * @param {unknown[]} messages
+ * @param {Event | null | undefined} [event]
+ */
+function tryOpenCardCarouselFromBotResponseMessages(messages, event) {
+    try {
+        if (!Array.isArray(messages) || messages.length === 0) {
+            return;
+        }
+        if (!passesInlineRichMediaIntentGate(event)) {
+            return;
+        }
+        const payload = extractFirstOpenCardCarouselFromCxMessages(messages);
+        if (!payload || !payload.cards || payload.cards.length === 0) {
+            return;
+        }
+        const sig = openCardCarouselSignature(payload.cards);
+        if (sig && dfchatOpenCardCarouselSignaturesSeen.has(sig)) {
+            return;
+        }
+        if (sig) {
+            dfchatOpenCardCarouselSignaturesSeen.add(sig);
+        }
+        scheduleInjectInlineCardCarousel(activeDfMessenger, payload.cards, payload.messageText);
+    } catch (e) {
+        if (typeof console !== "undefined" && typeof console.warn === "function") {
+            console.warn("[company.js] Card carousel payload skipped (never breaks bot replies)", e);
+        }
+    }
+}
+
 function attachImageLightboxClickHandler() {
     if (window.__dfchatImageLightboxBound === true) {
         return;
@@ -9433,18 +10503,44 @@ function attachPersonaHandlers(dfMessenger) {
     }
     companyPersonaWindowListenersAttached = true;
 
-    window.addEventListener("df-user-input-entered", () => {
+    window.addEventListener("df-user-input-entered", (event) => {
+        const typed = extractDfUserInputEnteredText(event);
+        if (IS_RESTART_CHAT_ENABLED && isUserTypingRestartChatCommand(typed)) {
+            try {
+                if (typeof event.preventDefault === "function") {
+                    event.preventDefault();
+                }
+            } catch {
+                /* ignore */
+            }
+            scheduleRestartChatSessionFromUserPhrase();
+            return;
+        }
+        if (consumeLanguageSwitchFromUserFlowPhrase(typed, event)) {
+            return;
+        }
         const ms = activeDfMessenger;
         if (ms && typeof ms.renderCustomText === "function") {
             renderUserPersona(ms);
         }
-    });
+    }, true);
 
     window.addEventListener("df-request-sent", (event) => {
         const requestBody = event.detail && event.detail.data ? event.detail.data.requestBody : null;
         const queryText = requestBody && requestBody.queryInput && requestBody.queryInput.text
             ? requestBody.queryInput.text.text
             : "";
+
+        if (typeof queryText === "string"
+            && IS_RESTART_CHAT_ENABLED
+            && isUserTypingRestartChatCommand(queryText)) {
+            scheduleRestartChatSessionFromUserPhrase();
+            return;
+        }
+
+        if (consumeLanguageSwitchFromUserFlowPhrase(queryText)) {
+            return;
+        }
 
         if (typeof queryText === "string" && queryText.trim()) {
             const ms = activeDfMessenger;
@@ -9464,6 +10560,8 @@ function attachPersonaHandlers(dfMessenger) {
         tryOpenGalleryFromBotResponseMessages(cxResponseMessagesMerged, event);
         pruneStaleInlineVideoForCxResponse(cxResponseMessagesMerged, event);
         tryOpenVideoFromBotResponseMessages(cxResponseMessagesMerged, event);
+        pruneStaleInlineCardCarouselForCxResponse(cxResponseMessagesMerged, event);
+        tryOpenCardCarouselFromBotResponseMessages(cxResponseMessagesMerged, event);
 
         const requestedLanguage = extractLanguageFromResponse(event);
         if (requestedLanguage) {
@@ -10231,7 +11329,7 @@ function refreshInlineSyntheticOptionButtonLabels() {
         return;
     }
     const nodes = document.querySelectorAll(
-        `.${DFCHAT_INLINE_GALLERY_CLASS} button[data-dfchat-opt-key], .${DFCHAT_INLINE_VIDEO_CLASS} button[data-dfchat-opt-key]`
+        `.${DFCHAT_INLINE_GALLERY_CLASS} button[data-dfchat-opt-key], .${DFCHAT_INLINE_VIDEO_CLASS} button[data-dfchat-opt-key], .${DFCHAT_INLINE_CARD_CAROUSEL_CLASS} button[data-dfchat-opt-key]`
     );
     for (const node of nodes) {
         if (!node || typeof node.getAttribute !== "function") {
@@ -10655,6 +11753,11 @@ function isUsableFooterHost(host) {
 function restartChatSession() {
     try {
         clearOpenGalleryUrlDedupeState();
+    } catch {
+        /* ignore */
+    }
+    try {
+        stopComposerSpeechRecognition();
     } catch {
         /* ignore */
     }
