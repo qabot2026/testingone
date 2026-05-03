@@ -271,13 +271,16 @@ For **qabot2026/testingone**, use **Push to a branch** → branch **`main`**.
 
 ---
 
-### Step 13 — Open the `/health` check in browser
+### Step 13 — Quick check in browser
 
-Paste into the address bar (replace with **your** service URL):
+Open your service URL (same host as Cloud Run gives you):
 
-`https://YOUR-SERVICE-URL/health`
+| URL | Expected |
+|-----|----------|
+| `https://YOUR-SERVICE-URL/health` | Plain text **`ok`** |
+| `https://YOUR-SERVICE-URL/` | Short message that the **contact leads API** is running and **`POST …/contact-form-submissions`** |
 
-**Done when:** The page shows the text **`ok`**.
+**Note:** **`Cannot GET /`** on an older deployed revision only means **`GET /`** was not implemented yet; **redeploy** after updating the API, or always use **`/health`**. The widget still uses **`POST /contact-form-submissions`** — it does not use **`GET /`**.
 
 ---
 

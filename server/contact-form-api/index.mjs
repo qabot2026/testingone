@@ -125,6 +125,13 @@ app.post(PATHNAME, async (req, res) => {
 
 app.get("/health", (_req, res) => res.status(200).send("ok"));
 
+/** Opening the Cloud Run URL in a browser hits GET / — avoid Express default "Cannot GET /". */
+app.get("/", (_req, res) => {
+    res.status(200).type("text/plain; charset=utf-8").send(
+        [`Contact leads API running.`, `POST JSON → ${PATHNAME}`, `GET /health → health check.`].join("\n")
+    );
+});
+
 app.listen(PORT, () => {
     const sheetHint = SHEETS_DISABLED ? "(Sheets OFF)" : "(Sheets ON)";
     const fsHint = FIRESTORE_DISABLED ? "Firestore OFF" : "Firestore ON";
