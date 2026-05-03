@@ -287,6 +287,7 @@ Paste into the address bar (replace with **your** service URL):
 |---------|-------------------------------|
 | **Build failed** | Cloud Run → click service → **Revisions / Logs / Builds** links → open **Cloud Build** → read error. Often wrong **Dockerfile path** vs GitHub folder layout. Fix GitHub paths or rerun deploy with corrected path. |
 | **403 / permission** on GitHub | Repeat Step 11 and re-authorize; ensure the selected repo matches Step 10. |
+| **Failed to update trigger: Repository mapping does not exist** (with a link like `cloud-build/triggers/connect?region=us-central1`) | **Connect the repo once** before the trigger can run: open that URL (or **Cloud Build** → **Connect repository** / **Repositories** → **Manage connections**) → authorize **GitHub** → grant access to **`qabot2026/testingone`** → finish wizard until this project **shows the repository**. Trigger region (e.g. **`us-central1`**) must match the **connection region**. Then save the trigger again. |
 | **Firestore permission denied** in logs | IAM → grant **Cloud Datastore User** on **this project** for the Cloud Run **service account** (Step 6 account). Save → **Deploy new revision** with same container if needed so identity is applied. |
 | **Sheets append failed** | Sheet **Share** (Step 8) missing or wrong email; **`SHEETS_SPREADSHEET_ID`** wrong in Cloud Run env vars.**Edit service** → Variables → correct → Deploy. |
 
