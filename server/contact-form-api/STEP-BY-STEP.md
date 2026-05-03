@@ -38,6 +38,9 @@ If you do not use GitHub yet, create a **free** repo and upload files using GitH
 | **Repository** | [https://github.com/qabot2026/testingone](https://github.com/qabot2026/testingone) |
 | **Branch** | `main` |
 | **API folder (contains `Dockerfile`)** | `server/contact-form-api/` |
+| **Production contact API (Cloud Run)** | **`https://leadsservice-225529017623.us-central1.run.app`** |
+
+`myweb.html` and `chat-frame.html` are wired to **`apiBase` / `dfchat-api-base-url`** pointing at that host (no trailing slash). Change both if you redeploy under a new service URL.
 
 In **Cloud Run → deploy from this GitHub repo**, set the build to use folder **`server/contact-form-api`** as the **source / build context** (UI labels vary). The **`Dockerfile`** lives in that folder; if the wizard asks for a path from repo root, use **`server/contact-form-api/Dockerfile`** or the equivalent “directory” field.
 
@@ -257,7 +260,7 @@ For the **contact form API**, visitors’ browsers must call your Cloud Run **UR
 
 The console will queue a **Cloud Build** job and then deploy. Wait until the status is **Healthy** / **Serving** without a red error.
 
-**Done when:** Cloud Run shows a **URL** like `https://contact-form-api-xxxxx-xx.a.run.app`
+**Done when:** Cloud Run shows a **service URL**. This project’s deployed lead API is **`https://leadsservice-225529017623.us-central1.run.app`** (your service name may differ — use the URL the console shows).
 
 **If an extra wizard asks Cloud Build trigger — Event:**
 
@@ -277,8 +280,8 @@ Open your service URL (same host as Cloud Run gives you):
 
 | URL | Expected |
 |-----|----------|
-| `https://YOUR-SERVICE-URL/health` | Plain text **`ok`** |
-| `https://YOUR-SERVICE-URL/` | Short message that the **contact leads API** is running and **`POST …/contact-form-submissions`** |
+| `https://leadsservice-225529017623.us-central1.run.app/health` | Plain text **`ok`** |
+| `https://leadsservice-225529017623.us-central1.run.app/` | Short message that the **contact leads API** is running and **`POST …/contact-form-submissions`** |
 
 **Note:** **`Cannot GET /`** on an older deployed revision only means **`GET /`** was not implemented yet; **redeploy** after updating the API, or always use **`/health`**. The widget still uses **`POST /contact-form-submissions`** — it does not use **`GET /`**.
 
@@ -300,20 +303,21 @@ Open your service URL (same host as Cloud Run gives you):
 
 The chat iframe loads **`company-loader.js`**, which passes **`apiBase`** into **`chat-frame.html`** so **`company.js`** can `POST` to **`/contact-form-submissions`** on your API host.
 
-Where you embed the widget (for example **`myweb.html`** in this repo), add **`apiBase`** (**HTTPS only**, **no trailing slash**):
+Where you embed the widget (for example **`myweb.html`** in this repo), set **`apiBase`** to your Cloud Run host (**HTTPS**, **no trailing slash**). This repo is already configured like this:
 
 ```html
-<script src="company-loader.js?botid=0001&v=70&apiBase=https://YOUR-SERVICE-URL"></script>
+<script src="company-loader.js?botid=0001&v=70&apiBase=https://leadsservice-225529017623.us-central1.run.app"></script>
 ```
 
-Replace **`YOUR-SERVICE-URL`** with the host from Step 12 (example: **`contact-form-api-xxxxx-uc.a.run.app`** — include `https://` inside `apiBase` as shown).
+In **`chat-frame.html`**, **`meta name="dfchat-api-base-url"`** carries the same default when the iframe is opened **without** an `apiBase` query parameter.
 
+- Replace the URL everywhere if Cloud Run gives you a **new** hostname.
 - Keep **`v=70`** in sync when you bump cache versions in **`company-loader.js`** (`IFRAME_VERSION`) and **`chat-frame.html`** asset query strings after big updates.  
 - If the site is **GitHub Pages** for this same repo (**`…/testingone/`**), commit and push **`myweb.html`** after editing **`apiBase`**, then wait for Pages to rebuild.
 
 Save and publish your site and **hard-refresh** the page (**Ctrl+F5**).
 
-**Done when:** Chat opens; **F12** → **Network** shows a **`POST`** to `https://YOUR-SERVICE-URL/contact-form-submissions` returning **200** after submit (not blocked or mixed-content errors).
+**Done when:** Chat opens; **F12** → **Network** shows a **`POST`** to **`https://leadsservice-225529017623.us-central1.run.app/contact-form-submissions`** returning **200** after submit (not blocked or mixed-content errors).
 
 ---
 
@@ -383,6 +387,6 @@ You may occasionally see Git mention **`credential-manager-core`** on Windows; i
 
 ## Reminder — what stays public vs secret
 
-Safe in **`myweb.html`:** only **`https://`…`** Cloud Run URL in **`apiBase`**.
+Safe in **`myweb.html`:** only the **public HTTPS** Cloud Run host in **`apiBase`** / **`dfchat-api-base-url`** — currently **`https://leadsservice-225529017623.us-central1.run.app`**.
 
 Never put **service account JSON**, **sheet private links as secrets**, or **API keys meant for servers** inside `company.js`, `company.config.js`, or public GitHub repos.
