@@ -336,10 +336,11 @@ window.COMPANY_CHAT_UI_CONFIG = {
     form: {
       // Form to use when Dialogflow sends only `{ "action": "open_form" }` (no `form_id`), and on first load.
       defaultFormId: "contact",
-      // Shared defaults when a form does not set its own (this form uses per-form chatSummaryFieldNames)
+      // Shared defaults when a form does not set its own (this form uses per-form chatSummaryFieldNames).
+      // Align keys with CX session parameters — e.g. name, mobile, email (field `name` → POST JSON key).
       chatSummaryFieldNames: ["name", "mobile", "email"],
       forms: {
-        // Contact: name, mobile, email (no message field)
+        // Contact: name, mobile, email (matches Dialogflow parameter `mobile` for phone).
         contact: {
           titleByLanguage: {
             en: "Contact us",

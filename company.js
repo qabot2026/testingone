@@ -4,6 +4,8 @@ let lastUserPersonaRenderAt = 0;
 let companyPersonaWindowListenersAttached = false;
 let contactFormOpenTimer = null;
 let contactFormOpenPending = false;
+/** Extra keys from the latest `open_form` custom payload; applied when the contact form opens (e.g. name, mobile, email). */
+let pendingOpenFormPrefill = /** @type {Record<string, string> | null} */ (null);
 /** @type {string | null} Which `common.form.forms[…]` is active; `null` until first `readContactFormConfig()`. */
 let activeContactFormId = null;
 let activeDfMessenger = null;
@@ -27,6 +29,8 @@ const CHAT_CLIENT_CONTEXT_ENDPOINT = "/chat-client-context";
 const CHAT_CLIENT_CONTEXT_STORAGE_KEY = "company_chat_client_context";
 const CONTACT_FORM_OPEN_DELAY_MS = 600;
 const CONTACT_FORM_OPEN_ACTION = "open_form";
+/** Keys stripped when treating an `open_form` payload as field prefill (`action`, `form_id`, … only). */
+const OPEN_FORM_PAYLOAD_META_KEYS = new Set(["action", "form_id", "formId"]);
 const CONTACT_FORM_ENDPOINT = "/contact-form-submissions";
 const API_BASE_URL_META_NAME = "dfchat-api-base-url";
 const MOBILE_CHAT_BREAKPOINT_PX = 768;
@@ -3836,6 +3840,24 @@ function stripTrailingCourtesyWholeMessage(raw) {
     return s;
 }
 
+/**
+ * Bare ISO-style tags ("mr", "hi", "en") must not switch language alone; full names ("marathi", "hindi") still do.
+ * @param {string} piece
+ * @param {string} resolved
+ * @returns {boolean}
+ */
+function isBareIsoLanguageTagFlowAlias(piece, resolved) {
+    const normalized = normalizeWholeMessageIntentPhrase(piece);
+    if (!normalized || normalized.indexOf(" ") !== -1) {
+        return false;
+    }
+    const base = (resolved.split(/[-_]/)[0] || resolved).toLowerCase();
+    if (normalized !== base) {
+        return false;
+    }
+    return /^[a-z]{2,3}$/.test(normalized);
+}
+
 /** Cached: normalized spoken phrase → `enabledLanguages` code (normalized). Built from codes, labels, `nativeLabel`, autonyms. */
 let chatLanguageFlowAliasMapCache = null;
 
@@ -3889,7 +3911,9 @@ function getChatLanguageFlowAliasMap() {
                 seenPhrase.add(piece);
             }
             for (const piece of seenPhrase) {
-                alias(piece, resolved);
+                if (!isBareIsoLanguageTagFlowAlias(piece, resolved)) {
+                    alias(piece, resolved);
+                }
                 const n = normalizeWholeMessageIntentPhrase(piece);
                 if (n.length < 3) {
                     continue;
@@ -3905,8 +3929,14 @@ function getChatLanguageFlowAliasMap() {
                 alias(`${n} please`, resolved);
             }
         }
-        /** Roman-keyboard typos (“hinid”) when the gloss language is enabled. */
-        const flowTyposToBaseLang = [["hinid", "hi"], ["hendi", "hi"]];
+        /** Roman-keyboard / speech-style typos when the gloss language is enabled (full-name intent, not short codes). */
+        const flowTyposToBaseLang = [
+            ["hinid", "hi"],
+            ["hendi", "hi"],
+            ["maarghi", "mr"],
+            ["marati", "mr"],
+            ["marthi", "mr"]
+        ];
         for (let ti = 0; ti < flowTyposToBaseLang.length; ti += 1) {
             const typo = flowTyposToBaseLang[ti][0];
             const baseGuess = flowTyposToBaseLang[ti][1];
@@ -3924,6 +3954,7 @@ function getChatLanguageFlowAliasMap() {
 
 /**
  * Whole-message language switch (“hindi”, “marathi”, “speak english”, …) when multiLanguage is enabled.
+ * Bare tags like “mr” / “hi” / “en” alone do not switch; use the full language name (or a listed typo).
  * @param {string} text
  * @returns {string} Resolved language code, or ""
  */
@@ -10578,6 +10609,7 @@ function attachPersonaHandlers(dfMessenger) {
 
         if (willOpenForm) {
             contactFormOpenPending = true;
+            pendingOpenFormPrefill = extractOpenFormPrefillFromEvent(event);
         }
 
         if (messages.length > 0) {
@@ -10730,6 +10762,87 @@ function extractOpenFormIdFromEvent(event) {
     return "";
 }
 
+/**
+ * @param {Record<string, unknown>} payload
+ * @returns {Record<string, string> | null}
+ */
+function shallowPrefillFromOpenFormPayload(payload) {
+    if (!payload || typeof payload !== "object") {
+        return null;
+    }
+    /** @type {Record<string, string>} */
+    const out = {};
+    for (const [key, value] of Object.entries(payload)) {
+        if (!key || OPEN_FORM_PAYLOAD_META_KEYS.has(key)) {
+            continue;
+        }
+        if (typeof value === "string") {
+            const t = value.trim();
+            if (t) {
+                out[key] = t;
+            }
+        } else if (typeof value === "number" && Number.isFinite(value)) {
+            out[key] = String(value);
+        }
+    }
+    return Object.keys(out).length ? out : null;
+}
+
+/**
+ * Merge string/number field hints from every `open_form` payload on this turn (later messages override).
+ * @param {Event} event
+ * @returns {Record<string, string> | null}
+ */
+function extractOpenFormPrefillFromEvent(event) {
+    const responseMessages = event && event.detail && event.detail.raw && event.detail.raw.queryResult
+        && Array.isArray(event.detail.raw.queryResult.responseMessages)
+        ? event.detail.raw.queryResult.responseMessages
+        : [];
+
+    const messengerMessages = event && event.detail && event.detail.data && Array.isArray(event.detail.data.messages)
+        ? event.detail.data.messages
+        : [];
+
+    /** @type {Record<string, string>} */
+    let merged = {};
+    for (const message of [...responseMessages, ...messengerMessages]) {
+        const payload = extractPayload(message);
+        if (!payload || payload.action !== CONTACT_FORM_OPEN_ACTION) {
+            continue;
+        }
+        const slice = shallowPrefillFromOpenFormPayload(payload);
+        if (slice) {
+            merged = Object.assign(merged, slice);
+        }
+    }
+    return Object.keys(merged).length ? merged : null;
+}
+
+/**
+ * @param {Record<string, string>} values
+ */
+function applyContactFormPrefill(values) {
+    if (!values || typeof values !== "object") {
+        return;
+    }
+    const cfg = readContactFormConfig();
+    const fields = Array.isArray(cfg.fields) ? cfg.fields : [];
+    for (const def of fields) {
+        if (!def || !def.id || !def.name) {
+            continue;
+        }
+        const v = values[def.name];
+        const s = v != null ? String(v).trim() : "";
+        if (!s) {
+            continue;
+        }
+        const el = document.getElementById(def.id);
+        if (el && "value" in el) {
+            el.value = s;
+        }
+    }
+}
+
 function extractPayload(message) {
     if (!message || typeof message !== "object") {
         return null;
@@ -10831,6 +10944,11 @@ function openContactForm() {
         syncContactFormPosition();
     }, 0);
     scheduleSyncChatActionBarPosition();
+
+    if (pendingOpenFormPrefill) {
+        applyContactFormPrefill(pendingOpenFormPrefill);
+        pendingOpenFormPrefill = null;
+    }
 }
 
 function closeForm() {

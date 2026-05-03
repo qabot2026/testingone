@@ -35,7 +35,7 @@
   }
 
   var CHAT_HOST = chatHostFromLoaderSrc() || "https://qabot2026.github.io/testingone/";
-  var IFRAME_VERSION = "69";
+  var IFRAME_VERSION = "70";
 
   function getLoaderQuery() {
     var cur = document.currentScript;
@@ -59,10 +59,15 @@
   }
   var q = getLoaderQuery();
   var bot = (q.get("botid") || "").trim();
+  /** Pass-through: backend base URL for `/contact-form-submissions` (Cloud Run etc.). Same-origin if omitted. */
+  var apiBase = (q.get("apiBase") || "").trim();
 
   var frameUrl = CHAT_HOST + "chat-frame.html?v=" + encodeURIComponent(IFRAME_VERSION);
   if (bot) {
     frameUrl += "&botid=" + encodeURIComponent(bot);
+  }
+  if (apiBase) {
+    frameUrl += "&apiBase=" + encodeURIComponent(apiBase);
   }
 
   function mount() {

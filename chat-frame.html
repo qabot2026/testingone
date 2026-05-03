@@ -4,16 +4,19 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Chat</title>
-  <link rel="stylesheet" href="company.css?v=69" />
+  <link rel="stylesheet" href="company.css?v=70" />
   <script src="https://www.gstatic.com/dialogflow-console/fast/df-messenger/prod/v1/df-messenger.js"></script>
   <script>
     (function () {
-      var b = new URLSearchParams(window.location.search).get("botid");
+      var p = new URLSearchParams(window.location.search);
+      var b = p.get("botid");
       if (b) window.COMPANY_EMBED_BOT_ID = b.trim();
+      var api = (p.get("apiBase") || "").trim();
+      if (api) window.COMPANY_API_BASE_URL = api;
     })();
   </script>
-  <script src="company.config.js?v=69"></script>
-  <script src="company.js?v=69"></script>
+  <script src="company.config.js?v=70"></script>
+  <script src="company.js?v=70"></script>
   <style>
     html, body { height: 100%; margin: 0; background: transparent; overflow: visible; }
   </style>
