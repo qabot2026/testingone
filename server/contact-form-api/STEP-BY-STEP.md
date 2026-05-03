@@ -259,6 +259,16 @@ The console will queue a **Cloud Build** job and then deploy. Wait until the sta
 
 **Done when:** Cloud Run shows a **URL** like `https://contact-form-api-xxxxx-xx.a.run.app`
 
+**If an extra wizard asks Cloud Build trigger — Event:**
+
+| Event | Pick when… |
+|--------|------------|
+| **Push to a branch** | **Recommended.** Deploy/rebuild whenever you push to **`main`** (daily workflow for this repo). |
+| **Push new tag** | Only if you want deploys **only** after creating a Git **tag** (e.g. `v1.0.0`). |
+| **Pull request** | Optional CI on PRs; skip if unused. |
+
+For **qabot2026/testingone**, use **Push to a branch** → branch **`main`**.
+
 ---
 
 ### Step 13 — Open the `/health` check in browser
