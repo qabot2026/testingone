@@ -217,10 +217,19 @@ If the build fails with “Dockerfile not found”, open **[Dockerfile on GitHub
 
 4. **Service name:** `contact-form-api` (any allowed name).
 
-5. **Authentication:**
+5. **Authentication** (required dropdown / radio — pick one)
 
-   - Choose **Allow unauthenticated invocations** so your public website can `POST` (required for the chat form).  
-   - If you only see “Require authentication”, pick the option that allows **public** HTTP access to this service (UI labels vary by org policy).
+For the **contact form API**, visitors’ browsers must call your Cloud Run **URL** without signing in to Google. Choose **public** access:
+
+| If the console shows… | Choose |
+|------------------------|--------|
+| **Allow unauthenticated invocations** | ✅ **Yes** / **Allow** (this is what you want). |
+| **Allow public access** | ✅ **Yes**. |
+| **Ingress: all** (with public URL) + auth “none” / open | ✅ Match your wizard’s “public HTTP” option. |
+
+❌ **Do not** choose **Require authentication**, **IAM only**, **Authenticated users only**, or similar — that blocks anonymous `POST` from your website unless you add Cloud IAM tokens in JavaScript (you are not doing that).
+
+**Note:** “Unauthenticated” means **anyone who has the URL can send requests** to this service. Keep the URL unlisted if you want obscurity; rate limiting is a separate topic. Firestore/Sheets writes still use the **runtime service account** configured in **item 7 (Service account)** in **this same Step 12** — that is **server-side** identity, not your website visitors.
 
 6. **Container / Runtime / Resources:** defaults are usually enough for this small API; you can increase memory later if builds fail.
 
