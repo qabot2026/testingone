@@ -2,6 +2,16 @@
 
 This guide uses **only web pages** (Google Cloud Console + GitHub in a browser). It does **not** use Terminal, Command Prompt, `gcloud`, `npm`, Cloud Shell commands, or copy-pasted shell blocks.
 
+The API code and this file live on GitHub under **`server/contact-form-api/`** in [qabot2026/testingone](https://github.com/qabot2026/testingone) (**branch `main`**). After edits, keep GitHub updated (see **Pushing updates from your computer**) so Cloud Run can rebuild from the latest commit.
+
+---
+
+## Contents
+
+1. [What you need first](#what-you-need-first) · [This project on GitHub](#this-project-on-github-official-repo)  
+2. [Steps 1–18](#steps-all-from-dashboards) (Cloud + GitHub + embed)  
+3. [Pushing updates (Git)](#pushing-updates-from-your-computer-git) · [Optional env vars](#optional-dashboards-only-later-tuning)
+
 ---
 
 ## What you need first
@@ -141,7 +151,7 @@ With the spreadsheet open, look at the address bar:
 
 `https://docs.google.com/spreadsheets/d/` **`THIS_LONG_ID`** `/edit`
 
-Copy **only** **`THIS_LONG_ID`**. Save it as `YOUR_SHEET_ID` for Step 15.
+Copy **only** **`THIS_LONG_ID`**. You will paste it as **`SHEETS_SPREADSHEET_ID`** in Cloud Run (Step 12).
 
 ---
 
@@ -191,6 +201,19 @@ Configure **source**:
   - If `Dockerfile` is at repo root → choose **Dockerfile** and path **`/Dockerfile`** (or `/` as root).  
 
   - If `Dockerfile` is inside a folder → set **Dockerfile location** / **directory** / **build context** to that folder per the form’s hints (examples: `./` root vs `server/contact-form-api`).
+
+**Concrete example — this repo ([qabot2026/testingone](https://github.com/qabot2026/testingone))**
+
+| Field | Value |
+|--------|--------|
+| Repository | `qabot2026/testingone` (or browse and select it after GitHub auth) |
+| Branch | `main` |
+| **Source folder / build context** | **`server/contact-form-api`** (folder that contains `Dockerfile`) |
+| **Dockerfile path** (if separate from context) | Often **`Dockerfile`** relative to that folder, **or** from repo root: **`server/contact-form-api/Dockerfile`** |
+
+If the build fails with “Dockerfile not found”, open **[Dockerfile on GitHub](https://github.com/qabot2026/testingone/blob/main/server/contact-form-api/Dockerfile)** and match the folder you set in the wizard.
+
+**GCP project vs Dialogflow:** `company.config.js` may list a Dialogflow **project id** (e.g. `qabot01`). Your **Cloud Run + Firestore** project can be the same GCP project or a different one — they are only related by what *you* configure. Create Firestore and this service in whichever project you use for **storing** form rows.
 
 4. **Service name:** `contact-form-api` (any allowed name).
 
@@ -242,18 +265,22 @@ Paste into the address bar (replace with **your** service URL):
 
 ### Step 15 — Point your chat widget at Cloud Run (**your site / HTML**, not GCP)
 
-Where you load **`company-loader.js`** (for example **`myweb.html`**), set **`apiBase`** to your HTTPS service URL (**no slash** at the end):
+The chat iframe loads **`company-loader.js`**, which passes **`apiBase`** into **`chat-frame.html`** so **`company.js`** can `POST` to **`/contact-form-submissions`** on your API host.
+
+Where you embed the widget (for example **`myweb.html`** in this repo), add **`apiBase`** (**HTTPS only**, **no trailing slash**):
 
 ```html
 <script src="company-loader.js?botid=0001&v=70&apiBase=https://YOUR-SERVICE-URL"></script>
-
 ```
 
-Replace **`https://YOUR-SERVICE-URL`** with the URL from Step 12.
+Replace **`YOUR-SERVICE-URL`** with the host from Step 12 (example: **`contact-form-api-xxxxx-uc.a.run.app`** — include `https://` inside `apiBase` as shown).
 
-Save and publish your site (GitHub Pages, hosting, etc.) and **hard-refresh** the page (**Ctrl+F5**).
+- Keep **`v=70`** in sync when you bump cache versions in **`company-loader.js`** (`IFRAME_VERSION`) and **`chat-frame.html`** asset query strings after big updates.  
+- If the site is **GitHub Pages** for this same repo (**`…/testingone/`**), commit and push **`myweb.html`** after editing **`apiBase`**, then wait for Pages to rebuild.
 
-**Done when:** Chat opens normally; browser dev tools (**F12** → Console) shows no blocked request to `/contact-form-submissions`.
+Save and publish your site and **hard-refresh** the page (**Ctrl+F5**).
+
+**Done when:** Chat opens; **F12** → **Network** shows a **`POST`** to `https://YOUR-SERVICE-URL/contact-form-submissions` returning **200** after submit (not blocked or mixed-content errors).
 
 ---
 
@@ -292,13 +319,20 @@ If your setup **redeploys on every Git push**, then after **Commit** on GitHub, 
 
 ## Pushing updates from your computer (Git)
 
-This repo’s remote is **`https://github.com/qabot2026/testingone.git`**, branch **`main`**. After you edit files locally (in Cursor, VS Code, etc.):
+This repo’s remote is **`https://github.com/qabot2026/testingone.git`**, branch **`main`**.
 
-1. **Stage** all changed files (including `server/contact-form-api/`).  
-2. **Commit** with a short message.  
-3. **Push** to **`origin`** / **`main`**.
+After you edit files locally (Cursor, VS Code, **GitHub Desktop**, etc.):
 
-That keeps GitHub in sync for Cloud Run “deploy from repository” and for anyone following **Step 10**.
+1. **Stage** changed files (`chat-frame.html`, `company-loader.js`, `myweb.html`, `server/contact-form-api/STEP-BY-STEP.md`, …).  
+2. **Commit** with a short message describing the change.  
+3. **Push** to **`main`** (`origin`).
+
+That updates GitHub for:
+
+- Cloud Run triggers or manual “deploy from repo” (**Step 12 / Step 18**), and  
+- This guide remaining accurate beside the repo it documents.
+
+You may occasionally see Git mention **`credential-manager-core`** on Windows; if **`git push`** still reports **`main -> main`**, the push succeeded.
 
 ---
 
