@@ -16,6 +16,7 @@
  *   SHEETS_RANGE — default "Sheet1!A:F" (timestamp, formId, name, mobile, email, client_session_id)
  *   DISABLE_SHEETS=1 — skip Google Sheets (Firestore only)
  *   DISABLE_FIRESTORE=1 — skip Firestore (Sheets only; unusual)
+ *   FIRESTORE_DATABASE_ID — only if not using default DB: e.g. lead-submissions (omit for (default))
  *   CORS_ORIGIN — omit for reflect request Origin; set to exact origin(s) comma-separated if you prefer strict CORS
  */
 
@@ -103,17 +104,27 @@ app.post(PATHNAME, async (req, res) => {
             });
         }
         if (!FIRESTORE_DISABLED) {
-            await persistToFirestore(record);
+            try {
+                await persistToFirestore(record);
+            } catch (fe) {
+                const detail = fe && fe.message ? fe.message : String(fe);
+                throw new Error(`Firestore: ${detail}`);
+            }
         }
         if (!SHEETS_DISABLED) {
-            await appendContactRowToSheet({
-                iso,
-                formId,
-                name,
-                mobile,
-                email,
-                clientSessionId
-            });
+            try {
+                await appendContactRowToSheet({
+                    iso,
+                    formId,
+                    name,
+                    mobile,
+                    email,
+                    clientSessionId
+                });
+            } catch (se) {
+                const detail = se && se.message ? se.message : String(se);
+                throw new Error(`Sheets: ${detail}`);
+            }
         }
         return res.status(200).json({ ok: true, message: "Saved." });
     } catch (err) {

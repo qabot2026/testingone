@@ -4,8 +4,11 @@
 
 import fs from "node:fs";
 import admin from "firebase-admin";
+import { getFirestore } from "firebase-admin/firestore";
 
 const COLLECTION = process.env.FIRESTORE_COLLECTION || "contact_submissions";
+/** Empty, `default`, or `(default)` → default DB. Any other value → named Firestore database (avoids NOT_FOUND if you did not use the default). */
+const FIRESTORE_DATABASE_ID = (process.env.FIRESTORE_DATABASE_ID || "").trim();
 
 /** @typedef {Record<string, unknown>} FirestoreRecord */
 
@@ -34,8 +37,16 @@ export function firebaseAdminInit() {
     admin.initializeApp();
 }
 
+function getFirestoreDb() {
+    const id = FIRESTORE_DATABASE_ID;
+    if (!id || id === "(default)" || id === "default") {
+        return admin.firestore();
+    }
+    return getFirestore(admin.app(), id);
+}
+
 export async function persistToFirestore(record) {
-    const db = admin.firestore();
+    const db = getFirestoreDb();
     await db.collection(COLLECTION).add({
         ...record,
         /** server time for indexing */
