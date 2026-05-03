@@ -196,11 +196,21 @@ Configure **source**:
 - Choose **deploy from GitHub / source repository / continuous deployment** (wording varies).  
 - **Repository:** the repo from Step 10.  
 - **Branch:** usually `main` or `master` (whatever you use).  
-- **Source / Build configuration:**  
 
-  - If `Dockerfile` is at repo root → choose **Dockerfile** and path **`/Dockerfile`** (or `/` as root).  
+When the wizard asks **Configuration → Type**:
 
-  - If `Dockerfile` is inside a folder → set **Dockerfile location** / **directory** / **build context** to that folder per the form’s hints (examples: `./` root vs `server/contact-form-api`).
+| Option | Use for this repo? |
+|--------|---------------------|
+| **Autodetected** | Risky — may look only at repo **root**. Your Dockerfile is **not** at root. Prefer **Dockerfile** below. |
+| **Cloud Build configuration file** | Only if you add `cloudbuild.yaml`. Skip unless you maintain that file. |
+| **Dockerfile** | **Choose this.** Then set Dockerfile path / context per the table below. |
+| **Buildpacks** | Skip — unnecessary; you already ship a Dockerfile. |
+
+**Source / Build configuration** (when type = **Dockerfile**):
+
+  - **`Dockerfile` at repo root** → Dockerfile path **`/Dockerfile`** (or `/` as context).  
+
+  - **This project** → context / source directory **`server/contact-form-api`**, Dockerfile **`Dockerfile`** **or** single path from repo root: **`server/contact-form-api/Dockerfile`** (labels differ by console version).
 
 **Concrete example — this repo ([qabot2026/testingone](https://github.com/qabot2026/testingone))**
 
