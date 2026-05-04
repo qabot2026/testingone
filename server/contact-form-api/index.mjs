@@ -151,13 +151,6 @@ app.post(
         let drive_subfolder_id = "";
         let drive_subfolder_name = "";
 
-        if (uploadedFiles.length > 0 && FIRESTORE_DISABLED) {
-            return res.status(400).json({
-                ok: false,
-                error: "Submissions with file attachments require Firestore to store attachment metadata. Turn off DISABLE_FIRESTORE on Railway."
-            });
-        }
-
         if (uploadedFiles.length > 0) {
             if (!(process.env.GOOGLE_DRIVE_FOLDER_ID || "").trim()) {
                 return res.status(500).json({
@@ -216,10 +209,10 @@ app.post(
         };
 
         try {
-            if (FIRESTORE_DISABLED && SHEETS_DISABLED) {
+            if (FIRESTORE_DISABLED && SHEETS_DISABLED && drive_uploads.length === 0) {
                 return res.status(500).json({
                     ok: false,
-                    error: "Neither Firestore nor Sheets is enabled: set FIREBASE_SERVICE_ACCOUNT_JSON + Firestore, and/or SHEETS_SPREADSHEET_ID for Sheets. Remove DISABLE_FIRESTORE / DISABLE_SHEETS if applicable."
+                    error: "Neither Firestore nor Sheets is enabled, and there were no files uploaded to Drive. Set FIREBASE_SERVICE_ACCOUNT_JSON + Firestore, and/or SHEETS_SPREADSHEET_ID, or send files (Drive-only)."
                 });
             }
             if (!FIRESTORE_DISABLED) {
