@@ -6,14 +6,14 @@
  * 1. Firebase Console → Project settings → Service accounts → **Generate new private key** (JSON).
  * 2. Railway → **FIREBASE_SERVICE_ACCOUNT_JSON** = full JSON (used for Firestore + Sheets).
  * 3. Google Sheets: share the spreadsheet with the service account **`client_email`** (Editor). Enable **Google Sheets API** in the same Google Cloud project if prompted.
- * 4. Railway → **SHEETS_SPREADSHEET_ID** (from the sheet URL). Optional **SHEETS_RANGE** (default `Sheet1!A:F`). Set **DISABLE_SHEETS=1** to skip Sheets; omit **SHEETS_SPREADSHEET_ID** to use Firestore only.
+ * 4. Railway → **SHEETS_SPREADSHEET_ID** (from the sheet URL). Optional **SHEETS_RANGE** (default `Sheet1!A:H`). Set **DISABLE_SHEETS=1** to skip Sheets; omit **SHEETS_SPREADSHEET_ID** to use Firestore only.
  * 5. Point the site at this API (`dfchat-api-base-url` / `apiBase`).
  *
  * Env:
  *   PORT, FIREBASE_SERVICE_ACCOUNT_JSON / FIREBASE_CONFIG, GOOGLE_APPLICATION_CREDENTIALS (local file)
  *   DISABLE_FIRESTORE=1, FIRESTORE_DATABASE_ID, CORS_ORIGIN
  *   SHEETS_SPREADSHEET_ID — enables live append when set (unless DISABLE_SHEETS=1)
- *   SHEETS_RANGE — optional, default Sheet1!A:F
+ *   SHEETS_RANGE — optional, default Sheet1!A:H
  *   DISABLE_SHEETS=1 — never write to Sheets (even if SHEETS_SPREADSHEET_ID is set)
  */
 
@@ -82,6 +82,12 @@ app.post(PATHNAME, async (req, res) => {
     const clientSessionId = typeof clientContext.client_session_id === "string"
         ? clientContext.client_session_id
         : "";
+    const browserName = typeof clientContext.browser_name === "string"
+        ? clientContext.browser_name.trim()
+        : "";
+    const deviceType = typeof clientContext.device_type === "string"
+        ? clientContext.device_type.trim()
+        : "";
 
     const iso = new Date().toISOString();
     /** Firestore-safe payload (flattened for querying) */
@@ -118,7 +124,9 @@ app.post(PATHNAME, async (req, res) => {
                     name,
                     mobile,
                     email,
-                    clientSessionId
+                    clientSessionId,
+                    browserName,
+                    deviceType
                 });
             } catch (se) {
                 const detail = se && se.message ? se.message : String(se);
