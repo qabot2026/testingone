@@ -1,20 +1,20 @@
 /**
  * Backend for `company.js` POST /contact-form-submissions (JSON or multipart with files).
- * File bytes always go to **Google Drive** (not Firestore/Sheets).
+ * Large file uploads: **Google Drive API** in this service, **or** relay to your **Apps Script web app**
+ *   (`GOOGLE_APPS_SCRIPT_WEBAPP_URL` → script runs as you, no service-account Drive quota issue).
  *
  * **Easiest “files only” (no database, no Sheet):** set on Railway
- *   `DRIVE_ONLY=1` + `GOOGLE_DRIVE_FOLDER_ID` + the same service-account JSON you use for Google APIs
- *   (`FIREBASE_SERVICE_ACCOUNT_JSON` or `GOOGLE_SERVICE_ACCOUNT_JSON`). The folder must sit on a
- *   **Google Workspace Shared drive** (team folder), with the service account added as a member — two
- *   steps in Drive, no OAuth. Personal Gmail cannot use this shortcut; use `GOOGLE_DRIVE_OAUTH_*` instead.
+ *   `DRIVE_ONLY=1` + `GOOGLE_APPS_SCRIPT_WEBAPP_URL` (recommended for personal Gmail), **or**
+ *   `DRIVE_ONLY=1` + `GOOGLE_DRIVE_FOLDER_ID` + service-account JSON (**Workspace Shared drive** only).
  *
  * **Text-only leads (no attachments):** `SHEETS_SPREADSHEET_ID` + share the Sheet with the service
  *   account; `DISABLE_FIRESTORE=1` + `DISABLE_DRIVE_UPLOAD=1`.
  *
  * Env:
- *   DRIVE_ONLY=1 — skip Firestore and Sheets; only accept uploads to Drive (multipart with files)
+ *   GOOGLE_APPS_SCRIPT_WEBAPP_URL — full `/exec` deploy URL; multipart is forwarded here (skips Drive API)
+ *   DRIVE_ONLY=1 — skip Firestore and Sheets; only accept uploads (multipart with files)
  *   DISABLE_DRIVE_UPLOAD=1 — reject file fields (Sheet/text-only mode)
- *   GOOGLE_DRIVE_FOLDER_ID, GOOGLE_DRIVE_OAUTH_* (optional; personal Gmail Drive)
+ *   GOOGLE_DRIVE_FOLDER_ID, GOOGLE_DRIVE_OAUTH_* (Drive API path; optional if Apps Script URL set)
  *   PORT, FIREBASE_SERVICE_ACCOUNT_JSON / GOOGLE_SERVICE_ACCOUNT_JSON / GOOGLE_APPLICATION_CREDENTIALS
  *   DISABLE_FIRESTORE=1, FIRESTORE_DATABASE_ID, CORS_ORIGIN, SHEETS_*, DISABLE_SHEETS=1
  */
@@ -27,6 +27,9 @@ import { firebaseAdminInit, persistToFirestore } from "./lib/firestore.mjs";
 import { appendContactRowToSheet } from "./lib/sheets.mjs";
 import { uploadSubmissionFilesToDrive } from "./lib/drive-upload.mjs";
 import { hasDriveUploadCredentials } from "./lib/drive-auth.mjs";
+import { forwardSubmissionToAppsScript } from "./lib/apps-script-upload.mjs";
+
+const APPS_SCRIPT_WEBAPP_URL = (process.env.GOOGLE_APPS_SCRIPT_WEBAPP_URL || "").trim();
 
 const PORT = Number(process.env.PORT) || 8080;
 const PATHNAME = "/contact-form-submissions";
@@ -155,10 +158,25 @@ app.post(
         const channel = normalizeLeadChannel(clientContext.channel);
         const mergedClientContext = { ...clientContext, channel };
 
+        if (DRIVE_ONLY) {
+            const hasBytes = uploadedFiles.some(
+                (f) => f && Buffer.isBuffer(f.buffer) && f.buffer.length > 0
+            );
+            if (!hasBytes) {
+                return res.status(400).json({
+                    ok: false,
+                    error:
+                        "DRIVE_ONLY=1: include at least one file with data in the form, or remove DRIVE_ONLY to save text to Firestore/Sheets."
+                });
+            }
+        }
+
         /** @type {Array<Record<string, unknown>>} */
         let drive_uploads = [];
         let drive_subfolder_id = "";
         let drive_subfolder_name = "";
+        /** True after a successful Apps Script forward, even if the script returns no JSON uploads. */
+        let filesStoredExternally = false;
 
         if (uploadedFiles.length > 0 && DISABLE_DRIVE_UPLOAD) {
             return res.status(400).json({
@@ -170,38 +188,60 @@ app.post(
         }
 
         if (uploadedFiles.length > 0) {
-            if (!(process.env.GOOGLE_DRIVE_FOLDER_ID || "").trim()) {
-                return res.status(500).json({
-                    ok: false,
-                    error: "Set GOOGLE_DRIVE_FOLDER_ID (folder id from the Drive URL)."
-                });
-            }
-            if (!hasDriveUploadCredentials()) {
-                return res.status(500).json({
-                    ok: false,
-                    error:
-                        "File uploads need Drive auth: set GOOGLE_DRIVE_OAUTH_CLIENT_ID, GOOGLE_DRIVE_OAUTH_CLIENT_SECRET, and GOOGLE_DRIVE_OAUTH_REFRESH_TOKEN (user account), or a service-account JSON (e.g. FIREBASE_SERVICE_ACCOUNT_JSON) for Workspace Shared drive."
-                });
-            }
             try {
-                const pack = await uploadSubmissionFilesToDrive(uploadedFiles, { mobile });
-                drive_uploads = pack.uploads;
-                drive_subfolder_id = pack.drive_subfolder_id || "";
-                drive_subfolder_name = pack.drive_subfolder_name || "";
+                if (APPS_SCRIPT_WEBAPP_URL) {
+                    const pack = await forwardSubmissionToAppsScript(APPS_SCRIPT_WEBAPP_URL, {
+                        files: uploadedFiles,
+                        fields,
+                        clientContext: mergedClientContext,
+                        formId
+                    });
+                    drive_uploads = pack.uploads;
+                    filesStoredExternally = true;
+                    const j = pack.json;
+                    if (j && typeof j === "object") {
+                        if (typeof j.drive_subfolder_id === "string" && j.drive_subfolder_id.trim()) {
+                            drive_subfolder_id = j.drive_subfolder_id.trim();
+                        }
+                        if (typeof j.drive_subfolder_name === "string" && j.drive_subfolder_name.trim()) {
+                            drive_subfolder_name = j.drive_subfolder_name.trim();
+                        }
+                    }
+                } else {
+                    if (!(process.env.GOOGLE_DRIVE_FOLDER_ID || "").trim()) {
+                        return res.status(500).json({
+                            ok: false,
+                            error:
+                                "Set GOOGLE_APPS_SCRIPT_WEBAPP_URL (Apps Script /exec URL) or GOOGLE_DRIVE_FOLDER_ID (Drive API folder id)."
+                        });
+                    }
+                    if (!hasDriveUploadCredentials()) {
+                        return res.status(500).json({
+                            ok: false,
+                            error:
+                                "File uploads need either GOOGLE_APPS_SCRIPT_WEBAPP_URL, or Drive API auth: GOOGLE_DRIVE_OAUTH_* or a service-account JSON for Workspace Shared drive."
+                        });
+                    }
+                    const pack = await uploadSubmissionFilesToDrive(uploadedFiles, { mobile });
+                    drive_uploads = pack.uploads;
+                    drive_subfolder_id = pack.drive_subfolder_id || "";
+                    drive_subfolder_name = pack.drive_subfolder_name || "";
+                    filesStoredExternally = drive_uploads.length > 0;
+                }
             } catch (ue) {
                 let detail = ue && ue.message ? ue.message : String(ue);
                 if (/storage quota|Service Accounts do not have storage/i.test(detail)) {
                     detail +=
-                        " Use a Workspace Shared drive for the service account, or switch to user OAuth (GOOGLE_DRIVE_OAUTH_* env) for a normal Google account folder.";
+                        " Use Apps Script (GOOGLE_APPS_SCRIPT_WEBAPP_URL), a Workspace Shared drive, or GOOGLE_DRIVE_OAUTH_*.";
                 }
-                console.error("[contact-form-api] Google Drive upload failed", detail, ue);
+                console.error("[contact-form-api] Upload forward failed", detail, ue);
                 return res.status(500).json({
                     ok: false,
-                    error: `Drive: ${detail}`
+                    error: detail
                 });
             }
-            const namesForSummary = drive_uploads
-                .map((f) => (typeof f.original_name === "string" ? f.original_name : ""))
+            const namesForSummary = uploadedFiles
+                .map((f) => (typeof f.originalname === "string" ? f.originalname : ""))
                 .filter(Boolean);
             if (namesForSummary.length && !fields.document) {
                 fields.document = namesForSummary.join(", ");
@@ -234,17 +274,10 @@ app.post(
         };
 
         try {
-            if (DRIVE_ONLY && drive_uploads.length === 0) {
-                return res.status(400).json({
-                    ok: false,
-                    error:
-                        "DRIVE_ONLY=1 means this server only saves files to Google Drive. Send multipart/form-data with at least one file, or remove DRIVE_ONLY to save form text to Firestore/Sheets."
-                });
-            }
-            if (FIRESTORE_DISABLED && SHEETS_DISABLED && drive_uploads.length === 0) {
+            if (FIRESTORE_DISABLED && SHEETS_DISABLED && drive_uploads.length === 0 && !filesStoredExternally) {
                 return res.status(500).json({
                     ok: false,
-                    error: "Neither Firestore nor Sheets is enabled, and there were no files uploaded to Drive. Set FIREBASE_SERVICE_ACCOUNT_JSON + Firestore, and/or SHEETS_SPREADSHEET_ID, or send files (Drive-only)."
+                    error: "Neither Firestore nor Sheets is enabled, and files were not stored (no Drive upload and no Apps Script success). Set SHEETS_SPREADSHEET_ID and/or Firestore, or configure GOOGLE_APPS_SCRIPT_WEBAPP_URL / Drive uploads."
                 });
             }
             if (!FIRESTORE_DISABLED) {
@@ -300,7 +333,11 @@ app.get("/", (_req, res) => {
 app.listen(PORT, () => {
     const sheetHint = SHEETS_DISABLED ? "(Sheets OFF)" : "(Sheets ON)";
     const fsHint = FIRESTORE_DISABLED ? "Firestore OFF" : "Firestore ON";
-    const driveHint = DISABLE_DRIVE_UPLOAD ? "uploads=off" : "uploads=Drive";
+    const driveHint = DISABLE_DRIVE_UPLOAD
+        ? "uploads=off"
+        : APPS_SCRIPT_WEBAPP_URL
+          ? "uploads=AppsScript"
+          : "uploads=DriveAPI";
     const mode = DRIVE_ONLY ? " DRIVE_ONLY" : "";
     console.log(`contact-form-api listening on :${PORT} ${PATHNAME} — ${fsHint} ${sheetHint} ${driveHint}${mode}`);
 });
