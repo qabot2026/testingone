@@ -40,7 +40,7 @@ Optional: **Dialogflow** in `company.config.js` is separate from this API.
 2. **[railway.app](https://railway.app)** → **New project** → **Deploy from GitHub** → select the repo.
 3. The repo root should include **`railway.json`**, which points the Docker build at **`server/contact-form-api/Dockerfile`**.
 4. Add **`FIREBASE_SERVICE_ACCOUNT_JSON`** (step 1).
-5. **Networking** → generate a public **HTTPS** URL (e.g. `https://something.up.railway.app`).
+5. **Networking** → generate a public **HTTPS** URL (this project uses `https://handsome-amazement-production-7f65.up.railway.app`).
 6. Wait until **`GET /health`** returns `ok`.
 
 ---
@@ -49,10 +49,10 @@ Optional: **Dialogflow** in `company.config.js` is separate from this API.
 
 Set your public Railway base URL (**no trailing slash**) in:
 
-- **`myweb.html`** — `company-loader.js?...&apiBase=https://YOUR-SERVICE.up.railway.app`
-- **`chat-frame.html`** — `<meta name="dfchat-api-base-url" content="https://YOUR-SERVICE.up.railway.app" />`
+- **`myweb.html`** — `apiBase=https://handsome-amazement-production-7f65.up.railway.app`
+- **`chat-frame.html`** — `<meta name="dfchat-api-base-url" content="https://handsome-amazement-production-7f65.up.railway.app" />`
 
-Replace **`YOUR-SERVICE`** with the hostname Railway gives you.
+If Railway gives you a **new** domain later, update both places (and the line above) to match.
 
 ---
 
