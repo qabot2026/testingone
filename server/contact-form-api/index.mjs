@@ -6,14 +6,14 @@
  * 1. Firebase Console → Project settings → Service accounts → **Generate new private key** (JSON).
  * 2. Railway → **FIREBASE_SERVICE_ACCOUNT_JSON** = full JSON (used for Firestore + Sheets).
  * 3. Google Sheets: share the spreadsheet with the service account **`client_email`** (Editor). Enable **Google Sheets API** in the same Google Cloud project if prompted.
- * 4. Railway → **SHEETS_SPREADSHEET_ID** (from the sheet URL). Optional **SHEETS_RANGE** (default `Sheet1!A:H`). Set **DISABLE_SHEETS=1** to skip Sheets; omit **SHEETS_SPREADSHEET_ID** to use Firestore only.
+ * 4. Railway → **SHEETS_SPREADSHEET_ID** (from the sheet URL). Optional **SHEETS_RANGE** (default `Sheet1!A:I`). Set **DISABLE_SHEETS=1** to skip Sheets; omit **SHEETS_SPREADSHEET_ID** to use Firestore only.
  * 5. Point the site at this API (`dfchat-api-base-url` / `apiBase`).
  *
  * Env:
  *   PORT, FIREBASE_SERVICE_ACCOUNT_JSON / FIREBASE_CONFIG, GOOGLE_APPLICATION_CREDENTIALS (local file)
  *   DISABLE_FIRESTORE=1, FIRESTORE_DATABASE_ID, CORS_ORIGIN
  *   SHEETS_SPREADSHEET_ID — enables live append when set (unless DISABLE_SHEETS=1)
- *   SHEETS_RANGE — optional, default Sheet1!A:H
+ *   SHEETS_RANGE — optional, default Sheet1!A:I
  *   DISABLE_SHEETS=1 — never write to Sheets (even if SHEETS_SPREADSHEET_ID is set)
  */
 
@@ -29,6 +29,12 @@ const SHEETS_DISABLED =
     process.env.DISABLE_SHEETS === "1" ||
     !(process.env.SHEETS_SPREADSHEET_ID || "").trim();
 const FIRESTORE_DISABLED = process.env.DISABLE_FIRESTORE === "1";
+
+/** `client_context.channel`: `web` or `whatsapp` (non-WhatsApp integrations should send `whatsapp` explicitly). */
+function normalizeLeadChannel(raw) {
+    const s = typeof raw === "string" ? raw.trim().toLowerCase() : "";
+    return s === "whatsapp" ? "whatsapp" : "web";
+}
 
 function corsOriginOption() {
     const raw = (process.env.CORS_ORIGIN || "").trim();
@@ -88,6 +94,8 @@ app.post(PATHNAME, async (req, res) => {
     const deviceType = typeof clientContext.device_type === "string"
         ? clientContext.device_type.trim()
         : "";
+    const channel = normalizeLeadChannel(clientContext.channel);
+    const mergedClientContext = { ...clientContext, channel };
 
     const iso = new Date().toISOString();
     /** Firestore-safe payload (flattened for querying) */
@@ -98,7 +106,7 @@ app.post(PATHNAME, async (req, res) => {
         email,
         mobile,
         fields,
-        client_context: clientContext
+        client_context: mergedClientContext
     };
 
     try {
@@ -126,7 +134,8 @@ app.post(PATHNAME, async (req, res) => {
                     email,
                     clientSessionId,
                     browserName,
-                    deviceType
+                    deviceType,
+                    channel
                 });
             } catch (se) {
                 const detail = se && se.message ? se.message : String(se);

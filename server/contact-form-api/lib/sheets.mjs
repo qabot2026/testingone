@@ -6,7 +6,7 @@ import fs from "node:fs";
 import { google } from "googleapis";
 
 const SPREADSHEET_ID = (process.env.SHEETS_SPREADSHEET_ID || "").trim();
-const RANGE = (process.env.SHEETS_RANGE || "Sheet1!A:H").trim();
+const RANGE = (process.env.SHEETS_RANGE || "Sheet1!A:I").trim();
 
 const SPREADSHEET_SCOPES = ["https://www.googleapis.com/auth/spreadsheets"];
 
@@ -69,8 +69,8 @@ async function getSheetsAuthClient() {
 }
 
 /**
- * Columns A–H: iso, formId, name, mobile, email, clientSessionId, browserName, deviceType.
- * @param {{ iso: string, formId: string, name: string, mobile: string, email: string, clientSessionId: string, browserName: string, deviceType: string }} row
+ * Columns A–I: iso, formId, name, mobile, email, clientSessionId, browserName, deviceType, channel (web|whatsapp).
+ * @param {{ iso: string, formId: string, name: string, mobile: string, email: string, clientSessionId: string, browserName: string, deviceType: string, channel: string }} row
  */
 export async function appendContactRowToSheet(row) {
     if (!SPREADSHEET_ID) {
@@ -86,7 +86,8 @@ export async function appendContactRowToSheet(row) {
         row.email,
         row.clientSessionId,
         row.browserName,
-        row.deviceType
+        row.deviceType,
+        row.channel
     ]];
     await sheets.spreadsheets.values.append({
         spreadsheetId: SPREADSHEET_ID,

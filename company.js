@@ -12736,7 +12736,8 @@ function getClientContext() {
         platform: navigator.platform || "",
         timezone: getBrowserTimeZone(),
         screen_resolution: getScreenResolution(),
-        viewport_size: `${window.innerWidth || 0}x${window.innerHeight || 0}`
+        viewport_size: `${window.innerWidth || 0}x${window.innerHeight || 0}`,
+        channel: "web"
     };
 
     persistClientContext(clientContext);
