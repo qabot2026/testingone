@@ -2,14 +2,16 @@
  * Backend for `company.js` POST /contact-form-submissions (JSON or multipart with files).
  * Hosting: **Railway only**. Data: **Firestore** + optional **Google Sheets**; file fields → **Google Drive** only.
  *
- * Drive setup:
- * 1. Enable **Google Drive API** (Google Cloud Console, same project as the service account).
- * 2. Parent folder **`GOOGLE_DRIVE_FOLDER_ID` must be on a Shared drive (Team Drive)** — personal “My Drive”
- *    folders fail with “service account has no storage quota” even when shared with `client_email`.
- * 3. Add the service account **`client_email`** from your JSON to the Shared drive / folder (Editor).
+ * Drive setup (pick one):
+ * • **User account (OAuth):** `GOOGLE_DRIVE_OAUTH_CLIENT_ID`, `GOOGLE_DRIVE_OAUTH_CLIENT_SECRET`,
+ *   `GOOGLE_DRIVE_OAUTH_REFRESH_TOKEN` + `GOOGLE_DRIVE_FOLDER_ID` (any folder that account can write).
+ * • **Service account:** `GOOGLE_*_SERVICE_ACCOUNT_JSON` — folder must be on a **Workspace Shared drive**
+ *   (My Drive shared with the SA still fails with “no storage quota”).
+ * Enable **Google Drive API** in the same GCP project as the OAuth client / service account.
  *
  * Env:
  *   GOOGLE_DRIVE_FOLDER_ID — required for file uploads
+ *   GOOGLE_DRIVE_OAUTH_* — optional; user Drive instead of service account
  *   PORT, FIREBASE_SERVICE_ACCOUNT_JSON / FIREBASE_CONFIG / GOOGLE_APPLICATION_CREDENTIALS
  *   DISABLE_FIRESTORE=1, FIRESTORE_DATABASE_ID, CORS_ORIGIN
  *   SHEETS_SPREADSHEET_ID, SHEETS_RANGE, DISABLE_SHEETS=1
@@ -22,7 +24,7 @@ import multer from "multer";
 import { firebaseAdminInit, persistToFirestore } from "./lib/firestore.mjs";
 import { appendContactRowToSheet } from "./lib/sheets.mjs";
 import { uploadSubmissionFilesToDrive } from "./lib/drive-upload.mjs";
-import { getServiceAccountCredentials } from "./lib/google-service-account.mjs";
+import { hasDriveUploadCredentials } from "./lib/drive-auth.mjs";
 
 const PORT = Number(process.env.PORT) || 8080;
 const PATHNAME = "/contact-form-submissions";
@@ -155,13 +157,14 @@ app.post(
             if (!(process.env.GOOGLE_DRIVE_FOLDER_ID || "").trim()) {
                 return res.status(500).json({
                     ok: false,
-                    error: "Set GOOGLE_DRIVE_FOLDER_ID (a folder on a Google Shared drive, id from the Drive URL)."
+                    error: "Set GOOGLE_DRIVE_FOLDER_ID (folder id from the Drive URL)."
                 });
             }
-            if (!getServiceAccountCredentials()) {
+            if (!hasDriveUploadCredentials()) {
                 return res.status(500).json({
                     ok: false,
-                    error: "File uploads require a Google service account JSON (e.g. FIREBASE_SERVICE_ACCOUNT_JSON)."
+                    error:
+                        "File uploads need Drive auth: set GOOGLE_DRIVE_OAUTH_CLIENT_ID, GOOGLE_DRIVE_OAUTH_CLIENT_SECRET, and GOOGLE_DRIVE_OAUTH_REFRESH_TOKEN (user account), or a service-account JSON (e.g. FIREBASE_SERVICE_ACCOUNT_JSON) for Workspace Shared drive."
                 });
             }
             try {
@@ -172,7 +175,8 @@ app.post(
             } catch (ue) {
                 let detail = ue && ue.message ? ue.message : String(ue);
                 if (/storage quota|Service Accounts do not have storage/i.test(detail)) {
-                    detail += " Put GOOGLE_DRIVE_FOLDER_ID inside a Shared drive (Team Drive) and add the service account as a member.";
+                    detail +=
+                        " Use a Workspace Shared drive for the service account, or switch to user OAuth (GOOGLE_DRIVE_OAUTH_* env) for a normal Google account folder.";
                 }
                 console.error("[contact-form-api] Google Drive upload failed", detail, ue);
                 return res.status(500).json({

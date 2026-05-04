@@ -1,14 +1,13 @@
 /**
  * Upload multipart buffers into a per-submission subfolder under GOOGLE_DRIVE_FOLDER_ID.
  *
- * **The parent folder must be on a Google Shared drive (Team Drive).** Personal “My Drive”
- * folders (even when shared with the service account) return “Service Accounts do not have storage quota”.
+ * **Service account:** parent folder must be on a **Workspace Shared drive** (Team Drive).
+ * **OAuth user:** use GOOGLE_DRIVE_OAUTH_* env; folder can be in that user’s My Drive or Shared drives.
  */
 
 import { randomUUID } from "node:crypto";
 import { PassThrough } from "node:stream";
-import { google } from "googleapis";
-import { getServiceAccountCredentials } from "./google-service-account.mjs";
+import { getDriveClient, isDriveAuthOAuthUser } from "./drive-auth.mjs";
 import {
     normalizeMobileDigits,
     nextMobileSubmissionFolderName,
@@ -20,8 +19,6 @@ const FOLDER_ID = (process.env.GOOGLE_DRIVE_FOLDER_ID || "").trim();
 
 const DRIVE_CREATE = { supportsAllDrives: true };
 const DRIVE_LIST = { supportsAllDrives: true, includeItemsFromAllDrives: true };
-
-const DRIVE_SCOPES = ["https://www.googleapis.com/auth/drive"];
 
 /** Service accounts have no My Drive quota; uploads only work under a Shared drive (driveId set). */
 async function assertFolderIsOnSharedDrive(drive, folderId) {
@@ -58,20 +55,6 @@ async function assertFolderIsOnSharedDrive(drive, folderId) {
     }
 }
 
-async function getDriveClient() {
-    const cred = getServiceAccountCredentials();
-    if (!cred) {
-        throw new Error(
-            "No Google service account JSON for Drive. Set FIREBASE_SERVICE_ACCOUNT_JSON or GOOGLE_SERVICE_ACCOUNT_JSON (same as Sheets)."
-        );
-    }
-    const auth = new google.auth.GoogleAuth({
-        credentials: cred,
-        scopes: DRIVE_SCOPES
-    });
-    return google.drive({ version: "v3", auth: await auth.getClient() });
-}
-
 /**
  * @param {Array<import("multer").File & { buffer: Buffer }>} files
  * @param {{ mobile: string }} opts
@@ -95,12 +78,14 @@ export async function uploadSubmissionFilesToDrive(files, { mobile }) {
     }
     if (!FOLDER_ID) {
         throw new Error(
-            "Set GOOGLE_DRIVE_FOLDER_ID to a folder inside a Google Shared drive (Team Drive), not My Drive."
+            "Set GOOGLE_DRIVE_FOLDER_ID to the target folder id (from the Drive URL)."
         );
     }
 
     const drive = await getDriveClient();
-    await assertFolderIsOnSharedDrive(drive, FOLDER_ID);
+    if (!isDriveAuthOAuthUser()) {
+        await assertFolderIsOnSharedDrive(drive, FOLDER_ID);
+    }
     const childFolders = await listChildFolders(drive, FOLDER_ID);
     const folderNames = childFolders.map((f) => (f.name ? String(f.name) : "")).filter(Boolean);
 
