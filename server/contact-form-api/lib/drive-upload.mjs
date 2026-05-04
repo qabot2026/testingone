@@ -1,10 +1,8 @@
 /**
  * Upload multipart buffers into a per-submission subfolder under GOOGLE_DRIVE_FOLDER_ID.
  *
- * **Drive only works reliably with a folder on a Google Shared drive (Team Drive).**
- * Personal “My Drive” shared folders → “Service Accounts do not have storage quota”.
- *
- * Prefer **`FILE_UPLOAD_BACKEND=firebase`** (default) if you do not use Workspace Shared drives.
+ * **The parent folder must be on a Google Shared drive (Team Drive).** Personal “My Drive”
+ * folders (even when shared with the service account) return “Service Accounts do not have storage quota”.
  */
 
 import { randomUUID } from "node:crypto";
