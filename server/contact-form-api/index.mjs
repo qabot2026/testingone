@@ -2,16 +2,17 @@
  * Backend for `company.js` POST /contact-form-submissions (JSON or multipart with files).
  * Hosting: **Railway only**. Data: **Firestore** + optional **Google Sheets**; file fields → **Google Drive** only.
  *
- * Drive setup (pick one):
- * • **User account (OAuth):** `GOOGLE_DRIVE_OAUTH_CLIENT_ID`, `GOOGLE_DRIVE_OAUTH_CLIENT_SECRET`,
- *   `GOOGLE_DRIVE_OAUTH_REFRESH_TOKEN` + `GOOGLE_DRIVE_FOLDER_ID` (any folder that account can write).
- * • **Service account:** `GOOGLE_*_SERVICE_ACCOUNT_JSON` — folder must be on a **Workspace Shared drive**
- *   (My Drive shared with the SA still fails with “no storage quota”).
- * Enable **Google Drive API** in the same GCP project as the OAuth client / service account.
+ * **Simplest (no Drive, no OAuth):** `SHEETS_SPREADSHEET_ID` + service-account JSON, share the Sheet with
+ *   the service account. Set `DISABLE_FIRESTORE=1` and `DISABLE_DRIVE_UPLOAD=1` — text leads only, no
+ *   attachments. (A Sheet is a table, not a place to store big files.)
+ *
+ * **With file uploads:** files are stored in **Google Drive**; the Sheet row includes **links** in column J.
+ *   Use OAuth (`GOOGLE_DRIVE_OAUTH_*`) or a service account + **Workspace Shared drive** folder.
  *
  * Env:
- *   GOOGLE_DRIVE_FOLDER_ID — required for file uploads
- *   GOOGLE_DRIVE_OAUTH_* — optional; user Drive instead of service account
+ *   DISABLE_DRIVE_UPLOAD=1 — reject requests that include file fields; no Drive needed
+ *   GOOGLE_DRIVE_FOLDER_ID — required when uploads enabled and the form sends files
+ *   GOOGLE_DRIVE_OAUTH_* — optional user-account Drive
  *   PORT, FIREBASE_SERVICE_ACCOUNT_JSON / FIREBASE_CONFIG / GOOGLE_APPLICATION_CREDENTIALS
  *   DISABLE_FIRESTORE=1, FIRESTORE_DATABASE_ID, CORS_ORIGIN
  *   SHEETS_SPREADSHEET_ID, SHEETS_RANGE, DISABLE_SHEETS=1
@@ -33,6 +34,8 @@ const SHEETS_DISABLED =
     process.env.DISABLE_SHEETS === "1" ||
     !(process.env.SHEETS_SPREADSHEET_ID || "").trim();
 const FIRESTORE_DISABLED = process.env.DISABLE_FIRESTORE === "1";
+/** When set, file fields are not accepted; use Sheet + service account only (no Drive/OAuth). */
+const DISABLE_DRIVE_UPLOAD = process.env.DISABLE_DRIVE_UPLOAD === "1";
 
 function hasFirebaseCredentials() {
     if ((process.env.FIREBASE_SERVICE_ACCOUNT_JSON || "").trim()) {
@@ -153,6 +156,15 @@ app.post(
         let drive_subfolder_id = "";
         let drive_subfolder_name = "";
 
+        if (uploadedFiles.length > 0 && DISABLE_DRIVE_UPLOAD) {
+            return res.status(400).json({
+                ok: false,
+                error:
+                    "This app is set to save only to Google Sheets (DISABLE_DRIVE_UPLOAD=1). " +
+                    "Sheets cannot store file attachments. Remove files from the form, or set DISABLE_DRIVE_UPLOAD=0 and configure Google Drive for uploads."
+            });
+        }
+
         if (uploadedFiles.length > 0) {
             if (!(process.env.GOOGLE_DRIVE_FOLDER_ID || "").trim()) {
                 return res.status(500).json({
@@ -194,6 +206,11 @@ app.post(
 
         const iso = new Date().toISOString();
         /** Firestore-safe payload (flattened for querying) */
+        const fileLinksForSheet = drive_uploads
+            .map((u) => (typeof u.web_view_link === "string" ? u.web_view_link : ""))
+            .filter(Boolean)
+            .join(", ");
+
         const record = {
             submitted_at: iso,
             form_id: formId,
@@ -238,7 +255,8 @@ app.post(
                         clientSessionId,
                         browserName,
                         deviceType,
-                        channel
+                        channel,
+                        fileLinks: fileLinksForSheet
                     });
                 } catch (se) {
                     const detail = se && se.message ? se.message : String(se);
@@ -263,7 +281,7 @@ app.get("/", (_req, res) => {
             `Contact leads API running.`,
             `POST JSON or multipart/form-data → ${PATHNAME}`,
             `GET /health → health check.`,
-            `Firestore + Google Drive (file uploads) + optional Google Sheets.`
+            `Firestore + Google Sheets (column J = file links when Drive upload) + Google Drive for files.`
         ].join("\n")
     );
 });
@@ -271,5 +289,6 @@ app.get("/", (_req, res) => {
 app.listen(PORT, () => {
     const sheetHint = SHEETS_DISABLED ? "(Sheets OFF)" : "(Sheets ON)";
     const fsHint = FIRESTORE_DISABLED ? "Firestore OFF" : "Firestore ON";
-    console.log(`contact-form-api listening on :${PORT} ${PATHNAME} — ${fsHint} ${sheetHint} uploads=Drive`);
+    const driveHint = DISABLE_DRIVE_UPLOAD ? "uploads=off" : "uploads=Drive";
+    console.log(`contact-form-api listening on :${PORT} ${PATHNAME} — ${fsHint} ${sheetHint} ${driveHint}`);
 });

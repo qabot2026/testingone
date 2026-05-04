@@ -6,7 +6,7 @@ import { google } from "googleapis";
 import { getServiceAccountCredentials } from "./google-service-account.mjs";
 
 const SPREADSHEET_ID = (process.env.SHEETS_SPREADSHEET_ID || "").trim();
-const RANGE = (process.env.SHEETS_RANGE || "Sheet1!A:I").trim();
+const RANGE = (process.env.SHEETS_RANGE || "Sheet1!A:J").trim();
 
 const SPREADSHEET_SCOPES = ["https://www.googleapis.com/auth/spreadsheets"];
 
@@ -47,8 +47,8 @@ async function getSheetsAuthClient() {
 }
 
 /**
- * Columns A–I: iso, formId, name, mobile, email, clientSessionId, browserName, deviceType, channel (web|whatsapp).
- * @param {{ iso: string, formId: string, name: string, mobile: string, email: string, clientSessionId: string, browserName: string, deviceType: string, channel: string }} row
+ * Columns A–J: iso, formId, name, mobile, email, clientSessionId, browserName, deviceType, channel (web|whatsapp), file_links (Drive URLs, comma-separated, or empty).
+ * @param {{ iso: string, formId: string, name: string, mobile: string, email: string, clientSessionId: string, browserName: string, deviceType: string, channel: string, fileLinks?: string }} row
  */
 export async function appendContactRowToSheet(row) {
     if (!SPREADSHEET_ID) {
@@ -59,6 +59,10 @@ export async function appendContactRowToSheet(row) {
     const ch = typeof row.channel === "string" && row.channel.trim()
         ? row.channel.trim()
         : "web";
+    const fileLinks =
+        typeof row.fileLinks === "string" && row.fileLinks.trim()
+            ? row.fileLinks.trim()
+            : "";
     const values = [[
         row.iso,
         row.formId,
@@ -68,7 +72,8 @@ export async function appendContactRowToSheet(row) {
         row.clientSessionId,
         row.browserName,
         row.deviceType,
-        ch
+        ch,
+        fileLinks
     ]];
     await sheets.spreadsheets.values.append({
         spreadsheetId: SPREADSHEET_ID,
