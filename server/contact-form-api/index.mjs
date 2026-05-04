@@ -1,20 +1,21 @@
 /**
  * Backend for `company.js` POST /contact-form-submissions (JSON or multipart with files).
- * Hosting: **Railway only**. Data: **Firestore** + optional **Google Sheets**; file fields → **Firebase Storage**.
+ * Hosting: **Railway only**. Data: **Firestore** + optional **Google Sheets**; file fields → **Google Drive**.
  *
  * Setup:
- * 1. Firebase Console → Project settings → Service accounts → **Generate new private key** (JSON).
- * 2. Railway → **FIREBASE_SERVICE_ACCOUNT_JSON** = full JSON (used for Firestore, Storage, Sheets).
- * 3. GCP: enable **Cloud Storage API**; default bucket `<project-id>.appspot.com` must exist (Firebase → Storage).
- * 4. Grant the service account **Storage Object Admin** (or Firebase Admin) on that bucket if uploads fail with 403.
- * 5. Optional **`FIREBASE_STORAGE_BUCKET`** if you use a non-default bucket name.
- * 6. Google Sheets: share the spreadsheet with the service account **`client_email`** (Editor).
- * 7. Point the site at this API (`dfchat-api-base-url` / `apiBase`).
+ * 1. Service account JSON (**same** as Firebase/Sheets): `FIREBASE_SERVICE_ACCOUNT_JSON` (or `GOOGLE_SERVICE_ACCOUNT_JSON`).
+ * 2. Google Cloud Console → enable **Google Drive API** for that project.
+ * 3. Create a Drive folder; share it with the service account **`client_email`** (Editor). Copy the folder id from the URL.
+ * 4. Railway → **`GOOGLE_DRIVE_FOLDER_ID`** = that folder id. Shared drives: also set **`GOOGLE_DRIVE_USE_SHARED_DRIVE=1`**.  
+ *    Files go into **subfolders** per submission (`9960343434`, then `9960343434_2`, or `unknown1`, `unknown2`, …).
+ * 5. Firebase/Firestore for lead documents (optional disable with **DISABLE_FIRESTORE**). Sheets optional (**SHEETS_SPREADSHEET_ID**).
+ * 6. Point the site at this API (`dfchat-api-base-url` / `apiBase`).
  *
  * Env:
- *   PORT, FIREBASE_SERVICE_ACCOUNT_JSON / FIREBASE_CONFIG, GOOGLE_APPLICATION_CREDENTIALS (local file)
+ *   PORT, FIREBASE_SERVICE_ACCOUNT_JSON / FIREBASE_CONFIG / GOOGLE_APPLICATION_CREDENTIALS
+ *   GOOGLE_DRIVE_FOLDER_ID — required for multipart file uploads
+ *   GOOGLE_DRIVE_USE_SHARED_DRIVE=1 — if the folder lives on a Shared drive
  *   DISABLE_FIRESTORE=1, FIRESTORE_DATABASE_ID, CORS_ORIGIN
- *   FIREBASE_STORAGE_BUCKET — optional override
  *   SHEETS_SPREADSHEET_ID, SHEETS_RANGE, DISABLE_SHEETS=1
  */
 
@@ -24,7 +25,8 @@ import cors from "cors";
 import multer from "multer";
 import { firebaseAdminInit, persistToFirestore } from "./lib/firestore.mjs";
 import { appendContactRowToSheet } from "./lib/sheets.mjs";
-import { uploadSubmissionFiles } from "./lib/storage-upload.mjs";
+import { uploadSubmissionFilesToDrive } from "./lib/drive-upload.mjs";
+import { getServiceAccountCredentials } from "./lib/google-service-account.mjs";
 
 const PORT = Number(process.env.PORT) || 8080;
 const PATHNAME = "/contact-form-submissions";
@@ -70,7 +72,7 @@ function corsOriginOption() {
     };
 }
 
-/** Initialize Admin when credentials exist so Storage uploads work even if Firestore writes are disabled. */
+/** Firestore persistence (optional); Drive uploads use the same service account JSON via `google-service-account.mjs`. */
 if (hasFirebaseCredentials()) {
     firebaseAdminInit();
 }
@@ -150,35 +152,46 @@ app.post(
         const mergedClientContext = { ...clientContext, channel };
 
         /** @type {Array<Record<string, unknown>>} */
-        let file_uploads = [];
+        let drive_uploads = [];
+        let drive_subfolder_id = "";
+        let drive_subfolder_name = "";
 
         if (uploadedFiles.length > 0 && FIRESTORE_DISABLED) {
             return res.status(400).json({
                 ok: false,
-                error: "Submissions with file attachments require Firestore (metadata + Storage paths). Turn off DISABLE_FIRESTORE on Railway."
+                error: "Submissions with file attachments require Firestore (metadata + Drive file ids). Turn off DISABLE_FIRESTORE on Railway."
             });
         }
 
         if (uploadedFiles.length > 0) {
-            if (!hasFirebaseCredentials()) {
+            if (!(process.env.GOOGLE_DRIVE_FOLDER_ID || "").trim()) {
                 return res.status(500).json({
                     ok: false,
-                    error: "File uploads require FIREBASE_SERVICE_ACCOUNT_JSON on the server."
+                    error: "Set GOOGLE_DRIVE_FOLDER_ID in Railway (Drive folder shared with the service account as Editor)."
+                });
+            }
+            if (!getServiceAccountCredentials()) {
+                return res.status(500).json({
+                    ok: false,
+                    error: "File uploads require a Google service account JSON (e.g. FIREBASE_SERVICE_ACCOUNT_JSON)."
                 });
             }
             try {
-                file_uploads = await uploadSubmissionFiles(uploadedFiles, {
-                    sessionId: clientSessionId
+                const pack = await uploadSubmissionFilesToDrive(uploadedFiles, {
+                    mobile
                 });
+                drive_uploads = pack.uploads;
+                drive_subfolder_id = pack.drive_subfolder_id || "";
+                drive_subfolder_name = pack.drive_subfolder_name || "";
             } catch (ue) {
                 const detail = ue && ue.message ? ue.message : String(ue);
-                console.error("[contact-form-api] Storage upload failed", detail, ue);
+                console.error("[contact-form-api] Google Drive upload failed", detail, ue);
                 return res.status(500).json({
                     ok: false,
-                    error: `Storage: ${detail}. Enable Cloud Storage API and grant the service account access to the bucket.`
+                    error: `Drive: ${detail}. Enable Drive API and share the folder with the service account client_email.`
                 });
             }
-            const namesForSummary = file_uploads
+            const namesForSummary = drive_uploads
                 .map((f) => (typeof f.original_name === "string" ? f.original_name : ""))
                 .filter(Boolean);
             if (namesForSummary.length && !fields.document) {
@@ -196,7 +209,14 @@ app.post(
             mobile,
             fields,
             client_context: mergedClientContext,
-            ...(file_uploads.length ? { file_uploads } : {})
+            ...(drive_uploads.length
+                ? {
+                    drive_uploads,
+                    ...(drive_subfolder_id
+                        ? { drive_subfolder_id, drive_subfolder_name }
+                        : {})
+                }
+                : {})
         };
 
         try {
@@ -250,7 +270,7 @@ app.get("/", (_req, res) => {
             `Contact leads API running.`,
             `POST JSON or multipart/form-data → ${PATHNAME}`,
             `GET /health → health check.`,
-            `Firestore + Firebase Storage (file fields) + optional Google Sheets.`
+            `Firestore + Google Drive (file fields) + optional Google Sheets.`
         ].join("\n")
     );
 });

@@ -2,8 +2,8 @@
  * Append one row via Google Sheets API v4 (service account must be shared on the spreadsheet).
  */
 
-import fs from "node:fs";
 import { google } from "googleapis";
+import { getServiceAccountCredentials } from "./google-service-account.mjs";
 
 const SPREADSHEET_ID = (process.env.SHEETS_SPREADSHEET_ID || "").trim();
 const RANGE = (process.env.SHEETS_RANGE || "Sheet1!A:I").trim();
@@ -25,45 +25,6 @@ function appendRangeFullWidth(raw) {
         return `${s}!A:Z`;
     }
     return `${s.slice(0, bang)}!A:Z`;
-}
-
-/**
- * Same JSON as Firestore: full service account (`type` + `private_key`).
- * On Railway there is no "default credentials" — must not fall through to ADC.
- */
-function getServiceAccountCredentials() {
-    const rawStrings = [
-        process.env.FIREBASE_SERVICE_ACCOUNT_JSON,
-        process.env.FIREBASE_CONFIG,
-        process.env.GOOGLE_SHEETS_SERVICE_ACCOUNT_JSON,
-        process.env.GOOGLE_SERVICE_ACCOUNT_JSON
-    ];
-    for (const raw of rawStrings) {
-        const s = (raw || "").trim();
-        if (!s) {
-            continue;
-        }
-        try {
-            const o = JSON.parse(s);
-            if (o && o.type === "service_account" && typeof o.private_key === "string") {
-                return o;
-            }
-        } catch {
-            continue;
-        }
-    }
-    const credPath = (process.env.GOOGLE_APPLICATION_CREDENTIALS || "").trim();
-    if (credPath && fs.existsSync(credPath)) {
-        try {
-            const o = JSON.parse(fs.readFileSync(credPath, "utf8"));
-            if (o && o.type === "service_account") {
-                return o;
-            }
-        } catch {
-            /* ignore */
-        }
-    }
-    return null;
 }
 
 async function getSheetsAuthClient() {
