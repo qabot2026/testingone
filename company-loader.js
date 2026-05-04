@@ -59,7 +59,7 @@
   }
   var q = getLoaderQuery();
   var bot = (q.get("botid") || "").trim();
-  /** Pass-through: backend base URL for `/contact-form-submissions` (Cloud Run etc.). Same-origin if omitted. */
+  /** Pass-through: backend base URL for `/contact-form-submissions` (Railway API). Same-origin if omitted. */
   var apiBase = (q.get("apiBase") || "").trim();
 
   var frameUrl = CHAT_HOST + "chat-frame.html?v=" + encodeURIComponent(IFRAME_VERSION);

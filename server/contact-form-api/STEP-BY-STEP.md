@@ -38,7 +38,7 @@ If you do not use GitHub yet, create a **free** repo and upload files using GitH
 | **Repository** | [https://github.com/qabot2026/testingone](https://github.com/qabot2026/testingone) |
 | **Branch** | `main` |
 | **API folder (contains `Dockerfile`)** | `server/contact-form-api/` |
-| **Production contact API (Cloud Run)** | **`https://leadsservice-225529017623.us-central1.run.app`** |
+| **Production contact API (Railway)** | **`https://handsome-amazement.up.railway.app`** |
 
 `myweb.html` and `chat-frame.html` are wired to **`apiBase` / `dfchat-api-base-url`** pointing at that host (no trailing slash). Change both if you redeploy under a new service URL.
 
@@ -260,7 +260,7 @@ For the **contact form API**, visitors’ browsers must call your Cloud Run **UR
 
 The console will queue a **Cloud Build** job and then deploy. Wait until the status is **Healthy** / **Serving** without a red error.
 
-**Done when:** Cloud Run shows a **service URL**. This project’s deployed lead API is **`https://leadsservice-225529017623.us-central1.run.app`** (your service name may differ — use the URL the console shows).
+**Done when:** Railway shows a **service URL**. This project's deployed lead API is **`https://handsome-amazement.up.railway.app`** (Railway service — use the URL Railway shows for your deployment).
 
 **If an extra wizard asks Cloud Build trigger — Event:**
 
@@ -280,8 +280,8 @@ Open your service URL (same host as Cloud Run gives you):
 
 | URL | Expected |
 |-----|----------|
-| `https://leadsservice-225529017623.us-central1.run.app/health` | Plain text **`ok`** |
-| `https://leadsservice-225529017623.us-central1.run.app/` | Short message that the **contact leads API** is running and **`POST …/contact-form-submissions`** |
+| `https://handsome-amazement.up.railway.app/health` | Plain text **`ok`** |
+| `https://handsome-amazement.up.railway.app/` | Short message that the **contact leads API** is running and **`POST …/contact-form-submissions`** |
 
 **Note:** **`Cannot GET /`** on an older deployed revision only means **`GET /`** was not implemented yet; **redeploy** after updating the API, or always use **`/health`**. The widget still uses **`POST /contact-form-submissions`** — it does not use **`GET /`**.
 
@@ -304,10 +304,10 @@ Open your service URL (same host as Cloud Run gives you):
 
 The chat iframe loads **`company-loader.js`**, which passes **`apiBase`** into **`chat-frame.html`** so **`company.js`** can `POST` to **`/contact-form-submissions`** on your API host.
 
-Where you embed the widget (for example **`myweb.html`** in this repo), set **`apiBase`** to your Cloud Run host (**HTTPS**, **no trailing slash**). This repo is already configured like this:
+Where you embed the widget (for example **`myweb.html`** in this repo), set **`apiBase`** to your Railway host (**HTTPS**, **no trailing slash**). This repo is already configured like this:
 
 ```html
-<script src="company-loader.js?botid=0001&v=70&apiBase=https://leadsservice-225529017623.us-central1.run.app"></script>
+<script src="company-loader.js?botid=0001&v=70&apiBase=https://handsome-amazement.up.railway.app"></script>
 ```
 
 In **`chat-frame.html`**, **`meta name="dfchat-api-base-url"`** carries the same default when the iframe is opened **without** an `apiBase` query parameter.
@@ -318,7 +318,7 @@ In **`chat-frame.html`**, **`meta name="dfchat-api-base-url"`** carries the same
 
 Save and publish your site and **hard-refresh** the page (**Ctrl+F5**).
 
-**Done when:** Chat opens; **F12** → **Network** shows a **`POST`** to **`https://leadsservice-225529017623.us-central1.run.app/contact-form-submissions`** returning **200** after submit (not blocked or mixed-content errors).
+**Done when:** Chat opens; **F12** → **Network** shows a **`POST`** to **`https://handsome-amazement.up.railway.app/contact-form-submissions`** returning **200** after submit (not blocked or mixed-content errors).
 
 ---
 
@@ -388,6 +388,6 @@ You may occasionally see Git mention **`credential-manager-core`** on Windows; i
 
 ## Reminder — what stays public vs secret
 
-Safe in **`myweb.html`:** only the **public HTTPS** Cloud Run host in **`apiBase`** / **`dfchat-api-base-url`** — currently **`https://leadsservice-225529017623.us-central1.run.app`**.
+Safe in **`myweb.html`:** only the **public HTTPS** Railway host in **`apiBase`** / **`dfchat-api-base-url`** — currently **`https://handsome-amazement.up.railway.app`**.
 
 Never put **service account JSON**, **sheet private links as secrets**, or **API keys meant for servers** inside `company.js`, `company.config.js`, or public GitHub repos.
