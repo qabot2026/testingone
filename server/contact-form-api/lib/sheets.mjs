@@ -11,6 +11,23 @@ const RANGE = (process.env.SHEETS_RANGE || "Sheet1!A:I").trim();
 const SPREADSHEET_SCOPES = ["https://www.googleapis.com/auth/spreadsheets"];
 
 /**
+ * Google Sheets `append` uses the range width as the table width. `Sheet1!A:H` drops
+ * any column past H (e.g. channel in I). We keep the tab from env but append with A:Z.
+ * @param {string} raw same as `SHEETS_RANGE` / default
+ */
+function appendRangeFullWidth(raw) {
+    const s = (raw || "").trim();
+    if (!s) {
+        return "Sheet1!A:Z";
+    }
+    const bang = s.indexOf("!");
+    if (bang === -1) {
+        return `${s}!A:Z`;
+    }
+    return `${s.slice(0, bang)}!A:Z`;
+}
+
+/**
  * Same JSON as Firestore: full service account (`type` + `private_key`).
  * On Railway there is no "default credentials" — must not fall through to ADC.
  */
@@ -78,6 +95,9 @@ export async function appendContactRowToSheet(row) {
     }
     const client = await getSheetsAuthClient();
     const sheets = google.sheets({ version: "v4", auth: client });
+    const ch = typeof row.channel === "string" && row.channel.trim()
+        ? row.channel.trim()
+        : "web";
     const values = [[
         row.iso,
         row.formId,
@@ -87,11 +107,11 @@ export async function appendContactRowToSheet(row) {
         row.clientSessionId,
         row.browserName,
         row.deviceType,
-        row.channel
+        ch
     ]];
     await sheets.spreadsheets.values.append({
         spreadsheetId: SPREADSHEET_ID,
-        range: RANGE,
+        range: appendRangeFullWidth(RANGE),
         valueInputOption: "USER_ENTERED",
         insertDataOption: "INSERT_ROWS",
         requestBody: { values }
