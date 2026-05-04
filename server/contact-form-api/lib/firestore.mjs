@@ -54,9 +54,33 @@ function getFirestoreDb() {
 
 export async function persistToFirestore(record) {
     const db = getFirestoreDb();
-    await db.collection(COLLECTION).add({
-        ...record,
-        /** server time for indexing */
-        saved_at: admin.firestore.FieldValue.serverTimestamp()
-    });
+    try {
+        await db.collection(COLLECTION).add({
+            ...record,
+            /** server time for indexing */
+            saved_at: admin.firestore.FieldValue.serverTimestamp()
+        });
+    } catch (err) {
+        const msg = err && err.message ? err.message : String(err);
+        const code = err && err.code;
+        if (
+            code === 5 ||
+            /NOT_FOUND/i.test(msg) ||
+            /5 NOT_FOUND/.test(msg)
+        ) {
+            const pid = admin.apps[0] && admin.apps[0].options && admin.apps[0].options.projectId;
+            const dbId = FIRESTORE_DATABASE_ID || "(default)";
+            throw new Error(
+                [
+                    "Firestore NOT_FOUND — the database was not found for this project/credentials.",
+                    `Using project_id="${pid || "?"}" and database id="${dbId}".`,
+                    "Fix: (1) Firebase Console → same project as this service account → Firestore → create the Native database if missing.",
+                    "(2) If you created a named database (not \"(default)\"), set Railway env FIRESTORE_DATABASE_ID to that exact id.",
+                    "(3) Ensure your FIREBASE_SERVICE_ACCOUNT_JSON is from the same Firebase project where Firestore lives.",
+                    `Original: ${msg}`
+                ].join(" ")
+            );
+        }
+        throw err;
+    }
 }
