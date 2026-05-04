@@ -10,28 +10,61 @@ const RANGE = (process.env.SHEETS_RANGE || "Sheet1!A:F").trim();
 
 const SPREADSHEET_SCOPES = ["https://www.googleapis.com/auth/spreadsheets"];
 
-async function getSheetsAuthClient() {
-    const jsonRaw = (
-        process.env.GOOGLE_SHEETS_SERVICE_ACCOUNT_JSON ||
-        process.env.GOOGLE_SERVICE_ACCOUNT_JSON ||
-        process.env.FIREBASE_SERVICE_ACCOUNT_JSON ||
-        ""
-    ).trim();
-    let key = jsonRaw ? JSON.parse(jsonRaw) : null;
-    if (!key && process.env.GOOGLE_APPLICATION_CREDENTIALS) {
-        const path = process.env.GOOGLE_APPLICATION_CREDENTIALS;
-        if (fs.existsSync(path)) {
-            key = JSON.parse(fs.readFileSync(path, "utf8"));
+/**
+ * Same JSON as Firestore: full service account (`type` + `private_key`).
+ * On Railway there is no "default credentials" — must not fall through to ADC.
+ */
+function getServiceAccountCredentials() {
+    const rawStrings = [
+        process.env.FIREBASE_SERVICE_ACCOUNT_JSON,
+        process.env.FIREBASE_CONFIG,
+        process.env.GOOGLE_SHEETS_SERVICE_ACCOUNT_JSON,
+        process.env.GOOGLE_SERVICE_ACCOUNT_JSON
+    ];
+    for (const raw of rawStrings) {
+        const s = (raw || "").trim();
+        if (!s) {
+            continue;
+        }
+        try {
+            const o = JSON.parse(s);
+            if (o && o.type === "service_account" && typeof o.private_key === "string") {
+                return o;
+            }
+        } catch {
+            continue;
         }
     }
-    if (key) {
-        const auth = new google.auth.GoogleAuth({
-            credentials: key,
-            scopes: SPREADSHEET_SCOPES
-        });
-        return auth.getClient();
+    const credPath = (process.env.GOOGLE_APPLICATION_CREDENTIALS || "").trim();
+    if (credPath && fs.existsSync(credPath)) {
+        try {
+            const o = JSON.parse(fs.readFileSync(credPath, "utf8"));
+            if (o && o.type === "service_account") {
+                return o;
+            }
+        } catch {
+            /* ignore */
+        }
     }
-    const auth = new google.auth.GoogleAuth({ scopes: SPREADSHEET_SCOPES });
+    return null;
+}
+
+async function getSheetsAuthClient() {
+    const key = getServiceAccountCredentials();
+    if (!key) {
+        throw new Error(
+            [
+                "No Google service account JSON for Sheets.",
+                "In Railway, set FIREBASE_SERVICE_ACCOUNT_JSON (or FIREBASE_CONFIG) to the full JSON from",
+                "Firebase Console → Project settings → Service accounts → Generate new private key.",
+                "Same value as for Firestore; do not rely on default credentials on Railway."
+            ].join(" ")
+        );
+    }
+    const auth = new google.auth.GoogleAuth({
+        credentials: key,
+        scopes: SPREADSHEET_SCOPES
+    });
     return auth.getClient();
 }
 

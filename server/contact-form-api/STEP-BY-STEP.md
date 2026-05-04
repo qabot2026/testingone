@@ -84,7 +84,9 @@ If Railway gives you a **new** domain later, update both places (and the line ab
 |---------|----------------|
 | **`Firestore: 5 NOT_FOUND` or `NOT_FOUND`** | **Most common:** no Firestore database in that project, wrong **database id**, or the JSON key is for a **different** project than where you opened Firestore. Open **Firebase Console** → select the project whose **`project_id`** is inside your JSON → **Firestore Database** → if you see **Create database**, create it (Native / **production** mode is fine). If you use a **named** database (not `(default)`), set Railway **`FIRESTORE_DATABASE_ID`** to that exact name (see Firestore → database selector). |
 | `Firestore: ... permission` or IAM | Same project as Firebase: service account needs write access. **Firebase Console → Project settings → Service accounts** (use the key from here), or in Google Cloud **IAM** grant **Datastore User** (or Editor for testing) to **`client_email`** from the JSON. |
-| **`Sheets:` … permission / 403 / Request had insufficient authentication** | Sheet **Shared** with **`client_email`** from the JSON as **Editor**. **Google Sheets API** enabled in the same GCP project as Firebase. |
+| **`Sheets:` … default credentials** / **Could not load the default credentials** | **Railway** must have **`FIREBASE_SERVICE_ACCOUNT_JSON`** (full service account JSON — same as Firestore). Without it, Sheets cannot sign requests. Redeploy after adding the variable. |
+| **`Sheets:` … No Google service account JSON** | Paste the full JSON in **`FIREBASE_SERVICE_ACCOUNT_JSON`** (must include `"type":"service_account"` and **`private_key`**). Client-only Firebase web config is not valid here. |
+| **`Sheets:` … permission / 403** | Sheet **Shared** with **`client_email`** from the JSON as **Editor**. **Google Sheets API** enabled in the same GCP project as Firebase. |
 | **`Sheets:` … Unable to parse range** | **`SHEETS_RANGE`** must match an existing tab name, e.g. `Sheet1!A:F`. |
 | Build fails on Railway | **Deploy logs** — `railway.json` **`dockerfilePath`** must match **`server/contact-form-api/Dockerfile`**. |
 
