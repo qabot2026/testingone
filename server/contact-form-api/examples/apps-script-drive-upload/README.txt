@@ -4,4 +4,6 @@
 3. Deploy → New deployment → Web app → Anyone → copy /exec URL to Railway GOOGLE_APPS_SCRIPT_WEBAPP_URL.
 4. After every script change: Deploy → Manage deployments → Edit → New version → Deploy.
 
-The API sends JSON like { name, email, ..., _files: [{ name, mime, field, dataBase64 }] }.
+The API sends JSON like { mobile, client_context, ..., _files: [{ name, mime, dataBase64 }] }.
+Subfolders: {mobile}_1, {mobile}_2, … or {sanitized_session_id}_1,_2 … or unknown_1,… — same rules as submission-folder-name.mjs.
+

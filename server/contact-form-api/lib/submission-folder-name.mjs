@@ -1,6 +1,9 @@
 /**
- * Shared rules for per-submission folder names (Firebase Storage path segment or Drive folder).
- * Mobile digits: first `9960343434`, then `9960343434_2`, … — no mobile: `unknown1`, `unknown2`, …
+ * Per-submission folder names under the parent Drive folder / Apps Script target.
+ *
+ * • Mobile digits: `{digits}_1`, `{digits}_2`, … (legacy bare `{digits}` counts as submission #1)
+ * • No mobile: sanitized `client_session_id` → `{session}_1`, `{session}_2`, …
+ * • No mobile and no session: `unknown_1`, `unknown_2`, … (legacy `unknownN` still counted)
  */
 
 export function normalizeMobileDigits(raw) {
@@ -9,8 +12,7 @@ export function normalizeMobileDigits(raw) {
 }
 
 /**
- * First submission for this number → folder `9960343434`. Later → `9960343434_2`, `_3`, …
- * @param {string} digits
+ * @param {string} digits normalized digits only
  * @param {string[]} folderNames
  */
 export function nextMobileSubmissionFolderName(digits, folderNames) {
@@ -28,28 +30,85 @@ export function nextMobileSubmissionFolderName(digits, folderNames) {
             }
         }
     }
-    if (ranks.size === 0) {
-        return digits;
-    }
-    const nextRank = Math.max(...ranks) + 1;
+    const nextRank = ranks.size === 0 ? 1 : Math.max(...ranks) + 1;
     return `${digits}_${nextRank}`;
 }
 
-/** Sequential unknown1, unknown2, … */
-export function nextUnknownFolderName(folderNames) {
-    const nums = [];
-    const re = /^unknown(\d+)$/i;
+/** Sanitize client_session_id for use as a folder name segment. */
+export function sanitizeSessionFolderBase(raw) {
+    const s = String(raw || "").trim();
+    if (!s.length) {
+        return "";
+    }
+    const cleaned = s.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 80);
+    return cleaned || "";
+}
+
+/**
+ * Same numbering pattern as mobile, using session id as base (e.g. abc_1, abc_2).
+ */
+export function nextSessionSubmissionFolderName(sessionBase, folderNames) {
+    if (!sessionBase) {
+        return nextUnknownFolderName(folderNames);
+    }
+    const ranks = new Set();
+    if (folderNames.includes(sessionBase)) {
+        ranks.add(1);
+    }
+    const re = new RegExp(`^${escapeRegExp(sessionBase)}_(\\d+)$`);
     for (const n of folderNames) {
         const m = n.match(re);
         if (m) {
-            const v = parseInt(m[1], 10);
-            if (!Number.isNaN(v)) {
-                nums.push(v);
+            const r = parseInt(m[1], 10);
+            if (!Number.isNaN(r)) {
+                ranks.add(r);
             }
         }
     }
-    const next = nums.length ? Math.max(...nums) + 1 : 1;
-    return `unknown${next}`;
+    const nextRank = ranks.size === 0 ? 1 : Math.max(...ranks) + 1;
+    return `${sessionBase}_${nextRank}`;
+}
+
+/** `unknown_1`, `unknown_2`, … (+ legacy unknown1-style names) */
+export function nextUnknownFolderName(folderNames) {
+    const base = "unknown";
+    const ranks = new Set();
+    const reUnderscore = /^unknown_(\d+)$/i;
+    const reLegacy = /^unknown(\d+)$/i;
+    for (const n of folderNames) {
+        let m = n.match(reUnderscore);
+        if (m) {
+            const r = parseInt(m[1], 10);
+            if (!Number.isNaN(r)) {
+                ranks.add(r);
+            }
+            continue;
+        }
+        m = n.match(reLegacy);
+        if (m) {
+            const r = parseInt(m[1], 10);
+            if (!Number.isNaN(r)) {
+                ranks.add(r);
+            }
+        }
+    }
+    const nextRank = ranks.size === 0 ? 1 : Math.max(...ranks) + 1;
+    return `${base}_${nextRank}`;
+}
+
+/**
+ * @param {{ mobile: string, clientSessionId: string, folderNames: string[] }} args
+ */
+export function nextSubmissionFolderName({ mobile, clientSessionId, folderNames }) {
+    const digits = normalizeMobileDigits(mobile);
+    if (digits) {
+        return nextMobileSubmissionFolderName(digits, folderNames);
+    }
+    const sessionBase = sanitizeSessionFolderBase(clientSessionId);
+    if (sessionBase) {
+        return nextSessionSubmissionFolderName(sessionBase, folderNames);
+    }
+    return nextUnknownFolderName(folderNames);
 }
 
 export function escapeRegExp(s) {

@@ -224,7 +224,10 @@ app.post(
                                 "File uploads need either GOOGLE_APPS_SCRIPT_WEBAPP_URL, or Drive API auth: GOOGLE_DRIVE_OAUTH_* or a service-account JSON for Workspace Shared drive."
                         });
                     }
-                    const pack = await uploadSubmissionFilesToDrive(uploadedFiles, { mobile });
+                    const pack = await uploadSubmissionFilesToDrive(uploadedFiles, {
+                        mobile,
+                        clientSessionId
+                    });
                     drive_uploads = pack.uploads;
                     drive_subfolder_id = pack.drive_subfolder_id || "";
                     drive_subfolder_name = pack.drive_subfolder_name || "";

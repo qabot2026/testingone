@@ -8,12 +8,7 @@
 import { randomUUID } from "node:crypto";
 import { PassThrough } from "node:stream";
 import { getDriveClient, isDriveAuthOAuthUser } from "./drive-auth.mjs";
-import {
-    normalizeMobileDigits,
-    nextMobileSubmissionFolderName,
-    nextUnknownFolderName,
-    sanitizeFilename
-} from "./submission-folder-name.mjs";
+import { nextSubmissionFolderName, sanitizeFilename } from "./submission-folder-name.mjs";
 
 const FOLDER_ID = (process.env.GOOGLE_DRIVE_FOLDER_ID || "").trim();
 
@@ -57,10 +52,10 @@ async function assertFolderIsOnSharedDrive(drive, folderId) {
 
 /**
  * @param {Array<import("multer").File & { buffer: Buffer }>} files
- * @param {{ mobile: string }} opts
+ * @param {{ mobile: string, clientSessionId?: string }} opts
  * @returns {Promise<{ uploads: Array<Record<string, unknown>>; drive_subfolder_id: string; drive_subfolder_name: string }>}
  */
-export async function uploadSubmissionFilesToDrive(files, { mobile }) {
+export async function uploadSubmissionFilesToDrive(files, { mobile, clientSessionId = "" }) {
     if (!Array.isArray(files) || files.length === 0) {
         return {
             uploads: [],
@@ -89,10 +84,11 @@ export async function uploadSubmissionFilesToDrive(files, { mobile }) {
     const childFolders = await listChildFolders(drive, FOLDER_ID);
     const folderNames = childFolders.map((f) => (f.name ? String(f.name) : "")).filter(Boolean);
 
-    const digits = normalizeMobileDigits(mobile);
-    const newFolderName = digits
-        ? nextMobileSubmissionFolderName(digits, folderNames)
-        : nextUnknownFolderName(folderNames);
+    const newFolderName = nextSubmissionFolderName({
+        mobile,
+        clientSessionId,
+        folderNames
+    });
 
     const subfolder = await drive.files.create({
         requestBody: {
