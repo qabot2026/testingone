@@ -1,24 +1,25 @@
 /**
  * Upload multipart buffers into a per-submission subfolder under GOOGLE_DRIVE_FOLDER_ID.
  *
- * Important: **`GOOGLE_DRIVE_FOLDER_ID` must be a folder inside a Google *Shared drive* (Team Drive).**
- * A service account has no personal Drive quota — uploads into someone’s "My Drive" shared folder
- * fail with “Service Accounts do not have storage quota”. Create a Shared drive (needs Google Workspace
- * in most setups), add the service account as a member, then use a folder there.
+ * **Drive only works reliably with a folder on a Google Shared drive (Team Drive).**
+ * Personal “My Drive” shared folders → “Service Accounts do not have storage quota”.
  *
- * Naming:
- *   - Mobile present (digits only): first submission `9960343434`, then `9960343434_2`, `_3`, …
- *   - No mobile: `unknown1`, `unknown2`, …
+ * Prefer **`FILE_UPLOAD_BACKEND=firebase`** (default) if you do not use Workspace Shared drives.
  */
 
 import { randomUUID } from "node:crypto";
 import { PassThrough } from "node:stream";
 import { google } from "googleapis";
 import { getServiceAccountCredentials } from "./google-service-account.mjs";
+import {
+    normalizeMobileDigits,
+    nextMobileSubmissionFolderName,
+    nextUnknownFolderName,
+    sanitizeFilename
+} from "./submission-folder-name.mjs";
 
 const FOLDER_ID = (process.env.GOOGLE_DRIVE_FOLDER_ID || "").trim();
 
-/** Shared-drive uploads need `supportsAllDrives` on create; list also needs `includeItemsFromAllDrives`. */
 const DRIVE_CREATE = { supportsAllDrives: true };
 const DRIVE_LIST = { supportsAllDrives: true, includeItemsFromAllDrives: true };
 
@@ -51,7 +52,6 @@ export async function uploadSubmissionFilesToDrive(files, { mobile }) {
             drive_subfolder_name: ""
         };
     }
-    /** Multer must give in-memory buffers; empty buffers → empty Drive folders if we don't check. */
     const fileParts = files.filter(
         (f) => f && Buffer.isBuffer(f.buffer) && f.buffer.length > 0
     );
@@ -139,11 +139,11 @@ export async function uploadSubmissionFilesToDrive(files, { mobile }) {
                 web_view_link: view,
                 web_content_link: typeof data.webContentLink === "string" ? data.webContentLink : "",
                 drive_subfolder_name: parentName,
-                drive_subfolder_id: parentId
+                drive_subfolder_id: parentId,
+                upload_backend: "google_drive"
             });
         }
     } catch (err) {
-        /** Avoid orphaned empty folders when file writes fail after mkdir. */
         try {
             await drive.files.delete({ fileId: parentId, ...DRIVE_CREATE });
         } catch {
@@ -172,62 +172,4 @@ async function listChildFolders(drive, parentId) {
         ...DRIVE_LIST
     });
     return Array.isArray(res.data.files) ? res.data.files : [];
-}
-
-function normalizeMobileDigits(raw) {
-    const d = String(raw || "").replace(/\D/g, "");
-    return d.length ? d : "";
-}
-
-/**
- * First submission for this number → folder `9960343434`. Later → `9960343434_2`, `_3`, …
- */
-function nextMobileSubmissionFolderName(digits, folderNames) {
-    const ranks = new Set();
-    if (folderNames.includes(digits)) {
-        ranks.add(1);
-    }
-    const re = new RegExp(`^${escapeRegExp(digits)}_(\\d+)$`);
-    for (const n of folderNames) {
-        const m = n.match(re);
-        if (m) {
-            const r = parseInt(m[1], 10);
-            if (!Number.isNaN(r)) {
-                ranks.add(r);
-            }
-        }
-    }
-    if (ranks.size === 0) {
-        return digits;
-    }
-    const nextRank = Math.max(...ranks) + 1;
-    return `${digits}_${nextRank}`;
-}
-
-/**
- * Sequential unknown1, unknown2, …
- */
-function nextUnknownFolderName(folderNames) {
-    const nums = [];
-    const re = /^unknown(\d+)$/i;
-    for (const n of folderNames) {
-        const m = n.match(re);
-        if (m) {
-            const v = parseInt(m[1], 10);
-            if (!Number.isNaN(v)) {
-                nums.push(v);
-            }
-        }
-    }
-    const next = nums.length ? Math.max(...nums) + 1 : 1;
-    return `unknown${next}`;
-}
-
-function escapeRegExp(s) {
-    return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function sanitizeFilename(name) {
-    const base = name.replace(/[/\\]/g, "_").replace(/\0/g, "");
-    return base.slice(0, 200) || "file";
 }

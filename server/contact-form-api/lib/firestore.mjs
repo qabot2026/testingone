@@ -21,18 +21,29 @@ export function firebaseAdminInit() {
     const json = (process.env.FIREBASE_CONFIG || process.env.FIREBASE_SERVICE_ACCOUNT_JSON || "").trim();
     if (json) {
         const cred = JSON.parse(json);
+        const bucketOverride = (process.env.FIREBASE_STORAGE_BUCKET || "").trim();
+        const defaultBucket = cred.project_id ? `${cred.project_id}.appspot.com` : "";
         admin.initializeApp({
             credential: admin.credential.cert(cred),
-            projectId: cred.project_id
+            projectId: cred.project_id,
+            ...(bucketOverride || defaultBucket
+                ? { storageBucket: bucketOverride || defaultBucket }
+                : {})
         });
         return;
     }
     const path = process.env.GOOGLE_APPLICATION_CREDENTIALS;
     if (path && fs.existsSync(path)) {
         const cred = JSON.parse(fs.readFileSync(path, "utf8"));
+        const bucketOverride = (process.env.FIREBASE_STORAGE_BUCKET || "").trim();
+        const pid = cred.project_id || process.env.GCLOUD_PROJECT;
+        const defaultBucket = pid ? `${pid}.appspot.com` : "";
         admin.initializeApp({
             credential: admin.credential.cert(cred),
-            projectId: cred.project_id || process.env.GCLOUD_PROJECT
+            projectId: pid,
+            ...(bucketOverride || defaultBucket
+                ? { storageBucket: bucketOverride || defaultBucket }
+                : {})
         });
         return;
     }

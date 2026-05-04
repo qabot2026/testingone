@@ -1,20 +1,20 @@
 /**
  * Backend for `company.js` POST /contact-form-submissions (JSON or multipart with files).
- * Hosting: **Railway only**. Data: **Firestore** + optional **Google Sheets**; file fields → **Google Drive**.
+ * Hosting: **Railway only**. Data: **Firestore** + optional **Google Sheets**; file fields → **Firebase Storage** (default) or **Google Drive** (optional).
  *
- * Setup:
- * 1. Service account JSON (**same** as Firebase/Sheets): `FIREBASE_SERVICE_ACCOUNT_JSON` (or `GOOGLE_SERVICE_ACCOUNT_JSON`).
- * 2. Google Cloud Console → enable **Google Drive API** for that project.
- * 3. Use a folder inside a **Shared drive** (Team Drive), not personal "My Drive" — service accounts have no My Drive quota.
- *    Add the service account to the shared drive (or share the folder) with **`client_email`** (Editor / Content manager).
- * 4. Railway → **`GOOGLE_DRIVE_FOLDER_ID`** = that folder’s id from the URL.  
- *    Subfolders per upload: `9960343434` / `9960343434_2` or `unknown1`, `unknown2`, …
- * 5. Firebase/Firestore for lead documents (optional disable with **DISABLE_FIRESTORE**). Sheets optional (**SHEETS_SPREADSHEET_ID**).
- * 6. Point the site at this API (`dfchat-api-base-url` / `apiBase`).
+ * File uploads (**recommended default**):
+ * - **`FILE_UPLOAD_BACKEND`** = `firebase` (default) — uses **Firebase / Google Cloud Storage** with your existing service account.
+ *   Enable **Firebase → Storage** once; optional **`FIREBASE_STORAGE_BUCKET`** if not `PROJECT_ID.appspot.com`.
+ * - **`FILE_UPLOAD_BACKEND=drive`** — uses **Google Drive** only if the parent folder is on a **Shared drive** (Team Drive).
+ *   Personal “My Drive” folders fail with “service account has no storage quota” even when shared.
+ *
+ * Paths / subfolders: `contact-submissions/<mobile or unknownN>/…` (same naming rules for both backends).
  *
  * Env:
+ *   FILE_UPLOAD_BACKEND — `firebase` (default) or `drive`
  *   PORT, FIREBASE_SERVICE_ACCOUNT_JSON / FIREBASE_CONFIG / GOOGLE_APPLICATION_CREDENTIALS
- *   GOOGLE_DRIVE_FOLDER_ID — required for multipart file uploads
+ *   FIREBASE_STORAGE_BUCKET — optional
+ *   GOOGLE_DRIVE_FOLDER_ID — only when `FILE_UPLOAD_BACKEND=drive`
  *   DISABLE_FIRESTORE=1, FIRESTORE_DATABASE_ID, CORS_ORIGIN
  *   SHEETS_SPREADSHEET_ID, SHEETS_RANGE, DISABLE_SHEETS=1
  */
@@ -26,6 +26,7 @@ import multer from "multer";
 import { firebaseAdminInit, persistToFirestore } from "./lib/firestore.mjs";
 import { appendContactRowToSheet } from "./lib/sheets.mjs";
 import { uploadSubmissionFilesToDrive } from "./lib/drive-upload.mjs";
+import { uploadSubmissionFilesToFirebaseStorage } from "./lib/firebase-storage-upload.mjs";
 import { getServiceAccountCredentials } from "./lib/google-service-account.mjs";
 
 const PORT = Number(process.env.PORT) || 8080;
@@ -35,6 +36,10 @@ const SHEETS_DISABLED =
     process.env.DISABLE_SHEETS === "1" ||
     !(process.env.SHEETS_SPREADSHEET_ID || "").trim();
 const FIRESTORE_DISABLED = process.env.DISABLE_FIRESTORE === "1";
+
+/** `firebase` (default) = Cloud Storage bucket; `drive` = Google Drive (Shared drive folder only in practice). */
+const FILE_UPLOAD_BACKEND = (process.env.FILE_UPLOAD_BACKEND || "firebase").trim().toLowerCase();
+const USE_DRIVE_UPLOADS = FILE_UPLOAD_BACKEND === "drive" || FILE_UPLOAD_BACKEND === "google_drive";
 
 function hasFirebaseCredentials() {
     if ((process.env.FIREBASE_SERVICE_ACCOUNT_JSON || "").trim()) {
@@ -72,7 +77,7 @@ function corsOriginOption() {
     };
 }
 
-/** Firestore persistence (optional); Drive uploads use the same service account JSON via `google-service-account.mjs`. */
+/** Firestore + Firebase Storage (default uploads) initialize Admin when credentials exist. */
 if (hasFirebaseCredentials()) {
     firebaseAdminInit();
 }
@@ -153,48 +158,62 @@ app.post(
 
         /** @type {Array<Record<string, unknown>>} */
         let drive_uploads = [];
+        /** @type {Array<Record<string, unknown>>} */
+        let file_uploads = [];
         let drive_subfolder_id = "";
         let drive_subfolder_name = "";
+        let storage_subfolder_name = "";
 
         if (uploadedFiles.length > 0 && FIRESTORE_DISABLED) {
             return res.status(400).json({
                 ok: false,
-                error: "Submissions with file attachments require Firestore (metadata + Drive file ids). Turn off DISABLE_FIRESTORE on Railway."
+                error: "Submissions with file attachments require Firestore to store attachment metadata. Turn off DISABLE_FIRESTORE on Railway."
             });
         }
 
         if (uploadedFiles.length > 0) {
-            if (!(process.env.GOOGLE_DRIVE_FOLDER_ID || "").trim()) {
+            if (!hasFirebaseCredentials()) {
                 return res.status(500).json({
                     ok: false,
-                    error: "Set GOOGLE_DRIVE_FOLDER_ID in Railway (Drive folder shared with the service account as Editor)."
-                });
-            }
-            if (!getServiceAccountCredentials()) {
-                return res.status(500).json({
-                    ok: false,
-                    error: "File uploads require a Google service account JSON (e.g. FIREBASE_SERVICE_ACCOUNT_JSON)."
+                    error: "File uploads require Firebase credentials (e.g. FIREBASE_SERVICE_ACCOUNT_JSON)."
                 });
             }
             try {
-                const pack = await uploadSubmissionFilesToDrive(uploadedFiles, {
-                    mobile
-                });
-                drive_uploads = pack.uploads;
-                drive_subfolder_id = pack.drive_subfolder_id || "";
-                drive_subfolder_name = pack.drive_subfolder_name || "";
+                if (USE_DRIVE_UPLOADS) {
+                    if (!(process.env.GOOGLE_DRIVE_FOLDER_ID || "").trim()) {
+                        return res.status(500).json({
+                            ok: false,
+                            error: "Set GOOGLE_DRIVE_FOLDER_ID for Drive uploads, or remove FILE_UPLOAD_BACKEND=drive to use Firebase Storage (default)."
+                        });
+                    }
+                    if (!getServiceAccountCredentials()) {
+                        return res.status(500).json({
+                            ok: false,
+                            error: "Drive uploads require a Google service account JSON."
+                        });
+                    }
+                    const pack = await uploadSubmissionFilesToDrive(uploadedFiles, { mobile });
+                    drive_uploads = pack.uploads;
+                    drive_subfolder_id = pack.drive_subfolder_id || "";
+                    drive_subfolder_name = pack.drive_subfolder_name || "";
+                } else {
+                    const pack = await uploadSubmissionFilesToFirebaseStorage(uploadedFiles, { mobile });
+                    file_uploads = pack.uploads;
+                    storage_subfolder_name = pack.storage_subfolder_name || "";
+                }
             } catch (ue) {
                 let detail = ue && ue.message ? ue.message : String(ue);
-                if (/storage quota|Service Accounts do not have storage/i.test(detail)) {
-                    detail += " — Use a folder on a Google Shared drive (Team Drive) with the service account added; personal My Drive does not work.";
+                if (USE_DRIVE_UPLOADS && /storage quota|Service Accounts do not have storage/i.test(detail)) {
+                    detail += " Use a Shared drive folder, or set FILE_UPLOAD_BACKEND=firebase on Railway.";
                 }
-                console.error("[contact-form-api] Google Drive upload failed", detail, ue);
+                console.error("[contact-form-api] File upload failed", detail, ue);
                 return res.status(500).json({
                     ok: false,
-                    error: `Drive: ${detail} Enable Drive API; parent folder must live on a Shared drive for service accounts.`
+                    error: USE_DRIVE_UPLOADS ? `Drive: ${detail}` : `Storage: ${detail}`
                 });
             }
-            const namesForSummary = drive_uploads
+            const summaryList = USE_DRIVE_UPLOADS ? drive_uploads : file_uploads;
+            const namesForSummary = summaryList
                 .map((f) => (typeof f.original_name === "string" ? f.original_name : ""))
                 .filter(Boolean);
             if (namesForSummary.length && !fields.document) {
@@ -212,12 +231,18 @@ app.post(
             mobile,
             fields,
             client_context: mergedClientContext,
+            ...(file_uploads.length
+                ? {
+                    file_uploads,
+                    ...(storage_subfolder_name ? { storage_subfolder_name } : {})
+                }
+                : {}),
             ...(drive_uploads.length
                 ? {
                     drive_uploads,
                     ...(drive_subfolder_id
                         ? { drive_subfolder_id, drive_subfolder_name }
-                        : {})
+                        : { ...(drive_subfolder_name ? { drive_subfolder_name } : {}) })
                 }
                 : {})
         };
@@ -273,7 +298,7 @@ app.get("/", (_req, res) => {
             `Contact leads API running.`,
             `POST JSON or multipart/form-data → ${PATHNAME}`,
             `GET /health → health check.`,
-            `Firestore + Google Drive (file fields) + optional Google Sheets.`
+            `Firestore + Firebase Storage (default file uploads) or Drive — optional Google Sheets.`
         ].join("\n")
     );
 });
@@ -281,5 +306,6 @@ app.get("/", (_req, res) => {
 app.listen(PORT, () => {
     const sheetHint = SHEETS_DISABLED ? "(Sheets OFF)" : "(Sheets ON)";
     const fsHint = FIRESTORE_DISABLED ? "Firestore OFF" : "Firestore ON";
-    console.log(`contact-form-api listening on :${PORT} ${PATHNAME} — ${fsHint} ${sheetHint}`);
+    const uploadHint = USE_DRIVE_UPLOADS ? "uploads=Drive" : "uploads=FirebaseStorage";
+    console.log(`contact-form-api listening on :${PORT} ${PATHNAME} — ${fsHint} ${sheetHint} ${uploadHint}`);
 });
