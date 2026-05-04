@@ -1,32 +1,33 @@
 /**
  * Backend for `company.js` POST /contact-form-submissions (same JSON the widget sends).
- * Hosting: **Railway only**. Data: **Firebase Firestore** (credentials from Firebase Console, not GCP Cloud Run).
- * Google Sheets is disabled in code (SHEETS_DISABLED = true).
+ * Hosting: **Railway only**. Data: **Firestore** + optional **Google Sheets** (append row on each submit).
  *
  * Setup:
  * 1. Firebase Console → Project settings → Service accounts → **Generate new private key** (JSON).
- * 2. Railway → Variables → **FIREBASE_SERVICE_ACCOUNT_JSON** = paste full JSON.
- * 3. Local dev: set **GOOGLE_APPLICATION_CREDENTIALS** to that JSON file path, or paste JSON into **FIREBASE_SERVICE_ACCOUNT_JSON**.
- * 4. Point the site at this API base (`dfchat-api-base-url` / `apiBase` on the loader).
+ * 2. Railway → **FIREBASE_SERVICE_ACCOUNT_JSON** = full JSON (used for Firestore + Sheets).
+ * 3. Google Sheets: share the spreadsheet with the service account **`client_email`** (Editor). Enable **Google Sheets API** in the same Google Cloud project if prompted.
+ * 4. Railway → **SHEETS_SPREADSHEET_ID** (from the sheet URL). Optional **SHEETS_RANGE** (default `Sheet1!A:F`). Set **DISABLE_SHEETS=1** to skip Sheets; omit **SHEETS_SPREADSHEET_ID** to use Firestore only.
+ * 5. Point the site at this API (`dfchat-api-base-url` / `apiBase`).
  *
  * Env:
- *   PORT (default 8080; set by Railway at runtime)
- *   FIREBASE_SERVICE_ACCOUNT_JSON or FIREBASE_CONFIG — service account JSON string (production on Railway)
- *   GOOGLE_APPLICATION_CREDENTIALS — path to JSON file (local dev)
- *   DISABLE_FIRESTORE=1 — skip Firestore
- *   FIRESTORE_DATABASE_ID — only if not using the default database
- *   CORS_ORIGIN — optional; comma-separated origins or omit to reflect Origin
+ *   PORT, FIREBASE_SERVICE_ACCOUNT_JSON / FIREBASE_CONFIG, GOOGLE_APPLICATION_CREDENTIALS (local file)
+ *   DISABLE_FIRESTORE=1, FIRESTORE_DATABASE_ID, CORS_ORIGIN
+ *   SHEETS_SPREADSHEET_ID — enables live append when set (unless DISABLE_SHEETS=1)
+ *   SHEETS_RANGE — optional, default Sheet1!A:F
+ *   DISABLE_SHEETS=1 — never write to Sheets (even if SHEETS_SPREADSHEET_ID is set)
  */
 
 import express from "express";
 import cors from "cors";
-import fs from "node:fs";
 import { firebaseAdminInit, persistToFirestore } from "./lib/firestore.mjs";
 import { appendContactRowToSheet } from "./lib/sheets.mjs";
 
 const PORT = Number(process.env.PORT) || 8080;
 const PATHNAME = "/contact-form-submissions";
-const SHEETS_DISABLED = true; // Google Sheets disabled — Railway + Firestore only (DISABLE_SHEETS=1)
+/** Sheets on when SHEETS_SPREADSHEET_ID is set and not DISABLE_SHEETS=1 */
+const SHEETS_DISABLED =
+    process.env.DISABLE_SHEETS === "1" ||
+    !(process.env.SHEETS_SPREADSHEET_ID || "").trim();
 const FIRESTORE_DISABLED = process.env.DISABLE_FIRESTORE === "1";
 
 function corsOriginOption() {
@@ -98,7 +99,7 @@ app.post(PATHNAME, async (req, res) => {
         if (FIRESTORE_DISABLED && SHEETS_DISABLED) {
             return res.status(500).json({
                 ok: false,
-                error: "Neither Firestore nor Sheets is enabled; remove DISABLE_FIRESTORE / DISABLE_SHEETS from env."
+                error: "Neither Firestore nor Sheets is enabled: set FIREBASE_SERVICE_ACCOUNT_JSON + Firestore, and/or SHEETS_SPREADSHEET_ID for Sheets. Remove DISABLE_FIRESTORE / DISABLE_SHEETS if applicable."
             });
         }
         if (!FIRESTORE_DISABLED) {
@@ -137,7 +138,12 @@ app.get("/health", (_req, res) => res.status(200).send("ok"));
 /** Opening the Railway URL in a browser hits GET / — avoid Express default "Cannot GET /". */
 app.get("/", (_req, res) => {
     res.status(200).type("text/plain; charset=utf-8").send(
-        [`Contact leads API running.`, `POST JSON → ${PATHNAME}`, `GET /health → health check.`].join("\n")
+        [
+            `Contact leads API running.`,
+            `POST JSON → ${PATHNAME}`,
+            `GET /health → health check.`,
+            `Firestore + optional Google Sheets (set SHEETS_SPREADSHEET_ID on Railway for live sheet rows).`
+        ].join("\n")
     );
 });
 

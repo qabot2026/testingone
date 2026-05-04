@@ -40,7 +40,7 @@ async function getSheetsAuthClient() {
  */
 export async function appendContactRowToSheet(row) {
     if (!SPREADSHEET_ID) {
-        throw new Error("Missing SHEETS_SPREADSHEET_ID (set it or DISABLE_SHEETS=1)");
+        throw new Error("Missing SHEETS_SPREADSHEET_ID in env (or set DISABLE_SHEETS=1).");
     }
     const client = await getSheetsAuthClient();
     const sheets = google.sheets({ version: "v4", auth: client });

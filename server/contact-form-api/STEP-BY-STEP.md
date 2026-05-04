@@ -1,6 +1,6 @@
-# Contact form API — **Railway** + **Firebase (Firestore)**
+# Contact form API — **Railway** + **Firebase Firestore** + optional **Google Sheets**
 
-Hosting is **only on [Railway](https://railway.app/)**. Data goes to **Firebase Firestore** — you use the **[Firebase Console](https://console.firebase.google.com/)** (not Google Cloud Run, Cloud Build, or `gcloud`).
+Hosting is **only on [Railway](https://railway.app/)**. **Firestore** and credentials come from the **[Firebase Console](https://console.firebase.google.com/)**. **Google Sheets** gets a **live row append** on each successful save when you set **`SHEETS_SPREADSHEET_ID`** (same service account; share the sheet with its email).
 
 Optional: **Dialogflow** in `company.config.js` is separate from this API.
 
@@ -13,6 +13,7 @@ Optional: **Dialogflow** in `company.config.js` is separate from this API.
 | Website + chat (static files) | GitHub Pages, Netlify, your host, etc. |
 | **Contact API** (this folder) | **Railway** (Docker / Node) |
 | **Firestore** | **Firebase** (same project as your app) |
+| **Google Sheets** (optional) | Your spreadsheet; API appends a row when **`SHEETS_SPREADSHEET_ID`** is set in Railway |
 
 ---
 
@@ -34,14 +35,35 @@ Optional: **Dialogflow** in `company.config.js` is separate from this API.
 
 ---
 
+## 1b. Google Sheets — live row on each submission (optional)
+
+1. Create a Google Sheet or open an existing one. First row can be headers, e.g. `timestamp`, `form_id`, `name`, `mobile`, `email`, `client_session_id` (columns **A–F** match the default range).
+
+2. From your **`FIREBASE_SERVICE_ACCOUNT_JSON`**, copy the **`client_email`** (looks like `something@PROJECT.iam.gserviceaccount.com`). In the Sheet click **Share** → paste that email → role **Editor** → **Send**.
+
+3. Copy **`SHEETS_SPREADSHEET_ID`** from the URL:  
+   `https://docs.google.com/spreadsheets/d/THIS_PART_IS_THE_ID/edit`
+
+4. In **[Google Cloud Console](https://console.cloud.google.com/)** → select the **same project** as Firebase (**project id** in your JSON) → **APIs & Services** → **Library** → enable **Google Sheets API** (if the first append fails with API not enabled).
+
+5. In **Railway → Variables** add:
+   - **`SHEETS_SPREADSHEET_ID`** = that id  
+   - Optional: **`SHEETS_RANGE`** = e.g. `Sheet1!A:F` (default) or `Leads!A:F` if your tab is named `Leads`  
+   - To turn Sheets off but keep Firestore: **`DISABLE_SHEETS`** = `1`, or remove **`SHEETS_SPREADSHEET_ID`**.
+
+Each **POST** to `/contact-form-submissions` appends **one row** when Sheets is enabled.
+
+---
+
 ## 2. Deploy the API on Railway
 
 1. Push this repo to **GitHub**.
 2. **[railway.app](https://railway.app)** → **New project** → **Deploy from GitHub** → select the repo.
 3. The repo root should include **`railway.json`**, which points the Docker build at **`server/contact-form-api/Dockerfile`**.
-4. Add **`FIREBASE_SERVICE_ACCOUNT_JSON`** (step 1).
-5. **Networking** → generate a public **HTTPS** URL (this project uses `https://handsome-amazement-production-7f65.up.railway.app`).
-6. Wait until **`GET /health`** returns `ok`.
+4. Add **`FIREBASE_SERVICE_ACCOUNT_JSON`** (step 1).  
+5. For Sheets: add **`SHEETS_SPREADSHEET_ID`** (and optional **`SHEETS_RANGE`**) per **§1b**.
+6. **Networking** → public **HTTPS** URL (e.g. `https://handsome-amazement-production-7f65.up.railway.app`).
+7. Wait until **`GET /health`** returns `ok`.
 
 ---
 
@@ -60,8 +82,10 @@ If Railway gives you a **new** domain later, update both places (and the line ab
 
 | Problem | What to check |
 |---------|----------------|
-| `Firestore: ... permission` or IAM | In Google **Cloud** console, same project as Firebase: the service account email from your JSON needs **Firestore** write access. Easiest fix: **Firebase Console → Project settings → Service accounts** and use the **Firebase Admin SDK** default service account, or grant **Cloud Datastore User** / Firestore-compatible role to the account in **IAM**. |
-| `NOT_FOUND` / database | Firestore created? **`FIRESTORE_DATABASE_ID`** set if using a non-default database? |
+| **`Firestore: 5 NOT_FOUND` or `NOT_FOUND`** | **Most common:** no Firestore database in that project, wrong **database id**, or the JSON key is for a **different** project than where you opened Firestore. Open **Firebase Console** → select the project whose **`project_id`** is inside your JSON → **Firestore Database** → if you see **Create database**, create it (Native / **production** mode is fine). If you use a **named** database (not `(default)`), set Railway **`FIRESTORE_DATABASE_ID`** to that exact name (see Firestore → database selector). |
+| `Firestore: ... permission` or IAM | Same project as Firebase: service account needs write access. **Firebase Console → Project settings → Service accounts** (use the key from here), or in Google Cloud **IAM** grant **Datastore User** (or Editor for testing) to **`client_email`** from the JSON. |
+| **`Sheets:` … permission / 403 / Request had insufficient authentication** | Sheet **Shared** with **`client_email`** from the JSON as **Editor**. **Google Sheets API** enabled in the same GCP project as Firebase. |
+| **`Sheets:` … Unable to parse range** | **`SHEETS_RANGE`** must match an existing tab name, e.g. `Sheet1!A:F`. |
 | Build fails on Railway | **Deploy logs** — `railway.json` **`dockerfilePath`** must match **`server/contact-form-api/Dockerfile`**. |
 
 ---
