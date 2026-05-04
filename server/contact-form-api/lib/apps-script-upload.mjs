@@ -34,7 +34,11 @@ export async function forwardSubmissionToAppsScript(webAppUrl, payload) {
         fd.append(field, blob, orig);
     }
 
-    const res = await fetch(webAppUrl, {
+    let execUrl = (webAppUrl || "").trim().replace(/\s+/g, "");
+    while (execUrl.endsWith("/")) {
+        execUrl = execUrl.slice(0, -1);
+    }
+    const res = await fetch(execUrl, {
         method: "POST",
         body: fd,
         redirect: "follow"
@@ -54,9 +58,18 @@ export async function forwardSubmissionToAppsScript(webAppUrl, payload) {
     }
 
     if (status >= 400) {
-        throw new Error(
-            `Apps Script web app responded with HTTP ${status}. First 400 chars:\n${text.slice(0, 400)}`
-        );
+        const hint403 =
+            "\n\nMost common fix for 401/403 with HTML Google pages: Deploy again as a **Web app** with " +
+            '"Who has access" set to **Anyone** (anonymous). Railway has no Google login — "Anyone with Google ' +
+            'account" usually fails.\nAlso use the Published **…/macros/s/…/exec** URL from the deployment ' +
+            "dialog — not `/dev`. Copy a **New deployment** URL if you redeployed the script.";
+        const looksLikeGoogleHtml =
+            /<!DOCTYPE html>/i.test(text) || /<title>/i.test(text) || /Page Not Found/i.test(text);
+        const tail =
+            looksLikeGoogleHtml && (status === 401 || status === 403 || status === 404)
+                ? `${hint403}\n\nSnippet:\n${text.slice(0, 400)}`
+                : `\n${text.slice(0, 400)}`;
+        throw new Error(`Apps Script web app HTTP ${status}.${tail}`);
     }
     if (json && typeof json === "object" && json.ok === false) {
         const err = typeof json.error === "string" ? json.error : JSON.stringify(json.error ?? json);
