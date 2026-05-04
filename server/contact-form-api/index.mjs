@@ -20,6 +20,7 @@
  *   CORS_ORIGIN — omit for reflect request Origin; set to exact origin(s) comma-separated if you prefer strict CORS
  */
 
+import "./lib/firebase.mjs";
 import express from "express";
 import cors from "cors";
 import fs from "node:fs";

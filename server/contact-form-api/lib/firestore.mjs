@@ -16,7 +16,7 @@ export function firebaseAdminInit() {
     if (admin.apps.length) {
         return;
     }
-    const json = (process.env.FIREBASE_SERVICE_ACCOUNT_JSON || "").trim();
+    const json = (process.env.FIREBASE_CONFIG || process.env.FIREBASE_SERVICE_ACCOUNT_JSON || "").trim();
     if (json) {
         const cred = JSON.parse(json);
         admin.initializeApp({
