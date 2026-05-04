@@ -1,5 +1,7 @@
 /**
- * Firestore writer using firebase-admin default credentials (GOOGLE_APPLICATION_CREDENTIALS).
+ * Firestore writer via firebase-admin.
+ * Production (Railway): set FIREBASE_SERVICE_ACCOUNT_JSON from Firebase Console → Service accounts → private key.
+ * Local: GOOGLE_APPLICATION_CREDENTIALS pointing at the same JSON file, or FIREBASE_SERVICE_ACCOUNT_JSON.
  */
 
 import fs from "node:fs";
@@ -33,6 +35,11 @@ export function firebaseAdminInit() {
             projectId: cred.project_id || process.env.GCLOUD_PROJECT
         });
         return;
+    }
+    if (process.env.NODE_ENV === "production") {
+        throw new Error(
+            "Missing Firebase credentials: set FIREBASE_SERVICE_ACCOUNT_JSON in Railway (Firebase Console → Project settings → Service accounts → Generate new private key)."
+        );
     }
     admin.initializeApp();
 }

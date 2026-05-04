@@ -1,5 +1,5 @@
-# Optional local test ONLY if you downloaded a service account KEY (JSON file).
-# If your org BLOCKS keys — do NOT run this script. Deploy with Cloud Run instead (STEP-BY-STEP.md Part C).
+# Optional local test ONLY if you have a Firebase service account JSON key file (Firebase Console → Project settings → Service accounts).
+# Production uses Railway + FIREBASE_SERVICE_ACCOUNT_JSON — see STEP-BY-STEP.md.
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
@@ -11,8 +11,8 @@ $haveKey = (Read-Host "Do you have a service account JSON key file on disk? [y/N
 if ($haveKey -ne "y" -and $haveKey -ne "yes") {
     Write-Host ""
     Write-Host "You don't need this script." -ForegroundColor Yellow
-    Write-Host "  Org policy blocks keys  ->  Deploy to Cloud Run (--service-account) per STEP-BY-STEP.md Part C."
-    Write-Host "  No JSON file            ->  Same: skip local; use Cloud Run."
+    Write-Host "  No local key file  ->  Deploy on Railway; set FIREBASE_SERVICE_ACCOUNT_JSON in Railway (STEP-BY-STEP.md)."
+    Write-Host "  Org blocks keys     ->  Same: use Railway variables; do not commit secrets."
     Write-Host ""
     exit 0
 }

@@ -11,7 +11,12 @@ const RANGE = (process.env.SHEETS_RANGE || "Sheet1!A:F").trim();
 const SPREADSHEET_SCOPES = ["https://www.googleapis.com/auth/spreadsheets"];
 
 async function getSheetsAuthClient() {
-    const jsonRaw = (process.env.GOOGLE_SHEETS_SERVICE_ACCOUNT_JSON || process.env.GOOGLE_SERVICE_ACCOUNT_JSON || "").trim();
+    const jsonRaw = (
+        process.env.GOOGLE_SHEETS_SERVICE_ACCOUNT_JSON ||
+        process.env.GOOGLE_SERVICE_ACCOUNT_JSON ||
+        process.env.FIREBASE_SERVICE_ACCOUNT_JSON ||
+        ""
+    ).trim();
     let key = jsonRaw ? JSON.parse(jsonRaw) : null;
     if (!key && process.env.GOOGLE_APPLICATION_CREDENTIALS) {
         const path = process.env.GOOGLE_APPLICATION_CREDENTIALS;

@@ -1,943 +1,943 @@
 /**
  * company.css — Dialogflow chat widget + shared inline form (contact / appointment / upload; no host page html/body rules).
  */
-@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap");
-
-:root {
-  --dfchat-bg-1: #e8f4fc;
-  --dfchat-bg-2: #f7fbff;
-  --dfchat-brand-900: #0f172a;
-  --dfchat-brand-700: #0369a1;
-  --dfchat-brand-500: #0ea5e9;
-  --dfchat-accent-200: #e0f2fe;
-  --dfchat-surface: #ffffff;
-  --dfchat-text: #0f172a;
-  --dfchat-text-soft: #475569;
-  --dfchat-border: #dbe5ec;
-}
-
-/* `company.config.js` →  applyDfMessengerThemeConfig sets `common.dfMessengerTheme` vars on this node as
-   **inline** styles, so a rule in this file such as `df-messenger { --df-messenger-chat-border-radius: 8px; }`
-   usually loses.
-   - **Whitish open chat card** (the panel shell): Google applies `border-radius: var(--df-messenger-chat-border-radius)`
-     on `.chat-wrapper` *inside* shadow DOM. Per-corner (e.g. flat top, round bottom) is handled in
-     `company.js` from `common.chatPanel.borderRadius` (injected CSS + inline on those nodes) — this file
-     does not see `.chat-wrapper`.
-   - **Message list strip** (middle of the card): `common.chatMessageList.paneBorderRadius` in company.config.js.
-   - For an even radius on the **whole** card, change `dfMessengerTheme["--df-messenger-chat-border-radius"]` in
-     company.config.js. */
-df-messenger {
-  position: fixed;
-  bottom: 20px;
-  right: 10px;
-  left: auto;
-  z-index: 999;
-  overflow: visible;
-  box-sizing: border-box;
-  /* Scroll inside the chat, not the host page (paired with `applyHostPageScrollLockForOpenChat` in company.js) */
-  overscroll-behavior: contain;
-  touch-action: manipulation;
-  animation: dfchat-fade-up 320ms ease-out;
-
-  --df-messenger-font-family: "Manrope", "Segoe UI", sans-serif;
-  --df-messenger-font-color: var(--dfchat-text);
-  --df-messenger-primary-color: #0284c7;
-
-  --df-messenger-message-bot-background: linear-gradient(168deg, #e8f6ff 0%, #bae6fd 100%);
-  --df-messenger-message-bot-font-color: #0c4a6e;
-  --df-messenger-message-user-background: linear-gradient(145deg, #0284c7 0%, #0ea5e9 100%);
-  --df-messenger-message-user-font-color: #f0f9ff;
-
-  --df-messenger-message-stack-spacing: 6px;
-  --df-messenger-message-spacing: 8px;
-  --df-messenger-chat-padding: 12px;
-
-  --df-messenger-input-background: var(--dfchat-surface);
-  --df-messenger-input-box-background: var(--dfchat-surface);
-  --df-messenger-input-font-color: var(--dfchat-text);
-  /* Text field shell (textarea wrapper inside user-input) — Dialogflow `.input-element-wrapper` */
-  --df-messenger-input-box-border-radius: 12px;
-  --df-messenger-input-box-border: 1px solid rgba(148, 197, 224, 0.95);
-  --df-messenger-input-box-focus-border: 1px solid rgba(2, 132, 199, 0.9);
-  /* 29px top, 8px sides, 16px bottom */
-  --df-messenger-input-padding: 29px 8px 16px 8px;
-
-  --df-messenger-chips-background: rgba(186, 230, 253, 0.92);
-  --df-messenger-chips-font-color: #0c4a6e;
-  --df-messenger-chips-border-radius: 999px;
-  --df-messenger-button-border: 1px solid rgba(14, 165, 233, 0.45);
-
-  /* Omit outer stroke — full box-border draws harsh vertical rails beside the curved title bar; rely on shadows */
-  --df-messenger-chat-border: none;
-  /* Raised card: inset highlight + modest blurs (lighter GPU than oversized glows) */
-  --df-messenger-chat-box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.75),
-    inset 0 -1px 0 rgba(15, 23, 42, 0.04),
-    0 1px 3px rgba(15, 23, 42, 0.05),
-    0 10px 28px -6px rgba(15, 23, 42, 0.1),
-    0 20px 40px -14px rgba(14, 165, 233, 0.12);
-  --df-messenger-chat-border-radius: 22px;
-  /* Chat window size is controlled from `static/company.config.js` */
-
-  /* Top sheen + angled base = raised title strip (Messenger only exposes bg + borders here, no titlebar shadow var) */
-  --df-messenger-titlebar-background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.38) 0%, rgba(255, 255, 255, 0.1) 24%, transparent 46%),
-    linear-gradient(168deg, #38bdf8 0%, #0284c7 42%, #075985 100%);
-  --df-messenger-titlebar-border: none;
-  --df-messenger-titlebar-border-bottom: 1px solid rgba(4, 58, 90, 0.55);
-  --df-messenger-titlebar-font-color: #f0f9ff;
-  --df-messenger-titlebar-subtitle-font-color: #bae6fd;
-  --df-messenger-titlebar-title-line-height: 36px;
-  --df-messenger-titlebar-icon-height: 50px;
-  --df-messenger-titlebar-icon-width: 50px;
-
-  --df-messenger-chat-bubble-icon-size: 64px;
-  --df-messenger-chat-bubble-background: linear-gradient(160deg, #0ea5e9 0%, #0284c7 48%, #0369a1 100%);
-  --df-messenger-chat-icon-radius: 50%;
-
-  /* Panel: airy, low-stop gradient */
-  --df-messenger-chat-background: linear-gradient(180deg, #fbfdff 0%, #f0f9ff 100%);
-  --df-messenger-input-border-top: 1px solid rgba(14, 165, 233, 0.2);
-}
-
-/* Smaller titlebar on phones so the header stays on-screen with the open panel. */
-@media (max-width: 768px) {
-  df-messenger {
-    /* `!important` wins over `dfMessengerTheme` inline props on the same host */
-    --df-messenger-font-size: 12px !important;
-    --df-messenger-message-font-size: 12px !important;
-    --df-messenger-input-font-size: 13px !important;
-    --df-messenger-chips-font-size: 11px !important;
-    --df-messenger-titlebar-padding: 0 6px 0 6px;
-    --df-messenger-titlebar-title-font-size: 12px !important;
-    --df-messenger-titlebar-title-line-height: 1.2;
-    --df-messenger-titlebar-subtitle-font-size: 9px !important;
-    --df-messenger-titlebar-subtitle-line-height: 1.25;
-    --df-messenger-titlebar-icon-height: 32px;
-    --df-messenger-titlebar-icon-width: 32px;
-    --df-messenger-titlebar-icon-padding: 0 4px 0 0;
-    max-height: calc(
-      100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 8px
-    );
-  }
-
-  /* Nudge title bar slightly higher (~10px) */
-  df-messenger df-messenger-header {
-    position: relative;
-    top: -10px;
-    margin-bottom: -10px;
-  }
-
-  /* Typing: do not hide the whole title bar — that removed close / Language / Restart in header-controls.
-     Space is already tightened via mobile titlebar vars; optional padding trim only: */
-  df-messenger.dfchat-composer-typing df-messenger-header {
-    min-height: 0;
-  }
-}
-
-/* Set by company.js on mobile when the chat is open: freeze host scroll */
-html.dfchat-host-scroll-locked,
-html.dfchat-host-scroll-locked body {
-  overflow: hidden !important;
-  overscroll-behavior: none;
-}
-
-/* Footer chrome: stay viewport-fixed even if the host page overrides `position` */
-#dfchat-chat-action-bar.dfchat-chat-action-bar--body-fixed,
-#dfchat-powered-by-strip {
-  position: fixed !important;
-}
-
-/* "Powered by …" strip (sits just above the composer; positioned by company.js) */
-#dfchat-powered-by-strip {
-  box-sizing: border-box;
-  display: inline-block;
-  /* margin: set at runtime from company.config.js poweredBy.marginPx (company.js) */
-  padding: 0 4px;
-  max-width: calc(100vw - 8px);
-  font-family: "Manrope", "Segoe UI", system-ui, sans-serif;
-  /* color, size, align: set from company.config.js (poweredBy) */
-  white-space: nowrap;
-  overflow: visible;
-  letter-spacing: 0.01em;
-  /* Intrinsic width: hit targets match the label (JS sets width: max-content). */
-  vertical-align: top;
-}
-/* Clicks only when `poweredBy.linkUrl` is set (rendered as <a href="...">). */
-#dfchat-powered-by-strip[href] {
-  pointer-events: auto;
-  cursor: pointer;
-}
-#dfchat-powered-by-strip:not([href]) {
-  pointer-events: none;
-}
-
-/* Footer controls (Language + Restart) anchored near Send */
-#dfchat-chat-footer-overlay {
-  position: fixed !important;
-  z-index: 2147483646 !important;
-  display: none !important;
-  align-items: center !important;
-  gap: 8px !important;
-  left: 16px !important;
-  right: auto !important;
-  bottom: 110px !important;
-  pointer-events: auto !important;
-}
-
-#dfchat-chat-footer-overlay button {
-  width: 34px !important;
-  height: 34px !important;
-  display: grid !important;
-  place-items: center !important;
-  border: 1px solid rgba(203, 213, 225, 0.9) !important;
-  border-radius: 10px !important;
-  background: rgba(255, 255, 255, 0.92) !important;
-  color: #0369a1 !important;
-  cursor: pointer !important;
-  padding: 0 !important;
-}
-
-#dfchat-chat-footer-overlay button:hover {
-  background: #ffffff !important;
-}
-
-/* Stable action bar near Send button */
-#dfchat-chat-action-bar {
-  position: static;
-  z-index: 2147483647;
-  display: none;
-  align-items: center;
-  gap: 8px;
-  pointer-events: auto;
-  flex-direction: row !important;
-  justify-content: flex-start !important;
-  margin-left: 0 !important;
-  margin-right: 0 !important;
-  flex: 0 0 auto !important;
-}
-
-#dfchat-chat-action-bar-fixed {
-  display: none !important;
-}
-
-/* In-flow bar: mounted *below* `.input-box-wrapper` (see company.js `findFooterBelowInputMountPoint`). */
-#dfchat-chat-action-bar.dfchat-chat-action-bar--inline {
-  position: static !important;
-  z-index: auto !important;
-  left: auto !important;
-  right: auto !important;
-  bottom: auto !important;
-  top: auto !important;
-  /* Fallback only; `applyChatActionBarInlineTransform` in company.js sets translate(x, y) from config (overrides). */
-  transform: translate(10px, 0px) !important;
-  box-sizing: border-box !important;
-  width: 100% !important;
-  max-width: 100% !important;
-  margin: 0 !important;
-  padding: 6px 10px 8px 10px !important;
-  order: unset !important;
-  flex-direction: row !important;
-  flex-wrap: wrap !important;
-  align-items: center !important;
-  justify-content: flex-end !important;
-  gap: 8px !important;
-  flex: 0 0 auto !important;
-}
-
-/* Bar stays in document body (not shadow DOM); JS sets inline position + display */
-#dfchat-chat-action-bar.dfchat-chat-action-bar--body-fixed {
-  flex-direction: row !important;
-  align-items: center !important;
-  gap: 8px !important;
-  box-sizing: border-box !important;
-  /* Stabilize compositing: reduces perceived flicker when `left`/`top` are updated every frame. */
-  backface-visibility: hidden;
-  transform: translateZ(0);
-}
-
-#dfchat-chat-action-bar.dfchat-chat-action-bar--body-fixed button,
-#dfchat-chat-action-bar.dfchat-chat-action-bar--body-fixed .dfchat-chat-action-menu {
-  /* Avoid extra layout work / double-tap delay on mobile when tapping Language / Restart. */
-  touch-action: manipulation;
-  -webkit-tap-highlight-color: transparent;
-}
-
-#dfchat-chat-action-bar .dfchat-chat-action-menu-wrapper,
-.dfchat-chat-action-menu-wrapper {
-  position: relative;
-  top: 0;
-  order: 0 !important;
-  margin-right: 8px !important;
-  margin-left: 0 !important;
-  flex: 0 0 auto !important;
-  transform: none;
-}
-
-#dfchat-chat-action-bar[data-dfchat-anchor="send"] > .dfchat-chat-action-icon {
-  transform: none !important;
-}
-
-[data-dfchat-chat-language="true"] {
-  display: none !important;
-}
-
-[data-dfchat-chat-restart="true"] {
-  display: none !important;
-}
-
-.dfchat-chat-action-icon {
-  width: 34px;
-  height: 34px;
-  display: grid;
-  place-items: center;
-  border: none;
-  border-radius: 10px;
-  background: transparent;
-  color: #000000;
-  cursor: pointer;
-  padding: 0;
-}
-
-.dfchat-chat-action-icon:hover {
-  background: rgba(0, 0, 0, 0.05);
-}
-
-.dfchat-chat-action-pill {
-  width: auto !important;
-  min-height: 0 !important;
-  height: auto !important;
-  display: inline-flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  gap: 6px !important;
-  padding: 0 12px !important;
-  border: none !important;
-  border-radius: 10px !important;
-  background: #ffffff !important;
-  color: #0f172a !important;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06) !important;
-  font: 700 12px "Manrope", "Segoe UI", sans-serif !important;
-  line-height: 1.2 !important;
-  cursor: pointer !important;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.dfchat-chat-action-pill:hover {
-  background: #f8fafc !important;
-  border: none !important;
-}
-
-.dfchat-chat-action-pill:active {
-  background: #f1f5f9 !important;
-}
-
-.dfchat-chat-action-pill:focus-visible {
-  outline: 2px solid var(--dfchat-brand-500, #0ea5e9);
-  outline-offset: 2px;
-}
-
-.dfchat-chat-action-pill__text {
-  white-space: nowrap;
-  pointer-events: none;
-  font-weight: 700 !important;
-}
-
-.dfchat-chat-action-pill__icon {
-  display: inline-flex;
-  flex-shrink: 0;
-  color: #0369a1;
-  pointer-events: none;
-}
-
-.dfchat-restart-icon-glyph {
-  display: inline-block;
-  line-height: 1;
-  font-weight: 500;
-  color: currentColor;
-  font-family: "Segoe UI Symbol", "Segoe UI", "Apple Symbols", "Noto Sans Symbols 2", sans-serif;
-}
-
-.dfchat-chat-action-menu {
-  position: absolute;
-  right: 0;
-  bottom: 42px;
-  min-width: 148px;
-  border: 1px solid rgba(203, 213, 225, 0.95);
-  border-radius: 12px;
-  background: #ffffff;
-  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.18);
-  padding: 6px;
-}
-
-.dfchat-chat-action-menu-item {
-  width: 100%;
-  text-align: left;
-  border: 0;
-  background: transparent;
-  color: #0f172a;
-  border-radius: 10px;
-  padding: 8px 10px;
-  font: 600 12px "Manrope", "Segoe UI", sans-serif;
-  cursor: pointer;
-}
-
-.dfchat-chat-action-menu-item:hover {
-  background: rgba(3, 105, 161, 0.08);
-}
-
-.dfchat-chat-action-menu-item[data-active="true"] {
-  color: #0369a1;
-}
-
-/* Mobile: sit a bit tighter; keep white pill (matches desktop) */
-@media (max-width: 768px) {
-  #dfchat-chat-action-bar.dfchat-chat-action-bar--body-fixed {
-    gap: 4px !important;
-  }
-
-  #dfchat-chat-action-bar.dfchat-chat-action-bar--body-fixed .dfchat-chat-action-menu-wrapper {
-    margin-right: 4px !important;
-  }
-
-  #dfchat-chat-action-bar.dfchat-chat-action-bar--body-fixed .dfchat-chat-action-pill {
-    background: #ffffff !important;
-    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06) !important;
-    padding: 0 8px !important;
-  }
-
-  #dfchat-chat-action-bar.dfchat-chat-action-bar--body-fixed .dfchat-chat-action-pill:hover,
-  #dfchat-chat-action-bar.dfchat-chat-action-bar--body-fixed .dfchat-chat-action-pill:active {
-    background: #f1f5f9 !important;
-  }
-
-  /* `right:0` (desktop) grows the list left; when the control sits near the left of the bar/viewport, the
-     menu can clip. Grow right from the language control on small screens so options stay in view. */
-  #dfchat-chat-action-bar.dfchat-chat-action-bar--body-fixed .dfchat-chat-action-menu {
-    left: 0;
-    right: auto;
-    min-width: 0;
-    max-width: min(220px, calc(100vw - 16px));
-  }
-}
-
-/* Reliable footer action bar (icon only) */
-#dfchat-hard-language-wrap {
-  position: relative;
-}
-
-#dfchat-hard-language-btn:hover,
-#dfchat-hard-restart-btn:hover,
-#dfchat-contact-form-close:hover {
-  background: rgba(14, 165, 233, 0.1) !important;
-}
-
-#dfchat-contact-form-close {
-  width: 44px !important;
-  height: 44px !important;
-  border-radius: 12px !important;
-  font-weight: 500 !important;
-  line-height: 1 !important;
-  font-size: 28px !important;
-}
-
-#dfchat-hard-language-menu {
-  position: absolute;
-  right: 0;
-  bottom: 42px;
-  min-width: 148px;
-  border: 1px solid rgba(203, 213, 225, 0.95);
-  border-radius: 12px;
-  background: #ffffff;
-  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.18);
-  padding: 6px;
-  display: none;
-}
-
-#dfchat-hard-language-menu button {
-  width: 100% !important;
-  height: auto !important;
-  text-align: left !important;
-  border: 0 !important;
-  background: transparent !important;
-  color: #0f172a !important;
-  border-radius: 10px !important;
-  padding: 8px 10px !important;
-  font: 600 12px "Manrope", "Segoe UI", sans-serif !important;
-  cursor: pointer !important;
-  transition: background 0.2s ease !important;
-}
-
-#dfchat-hard-language-menu button:hover {
-  background: rgba(3, 105, 161, 0.08) !important;
-}
-
-#dfchat-hard-language-menu button[data-active="true"] {
-  color: #0369a1 !important;
-  font-weight: 700 !important;
-}
-
-.dfchat-chat-launcher-strip {
-  position: fixed;
-  /* Below `df-messenger` (999) so the chat bubble stays clickable when strips overlap it */
-  z-index: 997;
-  padding: 10px 14px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.98);
-  border: 1px solid rgba(3, 105, 161, 0.22);
-  box-shadow: 0 14px 34px rgba(15, 23, 42, 0.16);
-  color: var(--dfchat-text);
-  font: 700 13px "Manrope", "Segoe UI", sans-serif;
-  letter-spacing: 0.2px;
-  backdrop-filter: blur(10px);
-  user-select: none;
-}
-
-.dfchat-chat-launcher-strip:hover {
-  transform: translateY(-1px);
-}
-
-.dfchat-chat-launcher-strip:active {
-  transform: translateY(0);
-}
-
-.dfchat-chat-launcher-input-strip {
-  position: fixed;
-  z-index: 998;
-  display: none;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 8px 6px 12px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.98);
-  border: 1px solid rgba(3, 105, 161, 0.22);
-  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.14);
-  backdrop-filter: blur(10px);
-  box-sizing: border-box;
-  width: auto;
-  min-width: min(220px, calc(100vw - 32px));
-}
-
-.dfchat-chat-launcher-input-strip__field {
-  flex: 1;
-  min-width: 0;
-  border: none;
-  background: transparent;
-  outline: none;
-  color: var(--dfchat-text);
-  font: 600 var(--dfchat-launcher-input-font-size, 14px) "Manrope", "Segoe UI", sans-serif;
-}
-
-.dfchat-chat-launcher-input-strip__field::placeholder {
-  color: rgba(15, 23, 42, 0.45);
-  font-weight: 500;
-}
-
-.dfchat-chat-launcher-input-strip__send {
-  flex-shrink: 0;
-  border: none;
-  border-radius: 999px;
-  padding: 8px 14px;
-  background: linear-gradient(140deg, #0369a1, #0ea5e9);
-  color: #f0fdfa;
-  font: 700 13px "Manrope", "Segoe UI", sans-serif;
-  cursor: pointer;
-  transition: filter 0.15s ease, transform 0.1s ease;
-}
-
-.dfchat-chat-launcher-input-strip__send:hover {
-  filter: brightness(1.05);
-}
-
-.dfchat-chat-launcher-input-strip__send:active {
-  transform: scale(0.98);
-}
-
-@keyframes dfchat-fade-up {
-  from {
-    opacity: 0;
-    transform: translateY(12px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@media (max-width: 768px) {
-  df-messenger {
-    /* Left/right: `company.js` from common.chatLayout.side + bubblePosition (do not set both here). */
-    bottom: 10px;
-    --df-messenger-chat-window-width: calc(100vw - 24px);
-    --df-messenger-chat-window-height: calc(100dvh - 24px);
-    --df-messenger-chat-border-radius: 20px;
-    --df-messenger-input-padding: 29px 8px 16px 8px;
-  }
-}
-
-.dfchat-contact-form {
-  position: fixed;
-  right: 33px;
-  /* Was 106px; +100px toward viewport bottom per product request */
-  bottom: 6px;
-  z-index: 1000;
-  /* 5px tighter on each side vs before (32px → 42px total horizontal margin) */
-  width: min(300px, calc(100vw - 82px));
-  display: none;
-}
-
-/* Undocked: wider panel on large screens (keep in sync with `desk.form.formDockMaxWidthPx`). */
-@media (min-width: 769px) {
-  .dfchat-contact-form {
-    width: min(380px, calc(100vw - 82px));
-  }
-}
-
-.dfchat-contact-form.dfchat-is-open {
-  display: block;
-  animation: dfchat-fade-up 220ms ease-out;
-}
-
-.dfchat-contact-form__card {
-  background: rgba(255, 255, 255, 0.98);
-  border: 1px solid var(--dfchat-border);
-  border-radius: 16px;
-  box-shadow: 0 18px 52px rgba(15, 23, 42, 0.18);
-  padding: 10px 12px 12px;
-  backdrop-filter: blur(10px);
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  max-height: min(50dvh, 300px);
-}
-
-.dfchat-contact-form__header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 6px;
-  flex-shrink: 0;
-}
-
-.dfchat-contact-form__title {
-  margin: 0;
-  font-size: 0.98rem;
-  font-weight: 700;
-  line-height: 1.2;
-}
-
-.dfchat-contact-form__subtitle {
-  margin: 2px 0 0;
-  font-size: 0.78rem;
-  line-height: 1.25;
-  color: var(--dfchat-text-soft);
-}
-
-.dfchat-contact-form__icon-button {
-  border: 0;
-  border-radius: 999px;
-  width: 30px;
-  height: 30px;
-  background: #eef6f7;
-  color: var(--dfchat-brand-900);
-  cursor: pointer;
-  font: inherit;
-  font-size: 1rem;
-}
-
-.dfchat-contact-form__fields {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  min-height: auto;
-  flex: 0 1 auto;
-}
-
-.dfchat-contact-form__fields--stacked {
-  display: flex;
-  flex-direction: column;
-  flex: 0 1 auto;
-  min-height: auto;
-  width: 100%;
-  overflow: visible;
-}
-
-.dfchat-contact-form__inputs {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  min-height: 6rem;
-  max-height: 220px;
-  overflow-x: hidden;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
-  padding-right: 2px;
-  flex: 0 1 auto;
-}
-
-.dfchat-contact-form__row {
-  display: flex;
-  flex-direction: row;
-  align-items: flex-start;
-  gap: 6px;
-  min-width: 0;
-  width: 100%;
-}
-
-.dfchat-contact-form__row-icon {
-  flex: 0 0 32px;
-  width: 32px;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-top: 2px;
-  border-radius: 9px;
-  background: var(--dfchat-accent-200, #d7f2ef);
-  color: var(--dfchat-brand-700, #0369a1);
-}
-
-.dfchat-contact-form__row-icon svg {
-  display: block;
-}
-
-.dfchat-contact-form__fields .dfchat-contact-form__control,
-.dfchat-contact-form__fields > input,
-.dfchat-contact-form__fields > textarea {
-  width: 100%;
-  box-sizing: border-box;
-  border: 1px solid var(--dfchat-border);
-  border-radius: 10px;
-  padding: 7px 9px;
-  background: #fbfdff;
-  font: inherit;
-  font-size: 0.88rem;
-  color: var(--dfchat-text);
-}
-
-.dfchat-contact-form__row .dfchat-contact-form__control {
-  flex: 1 1 auto;
-  min-width: 0;
-  width: auto;
-  box-sizing: border-box;
-  border: 1px solid var(--dfchat-border);
-  border-radius: 10px;
-  padding: 7px 9px;
-  background: #fbfdff;
-  font: inherit;
-  font-size: 0.88rem;
-  color: var(--dfchat-text);
-}
-
-.dfchat-contact-form__fields textarea {
-  resize: none;
-  min-height: 48px;
-  line-height: 1.3;
-  max-height: 72px;
-}
-
-.dfchat-contact-form__fields input:focus,
-.dfchat-contact-form__fields textarea:focus,
-.dfchat-contact-form__row .dfchat-contact-form__control:focus {
-  outline: 2px solid rgba(14, 165, 233, 0.18);
-  border-color: var(--dfchat-brand-500);
-}
-
-.dfchat-contact-form__row .dfchat-contact-form__control--file,
-.dfchat-contact-form__row input[type="file"].dfchat-contact-form__control {
-  width: 100%;
-  max-width: 100%;
-  min-width: 0;
-  min-height: 2.75rem;
-  padding: 6px 4px;
-  font-size: 0.88rem;
-  line-height: 1.3;
-  cursor: pointer;
-}
-
-/* Larger “Choose file” control (all upload fields use --file-lg) */
-.dfchat-contact-form__row .dfchat-contact-form__control--file-lg::file-selector-button,
-.dfchat-contact-form__row input[type="file"].dfchat-contact-form__control--file-lg::-webkit-file-upload-button {
-  -webkit-appearance: button;
-  appearance: button;
-  font: inherit;
-  font-size: 0.95rem;
-  font-weight: 700;
-  padding: 10px 18px;
-  margin-right: 12px;
-  border-radius: 10px;
-  border: 1px solid var(--dfchat-border, #dbe5ec);
-  background: linear-gradient(180deg, #f8fffe, #e8f7f4);
-  color: var(--dfchat-brand-900, #0f172a);
-  cursor: pointer;
-  min-height: 2.5rem;
-}
-
-.dfchat-contact-form__row .dfchat-contact-form__control--file-lg::file-selector-button:hover,
-.dfchat-contact-form__row input[type="file"].dfchat-contact-form__control--file-lg::-webkit-file-upload-button:hover {
-  border-color: var(--dfchat-brand-500, #0ea5e9);
-  background: linear-gradient(180deg, #f0fdfa, #d7f2ef);
-}
-
-.dfchat-contact-form__file-wrap {
-  flex: 1 1 auto;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 6px;
-}
-
-button.dfchat-contact-form__file-clear {
-  align-self: flex-start;
-  margin: 0;
-  padding: 5px 12px;
-  font: inherit;
-  font-size: 0.75rem;
-  font-weight: 600;
-  line-height: 1.2;
-  border-radius: 8px;
-  border: 1px solid var(--dfchat-border, #dbe5ec);
-  background: #fff;
-  color: var(--dfchat-text-soft, #475569);
-  cursor: pointer;
-}
-
-button.dfchat-contact-form__file-clear:hover {
-  border-color: #b91c1c;
-  color: #b91c1c;
-  background: #fef2f2;
-}
-
-/* OTP: OTP field + small “change mobile”; second step = mobile + back */
-.dfchat-contact-form-otp-views {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  width: 100%;
-}
-
-.dfchat-contact-form-otp-views__panel {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  width: 100%;
-}
-
-.dfchat-contact-form-otp-views__panel[hidden] {
-  display: none !important;
-}
-
-.dfchat-contact-form-otp-views__links {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  /* Space under the OTP input, then 2 “lines” between the two actions */
-  font-size: 0.72rem;
-  line-height: 1.25;
-  margin: 0.75rem 0 1px 38px;
-  gap: 2em;
-}
-
-button.dfchat-contact-form-otp-change-mobile,
-button.dfchat-contact-form-otp-resend,
-button.dfchat-contact-form-otp-back {
-  align-self: flex-start;
-  margin: 0;
-  padding: 0;
-  border: 0;
-  background: none;
-  font: inherit;
-  font-size: 0.72rem;
-  line-height: 1.25;
-  color: var(--dfchat-brand-700, #0369a1);
-  text-decoration: underline;
-  text-underline-offset: 2px;
-  cursor: pointer;
-}
-
-button.dfchat-contact-form-otp-resend:disabled {
-  opacity: 0.55;
-  cursor: wait;
-}
-
-button.dfchat-contact-form-otp-change-mobile:hover,
-button.dfchat-contact-form-otp-resend:hover,
-button.dfchat-contact-form-otp-back:hover {
-  color: var(--dfchat-brand-500, #0ea5e9);
-}
-
-.dfchat-contact-form__status {
-  min-height: 1rem;
-  margin: 0;
-  font-size: 0.8rem;
-  line-height: 1.2;
-  color: var(--dfchat-text-soft);
-  flex-shrink: 0;
-}
-
-.dfchat-contact-form__status.is-success {
-  color: #0369a1;
-}
-
-.dfchat-contact-form__status.is-error {
-  color: #b91c1c;
-}
-
-.dfchat-contact-form__submit {
-  border: 0;
-  border-radius: 10px;
-  padding: 8px 12px;
-  background: linear-gradient(135deg, #0369a1, #0284c7);
-  color: #f8fffe;
-  font: inherit;
-  font-size: 0.9rem;
-  font-weight: 700;
-  cursor: pointer;
-  flex-shrink: 0;
-}
-
-.dfchat-contact-form__submit:disabled {
-  opacity: 0.7;
-  cursor: wait;
-}
-
-.dfchat-contact-form.dfchat-contact-form--docked {
-  right: auto;
-  bottom: auto;
-  overflow: visible;
-}
-
-/* Docked: card is the only height box; form body flexes so the field list is never 0px tall. */
-.dfchat-contact-form--docked .dfchat-contact-form__card {
-  min-height: 0;
-  overflow: hidden;
-  max-height: min(90dvh, 420px);
-}
-
-.dfchat-contact-form--docked .dfchat-contact-form__fields--stacked {
-  display: flex;
-  flex: 1 1 auto;
-  flex-direction: column;
-  min-height: 0;
-  overflow: hidden;
-  width: 100%;
-}
-
-.dfchat-contact-form--docked .dfchat-contact-form__inputs {
-  flex: 1 1 auto;
-  min-height: 6rem;
-  min-width: 0;
-}
-
-@media (max-width: 768px) {
-  .dfchat-contact-form:not(.dfchat-contact-form--docked) {
-    right: 20px;
-    left: 30px;
-    /* Was 92px; moved 100px lower → 8px inset (avoids negative offset) */
-    bottom: 8px;
-    width: auto;
-  }
-}
+ @import url("https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap");
+
+ :root {
+   --dfchat-bg-1: #e8f4fc;
+   --dfchat-bg-2: #f7fbff;
+   --dfchat-brand-900: #0f172a;
+   --dfchat-brand-700: #0369a1;
+   --dfchat-brand-500: #0ea5e9;
+   --dfchat-accent-200: #e0f2fe;
+   --dfchat-surface: #ffffff;
+   --dfchat-text: #0f172a;
+   --dfchat-text-soft: #475569;
+   --dfchat-border: #dbe5ec;
+ }
+ 
+ /* `company.config.js` →  applyDfMessengerThemeConfig sets `common.dfMessengerTheme` vars on this node as
+    **inline** styles, so a rule in this file such as `df-messenger { --df-messenger-chat-border-radius: 8px; }`
+    usually loses.
+    - **Whitish open chat card** (the panel shell): Google applies `border-radius: var(--df-messenger-chat-border-radius)`
+      on `.chat-wrapper` *inside* shadow DOM. Per-corner (e.g. flat top, round bottom) is handled in
+      `company.js` from `common.chatPanel.borderRadius` (injected CSS + inline on those nodes) — this file
+      does not see `.chat-wrapper`.
+    - **Message list strip** (middle of the card): `common.chatMessageList.paneBorderRadius` in company.config.js.
+    - For an even radius on the **whole** card, change `dfMessengerTheme["--df-messenger-chat-border-radius"]` in
+      company.config.js. */
+ df-messenger {
+   position: fixed;
+   bottom: 20px;
+   right: 10px;
+   left: auto;
+   z-index: 999;
+   overflow: visible;
+   box-sizing: border-box;
+   /* Scroll inside the chat, not the host page (paired with `applyHostPageScrollLockForOpenChat` in company.js) */
+   overscroll-behavior: contain;
+   touch-action: manipulation;
+   animation: dfchat-fade-up 320ms ease-out;
+ 
+   --df-messenger-font-family: "Manrope", "Segoe UI", sans-serif;
+   --df-messenger-font-color: var(--dfchat-text);
+   --df-messenger-primary-color: #0284c7;
+ 
+   --df-messenger-message-bot-background: linear-gradient(168deg, #e8f6ff 0%, #bae6fd 100%);
+   --df-messenger-message-bot-font-color: #0c4a6e;
+   --df-messenger-message-user-background: linear-gradient(145deg, #0284c7 0%, #0ea5e9 100%);
+   --df-messenger-message-user-font-color: #f0f9ff;
+ 
+   --df-messenger-message-stack-spacing: 6px;
+   --df-messenger-message-spacing: 8px;
+   --df-messenger-chat-padding: 12px;
+ 
+   --df-messenger-input-background: var(--dfchat-surface);
+   --df-messenger-input-box-background: var(--dfchat-surface);
+   --df-messenger-input-font-color: var(--dfchat-text);
+   /* Text field shell (textarea wrapper inside user-input) — Dialogflow `.input-element-wrapper` */
+   --df-messenger-input-box-border-radius: 12px;
+   --df-messenger-input-box-border: 1px solid rgba(148, 197, 224, 0.95);
+   --df-messenger-input-box-focus-border: 1px solid rgba(2, 132, 199, 0.9);
+   /* 29px top, 8px sides, 16px bottom */
+   --df-messenger-input-padding: 29px 8px 16px 8px;
+ 
+   --df-messenger-chips-background: rgba(186, 230, 253, 0.92);
+   --df-messenger-chips-font-color: #0c4a6e;
+   --df-messenger-chips-border-radius: 999px;
+   --df-messenger-button-border: 1px solid rgba(14, 165, 233, 0.45);
+ 
+   /* Omit outer stroke — full box-border draws harsh vertical rails beside the curved title bar; rely on shadows */
+   --df-messenger-chat-border: none;
+   /* Raised card: inset highlight + modest blurs (lighter GPU than oversized glows) */
+   --df-messenger-chat-box-shadow:
+     inset 0 1px 0 rgba(255, 255, 255, 0.75),
+     inset 0 -1px 0 rgba(15, 23, 42, 0.04),
+     0 1px 3px rgba(15, 23, 42, 0.05),
+     0 10px 28px -6px rgba(15, 23, 42, 0.1),
+     0 20px 40px -14px rgba(14, 165, 233, 0.12);
+   --df-messenger-chat-border-radius: 22px;
+   /* Chat window size is controlled from `static/company.config.js` */
+ 
+   /* Top sheen + angled base = raised title strip (Messenger only exposes bg + borders here, no titlebar shadow var) */
+   --df-messenger-titlebar-background:
+     linear-gradient(180deg, rgba(255, 255, 255, 0.38) 0%, rgba(255, 255, 255, 0.1) 24%, transparent 46%),
+     linear-gradient(168deg, #38bdf8 0%, #0284c7 42%, #075985 100%);
+   --df-messenger-titlebar-border: none;
+   --df-messenger-titlebar-border-bottom: 1px solid rgba(4, 58, 90, 0.55);
+   --df-messenger-titlebar-font-color: #f0f9ff;
+   --df-messenger-titlebar-subtitle-font-color: #bae6fd;
+   --df-messenger-titlebar-title-line-height: 36px;
+   --df-messenger-titlebar-icon-height: 50px;
+   --df-messenger-titlebar-icon-width: 50px;
+ 
+   --df-messenger-chat-bubble-icon-size: 64px;
+   --df-messenger-chat-bubble-background: linear-gradient(160deg, #0ea5e9 0%, #0284c7 48%, #0369a1 100%);
+   --df-messenger-chat-icon-radius: 50%;
+ 
+   /* Panel: airy, low-stop gradient */
+   --df-messenger-chat-background: linear-gradient(180deg, #fbfdff 0%, #f0f9ff 100%);
+   --df-messenger-input-border-top: 1px solid rgba(14, 165, 233, 0.2);
+ }
+ 
+ /* Smaller titlebar on phones so the header stays on-screen with the open panel. */
+ @media (max-width: 768px) {
+   df-messenger {
+     /* `!important` wins over `dfMessengerTheme` inline props on the same host */
+     --df-messenger-font-size: 12px !important;
+     --df-messenger-message-font-size: 12px !important;
+     --df-messenger-input-font-size: 13px !important;
+     --df-messenger-chips-font-size: 11px !important;
+     --df-messenger-titlebar-padding: 0 6px 0 6px;
+     --df-messenger-titlebar-title-font-size: 12px !important;
+     --df-messenger-titlebar-title-line-height: 1.2;
+     --df-messenger-titlebar-subtitle-font-size: 9px !important;
+     --df-messenger-titlebar-subtitle-line-height: 1.25;
+     --df-messenger-titlebar-icon-height: 32px;
+     --df-messenger-titlebar-icon-width: 32px;
+     --df-messenger-titlebar-icon-padding: 0 4px 0 0;
+     max-height: calc(
+       100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 8px
+     );
+   }
+ 
+   /* Nudge title bar slightly higher (~10px) */
+   df-messenger df-messenger-header {
+     position: relative;
+     top: -10px;
+     margin-bottom: -10px;
+   }
+ 
+   /* Typing: do not hide the whole title bar — that removed close / Language / Restart in header-controls.
+      Space is already tightened via mobile titlebar vars; optional padding trim only: */
+   df-messenger.dfchat-composer-typing df-messenger-header {
+     min-height: 0;
+   }
+ }
+ 
+ /* Set by company.js on mobile when the chat is open: freeze host scroll */
+ html.dfchat-host-scroll-locked,
+ html.dfchat-host-scroll-locked body {
+   overflow: hidden !important;
+   overscroll-behavior: none;
+ }
+ 
+ /* Footer chrome: stay viewport-fixed even if the host page overrides `position` */
+ #dfchat-chat-action-bar.dfchat-chat-action-bar--body-fixed,
+ #dfchat-powered-by-strip {
+   position: fixed !important;
+ }
+ 
+ /* "Powered by …" strip (sits just above the composer; positioned by company.js) */
+ #dfchat-powered-by-strip {
+   box-sizing: border-box;
+   display: inline-block;
+   /* margin: set at runtime from company.config.js poweredBy.marginPx (company.js) */
+   padding: 0 4px;
+   max-width: calc(100vw - 8px);
+   font-family: "Manrope", "Segoe UI", system-ui, sans-serif;
+   /* color, size, align: set from company.config.js (poweredBy) */
+   white-space: nowrap;
+   overflow: visible;
+   letter-spacing: 0.01em;
+   /* Intrinsic width: hit targets match the label (JS sets width: max-content). */
+   vertical-align: top;
+ }
+ /* Clicks only when `poweredBy.linkUrl` is set (rendered as <a href="...">). */
+ #dfchat-powered-by-strip[href] {
+   pointer-events: auto;
+   cursor: pointer;
+ }
+ #dfchat-powered-by-strip:not([href]) {
+   pointer-events: none;
+ }
+ 
+ /* Footer controls (Language + Restart) anchored near Send */
+ #dfchat-chat-footer-overlay {
+   position: fixed !important;
+   z-index: 2147483646 !important;
+   display: none !important;
+   align-items: center !important;
+   gap: 8px !important;
+   left: 16px !important;
+   right: auto !important;
+   bottom: 110px !important;
+   pointer-events: auto !important;
+ }
+ 
+ #dfchat-chat-footer-overlay button {
+   width: 34px !important;
+   height: 34px !important;
+   display: grid !important;
+   place-items: center !important;
+   border: 1px solid rgba(203, 213, 225, 0.9) !important;
+   border-radius: 10px !important;
+   background: rgba(255, 255, 255, 0.92) !important;
+   color: #0369a1 !important;
+   cursor: pointer !important;
+   padding: 0 !important;
+ }
+ 
+ #dfchat-chat-footer-overlay button:hover {
+   background: #ffffff !important;
+ }
+ 
+ /* Stable action bar near Send button */
+ #dfchat-chat-action-bar {
+   position: static;
+   z-index: 2147483647;
+   display: none;
+   align-items: center;
+   gap: 8px;
+   pointer-events: auto;
+   flex-direction: row !important;
+   justify-content: flex-start !important;
+   margin-left: 0 !important;
+   margin-right: 0 !important;
+   flex: 0 0 auto !important;
+ }
+ 
+ #dfchat-chat-action-bar-fixed {
+   display: none !important;
+ }
+ 
+ /* In-flow bar: mounted *below* `.input-box-wrapper` (see company.js `findFooterBelowInputMountPoint`). */
+ #dfchat-chat-action-bar.dfchat-chat-action-bar--inline {
+   position: static !important;
+   z-index: auto !important;
+   left: auto !important;
+   right: auto !important;
+   bottom: auto !important;
+   top: auto !important;
+   /* Fallback only; `applyChatActionBarInlineTransform` in company.js sets translate(x, y) from config (overrides). */
+   transform: translate(10px, 0px) !important;
+   box-sizing: border-box !important;
+   width: 100% !important;
+   max-width: 100% !important;
+   margin: 0 !important;
+   padding: 6px 10px 8px 10px !important;
+   order: unset !important;
+   flex-direction: row !important;
+   flex-wrap: wrap !important;
+   align-items: center !important;
+   justify-content: flex-end !important;
+   gap: 8px !important;
+   flex: 0 0 auto !important;
+ }
+ 
+ /* Bar stays in document body (not shadow DOM); JS sets inline position + display */
+ #dfchat-chat-action-bar.dfchat-chat-action-bar--body-fixed {
+   flex-direction: row !important;
+   align-items: center !important;
+   gap: 8px !important;
+   box-sizing: border-box !important;
+   /* Stabilize compositing: reduces perceived flicker when `left`/`top` are updated every frame. */
+   backface-visibility: hidden;
+   transform: translateZ(0);
+ }
+ 
+ #dfchat-chat-action-bar.dfchat-chat-action-bar--body-fixed button,
+ #dfchat-chat-action-bar.dfchat-chat-action-bar--body-fixed .dfchat-chat-action-menu {
+   /* Avoid extra layout work / double-tap delay on mobile when tapping Language / Restart. */
+   touch-action: manipulation;
+   -webkit-tap-highlight-color: transparent;
+ }
+ 
+ #dfchat-chat-action-bar .dfchat-chat-action-menu-wrapper,
+ .dfchat-chat-action-menu-wrapper {
+   position: relative;
+   top: 0;
+   order: 0 !important;
+   margin-right: 8px !important;
+   margin-left: 0 !important;
+   flex: 0 0 auto !important;
+   transform: none;
+ }
+ 
+ #dfchat-chat-action-bar[data-dfchat-anchor="send"] > .dfchat-chat-action-icon {
+   transform: none !important;
+ }
+ 
+ [data-dfchat-chat-language="true"] {
+   display: none !important;
+ }
+ 
+ [data-dfchat-chat-restart="true"] {
+   display: none !important;
+ }
+ 
+ .dfchat-chat-action-icon {
+   width: 34px;
+   height: 34px;
+   display: grid;
+   place-items: center;
+   border: none;
+   border-radius: 10px;
+   background: transparent;
+   color: #000000;
+   cursor: pointer;
+   padding: 0;
+ }
+ 
+ .dfchat-chat-action-icon:hover {
+   background: rgba(0, 0, 0, 0.05);
+ }
+ 
+ .dfchat-chat-action-pill {
+   width: auto !important;
+   min-height: 0 !important;
+   height: auto !important;
+   display: inline-flex !important;
+   align-items: center !important;
+   justify-content: center !important;
+   gap: 6px !important;
+   padding: 0 12px !important;
+   border: none !important;
+   border-radius: 10px !important;
+   background: #ffffff !important;
+   color: #0f172a !important;
+   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06) !important;
+   font: 700 12px "Manrope", "Segoe UI", sans-serif !important;
+   line-height: 1.2 !important;
+   cursor: pointer !important;
+   -webkit-tap-highlight-color: transparent;
+ }
+ 
+ .dfchat-chat-action-pill:hover {
+   background: #f8fafc !important;
+   border: none !important;
+ }
+ 
+ .dfchat-chat-action-pill:active {
+   background: #f1f5f9 !important;
+ }
+ 
+ .dfchat-chat-action-pill:focus-visible {
+   outline: 2px solid var(--dfchat-brand-500, #0ea5e9);
+   outline-offset: 2px;
+ }
+ 
+ .dfchat-chat-action-pill__text {
+   white-space: nowrap;
+   pointer-events: none;
+   font-weight: 700 !important;
+ }
+ 
+ .dfchat-chat-action-pill__icon {
+   display: inline-flex;
+   flex-shrink: 0;
+   color: #0369a1;
+   pointer-events: none;
+ }
+ 
+ .dfchat-restart-icon-glyph {
+   display: inline-block;
+   line-height: 1;
+   font-weight: 500;
+   color: currentColor;
+   font-family: "Segoe UI Symbol", "Segoe UI", "Apple Symbols", "Noto Sans Symbols 2", sans-serif;
+ }
+ 
+ .dfchat-chat-action-menu {
+   position: absolute;
+   right: 0;
+   bottom: 42px;
+   min-width: 148px;
+   border: 1px solid rgba(203, 213, 225, 0.95);
+   border-radius: 12px;
+   background: #ffffff;
+   box-shadow: 0 12px 28px rgba(15, 23, 42, 0.18);
+   padding: 6px;
+ }
+ 
+ .dfchat-chat-action-menu-item {
+   width: 100%;
+   text-align: left;
+   border: 0;
+   background: transparent;
+   color: #0f172a;
+   border-radius: 10px;
+   padding: 8px 10px;
+   font: 600 12px "Manrope", "Segoe UI", sans-serif;
+   cursor: pointer;
+ }
+ 
+ .dfchat-chat-action-menu-item:hover {
+   background: rgba(3, 105, 161, 0.08);
+ }
+ 
+ .dfchat-chat-action-menu-item[data-active="true"] {
+   color: #0369a1;
+ }
+ 
+ /* Mobile: sit a bit tighter; keep white pill (matches desktop) */
+ @media (max-width: 768px) {
+   #dfchat-chat-action-bar.dfchat-chat-action-bar--body-fixed {
+     gap: 4px !important;
+   }
+ 
+   #dfchat-chat-action-bar.dfchat-chat-action-bar--body-fixed .dfchat-chat-action-menu-wrapper {
+     margin-right: 4px !important;
+   }
+ 
+   #dfchat-chat-action-bar.dfchat-chat-action-bar--body-fixed .dfchat-chat-action-pill {
+     background: #ffffff !important;
+     box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06) !important;
+     padding: 0 8px !important;
+   }
+ 
+   #dfchat-chat-action-bar.dfchat-chat-action-bar--body-fixed .dfchat-chat-action-pill:hover,
+   #dfchat-chat-action-bar.dfchat-chat-action-bar--body-fixed .dfchat-chat-action-pill:active {
+     background: #f1f5f9 !important;
+   }
+ 
+   /* `right:0` (desktop) grows the list left; when the control sits near the left of the bar/viewport, the
+      menu can clip. Grow right from the language control on small screens so options stay in view. */
+   #dfchat-chat-action-bar.dfchat-chat-action-bar--body-fixed .dfchat-chat-action-menu {
+     left: 0;
+     right: auto;
+     min-width: 0;
+     max-width: min(220px, calc(100vw - 16px));
+   }
+ }
+ 
+ /* Reliable footer action bar (icon only) */
+ #dfchat-hard-language-wrap {
+   position: relative;
+ }
+ 
+ #dfchat-hard-language-btn:hover,
+ #dfchat-hard-restart-btn:hover,
+ #dfchat-contact-form-close:hover {
+   background: rgba(14, 165, 233, 0.1) !important;
+ }
+ 
+ #dfchat-contact-form-close {
+   width: 44px !important;
+   height: 44px !important;
+   border-radius: 12px !important;
+   font-weight: 500 !important;
+   line-height: 1 !important;
+   font-size: 28px !important;
+ }
+ 
+ #dfchat-hard-language-menu {
+   position: absolute;
+   right: 0;
+   bottom: 42px;
+   min-width: 148px;
+   border: 1px solid rgba(203, 213, 225, 0.95);
+   border-radius: 12px;
+   background: #ffffff;
+   box-shadow: 0 12px 28px rgba(15, 23, 42, 0.18);
+   padding: 6px;
+   display: none;
+ }
+ 
+ #dfchat-hard-language-menu button {
+   width: 100% !important;
+   height: auto !important;
+   text-align: left !important;
+   border: 0 !important;
+   background: transparent !important;
+   color: #0f172a !important;
+   border-radius: 10px !important;
+   padding: 8px 10px !important;
+   font: 600 12px "Manrope", "Segoe UI", sans-serif !important;
+   cursor: pointer !important;
+   transition: background 0.2s ease !important;
+ }
+ 
+ #dfchat-hard-language-menu button:hover {
+   background: rgba(3, 105, 161, 0.08) !important;
+ }
+ 
+ #dfchat-hard-language-menu button[data-active="true"] {
+   color: #0369a1 !important;
+   font-weight: 700 !important;
+ }
+ 
+ .dfchat-chat-launcher-strip {
+   position: fixed;
+   /* Below `df-messenger` (999) so the chat bubble stays clickable when strips overlap it */
+   z-index: 997;
+   padding: 10px 14px;
+   border-radius: 999px;
+   background: rgba(255, 255, 255, 0.98);
+   border: 1px solid rgba(3, 105, 161, 0.22);
+   box-shadow: 0 14px 34px rgba(15, 23, 42, 0.16);
+   color: var(--dfchat-text);
+   font: 700 13px "Manrope", "Segoe UI", sans-serif;
+   letter-spacing: 0.2px;
+   backdrop-filter: blur(10px);
+   user-select: none;
+ }
+ 
+ .dfchat-chat-launcher-strip:hover {
+   transform: translateY(-1px);
+ }
+ 
+ .dfchat-chat-launcher-strip:active {
+   transform: translateY(0);
+ }
+ 
+ .dfchat-chat-launcher-input-strip {
+   position: fixed;
+   z-index: 998;
+   display: none;
+   align-items: center;
+   gap: 8px;
+   padding: 6px 8px 6px 12px;
+   border-radius: 999px;
+   background: rgba(255, 255, 255, 0.98);
+   border: 1px solid rgba(3, 105, 161, 0.22);
+   box-shadow: 0 12px 28px rgba(15, 23, 42, 0.14);
+   backdrop-filter: blur(10px);
+   box-sizing: border-box;
+   width: auto;
+   min-width: min(220px, calc(100vw - 32px));
+ }
+ 
+ .dfchat-chat-launcher-input-strip__field {
+   flex: 1;
+   min-width: 0;
+   border: none;
+   background: transparent;
+   outline: none;
+   color: var(--dfchat-text);
+   font: 600 var(--dfchat-launcher-input-font-size, 14px) "Manrope", "Segoe UI", sans-serif;
+ }
+ 
+ .dfchat-chat-launcher-input-strip__field::placeholder {
+   color: rgba(15, 23, 42, 0.45);
+   font-weight: 500;
+ }
+ 
+ .dfchat-chat-launcher-input-strip__send {
+   flex-shrink: 0;
+   border: none;
+   border-radius: 999px;
+   padding: 8px 14px;
+   background: linear-gradient(140deg, #0369a1, #0ea5e9);
+   color: #f0fdfa;
+   font: 700 13px "Manrope", "Segoe UI", sans-serif;
+   cursor: pointer;
+   transition: filter 0.15s ease, transform 0.1s ease;
+ }
+ 
+ .dfchat-chat-launcher-input-strip__send:hover {
+   filter: brightness(1.05);
+ }
+ 
+ .dfchat-chat-launcher-input-strip__send:active {
+   transform: scale(0.98);
+ }
+ 
+ @keyframes dfchat-fade-up {
+   from {
+     opacity: 0;
+     transform: translateY(12px);
+   }
+ 
+   to {
+     opacity: 1;
+     transform: translateY(0);
+   }
+ }
+ 
+ @media (max-width: 768px) {
+   df-messenger {
+     /* Left/right: `company.js` from common.chatLayout.side + bubblePosition (do not set both here). */
+     bottom: 10px;
+     --df-messenger-chat-window-width: calc(100vw - 24px);
+     --df-messenger-chat-window-height: calc(100dvh - 24px);
+     --df-messenger-chat-border-radius: 20px;
+     --df-messenger-input-padding: 29px 8px 16px 8px;
+   }
+ }
+ 
+ .dfchat-contact-form {
+   position: fixed;
+   right: 33px;
+   /* Was 106px; +100px toward viewport bottom per product request */
+   bottom: 6px;
+   z-index: 1000;
+   /* 5px tighter on each side vs before (32px → 42px total horizontal margin) */
+   width: min(300px, calc(100vw - 82px));
+   display: none;
+ }
+ 
+ /* Undocked: wider panel on large screens (keep in sync with `desk.form.formDockMaxWidthPx`). */
+ @media (min-width: 769px) {
+   .dfchat-contact-form {
+     width: min(380px, calc(100vw - 82px));
+   }
+ }
+ 
+ .dfchat-contact-form.dfchat-is-open {
+   display: block;
+   animation: dfchat-fade-up 220ms ease-out;
+ }
+ 
+ .dfchat-contact-form__card {
+   background: rgba(255, 255, 255, 0.98);
+   border: 1px solid var(--dfchat-border);
+   border-radius: 16px;
+   box-shadow: 0 18px 52px rgba(15, 23, 42, 0.18);
+   padding: 10px 12px 12px;
+   backdrop-filter: blur(10px);
+   display: flex;
+   flex-direction: column;
+   min-height: 0;
+   max-height: min(50dvh, 300px);
+ }
+ 
+ .dfchat-contact-form__header {
+   display: flex;
+   align-items: flex-start;
+   justify-content: space-between;
+   gap: 8px;
+   margin-bottom: 6px;
+   flex-shrink: 0;
+ }
+ 
+ .dfchat-contact-form__title {
+   margin: 0;
+   font-size: 0.98rem;
+   font-weight: 700;
+   line-height: 1.2;
+ }
+ 
+ .dfchat-contact-form__subtitle {
+   margin: 2px 0 0;
+   font-size: 0.78rem;
+   line-height: 1.25;
+   color: var(--dfchat-text-soft);
+ }
+ 
+ .dfchat-contact-form__icon-button {
+   border: 0;
+   border-radius: 999px;
+   width: 30px;
+   height: 30px;
+   background: #eef6f7;
+   color: var(--dfchat-brand-900);
+   cursor: pointer;
+   font: inherit;
+   font-size: 1rem;
+ }
+ 
+ .dfchat-contact-form__fields {
+   display: flex;
+   flex-direction: column;
+   gap: 6px;
+   min-height: auto;
+   flex: 0 1 auto;
+ }
+ 
+ .dfchat-contact-form__fields--stacked {
+   display: flex;
+   flex-direction: column;
+   flex: 0 1 auto;
+   min-height: auto;
+   width: 100%;
+   overflow: visible;
+ }
+ 
+ .dfchat-contact-form__inputs {
+   display: flex;
+   flex-direction: column;
+   gap: 5px;
+   min-height: 6rem;
+   max-height: 220px;
+   overflow-x: hidden;
+   overflow-y: auto;
+   -webkit-overflow-scrolling: touch;
+   padding-right: 2px;
+   flex: 0 1 auto;
+ }
+ 
+ .dfchat-contact-form__row {
+   display: flex;
+   flex-direction: row;
+   align-items: flex-start;
+   gap: 6px;
+   min-width: 0;
+   width: 100%;
+ }
+ 
+ .dfchat-contact-form__row-icon {
+   flex: 0 0 32px;
+   width: 32px;
+   height: 32px;
+   display: flex;
+   align-items: center;
+   justify-content: center;
+   margin-top: 2px;
+   border-radius: 9px;
+   background: var(--dfchat-accent-200, #d7f2ef);
+   color: var(--dfchat-brand-700, #0369a1);
+ }
+ 
+ .dfchat-contact-form__row-icon svg {
+   display: block;
+ }
+ 
+ .dfchat-contact-form__fields .dfchat-contact-form__control,
+ .dfchat-contact-form__fields > input,
+ .dfchat-contact-form__fields > textarea {
+   width: 100%;
+   box-sizing: border-box;
+   border: 1px solid var(--dfchat-border);
+   border-radius: 10px;
+   padding: 7px 9px;
+   background: #fbfdff;
+   font: inherit;
+   font-size: 0.88rem;
+   color: var(--dfchat-text);
+ }
+ 
+ .dfchat-contact-form__row .dfchat-contact-form__control {
+   flex: 1 1 auto;
+   min-width: 0;
+   width: auto;
+   box-sizing: border-box;
+   border: 1px solid var(--dfchat-border);
+   border-radius: 10px;
+   padding: 7px 9px;
+   background: #fbfdff;
+   font: inherit;
+   font-size: 0.88rem;
+   color: var(--dfchat-text);
+ }
+ 
+ .dfchat-contact-form__fields textarea {
+   resize: none;
+   min-height: 48px;
+   line-height: 1.3;
+   max-height: 72px;
+ }
+ 
+ .dfchat-contact-form__fields input:focus,
+ .dfchat-contact-form__fields textarea:focus,
+ .dfchat-contact-form__row .dfchat-contact-form__control:focus {
+   outline: 2px solid rgba(14, 165, 233, 0.18);
+   border-color: var(--dfchat-brand-500);
+ }
+ 
+ .dfchat-contact-form__row .dfchat-contact-form__control--file,
+ .dfchat-contact-form__row input[type="file"].dfchat-contact-form__control {
+   width: 100%;
+   max-width: 100%;
+   min-width: 0;
+   min-height: 2.75rem;
+   padding: 6px 4px;
+   font-size: 0.88rem;
+   line-height: 1.3;
+   cursor: pointer;
+ }
+ 
+ /* Larger “Choose file” control (all upload fields use --file-lg) */
+ .dfchat-contact-form__row .dfchat-contact-form__control--file-lg::file-selector-button,
+ .dfchat-contact-form__row input[type="file"].dfchat-contact-form__control--file-lg::-webkit-file-upload-button {
+   -webkit-appearance: button;
+   appearance: button;
+   font: inherit;
+   font-size: 0.95rem;
+   font-weight: 700;
+   padding: 10px 18px;
+   margin-right: 12px;
+   border-radius: 10px;
+   border: 1px solid var(--dfchat-border, #dbe5ec);
+   background: linear-gradient(180deg, #f8fffe, #e8f7f4);
+   color: var(--dfchat-brand-900, #0f172a);
+   cursor: pointer;
+   min-height: 2.5rem;
+ }
+ 
+ .dfchat-contact-form__row .dfchat-contact-form__control--file-lg::file-selector-button:hover,
+ .dfchat-contact-form__row input[type="file"].dfchat-contact-form__control--file-lg::-webkit-file-upload-button:hover {
+   border-color: var(--dfchat-brand-500, #0ea5e9);
+   background: linear-gradient(180deg, #f0fdfa, #d7f2ef);
+ }
+ 
+ .dfchat-contact-form__file-wrap {
+   flex: 1 1 auto;
+   min-width: 0;
+   display: flex;
+   flex-direction: column;
+   align-items: stretch;
+   gap: 6px;
+ }
+ 
+ button.dfchat-contact-form__file-clear {
+   align-self: flex-start;
+   margin: 0;
+   padding: 5px 12px;
+   font: inherit;
+   font-size: 0.75rem;
+   font-weight: 600;
+   line-height: 1.2;
+   border-radius: 8px;
+   border: 1px solid var(--dfchat-border, #dbe5ec);
+   background: #fff;
+   color: var(--dfchat-text-soft, #475569);
+   cursor: pointer;
+ }
+ 
+ button.dfchat-contact-form__file-clear:hover {
+   border-color: #b91c1c;
+   color: #b91c1c;
+   background: #fef2f2;
+ }
+ 
+ /* OTP: OTP field + small “change mobile”; second step = mobile + back */
+ .dfchat-contact-form-otp-views {
+   display: flex;
+   flex-direction: column;
+   gap: 2px;
+   width: 100%;
+ }
+ 
+ .dfchat-contact-form-otp-views__panel {
+   display: flex;
+   flex-direction: column;
+   gap: 3px;
+   width: 100%;
+ }
+ 
+ .dfchat-contact-form-otp-views__panel[hidden] {
+   display: none !important;
+ }
+ 
+ .dfchat-contact-form-otp-views__links {
+   display: flex;
+   flex-direction: column;
+   align-items: flex-start;
+   /* Space under the OTP input, then 2 “lines” between the two actions */
+   font-size: 0.72rem;
+   line-height: 1.25;
+   margin: 0.75rem 0 1px 38px;
+   gap: 2em;
+ }
+ 
+ button.dfchat-contact-form-otp-change-mobile,
+ button.dfchat-contact-form-otp-resend,
+ button.dfchat-contact-form-otp-back {
+   align-self: flex-start;
+   margin: 0;
+   padding: 0;
+   border: 0;
+   background: none;
+   font: inherit;
+   font-size: 0.72rem;
+   line-height: 1.25;
+   color: var(--dfchat-brand-700, #0369a1);
+   text-decoration: underline;
+   text-underline-offset: 2px;
+   cursor: pointer;
+ }
+ 
+ button.dfchat-contact-form-otp-resend:disabled {
+   opacity: 0.55;
+   cursor: wait;
+ }
+ 
+ button.dfchat-contact-form-otp-change-mobile:hover,
+ button.dfchat-contact-form-otp-resend:hover,
+ button.dfchat-contact-form-otp-back:hover {
+   color: var(--dfchat-brand-500, #0ea5e9);
+ }
+ 
+ .dfchat-contact-form__status {
+   min-height: 1rem;
+   margin: 0;
+   font-size: 0.8rem;
+   line-height: 1.2;
+   color: var(--dfchat-text-soft);
+   flex-shrink: 0;
+ }
+ 
+ .dfchat-contact-form__status.is-success {
+   color: #0369a1;
+ }
+ 
+ .dfchat-contact-form__status.is-error {
+   color: #b91c1c;
+ }
+ 
+ .dfchat-contact-form__submit {
+   border: 0;
+   border-radius: 10px;
+   padding: 8px 12px;
+   background: linear-gradient(135deg, #0369a1, #0284c7);
+   color: #f8fffe;
+   font: inherit;
+   font-size: 0.9rem;
+   font-weight: 700;
+   cursor: pointer;
+   flex-shrink: 0;
+ }
+ 
+ .dfchat-contact-form__submit:disabled {
+   opacity: 0.7;
+   cursor: wait;
+ }
+ 
+ .dfchat-contact-form.dfchat-contact-form--docked {
+   right: auto;
+   bottom: auto;
+   overflow: visible;
+ }
+ 
+ /* Docked: card is the only height box; form body flexes so the field list is never 0px tall. */
+ .dfchat-contact-form--docked .dfchat-contact-form__card {
+   min-height: 0;
+   overflow: hidden;
+   max-height: min(90dvh, 420px);
+ }
+ 
+ .dfchat-contact-form--docked .dfchat-contact-form__fields--stacked {
+   display: flex;
+   flex: 1 1 auto;
+   flex-direction: column;
+   min-height: 0;
+   overflow: hidden;
+   width: 100%;
+ }
+ 
+ .dfchat-contact-form--docked .dfchat-contact-form__inputs {
+   flex: 1 1 auto;
+   min-height: 6rem;
+   min-width: 0;
+ }
+ 
+ @media (max-width: 768px) {
+   .dfchat-contact-form:not(.dfchat-contact-form--docked) {
+     right: 20px;
+     left: 30px;
+     /* Was 92px; moved 100px lower → 8px inset (avoids negative offset) */
+     bottom: 8px;
+     width: auto;
+   }
+ }

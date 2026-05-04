@@ -1,393 +1,87 @@
-# Contact form → Firestore + Google Sheet (**Google Cloud dashboards only**)
+# Contact form API — **Railway** + **Firebase (Firestore)**
 
-This guide uses **only web pages** (Google Cloud Console + GitHub in a browser). It does **not** use Terminal, Command Prompt, `gcloud`, `npm`, Cloud Shell commands, or copy-pasted shell blocks.
+Hosting is **only on [Railway](https://railway.app/)**. Data goes to **Firebase Firestore** — you use the **[Firebase Console](https://console.firebase.google.com/)** (not Google Cloud Run, Cloud Build, or `gcloud`).
 
-The API code and this file live on GitHub under **`server/contact-form-api/`** in [qabot2026/testingone](https://github.com/qabot2026/testingone) (**branch `main`**). After edits, keep GitHub updated (see **Pushing updates from your computer**) so Cloud Run can rebuild from the latest commit.
-
----
-
-## Contents
-
-1. [What you need first](#what-you-need-first) · [This project on GitHub](#this-project-on-github-official-repo)  
-2. [Steps 1–18](#steps-all-from-dashboards) (Cloud + GitHub + embed)  
-3. [Pushing updates (Git)](#pushing-updates-from-your-computer-git) · [Optional env vars](#optional-dashboards-only-later-tuning)
+Optional: **Dialogflow** in `company.config.js` is separate from this API.
 
 ---
 
-## What you need first
+## Architecture
 
-| Item | Purpose |
-|------|--------|
-| A Google account | Sign in to Google Cloud |
-| A **GitHub** account | Cloud Run pulls your code from GitHub via the dashboard (browser only) |
-
-If you do not use GitHub yet, create a **free** repo and upload files using GitHub’s website (**Add file → Upload files**). Upload everything inside your **`contact-form-api`** folder (including `Dockerfile`, `package.json`, `index.mjs`, and the **`lib`** folder).
-
-**Important:** Either:
-
-- Upload **only** the contents of **`contact-form-api`** as the **root** of the repo (so `Dockerfile` sits at the root of the repo), **or**
-
-- Keep a parent repo and remember the **path** to `Dockerfile` (for example `server/contact-form-api`) when Cloud Run asks for “Build context” or “Dockerfile path” — use the paths that match **your** GitHub repo.
-
----
-
-## This project on GitHub (official repo)
-
-| | |
-|--|--|
-| **Repository** | [https://github.com/qabot2026/testingone](https://github.com/qabot2026/testingone) |
-| **Branch** | `main` |
-| **API folder (contains `Dockerfile`)** | `server/contact-form-api/` |
-| **Production contact API (Railway)** | **`https://handsome-amazement.up.railway.app`** |
-
-`myweb.html` and `chat-frame.html` are wired to **`apiBase` / `dfchat-api-base-url`** pointing at that host (no trailing slash). Change both if you redeploy under a new service URL.
-
-In **Cloud Run → deploy from this GitHub repo**, set the build to use folder **`server/contact-form-api`** as the **source / build context** (UI labels vary). The **`Dockerfile`** lives in that folder; if the wizard asks for a path from repo root, use **`server/contact-form-api/Dockerfile`** or the equivalent “directory” field.
-
----
-
-## Steps (all from dashboards)
-
-### Step 1 — Open Google Cloud
-
-1. In the browser go to **[https://console.cloud.google.com](https://console.cloud.google.com)**  
-2. Sign in with Google.
-
-**Done when:** You see the Cloud Console home and a project picker at the top.
-
----
-
-### Step 2 — Create or select a project
-
-1. Top bar → click the **project name** (next to “Google Cloud”).  
-2. Click **New project** → enter a name → **Create**.  
-3. When it finishes, open the **project picker** again and **select** that project.
-
-**Done when:** The top bar shows **your new project** as active.
-
-**Find your Project ID** (you will need it later):
-
-1. Top-left **☰** (hamburger) → **IAM & Admin** → **Settings**.  
-2. Copy **Project ID** (lowercase, may differ from the display name). Example shape: `my-leads-123`.
-
----
-
-### Step 3 — Turn on billing (required for Cloud Run)
-
-1. **☰** → **Billing** → **Link a billing account** (or manage billing).  
-2. Follow the wizard to attach a billing account to **this project**.
-
-**Done when:** The project shows as linked to billing (no “billing disabled” banner for paid services).
-
----
-
-### Step 4 — Create Firestore
-
-1. **☰** → **Firestore** (search if needed).  
-2. **Create database**.  
-3. Choose a **location/region** → pick **Datastore mode** or **Native mode** (either is fine for this API) → finish the wizard.
-
-**Done when:** Firestore opens with no error and you can see the database home.
-
----
-
-### Step 5 — Enable APIs (checklist in one place)
-
-1. **☰** → **APIs & Services** → **Enabled APIs & services**.  
-2. Click **+ Enable APIs and services** at the top.  
-3. Search and open each of these, then click **Enable** if not already enabled:
-
-   - **Cloud Run Admin API**
-   - **Artifact Registry API** (often used when building from GitHub)
-   - **Cloud Build API** (builds your container when you deploy from source)
-   - **Secret Manager API** (optional — only if you later use secrets; safe to enable)
-   - **Google Sheets API**
-
-Return to **Enabled APIs & services** and confirm all of the above list as **Enabled**.
-
-**Done when:** No “Enable API” blocker when you reach Cloud Run in later steps.
-
----
-
-### Step 6 — Create service account (**no JSON key**)
-
-1. **☰** → **IAM & Admin** → **Service accounts**.  
-2. **Create service account**.  
-3. **Service account name:** for example `contact-form-api`.  
-   **Continue**.  
-4. **Grant this service account access to this project:**
-
-   - **Role** → search **Datastore** → select **Cloud Datastore User**.
-
-5. **Continue** → **Done**.
-
-**Done when:** The service account appears in the list.
-
-6. Click the new account row → copy the **email** (looks like `contact-form-api@YOUR_PROJECT_ID.iam.gserviceaccount.com`).  
-   Keep it in Notepad — you need it for Sheets and Cloud Run.
-
----
-
-### Step 7 — Organization blocks keys (optional reminder)
-
-If a screen ever says keys are blocked: **ignore “Create key”.** Cloud Run attaches this account **without** downloading JSON.
-
----
-
-### Step 8 — Share Google Sheet with the service account
-
-1. Open **[https://sheets.google.com](https://sheets.google.com)** → open or create your leads sheet.  
-2. Click **Share**.  
-3. Paste the **service account email** from Step 6.  
-4. Set access to **Editor** → **Send** / **Share**.
-
-**Done when:** That robot email appears under people with access.
-
-(Optional row 1 header):  
-`submitted_at` | `form_id` | `name` | `mobile` | `email` | `session_id`
-
----
-
-### Step 9 — Copy Spreadsheet ID
-
-With the spreadsheet open, look at the address bar:
-
-`https://docs.google.com/spreadsheets/d/` **`THIS_LONG_ID`** `/edit`
-
-Copy **only** **`THIS_LONG_ID`**. You will paste it as **`SHEETS_SPREADSHEET_ID`** in Cloud Run (Step 12).
-
----
-
-### Step 10 — Code on GitHub
-
-**If you use this repo already:** [https://github.com/qabot2026/testingone](https://github.com/qabot2026/testingone) — the API lives under **`server/contact-form-api/`**. Connect Cloud Run to **that** repo and folder in Step 12; no separate upload needed.
-
-**If you use your own empty repo** (browser only): on **[https://github.com](https://github.com)** → **New repository** → **Add file** → **Upload files** → upload everything under `server\contact-form-api` from your PC (including **`Dockerfile`**, **`package.json`**, **`index.mjs`**, **`lib`**). **Commit changes**.
-
-**Done when:** GitHub shows `Dockerfile` at **repo root** *or* under `server/contact-form-api/` — match that path in the Cloud Run source settings (Step 12).
-
----
-
-### Step 11 — Connect GitHub to Google Cloud (OAuth, in browser only)
-
-Google needs permission to read the repo Cloud Run will build from.
-
-Typical paths (names can shift slightly):
-
-1. **☰** → **Cloud Run**  
-2. You may see **Set up Continuous Deployment** or **Connect repository** — if not, go to Step 12 and start **Create service**; the wizard often includes **GitHub** connection.
-
-Otherwise:
-
-1. **☰** → **Infrastructure Manager** / **Developer Connect** OR from Cloud Run wizard “Connect Repository” leads to OAuth.
-
-Follow the prompts to **authorize Google Cloud** to **read** your GitHub account / selected repo.  
-Choose **only** the repo you created in Step 10.
-
-**Done when:** Your repo appears as a selectable **source** in the Cloud Run “Deploy from repo” wizard with no authorization error.
-
----
-
-### Step 12 — Create Cloud Run service from source (dashboard)
-
-1. **☰** → **Cloud Run**.  
-2. **Create service** (or **Create service** → **Deploy from GitHub/GitLab/source repository** depending on UI).  
-3. **Region:** pick one (example: **`us-central1`**). Same region is easiest for Artifact Registry consistency.
-
-Configure **source**:
-
-- Choose **deploy from GitHub / source repository / continuous deployment** (wording varies).  
-- **Repository:** the repo from Step 10.  
-- **Branch:** usually `main` or `master` (whatever you use).  
-
-When the wizard asks **Configuration → Type**:
-
-| Option | Use for this repo? |
-|--------|---------------------|
-| **Autodetected** | Risky — may look only at repo **root**. Your Dockerfile is **not** at root. Prefer **Dockerfile** below. |
-| **Cloud Build configuration file** | Only if you add `cloudbuild.yaml`. Skip unless you maintain that file. |
-| **Dockerfile** | **Choose this.** Then set Dockerfile path / context per the table below. |
-| **Buildpacks** | Skip — unnecessary; you already ship a Dockerfile. |
-
-**Source / Build configuration** (when type = **Dockerfile**):
-
-  - **`Dockerfile` at repo root** → Dockerfile path **`/Dockerfile`** (or `/` as context).  
-
-  - **This project** → context / source directory **`server/contact-form-api`**, Dockerfile **`Dockerfile`** **or** single path from repo root: **`server/contact-form-api/Dockerfile`** (labels differ by console version).
-
-**Concrete example — this repo ([qabot2026/testingone](https://github.com/qabot2026/testingone))**
-
-| Field | Value |
+| Piece | Where |
 |--------|--------|
-| Repository | `qabot2026/testingone` (or browse and select it after GitHub auth) |
-| Branch | `main` |
-| **Source folder / build context** | **`server/contact-form-api`** (folder that contains `Dockerfile`) |
-| **Dockerfile path** (if separate from context) | Often **`Dockerfile`** relative to that folder, **or** from repo root: **`server/contact-form-api/Dockerfile`** |
-
-If the build fails with “Dockerfile not found”, open **[Dockerfile on GitHub](https://github.com/qabot2026/testingone/blob/main/server/contact-form-api/Dockerfile)** and match the folder you set in the wizard.
-
-**GCP project vs Dialogflow:** `company.config.js` may list a Dialogflow **project id** (e.g. `qabot01`). Your **Cloud Run + Firestore** project can be the same GCP project or a different one — they are only related by what *you* configure. Create Firestore and this service in whichever project you use for **storing** form rows.
-
-4. **Service name:** `contact-form-api` (any allowed name).
-
-5. **Authentication** (required dropdown / radio — pick one)
-
-For the **contact form API**, visitors’ browsers must call your Cloud Run **URL** without signing in to Google. Choose **public** access:
-
-| If the console shows… | Choose |
-|------------------------|--------|
-| **Allow unauthenticated invocations** | ✅ **Yes** / **Allow** (this is what you want). |
-| **Allow public access** | ✅ **Yes**. |
-| **Ingress: all** (with public URL) + auth “none” / open | ✅ Match your wizard’s “public HTTP” option. |
-
-❌ **Do not** choose **Require authentication**, **IAM only**, **Authenticated users only**, or similar — that blocks anonymous `POST` from your website unless you add Cloud IAM tokens in JavaScript (you are not doing that).
-
-**Note:** “Unauthenticated” means **anyone who has the URL can send requests** to this service. Keep the URL unlisted if you want obscurity; rate limiting is a separate topic. Firestore/Sheets writes still use the **runtime service account** configured in **item 7 (Service account)** in **this same Step 12** — that is **server-side** identity, not your website visitors.
-
-6. **Container / Runtime / Resources:** defaults are usually enough for this small API; you can increase memory later if builds fail.
-
-7. **Service account** (important):
-
-   - Open the **Security** or **Container** / **Advanced** section.  
-   - Set **Service account** to **`contact-form-api@YOUR_PROJECT_ID.iam.gserviceaccount.com`** (the one from Step 6).
-
-8. **Environment variables:**
-
-   - Add variable **`SHEETS_SPREADSHEET_ID`**  
-   - Value = the **Spreadsheet ID** from Step 9.
-
-9. **Create** / **Deploy** (primary button).
-
-The console will queue a **Cloud Build** job and then deploy. Wait until the status is **Healthy** / **Serving** without a red error.
-
-**Done when:** Railway shows a **service URL**. This project's deployed lead API is **`https://handsome-amazement.up.railway.app`** (Railway service — use the URL Railway shows for your deployment).
-
-**If an extra wizard asks Cloud Build trigger — Event:**
-
-| Event | Pick when… |
-|--------|------------|
-| **Push to a branch** | **Recommended.** Deploy/rebuild whenever you push to **`main`** (daily workflow for this repo). |
-| **Push new tag** | Only if you want deploys **only** after creating a Git **tag** (e.g. `v1.0.0`). |
-| **Pull request** | Optional CI on PRs; skip if unused. |
-
-For **qabot2026/testingone**, use **Push to a branch** → branch **`main`**.
+| Website + chat (static files) | GitHub Pages, Netlify, your host, etc. |
+| **Contact API** (this folder) | **Railway** (Docker / Node) |
+| **Firestore** | **Firebase** (same project as your app) |
 
 ---
 
-### Step 13 — Quick check in browser
+## 1. Firebase — Firestore + private key (Firebase Console only)
 
-Open your service URL (same host as Cloud Run gives you):
+1. Open **[Firebase Console](https://console.firebase.google.com/)** → your project (or create one).
+2. **Build → Firestore Database** → create database if needed (**production** mode is fine; your API uses the **Admin** SDK server-side, not client rules for this path).
+3. **Project settings** (gear) → **Service accounts** tab.
+4. Click **Generate new private key** → download the JSON file.  
+   - This is the normal way servers talk to Firestore; you are **not** deploying anything on Google Cloud Run.
+5. In **Railway** → your service → **Variables**:
+   - Add **`FIREBASE_SERVICE_ACCOUNT_JSON`**
+   - Paste the **entire JSON** as the value (one line is OK; Railway supports multiline secrets).
+   - Railway may also show **`FIREBASE_CONFIG`** in some setups; either works if it contains the same service account JSON (this server reads both).
 
-| URL | Expected |
-|-----|----------|
-| `https://handsome-amazement.up.railway.app/health` | Plain text **`ok`** |
-| `https://handsome-amazement.up.railway.app/` | Short message that the **contact leads API** is running and **`POST …/contact-form-submissions`** |
+**Wrong JSON:** Firebase *web* config (`apiKey`, `authDomain`, …) is not what you need. You need the **service account** JSON with `"type": "service_account"` and `"private_key"`.
 
-**Note:** **`Cannot GET /`** on an older deployed revision only means **`GET /`** was not implemented yet; **redeploy** after updating the API, or always use **`/health`**. The widget still uses **`POST /contact-form-submissions`** — it does not use **`GET /`**.
-
----
-
-### Step 14 — Fix common dashboard errors
-
-| Symptom | What to change in dashboards |
-|---------|-------------------------------|
-| **Build failed** | Cloud Run → click service → **Revisions / Logs / Builds** links → open **Cloud Build** → read error. Often wrong **Dockerfile path** vs GitHub folder layout. Fix GitHub paths or rerun deploy with corrected path. |
-| **403 / permission** on GitHub | Repeat Step 11 and re-authorize; ensure the selected repo matches Step 10. |
-| **Failed to update trigger: Repository mapping does not exist** (with a link like `cloud-build/triggers/connect?region=us-central1`) | **Connect the repo once** before the trigger can run: open that URL (or **Cloud Build** → **Connect repository** / **Repositories** → **Manage connections**) → authorize **GitHub** → grant access to **`qabot2026/testingone`** → finish wizard until this project **shows the repository**. Trigger region (e.g. **`us-central1`**) must match the **connection region**. Then save the trigger again. |
-| **Firestore permission denied** in logs | IAM → grant **Cloud Datastore User** on **this project** for the Cloud Run **service account** (Step 6 account). Save → **Deploy new revision** with same container if needed so identity is applied. |
-| **`5 NOT_FOUND`** on submit (API may now say **`Firestore:`** or **`Sheets:`** prefix) | **Firestore:** Ensure **Native Firestore** exists in **`qabot01`** with database id **`(default)`** (recommended). If you created a **named** database instead, set Cloud Run env **`FIRESTORE_DATABASE_ID`** to that exact id (e.g. `lead-submissions`). **Sheets:** Wrong **`SHEETS_SPREADSHEET_ID`** (typo / deleted file), or first tab is not **`Sheet1`** — set **`SHEETS_RANGE`** (e.g. `Leads!A:F`). |
-| **Sheets append failed** | Sheet **Share** (Step 8) missing or wrong email; **`SHEETS_SPREADSHEET_ID`** wrong in Cloud Run env vars.**Edit service** → Variables → correct → Deploy. |
+**Named Firestore database:** If you use a database other than `(default)`, set **`FIRESTORE_DATABASE_ID`** in Railway to that database id.
 
 ---
 
-### Step 15 — Point your chat widget at Cloud Run (**your site / HTML**, not GCP)
+## 2. Deploy the API on Railway
 
-The chat iframe loads **`company-loader.js`**, which passes **`apiBase`** into **`chat-frame.html`** so **`company.js`** can `POST` to **`/contact-form-submissions`** on your API host.
+1. Push this repo to **GitHub**.
+2. **[railway.app](https://railway.app)** → **New project** → **Deploy from GitHub** → select the repo.
+3. The repo root should include **`railway.json`**, which points the Docker build at **`server/contact-form-api/Dockerfile`**.
+4. Add **`FIREBASE_SERVICE_ACCOUNT_JSON`** (step 1).
+5. **Networking** → generate a public **HTTPS** URL (e.g. `https://something.up.railway.app`).
+6. Wait until **`GET /health`** returns `ok`.
 
-Where you embed the widget (for example **`myweb.html`** in this repo), set **`apiBase`** to your Railway host (**HTTPS**, **no trailing slash**). This repo is already configured like this:
+---
 
-```html
-<script src="company-loader.js?botid=0001&v=70&apiBase=https://handsome-amazement.up.railway.app"></script>
+## 3. Point the chat widget at Railway
+
+Set your public Railway base URL (**no trailing slash**) in:
+
+- **`myweb.html`** — `company-loader.js?...&apiBase=https://YOUR-SERVICE.up.railway.app`
+- **`chat-frame.html`** — `<meta name="dfchat-api-base-url" content="https://YOUR-SERVICE.up.railway.app" />`
+
+Replace **`YOUR-SERVICE`** with the hostname Railway gives you.
+
+---
+
+## Troubleshooting
+
+| Problem | What to check |
+|---------|----------------|
+| `Firestore: ... permission` or IAM | In Google **Cloud** console, same project as Firebase: the service account email from your JSON needs **Firestore** write access. Easiest fix: **Firebase Console → Project settings → Service accounts** and use the **Firebase Admin SDK** default service account, or grant **Cloud Datastore User** / Firestore-compatible role to the account in **IAM**. |
+| `NOT_FOUND` / database | Firestore created? **`FIRESTORE_DATABASE_ID`** set if using a non-default database? |
+| Build fails on Railway | **Deploy logs** — `railway.json` **`dockerfilePath`** must match **`server/contact-form-api/Dockerfile`**. |
+
+---
+
+## Local development (optional)
+
+From **`server/contact-form-api/`**:
+
+```powershell
+$env:GOOGLE_APPLICATION_CREDENTIALS = "C:\path\to\your-service-account.json"
+npm install
+npm start
 ```
 
-In **`chat-frame.html`**, **`meta name="dfchat-api-base-url"`** carries the same default when the iframe is opened **without** an `apiBase` query parameter.
-
-- Replace the URL everywhere if Cloud Run gives you a **new** hostname.
-- Keep **`v=70`** in sync when you bump cache versions in **`company-loader.js`** (`IFRAME_VERSION`) and **`chat-frame.html`** asset query strings after big updates.  
-- If the site is **GitHub Pages** for this same repo (**`…/testingone/`**), commit and push **`myweb.html`** after editing **`apiBase`**, then wait for Pages to rebuild.
-
-Save and publish your site and **hard-refresh** the page (**Ctrl+F5**).
-
-**Done when:** Chat opens; **F12** → **Network** shows a **`POST`** to **`https://handsome-amazement.up.railway.app/contact-form-submissions`** returning **200** after submit (not blocked or mixed-content errors).
+Or set **`FIREBASE_SERVICE_ACCOUNT_JSON`** to the raw JSON string instead of a file path.
 
 ---
 
-### Step 16 — Submit the contact form in chat
+## What we intentionally do **not** use here
 
-Use the bot’s contact form (**name**, **mobile**, **email**).
+- **Google Cloud Run**, **Artifact Registry**, **Cloud Build** for this API — deploy on **Railway** only.
 
-**Done when:** It succeeds in the UI (no red error).
-
----
-
-### Step 17 — Verify Firestore and Sheet
-
-**Firestore:**
-
-1. **☰** → **Firestore** → open collection **`contact_submissions`** (created on first successful write).
-
-**Spreadsheet:**
-
-1. Open your Google Sheet → new row appended.
-
-**Done when:** Both places show the same submission.
-
----
-
-### Step 18 — Update code later (still no Terminal)
-
-After you change code on GitHub:
-
-1. **☰** → **Cloud Run** → click **`contact-form-api`**.  
-2. **Edit & deploy new revision** (or trigger rebuild from linked repo — wording varies).
-
-If your setup **redeploys on every Git push**, then after **Commit** on GitHub, wait for the revision to flip to **Serving**.
-
----
-
-## Pushing updates from your computer (Git)
-
-This repo’s remote is **`https://github.com/qabot2026/testingone.git`**, branch **`main`**.
-
-After you edit files locally (Cursor, VS Code, **GitHub Desktop**, etc.):
-
-1. **Stage** changed files (`chat-frame.html`, `company-loader.js`, `myweb.html`, `server/contact-form-api/STEP-BY-STEP.md`, …).  
-2. **Commit** with a short message describing the change.  
-3. **Push** to **`main`** (`origin`).
-
-That updates GitHub for:
-
-- Cloud Run triggers or manual “deploy from repo” (**Step 12 / Step 18**), and  
-- This guide remaining accurate beside the repo it documents.
-
-You may occasionally see Git mention **`credential-manager-core`** on Windows; if **`git push`** still reports **`main -> main`**, the push succeeded.
-
----
-
-### Optional dashboards only (later tuning)
-
-**More env vars:** Cloud Run → your service → **Edit & deploy new revision** → **Variables**.
-
-| Variable | Meaning |
-|---------|---------|
-| `DISABLE_SHEETS=1` | Firestore only |
-| `DISABLE_FIRESTORE=1` | Sheets only (rare) |
-| `FIRESTORE_COLLECTION` | Override collection name (`contact_submissions` default) |
-
----
-
-## Reminder — what stays public vs secret
-
-Safe in **`myweb.html`:** only the **public HTTPS** Railway host in **`apiBase`** / **`dfchat-api-base-url`** — currently **`https://handsome-amazement.up.railway.app`**.
-
-Never put **service account JSON**, **sheet private links as secrets**, or **API keys meant for servers** inside `company.js`, `company.config.js`, or public GitHub repos.
+Secrets belong in **Railway variables**, never committed to git.

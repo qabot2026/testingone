@@ -1,26 +1,23 @@
 /**
  * Backend for `company.js` POST /contact-form-submissions (same JSON the widget sends).
- * Deployed on Railway — saves to Firestore only. Google Sheets integration is disabled.
+ * Hosting: **Railway only**. Data: **Firebase Firestore** (credentials from Firebase Console, not GCP Cloud Run).
+ * Google Sheets is disabled in code (SHEETS_DISABLED = true).
  *
  * Setup:
- * 1. Create a Firebase service account with role **Datastore User** (or a custom Firestore role).
- * 2. Set GOOGLE_APPLICATION_CREDENTIALS=/absolute/path/key.json for local dev
- *    (Railway uses FIREBASE_SERVICE_ACCOUNT or GCP default credentials when deployed).
- * 3. Run: npm install && npm start
- * 4. Point the site at this API base (meta `dfchat-api-base-url` or window.COMPANY_API_BASE_URL).
- *    Production URL: https://handsome-amazement.up.railway.app
+ * 1. Firebase Console → Project settings → Service accounts → **Generate new private key** (JSON).
+ * 2. Railway → Variables → **FIREBASE_SERVICE_ACCOUNT_JSON** = paste full JSON.
+ * 3. Local dev: set **GOOGLE_APPLICATION_CREDENTIALS** to that JSON file path, or paste JSON into **FIREBASE_SERVICE_ACCOUNT_JSON**.
+ * 4. Point the site at this API base (`dfchat-api-base-url` / `apiBase` on the loader).
  *
  * Env:
- *   PORT (default 8080)
- *   GOOGLE_APPLICATION_CREDENTIALS — path to service account JSON (local dev)
- *   DISABLE_FIRESTORE=1 — skip Firestore (unusual; both disabled returns 500)
- *   FIRESTORE_DATABASE_ID — only if not using default DB: e.g. lead-submissions (omit for (default))
- *   CORS_ORIGIN — omit to reflect request Origin; set to exact origin(s) comma-separated for strict CORS
- *
- * Google Sheets is permanently disabled (SHEETS_DISABLED = true). No SHEETS_SPREADSHEET_ID needed.
+ *   PORT (default 8080; set by Railway at runtime)
+ *   FIREBASE_SERVICE_ACCOUNT_JSON or FIREBASE_CONFIG — service account JSON string (production on Railway)
+ *   GOOGLE_APPLICATION_CREDENTIALS — path to JSON file (local dev)
+ *   DISABLE_FIRESTORE=1 — skip Firestore
+ *   FIRESTORE_DATABASE_ID — only if not using the default database
+ *   CORS_ORIGIN — optional; comma-separated origins or omit to reflect Origin
  */
 
-import "./lib/firebase.mjs";
 import express from "express";
 import cors from "cors";
 import fs from "node:fs";
