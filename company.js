@@ -12679,6 +12679,33 @@ function getConfiguredApiBaseUrl() {
     return metaBaseUrl || "";
 }
 
+function getEmbedParentPageUrl() {
+    try {
+        if (typeof window.COMPANY_EMBED_PARENT_URL === "string") {
+            const s = window.COMPANY_EMBED_PARENT_URL.trim();
+            if (s) {
+                return s;
+            }
+        }
+    } catch {
+        /* no-op */
+    }
+    return "";
+}
+
+function derivePagePartsFromHref(href) {
+    try {
+        const u = new URL(href);
+        return {
+            origin: u.origin || "",
+            path: u.pathname || "",
+            hostname: u.hostname || ""
+        };
+    } catch {
+        return { origin: "", path: "", hostname: "" };
+    }
+}
+
 function getClientContext() {
     const storedContext = readStoredClientContext();
     const userAgent = navigator.userAgent || "";
@@ -12686,13 +12713,15 @@ function getClientContext() {
     const browserVersion = detectBrowserVersion(userAgent);
     const osName = detectOperatingSystem(userAgent, navigator.platform || "");
     const deviceType = detectDeviceType(userAgent);
+    const embedParentHref = getEmbedParentPageUrl();
+    const pageFromParent = embedParentHref ? derivePagePartsFromHref(embedParentHref) : null;
     const clientContext = {
         ...storedContext,
         client_session_id: storedContext.client_session_id || createClientSessionId(),
-        source_url: window.location.href || "",
-        page_origin: window.location.origin || "",
-        page_path: window.location.pathname || "",
-        page_hostname: window.location.hostname || "",
+        source_url: embedParentHref || window.location.href || "",
+        page_origin: pageFromParent ? pageFromParent.origin : window.location.origin || "",
+        page_path: pageFromParent ? pageFromParent.path : window.location.pathname || "",
+        page_hostname: pageFromParent ? pageFromParent.hostname : window.location.hostname || "",
         referrer_url: document.referrer || "",
         user_agent: userAgent,
         browser_name: browserName,

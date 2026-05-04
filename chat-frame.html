@@ -6,7 +6,7 @@
   <!-- Default API for contact form POST /contact-form-submissions; `apiBase` on company-loader overrides. -->
   <meta name="dfchat-api-base-url" content="https://handsome-amazement-production-7f65.up.railway.app" />
   <title>Chat</title>
-  <link rel="stylesheet" href="company.css?v=70" />
+  <link rel="stylesheet" href="company.css?v=71" />
   <script src="https://www.gstatic.com/dialogflow-console/fast/df-messenger/prod/v1/df-messenger.js"></script>
   <script>
     (function () {
@@ -15,10 +15,12 @@
       if (b) window.COMPANY_EMBED_BOT_ID = b.trim();
       var api = (p.get("apiBase") || "").trim();
       if (api) window.COMPANY_API_BASE_URL = api;
+      var hostPage = (p.get("hostPage") || "").trim();
+      if (hostPage) window.COMPANY_EMBED_PARENT_URL = hostPage;
     })();
   </script>
-  <script src="company.config.js?v=70"></script>
-  <script src="company.js?v=70"></script>
+  <script src="company.config.js?v=71"></script>
+  <script src="company.js?v=71"></script>
   <style>
     html, body { height: 100%; margin: 0; background: transparent; overflow: visible; }
   </style>

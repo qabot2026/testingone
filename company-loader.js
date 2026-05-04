@@ -35,7 +35,7 @@
   }
 
   var CHAT_HOST = chatHostFromLoaderSrc() || "https://qabot2026.github.io/testingone/";
-  var IFRAME_VERSION = "70";
+  var IFRAME_VERSION = "71";
 
   function getLoaderQuery() {
     var cur = document.currentScript;
@@ -68,6 +68,12 @@
   }
   if (apiBase) {
     frameUrl += "&apiBase=" + encodeURIComponent(apiBase);
+  }
+  /** Parent document URL → chat iframe reads this so `client_context.source_url` is the host page, not `chat-frame.html` or API host. */
+  try {
+    frameUrl += "&hostPage=" + encodeURIComponent(window.location.href);
+  } catch (e2) {
+    /* ignore invalid parent location */
   }
 
   function mount() {
