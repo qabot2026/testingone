@@ -1,9 +1,14 @@
 /**
  * Upload multipart buffers into a per-submission subfolder under GOOGLE_DRIVE_FOLDER_ID.
+ *
+ * Important: **`GOOGLE_DRIVE_FOLDER_ID` must be a folder inside a Google *Shared drive* (Team Drive).**
+ * A service account has no personal Drive quota — uploads into someone’s "My Drive" shared folder
+ * fail with “Service Accounts do not have storage quota”. Create a Shared drive (needs Google Workspace
+ * in most setups), add the service account as a member, then use a folder there.
+ *
  * Naming:
  *   - Mobile present (digits only): first submission `9960343434`, then `9960343434_2`, `_3`, …
  *   - No mobile: `unknown1`, `unknown2`, …
- * Share the parent folder with the service account `client_email` (Editor).
  */
 
 import { randomUUID } from "node:crypto";
@@ -12,7 +17,10 @@ import { google } from "googleapis";
 import { getServiceAccountCredentials } from "./google-service-account.mjs";
 
 const FOLDER_ID = (process.env.GOOGLE_DRIVE_FOLDER_ID || "").trim();
-const SHARED_DRIVE = process.env.GOOGLE_DRIVE_USE_SHARED_DRIVE === "1";
+
+/** Shared-drive uploads need `supportsAllDrives` on create; list also needs `includeItemsFromAllDrives`. */
+const DRIVE_CREATE = { supportsAllDrives: true };
+const DRIVE_LIST = { supportsAllDrives: true, includeItemsFromAllDrives: true };
 
 const DRIVE_SCOPES = ["https://www.googleapis.com/auth/drive"];
 
@@ -65,7 +73,7 @@ export async function uploadSubmissionFilesToDrive(files, { mobile }) {
             parents: [FOLDER_ID]
         },
         fields: "id, name",
-        supportsAllDrives: SHARED_DRIVE
+        ...DRIVE_CREATE
     });
 
     const parentId = subfolder.data.id || "";
@@ -98,7 +106,7 @@ export async function uploadSubmissionFilesToDrive(files, { mobile }) {
                 body: Readable.from(f.buffer)
             },
             fields: "id, name, mimeType, size, webViewLink, webContentLink",
-            supportsAllDrives: SHARED_DRIVE
+            ...DRIVE_CREATE
         });
 
         const data = created.data;
@@ -135,8 +143,7 @@ async function listChildFolders(drive, parentId) {
         q,
         fields: "files(id, name)",
         pageSize: 1000,
-        supportsAllDrives: SHARED_DRIVE,
-        includeItemsFromAllDrives: SHARED_DRIVE
+        ...DRIVE_LIST
     });
     return Array.isArray(res.data.files) ? res.data.files : [];
 }

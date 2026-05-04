@@ -5,16 +5,16 @@
  * Setup:
  * 1. Service account JSON (**same** as Firebase/Sheets): `FIREBASE_SERVICE_ACCOUNT_JSON` (or `GOOGLE_SERVICE_ACCOUNT_JSON`).
  * 2. Google Cloud Console → enable **Google Drive API** for that project.
- * 3. Create a Drive folder; share it with the service account **`client_email`** (Editor). Copy the folder id from the URL.
- * 4. Railway → **`GOOGLE_DRIVE_FOLDER_ID`** = that folder id. Shared drives: also set **`GOOGLE_DRIVE_USE_SHARED_DRIVE=1`**.  
- *    Files go into **subfolders** per submission (`9960343434`, then `9960343434_2`, or `unknown1`, `unknown2`, …).
+ * 3. Use a folder inside a **Shared drive** (Team Drive), not personal "My Drive" — service accounts have no My Drive quota.
+ *    Add the service account to the shared drive (or share the folder) with **`client_email`** (Editor / Content manager).
+ * 4. Railway → **`GOOGLE_DRIVE_FOLDER_ID`** = that folder’s id from the URL.  
+ *    Subfolders per upload: `9960343434` / `9960343434_2` or `unknown1`, `unknown2`, …
  * 5. Firebase/Firestore for lead documents (optional disable with **DISABLE_FIRESTORE**). Sheets optional (**SHEETS_SPREADSHEET_ID**).
  * 6. Point the site at this API (`dfchat-api-base-url` / `apiBase`).
  *
  * Env:
  *   PORT, FIREBASE_SERVICE_ACCOUNT_JSON / FIREBASE_CONFIG / GOOGLE_APPLICATION_CREDENTIALS
  *   GOOGLE_DRIVE_FOLDER_ID — required for multipart file uploads
- *   GOOGLE_DRIVE_USE_SHARED_DRIVE=1 — if the folder lives on a Shared drive
  *   DISABLE_FIRESTORE=1, FIRESTORE_DATABASE_ID, CORS_ORIGIN
  *   SHEETS_SPREADSHEET_ID, SHEETS_RANGE, DISABLE_SHEETS=1
  */
@@ -184,11 +184,14 @@ app.post(
                 drive_subfolder_id = pack.drive_subfolder_id || "";
                 drive_subfolder_name = pack.drive_subfolder_name || "";
             } catch (ue) {
-                const detail = ue && ue.message ? ue.message : String(ue);
+                let detail = ue && ue.message ? ue.message : String(ue);
+                if (/storage quota|Service Accounts do not have storage/i.test(detail)) {
+                    detail += " — Use a folder on a Google Shared drive (Team Drive) with the service account added; personal My Drive does not work.";
+                }
                 console.error("[contact-form-api] Google Drive upload failed", detail, ue);
                 return res.status(500).json({
                     ok: false,
-                    error: `Drive: ${detail}. Enable Drive API and share the folder with the service account client_email.`
+                    error: `Drive: ${detail} Enable Drive API; parent folder must live on a Shared drive for service accounts.`
                 });
             }
             const namesForSummary = drive_uploads
