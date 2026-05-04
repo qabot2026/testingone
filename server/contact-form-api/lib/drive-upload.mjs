@@ -12,7 +12,7 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { Readable } from "node:stream";
+import { PassThrough } from "node:stream";
 import { google } from "googleapis";
 import { getServiceAccountCredentials } from "./google-service-account.mjs";
 
@@ -51,6 +51,15 @@ export async function uploadSubmissionFilesToDrive(files, { mobile }) {
             drive_subfolder_name: ""
         };
     }
+    /** Multer must give in-memory buffers; empty buffers → empty Drive folders if we don't check. */
+    const fileParts = files.filter(
+        (f) => f && Buffer.isBuffer(f.buffer) && f.buffer.length > 0
+    );
+    if (fileParts.length === 0) {
+        throw new Error(
+            "No file bytes received (0-byte or missing buffers). The browser may not have sent file data; check form multipart or server body limits."
+        );
+    }
     if (!FOLDER_ID) {
         throw new Error(
             "Set GOOGLE_DRIVE_FOLDER_ID to your target folder id (from the Drive URL). Share that folder with the service account email as Editor."
@@ -85,49 +94,66 @@ export async function uploadSubmissionFilesToDrive(files, { mobile }) {
 
     /** @type {Array<Record<string, unknown>>} */
     const out = [];
-    for (const f of files) {
-        if (!f || !f.buffer) {
-            continue;
+    try {
+        for (const f of fileParts) {
+            const orig = typeof f.originalname === "string" ? f.originalname : "file";
+            const safeName = sanitizeFilename(orig);
+            const uploadName = `${Date.now()}_${randomUUID().slice(0, 8)}_${safeName}`;
+            const mime = typeof f.mimetype === "string" && f.mimetype
+                ? f.mimetype
+                : "application/octet-stream";
+
+            const mediaStream = new PassThrough();
+            mediaStream.end(f.buffer);
+
+            const created = await drive.files.create({
+                requestBody: {
+                    name: uploadName,
+                    parents: [parentId]
+                },
+                media: {
+                    mimeType: mime,
+                    body: mediaStream
+                },
+                fields: "id, name, mimeType, size, webViewLink, webContentLink",
+                ...DRIVE_CREATE
+            });
+
+            const data = created.data;
+            const id = data.id || "";
+            if (!id) {
+                throw new Error("Drive returned no file id after upload.");
+            }
+            const view =
+                (typeof data.webViewLink === "string" && data.webViewLink)
+                    ? data.webViewLink
+                    : `https://drive.google.com/file/d/${id}/view`;
+
+            out.push({
+                field: f.fieldname,
+                original_name: orig,
+                content_type: data.mimeType || mime,
+                size_bytes: f.buffer.length,
+                drive_file_id: id,
+                drive_file_name: typeof data.name === "string" ? data.name : uploadName,
+                web_view_link: view,
+                web_content_link: typeof data.webContentLink === "string" ? data.webContentLink : "",
+                drive_subfolder_name: parentName,
+                drive_subfolder_id: parentId
+            });
         }
-        const orig = typeof f.originalname === "string" ? f.originalname : "file";
-        const safeName = sanitizeFilename(orig);
-        const uploadName = `${Date.now()}_${randomUUID().slice(0, 8)}_${safeName}`;
-        const mime = typeof f.mimetype === "string" && f.mimetype
-            ? f.mimetype
-            : "application/octet-stream";
+    } catch (err) {
+        /** Avoid orphaned empty folders when file writes fail after mkdir. */
+        try {
+            await drive.files.delete({ fileId: parentId, ...DRIVE_CREATE });
+        } catch {
+            /* best-effort cleanup */
+        }
+        throw err;
+    }
 
-        const created = await drive.files.create({
-            requestBody: {
-                name: uploadName,
-                parents: [parentId]
-            },
-            media: {
-                mimeType: mime,
-                body: Readable.from(f.buffer)
-            },
-            fields: "id, name, mimeType, size, webViewLink, webContentLink",
-            ...DRIVE_CREATE
-        });
-
-        const data = created.data;
-        const id = data.id || "";
-        const view =
-            (typeof data.webViewLink === "string" && data.webViewLink)
-                ? data.webViewLink
-                : (id ? `https://drive.google.com/file/d/${id}/view` : "");
-
-        out.push({
-            field: f.fieldname,
-            original_name: orig,
-            content_type: data.mimeType || mime,
-            size_bytes: typeof f.size === "number" ? f.size : f.buffer.length,
-            drive_file_id: id,
-            drive_file_name: typeof data.name === "string" ? data.name : uploadName,
-            web_view_link: view,
-            web_content_link: typeof data.webContentLink === "string" ? data.webContentLink : "",
-            drive_subfolder_name: parentName,
-            drive_subfolder_id: parentId
-        });
+    if (out.length !== fileParts.length) {
+        throw new Error("Drive: not every file was stored successfully.");
     }
 
     return {
