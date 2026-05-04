@@ -23,6 +23,41 @@ const DRIVE_LIST = { supportsAllDrives: true, includeItemsFromAllDrives: true };
 
 const DRIVE_SCOPES = ["https://www.googleapis.com/auth/drive"];
 
+/** Service accounts have no My Drive quota; uploads only work under a Shared drive (driveId set). */
+async function assertFolderIsOnSharedDrive(drive, folderId) {
+    let res;
+    try {
+        res = await drive.files.get({
+            fileId: folderId,
+            fields: "id, name, mimeType, driveId",
+            supportsAllDrives: true
+        });
+    } catch (e) {
+        const msg = e && e.message ? e.message : String(e);
+        throw new Error(
+            `Could not read GOOGLE_DRIVE_FOLDER_ID (${folderId}). Check the id, Drive API access, and that the service account can see the folder. ${msg}`
+        );
+    }
+    const data = res && res.data ? res.data : {};
+    if (data.mimeType && data.mimeType !== "application/vnd.google-apps.folder") {
+        throw new Error(
+            "GOOGLE_DRIVE_FOLDER_ID must be a folder, not a file. Create a folder on a Shared drive and use its id from the URL."
+        );
+    }
+    if (!data.driveId) {
+        throw new Error(
+            [
+                "This folder is in personal My Drive. Google does not give service accounts storage there,",
+                "even if the folder is shared with the service account email.",
+                "Fix: In Google Workspace, open Drive → Shared drives → create or pick a Shared drive →",
+                "add your service account (Manage members) as Content manager → create a folder inside →",
+                "set GOOGLE_DRIVE_FOLDER_ID to that folder’s id (from the URL).",
+                "Shared drives require Google Workspace; consumer Gmail alone cannot create them."
+            ].join(" ")
+        );
+    }
+}
+
 async function getDriveClient() {
     const cred = getServiceAccountCredentials();
     if (!cred) {
@@ -60,11 +95,12 @@ export async function uploadSubmissionFilesToDrive(files, { mobile }) {
     }
     if (!FOLDER_ID) {
         throw new Error(
-            "Set GOOGLE_DRIVE_FOLDER_ID to your target folder id (from the Drive URL). Share that folder with the service account email as Editor."
+            "Set GOOGLE_DRIVE_FOLDER_ID to a folder inside a Google Shared drive (Team Drive), not My Drive."
         );
     }
 
     const drive = await getDriveClient();
+    await assertFolderIsOnSharedDrive(drive, FOLDER_ID);
     const childFolders = await listChildFolders(drive, FOLDER_ID);
     const folderNames = childFolders.map((f) => (f.name ? String(f.name) : "")).filter(Boolean);
 
