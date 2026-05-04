@@ -9,10 +9,10 @@
 
 /**
  * @param {string} webAppUrl e.g. https://script.google.com/macros/s/DEPLOYMENT_ID/exec
- * @param {{ files: Array<import('multer').File & { buffer: Buffer }>, fields: Record<string, string>, clientContext: object, formId: string }} payload
+ * @param {{ files: Array<import('multer').File & { buffer: Buffer }>, fields: Record<string, string>, clientContext: object, formId: string, mobile?: string }} payload
  */
 export async function forwardSubmissionToAppsScript(webAppUrl, payload) {
-    const { files = [], fields = {}, clientContext = {}, formId = "unknown" } = payload;
+    const { files = [], fields = {}, clientContext = {}, formId = "unknown", mobile = "" } = payload;
     const fileParts = (Array.isArray(files) ? files : []).filter(
         (f) => f && Buffer.isBuffer(f.buffer) && f.buffer.length > 0
     );
@@ -53,9 +53,12 @@ export async function forwardSubmissionToAppsScript(webAppUrl, payload) {
             process.env.GOOGLE_DRIVE_FOLDER_ID ||
             ""
         ).trim();
+        const resolvedMobile =
+            typeof mobile === "string" && mobile.trim() ? mobile.trim() : fields.mobile || "";
         /** @type {Record<string, unknown>} */
         const body = {
             ...fields,
+            mobile: resolvedMobile,
             _contactFormId: String(formId),
             client_context: clientContext,
             _files: fileParts.map((f) => ({

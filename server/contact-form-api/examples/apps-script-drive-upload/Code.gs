@@ -65,8 +65,25 @@ function doPost(e) {
   }
 }
 
+function pickMobileRaw_(o) {
+  var m =
+    pick_(o.mobile) ||
+    pick_(o.phone) ||
+    pick_(o.tel) ||
+    pick_(o.contact_mobile) ||
+    pick_(o.whatsapp) ||
+    pickFromCtx_(o.client_context, "mobile") ||
+    pickFromCtx_(o.client_context, "phone");
+  return m;
+}
+
+function pickFromCtx_(ctx, key) {
+  if (!ctx || typeof ctx !== "object") return "";
+  return pick_(ctx[key]);
+}
+
 function pickSubmissionSubfolderName_(o, folderNames) {
-  var digits = normalizeDigits_(o.mobile);
+  var digits = normalizeDigits_(pickMobileRaw_(o));
   if (digits) {
     return nextMobileFolderName_(digits, folderNames);
   }

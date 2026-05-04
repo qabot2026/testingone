@@ -30,6 +30,7 @@ import { appendContactRowToSheet } from "./lib/sheets.mjs";
 import { uploadSubmissionFilesToDrive } from "./lib/drive-upload.mjs";
 import { hasDriveUploadCredentials } from "./lib/drive-auth.mjs";
 import { forwardSubmissionToAppsScript } from "./lib/apps-script-upload.mjs";
+import { resolveContactMobile, scalarFormValue } from "./lib/contact-mobile.mjs";
 
 const APPS_SCRIPT_WEBAPP_URL = (process.env.GOOGLE_APPS_SCRIPT_WEBAPP_URL || "").trim();
 
@@ -130,24 +131,24 @@ app.post(
         }
 
         const uploadedFiles = Array.isArray(req.files) ? req.files : [];
+        const formId = typeof body._contactFormId === "string" ? body._contactFormId : "unknown";
+        const clientContext =
+            body.client_context && typeof body.client_context === "object" ? body.client_context : {};
 
         /** @type {Record<string, string>} */
         const fields = {};
         for (const [k, val] of Object.entries(body)) {
             if (!k.startsWith("_") && k !== "client_context") {
-                if (typeof val === "string") {
-                    fields[k] = val.trim();
-                } else if (val != null && typeof val !== "object" && typeof val !== "undefined") {
-                    fields[k] = String(val).trim();
+                const s = scalarFormValue(val);
+                if (s) {
+                    fields[k] = s;
                 }
             }
         }
 
         const name = fields.name ?? "";
         const email = fields.email ?? "";
-        const mobile = fields.mobile ?? "";
-        const formId = typeof body._contactFormId === "string" ? body._contactFormId : "unknown";
-        const clientContext = body.client_context && typeof body.client_context === "object" ? body.client_context : {};
+        const mobile = resolveContactMobile(fields, body, clientContext);
         const clientSessionId = typeof clientContext.client_session_id === "string"
             ? clientContext.client_session_id
             : "";
@@ -196,7 +197,8 @@ app.post(
                         files: uploadedFiles,
                         fields,
                         clientContext: mergedClientContext,
-                        formId
+                        formId,
+                        mobile
                     });
                     drive_uploads = pack.uploads;
                     filesStoredExternally = true;
