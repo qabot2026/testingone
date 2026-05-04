@@ -1,6 +1,10 @@
 /**
- * Forwards multipart form data (fields + files) to a deployed Apps Script Web App URL.
- * The script runs as the owner, so uploads land in their Google Drive without OAuth in Node.
+ * Forwards submissions to a deployed Apps Script Web App.
+ *
+ * Default: **application/json** with Base64 file parts (`_files[]`). Apps Script `doPost` often does **not**
+ * reliably handle external `multipart/form-data`, so the server used to return 200 while nothing was saved.
+ *
+ * Legacy: set `GOOGLE_APPS_SCRIPT_USE_MULTIPART=1` to send multipart (only if your script parses it).
  */
 
 /**
@@ -18,31 +22,63 @@ export async function forwardSubmissionToAppsScript(webAppUrl, payload) {
         );
     }
 
-    const fd = new FormData();
-    for (const [k, val] of Object.entries(fields)) {
-        fd.append(k, typeof val === "string" ? val : String(val ?? ""));
-    }
-    fd.append("_contactFormId", String(formId));
-    fd.append("client_context", JSON.stringify(clientContext));
-
-    for (const f of fileParts) {
-        const mime = typeof f.mimetype === "string" && f.mimetype ? f.mimetype : "application/octet-stream";
-        const blob = new Blob([f.buffer], { type: mime });
-        const orig =
-            typeof f.originalname === "string" && f.originalname.trim() ? f.originalname.trim() : "file";
-        const field = typeof f.fieldname === "string" && f.fieldname.trim() ? f.fieldname : "file";
-        fd.append(field, blob, orig);
-    }
-
     let execUrl = (webAppUrl || "").trim().replace(/\s+/g, "");
     while (execUrl.endsWith("/")) {
         execUrl = execUrl.slice(0, -1);
     }
-    const res = await fetch(execUrl, {
-        method: "POST",
-        body: fd,
-        redirect: "follow"
-    });
+
+    const useMultipart = process.env.GOOGLE_APPS_SCRIPT_USE_MULTIPART === "1";
+
+    let res;
+    if (useMultipart) {
+        const fd = new FormData();
+        for (const [k, val] of Object.entries(fields)) {
+            fd.append(k, typeof val === "string" ? val : String(val ?? ""));
+        }
+        fd.append("_contactFormId", String(formId));
+        fd.append("client_context", JSON.stringify(clientContext));
+
+        for (const f of fileParts) {
+            const mime = typeof f.mimetype === "string" && f.mimetype ? f.mimetype : "application/octet-stream";
+            const blob = new Blob([f.buffer], { type: mime });
+            const orig =
+                typeof f.originalname === "string" && f.originalname.trim() ? f.originalname.trim() : "file";
+            const field = typeof f.fieldname === "string" && f.fieldname.trim() ? f.fieldname : "file";
+            fd.append(field, blob, orig);
+        }
+        res = await fetch(execUrl, { method: "POST", body: fd, redirect: "follow" });
+    } else {
+        const folderId = (
+            process.env.APPS_SCRIPT_TARGET_FOLDER_ID ||
+            process.env.GOOGLE_DRIVE_FOLDER_ID ||
+            ""
+        ).trim();
+        /** @type {Record<string, unknown>} */
+        const body = {
+            ...fields,
+            _contactFormId: String(formId),
+            client_context: clientContext,
+            _files: fileParts.map((f) => ({
+                field: typeof f.fieldname === "string" && f.fieldname.trim() ? f.fieldname : "file",
+                name:
+                    typeof f.originalname === "string" && f.originalname.trim()
+                        ? f.originalname.trim()
+                        : "upload.bin",
+                mime: typeof f.mimetype === "string" && f.mimetype ? f.mimetype : "application/octet-stream",
+                dataBase64: f.buffer.toString("base64")
+            }))
+        };
+        if (folderId) {
+            body._drive_folder_id = folderId;
+        }
+        res = await fetch(execUrl, {
+            method: "POST",
+            redirect: "follow",
+            headers: { "Content-Type": "application/json; charset=utf-8" },
+            body: JSON.stringify(body)
+        });
+    }
+
     const status = res.status;
     const text = await res.text();
 
@@ -55,6 +91,14 @@ export async function forwardSubmissionToAppsScript(webAppUrl, payload) {
         } catch {
             /* leave null */
         }
+    }
+
+    if (!useMultipart && status < 400 && json === null) {
+        throw new Error(
+            "Apps Script must return JSON such as {\"ok\":true,\"uploads\":[…]}. " +
+                "Paste the sample doPost from server/contact-form-api/examples/apps-script-drive-upload/Code.gs. " +
+                `Response preview: ${text.slice(0, 180).replace(/\s+/g, " ")}`
+        );
     }
 
     if (status >= 400) {
@@ -74,6 +118,21 @@ export async function forwardSubmissionToAppsScript(webAppUrl, payload) {
     if (json && typeof json === "object" && json.ok === false) {
         const err = typeof json.error === "string" ? json.error : JSON.stringify(json.error ?? json);
         throw new Error(`Apps Script: ${err}`);
+    }
+
+    if (
+        !useMultipart &&
+        status < 400 &&
+        json &&
+        typeof json === "object" &&
+        json.ok === true &&
+        fileParts.length > 0 &&
+        (!Array.isArray(json.uploads) || json.uploads.length === 0)
+    ) {
+        throw new Error(
+            "Apps Script returned ok:true but no file entries in uploads[]. " +
+                "Use the sample Code.gs (createFile + push drive_file_id/web_view_link)."
+        );
     }
 
     const uploads =

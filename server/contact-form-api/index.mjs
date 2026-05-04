@@ -11,10 +11,12 @@
  *   account; `DISABLE_FIRESTORE=1` + `DISABLE_DRIVE_UPLOAD=1`.
  *
  * Env:
- *   GOOGLE_APPS_SCRIPT_WEBAPP_URL — full `/exec` deploy URL; multipart is forwarded here (skips Drive API)
+ *   GOOGLE_APPS_SCRIPT_WEBAPP_URL — full `/exec` URL; POST **JSON + Base64 `_files`** (see examples/apps-script-drive-upload/Code.gs)
+ *   GOOGLE_APPS_SCRIPT_USE_MULTIPART=1 — legacy multipart (omit unless your script parses it)
+ *   GOOGLE_DRIVE_FOLDER_ID — Drive API folder, **or** target folder sent to Apps Script as `_drive_folder_id`
  *   DRIVE_ONLY=1 — skip Firestore and Sheets; only accept uploads (multipart with files)
  *   DISABLE_DRIVE_UPLOAD=1 — reject file fields (Sheet/text-only mode)
- *   GOOGLE_DRIVE_FOLDER_ID, GOOGLE_DRIVE_OAUTH_* (Drive API path; optional if Apps Script URL set)
+ *   GOOGLE_DRIVE_OAUTH_* (Drive API path; optional if Apps Script URL set)
  *   PORT, FIREBASE_SERVICE_ACCOUNT_JSON / GOOGLE_SERVICE_ACCOUNT_JSON / GOOGLE_APPLICATION_CREDENTIALS
  *   DISABLE_FIRESTORE=1, FIRESTORE_DATABASE_ID, CORS_ORIGIN, SHEETS_*, DISABLE_SHEETS=1
  */
