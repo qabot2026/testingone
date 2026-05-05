@@ -1,9 +1,10 @@
 /**
  * Web app: POST application/json with _files[].dataBase64.
- * Creates a subfolder under the parent: {mobile}_1,_2,… or {client_session_id}_1,_2,… or unknown_1,…
+ * Creates a subfolder: {mobile}_{dd}_{mm}_{yyyy}_1,_2,… or {session}_{date}_1,… or unknown_{date}_1,…
  *
  * Parent folder: Script property UPLOAD_FOLDER_ID and/or JSON _drive_folder_id (from Railway GOOGLE_DRIVE_FOLDER_ID).
  * Deploy: Execute as Me, Who has access: Anyone — new version after edits.
+ * Railway forwards _submission_mobile_digits (digits-only) when it resolves the phone; folder names use it first so behavior matches the Node server even if mobile fields are oddly shaped.
  */
 
 function doPost(e) {
@@ -31,7 +32,12 @@ function doPost(e) {
     }
 
     var childNames = listChildFolderNames_(parentFolder);
-    var subFolderName = pickSubmissionSubfolderName_(o, childNames);
+    var dateLabel = Utilities.formatDate(
+      new Date(),
+      Session.getScriptTimeZone(),
+      "dd_MM_yyyy"
+    );
+    var subFolderName = pickSubmissionSubfolderName_(o, childNames, dateLabel);
     var subFolder = getOrCreateChildFolder_(parentFolder, subFolderName);
 
     var uploads = [];
@@ -65,15 +71,65 @@ function doPost(e) {
   }
 }
 
+function normalizedKeyGuess_(raw) {
+  return String(raw || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
+}
+
+/** Matches Node contact-mobile “loose” aliases so folder naming prefers mobile when the JSON uses custom field names. */
+function pickMobileLoose_(obj) {
+  if (!obj || typeof obj !== "object") return "";
+  var aliases = {
+    mobile: true,
+    phonenumber: true,
+    phone: true,
+    tel: true,
+    whatsapp: true,
+    whatsappnumber: true,
+    contactnumber: true,
+    contactphone: true,
+    contactmobile: true,
+    cellphone: true,
+    cell: true,
+    mobilenumber: true,
+    mobilephone: true,
+    usermobile: true,
+    yourmobile: true,
+    customermobile: true,
+  };
+  var keys = Object.keys(obj);
+  for (var i = 0; i < keys.length; i++) {
+    var nk = normalizedKeyGuess_(keys[i]);
+    if (aliases[nk]) {
+      var got = pick_(obj[keys[i]]);
+      if (got) return got;
+    }
+  }
+  return "";
+}
+
 function pickMobileRaw_(o) {
+  var ctx = o.client_context || {};
   var m =
     pick_(o.mobile) ||
     pick_(o.phone) ||
     pick_(o.tel) ||
     pick_(o.contact_mobile) ||
     pick_(o.whatsapp) ||
-    pickFromCtx_(o.client_context, "mobile") ||
-    pickFromCtx_(o.client_context, "phone");
+    pick_(o.whatsapp_number) ||
+    pick_(o.contact_phone) ||
+    pick_(o.mobile_number) ||
+    pick_(o.phone_number) ||
+    pick_(o.cell) ||
+    pick_(o.cell_phone) ||
+    pickFromCtx_(ctx, "mobile") ||
+    pickFromCtx_(ctx, "phone") ||
+    pickFromCtx_(ctx, "tel") ||
+    pickFromCtx_(ctx, "contact_mobile") ||
+    pickFromCtx_(ctx, "whatsapp") ||
+    pickMobileLoose_(o) ||
+    pickMobileLoose_(ctx);
   return m;
 }
 
@@ -82,17 +138,19 @@ function pickFromCtx_(ctx, key) {
   return pick_(ctx[key]);
 }
 
-function pickSubmissionSubfolderName_(o, folderNames) {
-  var digits = normalizeDigits_(pickMobileRaw_(o));
+function pickSubmissionSubfolderName_(o, folderNames, dateLabel) {
+  // Server (Railway) sets this when it resolved the phone — avoids relying on o.mobile after JSON merges.
+  var fromServer = normalizeDigits_(pick_(o._submission_mobile_digits));
+  var digits = fromServer || normalizeDigits_(pickMobileRaw_(o));
   if (digits) {
-    return nextMobileFolderName_(digits, folderNames);
+    return nextMobileFolderName_(digits, folderNames, dateLabel);
   }
   var ctx = o.client_context || {};
   var sid = sanitizeSession_(pick_(ctx.client_session_id));
   if (sid) {
-    return nextSessionFolderName_(sid, folderNames);
+    return nextSessionFolderName_(sid, folderNames, dateLabel);
   }
-  return nextUnknownFolderName_(folderNames);
+  return nextUnknownFolderName_(folderNames, dateLabel);
 }
 
 function listChildFolderNames_(parent) {
@@ -135,17 +193,18 @@ function maxRankFromRanks_(ranks) {
   return maxR;
 }
 
-/** First 9900990099_1, then 9900990099_2; legacy folder "9900990099" counts as #1 */
-function nextMobileFolderName_(digits, folderNames) {
+/** e.g. 9900990099_06_05_2026_1 then …_2 same day */
+function nextMobileFolderName_(digits, folderNames, dateLabel) {
   var ranks = {};
-  if (folderNames.indexOf(digits) !== -1) addRanks_(ranks, 1);
-  var re = new RegExp("^" + escapeRe_(digits) + "_(\\d+)$");
+  var re = new RegExp(
+    "^" + escapeRe_(digits) + "_" + escapeRe_(dateLabel) + "_(\\d+)$"
+  );
   for (var i = 0; i < folderNames.length; i++) {
     var m = folderNames[i].match(re);
     if (m) addRanks_(ranks, parseInt(m[1], 10));
   }
   var nextRank = Object.keys(ranks).length ? maxRankFromRanks_(ranks) + 1 : 1;
-  return digits + "_" + nextRank;
+  return digits + "_" + dateLabel + "_" + nextRank;
 }
 
 function sanitizeSession_(raw) {
@@ -155,36 +214,33 @@ function sanitizeSession_(raw) {
   return cleaned || "";
 }
 
-function nextSessionFolderName_(base, folderNames) {
-  if (!base) return nextUnknownFolderName_(folderNames);
+function nextSessionFolderName_(base, folderNames, dateLabel) {
+  if (!base) return nextUnknownFolderName_(folderNames, dateLabel);
   var ranks = {};
-  if (folderNames.indexOf(base) !== -1) addRanks_(ranks, 1);
-  var re = new RegExp("^" + escapeRe_(base) + "_(\\d+)$");
+  var re = new RegExp(
+    "^" + escapeRe_(base) + "_" + escapeRe_(dateLabel) + "_(\\d+)$"
+  );
   for (var i = 0; i < folderNames.length; i++) {
     var m = folderNames[i].match(re);
     if (m) addRanks_(ranks, parseInt(m[1], 10));
   }
   var nextRank = Object.keys(ranks).length ? maxRankFromRanks_(ranks) + 1 : 1;
-  return base + "_" + nextRank;
+  return base + "_" + dateLabel + "_" + nextRank;
 }
 
-function nextUnknownFolderName_(folderNames) {
+function nextUnknownFolderName_(folderNames, dateLabel) {
   var base = "unknown";
   var ranks = {};
-  var reUnd = /^unknown_(\d+)$/i;
-  var reLeg = /^unknown(\d+)$/i;
+  var reDated = new RegExp(
+    "^" + escapeRe_(base) + "_" + escapeRe_(dateLabel) + "_(\\d+)$",
+    "i"
+  );
   for (var i = 0; i < folderNames.length; i++) {
-    var n = folderNames[i];
-    var m = n.match(reUnd);
-    if (m) {
-      addRanks_(ranks, parseInt(m[1], 10));
-      continue;
-    }
-    m = n.match(reLeg);
+    var m = folderNames[i].match(reDated);
     if (m) addRanks_(ranks, parseInt(m[1], 10));
   }
   var nextRank = Object.keys(ranks).length ? maxRankFromRanks_(ranks) + 1 : 1;
-  return base + "_" + nextRank;
+  return base + "_" + dateLabel + "_" + nextRank;
 }
 
 function doGet() {

@@ -497,6 +497,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
           ]
         },
         // Upload document — `form_id`: `"uploadDocument"`. `multiple: true` = several files; omit or `false` = one file.
+        // Mobile is required so Drive folder names can use `{mobile}_{dd}_{mm}_{yyyy}_{n}` (see contact-form-api).
         uploadDocument: {
           titleByLanguage: {
             en: "Upload document",
@@ -504,14 +505,25 @@ window.COMPANY_CHAT_UI_CONFIG = {
             mr: "दस्तऐवज अपलोड करा"
           },
           subtitleByLanguage: {
-            en: "You can select one or more files.",
-            hi: "एक या अधिक फ़ाइल चुन सकते हैं।",
-            mr: "एक किंवा अनेक फाइल निवडा."
+            en: "Enter your mobile number, then attach file(s). Folders are named with your number and date.",
+            hi: "अपना मोबाइल नंबर दर्ज करें, फिर फ़ाइलें जोड़ें।",
+            mr: "मोबाईल नंबर टाका, नंतर फाइल जोडा."
           },
           showSubtitle: true,
-          maxCardHeightPx: 280,
-          chatSummaryFieldNames: ["document"],
+          maxCardHeightPx: 340,
+          chatSummaryFieldNames: ["mobile", "document"],
           fields: [
+            {
+              id: "u-mobile",
+              name: "mobile",
+              type: "tel",
+              required: true,
+              icon: "phone",
+              i18nPlaceholder: "mobilePlaceholder",
+              i18nSummaryLabel: "summaryMobileLabel",
+              autocomplete: "tel",
+              inputMode: "tel"
+            },
             {
               id: "u-document",
               name: "document",

@@ -7,6 +7,9 @@
  * Legacy: set `GOOGLE_APPS_SCRIPT_USE_MULTIPART=1` to send multipart (only if your script parses it).
  */
 
+import { resolveMobileForUpstream } from "./contact-mobile.mjs";
+import { normalizeMobileDigits } from "./submission-folder-name.mjs";
+
 /**
  * @param {string} webAppUrl e.g. https://script.google.com/macros/s/DEPLOYMENT_ID/exec
  * @param {{ files: Array<import('multer').File & { buffer: Buffer }>, fields: Record<string, string>, clientContext: object, formId: string, mobile?: string }} payload
@@ -29,14 +32,27 @@ export async function forwardSubmissionToAppsScript(webAppUrl, payload) {
 
     const useMultipart = process.env.GOOGLE_APPS_SCRIPT_USE_MULTIPART === "1";
 
+    const effectiveMobile = resolveMobileForUpstream(
+        fields,
+        clientContext,
+        typeof mobile === "string" ? mobile : ""
+    );
+    const mobileDigits = normalizeMobileDigits(effectiveMobile);
+    const fieldsForOutbound = effectiveMobile
+        ? { ...fields, mobile: effectiveMobile }
+        : { ...fields };
+
     let res;
     if (useMultipart) {
         const fd = new FormData();
-        for (const [k, val] of Object.entries(fields)) {
+        for (const [k, val] of Object.entries(fieldsForOutbound)) {
             fd.append(k, typeof val === "string" ? val : String(val ?? ""));
         }
         fd.append("_contactFormId", String(formId));
         fd.append("client_context", JSON.stringify(clientContext));
+        if (mobileDigits) {
+            fd.append("_submission_mobile_digits", mobileDigits);
+        }
 
         for (const f of fileParts) {
             const mime = typeof f.mimetype === "string" && f.mimetype ? f.mimetype : "application/octet-stream";
@@ -53,14 +69,12 @@ export async function forwardSubmissionToAppsScript(webAppUrl, payload) {
             process.env.GOOGLE_DRIVE_FOLDER_ID ||
             ""
         ).trim();
-        const resolvedMobile =
-            typeof mobile === "string" && mobile.trim() ? mobile.trim() : fields.mobile || "";
         /** @type {Record<string, unknown>} */
         const body = {
-            ...fields,
-            mobile: resolvedMobile,
+            ...fieldsForOutbound,
             _contactFormId: String(formId),
             client_context: clientContext,
+            ...(mobileDigits ? { _submission_mobile_digits: mobileDigits } : {}),
             _files: fileParts.map((f) => ({
                 field: typeof f.fieldname === "string" && f.fieldname.trim() ? f.fieldname : "file",
                 name:

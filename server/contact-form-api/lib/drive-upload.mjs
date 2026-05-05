@@ -87,7 +87,8 @@ export async function uploadSubmissionFilesToDrive(files, { mobile, clientSessio
     const newFolderName = nextSubmissionFolderName({
         mobile,
         clientSessionId,
-        folderNames
+        folderNames,
+        submittedAt: new Date()
     });
 
     const subfolder = await drive.files.create({

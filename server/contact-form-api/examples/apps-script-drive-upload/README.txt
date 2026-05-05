@@ -5,5 +5,5 @@
 4. After every script change: Deploy → Manage deployments → Edit → New version → Deploy.
 
 The API sends JSON like { mobile, client_context, ..., _files: [{ name, mime, dataBase64 }] }.
-Subfolders: {mobile}_1, {mobile}_2, … or {sanitized_session_id}_1,_2 … or unknown_1,… — same rules as submission-folder-name.mjs.
+Subfolders: {mobile}_{dd}_{mm}_{yyyy}_1, … same mobile+day increments _2,_3,…; without mobile uses {session}_{date}_n; else unknown_{date}_n. Matches submission-folder-name.mjs (script uses the project’s timezone).
 
