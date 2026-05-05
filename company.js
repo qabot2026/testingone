@@ -11154,9 +11154,13 @@ function submitContactForm(event) {
     let fetchBody;
     /** @type {Record<string, string> | undefined} */
     let fetchHeaders;
+    const fieldDefsExplicitMobile = fieldDefs.some(
+        (d) => d && d.name === "mobile" && String(d.type || "").toLowerCase() !== "file"
+    );
     if (!isOtpUpdateMobile && useMultipart) {
+        const clientSnapshot = getClientContext();
         const fd = new FormData();
-        fd.append("client_context", JSON.stringify(getClientContext()));
+        fd.append("client_context", JSON.stringify(clientSnapshot));
         fd.append("_contactFormId", cfg0.formKey);
         for (const def of fieldDefs) {
             if (!def || !def.id || !def.name) {
@@ -11186,6 +11190,12 @@ function submitContactForm(event) {
             const m = typeof mRaw === "string" ? mRaw.trim() : "";
             if (m) {
                 fd.append("mobile", m);
+            }
+        }
+        if (!fieldDefsExplicitMobile) {
+            const im = typeof clientSnapshot.mobile === "string" ? clientSnapshot.mobile.trim() : "";
+            if (im) {
+                fd.append("mobile", im);
             }
         }
         fetchBody = fd;
@@ -11224,6 +11234,9 @@ function submitContactForm(event) {
                     status.classList.add("is-success");
                     status.classList.remove("is-error");
                 }
+                if (payload && typeof payload.mobile === "string" && payload.mobile.trim()) {
+                    mergeVisitorMobileIntoStoredContext(payload.mobile);
+                }
                 setOtpFormStep("otp");
                 const oOtpEl = document.getElementById("o-otp");
                 if (oOtpEl) {
@@ -11239,6 +11252,15 @@ function submitContactForm(event) {
             }
 
             const summaryForChat = chatSummaryPayload != null ? chatSummaryPayload : payload;
+            let mobileToRemember = "";
+            if (summaryForChat && typeof summaryForChat.mobile === "string") {
+                mobileToRemember = summaryForChat.mobile.trim();
+            } else if (payload && typeof payload.mobile === "string") {
+                mobileToRemember = payload.mobile.trim();
+            }
+            if (mobileToRemember) {
+                mergeVisitorMobileIntoStoredContext(mobileToRemember);
+            }
             renderContactFormSubmissionResponse(summaryForChat);
 
             for (const def of fieldDefs) {
@@ -12789,6 +12811,27 @@ function persistClientContext(clientContext) {
         );
     } catch {
         // Session storage can fail in privacy-restricted browsers.
+    }
+}
+
+/**
+ * Remember the visitor’s mobile after Contact / OTP forms so document uploads (no tel field)
+ * still send `mobile` inside `client_context` for backend Drive folder naming.
+ * @param {string} rawMobile
+ */
+function mergeVisitorMobileIntoStoredContext(rawMobile) {
+    const v = typeof rawMobile === "string" ? rawMobile.trim() : "";
+    if (!v || !/\d/.test(v)) {
+        return;
+    }
+    try {
+        const prev = readStoredClientContext();
+        persistClientContext({
+            ...prev,
+            mobile: v
+        });
+    } catch {
+        /* ignore */
     }
 }
 
