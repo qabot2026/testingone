@@ -113,8 +113,10 @@ const FEATURES_CONFIG = COMMON_CONFIG.features && typeof COMMON_CONFIG.features 
 const MULTI_LANGUAGE_CONFIG = FEATURES_CONFIG.multiLanguage && typeof FEATURES_CONFIG.multiLanguage === "object"
     ? FEATURES_CONFIG.multiLanguage
     : {};
-/** When `multiLanguage` is missing, default is false (turn on with `enabled: true`). */
-const IS_MULTI_LANGUAGE_ENABLED = isFeatureEnabledFromConfig(MULTI_LANGUAGE_CONFIG, false);
+/** When `multiLanguage` is missing, default is false (turn on with `enabled: true`). Re-read so admin/runtime merges apply without reload. */
+function isMultiLanguageEnabled() {
+    return isFeatureEnabledFromConfig(MULTI_LANGUAGE_CONFIG, false);
+}
 /** When true, auto-translation (Google) may walk `document.body`; default false = only chat widget shadow roots. */
 const AUTO_TRANSLATE_HOST_PAGE = typeof MULTI_LANGUAGE_CONFIG.autoTranslateHostPage === "boolean"
     ? MULTI_LANGUAGE_CONFIG.autoTranslateHostPage
@@ -122,11 +124,15 @@ const AUTO_TRANSLATE_HOST_PAGE = typeof MULTI_LANGUAGE_CONFIG.autoTranslateHostP
 const RESTART_CHAT_CONFIG = FEATURES_CONFIG.restartChat && typeof FEATURES_CONFIG.restartChat === "object"
     ? FEATURES_CONFIG.restartChat
     : {};
-const IS_RESTART_CHAT_ENABLED = isFeatureEnabledFromConfig(RESTART_CHAT_CONFIG, true);
+function isRestartChatEnabled() {
+    return isFeatureEnabledFromConfig(RESTART_CHAT_CONFIG, true);
+}
 const POWERED_BY_CONFIG = COMMON_CONFIG.poweredBy && typeof COMMON_CONFIG.poweredBy === "object"
     ? COMMON_CONFIG.poweredBy
     : {};
-const IS_POWERED_BY_ENABLED = isFeatureEnabledFromConfig(POWERED_BY_CONFIG, false);
+function isPoweredByFeatureEnabled() {
+    return isFeatureEnabledFromConfig(POWERED_BY_CONFIG, false);
+}
 /** When true, POSTs session metadata to `getApiEndpoint("/chat-client-context")`. Static hosts have no route — set `enabled: false` in config. Default true keeps same-origin API behavior for existing backends. */
 const CLIENT_CONTEXT_CAPTURE_CONFIG = FEATURES_CONFIG.clientContextCapture && typeof FEATURES_CONFIG.clientContextCapture === "object"
     ? FEATURES_CONFIG.clientContextCapture
@@ -1781,7 +1787,7 @@ function ensureComposerHeaderCollapseBehavior() {
 function runCompanyDomReadyInit() {
     mountDfchatContactFormHostIfNeeded();
     applyThemeConfig(COMPANY_UI_CONFIG);
-    if (!IS_MULTI_LANGUAGE_ENABLED) {
+    if (!isMultiLanguageEnabled()) {
         activeLanguage = DEFAULT_LANGUAGE;
     }
     window.addEventListener("resize", () => {
@@ -1798,8 +1804,8 @@ function runCompanyDomReadyInit() {
     // (removed status overlay)
     updateCompanyDebugBadge([
         `company.js build: ${COMPANY_JS_BUILD_TAG}`,
-        `multiLanguage enabled: ${IS_MULTI_LANGUAGE_ENABLED}`,
-        `restart enabled: ${IS_RESTART_CHAT_ENABLED}`,
+        `multiLanguage enabled: ${isMultiLanguageEnabled()}`,
+        `restart enabled: ${isRestartChatEnabled()}`,
         `activeLanguage: ${activeLanguage}`,
         `debug: add ?${COMPANY_DEBUG_QUERY_FLAG}=1`
     ]);
@@ -1885,7 +1891,7 @@ function initializeHardActionBar() {
         return;
     }
 
-    if (IS_MULTI_LANGUAGE_ENABLED) {
+    if (isMultiLanguageEnabled()) {
         const langWrap = document.createElement("div");
         langWrap.id = "dfchat-hard-language-wrap";
         langWrap.style.position = "relative";
@@ -1935,7 +1941,7 @@ function initializeHardActionBar() {
         }, false);
     }
 
-    if (IS_RESTART_CHAT_ENABLED) {
+    if (isRestartChatEnabled()) {
         const restartButton = document.createElement("button");
         restartButton.id = "dfchat-hard-restart-btn";
         restartButton.type = "button";
@@ -2120,8 +2126,8 @@ function createAndMountMessenger() {
     updateCompanyDebugBadge([
         `company.js build: ${COMPANY_JS_BUILD_TAG}`,
         `df-messenger mounted: true`,
-        `multiLanguage enabled: ${IS_MULTI_LANGUAGE_ENABLED}`,
-        `restart enabled: ${IS_RESTART_CHAT_ENABLED}`,
+        `multiLanguage enabled: ${isMultiLanguageEnabled()}`,
+        `restart enabled: ${isRestartChatEnabled()}`,
         `activeLanguage: ${activeLanguage}`
     ]);
 
@@ -2140,12 +2146,12 @@ function initializeFooterOverlayControls(dfMessenger, commonConfig) {
         ? features.restartChat
         : null;
 
-    if (!IS_MULTI_LANGUAGE_ENABLED && !IS_RESTART_CHAT_ENABLED) {
+    if (!isMultiLanguageEnabled() && !isRestartChatEnabled()) {
         return;
     }
 
     const ensure = () => {
-        mountFooterOverlayControls(restartConfig, IS_RESTART_CHAT_ENABLED);
+        mountFooterOverlayControls(restartConfig, isRestartChatEnabled());
         updateFooterOverlayVisibility(dfMessenger);
         updateFooterOverlayPosition(dfMessenger);
     };
@@ -2184,11 +2190,11 @@ function ensureGlobalFooterOverlayControls() {
         ? features.restartChat
         : null;
 
-    if (!IS_MULTI_LANGUAGE_ENABLED && !IS_RESTART_CHAT_ENABLED) {
+    if (!isMultiLanguageEnabled() && !isRestartChatEnabled()) {
         return;
     }
 
-    mountFooterOverlayControls(restartConfig, IS_RESTART_CHAT_ENABLED);
+    mountFooterOverlayControls(restartConfig, isRestartChatEnabled());
     updateFooterOverlayVisibility(activeDfMessenger);
     updateFooterOverlayPosition(activeDfMessenger);
 }
@@ -2254,7 +2260,7 @@ function mountFooterOverlayControls(restartConfig, restartEnabled) {
         return button;
     };
 
-    if (IS_MULTI_LANGUAGE_ENABLED) {
+    if (isMultiLanguageEnabled()) {
         const languageButton = makeIconButton(getTranslation("languageLabel"), getTranslation("languageLabel"));
         languageButton.textContent = "L";
         languageButton.innerHTML =
@@ -2351,7 +2357,7 @@ function mountFooterOverlayControls(restartConfig, restartEnabled) {
     updateCompanyDebugBadge([
         `company.js build: ${COMPANY_JS_BUILD_TAG}`,
         `overlay mounted: true`,
-        `overlay languages: ${IS_MULTI_LANGUAGE_ENABLED}`,
+        `overlay languages: ${isMultiLanguageEnabled()}`,
         `overlay restart: ${restartEnabled}`
     ]);
 }
@@ -2446,7 +2452,7 @@ function ensureChatActionBar() {
         legacyOverlay.style.display = "none";
     }
 
-    if (!IS_MULTI_LANGUAGE_ENABLED && !IS_RESTART_CHAT_ENABLED) {
+    if (!isMultiLanguageEnabled() && !isRestartChatEnabled()) {
         const strip = getChatActionBar();
         if (strip) {
             strip.remove();
@@ -2456,6 +2462,22 @@ function ensureChatActionBar() {
     }
 
     let bar = getChatActionBar();
+    if (bar) {
+        const wantLang = isMultiLanguageEnabled();
+        const wantRestart = isRestartChatEnabled();
+        const hasLang = !!bar.querySelector("[data-dfchat-lang-pill]");
+        const hasRestart = !!bar.querySelector("[data-dfchat-restart-pill], button[data-i18n-aria-label=\"restartButtonLabel\"]");
+        if (wantLang !== hasLang || wantRestart !== hasRestart) {
+            try {
+                bar.remove();
+            } catch {
+                /* no-op */
+            }
+            resetChatActionBarPositionCaches();
+            bar = null;
+        }
+    }
+
     if (bar) {
         try {
             bar.setAttribute("data-dfchat-no-translate", "true");
@@ -2484,7 +2506,7 @@ function ensureChatActionBar() {
 
     ensureChatActionBarEncapsulatedSkin(bar);
 
-    if (IS_MULTI_LANGUAGE_ENABLED) {
+    if (isMultiLanguageEnabled()) {
         const langWrapper = document.createElement("div");
         langWrapper.className = "dfchat-chat-action-menu-wrapper";
         langWrapper.style.position = "relative";
@@ -2585,10 +2607,11 @@ function ensureChatActionBar() {
         }, false);
     }
 
-    if (IS_RESTART_CHAT_ENABLED) {
+    if (isRestartChatEnabled()) {
         const restartButton = document.createElement("button");
         restartButton.type = "button";
         restartButton.className = "dfchat-chat-action-icon dfchat-chat-action-pill";
+        restartButton.setAttribute("data-dfchat-restart-pill", "true");
         restartButton.setAttribute("data-i18n-aria-label", "restartButtonLabel");
         restartButton.setAttribute("aria-label", getTranslation("restartButtonLabel"));
         restartButton.title = getTranslation("restartButtonLabel");
@@ -3028,7 +3051,7 @@ function clampChatActionBarInViewport(bar) {
 }
 
 function ensurePoweredByStrip() {
-    if (!IS_POWERED_BY_ENABLED) {
+    if (!isPoweredByFeatureEnabled()) {
         return;
     }
     if (poweredByStripNode && document.getElementById(POWERED_BY_STRIP_ID)) {
@@ -3197,7 +3220,7 @@ function getPoweredByComposerAnchorRect(dfMessenger) {
 }
 
 function syncPoweredByStripPosition() {
-    if (!IS_POWERED_BY_ENABLED) {
+    if (!isPoweredByFeatureEnabled()) {
         if (poweredByStripNode) {
             poweredByStripNode.style.display = "none";
         }
@@ -3959,7 +3982,7 @@ function getChatLanguageFlowAliasMap() {
  * @returns {string} Resolved language code, or ""
  */
 function tryResolveSupportedLanguageFromUserFlowPhrase(text) {
-    if (!IS_MULTI_LANGUAGE_ENABLED) {
+    if (!isMultiLanguageEnabled()) {
         return "";
     }
     const prepared = normalizeWholeMessageIntentPhrase(stripTrailingCourtesyWholeMessage(text));
@@ -4035,7 +4058,7 @@ function scheduleClearMessengerComposerAfterFlowCommand(dfMessenger) {
  * @returns {boolean} true if the utterance was consumed.
  */
 function consumeLanguageSwitchFromUserFlowPhrase(userText, optionalEventForPreventDefault, dfMessengerForComposer) {
-    if (!IS_MULTI_LANGUAGE_ENABLED) {
+    if (!isMultiLanguageEnabled()) {
         return false;
     }
     const target = tryResolveSupportedLanguageFromUserFlowPhrase(userText);
@@ -4072,7 +4095,7 @@ function isUserTypingRestartChatCommand(text) {
 }
 
 function scheduleRestartChatSessionFromUserPhrase() {
-    if (!IS_RESTART_CHAT_ENABLED) {
+    if (!isRestartChatEnabled()) {
         return;
     }
     if (restartFromUserPhraseTimerId !== null) {
@@ -4089,7 +4112,7 @@ function sendUserTextViaDfMessenger(dfMessenger, text, shouldRenderCustomTextNow
     if (!t || !dfMessenger) {
         return;
     }
-    if (IS_RESTART_CHAT_ENABLED && isUserTypingRestartChatCommand(t)) {
+    if (isRestartChatEnabled() && isUserTypingRestartChatCommand(t)) {
         scheduleRestartChatSessionFromUserPhrase();
         return;
     }
@@ -10536,7 +10559,7 @@ function attachPersonaHandlers(dfMessenger) {
 
     window.addEventListener("df-user-input-entered", (event) => {
         const typed = extractDfUserInputEnteredText(event);
-        if (IS_RESTART_CHAT_ENABLED && isUserTypingRestartChatCommand(typed)) {
+        if (isRestartChatEnabled() && isUserTypingRestartChatCommand(typed)) {
             try {
                 if (typeof event.preventDefault === "function") {
                     event.preventDefault();
@@ -10563,7 +10586,7 @@ function attachPersonaHandlers(dfMessenger) {
             : "";
 
         if (typeof queryText === "string"
-            && IS_RESTART_CHAT_ENABLED
+            && isRestartChatEnabled()
             && isUserTypingRestartChatCommand(queryText)) {
             scheduleRestartChatSessionFromUserPhrase();
             return;
@@ -11484,7 +11507,7 @@ function initializeChatLanguageDropdown(dfMessenger) {
 }
 
 function mountChatLanguageDropdown(dfMessenger) {
-    if (!IS_MULTI_LANGUAGE_ENABLED) {
+    if (!isMultiLanguageEnabled()) {
         return;
     }
     updateCompanyDebugBadge([
@@ -12123,7 +12146,7 @@ function getTranslation(key) {
 }
 
 function scheduleDomTranslationRefresh() {
-    if (!IS_MULTI_LANGUAGE_ENABLED) {
+    if (!isMultiLanguageEnabled()) {
         return;
     }
 
@@ -12138,7 +12161,7 @@ function scheduleDomTranslationRefresh() {
 }
 
 async function applyDomTranslation(languageCode) {
-    if (!IS_MULTI_LANGUAGE_ENABLED) {
+    if (!isMultiLanguageEnabled()) {
         return;
     }
 
@@ -12565,7 +12588,7 @@ function extractGoogleTranslatedText(payload) {
 }
 
 function getInitialLanguage() {
-    if (!IS_MULTI_LANGUAGE_ENABLED) {
+    if (!isMultiLanguageEnabled()) {
         return DEFAULT_LANGUAGE;
     }
 
@@ -13918,3 +13941,289 @@ function escapeXml(value) {
         .replace(/"/g, "&quot;")
         .replace(/'/g, "&apos;");
 }
+
+// --- Company admin preview: merge flat settings into live config (no iframe reload) ---
+function dfchatIsPlainObject(v) {
+    return Boolean(v && typeof v === "object" && !Array.isArray(v));
+}
+
+function dfchatDeepMerge(dst, src) {
+    if (!dfchatIsPlainObject(dst) || !dfchatIsPlainObject(src)) {
+        return dst;
+    }
+    for (const k of Object.keys(src)) {
+        const sv = src[k];
+        if (dfchatIsPlainObject(sv)) {
+            if (!dfchatIsPlainObject(dst[k])) {
+                dst[k] = {};
+            }
+            dfchatDeepMerge(dst[k], sv);
+        } else {
+            dst[k] = sv;
+        }
+    }
+    return dst;
+}
+
+/** Maps the admin UI flat object to the same nested shape as `settings-public.json` from the admin host. */
+function buildCompanyAdminFlatSettingsPatch(flat) {
+    const s = dfchatIsPlainObject(flat) ? flat : {};
+    const asAdminFeatureBoolOrNull = (key) => {
+        if (!Object.prototype.hasOwnProperty.call(s, key)) {
+            return null;
+        }
+        return isFeatureEnabled(s[key], false);
+    };
+    const asNum = (v) => {
+        const n = Number(v);
+        return Number.isFinite(n) ? n : null;
+    };
+    const asStr = (v) => (typeof v === "string" ? v : "");
+
+    function parseHexRgb(hex) {
+        if (typeof hex !== "string") return null;
+        const m = String(hex).trim().match(/^#?([0-9a-fA-F]{6})$/);
+        if (!m) return null;
+        const int = parseInt(m[1], 16);
+        return { r: (int >> 16) & 255, g: (int >> 8) & 255, b: int & 255 };
+    }
+
+    function mixRgb(a, b, w) {
+        return {
+            r: Math.round(a.r * (1 - w) + b.r * w),
+            g: Math.round(a.g * (1 - w) + b.g * w),
+            b: Math.round(a.b * (1 - w) + b.b * w),
+        };
+    }
+
+    function toRgbCss(rgb) {
+        return `rgb(${rgb.r}, ${rgb.g}, ${rgb.b})`;
+    }
+
+    function tintHex(hex, w) {
+        const rgb = parseHexRgb(hex);
+        if (!rgb) return null;
+        return toRgbCss(mixRgb(rgb, { r: 255, g: 255, b: 255 }, w));
+    }
+
+    function shadeHex(hex, w) {
+        const rgb = parseHexRgb(hex);
+        if (!rgb) return null;
+        return toRgbCss(mixRgb(rgb, { r: 0, g: 0, b: 0 }, w));
+    }
+
+    const width = asNum(s.chatWidthPx);
+    const height = asNum(s.chatHeightPx);
+    const enableMultiLanguage = asAdminFeatureBoolOrNull("enableMultiLanguage");
+    const enableRestart = asAdminFeatureBoolOrNull("enableRestart");
+    const enablePoweredBy = asAdminFeatureBoolOrNull("enablePoweredBy");
+    const enableMic = asAdminFeatureBoolOrNull("enableMic");
+    const autoOpenDeskEnabled = asAdminFeatureBoolOrNull("autoOpenDeskEnabled");
+    const autoOpenMobEnabled = asAdminFeatureBoolOrNull("autoOpenMobEnabled");
+
+    const autoOpenDeskDelayMs = asNum(s.autoOpenDeskDelayMs);
+    const autoOpenMobDelayMs = asNum(s.autoOpenMobDelayMs);
+
+    const launcherStripDeskEnabled = asAdminFeatureBoolOrNull("launcherStripDeskEnabled");
+    const launcherStripMobEnabled = asAdminFeatureBoolOrNull("launcherStripMobEnabled");
+    const launcherStripDeskTypingDurationMs = asNum(s.launcherStripDeskTypingDurationMs);
+    const launcherStripDeskSwapTextDelayMs = asNum(s.launcherStripDeskSwapTextDelayMs);
+    const launcherStripMobTypingDurationMs = asNum(s.launcherStripMobTypingDurationMs);
+    const launcherStripMobSwapTextDelayMs = asNum(s.launcherStripMobSwapTextDelayMs);
+
+    const defaultLanguageRaw = typeof s.defaultLanguage === "string" ? s.defaultLanguage.trim() : "";
+    let enabledLanguages = null;
+    if (typeof s.enabledLanguagesJson === "string" && s.enabledLanguagesJson.trim()) {
+        try {
+            const parsed = JSON.parse(s.enabledLanguagesJson);
+            if (Array.isArray(parsed)) {
+                enabledLanguages = parsed;
+            }
+        } catch {
+            // ignore invalid JSON
+        }
+    }
+
+    const primaryHex = typeof s.chatbotPrimaryColor === "string" ? s.chatbotPrimaryColor.trim() : "";
+    const userMsgBgHex = typeof s.userMessageBg === "string" ? s.userMessageBg.trim() : "";
+    const botMsgBgHex = typeof s.botMessageBg === "string" ? s.botMessageBg.trim() : "";
+    const userMsgTextHex = typeof s.userMessageText === "string" ? s.userMessageText.trim() : "";
+    const botMsgTextHex = typeof s.botMessageText === "string" ? s.botMessageText.trim() : "";
+
+    const primaryLight = tintHex(primaryHex, 0.35);
+    const primaryDark = shadeHex(primaryHex, 0.35);
+    const titlebarGradient = (primaryLight && primaryDark)
+        ? `linear-gradient(180deg, rgba(255, 255, 255, 0.38) 0%, rgba(255, 255, 255, 0.1) 24%, transparent 46%), linear-gradient(168deg, ${primaryLight} 0%, ${primaryHex} 42%, ${primaryDark} 100%)`
+        : undefined;
+
+    const chatBubbleGradient = (primaryLight && primaryDark)
+        ? `linear-gradient(160deg, ${primaryLight} 0%, ${primaryHex} 48%, ${primaryDark} 100%)`
+        : undefined;
+
+    const chipsBgRgba = (() => {
+        const rgb = parseHexRgb(primaryHex);
+        if (!rgb) return undefined;
+        return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.92)`;
+    })();
+
+    const buttonBorder = (() => {
+        const rgb = parseHexRgb(primaryHex);
+        if (!rgb) return undefined;
+        return `1px solid rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.45)`;
+    })();
+
+    const userMsgBackgroundGradient = (() => {
+        const shade = shadeHex(userMsgBgHex, 0.25);
+        const tint = tintHex(userMsgBgHex, 0.45);
+        if (!shade || !tint) return undefined;
+        return `linear-gradient(145deg, ${shade} 0%, ${tint} 100%)`;
+    })();
+
+    const botMsgBackgroundGradient = (() => {
+        const shade = shadeHex(botMsgBgHex, 0.15);
+        const tint = tintHex(botMsgBgHex, 0.70);
+        if (!shade || !tint) return undefined;
+        return `linear-gradient(168deg, ${shade} 0%, ${tint} 100%)`;
+    })();
+
+    return {
+        common: {
+            header: {
+                ...(typeof s.headerTitle === "string" ? { title: asStr(s.headerTitle) } : null),
+                ...(typeof s.headerSubtitle === "string" ? { subtitle: asStr(s.headerSubtitle) } : null),
+                ...(typeof s.chatIconUrl === "string" ? { chatIconUrl: asStr(s.chatIconUrl).trim() } : null),
+                ...(typeof s.chatTitleIconUrl === "string" ? { chatTitleIconUrl: asStr(s.chatTitleIconUrl).trim() } : null),
+            },
+            dfMessengerTheme: {
+                ...(typeof s.chatbotPrimaryColor === "string" ? { "--df-messenger-primary-color": primaryHex } : null),
+                ...(userMsgBackgroundGradient ? { "--df-messenger-message-user-background": userMsgBackgroundGradient } : (typeof s.userMessageBg === "string" ? { "--df-messenger-message-user-background": userMsgBgHex } : null)),
+                ...(typeof s.userMessageText === "string" ? { "--df-messenger-message-user-font-color": userMsgTextHex } : null),
+                ...(botMsgBackgroundGradient ? { "--df-messenger-message-bot-background": botMsgBackgroundGradient } : (typeof s.botMessageBg === "string" ? { "--df-messenger-message-bot-background": botMsgBgHex } : null)),
+                ...(typeof s.botMessageText === "string" ? { "--df-messenger-message-bot-font-color": botMsgTextHex } : null),
+
+                // Apply primary color to other visible theme parts too.
+                ...(titlebarGradient ? { "--df-messenger-titlebar-background": titlebarGradient } : null),
+                ...(chatBubbleGradient ? { "--df-messenger-chat-bubble-background": chatBubbleGradient } : null),
+                ...(chipsBgRgba ? { "--df-messenger-chips-background": chipsBgRgba } : null),
+                ...(buttonBorder ? { "--df-messenger-button-border": buttonBorder } : null),
+            },
+            features: {
+                ...(enableMultiLanguage == null ? null : {
+                    multiLanguage: {
+                        enabled: enableMultiLanguage,
+                        ...(defaultLanguageRaw ? { defaultLanguage: defaultLanguageRaw } : null),
+                        ...(enabledLanguages ? { enabledLanguages } : null)
+                    }
+                }),
+                ...(enableRestart == null ? null : { restartChat: { enabled: enableRestart } }),
+            },
+            ...(enablePoweredBy == null ? null : { poweredBy: { enabled: enablePoweredBy } }),
+        },
+        desk: {
+            chatWindow: {
+                ...(width == null ? null : { widthPx: width }),
+                ...(height == null ? null : { heightPx: height }),
+            },
+            ...(enableMic == null ? null : { speechToText: { enabled: enableMic } }),
+            ...((autoOpenDeskEnabled == null && autoOpenDeskDelayMs == null) ? null : {
+                autoOpenChat: {
+                    ...(autoOpenDeskEnabled == null ? null : { enabled: autoOpenDeskEnabled }),
+                    ...(autoOpenDeskDelayMs == null ? null : { delayMs: autoOpenDeskDelayMs })
+                }
+            }),
+            ...((launcherStripDeskEnabled == null
+                && typeof s.launcherStripDeskText !== "string"
+                && launcherStripDeskTypingDurationMs == null
+                && launcherStripDeskSwapTextDelayMs == null
+                && typeof s.launcherStripDeskSwapText !== "string") ? null : {
+                launcherStrip: {
+                    ...(launcherStripDeskEnabled == null ? null : { enabled: launcherStripDeskEnabled }),
+                    ...(typeof s.launcherStripDeskText === "string" ? { text: asStr(s.launcherStripDeskText) } : null),
+                    ...(launcherStripDeskTypingDurationMs == null ? null : { typingDurationMs: launcherStripDeskTypingDurationMs }),
+                    ...(launcherStripDeskSwapTextDelayMs == null ? null : { swapTextDelayMs: launcherStripDeskSwapTextDelayMs }),
+                    ...(typeof s.launcherStripDeskSwapText === "string" ? { swapText: asStr(s.launcherStripDeskSwapText) } : null),
+                }
+            }),
+        },
+        mob: {
+            chatWindow: {
+                ...(width == null ? null : { widthPx: width }),
+                ...(height == null ? null : { heightPx: height }),
+            },
+            ...(enableMic == null ? null : { speechToText: { enabled: enableMic } }),
+            ...((autoOpenMobEnabled == null && autoOpenMobDelayMs == null) ? null : {
+                autoOpenChat: {
+                    ...(autoOpenMobEnabled == null ? null : { enabled: autoOpenMobEnabled }),
+                    ...(autoOpenMobDelayMs == null ? null : { delayMs: autoOpenMobDelayMs })
+                }
+            }),
+            ...((launcherStripMobEnabled == null
+                && typeof s.launcherStripMobText !== "string"
+                && launcherStripMobTypingDurationMs == null
+                && launcherStripMobSwapTextDelayMs == null
+                && typeof s.launcherStripMobSwapText !== "string") ? null : {
+                launcherStrip: {
+                    ...(launcherStripMobEnabled == null ? null : { enabled: launcherStripMobEnabled }),
+                    ...(typeof s.launcherStripMobText === "string" ? { text: asStr(s.launcherStripMobText) } : null),
+                    ...(launcherStripMobTypingDurationMs == null ? null : { typingDurationMs: launcherStripMobTypingDurationMs }),
+                    ...(launcherStripMobSwapTextDelayMs == null ? null : { swapTextDelayMs: launcherStripMobSwapTextDelayMs }),
+                    ...(typeof s.launcherStripMobSwapText === "string" ? { swapText: asStr(s.launcherStripMobSwapText) } : null),
+                }
+            }),
+        },
+    };
+}
+
+function dfchatApplyCompanyAdminFlatSettingsNow() {
+    const df = activeDfMessenger || document.querySelector("df-messenger");
+    if (!df) {
+        return false;
+    }
+    applyDfMessengerThemeConfig(df, readCompanyUiConfig());
+    const bubble = df.querySelector("df-messenger-chat-bubble");
+    const h = COMMON_CONFIG.header || {};
+    if (bubble) {
+        if (typeof h.title === "string") {
+            bubble.setAttribute("chat-title", h.title || "Chat Support");
+        }
+        if (typeof h.subtitle === "string") {
+            bubble.setAttribute("chat-subtitle", h.subtitle);
+        }
+    }
+    ensureChatActionBar();
+    scheduleSyncChatActionBarPosition();
+    ensurePoweredByStrip();
+    syncPoweredByStripPosition();
+    scheduleComposerSpeechMicAttach(df);
+    return true;
+}
+
+/**
+ * Called from `chat-frame.html` via `postMessage` so the admin preview updates **without** reloading the iframe.
+ * @param {Record<string, unknown>} flat
+ */
+window.__dfchatApplyCompanyAdminFlatSettings = function __dfchatApplyCompanyAdminFlatSettings(flat) {
+    const patch = buildCompanyAdminFlatSettingsPatch(flat);
+    dfchatDeepMerge(window.COMPANY_CHAT_UI_CONFIG, patch);
+    // Advanced: merge full nested patch JSON if present.
+    try {
+        if (flat && typeof flat.advancedPatchJson === "string" && flat.advancedPatchJson.trim()) {
+            const adv = JSON.parse(flat.advancedPatchJson);
+            if (dfchatIsPlainObject(adv)) {
+                dfchatDeepMerge(window.COMPANY_CHAT_UI_CONFIG, adv);
+            }
+        }
+    } catch {
+        /* ignore invalid JSON */
+    }
+    if (dfchatApplyCompanyAdminFlatSettingsNow()) {
+        return;
+    }
+    let n = 0;
+    const tick = window.setInterval(() => {
+        n += 1;
+        if (dfchatApplyCompanyAdminFlatSettingsNow() || n > 40) {
+            window.clearInterval(tick);
+        }
+    }, 120);
+};

@@ -6,7 +6,7 @@
   <!-- Default API for contact form POST /contact-form-submissions; `apiBase` on company-loader overrides. -->
   <meta name="dfchat-api-base-url" content="https://handsome-amazement-production-7f65.up.railway.app" />
   <title>Chat</title>
-  <link rel="stylesheet" href="company.css?v=71" />
+  <link rel="stylesheet" href="company.css?v=76" />
   <script src="https://www.gstatic.com/dialogflow-console/fast/df-messenger/prod/v1/df-messenger.js"></script>
   <script>
     (function () {
@@ -19,8 +19,134 @@
       if (hostPage) window.COMPANY_EMBED_PARENT_URL = hostPage;
     })();
   </script>
-  <script src="company.config.js?v=71"></script>
-  <script src="company.js?v=71"></script>
+  <script src="company.config.js?v=76"></script>
+  <script src="company.js?v=76"></script>
+  <script>
+    (function () {
+      function parseHexRgb(hex) {
+        if (typeof hex !== "string") return null;
+        var m = String(hex).trim().match(/^#?([0-9a-fA-F]{6})$/);
+        if (!m) return null;
+        var int = parseInt(m[1], 16);
+        return { r: (int >> 16) & 255, g: (int >> 8) & 255, b: int & 255 };
+      }
+
+      function mixRgb(a, b, w) {
+        return {
+          r: Math.round(a.r * (1 - w) + b.r * w),
+          g: Math.round(a.g * (1 - w) + b.g * w),
+          b: Math.round(a.b * (1 - w) + b.b * w),
+        };
+      }
+
+      function toRgbCss(rgb) {
+        return "rgb(" + rgb.r + ", " + rgb.g + ", " + rgb.b + ")";
+      }
+
+      function tintHex(hex, w) {
+        var rgb = parseHexRgb(hex);
+        if (!rgb) return null;
+        return toRgbCss(mixRgb(rgb, { r: 255, g: 255, b: 255 }, w));
+      }
+
+      function shadeHex(hex, w) {
+        var rgb = parseHexRgb(hex);
+        if (!rgb) return null;
+        return toRgbCss(mixRgb(rgb, { r: 0, g: 0, b: 0 }, w));
+      }
+
+      function applyThemeVarsLive(settings) {
+        try {
+          var df = document.querySelector("df-messenger");
+          if (!df || !df.style || typeof df.style.setProperty !== "function") return;
+
+          var primary = settings && typeof settings.chatbotPrimaryColor === "string" ? settings.chatbotPrimaryColor.trim() : "";
+          var userBg = settings && typeof settings.userMessageBg === "string" ? settings.userMessageBg.trim() : "";
+          var botBg = settings && typeof settings.botMessageBg === "string" ? settings.botMessageBg.trim() : "";
+          var userText = settings && typeof settings.userMessageText === "string" ? settings.userMessageText.trim() : "";
+          var botText = settings && typeof settings.botMessageText === "string" ? settings.botMessageText.trim() : "";
+
+          var primaryLight = tintHex(primary, 0.35);
+          var primaryDark = shadeHex(primary, 0.35);
+
+          // Primary + title bar + bubble gradients.
+          if (primary) df.style.setProperty("--df-messenger-primary-color", primary);
+          if (primaryLight && primaryDark) {
+            df.style.setProperty(
+              "--df-messenger-titlebar-background",
+              "linear-gradient(180deg, rgba(255, 255, 255, 0.38) 0%, rgba(255, 255, 255, 0.1) 24%, transparent 46%), "
+                + "linear-gradient(168deg, " + primaryLight + " 0%, " + primary + " 42%, " + primaryDark + " 100%)"
+            );
+            df.style.setProperty(
+              "--df-messenger-chat-bubble-background",
+              "linear-gradient(160deg, " + primaryLight + " 0%, " + primary + " 48%, " + primaryDark + " 100%)"
+            );
+          }
+
+          // User/bot message backgrounds (gradients).
+          var userShade = shadeHex(userBg, 0.25);
+          var userTint = tintHex(userBg, 0.45);
+          if (userShade && userTint) {
+            df.style.setProperty(
+              "--df-messenger-message-user-background",
+              "linear-gradient(145deg, " + userShade + " 0%, " + userTint + " 100%)"
+            );
+          } else if (userBg) {
+            df.style.setProperty("--df-messenger-message-user-background", userBg);
+          }
+
+          var botShade = shadeHex(botBg, 0.15);
+          var botTint = tintHex(botBg, 0.70);
+          if (botShade && botTint) {
+            df.style.setProperty(
+              "--df-messenger-message-bot-background",
+              "linear-gradient(168deg, " + botShade + " 0%, " + botTint + " 100%)"
+            );
+          } else if (botBg) {
+            df.style.setProperty("--df-messenger-message-bot-background", botBg);
+          }
+
+          if (userText) df.style.setProperty("--df-messenger-message-user-font-color", userText);
+          if (botText) df.style.setProperty("--df-messenger-message-bot-font-color", botText);
+
+          // Chips + button border.
+          var rgb = parseHexRgb(primary);
+          if (rgb) {
+            df.style.setProperty("--df-messenger-chips-background", "rgba(" + rgb.r + ", " + rgb.g + ", " + rgb.b + ", 0.92)");
+            df.style.setProperty("--df-messenger-chips-font-color", botText || "");
+            if (botText) df.style.setProperty("--df-messenger-chips-font-color", botText);
+            df.style.setProperty("--df-messenger-button-border", "1px solid rgba(" + rgb.r + ", " + rgb.g + ", " + rgb.b + ", 0.45)");
+          }
+        } catch (e) {
+          /* ignore */
+        }
+      }
+
+      window.addEventListener("message", function (ev) {
+        try {
+          if (!ev || ev.origin !== window.location.origin) return;
+          var data = ev.data;
+          if (!data || data.type !== "company_admin_settings") return;
+          if (typeof window.__dfchatApplyCompanyAdminFlatSettings === "function") {
+            window.__dfchatApplyCompanyAdminFlatSettings(data.settings || {});
+          }
+          applyThemeVarsLive(data.settings || {});
+        } catch (e) {
+          /* ignore */
+        }
+      });
+
+      // Notify parent when chat opens/closes so admin can hide/show the left panel.
+      window.addEventListener("df-chat-open-changed", function (ev) {
+        try {
+          var open = !!(ev && ev.detail && ev.detail.isOpen);
+          window.parent && window.parent.postMessage({ type: "dfchat_open_changed", open: open }, window.location.origin);
+        } catch (e) {
+          /* ignore */
+        }
+      });
+    })();
+  </script>
   <style>
     html, body { height: 100%; margin: 0; background: transparent; overflow: visible; }
   </style>

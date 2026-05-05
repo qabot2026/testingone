@@ -780,3 +780,39 @@ window.COMPANY_CHAT_UI_CONFIG = {
 
   // (Colors moved to COMMON section above)
 };
+
+// ---------------------------------------------------------------------------
+// Runtime settings merge (optional)
+// If your host serves `/company-admin/settings-public.json` on the same origin,
+// this merges that JSON into `window.COMPANY_CHAT_UI_CONFIG`.
+// ---------------------------------------------------------------------------
+(function () {
+  function isObj(v) { return v && typeof v === "object" && !Array.isArray(v); }
+  function deepMerge(dst, src) {
+    if (!isObj(dst) || !isObj(src)) return dst;
+    for (const k of Object.keys(src)) {
+      const sv = src[k];
+      if (isObj(sv)) {
+        if (!isObj(dst[k])) dst[k] = {};
+        deepMerge(dst[k], sv);
+      } else {
+        dst[k] = sv;
+      }
+    }
+    return dst;
+  }
+
+  try {
+    const xhr = new XMLHttpRequest();
+    xhr.open("GET", "/company-admin/settings-public.json", false);
+    xhr.send(null);
+    if (xhr.status >= 200 && xhr.status < 300 && xhr.responseText) {
+      const patch = JSON.parse(xhr.responseText);
+      if (isObj(patch)) {
+        deepMerge(window.COMPANY_CHAT_UI_CONFIG, patch);
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+})();
