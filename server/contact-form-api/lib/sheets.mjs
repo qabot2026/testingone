@@ -7,6 +7,15 @@ import { getServiceAccountCredentials } from "./google-service-account.mjs";
 
 const SPREADSHEET_ID = (process.env.SHEETS_SPREADSHEET_ID || "").trim();
 const RANGE = (process.env.SHEETS_RANGE || "Sheet1!A:J").trim();
+const DEDUP_LOOKBACK_ROWS = Math.max(
+    10,
+    Number.parseInt(process.env.SHEETS_DEDUP_LOOKBACK_ROWS || "500", 10) || 500
+);
+const DEDUP_WINDOW_MS = Math.max(
+    10_000,
+    Number.parseInt(process.env.SHEETS_DEDUP_WINDOW_MS || String(10 * 60 * 1000), 10)
+        || (10 * 60 * 1000)
+);
 
 const SPREADSHEET_SCOPES = ["https://www.googleapis.com/auth/spreadsheets"];
 
@@ -25,6 +34,95 @@ function appendRangeFullWidth(raw) {
         return `${s}!A:Z`;
     }
     return `${s.slice(0, bang)}!A:Z`;
+}
+
+function tabNameFromRange(raw) {
+    const s = (raw || "").trim();
+    if (!s) {
+        return "Sheet1";
+    }
+    const bang = s.indexOf("!");
+    if (bang === -1) {
+        return s;
+    }
+    return s.slice(0, bang) || "Sheet1";
+}
+
+/** @param {string} s */
+function mobileDigitsOnly(s) {
+    return String(s || "").replace(/\D/g, "");
+}
+
+/**
+ * Dedupe strategy:
+ * - Primary key: (mobile_digits + clientSessionId) when session id exists
+ * - Fallback: if session id missing, only dedupe same mobile if another row was appended very recently
+ *
+ * @param {{ iso: string, mobile: string, clientSessionId: string }} row
+ */
+function buildDedupeKey(row) {
+    const md = mobileDigitsOnly(row.mobile);
+    const sid = typeof row.clientSessionId === "string" ? row.clientSessionId.trim() : "";
+    if (!md) {
+        return "";
+    }
+    if (sid) {
+        return `m:${md}|sid:${sid}`;
+    }
+    return `m:${md}|sid:`;
+}
+
+/**
+ * @param {import("googleapis").sheets_v4.Sheets} sheets
+ * @param {{ iso: string, mobile: string, clientSessionId: string }} row
+ */
+async function alreadyInSheetRecent_(sheets, row) {
+    const key = buildDedupeKey(row);
+    if (!key) {
+        return false;
+    }
+    const tab = tabNameFromRange(RANGE);
+    const res = await sheets.spreadsheets.values.get({
+        spreadsheetId: SPREADSHEET_ID,
+        range: `${tab}!A:J`
+    });
+    const rows = Array.isArray(res.data.values) ? res.data.values : [];
+    if (!rows.length) {
+        return false;
+    }
+    const tail = rows.slice(Math.max(0, rows.length - DEDUP_LOOKBACK_ROWS));
+    const incomingIsoMs = Date.parse(row.iso);
+    const incomingMobileDigits = mobileDigitsOnly(row.mobile);
+    const incomingSid = typeof row.clientSessionId === "string" ? row.clientSessionId.trim() : "";
+
+    for (let i = tail.length - 1; i >= 0; i--) {
+        const r = tail[i] || [];
+        const existingIso = typeof r[0] === "string" ? r[0].trim() : "";
+        const existingMobile = typeof r[3] === "string" ? r[3].trim() : "";
+        const existingSid = typeof r[5] === "string" ? r[5].trim() : "";
+
+        const existingMobileDigits = mobileDigitsOnly(existingMobile);
+        if (!existingMobileDigits || existingMobileDigits !== incomingMobileDigits) {
+            continue;
+        }
+
+        // Strict match when session id is present in either record.
+        if (incomingSid && existingSid && incomingSid === existingSid) {
+            return true;
+        }
+
+        // Fallback: if session id missing, only suppress duplicates within a short time window.
+        if (!incomingSid || !existingSid) {
+            const existingMs = Date.parse(existingIso);
+            if (Number.isFinite(incomingIsoMs) && Number.isFinite(existingMs)) {
+                if (Math.abs(incomingIsoMs - existingMs) <= DEDUP_WINDOW_MS) {
+                    return true;
+                }
+            }
+        }
+    }
+
+    return false;
 }
 
 async function getSheetsAuthClient() {
@@ -56,6 +154,12 @@ export async function appendContactRowToSheet(row) {
     }
     const client = await getSheetsAuthClient();
     const sheets = google.sheets({ version: "v4", auth: client });
+
+    // Prevent double-write when chat mobile sync and form submission both hit Sheets.
+    if (await alreadyInSheetRecent_(sheets, row)) {
+        return;
+    }
+
     const ch = typeof row.channel === "string" && row.channel.trim()
         ? row.channel.trim()
         : "web";
