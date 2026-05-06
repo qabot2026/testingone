@@ -85,7 +85,9 @@ async function alreadyInSheetRecent_(sheets, row) {
     const tab = tabNameFromRange(RANGE);
     const res = await sheets.spreadsheets.values.get({
         spreadsheetId: SPREADSHEET_ID,
-        range: `${tab}!A:J`
+        // Use a wide range so dedupe works even if your sheet has more columns than expected
+        // or the session id column was moved.
+        range: `${tab}!A:Z`
     });
     const rows = Array.isArray(res.data.values) ? res.data.values : [];
     if (!rows.length) {
@@ -105,6 +107,15 @@ async function alreadyInSheetRecent_(sheets, row) {
         // If we have a session id, enforce "only once per session".
         if (incomingSid && existingSid && incomingSid === existingSid) {
             return true;
+        }
+        // Some sheets have different column ordering; scan the whole row for the session id string.
+        if (incomingSid && Array.isArray(r)) {
+            for (let c = 0; c < r.length; c++) {
+                const cell = typeof r[c] === "string" ? r[c].trim() : "";
+                if (cell && cell === incomingSid) {
+                    return true;
+                }
+            }
         }
 
         const existingMobileDigits = mobileDigitsOnly(existingMobile);
