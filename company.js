@@ -12966,6 +12966,9 @@ function dfParameterScalarToString(val) {
         if (typeof o.original === "string") {
             return o.original.trim();
         }
+        if (typeof o.resolved === "string") {
+            return o.resolved.trim();
+        }
         try {
             var c = convertDialogflowValue(val);
             if (typeof c === "string" && c.trim()) {
@@ -13010,6 +13013,73 @@ function stringMapFromDfParametersObject(parameters) {
     return Object.keys(out).length ? out : null;
 }
 
+/**
+ * CX diagnostic `Execution Sequence[].Step *.InitialState.SessionParameters` (mirrors $session.params).
+ * @param {unknown} diagnosticInfo
+ * @returns {Record<string, string> | null}
+ */
+function sessionParametersFromCxDiagnosticInfo(diagnosticInfo) {
+    if (!diagnosticInfo || typeof diagnosticInfo !== "object") {
+        return null;
+    }
+    /** @type {Record<string, string>} */
+    var merged = {};
+    var diag = /** @type {Record<string, unknown>} */ (diagnosticInfo);
+
+    var seq = diag["Execution Sequence"];
+    if (Array.isArray(seq)) {
+        for (var i = 0; i < seq.length; i += 1) {
+            var entry = seq[i];
+            if (!entry || typeof entry !== "object") {
+                continue;
+            }
+            var stepIds = Object.keys(entry);
+            for (var j = 0; j < stepIds.length; j += 1) {
+                var step = /** @type {Record<string, unknown>} */ (entry)[stepIds[j]];
+                if (!step || typeof step !== "object") {
+                    continue;
+                }
+                var initial = /** @type {Record<string, unknown>} */ (step).InitialState;
+                if (initial && typeof initial.SessionParameters === "object") {
+                    var layer = stringMapFromDfParametersObject(initial.SessionParameters);
+                    if (layer) {
+                        var lk = Object.keys(layer);
+                        for (var l = 0; l < lk.length; l += 1) {
+                            var key = lk[l];
+                            if (layer[key]) {
+                                merged[key] = layer[key];
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    var alt = diag["Alternative Matched Intents"];
+    if (Array.isArray(alt)) {
+        for (var a = 0; a < alt.length; a += 1) {
+            var intent = alt[a];
+            if (intent && typeof intent === "object" && /** @type {Record<string, unknown>} */ (intent).Parameters) {
+                var pm = stringMapFromDfParametersObject(
+                    /** @type {{ Parameters: unknown }} */ (intent).Parameters
+                );
+                if (pm) {
+                    var pmk = Object.keys(pm);
+                    for (var b = 0; b < pmk.length; b += 1) {
+                        var kk = pmk[b];
+                        if (pm[kk]) {
+                            merged[kk] = pm[kk];
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    return Object.keys(merged).length ? merged : null;
+}
+
 /** @param {Event | undefined | null} event */
 function getQueryResultObjectFromDfEvent(event) {
     var d = event && event.detail;
@@ -13021,24 +13091,142 @@ function getQueryResultObjectFromDfEvent(event) {
 }
 
 /**
- * When the bot fills Dialogflow/CX parameters (e.g. @sys.phone-number, custom `mobile`),
- * persist a phone-like value into session `client_context` so Sheets uploads see column D without `open_form`.
- * @param {Event | undefined | null} event
+ * CX `$session.params.*` surfaces in DetectIntent payloads under `parameters` inside `queryResult`
+ * but some builds also send `sessionInfo.parameters`, root `parameters`, etc. Merge all into one map.
+ * @param {unknown} branch `event.detail.raw` | `event.detail.data`
+ * @returns {Record<string, string> | null}
  */
-function mergePhoneFromDialogflowParametersIntoStoredContext(event) {
-    var qr = getQueryResultObjectFromDfEvent(event);
+function mergedParameterStringMapFromResponseBranch(branch) {
+    if (!branch || typeof branch !== "object") {
+        return null;
+    }
+    /** @type {Record<string, unknown>} */
+    var r = branch;
+    var slices = [];
+
+    slices.push(stringMapFromDfParametersObject(r.parameters));
+    slices.push(stringMapFromDfParametersObject(r.sessionParameters));
+
+    var sInfo =
+        r.sessionInfo && typeof r.sessionInfo === "object"
+            ? /** @type {{ parameters?: unknown }} */ (r.sessionInfo).parameters
+            : undefined;
+    slices.push(stringMapFromDfParametersObject(sInfo));
+
+    var qr =
+        r.queryResult && typeof r.queryResult === "object"
+            ? /** @type {Record<string, unknown>} */ (r.queryResult)
+            : null;
+    if (qr) {
+        slices.push(stringMapFromDfParametersObject(qr.parameters));
+        var qs =
+            qr.sessionInfo && typeof qr.sessionInfo === "object"
+                ? /** @type {{ parameters?: unknown }} */ (qr.sessionInfo).parameters
+                : undefined;
+        slices.push(stringMapFromDfParametersObject(qs));
+        var mt =
+            qr.match && typeof qr.match === "object"
+                ? /** @type {{ parameters?: unknown }} */ (qr.match).parameters
+                : undefined;
+        slices.push(stringMapFromDfParametersObject(mt));
+        slices.push(sessionParametersFromCxDiagnosticInfo(qr.diagnosticInfo));
+    }
+
+    /** @type {Record<string, string>} */
+    var merged = {};
+    for (var i = 0; i < slices.length; i += 1) {
+        if (!slices[i]) {
+            continue;
+        }
+        var keys = Object.keys(slices[i]);
+        for (var j = 0; j < keys.length; j += 1) {
+            var k = keys[j];
+            var v = slices[i][k];
+            if (v) {
+                merged[k] = v;
+            }
+        }
+    }
+    return Object.keys(merged).length ? merged : null;
+}
+
+/** @param {string} raw */
+function digitRunFromDigitsOnlyUtterance(raw) {
+    var t = String(raw || "").trim();
+    if (!t || t.length > 48) {
+        return "";
+    }
+    var digits = t.replace(/\D/g, "");
+    if (digits.length < 9 || digits.length > 15) {
+        return "";
+    }
+    if (!/^[\d\s+().\-]+$/i.test(t.replace(/\u00a0/g, " "))) {
+        return "";
+    }
+    return digits;
+}
+
+/** When the user sends only a phone number, CX fills `mobile` asynchronously; utterance appears on `queryResult.text` / `match.resolvedInput`. */
+function mergeVisitorMobileFromQueryResultUtterance(qr) {
     if (!qr || typeof qr !== "object") {
         return;
     }
     /** @type {Record<string, unknown>} */
-    var qro = qr;
-    var params = qro.parameters;
-    var slice = stringMapFromDfParametersObject(params);
-    if (slice) {
-        var fromAliases = mergePhoneFromOpenFormPrefillIntoStoredContext(slice);
-        if (!fromAliases) {
-            mergeDfParameterDigitsFallback(slice);
+    var q = qr;
+
+    var t1 = typeof q.text === "string" ? q.text : "";
+    var d = digitRunFromDigitsOnlyUtterance(t1);
+    if (d) {
+        mergeVisitorMobileIntoStoredContext(d);
+        return;
+    }
+
+    var match = q.match && typeof q.match === "object" ? /** @type {Record<string, unknown>} */ (q.match) : null;
+    var ri = match && typeof match.resolvedInput === "string" ? match.resolvedInput : "";
+    d = digitRunFromDigitsOnlyUtterance(ri);
+    if (d) {
+        mergeVisitorMobileIntoStoredContext(d);
+    }
+}
+
+/**
+ * When the bot fills Dialogflow/CX parameters (e.g. $session.params.mobile / @sys.phone-number),
+ * persist a phone-like value into session `client_context` so Sheets uploads see column D without `open_form`.
+ * @param {Event | undefined | null} event
+ */
+function mergePhoneFromDialogflowParametersIntoStoredContext(event) {
+    var d = event && event.detail;
+    /** @type {Record<string, string>} */
+    var mergedSlice = {};
+
+    ["raw", "data"].forEach(function (branch) {
+        /** @type {unknown} */
+        var obj = branch === "raw" ? d && d.raw : d && d.data;
+        var part = mergedParameterStringMapFromResponseBranch(obj);
+        if (!part) {
+            return;
         }
+        var pk = Object.keys(part);
+        for (var x = 0; x < pk.length; x += 1) {
+            var key = pk[x];
+            if (part[key]) {
+                mergedSlice[key] = part[key];
+            }
+        }
+    });
+
+    var sliceMerged = Object.keys(mergedSlice).length ? mergedSlice : null;
+
+    if (sliceMerged) {
+        var fromAliases = mergePhoneFromOpenFormPrefillIntoStoredContext(sliceMerged);
+        if (!fromAliases) {
+            mergeDfParameterDigitsFallback(sliceMerged);
+        }
+    }
+
+    var qr = getQueryResultObjectFromDfEvent(event);
+    if (qr) {
+        mergeVisitorMobileFromQueryResultUtterance(qr);
     }
 }
 
