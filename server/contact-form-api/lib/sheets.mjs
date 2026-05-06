@@ -208,7 +208,7 @@ async function updateExistingSessionRow_(sheets, tab, rowNumber, incoming) {
     const ip =
         incoming.ip && isBlankCell_(existing(11)) ? incoming.ip.trim() : "";
     const existingQueries = existing(13);
-    const mergedQueries = mergeCsvUnique_(existingQueries, incoming.userQueriesCsv || "", 40);
+    const mergedQueries = mergeCsvUnique_(existingQueries, incoming.userQueriesCsv || "", 200);
     const userQueriesCsv = mergedQueries && mergedQueries !== existingQueries ? mergedQueries : "";
 
     /** @type {Array<{ range: string, values: string[][] }>} */
@@ -325,4 +325,89 @@ export async function appendContactRowToSheet(row) {
         insertDataOption: "INSERT_ROWS",
         requestBody: { values }
     });
+}
+
+/**
+ * Find 1-based row number whose column F (or any cell) matches session id.
+ * @param {import("googleapis").sheets_v4.Sheets} sheets
+ * @param {string} tab
+ * @param {string} sessionId
+ */
+async function findSessionRowNumberBySessionId_(sheets, tab, sessionId) {
+    const sid = typeof sessionId === "string" ? sessionId.trim() : "";
+    if (!sid) {
+        return 0;
+    }
+    const res = await sheets.spreadsheets.values.get({
+        spreadsheetId: SPREADSHEET_ID,
+        range: `${tab}!A:Z`
+    });
+    const rows = Array.isArray(res.data.values) ? res.data.values : [];
+    if (!rows.length) {
+        return 0;
+    }
+    const tail = rows.slice(Math.max(0, rows.length - DEDUP_LOOKBACK_ROWS));
+    const tailOffset = rows.length - tail.length;
+    for (let i = tail.length - 1; i >= 0; i--) {
+        const r = tail[i] || [];
+        const existingSid = typeof r[5] === "string" ? r[5].trim() : "";
+        if (existingSid === sid) {
+            return tailOffset + i + 1;
+        }
+        if (Array.isArray(r)) {
+            for (let c = 0; c < r.length; c++) {
+                const cell = typeof r[c] === "string" ? r[c].trim() : "";
+                if (cell && cell === sid) {
+                    return tailOffset + i + 1;
+                }
+            }
+        }
+    }
+    return 0;
+}
+
+/**
+ * Merge latest user_queries into Column N for this session, or append a minimal row if none exists.
+ * Used for live chat query sync without requiring another form POST.
+ *
+ * @param {{ iso: string, formId: string, name: string, mobile: string, email: string, clientSessionId: string, browserName: string, deviceType: string, channel: string, fileLinks?: string, city?: string, ip?: string, userQueriesCsv?: string }} row
+ */
+export async function upsertSessionQueriesInSheet(row) {
+    if (!SPREADSHEET_ID) {
+        throw new Error("Missing SHEETS_SPREADSHEET_ID in env (or set DISABLE_SHEETS=1).");
+    }
+    const incomingQ = typeof row.userQueriesCsv === "string" ? row.userQueriesCsv.trim() : "";
+    if (!incomingQ) {
+        return;
+    }
+    const client = await getSheetsAuthClient();
+    const sheets = google.sheets({ version: "v4", auth: client });
+    const tab = tabNameFromRange(RANGE);
+    const sid = typeof row.clientSessionId === "string" ? row.clientSessionId.trim() : "";
+    if (!sid) {
+        throw new Error("Missing clientSessionId");
+    }
+
+    const rowNumber = await findSessionRowNumberBySessionId_(sheets, tab, sid);
+    if (rowNumber > 0) {
+        const got = await sheets.spreadsheets.values.get({
+            spreadsheetId: SPREADSHEET_ID,
+            range: `${tab}!A${rowNumber}:N${rowNumber}`
+        });
+        const r0 = Array.isArray(got.data.values) && got.data.values[0] ? got.data.values[0] : [];
+        const existingCsv = typeof r0[13] === "string" ? r0[13].trim() : "";
+        const merged = mergeCsvUnique_(existingCsv, incomingQ, 200);
+        if (merged !== existingCsv) {
+            await sheets.spreadsheets.values.batchUpdate({
+                spreadsheetId: SPREADSHEET_ID,
+                requestBody: {
+                    valueInputOption: "USER_ENTERED",
+                    data: [{ range: `${tab}!N${rowNumber}`, values: [[merged]] }]
+                }
+            });
+        }
+        return;
+    }
+
+    await appendContactRowToSheet(row);
 }

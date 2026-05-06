@@ -34,6 +34,8 @@ const OPEN_FORM_PAYLOAD_META_KEYS = new Set(["action", "form_id", "formId"]);
 const CONTACT_FORM_ENDPOINT = "/contact-form-submissions";
 /** POST JSON: append Sheets row when chat captured mobile (no file upload). Matches contact-form-api. */
 const CONTACT_FORM_MOBILE_SHEET_SYNC_ENDPOINT = "/contact-form-mobile-sheet-sync";
+/** Live-sync user_queries to Sheets (session column N); optional secret header matches Railway. */
+const CONTACT_FORM_SESSION_SHEET_SYNC_ENDPOINT = "/contact-form-session-sheet-sync";
 const API_BASE_URL_META_NAME = "dfchat-api-base-url";
 const MOBILE_CHAT_BREAKPOINT_PX = 768;
 /** Extra `nudgeRight` for Language / Restart + Powered by on small viewports only (see company.config.js mobile layout). */
@@ -10725,13 +10727,91 @@ function trackChatUserQueryInSessionContext_(raw) {
         }
 
         next.push(t);
-        // Cap to last 25 queries to avoid growing session storage forever.
-        const capped = next.slice(Math.max(0, next.length - 25));
+        // Cap to keep long sessions useful (matches server-side merge limit).
+        const capped = next.slice(Math.max(0, next.length - 120));
         persistClientContext({
             ...prev,
             user_queries: capped,
             user_queries_last_at: now
         });
+        scheduleSessionQueriesSheetSync_();
+    } catch {
+        /* ignore */
+    }
+}
+
+let sessionSheetSyncDebounceTimer = 0;
+
+function scheduleSessionQueriesSheetSync_() {
+    if (sessionSheetSyncDebounceTimer) {
+        window.clearTimeout(sessionSheetSyncDebounceTimer);
+    }
+    sessionSheetSyncDebounceTimer = window.setTimeout(() => {
+        sessionSheetSyncDebounceTimer = 0;
+        postSessionQueriesToSheetRow_();
+    }, 600);
+}
+
+function postSessionQueriesToSheetRow_() {
+    const endpoint = getApiEndpoint(CONTACT_FORM_SESSION_SHEET_SYNC_ENDPOINT);
+    if (!endpoint || typeof fetch !== "function") {
+        return;
+    }
+    /** @type {Record<string, string>} */
+    const headers = {
+        "Content-Type": "application/json"
+    };
+    try {
+        const metaNode =
+            typeof document !== "undefined"
+                ? document.querySelector('meta[name="dfchat-contact-form-mobile-sync-secret"]')
+                : null;
+        const mv = metaNode && metaNode instanceof HTMLMetaElement ? metaNode.getAttribute("content") : null;
+        const sec = typeof mv === "string" ? mv.trim() : "";
+        if (sec) {
+            headers["X-Contact-Form-Mobile-Sync-Secret"] = sec;
+        }
+    } catch {
+        /* ignore */
+    }
+    try {
+        const client_context = getClientContext();
+        fetch(endpoint, {
+            method: "POST",
+            headers,
+            credentials: "omit",
+            body: JSON.stringify({ client_context, _contactFormId: "chat" }),
+            keepalive: true
+        }).catch(() => {});
+    } catch {
+        /* ignore */
+    }
+}
+
+/**
+ * If mobile was already saved for this browser session, prefill the contact form so we do not ask again.
+ */
+function applyStoredMobileToOpenContactForm_() {
+    try {
+        const stored = readStoredClientContext();
+        const m =
+            stored && typeof stored.mobile === "string" && stored.mobile.trim()
+                ? stored.mobile.trim()
+                : "";
+        if (!m) {
+            return;
+        }
+        const cfg = readContactFormConfig();
+        const fields = Array.isArray(cfg.fields) ? cfg.fields : [];
+        for (const def of fields) {
+            if (!def || def.name !== "mobile" || !def.id) {
+                continue;
+            }
+            const el = document.getElementById(def.id);
+            if (el && "value" in el && !String(el.value || "").trim()) {
+                el.value = m;
+            }
+        }
     } catch {
         /* ignore */
     }
@@ -11057,6 +11137,9 @@ function openContactForm() {
         applyContactFormPrefill(pendingOpenFormPrefill);
         pendingOpenFormPrefill = null;
     }
+    window.setTimeout(() => {
+        applyStoredMobileToOpenContactForm_();
+    }, 0);
 }
 
 function closeForm() {

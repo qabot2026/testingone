@@ -31,7 +31,7 @@ import express from "express";
 import cors from "cors";
 import multer from "multer";
 import { firebaseAdminInit, persistToFirestore } from "./lib/firestore.mjs";
-import { appendContactRowToSheet } from "./lib/sheets.mjs";
+import { appendContactRowToSheet, upsertSessionQueriesInSheet } from "./lib/sheets.mjs";
 import { uploadSubmissionFilesToDrive } from "./lib/drive-upload.mjs";
 import { hasDriveUploadCredentials } from "./lib/drive-auth.mjs";
 import { forwardSubmissionToAppsScript } from "./lib/apps-script-upload.mjs";
@@ -42,6 +42,7 @@ const APPS_SCRIPT_WEBAPP_URL = (process.env.GOOGLE_APPS_SCRIPT_WEBAPP_URL || "")
 const PORT = Number(process.env.PORT) || 8080;
 const PATHNAME = "/contact-form-submissions";
 const PATHNAME_MOBILE_SHEET_SYNC = "/contact-form-mobile-sheet-sync";
+const PATHNAME_SESSION_SHEET_SYNC = "/contact-form-session-sheet-sync";
 /** “Just put files in Drive” — skips Firestore; Sheets are independent (see SHEETS_DISABLED). */
 const DRIVE_ONLY = process.env.DRIVE_ONLY === "1";
 const FIRESTORE_DISABLED = process.env.DISABLE_FIRESTORE === "1" || DRIVE_ONLY;
@@ -266,6 +267,7 @@ app.use(cors({
 
 app.options(PATHNAME, (_req, res) => res.sendStatus(204));
 app.options(PATHNAME_MOBILE_SHEET_SYNC, (_req, res) => res.sendStatus(204));
+app.options(PATHNAME_SESSION_SHEET_SYNC, (_req, res) => res.sendStatus(204));
 
 app.post(
     PATHNAME,
@@ -614,6 +616,119 @@ app.post(
     }
 );
 
+/** Live-sync accumulated user_queries (Column N) for the chat session — no mobile required. */
+app.post(
+    PATHNAME_SESSION_SHEET_SYNC,
+    express.json({ limit: "512kb" }),
+    async (req, res) => {
+        const syncSecret = (process.env.CONTACT_FORM_MOBILE_SHEET_SYNC_SECRET || "").trim();
+        if (syncSecret) {
+            const sent = typeof req.headers["x-contact-form-mobile-sync-secret"] === "string"
+                ? req.headers["x-contact-form-mobile-sync-secret"].trim()
+                : "";
+            if (sent !== syncSecret) {
+                return res.status(401).json({
+                    ok: false,
+                    error: "Unauthorized (set X-Contact-Form-Mobile-Sync-Secret or CONTACT_FORM_MOBILE_SHEET_SYNC_SECRET)."
+                });
+            }
+        }
+        if (SHEETS_DISABLED) {
+            return res.status(503).json({
+                ok: false,
+                error:
+                    "Google Sheets is not enabled. Set SHEETS_SPREADSHEET_ID or remove DISABLE_SHEETS=1."
+            });
+        }
+
+        let body = req.body && typeof req.body === "object" ? req.body : {};
+
+        if (typeof body.client_context === "string") {
+            try {
+                body = {
+                    ...body,
+                    client_context: JSON.parse(body.client_context)
+                };
+            } catch {
+                body = { ...body, client_context: {} };
+            }
+        }
+
+        const clientContext =
+            body.client_context && typeof body.client_context === "object" ? body.client_context : {};
+        const channel = normalizeLeadChannel(clientContext.channel);
+        const mergedClientContext = { ...clientContext, channel };
+
+        const clientSessionId = typeof clientContext.client_session_id === "string"
+            ? clientContext.client_session_id.trim()
+            : "";
+        if (!clientSessionId) {
+            return res.status(400).json({ ok: false, error: "Missing client_session_id in client_context." });
+        }
+
+        const userQueriesCsv = normalizeUserQueriesCsvFromClientContext(mergedClientContext);
+        if (!userQueriesCsv) {
+            return res.status(200).json({ ok: true, message: "Nothing to sync." });
+        }
+
+        const browserName = typeof clientContext.browser_name === "string"
+            ? clientContext.browser_name.trim()
+            : "";
+        const deviceType = typeof clientContext.device_type === "string"
+            ? clientContext.device_type.trim()
+            : "";
+        const formId =
+            typeof body._contactFormId === "string" && body._contactFormId.trim()
+                ? body._contactFormId.trim()
+                : "chat";
+
+        /** @type {Record<string, string>} */
+        const fields = {};
+        for (const [k, val] of Object.entries(body)) {
+            if (!k.startsWith("_") && k !== "client_context") {
+                const s = scalarFormValue(val);
+                if (s) {
+                    fields[k] = s;
+                }
+            }
+        }
+
+        let mobile =
+            resolveContactMobile(fields, body, mergedClientContext)
+            || resolveSubmissionMobileDigits(fields, body, mergedClientContext)
+            || "";
+        const name = fields.name ?? "";
+        const email = fields.email ?? "";
+
+        const iso = new Date().toISOString();
+        const ip = extractRequestIp(req);
+        const city = await resolveCityForRequest(req);
+
+        try {
+            await upsertSessionQueriesInSheet({
+                iso,
+                formId,
+                name,
+                mobile,
+                email,
+                clientSessionId,
+                browserName,
+                deviceType,
+                channel,
+                fileLinks: "",
+                ip,
+                city,
+                userQueriesCsv
+            });
+            return res.status(200).json({ ok: true, message: "Queries synced." });
+        } catch (se) {
+            const detail = se && se.message ? se.message : String(se);
+            console.error("[contact-form-api] session-sheet-sync", detail, se);
+            return res.status(500).json({ ok: false, error: detail });
+        }
+    }
+);
+
 app.get("/health", (_req, res) => res.status(200).send("ok"));
 
 /** Opening the Railway URL in a browser hits GET / — avoid Express default "Cannot GET /". */
@@ -623,6 +738,7 @@ app.get("/", (_req, res) => {
             `Contact leads API running.`,
             `POST JSON or multipart/form-data → ${PATHNAME}`,
             `POST JSON (chat mobile) → ${PATHNAME_MOBILE_SHEET_SYNC}`,
+            `POST JSON (session queries) → ${PATHNAME_SESSION_SHEET_SYNC}`,
             `GET /health → health check.`,
             `Drive uploads + optional Firestore/Sheets (DRIVE_ONLY=1 skips Firestore only; Sheets use SHEETS_SPREADSHEET_ID).`
         ].join("\n")
@@ -639,6 +755,6 @@ app.listen(PORT, () => {
           : "uploads=DriveAPI";
     const mode = DRIVE_ONLY ? " DRIVE_ONLY" : "";
     console.log(
-        `contact-form-api listening on :${PORT} ${PATHNAME} ${PATHNAME_MOBILE_SHEET_SYNC} — ${fsHint} ${sheetHint} ${driveHint}${mode}`
+        `contact-form-api listening on :${PORT} ${PATHNAME} ${PATHNAME_MOBILE_SHEET_SYNC} ${PATHNAME_SESSION_SHEET_SYNC} — ${fsHint} ${sheetHint} ${driveHint}${mode}`
     );
 });
