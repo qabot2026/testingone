@@ -4911,6 +4911,19 @@ function applyDefaultContactFormForBareOpenFormAction() {
     if (!c.forms || typeof c.forms !== "object" || !Object.keys(c.forms).length) {
         return;
     }
+    // Heuristic: if the bot sends open_form without form_id, infer likely form from the latest user message.
+    // This mitigates misconfigured intents where the payload omits `form_id`.
+    try {
+        const prev = readStoredClientContext();
+        const qs = prev && Array.isArray(prev.user_queries) ? prev.user_queries : [];
+        const last = qs.length ? String(qs[qs.length - 1] || "").trim().toLowerCase() : "";
+        if (last && c.forms.uploadDocument && /\b(upload|document|docs|pdf|file|files)\b/i.test(last)) {
+            setActiveContactFormId("uploadDocument");
+            return;
+        }
+    } catch {
+        /* ignore */
+    }
     const defId = getDefaultContactFormId();
     if (defId && c.forms[defId]) {
         setActiveContactFormId(defId);
