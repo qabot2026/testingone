@@ -10550,6 +10550,77 @@ function isChatExpanded(dfMessenger) {
     return expandAttribute === "true";
 }
 
+/**
+ * Persist chat-typed digits that look like a phone (works even if df-response-received does not reach window).
+ * @param {string} raw
+ */
+function mergeLikelyMobileFromChatText(raw) {
+    const t = typeof raw === "string" ? raw.trim() : "";
+    if (!t || t.length > 48) {
+        return;
+    }
+    const digits = t.replace(/\D/g, "");
+    if (digits.length < 9 || digits.length > 15) {
+        return;
+    }
+    if (!/^[\d\s+().\-]+$/i.test(t.replace(/\u00a0/g, " "))) {
+        return;
+    }
+    mergeVisitorMobileIntoStoredContext(digits);
+}
+
+function handleDfResponseReceived(event) {
+    const messages = event.detail && event.detail.data && Array.isArray(event.detail.data.messages)
+        ? event.detail.data.messages
+        : [];
+
+    const cxResponseMessagesMerged = mergeCxResponseEnvelopeForGallery(event);
+    pruneStaleInlineGalleryForCxResponse(cxResponseMessagesMerged, event);
+    tryOpenGalleryFromBotResponseMessages(cxResponseMessagesMerged, event);
+    pruneStaleInlineVideoForCxResponse(cxResponseMessagesMerged, event);
+    tryOpenVideoFromBotResponseMessages(cxResponseMessagesMerged, event);
+    pruneStaleInlineCardCarouselForCxResponse(cxResponseMessagesMerged, event);
+    tryOpenCardCarouselFromBotResponseMessages(cxResponseMessagesMerged, event);
+
+    const requestedLanguage = extractLanguageFromResponse(event);
+    if (requestedLanguage) {
+        applyLanguage(requestedLanguage);
+    }
+
+    const willOpenForm = shouldOpenContactForm(event);
+    const openFormId = extractOpenFormIdFromEvent(event);
+    if (openFormId) {
+        setActiveContactFormId(openFormId);
+    } else if (willOpenForm) {
+        applyDefaultContactFormForBareOpenFormAction();
+    }
+
+    if (willOpenForm) {
+        contactFormOpenPending = true;
+        pendingOpenFormPrefill = extractOpenFormPrefillFromEvent(event);
+        if (pendingOpenFormPrefill) {
+            mergePhoneFromOpenFormPrefillIntoStoredContext(pendingOpenFormPrefill);
+        }
+    }
+
+    mergePhoneFromDialogflowParametersIntoStoredContext(event);
+
+    if (messages.length > 0) {
+        const ms = activeDfMessenger;
+        if (ms && typeof ms.renderCustomText === "function") {
+            renderBotPersona(ms);
+        }
+    }
+
+    if (contactFormOpenPending) {
+        scheduleContactFormOpen();
+    }
+
+    maybeIncrementBubbleUnreadFromResponse(event);
+
+    scheduleDomTranslationRefresh();
+}
+
 function attachPersonaHandlers(dfMessenger) {
     void dfMessenger;
     if (companyPersonaWindowListenersAttached) {
@@ -10573,6 +10644,7 @@ function attachPersonaHandlers(dfMessenger) {
         if (consumeLanguageSwitchFromUserFlowPhrase(typed, event)) {
             return;
         }
+        mergeLikelyMobileFromChatText(typed);
         const ms = activeDfMessenger;
         if (ms && typeof ms.renderCustomText === "function") {
             renderUserPersona(ms);
@@ -10596,6 +10668,8 @@ function attachPersonaHandlers(dfMessenger) {
             return;
         }
 
+        mergeLikelyMobileFromChatText(queryText);
+
         if (typeof queryText === "string" && queryText.trim()) {
             const ms = activeDfMessenger;
             if (ms && typeof ms.renderCustomText === "function") {
@@ -10604,57 +10678,8 @@ function attachPersonaHandlers(dfMessenger) {
         }
     });
 
-    window.addEventListener("df-response-received", (event) => {
-        const messages = event.detail && event.detail.data && Array.isArray(event.detail.data.messages)
-            ? event.detail.data.messages
-            : [];
-
-        const cxResponseMessagesMerged = mergeCxResponseEnvelopeForGallery(event);
-        pruneStaleInlineGalleryForCxResponse(cxResponseMessagesMerged, event);
-        tryOpenGalleryFromBotResponseMessages(cxResponseMessagesMerged, event);
-        pruneStaleInlineVideoForCxResponse(cxResponseMessagesMerged, event);
-        tryOpenVideoFromBotResponseMessages(cxResponseMessagesMerged, event);
-        pruneStaleInlineCardCarouselForCxResponse(cxResponseMessagesMerged, event);
-        tryOpenCardCarouselFromBotResponseMessages(cxResponseMessagesMerged, event);
-
-        const requestedLanguage = extractLanguageFromResponse(event);
-        if (requestedLanguage) {
-            applyLanguage(requestedLanguage);
-        }
-
-        const willOpenForm = shouldOpenContactForm(event);
-        const openFormId = extractOpenFormIdFromEvent(event);
-        if (openFormId) {
-            setActiveContactFormId(openFormId);
-        } else if (willOpenForm) {
-            applyDefaultContactFormForBareOpenFormAction();
-        }
-
-        if (willOpenForm) {
-            contactFormOpenPending = true;
-            pendingOpenFormPrefill = extractOpenFormPrefillFromEvent(event);
-            if (pendingOpenFormPrefill) {
-                mergePhoneFromOpenFormPrefillIntoStoredContext(pendingOpenFormPrefill);
-            }
-        }
-
-        mergePhoneFromDialogflowParametersIntoStoredContext(event);
-
-        if (messages.length > 0) {
-            const ms = activeDfMessenger;
-            if (ms && typeof ms.renderCustomText === "function") {
-                renderBotPersona(ms);
-            }
-        }
-
-        if (contactFormOpenPending) {
-            scheduleContactFormOpen();
-        }
-
-        maybeIncrementBubbleUnreadFromResponse(event);
-
-        scheduleDomTranslationRefresh();
-    });
+    /** Capture:true helps when messenger dispatches inside shadow/custom element trees. */
+    window.addEventListener("df-response-received", handleDfResponseReceived, true);
 }
 
 function initializeContactForm() {

@@ -16,7 +16,7 @@
  *   GOOGLE_APPS_SCRIPT_WEBAPP_URL — full `/exec` URL; POST **JSON + Base64 `_files`** (see examples/apps-script-drive-upload/Code.gs)
  *   GOOGLE_APPS_SCRIPT_USE_MULTIPART=1 — legacy multipart (omit unless your script parses it)
  *   GOOGLE_DRIVE_FOLDER_ID — Drive API folder, **or** target folder sent to Apps Script as `_drive_folder_id`
- *   DRIVE_ONLY=1 — skip Firestore and Sheets; only accept uploads (multipart with files)
+ *   DRIVE_ONLY=1 — skip Firestore only; Sheets still run if SHEETS_SPREADSHEET_ID is set
  *   DISABLE_DRIVE_UPLOAD=1 — reject file fields (Sheet/text-only mode)
  *   GOOGLE_DRIVE_OAUTH_* (Drive API path; optional if Apps Script URL set)
  *   PORT, FIREBASE_SERVICE_ACCOUNT_JSON / GOOGLE_SERVICE_ACCOUNT_JSON / GOOGLE_APPLICATION_CREDENTIALS
@@ -38,7 +38,7 @@ const APPS_SCRIPT_WEBAPP_URL = (process.env.GOOGLE_APPS_SCRIPT_WEBAPP_URL || "")
 
 const PORT = Number(process.env.PORT) || 8080;
 const PATHNAME = "/contact-form-submissions";
-/** “Just put files in Drive” — one flag instead of DISABLE_FIRESTORE + DISABLE_SHEETS. */
+/** “Just put files in Drive” — skips Firestore; Sheets are independent (see SHEETS_DISABLED). */
 const DRIVE_ONLY = process.env.DRIVE_ONLY === "1";
 const FIRESTORE_DISABLED = process.env.DISABLE_FIRESTORE === "1" || DRIVE_ONLY;
 /** Sheets on when SHEETS_SPREADSHEET_ID is set and not DISABLE_SHEETS=1 (independent of DRIVE_ONLY). */
@@ -135,6 +135,8 @@ app.post(
         const formId = typeof body._contactFormId === "string" ? body._contactFormId : "unknown";
         const clientContext =
             body.client_context && typeof body.client_context === "object" ? body.client_context : {};
+        const channel = normalizeLeadChannel(clientContext.channel);
+        const mergedClientContext = { ...clientContext, channel };
 
         /** @type {Record<string, string>} */
         const fields = {};
@@ -149,9 +151,9 @@ app.post(
 
         const name = fields.name ?? "";
         const email = fields.email ?? "";
-        let mobile = resolveContactMobile(fields, body, clientContext);
+        let mobile = resolveContactMobile(fields, body, mergedClientContext);
         if (!mobile) {
-            const digitsFromContext = resolveSubmissionMobileDigits(fields, body, clientContext);
+            const digitsFromContext = resolveSubmissionMobileDigits(fields, body, mergedClientContext);
             if (digitsFromContext) {
                 mobile = digitsFromContext;
             }
@@ -165,8 +167,6 @@ app.post(
         const deviceType = typeof clientContext.device_type === "string"
             ? clientContext.device_type.trim()
             : "";
-        const channel = normalizeLeadChannel(clientContext.channel);
-        const mergedClientContext = { ...clientContext, channel };
 
         if (DRIVE_ONLY) {
             const hasBytes = uploadedFiles.some(
