@@ -49,13 +49,17 @@ function tabNameFromRange(raw) {
     return s.slice(0, bang) || "Sheet1";
 }
 
+/** @param {string} s */
+function mobileDigitsOnly(s) {
+    return String(s || "").replace(/\D/g, "");
+}
+
 /**
  * Dedupe strategy:
  * - Primary key: clientSessionId when session id exists (only one Sheet row per session)
+ * - Used for "Repeated" flag: mobile digits across different sessions
  *
- * NOTE: We intentionally do not store PII (name/email/mobile) in Sheets; only queries and non-PII metadata.
- *
- * @param {{ iso: string, clientSessionId: string }} row
+ * @param {{ iso: string, mobile: string, clientSessionId: string }} row
  */
 function buildDedupeKey(row) {
     const sid = typeof row.clientSessionId === "string" ? row.clientSessionId.trim() : "";
@@ -65,15 +69,16 @@ function buildDedupeKey(row) {
 /**
  * Scan recent sheet rows for:
  * - duplicate for the same session id (only one row per session id)
+ * - repeated: same mobile already exists under a different session id
  *
  * @param {import("googleapis").sheets_v4.Sheets} sheets
- * @param {{ iso: string, clientSessionId: string }} row
- * @returns {Promise<{ duplicate: boolean, matchedRowNumber: number }>}
+ * @param {{ iso: string, mobile: string, clientSessionId: string }} row
+ * @returns {Promise<{ duplicate: boolean, matchedRowNumber: number, repeatedAcrossSessions: boolean }>}
  */
 async function scanSheetTailForDedupeAndRepeat_(sheets, row) {
     const key = buildDedupeKey(row);
     if (!key) {
-        return { duplicate: false, matchedRowNumber: 0 };
+        return { duplicate: false, matchedRowNumber: 0, repeatedAcrossSessions: false };
     }
     const tab = tabNameFromRange(RANGE);
     const res = await sheets.spreadsheets.values.get({
@@ -84,33 +89,44 @@ async function scanSheetTailForDedupeAndRepeat_(sheets, row) {
     });
     const rows = Array.isArray(res.data.values) ? res.data.values : [];
     if (!rows.length) {
-        return { duplicate: false, matchedRowNumber: 0 };
+        return { duplicate: false, matchedRowNumber: 0, repeatedAcrossSessions: false };
     }
     const tail = rows.slice(Math.max(0, rows.length - DEDUP_LOOKBACK_ROWS));
     const tailOffset = rows.length - tail.length; // 0-based offset into full sheet rows
     const incomingSid = typeof row.clientSessionId === "string" ? row.clientSessionId.trim() : "";
+    const incomingMobileDigits = mobileDigitsOnly(row.mobile);
+    let repeatedAcrossSessions = false;
 
     for (let i = tail.length - 1; i >= 0; i--) {
         const r = tail[i] || [];
+        const existingMobile = typeof r[3] === "string" ? r[3].trim() : "";
         const existingSid = typeof r[5] === "string" ? r[5].trim() : "";
         const rowNumber = tailOffset + i + 1; // 1-based row number in the sheet
 
         // If we have a session id, enforce "only once per session".
         if (incomingSid && existingSid && incomingSid === existingSid) {
-            return { duplicate: true, matchedRowNumber: rowNumber };
+            return { duplicate: true, matchedRowNumber: rowNumber, repeatedAcrossSessions };
         }
         // Some sheets have different column ordering; scan the whole row for the session id string.
         if (incomingSid && Array.isArray(r)) {
             for (let c = 0; c < r.length; c++) {
                 const cell = typeof r[c] === "string" ? r[c].trim() : "";
                 if (cell && cell === incomingSid) {
-                    return { duplicate: true, matchedRowNumber: rowNumber };
+                    return { duplicate: true, matchedRowNumber: rowNumber, repeatedAcrossSessions };
                 }
+            }
+        }
+
+        // Repeated (same mobile, different session).
+        const existingMobileDigits = mobileDigitsOnly(existingMobile);
+        if (incomingMobileDigits && existingMobileDigits && incomingMobileDigits === existingMobileDigits) {
+            if (incomingSid && existingSid && incomingSid !== existingSid) {
+                repeatedAcrossSessions = true;
             }
         }
     }
 
-    return { duplicate: false, matchedRowNumber: 0 };
+    return { duplicate: false, matchedRowNumber: 0, repeatedAcrossSessions };
 }
 
 function isBlankCell_(v) {
@@ -161,7 +177,7 @@ function mergeCsvUnique_(existingCsv, incomingCsv, limit = 40) {
  * @param {import("googleapis").sheets_v4.Sheets} sheets
  * @param {string} tab
  * @param {number} rowNumber 1-based sheet row
- * @param {{ formId: string, browserName: string, deviceType: string, channel: string, fileLinks?: string, city?: string, ip?: string, userQueriesCsv?: string }} incoming
+ * @param {{ formId: string, name: string, mobile: string, email: string, browserName: string, deviceType: string, channel: string, fileLinks?: string, city?: string, ip?: string, userQueriesCsv?: string }} incoming
  */
 async function updateExistingSessionRow_(sheets, tab, rowNumber, incoming) {
     if (!rowNumber || rowNumber < 1) {
@@ -176,6 +192,9 @@ async function updateExistingSessionRow_(sheets, tab, rowNumber, incoming) {
     const existing = (idx) => (typeof row[idx] === "string" ? row[idx].trim() : "");
 
     const formId = incoming.formId && isBlankCell_(existing(1)) ? incoming.formId.trim() : "";
+    const name = incoming.name && isBlankCell_(existing(2)) ? incoming.name.trim() : "";
+    const mobile = incoming.mobile && isBlankCell_(existing(3)) ? incoming.mobile.trim() : "";
+    const email = incoming.email && isBlankCell_(existing(4)) ? incoming.email.trim() : "";
     const browserName =
         incoming.browserName && isBlankCell_(existing(6)) ? incoming.browserName.trim() : "";
     const deviceType =
@@ -195,6 +214,9 @@ async function updateExistingSessionRow_(sheets, tab, rowNumber, incoming) {
     /** @type {Array<{ range: string, values: string[][] }>} */
     const data = [];
     if (formId) data.push({ range: `${tab}!B${rowNumber}`, values: [[formId]] });
+    if (name) data.push({ range: `${tab}!C${rowNumber}`, values: [[name]] });
+    if (mobile) data.push({ range: `${tab}!D${rowNumber}`, values: [[mobile]] });
+    if (email) data.push({ range: `${tab}!E${rowNumber}`, values: [[email]] });
     if (browserName) data.push({ range: `${tab}!G${rowNumber}`, values: [[browserName]] });
     if (deviceType) data.push({ range: `${tab}!H${rowNumber}`, values: [[deviceType]] });
     if (channel) data.push({ range: `${tab}!I${rowNumber}`, values: [[channel]] });
@@ -251,7 +273,7 @@ async function getSheetsAuthClient() {
  * M repeated (Yes|No)
  * N user_queries (comma-separated)
  *
- * @param {{ iso: string, formId: string, clientSessionId: string, browserName: string, deviceType: string, channel: string, fileLinks?: string, city?: string, ip?: string, userQueriesCsv?: string }} row
+ * @param {{ iso: string, formId: string, name: string, mobile: string, email: string, clientSessionId: string, browserName: string, deviceType: string, channel: string, fileLinks?: string, city?: string, ip?: string, userQueriesCsv?: string }} row
  */
 export async function appendContactRowToSheet(row) {
     if (!SPREADSHEET_ID) {
@@ -279,12 +301,13 @@ export async function appendContactRowToSheet(row) {
     const city = typeof row.city === "string" ? row.city.trim() : "";
     const ip = typeof row.ip === "string" ? row.ip.trim() : "";
     const userQueriesCsv = typeof row.userQueriesCsv === "string" ? row.userQueriesCsv.trim() : "";
+    const repeated = scan.repeatedAcrossSessions ? "Yes" : "No";
     const values = [[
         row.iso,
         row.formId,
-        "",
-        "",
-        "",
+        row.name,
+        row.mobile,
+        row.email,
         row.clientSessionId,
         row.browserName,
         row.deviceType,
@@ -292,7 +315,7 @@ export async function appendContactRowToSheet(row) {
         fileLinks,
         city,
         ip,
-        "",
+        repeated,
         userQueriesCsv
     ]];
     await sheets.spreadsheets.values.append({

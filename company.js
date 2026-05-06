@@ -11142,6 +11142,11 @@ function submitContactForm(event) {
         payload.mobile = v;
     } else {
         chatSummaryPayload = {};
+        const stored = readStoredClientContext();
+        const storedMobile =
+            stored && typeof stored.mobile === "string" && stored.mobile.trim()
+                ? stored.mobile.trim()
+                : "";
         for (const def of fieldDefs) {
             if (!def || !def.id || !def.name) {
                 continue;
@@ -11189,7 +11194,18 @@ function submitContactForm(event) {
                 continue;
             }
             const raw = el && "value" in el ? el.value : "";
-            const v = typeof raw === "string" ? raw.trim() : "";
+            let v = typeof raw === "string" ? raw.trim() : "";
+            // If mobile is already known for this session, reuse it and don't force the user to type again.
+            if (!v && def.name === "mobile" && storedMobile) {
+                v = storedMobile;
+                try {
+                    if (el && "value" in el) {
+                        el.value = v;
+                    }
+                } catch {
+                    /* ignore */
+                }
+            }
             const check = validateContactFormField(def, v);
             if (!check.valid) {
                 if (status) {
