@@ -138,10 +138,54 @@ function pickFromCtx_(ctx, key) {
   return pick_(ctx[key]);
 }
 
+/** Looks for a 9–15 digit run anywhere under the payload (nested client_context, wa_id, etc.). Skips _* keys and _files. */
+function bestDigitRunFromStringScan_(s) {
+  var str = String(s || "");
+  var runs = str.match(/\d+/g);
+  if (!runs) return "";
+  var best = "";
+  for (var i = 0; i < runs.length; i++) {
+    var run = runs[i];
+    if (run.length >= 9 && run.length <= 15 && run.length > best.length) best = run;
+  }
+  return best;
+}
+
+function longestDigitRunDeepScan_(val, depth) {
+  if (depth > 12 || val == null) return "";
+  var t = typeof val;
+  if (t === "string") return bestDigitRunFromStringScan_(val);
+  if (t === "number" && isFinite(val)) return bestDigitRunFromStringScan_(String(val));
+  if (Object.prototype.toString.call(val) === "[object Array]") {
+    var arr = /** @type {Array<?>} */ (val);
+    var bestA = "";
+    for (var ai = 0; ai < arr.length; ai++) {
+      var ra = longestDigitRunDeepScan_(arr[ai], depth + 1);
+      if (ra.length > bestA.length) bestA = ra;
+    }
+    return bestA;
+  }
+  if (t === "object") {
+    var bestO = "";
+    var keys = Object.keys(val);
+    for (var ki = 0; ki < keys.length; ki++) {
+      var key = keys[ki];
+      if (key === "_files" || key.indexOf("_") === 0) continue;
+      var ro = longestDigitRunDeepScan_(val[key], depth + 1);
+      if (ro.length > bestO.length) bestO = ro;
+    }
+    return bestO;
+  }
+  return "";
+}
+
 function pickSubmissionSubfolderName_(o, folderNames, dateLabel) {
   // Server (Railway) sets this when it resolved the phone — avoids relying on o.mobile after JSON merges.
   var fromServer = normalizeDigits_(pick_(o._submission_mobile_digits));
-  var digits = fromServer || normalizeDigits_(pickMobileRaw_(o));
+  var digits =
+    fromServer ||
+    normalizeDigits_(pickMobileRaw_(o)) ||
+    longestDigitRunDeepScan_(o, 0);
   if (digits) {
     return nextMobileFolderName_(digits, folderNames, dateLabel);
   }

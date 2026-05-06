@@ -8,6 +8,7 @@
  */
 
 import { resolveMobileForUpstream, resolveSubmissionMobileDigits } from "./contact-mobile.mjs";
+import { normalizeMobileDigits } from "./submission-folder-name.mjs";
 
 /**
  * @param {string} webAppUrl e.g. https://script.google.com/macros/s/DEPLOYMENT_ID/exec
@@ -45,7 +46,7 @@ export async function forwardSubmissionToAppsScript(webAppUrl, payload) {
         typeof mobile === "string" ? mobile : ""
     );
     const mobileDigits = resolveSubmissionMobileDigits(fields, bodyObj, clientContext);
-    if (!effectiveMobile && mobileDigits) {
+    if (mobileDigits && !normalizeMobileDigits(effectiveMobile)) {
         effectiveMobile = mobileDigits;
     }
     const fieldsForOutbound = effectiveMobile

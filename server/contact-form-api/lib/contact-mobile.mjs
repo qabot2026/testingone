@@ -152,36 +152,65 @@ export function resolveMobileForUpstream(fields, clientContext, serverResolvedMo
     return resolveContactMobile(fields, mergedBody, ctx);
 }
 
-/**
- * Longest digit-only run (length 10–15) from shallow string values — catches custom field names
- * that do not match phone aliases so Drive / Apps Script can still folder by mobile.
- *
- * @param {Record<string, unknown>} obj
- */
-function longestDigitRunFromObject_(obj) {
-    if (!obj || typeof obj !== "object") {
+/** @param {string} s */
+function bestDigitRunFromString_(s) {
+    const str = String(s || "");
+    const runs = str.match(/\d+/g);
+    if (!runs) {
         return "";
     }
     let best = "";
-    for (const [k, rv] of Object.entries(obj)) {
-        if (typeof k === "string" && k.startsWith("_")) {
-            continue;
-        }
-        const s = scalarFormValue(rv);
-        if (!s) {
-            continue;
-        }
-        const runs = String(s).match(/\d+/g);
-        if (!runs) {
-            continue;
-        }
-        for (const run of runs) {
-            if (run.length >= 10 && run.length <= 15 && run.length > best.length) {
-                best = run;
-            }
+    for (const run of runs) {
+        if (run.length >= 9 && run.length <= 15 && run.length > best.length) {
+            best = run;
         }
     }
     return best;
+}
+
+const DIGIT_SCAN_MAX_DEPTH = 12;
+
+/**
+ * Longest plausible mobile digit run anywhere in JSON-like payloads (nested client_context, wa_id, etc.).
+ * Skips `_files` and other `_`-prefixed keys to avoid scanning base64.
+ *
+ * @param {unknown} val
+ * @param {number} depth
+ */
+function longestDigitRunDeep_(val, depth) {
+    if (depth > DIGIT_SCAN_MAX_DEPTH || val == null) {
+        return "";
+    }
+    if (typeof val === "string") {
+        return bestDigitRunFromString_(val.trim());
+    }
+    if (typeof val === "number" && Number.isFinite(val)) {
+        return bestDigitRunFromString_(String(val));
+    }
+    if (Array.isArray(val)) {
+        let best = "";
+        for (const x of val) {
+            const r = longestDigitRunDeep_(x, depth + 1);
+            if (r.length > best.length) {
+                best = r;
+            }
+        }
+        return best;
+    }
+    if (typeof val === "object") {
+        let best = "";
+        for (const [k, rv] of Object.entries(val)) {
+            if (typeof k === "string" && (k === "_files" || k.startsWith("_"))) {
+                continue;
+            }
+            const r = longestDigitRunDeep_(rv, depth + 1);
+            if (r.length > best.length) {
+                best = r;
+            }
+        }
+        return best;
+    }
+    return "";
 }
 
 /**
@@ -198,9 +227,10 @@ export function resolveSubmissionMobileDigits(fields, body, clientContext) {
         return direct;
     }
     const ctx = clientContext && typeof clientContext === "object" ? clientContext : {};
+    const bodyObj = body && typeof body === "object" ? body : {};
     return (
-        longestDigitRunFromObject_(fields) ||
-        longestDigitRunFromObject_(ctx) ||
-        longestDigitRunFromObject_(body)
+        longestDigitRunDeep_(fields, 0) ||
+        longestDigitRunDeep_(ctx, 0) ||
+        longestDigitRunDeep_(bodyObj, 0)
     );
 }
