@@ -6,7 +6,8 @@ import { google } from "googleapis";
 import { getServiceAccountCredentials } from "./google-service-account.mjs";
 
 const SPREADSHEET_ID = (process.env.SHEETS_SPREADSHEET_ID || "").trim();
-const RANGE = (process.env.SHEETS_RANGE || "Sheet1!A:J").trim();
+// Default includes extra columns for city/ip/repeated (A–M).
+const RANGE = (process.env.SHEETS_RANGE || "Sheet1!A:M").trim();
 const DEDUP_LOOKBACK_ROWS = Math.max(
     10,
     Number.parseInt(process.env.SHEETS_DEDUP_LOOKBACK_ROWS || "500", 10) || 500
@@ -77,10 +78,19 @@ function buildDedupeKey(row) {
  * @param {import("googleapis").sheets_v4.Sheets} sheets
  * @param {{ iso: string, mobile: string, clientSessionId: string }} row
  */
-async function alreadyInSheetRecent_(sheets, row) {
+/**
+ * Scan recent sheet rows for:
+ * - duplicate for the same session id (only one row per session id)
+ * - repeated: same mobile already exists under a different session id
+ *
+ * @param {import("googleapis").sheets_v4.Sheets} sheets
+ * @param {{ iso: string, mobile: string, clientSessionId: string }} row
+ * @returns {Promise<{ duplicate: boolean, repeatedAcrossSessions: boolean }>}
+ */
+async function scanSheetTailForDedupeAndRepeat_(sheets, row) {
     const key = buildDedupeKey(row);
     if (!key) {
-        return false;
+        return { duplicate: false, repeatedAcrossSessions: false };
     }
     const tab = tabNameFromRange(RANGE);
     const res = await sheets.spreadsheets.values.get({
@@ -91,12 +101,13 @@ async function alreadyInSheetRecent_(sheets, row) {
     });
     const rows = Array.isArray(res.data.values) ? res.data.values : [];
     if (!rows.length) {
-        return false;
+        return { duplicate: false, repeatedAcrossSessions: false };
     }
     const tail = rows.slice(Math.max(0, rows.length - DEDUP_LOOKBACK_ROWS));
     const incomingIsoMs = Date.parse(row.iso);
     const incomingMobileDigits = mobileDigitsOnly(row.mobile);
     const incomingSid = typeof row.clientSessionId === "string" ? row.clientSessionId.trim() : "";
+    let repeatedAcrossSessions = false;
 
     for (let i = tail.length - 1; i >= 0; i--) {
         const r = tail[i] || [];
@@ -106,14 +117,14 @@ async function alreadyInSheetRecent_(sheets, row) {
 
         // If we have a session id, enforce "only once per session".
         if (incomingSid && existingSid && incomingSid === existingSid) {
-            return true;
+            return { duplicate: true, repeatedAcrossSessions };
         }
         // Some sheets have different column ordering; scan the whole row for the session id string.
         if (incomingSid && Array.isArray(r)) {
             for (let c = 0; c < r.length; c++) {
                 const cell = typeof r[c] === "string" ? r[c].trim() : "";
                 if (cell && cell === incomingSid) {
-                    return true;
+                    return { duplicate: true, repeatedAcrossSessions };
                 }
             }
         }
@@ -123,18 +134,27 @@ async function alreadyInSheetRecent_(sheets, row) {
             continue;
         }
 
+        // Mark as repeated when the same mobile appears with a different session id.
+        if (
+            incomingSid
+            && existingSid
+            && incomingSid !== existingSid
+        ) {
+            repeatedAcrossSessions = true;
+        }
+
         // Fallback: if session id missing, only suppress duplicates within a short time window.
         if (!incomingSid || !existingSid) {
             const existingMs = Date.parse(existingIso);
             if (Number.isFinite(incomingIsoMs) && Number.isFinite(existingMs)) {
                 if (Math.abs(incomingIsoMs - existingMs) <= DEDUP_WINDOW_MS) {
-                    return true;
+                    return { duplicate: true, repeatedAcrossSessions };
                 }
             }
         }
     }
 
-    return false;
+    return { duplicate: false, repeatedAcrossSessions };
 }
 
 async function getSheetsAuthClient() {
@@ -157,8 +177,22 @@ async function getSheetsAuthClient() {
 }
 
 /**
- * Columns A–J: iso, formId, name, mobile, email, clientSessionId, browserName, deviceType, channel (web|whatsapp), file_links (Drive URLs, comma-separated, or empty).
- * @param {{ iso: string, formId: string, name: string, mobile: string, email: string, clientSessionId: string, browserName: string, deviceType: string, channel: string, fileLinks?: string }} row
+ * Columns A–M:
+ * A iso
+ * B formId
+ * C name
+ * D mobile
+ * E email
+ * F clientSessionId
+ * G browserName
+ * H deviceType
+ * I channel (web|whatsapp)
+ * J file_links (Drive URLs, comma-separated, or empty)
+ * K city
+ * L ip
+ * M repeated (Yes|No)
+ *
+ * @param {{ iso: string, formId: string, name: string, mobile: string, email: string, clientSessionId: string, browserName: string, deviceType: string, channel: string, fileLinks?: string, city?: string, ip?: string }} row
  */
 export async function appendContactRowToSheet(row) {
     if (!SPREADSHEET_ID) {
@@ -168,7 +202,8 @@ export async function appendContactRowToSheet(row) {
     const sheets = google.sheets({ version: "v4", auth: client });
 
     // Prevent double-write when chat mobile sync and form submission both hit Sheets.
-    if (await alreadyInSheetRecent_(sheets, row)) {
+    const scan = await scanSheetTailForDedupeAndRepeat_(sheets, row);
+    if (scan.duplicate) {
         return;
     }
 
@@ -179,6 +214,9 @@ export async function appendContactRowToSheet(row) {
         typeof row.fileLinks === "string" && row.fileLinks.trim()
             ? row.fileLinks.trim()
             : "";
+    const city = typeof row.city === "string" ? row.city.trim() : "";
+    const ip = typeof row.ip === "string" ? row.ip.trim() : "";
+    const repeated = scan.repeatedAcrossSessions ? "Yes" : "No";
     const values = [[
         row.iso,
         row.formId,
@@ -189,7 +227,10 @@ export async function appendContactRowToSheet(row) {
         row.browserName,
         row.deviceType,
         ch,
-        fileLinks
+        fileLinks,
+        city,
+        ip,
+        repeated
     ]];
     await sheets.spreadsheets.values.append({
         spreadsheetId: SPREADSHEET_ID,

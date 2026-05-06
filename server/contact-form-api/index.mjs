@@ -88,6 +88,94 @@ function corsOriginOption() {
     };
 }
 
+function firstIpFromXForwardedFor(value) {
+    const raw = typeof value === "string" ? value : "";
+    if (!raw.trim()) {
+        return "";
+    }
+    // "client, proxy1, proxy2"
+    const first = raw.split(",")[0] ? raw.split(",")[0].trim() : "";
+    if (!first) {
+        return "";
+    }
+    // Strip :port (IPv4:port) but keep IPv6 as-is.
+    if (/^\d{1,3}(\.\d{1,3}){3}:\d+$/.test(first)) {
+        return first.slice(0, first.lastIndexOf(":"));
+    }
+    return first;
+}
+
+function extractRequestIp(req) {
+    const h = req && req.headers ? req.headers : {};
+    const xf = firstIpFromXForwardedFor(h["x-forwarded-for"]);
+    if (xf) {
+        return xf;
+    }
+    const cf = typeof h["cf-connecting-ip"] === "string" ? h["cf-connecting-ip"].trim() : "";
+    if (cf) {
+        return cf;
+    }
+    const real = typeof h["x-real-ip"] === "string" ? h["x-real-ip"].trim() : "";
+    if (real) {
+        return real;
+    }
+    const ra = req && req.socket && typeof req.socket.remoteAddress === "string"
+        ? req.socket.remoteAddress
+        : "";
+    return ra || "";
+}
+
+const GEOIP_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+/** @type {Map<string, { city: string, ts: number }>} */
+const geoIpCityCache = new Map();
+
+async function resolveCityForRequest(req) {
+    const h = req && req.headers ? req.headers : {};
+    // Prefer provider-injected city headers if present (fast/no external call).
+    const fromCf = typeof h["cf-ipcity"] === "string" ? h["cf-ipcity"].trim() : "";
+    if (fromCf) {
+        return fromCf;
+    }
+    const fromVercel = typeof h["x-vercel-ip-city"] === "string" ? h["x-vercel-ip-city"].trim() : "";
+    if (fromVercel) {
+        return fromVercel;
+    }
+
+    const ip = extractRequestIp(req);
+    if (!ip) {
+        return "";
+    }
+    const cached = geoIpCityCache.get(ip);
+    if (cached && Date.now() - cached.ts <= GEOIP_CACHE_TTL_MS) {
+        return cached.city;
+    }
+
+    // Best-effort GeoIP: ipapi.co (no token). If fetch is unavailable or it errors, return empty.
+    if (typeof fetch !== "function") {
+        return "";
+    }
+    const ac = new AbortController();
+    const timeout = setTimeout(() => ac.abort(), 1500);
+    try {
+        const resp = await fetch(`https://ipapi.co/${encodeURIComponent(ip)}/json/`, {
+            method: "GET",
+            headers: { "Accept": "application/json" },
+            signal: ac.signal
+        });
+        if (!resp.ok) {
+            return "";
+        }
+        const data = await resp.json().catch(() => null);
+        const city = data && typeof data.city === "string" ? data.city.trim() : "";
+        geoIpCityCache.set(ip, { city, ts: Date.now() });
+        return city;
+    } catch {
+        return "";
+    } finally {
+        clearTimeout(timeout);
+    }
+}
+
 if (hasFirebaseCredentials()) {
     firebaseAdminInit();
 }
@@ -269,6 +357,8 @@ app.post(
         }
 
         const iso = new Date().toISOString();
+        const ip = extractRequestIp(req);
+        const city = await resolveCityForRequest(req);
         /** Firestore-safe payload (flattened for querying) */
         const fileLinksForSheet = drive_uploads
             .map((u) => (typeof u.web_view_link === "string" ? u.web_view_link : ""))
@@ -320,7 +410,9 @@ app.post(
                         browserName,
                         deviceType,
                         channel,
-                        fileLinks: fileLinksForSheet
+                        fileLinks: fileLinksForSheet,
+                        ip,
+                        city
                     });
                 } catch (se) {
                     const detail = se && se.message ? se.message : String(se);
@@ -415,6 +507,8 @@ app.post(
         }
 
         const iso = new Date().toISOString();
+        const ip = extractRequestIp(req);
+        const city = await resolveCityForRequest(req);
 
         try {
             await appendContactRowToSheet({
@@ -427,7 +521,9 @@ app.post(
                 browserName,
                 deviceType,
                 channel,
-                fileLinks: ""
+                fileLinks: "",
+                ip,
+                city
             });
             return res.status(200).json({ ok: true, message: "Sheet updated." });
         } catch (se) {
