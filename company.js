@@ -32,6 +32,8 @@ const CONTACT_FORM_OPEN_ACTION = "open_form";
 /** Keys stripped when treating an `open_form` payload as field prefill (`action`, `form_id`, … only). */
 const OPEN_FORM_PAYLOAD_META_KEYS = new Set(["action", "form_id", "formId"]);
 const CONTACT_FORM_ENDPOINT = "/contact-form-submissions";
+/** POST JSON: append Sheets row when chat captured mobile (no file upload). Matches contact-form-api. */
+const CONTACT_FORM_MOBILE_SHEET_SYNC_ENDPOINT = "/contact-form-mobile-sheet-sync";
 const API_BASE_URL_META_NAME = "dfchat-api-base-url";
 const MOBILE_CHAT_BREAKPOINT_PX = 768;
 /** Extra `nudgeRight` for Language / Restart + Powered by on small viewports only (see company.config.js mobile layout). */
@@ -11280,7 +11282,7 @@ function submitContactForm(event) {
                     status.classList.remove("is-error");
                 }
                 if (payload && typeof payload.mobile === "string" && payload.mobile.trim()) {
-                    mergeVisitorMobileIntoStoredContext(payload.mobile);
+                    mergeVisitorMobileIntoStoredContext(payload.mobile, { syncSheet: false });
                 }
                 setOtpFormStep("otp");
                 const oOtpEl = document.getElementById("o-otp");
@@ -11304,7 +11306,7 @@ function submitContactForm(event) {
                 mobileToRemember = payload.mobile.trim();
             }
             if (mobileToRemember) {
-                mergeVisitorMobileIntoStoredContext(mobileToRemember);
+                mergeVisitorMobileIntoStoredContext(mobileToRemember, { syncSheet: false });
             }
             renderContactFormSubmissionResponse(summaryForChat);
 
@@ -12859,22 +12861,108 @@ function persistClientContext(clientContext) {
     }
 }
 
+let chatMobileSheetSyncDebounceTimer = 0;
+/** Dedupe after a successful Sheet sync for the same session + mobile string. */
+let chatMobileSheetSyncLastOkKey = "";
+
+/**
+ * When Dialogflow/chat captures mobile, POST a Sheets-only row without waiting for the contact form.
+ * Optional meta: `<meta name="dfchat-contact-form-mobile-sync-secret" content="…">` if Railway sets CONTACT_FORM_MOBILE_SHEET_SYNC_SECRET.
+ * @param {string} normalizedMobile
+ */
+function scheduleSheetRowForCapturedChatMobile(normalizedMobile) {
+    const raw = typeof normalizedMobile === "string" ? normalizedMobile.trim() : "";
+    if (!raw || !/\d/.test(raw)) {
+        return;
+    }
+    if (chatMobileSheetSyncDebounceTimer) {
+        window.clearTimeout(chatMobileSheetSyncDebounceTimer);
+    }
+    chatMobileSheetSyncDebounceTimer = window.setTimeout(() => {
+        chatMobileSheetSyncDebounceTimer = 0;
+        postCapturedMobileToSheetRow(raw);
+    }, 450);
+}
+
+function postCapturedMobileToSheetRow(mobileValue) {
+    const endpoint = getApiEndpoint(CONTACT_FORM_MOBILE_SHEET_SYNC_ENDPOINT);
+    if (!endpoint || typeof fetch !== "function") {
+        return;
+    }
+
+    /** @type {Record<string, string>} */
+    const headers = {
+        "Content-Type": "application/json"
+    };
+    try {
+        const metaNode =
+            typeof document !== "undefined"
+                ? document.querySelector('meta[name="dfchat-contact-form-mobile-sync-secret"]')
+                : null;
+        const mv = metaNode && metaNode instanceof HTMLMetaElement ? metaNode.getAttribute("content") : null;
+        const sec = typeof mv === "string" ? mv.trim() : "";
+        if (sec) {
+            headers["X-Contact-Form-Mobile-Sync-Secret"] = sec;
+        }
+    } catch {
+        /* ignore */
+    }
+
+    const clientSnapshot = getClientContext();
+    const sid =
+        typeof clientSnapshot.client_session_id === "string" ? clientSnapshot.client_session_id.trim() : "";
+    const dedupeKey = `${sid}|${mobileValue}`;
+    if (dedupeKey === chatMobileSheetSyncLastOkKey) {
+        return;
+    }
+
+    const cfg = readContactFormConfig();
+    const formKey = cfg && typeof cfg.formKey === "string" ? cfg.formKey : "unknown";
+
+    fetch(endpoint, {
+        method: "POST",
+        headers,
+        credentials: "omit",
+        body: JSON.stringify({
+            mobile: mobileValue,
+            client_context: clientSnapshot,
+            _contactFormId: formKey,
+            _source: "dialogflow_chat"
+        }),
+        keepalive: true
+    })
+        .then(async (resp) => {
+            if (!resp.ok) {
+                return;
+            }
+            chatMobileSheetSyncLastOkKey = dedupeKey;
+        })
+        .catch(() => {
+            /* network / CORS; user can retry with next capture */
+        });
+}
+
 /**
  * Remember the visitor’s mobile after Contact / OTP forms so document uploads (no tel field)
  * still send `mobile` inside `client_context` for backend Drive folder naming.
  * @param {string} rawMobile
+ * @param {{ syncSheet?: boolean }} [opts] — set `syncSheet: false` after a contact form submit (main POST already appends the row).
  */
-function mergeVisitorMobileIntoStoredContext(rawMobile) {
+function mergeVisitorMobileIntoStoredContext(rawMobile, opts) {
     const v = typeof rawMobile === "string" ? rawMobile.trim() : "";
     if (!v || !/\d/.test(v)) {
         return;
     }
+    const syncSheet = !opts || opts.syncSheet !== false;
     try {
         const prev = readStoredClientContext();
         persistClientContext({
             ...prev,
             mobile: v
         });
+        if (syncSheet) {
+            scheduleSheetRowForCapturedChatMobile(v);
+        }
     } catch {
         /* ignore */
     }
