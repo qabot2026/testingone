@@ -163,6 +163,43 @@ function isBlankCell_(v) {
     return !(typeof v === "string" && v.trim());
 }
 
+function splitCsvValues_(raw) {
+    const s = typeof raw === "string" ? raw : "";
+    if (!s.trim()) {
+        return [];
+    }
+    return s
+        .split(",")
+        .map((x) => x.trim())
+        .filter(Boolean);
+}
+
+function mergeCsvUnique_(existingCsv, incomingCsv, limit = 40) {
+    const existing = splitCsvValues_(existingCsv);
+    const incoming = splitCsvValues_(incomingCsv);
+    if (!incoming.length) {
+        return existing.join(", ");
+    }
+    const seen = new Set();
+    const out = [];
+    // Preserve order: existing first, then add new ones.
+    for (const v of existing) {
+        const k = v.toLowerCase();
+        if (!seen.has(k)) {
+            seen.add(k);
+            out.push(v);
+        }
+    }
+    for (const v of incoming) {
+        const k = v.toLowerCase();
+        if (!seen.has(k)) {
+            seen.add(k);
+            out.push(v);
+        }
+    }
+    return out.slice(0, Math.max(1, limit)).join(", ");
+}
+
 /**
  * If we already have a row for this session id (from chat mobile sync), fill in missing fields
  * from the later contact-form submit rather than dropping the write.
@@ -170,7 +207,7 @@ function isBlankCell_(v) {
  * @param {import("googleapis").sheets_v4.Sheets} sheets
  * @param {string} tab
  * @param {number} rowNumber 1-based sheet row
- * @param {{ formId: string, name: string, email: string, browserName: string, deviceType: string, channel: string, fileLinks?: string, city?: string, ip?: string }} incoming
+ * @param {{ formId: string, name: string, email: string, browserName: string, deviceType: string, channel: string, fileLinks?: string, city?: string, ip?: string, userQueriesCsv?: string }} incoming
  */
 async function updateExistingSessionRow_(sheets, tab, rowNumber, incoming) {
     if (!rowNumber || rowNumber < 1) {
@@ -199,8 +236,9 @@ async function updateExistingSessionRow_(sheets, tab, rowNumber, incoming) {
         incoming.city && isBlankCell_(existing(10)) ? incoming.city.trim() : "";
     const ip =
         incoming.ip && isBlankCell_(existing(11)) ? incoming.ip.trim() : "";
-    const userQueriesCsv =
-        incoming.userQueriesCsv && isBlankCell_(existing(13)) ? incoming.userQueriesCsv.trim() : "";
+    const existingQueries = existing(13);
+    const mergedQueries = mergeCsvUnique_(existingQueries, incoming.userQueriesCsv || "", 40);
+    const userQueriesCsv = mergedQueries && mergedQueries !== existingQueries ? mergedQueries : "";
 
     /** @type {Array<{ range: string, values: string[][] }>} */
     const data = [];
