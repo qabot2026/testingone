@@ -12864,6 +12864,8 @@ function persistClientContext(clientContext) {
 let chatMobileSheetSyncDebounceTimer = 0;
 /** Dedupe after a successful Sheet sync for the same session + mobile string. */
 let chatMobileSheetSyncLastOkKey = "";
+/** Prevent duplicate posts before the first one completes. */
+let chatMobileSheetSyncInFlightKey = "";
 
 /**
  * When Dialogflow/chat captures mobile, POST a Sheets-only row without waiting for the contact form.
@@ -12911,10 +12913,15 @@ function postCapturedMobileToSheetRow(mobileValue) {
     const clientSnapshot = getClientContext();
     const sid =
         typeof clientSnapshot.client_session_id === "string" ? clientSnapshot.client_session_id.trim() : "";
-    const dedupeKey = `${sid}|${mobileValue}`;
-    if (dedupeKey === chatMobileSheetSyncLastOkKey) {
+    const mobileDigits = String(mobileValue || "").replace(/\D/g, "");
+    const dedupeKey = `${sid}|${mobileDigits}`;
+    if (!sid || !mobileDigits) {
         return;
     }
+    if (dedupeKey === chatMobileSheetSyncLastOkKey || dedupeKey === chatMobileSheetSyncInFlightKey) {
+        return;
+    }
+    chatMobileSheetSyncInFlightKey = dedupeKey;
 
     const cfg = readContactFormConfig();
     const formKey = cfg && typeof cfg.formKey === "string" ? cfg.formKey : "unknown";
@@ -12924,7 +12931,7 @@ function postCapturedMobileToSheetRow(mobileValue) {
         headers,
         credentials: "omit",
         body: JSON.stringify({
-            mobile: mobileValue,
+            mobile: mobileDigits,
             client_context: clientSnapshot,
             _contactFormId: formKey,
             _source: "dialogflow_chat"
@@ -12939,6 +12946,11 @@ function postCapturedMobileToSheetRow(mobileValue) {
         })
         .catch(() => {
             /* network / CORS; user can retry with next capture */
+        })
+        .finally(() => {
+            if (chatMobileSheetSyncInFlightKey === dedupeKey) {
+                chatMobileSheetSyncInFlightKey = "";
+            }
         });
 }
 
