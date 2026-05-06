@@ -10638,6 +10638,8 @@ function attachPersonaHandlers(dfMessenger) {
             }
         }
 
+        mergePhoneFromDialogflowParametersIntoStoredContext(event);
+
         if (messages.length > 0) {
             const ms = activeDfMessenger;
             if (ms && typeof ms.renderCustomText === "function") {
@@ -12841,15 +12843,17 @@ function mergeVisitorMobileIntoStoredContext(rawMobile) {
 /**
  * When the bot sends `open_form` with phone hints, persist them to `client_context` immediately so a later
  * file-only or minimal submit (no mobile field on the form) still posts `mobile` to Sheets / the API.
- * @param {Record<string, string> | null} prefill
+ * @param {Record<string, string | number | unknown> | null} prefill
+ * @returns {boolean} true if a phone was merged from known keys / aliases
  */
 function mergePhoneFromOpenFormPrefillIntoStoredContext(prefill) {
     if (!prefill || typeof prefill !== "object") {
-        return;
+        return false;
     }
     const strict = [
         "mobile",
         "phone",
+        "phone-number",
         "tel",
         "whatsapp",
         "whatsapp_number",
@@ -12862,10 +12866,10 @@ function mergePhoneFromOpenFormPrefillIntoStoredContext(prefill) {
     for (let i = 0; i < strict.length; i += 1) {
         const k = strict[i];
         const raw = prefill[k];
-        const v = typeof raw === "string" ? raw.trim() : "";
+        const v = dfParameterScalarToString(raw);
         if (v && /\d/.test(v)) {
             mergeVisitorMobileIntoStoredContext(v);
-            return;
+            return true;
         }
     }
     const alias = {
@@ -12897,10 +12901,143 @@ function mergePhoneFromOpenFormPrefillIntoStoredContext(prefill) {
             continue;
         }
         const raw2 = prefill[key];
-        const v2 = typeof raw2 === "string" ? raw2.trim() : "";
+        const v2 = dfParameterScalarToString(raw2);
         if (v2 && /\d/.test(v2)) {
             mergeVisitorMobileIntoStoredContext(v2);
-            return;
+            return true;
+        }
+    }
+    return false;
+}
+
+/** When parameter names are custom (not phone aliases), pick the longest plausible mobile digit span. */
+function mergeDfParameterDigitsFallback(prefill) {
+    if (!prefill || typeof prefill !== "object") {
+        return;
+    }
+    var pk = Object.keys(prefill);
+    var bestRun = "";
+    for (var p = 0; p < pk.length; p += 1) {
+        var vx = dfParameterScalarToString(prefill[pk[p]]);
+        if (!vx) {
+            continue;
+        }
+        var runs = String(vx).match(/\d+/g);
+        if (!runs) {
+            continue;
+        }
+        for (var r = 0; r < runs.length; r += 1) {
+            if (runs[r].length >= 9 && runs[r].length <= 15 && runs[r].length > bestRun.length) {
+                bestRun = runs[r];
+            }
+        }
+    }
+    if (bestRun) {
+        mergeVisitorMobileIntoStoredContext(bestRun);
+    }
+}
+
+/**
+ * Normalize one Dialogflow parameter value (Cx fullfillment / ES detect) to a display string for phone merging.
+ * @param {unknown} val
+ * @returns {string}
+ */
+function dfParameterScalarToString(val) {
+    if (val == null) {
+        return "";
+    }
+    if (typeof val === "string") {
+        return val.trim();
+    }
+    if (typeof val === "number" && Number.isFinite(val)) {
+        return String(val);
+    }
+    if (Array.isArray(val) && val.length > 0) {
+        return dfParameterScalarToString(val[0]);
+    }
+    if (typeof val === "object") {
+        var o = /** @type {Record<string, unknown>} */ (val);
+        if (typeof o.stringValue === "string") {
+            return o.stringValue.trim();
+        }
+        if (typeof o.numberValue === "number" && Number.isFinite(o.numberValue)) {
+            return String(o.numberValue);
+        }
+        if (typeof o.original === "string") {
+            return o.original.trim();
+        }
+        try {
+            var c = convertDialogflowValue(val);
+            if (typeof c === "string" && c.trim()) {
+                return c.trim();
+            }
+            if (typeof c === "number" && Number.isFinite(c)) {
+                return String(c);
+            }
+        } catch (_e) {
+            /* ignore */
+        }
+    }
+    return "";
+}
+
+/**
+ * Flatten queryResult.parameters to plain string map (handles protobuf structs and @sys.phone-number shapes).
+ * @param {unknown} parameters
+ * @returns {Record<string, string> | null}
+ */
+function stringMapFromDfParametersObject(parameters) {
+    if (!parameters || typeof parameters !== "object") {
+        return null;
+    }
+    var src =
+        parameters.fields && typeof parameters.fields === "object" && !Array.isArray(parameters.fields)
+            ? convertStructFieldsToObject(parameters.fields)
+            : parameters;
+    if (!src || typeof src !== "object") {
+        return null;
+    }
+    /** @type {Record<string, string>} */
+    var out = {};
+    var keys = Object.keys(src);
+    for (var i = 0; i < keys.length; i += 1) {
+        var k = keys[i];
+        var s = dfParameterScalarToString(src[k]);
+        if (s) {
+            out[k] = s;
+        }
+    }
+    return Object.keys(out).length ? out : null;
+}
+
+/** @param {Event | undefined | null} event */
+function getQueryResultObjectFromDfEvent(event) {
+    var d = event && event.detail;
+    return (
+        (d && d.raw && d.raw.queryResult)
+        || (d && d.data && d.data.queryResult)
+        || null
+    );
+}
+
+/**
+ * When the bot fills Dialogflow/CX parameters (e.g. @sys.phone-number, custom `mobile`),
+ * persist a phone-like value into session `client_context` so Sheets uploads see column D without `open_form`.
+ * @param {Event | undefined | null} event
+ */
+function mergePhoneFromDialogflowParametersIntoStoredContext(event) {
+    var qr = getQueryResultObjectFromDfEvent(event);
+    if (!qr || typeof qr !== "object") {
+        return;
+    }
+    /** @type {Record<string, unknown>} */
+    var qro = qr;
+    var params = qro.parameters;
+    var slice = stringMapFromDfParametersObject(params);
+    if (slice) {
+        var fromAliases = mergePhoneFromOpenFormPrefillIntoStoredContext(slice);
+        if (!fromAliases) {
+            mergeDfParameterDigitsFallback(slice);
         }
     }
 }
