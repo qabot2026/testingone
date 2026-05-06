@@ -88,26 +88,88 @@ function corsOriginOption() {
     };
 }
 
-function firstIpFromXForwardedFor(value) {
+function stripIpv4Port_(ip) {
+    const s = typeof ip === "string" ? ip.trim() : "";
+    if (!s) {
+        return "";
+    }
+    return /^\d{1,3}(\.\d{1,3}){3}:\d+$/.test(s) ? s.slice(0, s.lastIndexOf(":")) : s;
+}
+
+function normalizeRemoteAddress_(ip) {
+    const s = typeof ip === "string" ? ip.trim() : "";
+    if (!s) {
+        return "";
+    }
+    // "::ffff:1.2.3.4" → "1.2.3.4"
+    if (s.toLowerCase().startsWith("::ffff:")) {
+        return s.slice("::ffff:".length);
+    }
+    return s;
+}
+
+function isPrivateIpv4_(ip) {
+    const s = stripIpv4Port_(normalizeRemoteAddress_(ip));
+    if (!/^\d{1,3}(\.\d{1,3}){3}$/.test(s)) {
+        return false;
+    }
+    const parts = s.split(".").map((x) => Number.parseInt(x, 10));
+    if (parts.some((n) => !Number.isFinite(n) || n < 0 || n > 255)) {
+        return true;
+    }
+    const [a, b] = parts;
+    if (a === 10) return true;
+    if (a === 127) return true;
+    if (a === 192 && b === 168) return true;
+    if (a === 172 && b >= 16 && b <= 31) return true;
+    if (a === 169 && b === 254) return true;
+    // CGNAT 100.64.0.0/10
+    if (a === 100 && b >= 64 && b <= 127) return true;
+    return false;
+}
+
+function isPrivateIpv6_(ip) {
+    const s = String(ip || "").trim().toLowerCase();
+    if (!s) return true;
+    if (s === "::1") return true;
+    if (s.startsWith("fe80:")) return true; // link-local
+    if (s.startsWith("fc") || s.startsWith("fd")) return true; // unique local
+    return false;
+}
+
+function isPublicIp_(ip) {
+    const s = normalizeRemoteAddress_(stripIpv4Port_(ip));
+    if (!s) return false;
+    // IPv4
+    if (/^\d{1,3}(\.\d{1,3}){3}$/.test(s)) {
+        return !isPrivateIpv4_(s);
+    }
+    // IPv6-ish
+    if (s.includes(":")) {
+        return !isPrivateIpv6_(s);
+    }
+    return false;
+}
+
+function bestIpFromXForwardedFor(value) {
     const raw = typeof value === "string" ? value : "";
     if (!raw.trim()) {
         return "";
     }
-    // "client, proxy1, proxy2"
-    const first = raw.split(",")[0] ? raw.split(",")[0].trim() : "";
-    if (!first) {
-        return "";
+    // Usually: "client, proxy1, proxy2" — but some platforms prepend internal IPs.
+    const parts = raw.split(",").map((x) => normalizeRemoteAddress_(stripIpv4Port_(x))).filter(Boolean);
+    for (const p of parts) {
+        if (isPublicIp_(p)) {
+            return p;
+        }
     }
-    // Strip :port (IPv4:port) but keep IPv6 as-is.
-    if (/^\d{1,3}(\.\d{1,3}){3}:\d+$/.test(first)) {
-        return first.slice(0, first.lastIndexOf(":"));
-    }
-    return first;
+    // Fall back to the first non-empty token.
+    return parts[0] || "";
 }
 
 function extractRequestIp(req) {
     const h = req && req.headers ? req.headers : {};
-    const xf = firstIpFromXForwardedFor(h["x-forwarded-for"]);
+    const xf = bestIpFromXForwardedFor(h["x-forwarded-for"]);
     if (xf) {
         return xf;
     }
@@ -120,7 +182,7 @@ function extractRequestIp(req) {
         return real;
     }
     const ra = req && req.socket && typeof req.socket.remoteAddress === "string"
-        ? req.socket.remoteAddress
+        ? normalizeRemoteAddress_(req.socket.remoteAddress)
         : "";
     return ra || "";
 }
