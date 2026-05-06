@@ -10699,12 +10699,25 @@ function trackChatUserQueryInSessionContext_(raw) {
         const prev = readStoredClientContext();
         const existing = prev && Array.isArray(prev.user_queries) ? prev.user_queries : [];
         const next = existing.filter((x) => typeof x === "string" && x.trim());
+
+        // Deduplicate: `df-user-input-entered` and `df-request-sent` can fire for the same user message.
+        const last = next.length ? String(next[next.length - 1]).trim() : "";
+        if (last && last === t) {
+            return;
+        }
+        const lastAt = typeof prev.user_queries_last_at === "number" ? prev.user_queries_last_at : 0;
+        const now = Date.now();
+        if (last && last === t && now - lastAt < 1500) {
+            return;
+        }
+
         next.push(t);
         // Cap to last 25 queries to avoid growing session storage forever.
         const capped = next.slice(Math.max(0, next.length - 25));
         persistClientContext({
             ...prev,
-            user_queries: capped
+            user_queries: capped,
+            user_queries_last_at: now
         });
     } catch {
         /* ignore */
