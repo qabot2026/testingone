@@ -164,7 +164,7 @@ app.post(
             }
         }
         const clientSessionId = typeof clientContext.client_session_id === "string"
-            ? clientContext.client_session_id
+            ? clientContext.client_session_id.trim()
             : "";
         const browserName = typeof clientContext.browser_name === "string"
             ? clientContext.browser_name.trim()

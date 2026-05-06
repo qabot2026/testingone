@@ -55,7 +55,8 @@ function mobileDigitsOnly(s) {
 
 /**
  * Dedupe strategy:
- * - Primary key: (mobile_digits + clientSessionId) when session id exists
+ * - Primary key: clientSessionId when session id exists (only one Sheet row per session)
+ * - Secondary: (mobile_digits + clientSessionId) retained implicitly by the primary key
  * - Fallback: if session id missing, only dedupe same mobile if another row was appended very recently
  *
  * @param {{ iso: string, mobile: string, clientSessionId: string }} row
@@ -101,14 +102,14 @@ async function alreadyInSheetRecent_(sheets, row) {
         const existingMobile = typeof r[3] === "string" ? r[3].trim() : "";
         const existingSid = typeof r[5] === "string" ? r[5].trim() : "";
 
+        // If we have a session id, enforce "only once per session".
+        if (incomingSid && existingSid && incomingSid === existingSid) {
+            return true;
+        }
+
         const existingMobileDigits = mobileDigitsOnly(existingMobile);
         if (!existingMobileDigits || existingMobileDigits !== incomingMobileDigits) {
             continue;
-        }
-
-        // Strict match when session id is present in either record.
-        if (incomingSid && existingSid && incomingSid === existingSid) {
-            return true;
         }
 
         // Fallback: if session id missing, only suppress duplicates within a short time window.
