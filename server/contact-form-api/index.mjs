@@ -3,7 +3,9 @@
  * Large file uploads: **Google Drive API** in this service, **or** relay to your **Apps Script web app**
  *   (`GOOGLE_APPS_SCRIPT_WEBAPP_URL` → script runs as you, no service-account Drive quota issue).
  *
- * **Easiest “files only” (no database, no Sheet):** set on Railway
+ * **Easiest “files only” (no Firestore):** set on Railway `DRIVE_ONLY=1` + Apps Script or Drive API as below.
+ *   Google Sheets still append when `SHEETS_SPREADSHEET_ID` is set (unless `DISABLE_SHEETS=1`);
+ *   `DRIVE_ONLY` only skips Firestore, not Sheets.
  *   `DRIVE_ONLY=1` + `GOOGLE_APPS_SCRIPT_WEBAPP_URL` (recommended for personal Gmail), **or**
  *   `DRIVE_ONLY=1` + `GOOGLE_DRIVE_FOLDER_ID` + service-account JSON (**Workspace Shared drive** only).
  *
@@ -39,9 +41,8 @@ const PATHNAME = "/contact-form-submissions";
 /** “Just put files in Drive” — one flag instead of DISABLE_FIRESTORE + DISABLE_SHEETS. */
 const DRIVE_ONLY = process.env.DRIVE_ONLY === "1";
 const FIRESTORE_DISABLED = process.env.DISABLE_FIRESTORE === "1" || DRIVE_ONLY;
-/** Sheets on when SHEETS_SPREADSHEET_ID is set and not DISABLE_SHEETS=1 */
+/** Sheets on when SHEETS_SPREADSHEET_ID is set and not DISABLE_SHEETS=1 (independent of DRIVE_ONLY). */
 const SHEETS_DISABLED =
-    DRIVE_ONLY ||
     process.env.DISABLE_SHEETS === "1" ||
     !(process.env.SHEETS_SPREADSHEET_ID || "").trim();
 /** When set, file fields are not accepted; use Sheet + service account only (no Drive/OAuth). */
@@ -175,7 +176,7 @@ app.post(
                 return res.status(400).json({
                     ok: false,
                     error:
-                        "DRIVE_ONLY=1: include at least one file with data in the form, or remove DRIVE_ONLY to save text to Firestore/Sheets."
+                        "DRIVE_ONLY=1: include at least one file with data in the form, or remove DRIVE_ONLY to allow text-only submissions (Firestore / Sheet without attachments)."
                 });
             }
         }
@@ -339,7 +340,7 @@ app.get("/", (_req, res) => {
             `Contact leads API running.`,
             `POST JSON or multipart/form-data → ${PATHNAME}`,
             `GET /health → health check.`,
-            `Drive uploads + optional Firestore/Sheets (set DRIVE_ONLY=1 for files-only).`
+            `Drive uploads + optional Firestore/Sheets (DRIVE_ONLY=1 skips Firestore only; Sheets use SHEETS_SPREADSHEET_ID).`
         ].join("\n")
     );
 });

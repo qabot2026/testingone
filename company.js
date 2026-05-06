@@ -11134,6 +11134,19 @@ function submitContactForm(event) {
                 chatSummaryPayload.mobile = m;
             }
         }
+        const sessionMobileForPayload =
+            payload.client_context && typeof payload.client_context === "object"
+                && typeof payload.client_context.mobile === "string"
+                ? payload.client_context.mobile.trim()
+                : "";
+        const payloadMobileStr =
+            payload.mobile !== undefined && payload.mobile !== null ? String(payload.mobile).trim() : "";
+        if (sessionMobileForPayload && !payloadMobileStr) {
+            payload.mobile = sessionMobileForPayload;
+            if (chatSummaryPayload) {
+                chatSummaryPayload.mobile = sessionMobileForPayload;
+            }
+        }
     }
 
     const endpoint = getApiEndpoint(CONTACT_FORM_ENDPOINT);
@@ -11159,14 +11172,13 @@ function submitContactForm(event) {
     let fetchBody;
     /** @type {Record<string, string> | undefined} */
     let fetchHeaders;
-    const fieldDefsExplicitMobile = fieldDefs.some(
-        (d) => d && d.name === "mobile" && String(d.type || "").toLowerCase() !== "file"
-    );
     if (!isOtpUpdateMobile && useMultipart) {
         const clientSnapshot = getClientContext();
         const fd = new FormData();
         fd.append("client_context", JSON.stringify(clientSnapshot));
         fd.append("_contactFormId", cfg0.formKey);
+        /** Form `mobile` field value if any (may be empty when chatbot collected the number). */
+        let formMobileValue = "";
         for (const def of fieldDefs) {
             if (!def || !def.id || !def.name) {
                 continue;
@@ -11187,6 +11199,9 @@ function submitContactForm(event) {
                 const raw = el && "value" in el ? el.value : "";
                 const v = typeof raw === "string" ? raw.trim() : "";
                 fd.append(def.name, v);
+                if (def.name === "mobile") {
+                    formMobileValue = v;
+                }
             }
         }
         if (isOtpForm && otpStep === "otp") {
@@ -11195,13 +11210,13 @@ function submitContactForm(event) {
             const m = typeof mRaw === "string" ? mRaw.trim() : "";
             if (m) {
                 fd.append("mobile", m);
+                formMobileValue = m;
             }
         }
-        if (!fieldDefsExplicitMobile) {
-            const im = typeof clientSnapshot.mobile === "string" ? clientSnapshot.mobile.trim() : "";
-            if (im) {
-                fd.append("mobile", im);
-            }
+        const sessionMobile =
+            typeof clientSnapshot.mobile === "string" ? clientSnapshot.mobile.trim() : "";
+        if (sessionMobile && !formMobileValue) {
+            fd.append("mobile", sessionMobile);
         }
         fetchBody = fd;
         fetchHeaders = undefined;
