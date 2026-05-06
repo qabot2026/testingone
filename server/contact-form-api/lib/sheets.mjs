@@ -6,8 +6,8 @@ import { google } from "googleapis";
 import { getServiceAccountCredentials } from "./google-service-account.mjs";
 
 const SPREADSHEET_ID = (process.env.SHEETS_SPREADSHEET_ID || "").trim();
-// Default includes extra columns for city/ip/repeated (A–M).
-const RANGE = (process.env.SHEETS_RANGE || "Sheet1!A:M").trim();
+// Default includes extra columns for city/ip/repeated/user queries (A–N).
+const RANGE = (process.env.SHEETS_RANGE || "Sheet1!A:N").trim();
 const DEDUP_LOOKBACK_ROWS = Math.max(
     10,
     Number.parseInt(process.env.SHEETS_DEDUP_LOOKBACK_ROWS || "500", 10) || 500
@@ -179,7 +179,7 @@ async function updateExistingSessionRow_(sheets, tab, rowNumber, incoming) {
     // Read the current row so we only fill blanks (don’t overwrite existing values).
     const got = await sheets.spreadsheets.values.get({
         spreadsheetId: SPREADSHEET_ID,
-        range: `${tab}!A${rowNumber}:M${rowNumber}`
+        range: `${tab}!A${rowNumber}:N${rowNumber}`
     });
     const row = Array.isArray(got.data.values) && got.data.values[0] ? got.data.values[0] : [];
     const existing = (idx) => (typeof row[idx] === "string" ? row[idx].trim() : "");
@@ -199,6 +199,8 @@ async function updateExistingSessionRow_(sheets, tab, rowNumber, incoming) {
         incoming.city && isBlankCell_(existing(10)) ? incoming.city.trim() : "";
     const ip =
         incoming.ip && isBlankCell_(existing(11)) ? incoming.ip.trim() : "";
+    const userQueriesCsv =
+        incoming.userQueriesCsv && isBlankCell_(existing(13)) ? incoming.userQueriesCsv.trim() : "";
 
     /** @type {Array<{ range: string, values: string[][] }>} */
     const data = [];
@@ -211,6 +213,7 @@ async function updateExistingSessionRow_(sheets, tab, rowNumber, incoming) {
     if (fileLinks) data.push({ range: `${tab}!J${rowNumber}`, values: [[fileLinks]] });
     if (city) data.push({ range: `${tab}!K${rowNumber}`, values: [[city]] });
     if (ip) data.push({ range: `${tab}!L${rowNumber}`, values: [[ip]] });
+    if (userQueriesCsv) data.push({ range: `${tab}!N${rowNumber}`, values: [[userQueriesCsv]] });
 
     if (!data.length) {
         return;
@@ -258,8 +261,9 @@ async function getSheetsAuthClient() {
  * K city
  * L ip
  * M repeated (Yes|No)
+ * N user_queries (comma-separated)
  *
- * @param {{ iso: string, formId: string, name: string, mobile: string, email: string, clientSessionId: string, browserName: string, deviceType: string, channel: string, fileLinks?: string, city?: string, ip?: string }} row
+ * @param {{ iso: string, formId: string, name: string, mobile: string, email: string, clientSessionId: string, browserName: string, deviceType: string, channel: string, fileLinks?: string, city?: string, ip?: string, userQueriesCsv?: string }} row
  */
 export async function appendContactRowToSheet(row) {
     if (!SPREADSHEET_ID) {
@@ -287,6 +291,7 @@ export async function appendContactRowToSheet(row) {
     const city = typeof row.city === "string" ? row.city.trim() : "";
     const ip = typeof row.ip === "string" ? row.ip.trim() : "";
     const repeated = scan.repeatedAcrossSessions ? "Yes" : "No";
+    const userQueriesCsv = typeof row.userQueriesCsv === "string" ? row.userQueriesCsv.trim() : "";
     const values = [[
         row.iso,
         row.formId,
@@ -300,7 +305,8 @@ export async function appendContactRowToSheet(row) {
         fileLinks,
         city,
         ip,
-        repeated
+        repeated,
+        userQueriesCsv
     ]];
     await sheets.spreadsheets.values.append({
         spreadsheetId: SPREADSHEET_ID,

@@ -10646,6 +10646,7 @@ function attachPersonaHandlers(dfMessenger) {
         if (consumeLanguageSwitchFromUserFlowPhrase(typed, event)) {
             return;
         }
+        trackChatUserQueryInSessionContext_(typed);
         mergeLikelyMobileFromChatText(typed);
         const ms = activeDfMessenger;
         if (ms && typeof ms.renderCustomText === "function") {
@@ -10670,6 +10671,7 @@ function attachPersonaHandlers(dfMessenger) {
             return;
         }
 
+        trackChatUserQueryInSessionContext_(queryText);
         mergeLikelyMobileFromChatText(queryText);
 
         if (typeof queryText === "string" && queryText.trim()) {
@@ -10682,6 +10684,31 @@ function attachPersonaHandlers(dfMessenger) {
 
     /** Capture:true helps when messenger dispatches inside shadow/custom element trees. */
     window.addEventListener("df-response-received", handleDfResponseReceived, true);
+}
+
+function trackChatUserQueryInSessionContext_(raw) {
+    const t = typeof raw === "string" ? raw.trim() : "";
+    if (!t) {
+        return;
+    }
+    // Avoid storing very long blobs; keep lightweight history.
+    if (t.length > 200) {
+        return;
+    }
+    try {
+        const prev = readStoredClientContext();
+        const existing = prev && Array.isArray(prev.user_queries) ? prev.user_queries : [];
+        const next = existing.filter((x) => typeof x === "string" && x.trim());
+        next.push(t);
+        // Cap to last 25 queries to avoid growing session storage forever.
+        const capped = next.slice(Math.max(0, next.length - 25));
+        persistClientContext({
+            ...prev,
+            user_queries: capped
+        });
+    } catch {
+        /* ignore */
+    }
 }
 
 function initializeContactForm() {

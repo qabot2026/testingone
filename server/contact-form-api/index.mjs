@@ -125,6 +125,20 @@ function extractRequestIp(req) {
     return ra || "";
 }
 
+function normalizeUserQueriesCsvFromClientContext(clientContext) {
+    const ctx = clientContext && typeof clientContext === "object" ? clientContext : {};
+    const arr = Array.isArray(ctx.user_queries) ? ctx.user_queries : null;
+    if (arr) {
+        const cleaned = arr
+            .filter((x) => typeof x === "string")
+            .map((s) => s.trim())
+            .filter(Boolean);
+        return cleaned.join(", ");
+    }
+    const raw = typeof ctx.user_queries_csv === "string" ? ctx.user_queries_csv.trim() : "";
+    return raw;
+}
+
 const GEOIP_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 /** @type {Map<string, { city: string, ts: number }>} */
 const geoIpCityCache = new Map();
@@ -359,6 +373,7 @@ app.post(
         const iso = new Date().toISOString();
         const ip = extractRequestIp(req);
         const city = await resolveCityForRequest(req);
+        const userQueriesCsv = normalizeUserQueriesCsvFromClientContext(mergedClientContext);
         /** Firestore-safe payload (flattened for querying) */
         const fileLinksForSheet = drive_uploads
             .map((u) => (typeof u.web_view_link === "string" ? u.web_view_link : ""))
@@ -412,7 +427,8 @@ app.post(
                         channel,
                         fileLinks: fileLinksForSheet,
                         ip,
-                        city
+                        city,
+                        userQueriesCsv
                     });
                 } catch (se) {
                     const detail = se && se.message ? se.message : String(se);
@@ -509,6 +525,7 @@ app.post(
         const iso = new Date().toISOString();
         const ip = extractRequestIp(req);
         const city = await resolveCityForRequest(req);
+        const userQueriesCsv = normalizeUserQueriesCsvFromClientContext(mergedClientContext);
 
         try {
             await appendContactRowToSheet({
@@ -523,7 +540,8 @@ app.post(
                 channel,
                 fileLinks: "",
                 ip,
-                city
+                city,
+                userQueriesCsv
             });
             return res.status(200).json({ ok: true, message: "Sheet updated." });
         } catch (se) {
