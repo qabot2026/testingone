@@ -2,7 +2,7 @@
  * Per-upload folder names under the parent Drive folder / Apps Script target.
  *
  * With mobile: `{digits}_{dd}_{mm}_{yyyy}_{n}` (n = 1,2,… for that mobile on that calendar day)
- * No mobile: `{session}_{dd}_{mm}_{yyyy}_{n}`
+ * No mobile: `{session}__{dd}_{mm}_{yyyy}_{n}` (double underscore before date — distinguishes session token from date segments)
  * No mobile/session: `unknown_{dd}_{mm}_{yyyy}_{n}`
  *
  * Calendar day uses `CONTACT_FORM_SUBMISSION_TZ` (IANA), default `UTC`. Set e.g. `Asia/Kolkata` on the host if needed.
@@ -84,9 +84,15 @@ export function nextSessionSubmissionFolderName(sessionBase, folderNames, dateLa
         return nextUnknownFolderName(folderNames, dateLabel);
     }
     const ranks = new Set();
-    const re = new RegExp(`^${escapeRegExp(sessionBase)}_${escapeRegExp(dateLabel)}_(\\d+)$`);
+    const esc = escapeRegExp(sessionBase);
+    const escD = escapeRegExp(dateLabel);
+    const reNew = new RegExp(`^${esc}__${escD}_(\\d+)$`);
+    const reLegacy = new RegExp(`^${esc}_${escD}_(\\d+)$`);
     for (const n of folderNames) {
-        const m = n.match(re);
+        let m = n.match(reNew);
+        if (!m) {
+            m = n.match(reLegacy);
+        }
         if (m) {
             const r = parseInt(m[1], 10);
             if (!Number.isNaN(r)) {
@@ -95,7 +101,7 @@ export function nextSessionSubmissionFolderName(sessionBase, folderNames, dateLa
         }
     }
     const nextRank = ranks.size === 0 ? 1 : Math.max(...ranks) + 1;
-    return `${sessionBase}_${dateLabel}_${nextRank}`;
+    return `${sessionBase}__${dateLabel}_${nextRank}`;
 }
 
 /** `unknown_{date}_1`, `unknown_{date}_2`, … */

@@ -7,15 +7,21 @@
  * Legacy: set `GOOGLE_APPS_SCRIPT_USE_MULTIPART=1` to send multipart (only if your script parses it).
  */
 
-import { resolveMobileForUpstream } from "./contact-mobile.mjs";
-import { normalizeMobileDigits } from "./submission-folder-name.mjs";
+import { resolveMobileForUpstream, resolveSubmissionMobileDigits } from "./contact-mobile.mjs";
 
 /**
  * @param {string} webAppUrl e.g. https://script.google.com/macros/s/DEPLOYMENT_ID/exec
- * @param {{ files: Array<import('multer').File & { buffer: Buffer }>, fields: Record<string, string>, clientContext: object, formId: string, mobile?: string }} payload
+ * @param {{ files: Array<import('multer').File & { buffer: Buffer }>, fields: Record<string, string>, clientContext: object, formId: string, mobile?: string, body?: Record<string, unknown> }} payload
  */
 export async function forwardSubmissionToAppsScript(webAppUrl, payload) {
-    const { files = [], fields = {}, clientContext = {}, formId = "unknown", mobile = "" } = payload;
+    const {
+        files = [],
+        fields = {},
+        clientContext = {},
+        formId = "unknown",
+        mobile = "",
+        body = {}
+    } = payload;
     const fileParts = (Array.isArray(files) ? files : []).filter(
         (f) => f && Buffer.isBuffer(f.buffer) && f.buffer.length > 0
     );
@@ -32,12 +38,16 @@ export async function forwardSubmissionToAppsScript(webAppUrl, payload) {
 
     const useMultipart = process.env.GOOGLE_APPS_SCRIPT_USE_MULTIPART === "1";
 
-    const effectiveMobile = resolveMobileForUpstream(
+    const bodyObj = body && typeof body === "object" ? body : {};
+    let effectiveMobile = resolveMobileForUpstream(
         fields,
         clientContext,
         typeof mobile === "string" ? mobile : ""
     );
-    const mobileDigits = normalizeMobileDigits(effectiveMobile);
+    const mobileDigits = resolveSubmissionMobileDigits(fields, bodyObj, clientContext);
+    if (!effectiveMobile && mobileDigits) {
+        effectiveMobile = mobileDigits;
+    }
     const fieldsForOutbound = effectiveMobile
         ? { ...fields, mobile: effectiveMobile }
         : { ...fields };
@@ -74,7 +84,7 @@ export async function forwardSubmissionToAppsScript(webAppUrl, payload) {
             ...fieldsForOutbound,
             _contactFormId: String(formId),
             client_context: clientContext,
-            ...(mobileDigits ? { _submission_mobile_digits: mobileDigits } : {}),
+            ...(mobileDigits ? { _submission_mobile_digits: String(mobileDigits) } : {}),
             _files: fileParts.map((f) => ({
                 field: typeof f.fieldname === "string" && f.fieldname.trim() ? f.fieldname : "file",
                 name:

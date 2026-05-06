@@ -198,7 +198,8 @@ app.post(
                         fields,
                         clientContext: mergedClientContext,
                         formId,
-                        mobile
+                        mobile,
+                        body
                     });
                     drive_uploads = pack.uploads;
                     filesStoredExternally = true;

@@ -1,6 +1,6 @@
 /**
  * Web app: POST application/json with _files[].dataBase64.
- * Creates a subfolder: {mobile}_{dd}_{mm}_{yyyy}_1,_2,… or {session}_{date}_1,… or unknown_{date}_1,…
+ * Creates a subfolder: {mobile}_{dd}_{mm}_{yyyy}_1,_2,… or {session}__{dd}_{mm}_{yyyy}_1 (double underscore), …_2, …
  *
  * Parent folder: Script property UPLOAD_FOLDER_ID and/or JSON _drive_folder_id (from Railway GOOGLE_DRIVE_FOLDER_ID).
  * Deploy: Execute as Me, Who has access: Anyone — new version after edits.
@@ -217,15 +217,17 @@ function sanitizeSession_(raw) {
 function nextSessionFolderName_(base, folderNames, dateLabel) {
   if (!base) return nextUnknownFolderName_(folderNames, dateLabel);
   var ranks = {};
-  var re = new RegExp(
-    "^" + escapeRe_(base) + "_" + escapeRe_(dateLabel) + "_(\\d+)$"
-  );
+  var esc = escapeRe_(base);
+  var escD = escapeRe_(dateLabel);
+  var reNew = new RegExp("^" + esc + "__" + escD + "_(\\d+)$");
+  var reLegacy = new RegExp("^" + esc + "_" + escD + "_(\\d+)$");
   for (var i = 0; i < folderNames.length; i++) {
-    var m = folderNames[i].match(re);
+    var n = folderNames[i];
+    var m = n.match(reNew) || n.match(reLegacy);
     if (m) addRanks_(ranks, parseInt(m[1], 10));
   }
   var nextRank = Object.keys(ranks).length ? maxRankFromRanks_(ranks) + 1 : 1;
-  return base + "_" + dateLabel + "_" + nextRank;
+  return base + "__" + dateLabel + "_" + nextRank;
 }
 
 function nextUnknownFolderName_(folderNames, dateLabel) {
@@ -244,7 +246,7 @@ function nextUnknownFolderName_(folderNames, dateLabel) {
 }
 
 function doGet() {
-  return ContentService.createTextOutput("POST JSON uploads (subfolders by mobile or session id).").setMimeType(
+  return ContentService.createTextOutput("POST JSON uploads (subfolders by mobile or session id + date).").setMimeType(
     ContentService.MimeType.TEXT
   );
 }
