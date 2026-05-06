@@ -30,7 +30,7 @@ import { appendContactRowToSheet } from "./lib/sheets.mjs";
 import { uploadSubmissionFilesToDrive } from "./lib/drive-upload.mjs";
 import { hasDriveUploadCredentials } from "./lib/drive-auth.mjs";
 import { forwardSubmissionToAppsScript } from "./lib/apps-script-upload.mjs";
-import { resolveContactMobile, scalarFormValue } from "./lib/contact-mobile.mjs";
+import { resolveContactMobile, resolveSubmissionMobileDigits, scalarFormValue } from "./lib/contact-mobile.mjs";
 
 const APPS_SCRIPT_WEBAPP_URL = (process.env.GOOGLE_APPS_SCRIPT_WEBAPP_URL || "").trim();
 
@@ -148,7 +148,13 @@ app.post(
 
         const name = fields.name ?? "";
         const email = fields.email ?? "";
-        const mobile = resolveContactMobile(fields, body, clientContext);
+        let mobile = resolveContactMobile(fields, body, clientContext);
+        if (!mobile) {
+            const digitsFromContext = resolveSubmissionMobileDigits(fields, body, clientContext);
+            if (digitsFromContext) {
+                mobile = digitsFromContext;
+            }
+        }
         const clientSessionId = typeof clientContext.client_session_id === "string"
             ? clientContext.client_session_id
             : "";

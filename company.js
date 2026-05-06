@@ -10633,6 +10633,9 @@ function attachPersonaHandlers(dfMessenger) {
         if (willOpenForm) {
             contactFormOpenPending = true;
             pendingOpenFormPrefill = extractOpenFormPrefillFromEvent(event);
+            if (pendingOpenFormPrefill) {
+                mergePhoneFromOpenFormPrefillIntoStoredContext(pendingOpenFormPrefill);
+            }
         }
 
         if (messages.length > 0) {
@@ -12832,6 +12835,73 @@ function mergeVisitorMobileIntoStoredContext(rawMobile) {
         });
     } catch {
         /* ignore */
+    }
+}
+
+/**
+ * When the bot sends `open_form` with phone hints, persist them to `client_context` immediately so a later
+ * file-only or minimal submit (no mobile field on the form) still posts `mobile` to Sheets / the API.
+ * @param {Record<string, string> | null} prefill
+ */
+function mergePhoneFromOpenFormPrefillIntoStoredContext(prefill) {
+    if (!prefill || typeof prefill !== "object") {
+        return;
+    }
+    const strict = [
+        "mobile",
+        "phone",
+        "tel",
+        "whatsapp",
+        "whatsapp_number",
+        "contact_phone",
+        "mobile_number",
+        "phone_number",
+        "cell",
+        "cell_phone"
+    ];
+    for (let i = 0; i < strict.length; i += 1) {
+        const k = strict[i];
+        const raw = prefill[k];
+        const v = typeof raw === "string" ? raw.trim() : "";
+        if (v && /\d/.test(v)) {
+            mergeVisitorMobileIntoStoredContext(v);
+            return;
+        }
+    }
+    const alias = {
+        mobile: true,
+        phonenumber: true,
+        phone: true,
+        tel: true,
+        whatsapp: true,
+        whatsappnumber: true,
+        contactnumber: true,
+        contactphone: true,
+        contactmobile: true,
+        cell: true,
+        cellphone: true,
+        mobilenumber: true,
+        mobilephone: true,
+        usermobile: true,
+        yourmobile: true,
+        customermobile: true
+    };
+    const keys = Object.keys(prefill);
+    for (let j = 0; j < keys.length; j += 1) {
+        const key = keys[j];
+        const nk = String(key || "")
+            .trim()
+            .toLowerCase()
+            .replace(/[^a-z0-9]/g, "");
+        if (!alias[nk]) {
+            continue;
+        }
+        const raw2 = prefill[key];
+        const v2 = typeof raw2 === "string" ? raw2.trim() : "";
+        if (v2 && /\d/.test(v2)) {
+            mergeVisitorMobileIntoStoredContext(v2);
+            return;
+        }
     }
 }
 
