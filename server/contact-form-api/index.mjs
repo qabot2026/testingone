@@ -39,7 +39,6 @@ import { uploadSubmissionFilesToDrive } from "./lib/drive-upload.mjs";
 import { hasDriveUploadCredentials } from "./lib/drive-auth.mjs";
 import { forwardSubmissionToAppsScript } from "./lib/apps-script-upload.mjs";
 import { resolveContactMobile, resolveSubmissionMobileDigits, scalarFormValue } from "./lib/contact-mobile.mjs";
-import { readGenericTableFile } from "./lib/xml-generic-table.mjs";
 import { bookAppointment, listBookedSlots } from "./lib/appointments.mjs";
 import { listBranches, listDepartments, listDoctors } from "./lib/catalog-rtdb.mjs";
 
@@ -284,56 +283,8 @@ app.options(PATHNAME_MOBILE_SHEET_SYNC, (_req, res) => res.sendStatus(204));
 app.options(PATHNAME_SESSION_SHEET_SYNC, (_req, res) => res.sendStatus(204));
 
 // ---------------------------------------------------------------------------
-// Doctors/Branches feeds (sample XML) + appointment booking (Firestore)
+// Catalog + appointments: Firebase Realtime Database (CSV upload → RTDB)
 // ---------------------------------------------------------------------------
-
-const DOCTORS_XML_PATH = new URL("./data/doctors.sample.xml", import.meta.url);
-const BRANCHES_XML_PATH = new URL("./data/branches.sample.xml", import.meta.url);
-
-function readDoctors_() {
-    return readGenericTableFile({
-        filePath: DOCTORS_XML_PATH,
-        itemTag: "Doctor",
-        fields: [
-            "DoctorId",
-            "ImageUrl",
-            "PageUrl",
-            "Tags",
-            "DoctorName",
-            "DisplayDoctorName",
-            "Specialization",
-            "Designation",
-            "BranchId",
-            "Education",
-            "TimingPattern",
-            "Description"
-        ]
-    });
-}
-
-function readBranches_() {
-    return readGenericTableFile({
-        filePath: BRANCHES_XML_PATH,
-        itemTag: "Branch",
-        fields: [
-            "BranchId",
-            "ImageUrl",
-            "PageUrl",
-            "Tags",
-            "BranchName",
-            "State",
-            "City",
-            "Area",
-            "Address",
-            "Latitude",
-            "Longitude",
-            "GoogleMap",
-            "BranchTiming",
-            "ContactNumber",
-            "ContactEmail"
-        ]
-    });
-}
 
 /** Return "mon|tue|..." from YYYY-MM-DD (UTC-based, stable) */
 function weekdayKeyFromDateIso_(dateISO) {
@@ -366,13 +317,23 @@ function slotsFromTimingPattern_(timingPattern, weekdayKey) {
     return [];
 }
 
-app.get("/branches.xml", (_req, res) => {
-    return res.status(200).type("application/xml; charset=utf-8").send(fs.readFileSync(BRANCHES_XML_PATH, "utf8"));
-});
-
-app.get("/doctors.xml", (_req, res) => {
-    return res.status(200).type("application/xml; charset=utf-8").send(fs.readFileSync(DOCTORS_XML_PATH, "utf8"));
-});
+/**
+ * Slot labels for a doctor on a calendar day: `TimingPattern` (per-weekday) or CSV `Days`+`Start`+`End`.
+ */
+function slotsForDoctorOnDate_(d, dateISO) {
+    const weekdayKey = weekdayKeyFromDateIso_(dateISO);
+    const wdShort = weekdayShort_(dateISO);
+    const tp = normalizeStr_(d.TimingPattern);
+    if (tp) {
+        return slotsFromTimingPattern_(tp, weekdayKey);
+    }
+    const days = normalizeStr_(d.Days);
+    const start = normalizeStr_(d.Start);
+    const end = normalizeStr_(d.End);
+    if (!dayInDaysField_(wdShort, days)) return [];
+    if (start && end) return [`${start} - ${end}`];
+    return [];
+}
 
 // JSON helpers for CX webhooks (easier to consume than XML)
 app.get("/api/branches", (_req, res) => {
@@ -420,13 +381,22 @@ app.get("/api/slots", async (req, res) => {
     if (!doctorId || !dateISO) {
         return res.status(400).json({ ok: false, error: "Missing doctorId or date (YYYY-MM-DD)." });
     }
-    const docs = readDoctors_();
-    const d = docs.find((x) => (x.DoctorId || "").trim() === doctorId);
+    if (firebaseInitError) {
+        return res.status(503).json({ ok: false, error: `Firebase init failed: ${firebaseInitError}` });
+    }
+    let d;
+    try {
+        const docs = await listDoctors();
+        d = docs.find((x) => String(x.DoctorId || "").trim() === doctorId) || null;
+    } catch (e) {
+        const msg = e && e.message ? e.message : String(e);
+        return res.status(500).json({ ok: false, error: msg });
+    }
     if (!d) {
         return res.status(404).json({ ok: false, error: "Doctor not found." });
     }
     const weekdayKey = weekdayKeyFromDateIso_(dateISO);
-    const slots = slotsFromTimingPattern_(d.TimingPattern, weekdayKey);
+    const slots = slotsForDoctorOnDate_(d, dateISO);
     let booked = [];
     // Booked slots come from Firebase Realtime DB (not Firestore).
     try {

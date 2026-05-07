@@ -1,2 +1,2 @@
 BranchId,ImageUrl,PageUrl,Tags,BranchName,State,City,Area,Address,Latitude,Longitude,GoogleMap,BranchTiming,ContactNumber,ContactEmail
-500,,,,Artemis Main Branch,IN,Pune,,,,,,,,
+500,https://storage.googleapis.com/uploadedfilesbucket/location.png,https://storage.googleapis.com/uploadedfilesbucket/location.png,,Artemis Main Branch,Maharashtra,Pune,Aundh,Address of barnch is…,,,,10 AM - 7 PM,,
