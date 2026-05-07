@@ -717,10 +717,11 @@ app.post("/webhook", express.json({ limit: "512kb" }), async (req, res) => {
 
         if (tag === "get_specializations") {
             const city = normalizeStr_(params.city);
+            if (!city) {
+                return fallback("Please provide a city.");
+            }
             const docs = await listDoctors();
-            const filtered = city
-                ? docs.filter((d) => normalizeLower_(d.City) === normalizeLower_(city))
-                : docs;
+            const filtered = docs.filter((d) => normalizeLower_(d.City) === normalizeLower_(city));
             const specs = Array.from(new Set(filtered.map((d) => normalizeStr_(d.Specialization)).filter(Boolean)))
                 .sort((a, b) => a.localeCompare(b));
             if (!specs.length) return fallback("No specializations found.");
