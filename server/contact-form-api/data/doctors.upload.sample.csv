@@ -1,0 +1,4 @@
+DoctorId,ImageUrl,PageUrl,Tags,DoctorName,DisplayDoctorName,Specialization,Designation,BranchId,City,Description,Education,Days,Start,End
+300,https://www.artemishospitals.com/images/doctor-300.png,https://www.artemishospitals.com/doctors/dr-aditya-gupta,,Aditya Gupta,Dr. Aditya Gupta,Neurosurgery,Chairperson,500,Pune,Doctors in Education,Education,"Mon,Tue,Wed,Thu,Fri",10:00 AM,4:00 PM
+301,https://www.artemishospitals.com/images/doctor-301.png,https://www.artemishospitals.com/doctors/dr-namit-jain,,Namit Jain,Dr. Namit Jain,Pathology,Chairperson,500,Pune,Dr. Namit Jain profile,Education,"Mon,Tue,Wed,Thu,Fri",10:00 AM,4:00 PM
+302,https://www.artemishospitals.com/images/doctor-302.png,https://www.artemishospitals.com/doctors/dr-sanjay-mehra,,Sanjay Mehra,Dr. Sanjay Mehra,Radiology,Chairperson,500,Pune,Dr. Sanjay Mehra profile,Education,"Mon,Tue,Wed,Thu,Fri",9:00 AM,3:00 PM

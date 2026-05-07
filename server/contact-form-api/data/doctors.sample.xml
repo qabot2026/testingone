@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<GenericTable>
+  <Doctor>
+    <DoctorId>102</DoctorId>
+    <ImageUrl></ImageUrl>
+    <PageUrl></PageUrl>
+    <Tags></Tags>
+    <DoctorName>Ananya Sharma</DoctorName>
+    <DisplayDoctorName>Dr. Ananya Sharma</DisplayDoctorName>
+    <Specialization>General Physician</Specialization>
+    <Designation>MBBS, MD (General Medicine)</Designation>
+    <BranchId>500</BranchId>
+    <Education></Education>
+    <TimingPattern>mon:10:00 AM-1:00 PM,5:00 PM-7:00 PM; wed:10:00 AM-1:00 PM; fri:5:00 PM-7:00 PM</TimingPattern>
+    <Description>Clinic A — 2nd Floor. Walk-ins allowed when slots are full.</Description>
+  </Doctor>
+  <Doctor>
+    <DoctorId>105</DoctorId>
+    <ImageUrl></ImageUrl>
+    <PageUrl></PageUrl>
+    <Tags></Tags>
+    <DoctorName>Rohit Patel</DoctorName>
+    <DisplayDoctorName>Dr. Rohit Patel</DisplayDoctorName>
+    <Specialization>Orthopedics</Specialization>
+    <Designation>MBBS, MS (Orthopedics)</Designation>
+    <BranchId>500</BranchId>
+    <Education></Education>
+    <TimingPattern>tue:11:00 AM-2:00 PM; thu:4:00 PM-8:00 PM; sat:9:00 AM-12:00 PM</TimingPattern>
+    <Description>Clinic B — Ground Floor. X-ray reports recommended for ortho consult.</Description>
+  </Doctor>
+  <Doctor>
+    <DoctorId>107</DoctorId>
+    <ImageUrl></ImageUrl>
+    <PageUrl></PageUrl>
+    <Tags></Tags>
+    <DoctorName>Sana Khan</DoctorName>
+    <DisplayDoctorName>Dr. Sana Khan</DisplayDoctorName>
+    <Specialization>Dental / Orthodontics</Specialization>
+    <Designation>BDS, MDS (Orthodontics)</Designation>
+    <BranchId>500</BranchId>
+    <Education></Education>
+    <TimingPattern>mon:3:00 PM-6:00 PM; tue:3:00 PM-6:00 PM; thu:3:00 PM-6:00 PM</TimingPattern>
+    <Description>Dental Wing — 1st Floor. Braces consult typically needs 30 minutes.</Description>
+  </Doctor>
+</GenericTable>

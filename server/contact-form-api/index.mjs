@@ -30,12 +30,16 @@ import fs from "node:fs";
 import express from "express";
 import cors from "cors";
 import multer from "multer";
-import { firebaseAdminInit, persistToFirestore } from "./lib/firestore.mjs";
+import { firebaseAdminInit } from "./lib/firebase-admin-init.mjs";
+import { persistToFirestore } from "./lib/firestore.mjs";
 import { appendContactRowToSheet, upsertSessionQueriesInSheet } from "./lib/sheets.mjs";
 import { uploadSubmissionFilesToDrive } from "./lib/drive-upload.mjs";
 import { hasDriveUploadCredentials } from "./lib/drive-auth.mjs";
 import { forwardSubmissionToAppsScript } from "./lib/apps-script-upload.mjs";
 import { resolveContactMobile, resolveSubmissionMobileDigits, scalarFormValue } from "./lib/contact-mobile.mjs";
+import { readGenericTableFile } from "./lib/xml-generic-table.mjs";
+import { bookAppointment, listBookedSlots } from "./lib/appointments.mjs";
+import { listBranches, listDepartments, listDoctors } from "./lib/catalog-rtdb.mjs";
 
 const APPS_SCRIPT_WEBAPP_URL = (process.env.GOOGLE_APPS_SCRIPT_WEBAPP_URL || "").trim();
 
@@ -260,7 +264,7 @@ if (hasFirebaseCredentials()) {
 const app = express();
 app.use(cors({
     origin: corsOriginOption(),
-    methods: ["POST", "OPTIONS"],
+    methods: ["GET", "POST", "OPTIONS"],
     allowedHeaders: ["Content-Type", "X-Contact-Form-Mobile-Sync-Secret"],
     optionsSuccessStatus: 204
 }));
@@ -268,6 +272,386 @@ app.use(cors({
 app.options(PATHNAME, (_req, res) => res.sendStatus(204));
 app.options(PATHNAME_MOBILE_SHEET_SYNC, (_req, res) => res.sendStatus(204));
 app.options(PATHNAME_SESSION_SHEET_SYNC, (_req, res) => res.sendStatus(204));
+
+// ---------------------------------------------------------------------------
+// Doctors/Branches feeds (sample XML) + appointment booking (Firestore)
+// ---------------------------------------------------------------------------
+
+const DOCTORS_XML_PATH = new URL("./data/doctors.sample.xml", import.meta.url);
+const BRANCHES_XML_PATH = new URL("./data/branches.sample.xml", import.meta.url);
+
+function readDoctors_() {
+    return readGenericTableFile({
+        filePath: DOCTORS_XML_PATH,
+        itemTag: "Doctor",
+        fields: [
+            "DoctorId",
+            "ImageUrl",
+            "PageUrl",
+            "Tags",
+            "DoctorName",
+            "DisplayDoctorName",
+            "Specialization",
+            "Designation",
+            "BranchId",
+            "Education",
+            "TimingPattern",
+            "Description"
+        ]
+    });
+}
+
+function readBranches_() {
+    return readGenericTableFile({
+        filePath: BRANCHES_XML_PATH,
+        itemTag: "Branch",
+        fields: [
+            "BranchId",
+            "ImageUrl",
+            "PageUrl",
+            "Tags",
+            "BranchName",
+            "State",
+            "City",
+            "Area",
+            "Address",
+            "Latitude",
+            "Longitude",
+            "GoogleMap",
+            "BranchTiming",
+            "ContactNumber",
+            "ContactEmail"
+        ]
+    });
+}
+
+/** Return "mon|tue|..." from YYYY-MM-DD (UTC-based, stable) */
+function weekdayKeyFromDateIso_(dateISO) {
+    const d = new Date(`${dateISO}T00:00:00.000Z`);
+    const wd = d.getUTCDay(); // 0=Sun
+    return wd === 0 ? "sun" : wd === 1 ? "mon" : wd === 2 ? "tue" : wd === 3 ? "wed" : wd === 4 ? "thu" : wd === 5 ? "fri" : "sat";
+}
+
+/**
+ * TimingPattern (sample format):
+ * "mon:10:00 AM-1:00 PM,5:00 PM-7:00 PM; wed:10:00 AM-1:00 PM; fri:5:00 PM-7:00 PM"
+ *
+ * Returns a list of slot labels for one weekday. For now we keep slots as the ranges themselves.
+ */
+function slotsFromTimingPattern_(timingPattern, weekdayKey) {
+    const s = String(timingPattern || "");
+    if (!s.trim()) return [];
+    const parts = s.split(";").map((x) => x.trim()).filter(Boolean);
+    for (const p of parts) {
+        const idx = p.indexOf(":");
+        if (idx === -1) continue;
+        const day = p.slice(0, idx).trim().toLowerCase();
+        if (day !== weekdayKey) continue;
+        const slotsStr = p.slice(idx + 1).trim();
+        return slotsStr
+            .split(",")
+            .map((x) => x.trim())
+            .filter(Boolean);
+    }
+    return [];
+}
+
+app.get("/branches.xml", (_req, res) => {
+    return res.status(200).type("application/xml; charset=utf-8").send(fs.readFileSync(BRANCHES_XML_PATH, "utf8"));
+});
+
+app.get("/doctors.xml", (_req, res) => {
+    return res.status(200).type("application/xml; charset=utf-8").send(fs.readFileSync(DOCTORS_XML_PATH, "utf8"));
+});
+
+// JSON helpers for CX webhooks (easier to consume than XML)
+app.get("/api/branches", (_req, res) => {
+    listBranches()
+        .then((branches) => res.status(200).json({ ok: true, branches, source: "firebase_rtdb" }))
+        .catch((e) => {
+            const msg = e && e.message ? e.message : String(e);
+            res.status(500).json({ ok: false, error: msg });
+        });
+});
+
+app.get("/api/departments", (req, res) => {
+    const branchId = typeof req.query.branchId === "string" ? req.query.branchId.trim() : "";
+    listDepartments({ branchId: branchId || undefined })
+        .then((departments) => res.status(200).json({ ok: true, branchId: branchId || null, departments, source: "firebase_rtdb" }))
+        .catch((e) => {
+            const msg = e && e.message ? e.message : String(e);
+            res.status(500).json({ ok: false, error: msg });
+        });
+});
+
+app.get("/api/doctors", (req, res) => {
+    const branchId = typeof req.query.branchId === "string" ? req.query.branchId.trim() : "";
+    const department = typeof req.query.department === "string" ? req.query.department.trim() : "";
+    listDoctors({ branchId: branchId || undefined, department: department || undefined })
+        .then((doctors) => res.status(200).json({ ok: true, doctors, source: "firebase_rtdb" }))
+        .catch((e) => {
+            const msg = e && e.message ? e.message : String(e);
+            res.status(500).json({ ok: false, error: msg });
+        });
+});
+
+app.get("/api/slots", async (req, res) => {
+    const doctorId = typeof req.query.doctorId === "string" ? req.query.doctorId.trim() : "";
+    const dateISO = typeof req.query.date === "string" ? req.query.date.trim() : "";
+    if (!doctorId || !dateISO) {
+        return res.status(400).json({ ok: false, error: "Missing doctorId or date (YYYY-MM-DD)." });
+    }
+    const docs = readDoctors_();
+    const d = docs.find((x) => (x.DoctorId || "").trim() === doctorId);
+    if (!d) {
+        return res.status(404).json({ ok: false, error: "Doctor not found." });
+    }
+    const weekdayKey = weekdayKeyFromDateIso_(dateISO);
+    const slots = slotsFromTimingPattern_(d.TimingPattern, weekdayKey);
+    let booked = [];
+    // Booked slots come from Firebase Realtime DB (not Firestore).
+    try {
+        booked = await listBookedSlots({ doctorId, dateISO });
+    } catch {
+        booked = [];
+    }
+    const bookedSet = new Set(booked);
+    const available = slots.filter((s) => !bookedSet.has(s));
+    return res.status(200).json({
+        ok: true,
+        doctorId,
+        dateISO,
+        weekday: weekdayKey,
+        slots,
+        booked,
+        available
+    });
+});
+
+app.post("/api/book-appointment", express.json({ limit: "256kb" }), async (req, res) => {
+    const body = req.body && typeof req.body === "object" ? req.body : {};
+    const doctorId = typeof body.doctorId === "string" ? body.doctorId.trim() : "";
+    const branchId = typeof body.branchId === "string" ? body.branchId.trim() : "";
+    const department = typeof body.department === "string" ? body.department.trim() : "";
+    const dateISO = typeof body.date === "string" ? body.date.trim() : "";
+    const slotLabel = typeof body.slot === "string" ? body.slot.trim() : "";
+    const userId = typeof body.userId === "string" ? body.userId.trim() : "";
+    try {
+        const out = await bookAppointment({ doctorId, branchId, department, dateISO, slotLabel, userId });
+        return res.status(200).json(out);
+    } catch (e) {
+        const msg = e && e.message ? e.message : String(e);
+        const code = /already booked/i.test(msg) ? 409 : 400;
+        return res.status(code).json({ ok: false, error: msg });
+    }
+});
+
+// ---------------------------------------------------------------------------
+// Dialogflow CX webhook (Artemis flow tags) — served from Railway
+// ---------------------------------------------------------------------------
+
+function cxText_(text, languageCode) {
+    return { text: { text: [String(text || "")] }, ...(languageCode ? { languageCode } : {}) };
+}
+
+function cxChips_(options) {
+    return { payload: { richContent: [[{ type: "chips", options: options.map((t) => ({ text: String(t) })) }]] } };
+}
+
+function normalizeStr_(s) {
+    return String(s || "").trim();
+}
+
+function normalizeLower_(s) {
+    return normalizeStr_(s).toLowerCase();
+}
+
+function cxDateToISO_(dateObj) {
+    const d = dateObj && typeof dateObj === "object" ? dateObj : {};
+    const year = Number(d.year) || 0;
+    const month = Number(d.month) || 0;
+    const day = Number(d.day) || 0;
+    if (!year || !month || !day) return "";
+    return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+function cxTimeTo12h_(timeObj) {
+    const t = timeObj && typeof timeObj === "object" ? timeObj : {};
+    const hours = Number(t.hours);
+    const minutes = Number(t.minutes);
+    if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return "";
+    const h = ((hours % 24) + 24) % 24;
+    const m = ((minutes % 60) + 60) % 60;
+    const ampm = h >= 12 ? "PM" : "AM";
+    const hh = h % 12 === 0 ? 12 : h % 12;
+    return `${hh}:${String(m).padStart(2, "0")} ${ampm}`;
+}
+
+function weekdayShort_(dateISO) {
+    const d = new Date(`${dateISO}T00:00:00.000Z`);
+    const wd = d.getUTCDay();
+    return wd === 0 ? "Sun" : wd === 1 ? "Mon" : wd === 2 ? "Tue" : wd === 3 ? "Wed" : wd === 4 ? "Thu" : wd === 5 ? "Fri" : "Sat";
+}
+
+function dayInDaysField_(weekdayShort, daysField) {
+    const raw = normalizeStr_(daysField);
+    if (!raw) return true;
+    const w = weekdayShort.slice(0, 3);
+    if (raw.includes("-")) {
+        const parts = raw.split("-").map((x) => x.trim().slice(0, 3));
+        if (parts.length === 2) {
+            const order = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+            const a = order.indexOf(parts[0]);
+            const b = order.indexOf(parts[1]);
+            const wi = order.indexOf(w);
+            if (a !== -1 && b !== -1 && wi !== -1) {
+                if (a <= b) return wi >= a && wi <= b;
+                return wi >= a || wi <= b;
+            }
+        }
+    }
+    const tokens = raw.split(/[,\s]+/).map((x) => x.trim().slice(0, 3)).filter(Boolean);
+    return tokens.includes(w);
+}
+
+app.post("/webhook", express.json({ limit: "512kb" }), async (req, res) => {
+    const body = req.body && typeof req.body === "object" ? req.body : {};
+    const tag = normalizeLower_(body.fulfillmentInfo && body.fulfillmentInfo.tag);
+    const lang = normalizeStr_(body.languageCode) || "en";
+    const params = body.sessionInfo && body.sessionInfo.parameters && typeof body.sessionInfo.parameters === "object"
+        ? body.sessionInfo.parameters
+        : {};
+
+    const fallback = (msg) => res.json({ fulfillment_response: { messages: [cxText_(msg, lang)] } });
+
+    try {
+        if (tag === "get_specializations") {
+            const city = normalizeStr_(params.city);
+            const docs = await listDoctors();
+            const filtered = city
+                ? docs.filter((d) => normalizeLower_(d.City) === normalizeLower_(city))
+                : docs;
+            const specs = Array.from(new Set(filtered.map((d) => normalizeStr_(d.Specialization)).filter(Boolean)))
+                .sort((a, b) => a.localeCompare(b));
+            if (!specs.length) return fallback("No specializations found.");
+            return res.json({
+                fulfillment_response: {
+                    messages: [
+                        cxText_("Please select a specialization:", lang),
+                        cxChips_(specs)
+                    ]
+                }
+            });
+        }
+
+        if (tag === "get_doctors_by_city_and_spec") {
+            const city = normalizeStr_(params.city);
+            const specialization = normalizeStr_(params.specialization);
+            const docs = await listDoctors();
+            const filtered = docs.filter((d) => {
+                if (city && normalizeLower_(d.City) !== normalizeLower_(city)) return false;
+                if (specialization && normalizeStr_(d.Specialization) !== specialization) return false;
+                return true;
+            });
+            if (!filtered.length) return fallback("No doctors found.");
+            const lines = filtered.slice(0, 12).map((d, i) => `${i + 1}) ${normalizeStr_(d.DisplayDoctorName || d.DoctorName || "Doctor")} — ${normalizeStr_(d.Designation)}`);
+            const chipNames = filtered.slice(0, 12).map((d) => normalizeStr_(d.DisplayDoctorName || d.DoctorName)).filter(Boolean);
+            return res.json({
+                fulfillment_response: {
+                    messages: [
+                        cxText_(lines.join("\n"), lang),
+                        ...(chipNames.length ? [cxChips_(chipNames)] : [])
+                    ]
+                }
+            });
+        }
+
+        if (tag === "get_doctor_details_by_name" || tag === "get_doctor_details") {
+            const doctornameParam = normalizeStr_(params.doctorname);
+            const rawName = doctornameParam.replace(/^Dr\.?\s*/i, "").trim();
+            const docs = await listDoctors();
+            const match = docs.find((d) => normalizeLower_(d.DoctorName) === normalizeLower_(rawName))
+                || docs.find((d) => normalizeLower_(d.DisplayDoctorName) === normalizeLower_(doctornameParam))
+                || null;
+            if (!match) return fallback("Doctor not found.");
+            const days = normalizeStr_(match.Days);
+            const start = normalizeStr_(match.Start);
+            const end = normalizeStr_(match.End);
+            const timing = days && start && end ? `${days}: ${start} - ${end}` : "Not available";
+            const details =
+                `👨‍⚕️ ${normalizeStr_(match.DisplayDoctorName || ("Dr. " + (match.DoctorName || "")))}\n` +
+                `🩺 Specialization: ${normalizeStr_(match.Specialization)}\n` +
+                `🎖 Designation: ${normalizeStr_(match.Designation)}\n` +
+                `🏢 City: ${normalizeStr_(match.City)}\n` +
+                `🎓 ${normalizeStr_(match.Education)}\n` +
+                `🕒 Timings: ${timing}\n` +
+                (normalizeStr_(match.PageUrl) ? `🔗 Profile: ${normalizeStr_(match.PageUrl)}` : "");
+            return res.json({
+                sessionInfo: { parameters: { doctorname: rawName, city: normalizeStr_(match.City) } },
+                fulfillment_response: { messages: [cxText_(details, lang)] }
+            });
+        }
+
+        if (tag === "book_doctor_appointment") {
+            const dateISO = cxDateToISO_(params.consultationdate);
+            const timeLabel = cxTimeTo12h_(params.consultationtime);
+            const doctorName = normalizeStr_(params.doctorname).replace(/^Dr\.?\s*/i, "").trim();
+            const city = normalizeStr_(params.city);
+
+            if (!dateISO || !timeLabel || !doctorName || !city) {
+                return fallback("Missing appointment details (doctor/date/time/city).");
+            }
+
+            const docs = await listDoctors();
+            const doc = docs.find((d) => normalizeLower_(d.DoctorName) === normalizeLower_(doctorName) && normalizeLower_(d.City) === normalizeLower_(city))
+                || docs.find((d) => normalizeLower_(d.DoctorName) === normalizeLower_(doctorName))
+                || null;
+            if (!doc) return fallback("Doctor not found.");
+
+            const wd = weekdayShort_(dateISO);
+            if (!dayInDaysField_(wd, doc.Days)) {
+                return res.json({
+                    sessionInfo: { parameters: { consultationdate: null, consultationtime: null } },
+                    fulfillment_response: {
+                        messages: [cxText_(`❌ ${normalizeStr_(doc.DisplayDoctorName || ("Dr. " + doctorName))} is not available on ${dateISO} (${wd}). Please select another date.`, lang)]
+                    }
+                });
+            }
+
+            try {
+                await bookAppointment({
+                    doctorId: normalizeStr_(doc.DoctorId),
+                    branchId: normalizeStr_(doc.BranchId || "500"),
+                    department: normalizeStr_(doc.Specialization),
+                    dateISO,
+                    slotLabel: timeLabel,
+                    userId: ""
+                });
+            } catch (e) {
+                const msg = e && e.message ? e.message : String(e);
+                if (/already booked/i.test(msg)) {
+                    return res.json({
+                        fulfillment_response: {
+                            messages: [cxText_(`❌ Slot already booked with Dr. ${doctorName} on ${dateISO} at ${timeLabel}. Please choose a different date and time.`, lang)]
+                        }
+                    });
+                }
+                return fallback(msg);
+            }
+
+            return res.json({
+                fulfillment_response: {
+                    messages: [cxText_(`✅ Appointment booked with Dr. ${doctorName} on ${dateISO} at ${timeLabel} (${city}).`, lang)]
+                }
+            });
+        }
+
+        return fallback(`Unrecognized tag: ${tag || "(empty)"}`);
+    } catch (e) {
+        const msg = e && e.message ? e.message : String(e);
+        return res.status(500).json({ fulfillment_response: { messages: [cxText_(msg, lang)] } });
+    }
+});
 
 app.post(
     PATHNAME,

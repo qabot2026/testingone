@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="utf-8"?>
+<GenericTable>
+  <Branch>
+    <BranchId>500</BranchId>
+    <ImageUrl>https://dubailondonclinic.com/wp-content/uploads/2020/04/villacentro-br-sub.jpg</ImageUrl>
+    <PageUrl>https://dubailondonhospital.com</PageUrl>
+    <Tags></Tags>
+    <BranchName>Dubai London Hospital</BranchName>
+    <State>UAE</State>
+    <City>Dubai</City>
+    <Area>Umm Suqeim 2</Area>
+    <Address>Umm Suqeim 2, Jumeirah Beach Road (Near Kite Beach), Dubai, UAE</Address>
+    <Latitude>25.1547673</Latitude>
+    <Longitude>55.2003013</Longitude>
+    <GoogleMap>https://maps.app.goo.gl/kJUadMZGgNVywry3A</GoogleMap>
+    <BranchTiming>24/7 Walk-In Clinic</BranchTiming>
+    <ContactNumber>800 352</ContactNumber>
+    <ContactEmail>booking@dubailondonclinic.ae</ContactEmail>
+  </Branch>
+
+  <Branch>
+    <BranchId>501</BranchId>
+    <ImageUrl>https://dubailondonclinic.com/wp-content/uploads/2020/04/villacentro-br-sub.jpg</ImageUrl>
+    <PageUrl>https://dubailondonclinic.com/branch/speciality-hospital-umm-suqueim-2</PageUrl>
+    <Tags></Tags>
+    <BranchName>Speciality Hospital</BranchName>
+    <State>UAE</State>
+    <City>Dubai</City>
+    <Area>Umm Suqeim 2</Area>
+    <Address>Jumeirah Beach Road, Umm Suqeim 2, Dubai, UAE</Address>
+    <Latitude>25.152947</Latitude>
+    <Longitude>55.2014725</Longitude>
+    <GoogleMap>https://maps.app.goo.gl/Z8W5cdHaSCD2kaAW6</GoogleMap>
+    <BranchTiming>24/7 Walk-In Clinic</BranchTiming>
+    <ContactNumber>800 352</ContactNumber>
+    <ContactEmail>booking@dubailondonclinic.ae</ContactEmail>
+  </Branch>
+
+  <Branch>
+    <BranchId>502</BranchId>
+    <ImageUrl>https://dubailondonclinic.com/wp-content/uploads/2020/04/villacentro-br-sub.jpg</ImageUrl>
+    <PageUrl>https://dubailondonclinic.com/branch/clinic-at-the-villa-centro</PageUrl>
+    <Tags></Tags>
+    <BranchName>The Villa Centro Clinic</BranchName>
+    <State>UAE</State>
+    <City>Dubai</City>
+    <Area>The Villa Dubai Land</Area>
+    <Address>Villa Centro Community (Next to Spinneys), Dubai Land, Dubai, UAE</Address>
+    <Latitude>25.091751</Latitude>
+    <Longitude>55.3691711</Longitude>
+    <GoogleMap>https://maps.app.goo.gl/z7sbJHZPQ1yysfbk9</GoogleMap>
+    <BranchTiming>Monday – Saturday: 9:00 AM to 9:00 PM&#10;&#10;Sunday: 10:00 AM – 9:00 PM</BranchTiming>
+    <ContactNumber>800 352</ContactNumber>
+    <ContactEmail>booking@dubailondonclinic.ae</ContactEmail>
+  </Branch>
+
+  <Branch>
+    <BranchId>503</BranchId>
+    <ImageUrl>https://dubailondonclinic.com/wp-content/uploads/2020/04/nakheel-br-sub.png</ImageUrl>
+    <PageUrl>https://dubailondonclinic.com/branch/clinic-at-palm-jumeirah-mall</PageUrl>
+    <Tags></Tags>
+    <BranchName>Palm Jumeirah Mall</BranchName>
+    <State>UAE</State>
+    <City>Dubai</City>
+    <Area>Palm Jumeirah</Area>
+    <Address>Palm Jumeirah Mall, Lower Ground Floor Level, Palm Jumeirah, Dubai, UAE</Address>
+    <Latitude>25.1144086</Latitude>
+    <Longitude>55.1384973</Longitude>
+    <GoogleMap>https://maps.app.goo.gl/ccbxV7oV71fBkTsV7</GoogleMap>
+    <BranchTiming>Monday – Saturday: 9:00 AM to 9:00 PM&#10;&#10;Sunday: 10:00 AM – 9:00 PM</BranchTiming>
+    <ContactNumber>800 352</ContactNumber>
+    <ContactEmail>booking@dubailondonclinic.ae</ContactEmail>
+  </Branch>
+
+  <Branch>
+    <BranchId>504</BranchId>
+    <ImageUrl>https://dubailondonclinic.com/wp-content/uploads/2020/04/festival-city-sub.jpg</ImageUrl>
+    <PageUrl>https://dubailondonclinic.com/branch/clinic-at-dubai-festival-city-mall</PageUrl>
+    <Tags></Tags>
+    <BranchName>Festival City Mall</BranchName>
+    <State>UAE</State>
+    <City>Dubai</City>
+    <Area>Festival City</Area>
+    <Address>Dubai Festival City Mall (Opposite IKEA Parking), Dubai, UAE</Address>
+    <Latitude>25.2226323</Latitude>
+    <Longitude>55.355746</Longitude>
+    <GoogleMap>https://maps.app.goo.gl/FDAT2htj5bWHNosv7</GoogleMap>
+    <BranchTiming>Monday – Saturday: 9:00 AM to 9:00 PM&#10;&#10;Sunday: 10:00 AM – 9:00 PM</BranchTiming>
+    <ContactNumber>800 352</ContactNumber>
+    <ContactEmail>booking@dubailondonclinic.ae</ContactEmail>
+  </Branch>
+</GenericTable>

@@ -1,0 +1,8 @@
+DoctorId,ImageUrl,PageUrl,Tags,DoctorName,DisplayDoctorName,Specialization,Designation,BranchId,City,Description,Education,Days,Start,End
+300,https://www.artemi,https://www.artemi,,Aditya Gu,Dr. Aditya Gu,Neurosurge,Chairpers,500,Pune,Doctors in Education,Education,Mon-Fri,10:00 AM,4:00 PM
+301,https://www.artemi,https://www.artemi,,Namita Ja,Dr. Namita Ja,Pathology,Chairpers,500,Pune,Dr. Namit,Education,Mon-Fri,10:00 AM,4:00 PM
+302,https://www.artemi,https://www.artemi,,Sanjay Me,Dr. Sanjay Me,Radiology,Chairpers,500,Pune,Dr. Sanja,Education,Mon-Fri,9:00 AM,3:00 PM
+303,https://www.artemi,https://www.artemi,,I P S Ober,Dr. I P S Ober,Orthopae,Chairpers,500,Pune,Dr. I P S,Education,Mon-Sat,10:00 AM,4:00 PM
+304,https://www.artemi,https://www.artemi,,Renu Rain,Dr. Renu Rain,Gynaecolc,Chairpers,500,Pune,Dr. Renu,Education,Mon-Fri,10:00 AM,4:00 PM
+305,https://www.artemi,https://www.artemi,,Noaline Si,Dr. Noaline Si,Nuclear M,Chairpers,500,Pune,Dr. Noali,Education,Mon-Fri,8:00 AM,2:00 PM
+306,https://www.artemi,https://www.artemi,,S. V. Kotw,Dr. S. V. Kotw,Urology,Chairpers,500,Pune,Dr. S. V. K,Education,Mon-Fri,10:00 AM,4:00 PM
