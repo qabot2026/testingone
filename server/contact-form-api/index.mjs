@@ -30,6 +30,8 @@ import fs from "node:fs";
 import express from "express";
 import cors from "cors";
 import multer from "multer";
+import admin from "firebase-admin";
+import "firebase-admin/database";
 import { firebaseAdminInit } from "./lib/firebase-admin-init.mjs";
 import { persistToFirestore } from "./lib/firestore.mjs";
 import { appendContactRowToSheet, upsertSessionQueriesInSheet } from "./lib/sheets.mjs";
@@ -475,6 +477,22 @@ function cxChips_(options) {
     return { payload: { richContent: [[{ type: "chips", options: options.map((t) => ({ text: String(t) })) }]] } };
 }
 
+function cxAccordion_({ title, subtitle, text, imageUrl }) {
+    return {
+        payload: {
+            richContent: [[{
+                type: "accordion",
+                title: String(title || ""),
+                subtitle: String(subtitle || ""),
+                ...(imageUrl
+                    ? { image: { src: { rawUrl: String(imageUrl) } } }
+                    : {}),
+                text: String(text || "")
+            }]]
+        }
+    };
+}
+
 function normalizeStr_(s) {
     return String(s || "").trim();
 }
@@ -535,6 +553,8 @@ app.post("/webhook", express.json({ limit: "512kb" }), async (req, res) => {
     const body = req.body && typeof req.body === "object" ? req.body : {};
     const tag = normalizeLower_(body.fulfillmentInfo && body.fulfillmentInfo.tag);
     const lang = normalizeStr_(body.languageCode) || "en";
+    const sessionFull = normalizeStr_(body.sessionInfo && body.sessionInfo.session);
+    const sessionId = sessionFull ? sessionFull.split("/").slice(-1)[0] : "";
     const params = body.sessionInfo && body.sessionInfo.parameters && typeof body.sessionInfo.parameters === "object"
         ? body.sessionInfo.parameters
         : {};
@@ -542,6 +562,51 @@ app.post("/webhook", express.json({ limit: "512kb" }), async (req, res) => {
     const fallback = (msg) => res.json({ fulfillment_response: { messages: [cxText_(msg, lang)] } });
 
     try {
+        if (tag === "diag_yes") {
+            const dateISO = cxDateToISO_(params.testdate);
+            const diagnosticName = normalizeStr_(params.diagnostics || "diagnostic");
+            const data = {
+                appointment_date: dateISO,
+                patient_name: normalizeStr_(params.patientname),
+                phone: normalizeStr_(params.patientmobile),
+                age: normalizeStr_(params.patientage),
+                test: diagnosticName,
+                createdAt: new Date().toISOString()
+            };
+            if (!firebaseInitError && sessionId) {
+                await admin.database().ref(`leads/diagnostics/${sessionId}`).set(data);
+            }
+            return res.json({
+                fulfillment_response: {
+                    messages: [
+                        cxText_(`✅ Your ${diagnosticName} appointment has been booked for ${dateISO || "the selected date"}. We will contact you soon.`, lang)
+                    ]
+                }
+            });
+        }
+
+        if (tag === "homecare_booking") {
+            const dateISO = cxDateToISO_(params.hcservicedate);
+            const data = {
+                service_date: dateISO,
+                name: normalizeStr_(params.patientname),
+                phone: normalizeStr_(params.patientmobile),
+                age: normalizeStr_(params.patientage),
+                selected_service: normalizeStr_(params.homecare),
+                createdAt: new Date().toISOString()
+            };
+            if (!firebaseInitError && sessionId) {
+                await admin.database().ref(`leads/homecare/${sessionId}`).set(data);
+            }
+            return res.json({
+                fulfillment_response: {
+                    messages: [
+                        cxText_("✅ Home care request received. We will contact you soon.", lang)
+                    ]
+                }
+            });
+        }
+
         if (tag === "get_states") {
             const branches = await listBranches();
             const states = Array.from(
@@ -553,6 +618,98 @@ app.post("/webhook", express.json({ limit: "512kb" }), async (req, res) => {
                     messages: [
                         cxText_("Please select a state:", lang),
                         cxChips_(states)
+                    ]
+                }
+            });
+        }
+
+        if (tag === "get_cities") {
+            const state = normalizeStr_(params.state);
+            const branches = await listBranches();
+            const filtered = state
+                ? branches.filter((b) => normalizeLower_(b.State) === normalizeLower_(state))
+                : branches;
+            const cities = Array.from(
+                new Set(filtered.map((b) => normalizeStr_(b.City)).filter(Boolean))
+            ).sort((a, b) => a.localeCompare(b));
+            if (!cities.length) return fallback("No cities found.");
+            return res.json({
+                fulfillment_response: {
+                    messages: [
+                        cxText_("Please select a city:", lang),
+                        cxChips_(cities)
+                    ]
+                }
+            });
+        }
+
+        if (tag === "get_address") {
+            const state = normalizeStr_(params.state);
+            const city = normalizeStr_(params.city);
+            if (!state || !city) {
+                return fallback("Please select both state and city.");
+            }
+            const branches = await listBranches();
+            const matches = branches.filter(
+                (b) => normalizeLower_(b.State) === normalizeLower_(state) && normalizeLower_(b.City) === normalizeLower_(city)
+            );
+            if (!matches.length) {
+                return fallback("No address found for the selected city.");
+            }
+            const b = matches[0];
+            const addressLines = [
+                normalizeStr_(b.BranchName),
+                normalizeStr_(b.Address),
+                normalizeStr_(b.BranchTiming ? `Timing: ${b.BranchTiming}` : ""),
+                normalizeStr_(b.ContactNumber ? `Contact: ${b.ContactNumber}` : ""),
+                normalizeStr_(b.GoogleMap ? `Map: ${b.GoogleMap}` : "")
+            ].filter(Boolean);
+            const text = addressLines.join("\n");
+            return res.json({
+                fulfillment_response: {
+                    messages: [
+                        cxAccordion_({
+                            title: `${city}, ${state}`,
+                            subtitle: "Click here for address",
+                            text,
+                            imageUrl: "https://cdn-icons-png.flaticon.com/512/684/684908.png"
+                        }),
+                        cxText_(text, lang)
+                    ]
+                }
+            });
+        }
+
+        if (tag === "get_address_by_city_only") {
+            const city = normalizeStr_(params.city);
+            if (!city) {
+                return fallback("Please enter a city name.");
+            }
+            const branches = await listBranches();
+            const matches = branches.filter((b) => normalizeLower_(b.City) === normalizeLower_(city));
+            if (!matches.length) {
+                return fallback("No address found for this city.");
+            }
+            const b = matches[0];
+            const state = normalizeStr_(b.State);
+            const addressLines = [
+                normalizeStr_(b.BranchName),
+                normalizeStr_(b.Address),
+                normalizeStr_(b.BranchTiming ? `Timing: ${b.BranchTiming}` : ""),
+                normalizeStr_(b.ContactNumber ? `Contact: ${b.ContactNumber}` : ""),
+                normalizeStr_(b.GoogleMap ? `Map: ${b.GoogleMap}` : "")
+            ].filter(Boolean);
+            const text = addressLines.join("\n");
+            return res.json({
+                fulfillment_response: {
+                    messages: [
+                        cxAccordion_({
+                            title: `${city}${state ? `, ${state}` : ""}`,
+                            subtitle: "Click here for address",
+                            text,
+                            imageUrl: "https://cdn-icons-png.flaticon.com/512/684/684908.png"
+                        }),
+                        cxText_(text, lang)
                     ]
                 }
             });
