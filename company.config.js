@@ -38,7 +38,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
 
     // Header text + images.
     header: {
-      title: "Chat Support",
+      title: "Artemis",
       subtitle: "🟢 We are online to assist you",
       chatIconUrl: "https://storage.googleapis.com/companybucket/Images/cat.png",
       chatTitleIconUrl: "https://storage.googleapis.com/companybucket/Images/cat-icon.png",
