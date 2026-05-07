@@ -257,8 +257,16 @@ async function resolveCityForRequest(req) {
     }
 }
 
+let firebaseInitError = "";
 if (hasFirebaseCredentials()) {
-    firebaseAdminInit();
+    try {
+        firebaseAdminInit();
+    } catch (e) {
+        const msg = e && e.message ? e.message : String(e);
+        firebaseInitError = msg;
+        // Do not crash the entire API on boot; endpoints that require Firebase will return 503 with details.
+        console.error("[contact-form-api] Firebase init failed:", msg);
+    }
 }
 
 const app = express();
@@ -366,6 +374,9 @@ app.get("/doctors.xml", (_req, res) => {
 
 // JSON helpers for CX webhooks (easier to consume than XML)
 app.get("/api/branches", (_req, res) => {
+    if (firebaseInitError) {
+        return res.status(503).json({ ok: false, error: `Firebase init failed: ${firebaseInitError}` });
+    }
     listBranches()
         .then((branches) => res.status(200).json({ ok: true, branches, source: "firebase_rtdb" }))
         .catch((e) => {
@@ -375,6 +386,9 @@ app.get("/api/branches", (_req, res) => {
 });
 
 app.get("/api/departments", (req, res) => {
+    if (firebaseInitError) {
+        return res.status(503).json({ ok: false, error: `Firebase init failed: ${firebaseInitError}` });
+    }
     const branchId = typeof req.query.branchId === "string" ? req.query.branchId.trim() : "";
     listDepartments({ branchId: branchId || undefined })
         .then((departments) => res.status(200).json({ ok: true, branchId: branchId || null, departments, source: "firebase_rtdb" }))
@@ -385,6 +399,9 @@ app.get("/api/departments", (req, res) => {
 });
 
 app.get("/api/doctors", (req, res) => {
+    if (firebaseInitError) {
+        return res.status(503).json({ ok: false, error: `Firebase init failed: ${firebaseInitError}` });
+    }
     const branchId = typeof req.query.branchId === "string" ? req.query.branchId.trim() : "";
     const department = typeof req.query.department === "string" ? req.query.department.trim() : "";
     listDoctors({ branchId: branchId || undefined, department: department || undefined })
