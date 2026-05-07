@@ -161,6 +161,14 @@ function bestDigitRunFromString_(s) {
     }
     let best = "";
     for (const run of runs) {
+        // Filter out unix-epoch milliseconds timestamps (common in session ids / client clocks).
+        // Examples: 1712345678901 (13 digits). These are frequently mis-detected as phones.
+        if (run.length === 13) {
+            const n = Number(run);
+            if (Number.isFinite(n) && n >= 1_400_000_000_000 && n <= 2_200_000_000_000) {
+                continue;
+            }
+        }
         if (run.length >= 9 && run.length <= 15 && run.length > best.length) {
             best = run;
         }
@@ -202,6 +210,23 @@ function longestDigitRunDeep_(val, depth) {
         for (const [k, rv] of Object.entries(val)) {
             if (typeof k === "string" && (k === "_files" || k.startsWith("_"))) {
                 continue;
+            }
+            // Avoid scanning obvious non-phone identifiers that are often numeric.
+            // This prevents accidentally treating session ids / timestamps as "mobile".
+            if (typeof k === "string") {
+                const nk = normalizedFormKey(k);
+                if (
+                    nk.includes("session") ||
+                    nk.includes("clientsession") ||
+                    nk.includes("timestamp") ||
+                    nk.endsWith("ts") ||
+                    nk.includes("time") ||
+                    nk.includes("date") ||
+                    nk.includes("createdat") ||
+                    nk.includes("updatedat")
+                ) {
+                    continue;
+                }
             }
             const r = longestDigitRunDeep_(rv, depth + 1);
             if (r.length > best.length) {
