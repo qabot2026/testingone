@@ -542,6 +542,22 @@ app.post("/webhook", express.json({ limit: "512kb" }), async (req, res) => {
     const fallback = (msg) => res.json({ fulfillment_response: { messages: [cxText_(msg, lang)] } });
 
     try {
+        if (tag === "get_states") {
+            const branches = await listBranches();
+            const states = Array.from(
+                new Set(branches.map((b) => normalizeStr_(b.State)).filter(Boolean))
+            ).sort((a, b) => a.localeCompare(b));
+            if (!states.length) return fallback("No states found.");
+            return res.json({
+                fulfillment_response: {
+                    messages: [
+                        cxText_("Please select a state:", lang),
+                        cxChips_(states)
+                    ]
+                }
+            });
+        }
+
         if (tag === "get_specializations") {
             const city = normalizeStr_(params.city);
             const docs = await listDoctors();
