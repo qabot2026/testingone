@@ -24,9 +24,14 @@
  *
  * Chat-only mobile → Sheet row (no file upload): POST JSON `/contact-form-mobile-sheet-sync`.
  * Optional: CONTACT_FORM_MOBILE_SHEET_SYNC_SECRET → client must send `X-Contact-Form-Mobile-Sync-Secret`.
+ *
+ * RTDB catalog: POST `/api/sync-catalog-from-repo` with header `X-Catalog-Sync-Secret`
+ * matching `CATALOG_SYNC_SECRET` re-uploads bundled `data/doctors.upload.csv` + `data/branches.upload.csv`.
  */
 
 import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import express from "express";
 import cors from "cors";
 import multer from "multer";
@@ -41,8 +46,15 @@ import { forwardSubmissionToAppsScript } from "./lib/apps-script-upload.mjs";
 import { resolveContactMobile, resolveSubmissionMobileDigits, scalarFormValue } from "./lib/contact-mobile.mjs";
 import { bookAppointment, listBookedSlots } from "./lib/appointments.mjs";
 import { listBranches, listDepartments, listDoctors } from "./lib/catalog-rtdb.mjs";
+import { upsertCatalogFromCsvFiles } from "./lib/catalog-csv-ingest.mjs";
 
 const APPS_SCRIPT_WEBAPP_URL = (process.env.GOOGLE_APPS_SCRIPT_WEBAPP_URL || "").trim();
+
+const __dirname_api = path.dirname(fileURLToPath(import.meta.url));
+const CATALOG_DOCTORS_CSV = path.join(__dirname_api, "data", "doctors.upload.csv");
+const CATALOG_BRANCHES_CSV = path.join(__dirname_api, "data", "branches.upload.csv");
+const PATHNAME_CATALOG_SYNC = "/api/sync-catalog-from-repo";
+const CATALOG_SYNC_SECRET = (process.env.CATALOG_SYNC_SECRET || "").trim();
 
 const PORT = Number(process.env.PORT) || 8080;
 const PATHNAME = "/contact-form-submissions";
@@ -274,7 +286,7 @@ const app = express();
 app.use(cors({
     origin: corsOriginOption(),
     methods: ["GET", "POST", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "X-Contact-Form-Mobile-Sync-Secret"],
+    allowedHeaders: ["Content-Type", "X-Contact-Form-Mobile-Sync-Secret", "X-Catalog-Sync-Secret"],
     optionsSuccessStatus: 204
 }));
 
@@ -416,6 +428,35 @@ app.get("/api/slots", async (req, res) => {
         available
     });
 });
+
+/** Re-push CSV catalog from deployed `data/*.upload.csv` into RTDB (set CATALOG_SYNC_SECRET on the server). */
+app.post(PATHNAME_CATALOG_SYNC, async (req, res) => {
+    if (!CATALOG_SYNC_SECRET) {
+        return res.sendStatus(404);
+    }
+    const hdr = typeof req.get("x-catalog-sync-secret") === "string"
+        ? req.get("x-catalog-sync-secret").trim()
+        : "";
+    if (hdr !== CATALOG_SYNC_SECRET) {
+        return res.status(403).json({ ok: false, error: "Forbidden." });
+    }
+    if (firebaseInitError) {
+        return res.status(503).json({ ok: false, error: `Firebase init failed: ${firebaseInitError}` });
+    }
+    try {
+        const out = await upsertCatalogFromCsvFiles({
+            doctorsFile: CATALOG_DOCTORS_CSV,
+            branchesFile: CATALOG_BRANCHES_CSV
+        });
+        return res.status(200).json(out);
+    } catch (e) {
+        const msg = e && e.message ? e.message : String(e);
+        console.error("[contact-form-api] catalog-sync", msg);
+        return res.status(500).json({ ok: false, error: msg });
+    }
+});
+
+app.options(PATHNAME_CATALOG_SYNC, (_req, res) => res.sendStatus(204));
 
 app.post("/api/book-appointment", express.json({ limit: "256kb" }), async (req, res) => {
     const body = req.body && typeof req.body === "object" ? req.body : {};
@@ -1285,6 +1326,9 @@ app.get("/", (_req, res) => {
             `POST JSON (chat mobile) → ${PATHNAME_MOBILE_SHEET_SYNC}`,
             `POST JSON (session queries) → ${PATHNAME_SESSION_SHEET_SYNC}`,
             `GET /health → health check.`,
+            CATALOG_SYNC_SECRET
+                ? `POST ${PATHNAME_CATALOG_SYNC} + X-Catalog-Sync-Secret → push doctors/branches CSV to RTDB.`
+                : `Set CATALOG_SYNC_SECRET + redeploy → POST ${PATHNAME_CATALOG_SYNC} to sync CSV catalog to RTDB.`,
             `Drive uploads + optional Firestore/Sheets (DRIVE_ONLY=1 skips Firestore only; Sheets use SHEETS_SPREADSHEET_ID).`
         ].join("\n")
     );

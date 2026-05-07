@@ -8,7 +8,8 @@
 
 /** @param {string} input */
 export function parseCsv(input) {
-    const s = String(input || "");
+    // UTF-8 BOM on first cell breaks header "DoctorId" → skip all doctor rows unless stripped.
+    const s = String(input || "").replace(/^\uFEFF/, "");
     /** @type {string[][]} */
     const rows = [];
     /** @type {string[]} */
@@ -83,7 +84,7 @@ export function parseCsv(input) {
     if (rows.length === 0) {
         return { headers: [], records: [] };
     }
-    const headers = rows[0].map((h) => String(h || "").trim());
+    const headers = rows[0].map((h) => String(h || "").trim().replace(/^\uFEFF/, ""));
     const records = rows.slice(1).map((r) => {
         /** @type {Record<string, string>} */
         const obj = {};

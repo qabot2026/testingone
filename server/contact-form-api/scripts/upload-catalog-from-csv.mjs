@@ -1,8 +1,5 @@
-import fs from "node:fs";
-import path from "node:path";
 import { firebaseAdminInit } from "../lib/firebase-admin-init.mjs";
-import { parseCsv } from "../lib/csv.mjs";
-import { upsertCatalogFromRecords } from "../lib/catalog-rtdb.mjs";
+import { upsertCatalogFromCsvFiles } from "../lib/catalog-csv-ingest.mjs";
 
 /**
  * Usage:
@@ -19,43 +16,30 @@ function argValue_(name) {
     return process.argv[idx + 1] || "";
 }
 
-function readCsvFile_(p) {
-    const abs = path.resolve(p);
-    const raw = fs.readFileSync(abs, "utf8");
-    return parseCsv(raw).records;
-}
-
-function normalizeDays_(s) {
-    const raw = String(s || "").trim();
-    if (!raw) return "";
-    // Allow "Mon-Fri" or "Mon,Tue" etc. Store as a string; webhook/UI can format.
-    return raw;
-}
-
-function normalizeTime12h_(s) {
-    const raw = String(s || "").trim();
-    if (!raw) return "";
-    // Expect already in 12h format; keep as-is.
-    return raw;
-}
-
-function normalizeDoctorRecord_(r) {
-    const out = { ...r };
-    out.DoctorId = String(r.DoctorId || "").trim();
-    out.BranchId = String(r.BranchId || "").trim();
-    out.Days = normalizeDays_(r.Days);
-    out.Start = normalizeTime12h_(r.Start);
-    out.End = normalizeTime12h_(r.End);
-    return out;
-}
-
-function normalizeBranchRecord_(r) {
-    const out = { ...r };
-    out.BranchId = String(r.BranchId || "").trim();
-    return out;
+function requireRtdbEnv_() {
+    const url = (process.env.FIREBASE_DATABASE_URL || "").trim();
+    if (!url) {
+        console.error(
+            "Missing FIREBASE_DATABASE_URL. Set it to your Realtime Database URL, e.g.\n" +
+                "  https://YOUR-PROJECT-default-rtdb.firebaseio.com\n" +
+                "(Firebase Console → Realtime Database → copy URL.)"
+        );
+        process.exit(1);
+    }
+    const hasJson = !!(process.env.FIREBASE_CONFIG || process.env.FIREBASE_SERVICE_ACCOUNT_JSON || "").trim();
+    const hasFile = !!(process.env.GOOGLE_APPLICATION_CREDENTIALS || "").trim();
+    if (!hasJson && !hasFile) {
+        console.error(
+            "Missing Firebase Admin credentials. Set one of:\n" +
+                "  FIREBASE_SERVICE_ACCOUNT_JSON — full JSON string of the service account key, or\n" +
+                "  GOOGLE_APPLICATION_CREDENTIALS — path to the key .json file."
+        );
+        process.exit(1);
+    }
 }
 
 async function main() {
+    requireRtdbEnv_();
     firebaseAdminInit();
 
     const doctorsPath = argValue_("--doctors");
@@ -65,15 +49,21 @@ async function main() {
         process.exit(2);
     }
 
-    const doctors = doctorsPath ? readCsvFile_(doctorsPath).map(normalizeDoctorRecord_) : [];
-    const branches = branchesPath ? readCsvFile_(branchesPath).map(normalizeBranchRecord_) : [];
-
-    const wrote = await upsertCatalogFromRecords({ doctors, branches });
-    console.log(JSON.stringify({ ok: true, ...wrote, doctors: doctors.length, branches: branches.length }, null, 2));
+    const root = (process.env.FIREBASE_CATALOG_ROOT || "catalog").trim();
+    const out = await upsertCatalogFromCsvFiles({
+        doctorsFile: doctorsPath || undefined,
+        branchesFile: branchesPath || undefined
+    });
+    console.log(JSON.stringify(out, null, 2));
+    console.log(
+        `Done. In Firebase Console → Realtime Database open: ${root}/branches and ${root}/doctors (DoctorId / BranchId keys).`
+    );
+    if (out.notes && out.notes.length) {
+        console.warn("Notes:", out.notes.join(" "));
+    }
 }
 
 main().catch((e) => {
     console.error("Upload failed:", e && e.message ? e.message : e);
     process.exit(1);
 });
-
