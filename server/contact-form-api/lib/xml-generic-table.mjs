@@ -1,5 +1,4 @@
 import fs from "node:fs";
-import path from "node:path";
 
 /**
  * Extremely small XML reader for the specific "GenericTable" format used here:
@@ -49,12 +48,12 @@ function getTagText_(itemXml, tagName) {
 }
 
 /**
- * @param {{ filePath: string, itemTag: string, fields: string[] }} args
+ * @param {{ filePath: string | URL, itemTag: string, fields: string[] }} args
  * @returns {Array<Record<string, string>>}
  */
 export function readGenericTableFile({ filePath, itemTag, fields }) {
-    const full = path.resolve(filePath);
-    const xml = fs.readFileSync(full, "utf8");
+    // Accept either an absolute/relative filesystem path OR a file:// URL (from import.meta.url).
+    const xml = fs.readFileSync(/** @type {any} */ (filePath), "utf8");
     const items = extractItems_(xml, itemTag);
     return items.map((ix) => {
         /** @type {Record<string, string>} */
