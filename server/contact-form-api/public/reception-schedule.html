@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Staff schedule — bookings</title>
+  <style>
+    :root {
+      --bg: #f0f9ff;
+      --card: #ffffff;
+      --text: #0f172a;
+      --muted: #64748b;
+      --brand: #0369a1;
+      --booked: #991b1b;
+      --booked-bg: #fee2e2;
+      --free: #166534;
+      --free-bg: #dcfce7;
+      --border: #dbe5ec;
+      --radius: 12px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: system-ui, Segoe UI, Roboto, sans-serif;
+      background: linear-gradient(180deg, var(--bg), #fff);
+      color: var(--text);
+      min-height: 100dvh;
+      padding: 16px;
+    }
+    .wrap { max-width: 960px; margin: 0 auto; }
+    h1 { font-size: 1.35rem; margin: 0 0 8px; }
+    .sub { color: var(--muted); font-size: 0.88rem; margin: 0 0 16px; line-height: 1.45; }
+    .warn {
+      background: #fffbeb;
+      border: 1px solid #fcd34d;
+      border-radius: var(--radius);
+      padding: 10px 12px;
+      font-size: 0.82rem;
+      color: #92400e;
+      margin-bottom: 16px;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px 16px;
+      margin-bottom: 14px;
+      box-shadow: 0 4px 24px rgba(15, 23, 42, 0.06);
+    }
+    label { display: block; font-size: 0.82rem; font-weight: 600; margin-bottom: 4px; color: var(--muted); }
+    input[type="text"], input[type="date"], select {
+      width: 100%;
+      max-width: 420px;
+      padding: 8px 10px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      font: inherit;
+      font-size: 0.95rem;
+    }
+    .row { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end; margin-bottom: 12px; }
+    .row > div { flex: 1 1 200px; min-width: 160px; }
+    fieldset {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 12px 14px;
+      margin: 0 0 12px;
+    }
+    legend { font-weight: 700; font-size: 0.85rem; padding: 0 6px; }
+    .modes label { display: inline-flex; align-items: center; gap: 6px; font-weight: 500; margin-right: 16px; cursor: pointer; }
+    button.primary {
+      background: linear-gradient(135deg, #0369a1, #0284c7);
+      color: #f8fffe;
+      border: 0;
+      border-radius: 10px;
+      padding: 10px 20px;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    button.primary:hover { filter: brightness(1.05); }
+    button.primary:disabled { opacity: 0.55; cursor: wait; }
+    .status { font-size: 0.88rem; min-height: 1.25em; margin: 8px 0; }
+    .status.err { color: var(--booked); font-weight: 600; }
+    .meta { font-size: 0.8rem; color: var(--muted); margin-bottom: 10px; }
+    .slots {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .slot {
+      padding: 8px 12px;
+      border-radius: 10px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      border: 1px solid transparent;
+    }
+    .slot.booked { background: var(--booked-bg); color: var(--booked); border-color: #fecaca; }
+    .slot.free { background: var(--free-bg); color: var(--free); border-color: #bbf7d0; }
+    .legend { display: flex; gap: 16px; font-size: 0.78rem; margin-top: 10px; color: var(--muted); }
+    .legend span { display: inline-flex; align-items: center; gap: 6px; }
+    .dot { width: 10px; height: 10px; border-radius: 50%; }
+    .dot.booked { background: var(--booked-bg); border: 1px solid #fecaca; }
+    .dot.free { background: var(--free-bg); border: 1px solid #bbf7d0; }
+    h2 { font-size: 1.05rem; margin: 0 0 10px; }
+    .month-grid {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 6px;
+      font-size: 0.75rem;
+    }
+    .month-grid .dow { font-weight: 700; color: var(--muted); text-align: center; padding: 4px; }
+    .day-cell {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 6px 4px;
+      min-height: 52px;
+      background: #fafafa;
+      text-align: center;
+    }
+    .day-cell.off { opacity: 0.35; background: #f1f5f9; }
+    .day-cell.selected { outline: 2px solid var(--brand); background: #e0f2fe; }
+    .day-cell .num { font-weight: 700; font-size: 0.85rem; }
+    .day-cell .stat { color: var(--muted); margin-top: 4px; line-height: 1.2; }
+    .day-cell.working .stat { color: var(--text); }
+    @media (max-width: 520px) {
+      .month-grid { font-size: 0.68rem; }
+      .day-cell { min-height: 46px; padding: 4px 2px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Staff schedule</h1>
+    <p class="sub">
+      View the same slots and bookings as the chat widget — per doctor or the shared clinic calendar.
+      Open this page from your API host (below) so requests stay on the same site.
+    </p>
+    <div class="warn">
+      This page shows live availability. Anyone with the link can see counts and slot labels. Protect the URL
+      (VPN, staff-only network, or reverse-proxy auth) if your policy requires it.
+    </div>
+
+    <div class="card">
+      <label for="apiBase">API base URL</label>
+      <input type="text" id="apiBase" placeholder="https://your-api.up.railway.app (empty = this website)" autocomplete="off" />
+      <p class="meta">If you opened this file from the API server, leave empty — it uses <code id="originHint"></code>.</p>
+    </div>
+
+    <div class="card">
+      <fieldset>
+        <legend>Schedule</legend>
+        <div class="modes">
+          <label><input type="radio" name="mode" value="doctor" checked /> Per doctor</label>
+          <label><input type="radio" name="mode" value="general" /> General clinic pool</label>
+        </div>
+      </fieldset>
+      <div class="row">
+        <div id="doctorWrap">
+          <label for="doctor">Doctor</label>
+          <select id="doctor"></select>
+        </div>
+        <div>
+          <label for="date">Date</label>
+          <input type="date" id="date" />
+        </div>
+        <div>
+          <button type="button" class="primary" id="refresh">Load day &amp; month</button>
+        </div>
+      </div>
+      <p class="status" id="status"></p>
+    </div>
+
+    <div class="card">
+      <h2>Selected day — time slots</h2>
+      <p class="meta" id="dayMeta"></p>
+      <div class="slots" id="slotGrid"></div>
+      <div class="legend">
+        <span><span class="dot free"></span> Available</span>
+        <span><span class="dot booked"></span> Booked</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Month overview</h2>
+      <p class="meta" id="monthMeta"></p>
+      <div class="month-grid" id="monthHead"></div>
+      <div class="month-grid" id="monthGrid"></div>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      var apiInput = document.getElementById("apiBase");
+      var doctorSel = document.getElementById("doctor");
+      var doctorWrap = document.getElementById("doctorWrap");
+      var dateInput = document.getElementById("date");
+      var statusEl = document.getElementById("status");
+      var slotGrid = document.getElementById("slotGrid");
+      var dayMeta = document.getElementById("dayMeta");
+      var monthMeta = document.getElementById("monthMeta");
+      var monthHead = document.getElementById("monthHead");
+      var monthGrid = document.getElementById("monthGrid");
+      var refreshBtn = document.getElementById("refresh");
+      var originHint = document.getElementById("originHint");
+
+      var STORAGE_KEY = "dfchatStaffScheduleApiBase";
+
+      function todayISO() {
+        var d = new Date();
+        var y = d.getFullYear();
+        var m = String(d.getMonth() + 1).padStart(2, "0");
+        var day = String(d.getDate()).padStart(2, "0");
+        return y + "-" + m + "-" + day;
+      }
+
+      function monthFromDateISO(iso) {
+        return iso.slice(0, 7);
+      }
+
+      function apiBase() {
+        var raw = (apiInput.value || "").trim().replace(/\/+$/, "");
+        if (raw) return raw;
+        return window.location.origin || "";
+      }
+
+      function setStatus(msg, isErr) {
+        statusEl.textContent = msg || "";
+        statusEl.className = "status" + (isErr ? " err" : "");
+      }
+
+      async function fetchJSON(path) {
+        var base = apiBase();
+        var url = base + path;
+        var res = await fetch(url, { credentials: "omit" });
+        var text = await res.text();
+        var data;
+        try {
+          data = text ? JSON.parse(text) : null;
+        } catch (e) {
+          throw new Error("Bad JSON from " + path + " (" + res.status + ")");
+        }
+        if (!res.ok) {
+          var err = (data && data.error) || text || res.statusText;
+          throw new Error(err);
+        }
+        return data;
+      }
+
+      function doctorLabel(d) {
+        var name = d.DisplayDoctorName || d.DoctorName || d.doctorName || "";
+        var id = String(d.DoctorId || d.doctorId || "").trim();
+        return (name ? name + " (" + id + ")" : "Doctor " + id);
+      }
+
+      async function loadDoctors() {
+        doctorSel.innerHTML = "";
+        var data = await fetchJSON("/api/doctors");
+        var list = (data && data.doctors) || [];
+        if (!list.length) {
+          doctorSel.innerHTML = "<option value=\"\">No doctors in catalog</option>";
+          return;
+        }
+        list.forEach(function (d) {
+          var id = String(d.DoctorId || "").trim();
+          if (!id) return;
+          var opt = document.createElement("option");
+          opt.value = id;
+          opt.textContent = doctorLabel(d);
+          doctorSel.appendChild(opt);
+        });
+      }
+
+      function renderSlots(slotStatuses, info) {
+        slotGrid.innerHTML = "";
+        if (!slotStatuses || !slotStatuses.length) {
+          slotGrid.innerHTML = "<span style=\"color:#64748b\">No slots on this day (non-working day or no schedule).</span>";
+          return;
+        }
+        slotStatuses.forEach(function (row) {
+          var lab = row.label || "";
+          var booked = row.status === "booked";
+          var el = document.createElement("span");
+          el.className = "slot " + (booked ? "booked" : "free");
+          el.textContent = lab + (booked ? " · booked" : "");
+          slotGrid.appendChild(el);
+        });
+        dayMeta.textContent = info || "";
+      }
+
+      function renderMonth(monthData, selectedISO, modeGeneral) {
+        monthHead.innerHTML = "";
+        monthGrid.innerHTML = "";
+        var days = (monthData && monthData.days) || {};
+        var y = parseInt(selectedISO.slice(0, 4), 10);
+        var mo = parseInt(selectedISO.slice(5, 7), 10);
+        var first = new Date(y, mo - 1, 1);
+        var startPad = (first.getDay() + 6) % 7;
+        var dim = new Date(y, mo, 0).getDate();
+
+        ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].forEach(function (w) {
+          var h = document.createElement("div");
+          h.className = "dow";
+          h.textContent = w;
+          monthHead.appendChild(h);
+        });
+
+        for (var i = 0; i < startPad; i++) {
+          var empty = document.createElement("div");
+          empty.className = "day-cell off";
+          monthGrid.appendChild(empty);
+        }
+
+        for (var day = 1; day <= dim; day++) {
+          var iso = y + "-" + String(mo).padStart(2, "0") + "-" + String(day).padStart(2, "0");
+          var cell = document.createElement("div");
+          cell.className = "day-cell";
+          var rec = days[iso];
+          var num = document.createElement("div");
+          num.className = "num";
+          num.textContent = String(day);
+          cell.appendChild(num);
+
+          if (rec && rec.working) {
+            cell.classList.add("working");
+            var st = document.createElement("div");
+            st.className = "stat";
+            st.textContent = rec.bookedCount + "/" + rec.totalSlots + " booked";
+            cell.appendChild(st);
+          } else {
+            var st0 = document.createElement("div");
+            st0.className = "stat";
+            st0.textContent = "—";
+            cell.appendChild(st0);
+          }
+
+          if (iso === selectedISO) cell.classList.add("selected");
+
+          cell.addEventListener("click", function (isoVal) {
+            return function () {
+              dateInput.value = isoVal;
+              loadAll();
+            };
+          }(iso));
+
+          monthGrid.appendChild(cell);
+        }
+
+        monthMeta.textContent =
+          "Booked counts per day for " +
+          selectedISO.slice(0, 7) +
+          (modeGeneral ? " (general pool)." : " (selected doctor).");
+      }
+
+      async function loadAll() {
+        setStatus("");
+        refreshBtn.disabled = true;
+        var modeGeneral = document.querySelector('input[name="mode"]:checked').value === "general";
+        var iso = (dateInput.value || "").trim();
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) {
+          setStatus("Pick a valid date.", true);
+          refreshBtn.disabled = false;
+          return;
+        }
+
+        try {
+          if (modeGeneral) {
+            var gs = await fetchJSON("/api/general-slots?date=" + encodeURIComponent(iso));
+            renderSlots(gs.slotStatuses || [], gs.dateISO + " · slot step " + (gs.slotMinutes || "?") + " min · pool id " + (gs.doctorId || ""));
+            var month = monthFromDateISO(iso);
+            var gm = await fetchJSON("/api/general-month-overview?month=" + encodeURIComponent(month));
+            renderMonth(gm, iso, true);
+          } else {
+            var docId = (doctorSel.value || "").trim();
+            if (!docId) {
+              setStatus("Select a doctor.", true);
+              refreshBtn.disabled = false;
+              return;
+            }
+            var ds = await fetchJSON("/api/slots?doctorId=" + encodeURIComponent(docId) + "&date=" + encodeURIComponent(iso));
+            renderSlots(
+              ds.slotStatuses || [],
+              ds.dateISO + " · " + (ds.weekday || "") + " · slot step " + (ds.slotMinutes || "?") + " min"
+            );
+            var month2 = monthFromDateISO(iso);
+            var dm = await fetchJSON(
+              "/api/doctor-month-overview?doctorId=" + encodeURIComponent(docId) + "&month=" + encodeURIComponent(month2)
+            );
+            renderMonth(dm, iso, false);
+          }
+          setStatus("Updated.");
+        } catch (e) {
+          setStatus(e.message || String(e), true);
+          slotGrid.innerHTML = "";
+          dayMeta.textContent = "";
+          monthGrid.innerHTML = "";
+          monthHead.innerHTML = "";
+          monthMeta.textContent = "";
+        }
+        refreshBtn.disabled = false;
+      }
+
+      function syncModeUI() {
+        var modeGeneral = document.querySelector('input[name="mode"]:checked').value === "general";
+        doctorWrap.style.display = modeGeneral ? "none" : "block";
+      }
+
+      /* Init */
+      originHint.textContent = window.location.origin || "(unknown)";
+      var params = new URLSearchParams(window.location.search);
+      var saved = params.get("apiBase") || localStorage.getItem(STORAGE_KEY) || "";
+      if (!saved && window.location.protocol !== "file:") {
+        saved = "";
+      }
+      apiInput.value = saved;
+
+      apiInput.addEventListener("change", function () {
+        localStorage.setItem(STORAGE_KEY, (apiInput.value || "").trim());
+      });
+
+      dateInput.value = todayISO();
+
+      document.querySelectorAll('input[name="mode"]').forEach(function (r) {
+        r.addEventListener("change", syncModeUI);
+      });
+      syncModeUI();
+
+      refreshBtn.addEventListener("click", loadAll);
+      dateInput.addEventListener("change", loadAll);
+
+      (async function () {
+        try {
+          await loadDoctors();
+          await loadAll();
+        } catch (e) {
+          setStatus(
+            "Could not reach API. Set “API base URL” to your Railway URL (same as dfchat-api-base-url). " +
+              (e.message || ""),
+            true
+          );
+        }
+      })();
+    })();
+  </script>
+</body>
+</html>

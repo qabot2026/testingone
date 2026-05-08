@@ -4930,20 +4930,68 @@ function setupOtpFormTwoStepIfNeeded() {
 }
 
 /**
- * When Dialogflow sends `{ "action": "open_form" }` without `form_id`, use `common.form.defaultFormId`.
+ * Map common CX typos / short names to keys in `common.form.forms` (e.g. `upload` → `uploadDocument`).
+ * @param {string} requestedId
+ * @returns {string}
  */
-function applyDefaultContactFormForBareOpenFormAction() {
+function canonicalContactFormId_(requestedId) {
+    const c = readCommonFormConfigRoot();
+    const forms = c.forms && typeof c.forms === "object" ? c.forms : null;
+    const raw = String(requestedId || "").trim();
+    if (!raw || !forms) {
+        return raw;
+    }
+    if (forms[raw]) {
+        return raw;
+    }
+    const compact = raw.toLowerCase().replace(/[\s_-]+/g, "");
+    /** @type {Record<string, string>} */
+    const aliases = {
+        upload: "uploadDocument",
+        uploaddocument: "uploadDocument",
+        documentupload: "uploadDocument",
+        documents: "uploadDocument",
+        fileupload: "uploadDocument",
+        attach: "uploadDocument",
+        attachment: "uploadDocument"
+    };
+    const mapped = aliases[compact];
+    if (mapped && forms[mapped]) {
+        return mapped;
+    }
+    return raw;
+}
+
+/**
+ * When Dialogflow sends `{ "action": "open_form" }` without `form_id`, use `common.form.defaultFormId`.
+ * Also used when `form_id` is invalid — infer upload vs contact from intent name / recent user text.
+ * @param {Event} [event]
+ */
+function applyDefaultContactFormForBareOpenFormAction(event) {
     const c = readCommonFormConfigRoot();
     if (!c.forms || typeof c.forms !== "object" || !Object.keys(c.forms).length) {
         return;
     }
-    // Heuristic: if the bot sends open_form without form_id, infer likely form from the latest user message.
-    // This mitigates misconfigured intents where the payload omits `form_id`.
+    try {
+        const intentName = getIntentDisplayNameFromDfEvent(event);
+        if (
+            intentName
+            && c.forms.uploadDocument
+            && /\b(upload|uploading|document|documents|file|files|attachment|attachments)\b/i.test(intentName)
+        ) {
+            setActiveContactFormId("uploadDocument");
+            return;
+        }
+    } catch {
+        /* ignore */
+    }
+    // Heuristic: infer from recent user lines when payload omits form_id (chips / follow-ups may not repeat "upload").
     try {
         const prev = readStoredClientContext();
         const qs = prev && Array.isArray(prev.user_queries) ? prev.user_queries : [];
-        const last = qs.length ? String(qs[qs.length - 1] || "").trim().toLowerCase() : "";
-        if (last && c.forms.uploadDocument && /\b(upload|document|docs|pdf|file|files)\b/i.test(last)) {
+        const recent = qs.slice(-8).map((q) => String(q || "").trim().toLowerCase());
+        const uploadRe = /\b(upload|uploading|document|documents|docs|pdf|file|files|attachment|attachments)\b/i;
+        if (c.forms.uploadDocument && recent.some((line) => line && uploadRe.test(line))) {
             setActiveContactFormId("uploadDocument");
             return;
         }
@@ -4966,7 +5014,7 @@ function setActiveContactFormId(formId) {
     if (typeof formId !== "string" || !formId.trim()) {
         return;
     }
-    let id = formId.trim();
+    let id = canonicalContactFormId_(formId.trim());
     const c = readCommonFormConfigRoot();
     const alias = typeof c.legacyAppointmentFormAlias === "string" ? c.legacyAppointmentFormAlias.trim() : "";
     if (id === "appointment" && alias && c.forms && typeof c.forms === "object" && c.forms[alias]) {
@@ -11613,11 +11661,14 @@ function handleDfResponseReceived(event) {
     mergePhoneFromDialogflowParametersIntoStoredContext(event);
 
     const willOpenForm = shouldOpenContactForm(event);
-    const openFormId = extractOpenFormIdFromEvent(event);
-    if (openFormId) {
+    const rawOpenFormId = extractOpenFormIdFromEvent(event);
+    const openFormId = rawOpenFormId ? canonicalContactFormId_(rawOpenFormId) : "";
+    const fr = readCommonFormConfigRoot();
+    const formRegistered = !!(openFormId && fr.forms && typeof fr.forms === "object" && fr.forms[openFormId]);
+    if (formRegistered) {
         setActiveContactFormId(openFormId);
     } else if (willOpenForm) {
-        applyDefaultContactFormForBareOpenFormAction();
+        applyDefaultContactFormForBareOpenFormAction(event);
     }
 
     if (willOpenForm) {

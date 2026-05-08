@@ -1754,11 +1754,23 @@ app.post(
 
 app.get("/health", (_req, res) => res.status(200).send("ok"));
 
+/** Reception/staff: same-slot view as the chat widget (reads RTDB via /api/slots). */
+const RECEPTION_SCHEDULE_HTML = path.join(__dirname_api, "public", "reception-schedule.html");
+app.get("/reception-schedule", (_req, res) => {
+    res.sendFile(RECEPTION_SCHEDULE_HTML, (err) => {
+        if (err) {
+            console.error("[contact-form-api] reception-schedule:", err.message);
+            res.status(404).type("text/plain; charset=utf-8").send("Staff UI missing: add public/reception-schedule.html and redeploy.");
+        }
+    });
+});
+
 /** Opening the Railway URL in a browser hits GET / — avoid Express default "Cannot GET /". */
 app.get("/", (_req, res) => {
     res.status(200).type("text/plain; charset=utf-8").send(
         [
             `Contact leads API running.`,
+            `GET /reception-schedule → staff calendar (booked vs free slots).`,
             `POST JSON or multipart/form-data → ${PATHNAME}`,
             `POST JSON (chat mobile) → ${PATHNAME_MOBILE_SHEET_SYNC}`,
             `POST JSON (session queries) → ${PATHNAME_SESSION_SHEET_SYNC}`,
