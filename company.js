@@ -8043,12 +8043,24 @@ function bindLightboxToMessengerImages(dfMessenger) {
                     || isInShadowHostChain(img, "df-messenger-user-input")) {
                     return;
                 }
-                // Find siblings in the same row/container to enable prev/next.
-                const parent = img.parentElement;
+                // Same carousel/gallery strip only — not the whole transcript (see attachImageLightboxClickHandler).
+                /** @type {Element | null} */
+                let scopeEl = img.parentElement;
+                /** @type {Element | null} */
+                let walk = img;
+                while (walk && walk instanceof Element) {
+                    if (walk.classList
+                        && (walk.classList.contains(`${DFCHAT_INLINE_CARD_CAROUSEL_CLASS}__track`)
+                            || walk.classList.contains(`${DFCHAT_INLINE_GALLERY_CLASS}__track`))) {
+                        scopeEl = walk;
+                        break;
+                    }
+                    walk = walk.parentElement;
+                }
                 let srcs = [];
-                if (parent && typeof parent.querySelectorAll === "function") {
+                if (scopeEl && typeof scopeEl.querySelectorAll === "function") {
                     try {
-                        srcs = Array.from(parent.querySelectorAll("img"))
+                        srcs = Array.from(scopeEl.querySelectorAll("img"))
                             .map((el) => (el.getAttribute ? (el.getAttribute("src") || "") : ""))
                             .filter((u) => u && !u.includes("dfchat-"));
                     } catch {
@@ -10520,8 +10532,24 @@ function attachImageLightboxClickHandler() {
                 continue;
             }
             try {
+                // Prefer our injected horizontal strips. Otherwise when a carousel row has only one <img>
+                // (e.g. one doctor card with ImageUrl), the first ancestor with 2+ images becomes the whole
+                // transcript (#message-list), pulling in bot persona / chrome images into the lightbox.
+                if (node instanceof Element && node.classList
+                    && (node.classList.contains(`${DFCHAT_INLINE_CARD_CAROUSEL_CLASS}__track`)
+                        || node.classList.contains(`${DFCHAT_INLINE_GALLERY_CLASS}__track`))) {
+                    row = /** @type {HTMLElement} */ (node);
+                    break;
+                }
                 const imgs = node.querySelectorAll("img");
                 if (imgs && imgs.length >= 2) {
+                    if (node instanceof Element) {
+                        const id = typeof node.id === "string" ? node.id : "";
+                        const tag = node.tagName ? String(node.tagName).toLowerCase() : "";
+                        if (id === "message-list" || tag === "df-message-list") {
+                            continue;
+                        }
+                    }
                     row = /** @type {HTMLElement} */ (node);
                     break;
                 }
