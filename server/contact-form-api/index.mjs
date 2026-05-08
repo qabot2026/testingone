@@ -26,7 +26,7 @@
  * Optional: CONTACT_FORM_MOBILE_SHEET_SYNC_SECRET → client must send `X-Contact-Form-Mobile-Sync-Secret`.
  *
  * RTDB catalog: POST `/api/sync-catalog-from-repo` with header `X-Catalog-Sync-Secret`
- * matching `CATALOG_SYNC_SECRET` re-uploads bundled `data/doctors.upload.csv` + `data/branches.upload.csv`.
+ * matching `CATALOG_SYNC_SECRET` re-uploads bundled `data/doctors.upload.json` + `data/branches.upload.json`.
  */
 
 import fs from "node:fs";
@@ -51,8 +51,8 @@ import { upsertCatalogFromCsvFiles } from "./lib/catalog-csv-ingest.mjs";
 const APPS_SCRIPT_WEBAPP_URL = (process.env.GOOGLE_APPS_SCRIPT_WEBAPP_URL || "").trim();
 
 const __dirname_api = path.dirname(fileURLToPath(import.meta.url));
-const CATALOG_DOCTORS_CSV = path.join(__dirname_api, "data", "doctors.upload.csv");
-const CATALOG_BRANCHES_CSV = path.join(__dirname_api, "data", "branches.upload.csv");
+const CATALOG_DOCTORS_CSV = path.join(__dirname_api, "data", "doctors.upload.json");
+const CATALOG_BRANCHES_CSV = path.join(__dirname_api, "data", "branches.upload.json");
 const PATHNAME_CATALOG_SYNC = "/api/sync-catalog-from-repo";
 const CATALOG_SYNC_SECRET = (process.env.CATALOG_SYNC_SECRET || "").trim();
 
@@ -662,7 +662,7 @@ app.get("/api/general-month-overview", async (req, res) => {
     });
 });
 
-/** Re-push CSV catalog from deployed `data/*.upload.csv` into RTDB (set CATALOG_SYNC_SECRET on the server). */
+/** Re-push catalog from deployed `data/*.upload.json` (or legacy CSV) into RTDB (set CATALOG_SYNC_SECRET on the server). */
 app.post(PATHNAME_CATALOG_SYNC, async (req, res) => {
     if (!CATALOG_SYNC_SECRET) {
         return res.sendStatus(404);
@@ -996,15 +996,29 @@ app.post("/webhook", express.json({ limit: "512kb" }), async (req, res) => {
         }
 
         if (tag === "get_specializations") {
+            /** CX may send branch_id (snake) or branchId after branch picker; catalog doctors are keyed by BranchId. */
+            const branchId = normalizeStr_(params.branch_id ?? params.branchId ?? "");
             const city = normalizeStr_(params.city);
-            if (!city) {
-                return fallback("Please provide a city.");
+            /** @type {Awaited<ReturnType<typeof listDoctors>>} */
+            let filtered;
+            if (branchId) {
+                filtered = await listDoctors({ branchId });
+            } else if (city) {
+                const docs = await listDoctors();
+                filtered = docs.filter((d) => normalizeLower_(d.City) === normalizeLower_(city));
+            } else {
+                return fallback("Please select a branch or city first.");
             }
-            const docs = await listDoctors();
-            const filtered = docs.filter((d) => normalizeLower_(d.City) === normalizeLower_(city));
-            const specs = Array.from(new Set(filtered.map((d) => normalizeStr_(d.Specialization)).filter(Boolean)))
-                .sort((a, b) => a.localeCompare(b));
-            if (!specs.length) return fallback("No specializations found.");
+            const specs = Array.from(
+                new Set(filtered.map((d) => normalizeStr_(d.Specialization)).filter(Boolean))
+            ).sort((a, b) => a.localeCompare(b));
+            if (!specs.length) {
+                return fallback(
+                    branchId
+                        ? "No specializations found for this branch. Check doctor CSV: BranchId must match the branch, and the Specialization column must be filled."
+                        : "No specializations found for this city. Check doctor CSV City and Specialization columns."
+                );
+            }
             return res.json({
                 fulfillment_response: {
                     messages: [
@@ -1776,8 +1790,8 @@ app.get("/", (_req, res) => {
             `POST JSON (session queries) → ${PATHNAME_SESSION_SHEET_SYNC}`,
             `GET /health → health check.`,
             CATALOG_SYNC_SECRET
-                ? `POST ${PATHNAME_CATALOG_SYNC} + X-Catalog-Sync-Secret → push doctors/branches CSV to RTDB.`
-                : `Set CATALOG_SYNC_SECRET + redeploy → POST ${PATHNAME_CATALOG_SYNC} to sync CSV catalog to RTDB.`,
+                ? `POST ${PATHNAME_CATALOG_SYNC} + X-Catalog-Sync-Secret → push doctors/branches catalog (JSON) to RTDB.`
+                : `Set CATALOG_SYNC_SECRET + redeploy → POST ${PATHNAME_CATALOG_SYNC} to sync catalog JSON to RTDB.`,
             `Drive uploads + optional Firestore/Sheets (DRIVE_ONLY=1 skips Firestore only; Sheets use SHEETS_SPREADSHEET_ID).`
         ].join("\n")
     );

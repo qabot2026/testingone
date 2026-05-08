@@ -7,6 +7,8 @@ export function normalizeDoctorRecordForUpload(r) {
     const out = { ...r };
     out.DoctorId = String(out.DoctorId || out.doctorId || "").trim();
     out.BranchId = String(out.BranchId || out.branchId || "").trim();
+    out.City = String(out.City || out.city || "").trim();
+    out.Specialization = String(out.Specialization || out.specialization || "").trim();
     out.Days = String(out.Days || "").trim();
     out.Start = String(out.Start || "").trim();
     out.End = String(out.End || "").trim();
@@ -40,7 +42,64 @@ export function branchesFromCsvText(rawUtf8) {
 }
 
 /**
- * Read CSV files from disk and upsert into RTDB under FIREBASE_CATALOG_ROOT.
+ * @param {string} filePath
+ * @returns {{ doctors: Array<Record<string, string>>, headers: string[], skipped: number }}
+ */
+export function doctorsFromCatalogFile(filePath) {
+    const raw = fs.readFileSync(filePath, "utf8");
+    const lower = filePath.toLowerCase();
+    if (lower.endsWith(".json")) {
+        const arr = JSON.parse(raw);
+        const doctors = Array.isArray(arr) ? arr.map(normalizeDoctorRecordForUpload) : [];
+        const withId = doctors.filter((d) => d.DoctorId).length;
+        return { doctors, headers: [], skipped: doctors.length - withId };
+    }
+    const parsed = doctorsFromCsvText(raw);
+    return { doctors: parsed.doctors, headers: parsed.headers, skipped: parsed.skipped };
+}
+
+/**
+ * @param {string} filePath
+ * @returns {{ branches: Array<Record<string, string>>, headers: string[], skipped: number }}
+ */
+export function branchesFromCatalogFile(filePath) {
+    const raw = fs.readFileSync(filePath, "utf8");
+    const lower = filePath.toLowerCase();
+    if (lower.endsWith(".json")) {
+        const arr = JSON.parse(raw);
+        const branches = Array.isArray(arr) ? arr.map(normalizeBranchRecordForUpload) : [];
+        const withId = branches.filter((b) => b.BranchId).length;
+        return { branches, headers: [], skipped: branches.length - withId };
+    }
+    const parsed = branchesFromCsvText(raw);
+    return { branches: parsed.branches, headers: parsed.headers, skipped: parsed.skipped };
+}
+
+/** When doctor rows omit City, copy from the matching branch row (webhooks filter by city). */
+function fillDoctorCityFromBranches_(doctors, branches) {
+    /** @type {Map<string, string>} */
+    const cityByBranch = new Map();
+    for (const b of branches) {
+        const id = String(b.BranchId || "").trim();
+        const city = String(b.City || "").trim();
+        if (id && city) {
+            cityByBranch.set(id, city);
+        }
+    }
+    for (const d of doctors) {
+        const bid = String(d.BranchId || "").trim();
+        if (!bid || String(d.City || "").trim()) {
+            continue;
+        }
+        const c = cityByBranch.get(bid);
+        if (c) {
+            d.City = c;
+        }
+    }
+}
+
+/**
+ * Read CSV or JSON catalog files from disk and upsert into RTDB under FIREBASE_CATALOG_ROOT.
  * @param {{ doctorsFile?: string, branchesFile?: string }} args
  */
 export async function upsertCatalogFromCsvFiles(args) {
@@ -51,24 +110,24 @@ export async function upsertCatalogFromCsvFiles(args) {
     /** @type {string[]} */
     const notes = [];
 
-    if (doctorsPath) {
-        const raw = fs.readFileSync(doctorsPath, "utf8");
-        const parsed = doctorsFromCsvText(raw);
+    if (doctorsPath && fs.existsSync(doctorsPath)) {
+        const parsed = doctorsFromCatalogFile(doctorsPath);
         doctors = parsed.doctors;
         if (parsed.skipped > 0) {
             notes.push(
-                `${parsed.skipped} doctor row(s) skipped (empty DoctorId). First header was: ${JSON.stringify(parsed.headers[0] || "")}`
+                `${parsed.skipped} doctor row(s) skipped (empty DoctorId). Source: ${path.basename(doctorsPath)}`
             );
         }
     }
-    if (branchesPath) {
-        const raw = fs.readFileSync(branchesPath, "utf8");
-        const parsed = branchesFromCsvText(raw);
+    if (branchesPath && fs.existsSync(branchesPath)) {
+        const parsed = branchesFromCatalogFile(branchesPath);
         branches = parsed.branches;
         if (parsed.skipped > 0) {
             notes.push(`${parsed.skipped} branch row(s) skipped (empty BranchId).`);
         }
     }
+
+    fillDoctorCityFromBranches_(doctors, branches);
 
     const wrote = await upsertCatalogFromRecords({ doctors, branches });
     return {
