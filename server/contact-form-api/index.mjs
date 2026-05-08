@@ -410,7 +410,7 @@ app.get("/api/slots", async (req, res) => {
     const weekdayKey = weekdayKeyFromDateIso_(dateISO);
     const slots = slotsForDoctorOnDate_(d, dateISO);
     let booked = [];
-    // Booked slots come from Firebase Realtime DB (not Firestore).
+    // Booked slots come from Firebase RTDB.
     try {
         booked = await listBookedSlots({ doctorId, dateISO });
     } catch {
@@ -808,11 +808,18 @@ app.post("/webhook", express.json({ limit: "512kb" }), async (req, res) => {
         if (tag === "get_doctor_details_by_name" || tag === "get_doctor_details") {
             const doctornameParam = normalizeStr_(params.doctorname);
             const rawName = doctornameParam.replace(/^Dr\.?\s*/i, "").trim();
+            const idFromParam = doctornameParam.replace(/^doctor_/i, "").trim();
             const docs = await listDoctors();
-            const match = docs.find((d) => normalizeLower_(d.DoctorName) === normalizeLower_(rawName))
+            // Card carousel sends ctaValue = DoctorId when present (see doctorToCarouselCard_).
+            const match = docs.find((d) => {
+                const id = normalizeStr_(d.DoctorId);
+                return id !== "" && id === idFromParam;
+            })
+                || docs.find((d) => normalizeLower_(d.DoctorName) === normalizeLower_(rawName))
                 || docs.find((d) => normalizeLower_(d.DisplayDoctorName) === normalizeLower_(doctornameParam))
                 || null;
             if (!match) return fallback("Doctor not found.");
+            const sessionDoctorName = normalizeStr_(match.DoctorName).replace(/^Dr\.?\s*/i, "").trim();
             const days = normalizeStr_(match.Days);
             const start = normalizeStr_(match.Start);
             const end = normalizeStr_(match.End);
@@ -826,7 +833,7 @@ app.post("/webhook", express.json({ limit: "512kb" }), async (req, res) => {
                 `🕒 Timings: ${timing}\n` +
                 (normalizeStr_(match.PageUrl) ? `🔗 Profile: ${normalizeStr_(match.PageUrl)}` : "");
             return res.json({
-                sessionInfo: { parameters: { doctorname: rawName, city: normalizeStr_(match.City) } },
+                sessionInfo: { parameters: { doctorname: sessionDoctorName, city: normalizeStr_(match.City) } },
                 fulfillment_response: { messages: [cxText_(details, lang)] }
             });
         }
