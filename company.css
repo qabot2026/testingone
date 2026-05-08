@@ -676,8 +676,21 @@
    padding-right: 2px;
    flex: 0 1 auto;
  }
- 
- .dfchat-contact-form__row {
+
+/* Month grid + slot chips + contact rows need a taller scroll region than plain contact forms */
+.dfchat-contact-form--has-appointment .dfchat-contact-form__inputs {
+   max-height: min(62dvh, 520px);
+   min-height: 14rem;
+}
+
+.dfchat-contact-form__row--appointment .dfchat-contact-form__appointment-shell {
+   flex: 1 1 auto;
+   min-height: min(44dvh, 340px);
+   width: 100%;
+   box-sizing: border-box;
+}
+
+.dfchat-contact-form__row {
    display: flex;
    flex-direction: row;
    align-items: flex-start;
@@ -916,7 +929,11 @@
    overflow: hidden;
    max-height: min(90dvh, 420px);
  }
- 
+
+.dfchat-contact-form--docked.dfchat-contact-form--has-appointment .dfchat-contact-form__card {
+   max-height: min(92dvh, 620px);
+}
+
  .dfchat-contact-form--docked .dfchat-contact-form__fields--stacked {
    display: flex;
    flex: 1 1 auto;

@@ -5724,6 +5724,30 @@ function syncAppointmentDoctorHiddenFromSession() {
     }
 }
 
+/**
+ * Wider/taller scroll area for appointment forms — base CSS caps `#dfchat-contact-form-inputs` at 220px
+ * and docked layout used to cap at 240px, which hid slot chips below the calendar.
+ */
+function syncContactFormAppointmentModeClass_() {
+    const formRoot = document.getElementById("dfchat-contact-form");
+    if (!formRoot) {
+        return;
+    }
+    const fields = readContactFormConfig().fields;
+    let hasAppointment = false;
+    if (Array.isArray(fields)) {
+        for (let i = 0; i < fields.length; i += 1) {
+            const f = fields[i];
+            const t = String(f && f.type || "").toLowerCase();
+            if (t === "appointmentdoctor" || t === "appointmentgeneral") {
+                hasAppointment = true;
+                break;
+            }
+        }
+    }
+    formRoot.classList.toggle("dfchat-contact-form--has-appointment", hasAppointment);
+}
+
 function mountContactFormFieldsFromConfig() {
     const slot = document.getElementById("dfchat-contact-form-inputs");
     if (!slot) {
@@ -5741,6 +5765,7 @@ function mountContactFormFieldsFromConfig() {
     }
     syncContactFormNoValidateForActiveForm();
     setupOtpFormTwoStepIfNeeded();
+    syncContactFormAppointmentModeClass_();
     syncAppointmentDoctorHiddenFromSession();
 }
 
@@ -5756,6 +5781,7 @@ function applyContactFormLayoutFromConfig() {
     if (subtitle) {
         subtitle.style.display = cfg.showSubtitle ? "" : "none";
     }
+    syncContactFormAppointmentModeClass_();
 }
 
 function stripContactFormDocking() {
@@ -5779,6 +5805,7 @@ function stripContactFormDocking() {
     const inputs = el.querySelector(".dfchat-contact-form__inputs");
     if (inputs) {
         inputs.style.removeProperty("max-height");
+        inputs.style.removeProperty("min-height");
     }
     applyContactFormLayoutFromConfig();
 }
@@ -5825,6 +5852,8 @@ function syncContactFormPosition() {
         }
         return;
     }
+
+    syncContactFormAppointmentModeClass_();
 
     const cfg = readContactFormConfig();
     if (!cfg.dockToChatWindow) {
@@ -5906,7 +5935,12 @@ function syncContactFormPosition() {
     }
 
     const cardMax = Math.max(150, Math.min(cfg.maxCardHeightPx, sectionMaxH - 6));
-    const inputsMax = Math.max(100, Math.min(240, cardMax - 160));
+    const hasAppointment = el.classList.contains("dfchat-contact-form--has-appointment");
+    /** Undocked CSS raises appointment strip; docked used to cap ~240px — too small for calendar + slots + fields. */
+    let inputsMax = hasAppointment
+        ? Math.min(560, Math.max(200, cardMax - 85))
+        : Math.max(100, Math.min(240, cardMax - 160));
+    inputsMax = Math.min(inputsMax, Math.max(100, Math.floor(cardMax - 64)));
 
     el.classList.add("dfchat-contact-form--docked");
     el.style.position = "fixed";
@@ -5936,6 +5970,11 @@ function syncContactFormPosition() {
     }
     if (inputs) {
         inputs.style.maxHeight = `${inputsMax}px`;
+        if (hasAppointment) {
+            inputs.style.minHeight = `${Math.min(340, Math.max(200, inputsMax - 4))}px`;
+        } else {
+            inputs.style.removeProperty("min-height");
+        }
     }
 }
 
@@ -12062,6 +12101,7 @@ function openContactForm() {
     window.setTimeout(() => {
         applyStoredMobileToOpenContactForm_();
     }, 0);
+    syncContactFormAppointmentModeClass_();
     syncAppointmentDoctorHiddenFromSession();
 }
 
