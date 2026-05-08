@@ -9075,6 +9075,7 @@ function closeVideoLightbox() {
 const DFCHAT_INLINE_GALLERY_CLASS = "dfchat-inline-gallery";
 const DFCHAT_INLINE_VIDEO_CLASS = "dfchat-inline-video";
 const DFCHAT_INLINE_CARD_CAROUSEL_CLASS = "dfchat-inline-card-carousel";
+const DFCHAT_INLINE_SELECT_CLASS = "dfchat-inline-select";
 const DFCHAT_INLINE_BOOKING_CAL_CLASS = "dfchat-inline-booking-calendar";
 
 /**
@@ -10269,12 +10270,26 @@ let dfchatLastInlineBookingCalWrapEl = null;
 /** Invalidate pending booking-calendar append attempts between turns. */
 let dfchatInlineBookingCalendarInjectSeq = 0;
 
+/** Most recent `.dfchat-inline-select` node (city dropdown, etc.). */
+/** @type {HTMLElement | null} */
+let dfchatLastInlineSelectWrapEl = null;
+
+/** Invalidate pending inline-select append attempts between turns. */
+let dfchatInlineSelectInjectSeq = 0;
+
+/** Dedupe repeated identical option lists in one session (CX may echo fulfillment). */
+/** @type {Set<string>} */
+let dfchatInlineSelectSignaturesSeen = new Set();
+
 function clearOpenGalleryUrlDedupeState() {
     dfchatOpenGalleryUrlSetSignaturesSeen = new Set();
     dfchatLastInlineGalleryWrapEl = null;
     dfchatLastInlineVideoWrapEl = null;
     dfchatOpenCardCarouselSignaturesSeen = new Set();
     dfchatLastInlineCardCarouselWrapEl = null;
+    dfchatInlineSelectInjectSeq += 1;
+    dfchatLastInlineSelectWrapEl = null;
+    dfchatInlineSelectSignaturesSeen = new Set();
     dfchatInlineBookingCalendarInjectSeq += 1;
     dfchatLastInlineBookingCalWrapEl = null;
 }
@@ -10319,6 +10334,38 @@ function removeDfchatLastInlineCardCarouselIfPresent() {
     }
     try {
         dfchatOpenCardCarouselSignaturesSeen.clear();
+    } catch {
+        /* ignore */
+    }
+}
+
+/**
+ * Detach the last injected inline select control when the bot reply is plain text / another intent.
+ * @returns {void}
+ */
+function removeDfchatLastInlineSelectIfPresent() {
+    const el = dfchatLastInlineSelectWrapEl;
+    dfchatLastInlineSelectWrapEl = null;
+    dfchatInlineSelectInjectSeq += 1;
+    if (!el) {
+        try {
+            dfchatInlineSelectSignaturesSeen.clear();
+        } catch {
+            /* ignore */
+        }
+        return;
+    }
+    try {
+        if (typeof el.remove === "function") {
+            el.remove();
+        } else if (el.parentNode) {
+            el.parentNode.removeChild(el);
+        }
+    } catch {
+        /* ignore */
+    }
+    try {
+        dfchatInlineSelectSignaturesSeen.clear();
     } catch {
         /* ignore */
     }
@@ -10990,6 +11037,300 @@ function tryOpenCardCarouselFromBotResponseMessages(messages, event) {
 }
 
 /**
+ * @param {unknown} raw
+ * @returns {{ label: string, value: string }[]}
+ */
+function normalizeDfchatInlineSelectOptions(raw) {
+    if (!Array.isArray(raw)) {
+        return [];
+    }
+    /** @type {{ label: string, value: string }[]} */
+    const out = [];
+    for (let i = 0; i < raw.length; i += 1) {
+        const item = raw[i];
+        if (typeof item === "string") {
+            const t = item.trim();
+            if (t) {
+                out.push({ label: t, value: t });
+            }
+            continue;
+        }
+        if (item && typeof item === "object") {
+            /** @type {Record<string, unknown>} */
+            const o = /** @type {Record<string, unknown>} */ (item);
+            const label = unwrapPayloadStringField(o.label ?? o.text ?? "").trim();
+            let value = unwrapPayloadStringField(o.value ?? o.label ?? "").trim();
+            if (!value && label) {
+                value = label;
+            }
+            if (label && value) {
+                out.push({ label, value });
+            }
+        }
+    }
+    return out;
+}
+
+/**
+ * @param {{ label: string, value: string }[]} options
+ * @returns {string}
+ */
+function inlineSelectOptionsSignature(options) {
+    if (!options || options.length === 0) {
+        return "";
+    }
+    return options
+        .slice()
+        .map((o) => String(o.value || "").trim())
+        .sort()
+        .join("\u0001");
+}
+
+/**
+ * Extract `{ action: "dfchat_inline_select", options: [...] }` from merged CX fulfillment messages.
+ *
+ * @param {unknown[]} messages
+ * @returns {{ options: { label: string, value: string }[], placeholder: string, messageText: string } | null}
+ */
+function extractFirstDfchatInlineSelectFromCxMessages(messages) {
+    if (!Array.isArray(messages) || messages.length === 0) {
+        return null;
+    }
+    for (let cx = 0; cx < messages.length; cx += 1) {
+        const cand = messages[cx];
+        if (!messageHasFulfillmentPayload(cand)) {
+            continue;
+        }
+        /** @type {Record<string, unknown> | null} */
+        let pl = null;
+        try {
+            pl = extractPayload(cand);
+        } catch {
+            pl = null;
+        }
+        const actionStr = unwrapPayloadStringField(pl && pl.action).toLowerCase();
+        if (!pl || actionStr !== "dfchat_inline_select") {
+            continue;
+        }
+        const rawMessage =
+            Object.prototype.hasOwnProperty.call(pl, "message") ? pl.message
+                : Object.prototype.hasOwnProperty.call(pl, "text") ? pl.text
+                    : Object.prototype.hasOwnProperty.call(pl, "prompt") ? pl.prompt
+                        : null;
+        const messageText = normalizeOpenVideoMessage(rawMessage);
+        const placeholderRaw = Object.prototype.hasOwnProperty.call(pl, "placeholder") ? pl.placeholder : "";
+        const placeholder = unwrapPayloadStringField(placeholderRaw).trim() || "Choose…";
+        const opts = normalizeDfchatInlineSelectOptions(pl.options);
+        if (opts.length === 0) {
+            continue;
+        }
+        return { options: opts, placeholder, messageText };
+    }
+    return null;
+}
+
+/**
+ * @param {HTMLElement | null | undefined} dfMessenger
+ * @param {{ label: string, value: string }[]} options
+ * @param {string} placeholder
+ * @param {string} messageText
+ * @returns {void}
+ */
+function scheduleInjectInlineSelectDropdown(dfMessenger, options, placeholder, messageText) {
+    const injectSeq = (dfchatInlineSelectInjectSeq += 1);
+    let injected = false;
+    /** @type {number[] | undefined} */
+    let pendingTimers = undefined;
+
+    const list = Array.isArray(options) ? options.slice(0, 300) : [];
+    const ph = typeof placeholder === "string" && placeholder.trim() ? placeholder.trim() : "Choose…";
+    const msg = typeof messageText === "string" ? messageText.trim() : "";
+
+    function tryAppend() {
+        if (injected) {
+            return;
+        }
+        if (injectSeq !== dfchatInlineSelectInjectSeq) {
+            return;
+        }
+        const msResolved =
+            dfMessenger
+            || (typeof activeDfMessenger !== "undefined" ? activeDfMessenger : null)
+            || (typeof document !== "undefined" ? document.querySelector("df-messenger") : null);
+        const ml = findMessengerMessageListRoot(msResolved);
+        if (!ml) {
+            return;
+        }
+
+        try {
+            removeDfchatLastInlineSelectIfPresent();
+        } catch {
+            /* ignore */
+        }
+
+        const wrap = document.createElement("div");
+        wrap.className = DFCHAT_INLINE_SELECT_CLASS;
+        wrap.style.cssText = [
+            "width:100%",
+            "box-sizing:border-box",
+            "margin:10px 0 0",
+            "padding:0 10px 12px",
+            "pointer-events:auto"
+        ].join(";");
+
+        if (msg) {
+            const messageEl = document.createElement("div");
+            messageEl.style.cssText = "font-size:14px;line-height:1.35;margin:0 0 8px;color:rgba(0,0,0,.82)";
+            messageEl.textContent = msg;
+            wrap.appendChild(messageEl);
+        }
+
+        const sel = document.createElement("select");
+        sel.setAttribute("aria-label", ph);
+        sel.style.cssText = [
+            "width:100%",
+            "max-width:100%",
+            "box-sizing:border-box",
+            "font-size:15px",
+            "line-height:1.3",
+            "padding:10px 12px",
+            "border-radius:8px",
+            "border:1px solid rgba(0,0,0,.14)",
+            "background:#fff",
+            "color:rgba(0,0,0,.87)",
+            "cursor:pointer"
+        ].join(";");
+
+        const opt0 = document.createElement("option");
+        opt0.value = "";
+        opt0.textContent = ph;
+        opt0.disabled = true;
+        opt0.selected = true;
+        sel.appendChild(opt0);
+
+        for (let i = 0; i < list.length; i += 1) {
+            const o = list[i];
+            const opt = document.createElement("option");
+            opt.value = o.value;
+            opt.textContent = o.label || o.value;
+            sel.appendChild(opt);
+        }
+
+        sel.addEventListener("change", () => {
+            const v = (sel.value || "").trim();
+            if (!v) {
+                return;
+            }
+            sendUserTextViaDfMessenger(msResolved, v, true);
+            try {
+                if (wrap.parentNode && typeof wrap.remove === "function") {
+                    wrap.remove();
+                } else if (wrap.parentNode) {
+                    wrap.parentNode.removeChild(wrap);
+                }
+            } catch {
+                /* ignore */
+            }
+            dfchatLastInlineSelectWrapEl = null;
+        });
+
+        wrap.appendChild(sel);
+
+        const beforeNode = resolveGalleryInsertBeforeByCxOrder(ml);
+        if (beforeNode && beforeNode.parentNode === ml && typeof ml.insertBefore === "function") {
+            ml.insertBefore(wrap, beforeNode);
+        } else {
+            ml.appendChild(wrap);
+        }
+        dfchatLastInlineSelectWrapEl = wrap;
+
+        injected = true;
+        try {
+            ml.scrollTop = ml.scrollHeight;
+        } catch {
+            /* ignore */
+        }
+
+        if (Array.isArray(pendingTimers)) {
+            for (let ti = 0; ti < pendingTimers.length; ti += 1) {
+                clearTimeout(pendingTimers[ti]);
+            }
+            pendingTimers = undefined;
+        }
+    }
+
+    const delaysMs = [72, 180, 400, 800, 1600];
+    delaysMs.forEach((delayMs) => {
+        const tid = window.setTimeout(() => {
+            tryAppend();
+        }, delayMs);
+        if (!pendingTimers) {
+            pendingTimers = [];
+        }
+        pendingTimers.push(tid);
+    });
+}
+
+/**
+ * Drop the previous inline city dropdown when this turn has no allowed `dfchat_inline_select`.
+ *
+ * @param {unknown[]} messages Merged CX `responseMessages` (see `mergeCxResponseEnvelopeForGallery`).
+ * @param {Event | null | undefined} event
+ * @returns {void}
+ */
+function pruneStaleInlineSelectForCxResponse(messages, event) {
+    try {
+        const payload = extractFirstDfchatInlineSelectFromCxMessages(messages);
+        const hasPayload = !!(payload && payload.options && payload.options.length > 0);
+        const gateOk = passesInlineRichMediaIntentGate(event);
+        if (hasPayload && gateOk) {
+            return;
+        }
+        removeDfchatLastInlineSelectIfPresent();
+    } catch {
+        /* ignore */
+    }
+}
+
+/**
+ * Custom payload: `{ action: "dfchat_inline_select", options: [...] }` → native `select` in the transcript.
+ *
+ * @param {unknown[]} messages
+ * @param {Event | null | undefined} [event]
+ */
+function tryDfchatInlineSelectFromBotResponseMessages(messages, event) {
+    try {
+        if (!Array.isArray(messages) || messages.length === 0) {
+            return;
+        }
+        if (!passesInlineRichMediaIntentGate(event)) {
+            return;
+        }
+        const payload = extractFirstDfchatInlineSelectFromCxMessages(messages);
+        if (!payload || !payload.options || payload.options.length === 0) {
+            return;
+        }
+        const sig = inlineSelectOptionsSignature(payload.options);
+        if (sig && dfchatInlineSelectSignaturesSeen.has(sig)) {
+            return;
+        }
+        if (sig) {
+            dfchatInlineSelectSignaturesSeen.add(sig);
+        }
+        scheduleInjectInlineSelectDropdown(
+            activeDfMessenger,
+            payload.options,
+            payload.placeholder,
+            payload.messageText
+        );
+    } catch (e) {
+        if (typeof console !== "undefined" && typeof console.warn === "function") {
+            console.warn("[company.js] Inline select payload skipped (never breaks bot replies)", e);
+        }
+    }
+}
+
+/**
  * @param {unknown[]} messages
  * @returns {string[]}
  */
@@ -11650,6 +11991,8 @@ function handleDfResponseReceived(event) {
     tryOpenVideoFromBotResponseMessages(cxResponseMessagesMerged, event);
     pruneStaleInlineCardCarouselForCxResponse(cxResponseMessagesMerged, event);
     tryOpenCardCarouselFromBotResponseMessages(cxResponseMessagesMerged, event);
+    pruneStaleInlineSelectForCxResponse(cxResponseMessagesMerged, event);
+    tryDfchatInlineSelectFromBotResponseMessages(cxResponseMessagesMerged, event);
     pruneStaleInlineBookingCalendarForCxResponse(cxResponseMessagesMerged, event);
     tryOpenBookingCalendarFromBotResponse(cxResponseMessagesMerged, event);
 

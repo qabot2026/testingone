@@ -946,8 +946,15 @@ app.post("/webhook", express.json({ limit: "512kb" }), async (req, res) => {
             return res.json({
                 fulfillment_response: {
                     messages: [
-                        cxText_("Please select a city:", lang),
-                        cxChips_(cities)
+                        cxPayload_({
+                            action: "dfchat_inline_select",
+                            message: "Please select a city:",
+                            placeholder: "Choose a city…",
+                            options: cities.map((c) => ({
+                                label: String(c),
+                                value: String(c)
+                            }))
+                        })
                     ]
                 }
             });
