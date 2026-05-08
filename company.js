@@ -5979,9 +5979,11 @@ function syncContactFormPosition() {
     const hasAppointment = el.classList.contains("dfchat-contact-form--has-appointment");
     /** Undocked CSS raises appointment strip; docked used to cap ~240px — too small for calendar + slots + fields. */
     let inputsMax = hasAppointment
-        ? Math.min(560, Math.max(200, cardMax - 85))
+        ? Math.min(560, Math.max(120, cardMax - 85))
         : Math.max(100, Math.min(240, cardMax - 160));
-    inputsMax = Math.min(inputsMax, Math.max(100, Math.floor(cardMax - 64)));
+    /** Reserve space for header + status + Submit (appointment calendar needs more vertical slack than plain fields). */
+    const cardFooterReserve = hasAppointment ? 118 : 64;
+    inputsMax = Math.min(inputsMax, Math.max(100, Math.floor(cardMax - cardFooterReserve)));
 
     el.classList.add("dfchat-contact-form--docked");
     el.style.position = "fixed";
@@ -6012,7 +6014,9 @@ function syncContactFormPosition() {
     if (inputs) {
         inputs.style.maxHeight = `${inputsMax}px`;
         if (hasAppointment) {
-            inputs.style.minHeight = `${Math.min(340, Math.max(200, inputsMax - 4))}px`;
+            /** Never set min-height above max-height — otherwise flex clips status + Submit below the card. */
+            const minWant = Math.min(340, Math.max(120, inputsMax - 4));
+            inputs.style.minHeight = `${Math.min(minWant, inputsMax)}px`;
         } else {
             inputs.style.removeProperty("min-height");
         }

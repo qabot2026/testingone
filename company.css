@@ -957,11 +957,12 @@
    min-width: 0;
  }
 
- /* Undocked appointment: card body flexes like docked so Submit is not clipped */
+ /* Undocked appointment: taller card + flex body so calendar strip does not swallow Submit */
  #dfchat-contact-form.dfchat-contact-form--has-appointment:not(.dfchat-contact-form--docked) .dfchat-contact-form__card {
    min-height: 0;
    display: flex;
    flex-direction: column;
+   max-height: min(90dvh, 620px);
  }
 
  #dfchat-contact-form.dfchat-contact-form--has-appointment:not(.dfchat-contact-form--docked) .dfchat-contact-form__card > form.dfchat-contact-form__fields--stacked {
