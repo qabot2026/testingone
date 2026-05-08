@@ -663,6 +663,13 @@
    width: 100%;
    overflow: visible;
  }
+
+ /* Appointment: form fills card; inputs scroll; status + submit stay visible */
+ #dfchat-contact-form.dfchat-contact-form--has-appointment .dfchat-contact-form__card > form.dfchat-contact-form__fields--stacked {
+   flex: 1 1 auto;
+   min-height: 0;
+   overflow: hidden;
+ }
  
  .dfchat-contact-form__inputs {
    display: flex;
@@ -677,15 +684,16 @@
    flex: 0 1 auto;
  }
 
-/* Month grid + slot chips + contact rows need a taller scroll region than plain contact forms */
+/* Month grid + slot chips scroll inside this strip; keep min-height 0 so flex layout leaves room for Submit */
 .dfchat-contact-form--has-appointment .dfchat-contact-form__inputs {
+   flex: 1 1 auto;
+   min-height: 0;
    max-height: min(62dvh, 520px);
-   min-height: 14rem;
 }
 
 .dfchat-contact-form__row--appointment .dfchat-contact-form__appointment-shell {
    flex: 1 1 auto;
-   min-height: min(44dvh, 340px);
+   min-height: min(28dvh, 220px);
    width: 100%;
    box-sizing: border-box;
 }
@@ -945,8 +953,21 @@
  
  .dfchat-contact-form--docked .dfchat-contact-form__inputs {
    flex: 1 1 auto;
-   min-height: 6rem;
+   min-height: 0;
    min-width: 0;
+ }
+
+ /* Undocked appointment: card body flexes like docked so Submit is not clipped */
+ #dfchat-contact-form.dfchat-contact-form--has-appointment:not(.dfchat-contact-form--docked) .dfchat-contact-form__card {
+   min-height: 0;
+   display: flex;
+   flex-direction: column;
+ }
+
+ #dfchat-contact-form.dfchat-contact-form--has-appointment:not(.dfchat-contact-form--docked) .dfchat-contact-form__card > form.dfchat-contact-form__fields--stacked {
+   flex: 1 1 auto;
+   min-height: 0;
+   overflow: hidden;
  }
  
  @media (max-width: 768px) {

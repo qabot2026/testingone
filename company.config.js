@@ -8,7 +8,8 @@
  *
  * This file must load *before* `company.js` (see `myweb.html` script order).
  *
- * Load Dialogflow default CSS, then `company.css`, then this file, then `company.js`.
+ * Load Dialogflow default CSS, then `company.css`, then **all** `forms/*.js` (register in-chat forms),
+ * then this file, then `company.js`. See `forms/` for one file per form (contact, otp, upload, …).
  * The in-chat form DOM is injected by `company.js`.
  * If you host files under different names or folders, update every `<link>` / `<script src>` in your HTML to match.
  *
@@ -330,7 +331,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
     },
 
     // -------------------------------------------------------------------------
-    // In-chat forms (contact, appointment, upload, otp, …) — field defs + i18n only.
+    // In-chat forms — field defs live in `forms/*.js` (each registers `window.__DFCHAT_FORMS__[formKey]`).
     // Docking / padding / insets: set per device under `desk.form` and `mob.form` (not here).
     // -------------------------------------------------------------------------
     form: {
@@ -341,272 +342,14 @@ window.COMPANY_CHAT_UI_CONFIG = {
       // Shared defaults when a form does not set its own (this form uses per-form chatSummaryFieldNames).
       // Align keys with CX session parameters — e.g. name, mobile, email (field `name` → POST JSON key).
       chatSummaryFieldNames: ["name", "mobile", "email"],
-      forms: {
-        // Contact: name, mobile, email (matches Dialogflow parameter `mobile` for phone).
-        contact: {
-          titleByLanguage: {
-            en: "Contact us",
-            hi: "हमसे संपर्क करें",
-            mr: "आमच्याशी संपर्क करा"
-          },
-          subtitleByLanguage: {
-            en: "Share your contact details.",
-            hi: "अपनी जानकारी साझा करें।",
-            mr: "तुमची माहिती शेअर करा."
-          },
-          showSubtitle: true,
-          maxCardHeightPx: 300,
-          chatSummaryFieldNames: ["name", "mobile", "email"],
-          fields: [
-            { id: "c-name", name: "name", type: "text", required: true, icon: "user", i18nPlaceholder: "namePlaceholder", i18nSummaryLabel: "summaryNameLabel", autocomplete: "name" },
-            { id: "c-mobile", name: "mobile", type: "tel", required: true, icon: "phone", i18nPlaceholder: "mobilePlaceholder", i18nSummaryLabel: "summaryMobileLabel", autocomplete: "tel", inputMode: "tel" },
-            { id: "c-email", name: "email", type: "email", required: true, icon: "email", validateAs: "email", i18nPlaceholder: "emailPlaceholder", i18nSummaryLabel: "summaryEmailLabel", autocomplete: "email" }
-          ]
-        },
-        // Feedback: rating + message (open from Dialogflow with `form_id`: `"feedback"`)
-        feedback: {
-          titleByLanguage: {
-            en: "Feedback",
-            hi: "फीडबैक",
-            mr: "अभिप्राय"
-          },
-          subtitleByLanguage: {
-            en: "Tell us how we did.",
-            hi: "आपका अनुभव कैसा रहा?",
-            mr: "तुमचा अनुभव कसा होता?"
-          },
-          showSubtitle: true,
-          maxCardHeightPx: 300,
-          chatSummaryFieldNames: ["rating", "message"],
-          fields: [
-            {
-              id: "f-rating",
-              name: "rating",
-              type: "select",
-              required: true,
-              icon: "star",
-              placeholderByLanguage: { en: "Rating (1-5)", hi: "रेटिंग (1-5)", mr: "रेटिंग (1-5)" },
-              options: [
-                { label: "1", value: "1" },
-                { label: "2", value: "2" },
-                { label: "3", value: "3" },
-                { label: "4", value: "4" },
-                { label: "5", value: "5" }
-              ]
-            },
-            {
-              id: "f-message",
-              name: "message",
-              type: "textarea",
-              required: true,
-              icon: "message",
-              rows: 3,
-              placeholderByLanguage: { en: "Write your feedback…", hi: "अपना फीडबैक लिखें…", mr: "तुमचा अभिप्राय लिहा…" }
-            }
-          ]
-        },
-        // Appointment: date and time (open from Dialogflow with `form_id`: `"appointment"`)
-        appointment: {
-          titleByLanguage: {
-            en: "Appointment",
-            hi: "अपॉइंटमेंट",
-            mr: "अपॉइंटमेंट"
-          },
-          subtitleByLanguage: {
-            en: "Choose a date and time.",
-            hi: "तारीख और समय चुनें।",
-            mr: "तारीख आणि वेळ निवडा."
-          },
-          showSubtitle: true,
-          maxCardHeightPx: 260,
-          chatSummaryFieldNames: ["appointmentdate", "appointmenttime"],
-          fields: [
-            {
-              id: "a-date",
-              name: "appointmentdate",
-              type: "date",
-              required: true,
-              icon: "calendar",
-              i18nSummaryLabel: "summaryDateLabel",
-              placeholderByLanguage: { en: "Date", hi: "तिथि", mr: "तारीख" }
-            },
-            {
-              id: "a-time",
-              name: "appointmenttime",
-              type: "time",
-              required: true,
-              icon: "clock",
-              i18nSummaryLabel: "summaryTimeLabel",
-              placeholderByLanguage: { en: "Time", hi: "समय", mr: "वेळ" }
-            }
-          ]
-        },
-        // Per-doctor booking (`form_id`: `"appintmentformdocot"`). Requires user to pick a doctor in chat first;
-        // conflict checks and RTDB keys are per doctorId.
-        appintmentformdocot: {
-          titleByLanguage: {
-            en: "Doctor appointment",
-            hi: "डॉक्टर अपॉइंटमेंट",
-            mr: "डॉक्टर अपॉइंटमेंट"
-          },
-          subtitleByLanguage: {
-            en: "Choose a date and time for the doctor you selected. Red = booked for this doctor.",
-            hi: "चयनित डॉक्टर के लिए तारीख और समय चुनें। लाल = इस डॉक्टर के लिए बुक।",
-            mr: "निवडलेल्या डॉक्टरसाठी तारीख आणि वेळ निवडा. लाल = या डॉक्टरसाठी बुक."
-          },
-          showSubtitle: true,
-          maxCardHeightPx: 540,
-          chatSummaryFieldNames: ["doctorId", "name", "mobile", "email", "appointmentdate", "appointmenttime"],
-          fields: [
-            { id: "afd-doctor", name: "doctorId", type: "hidden", required: true, value: "", i18nSummaryLabel: "summaryDoctorIdLabel" },
-            {
-              id: "afd-appt",
-              name: "appointmentdate",
-              type: "appointmentdoctor",
-              required: true,
-              icon: "calendar",
-              hiddenDateId: "afd-appt-date",
-              hiddenTimeId: "afd-appt-time",
-              i18nSummaryLabel: "summaryDateLabel",
-              placeholderByLanguage: {
-                en: "Calendar below",
-                hi: "नीचे कैलेंडर",
-                mr: "खाली दिनदर्शिका"
-              }
-            },
-            { id: "afd-name", name: "name", type: "text", required: true, icon: "user", i18nPlaceholder: "namePlaceholder", i18nSummaryLabel: "summaryNameLabel", autocomplete: "name" },
-            { id: "afd-mobile", name: "mobile", type: "tel", required: true, icon: "phone", i18nPlaceholder: "mobilePlaceholder", i18nSummaryLabel: "summaryMobileLabel", autocomplete: "tel", inputMode: "tel" },
-            { id: "afd-email", name: "email", type: "email", required: true, icon: "email", validateAs: "email", i18nPlaceholder: "emailPlaceholder", i18nSummaryLabel: "summaryEmailLabel", autocomplete: "email" }
-          ]
-        },
-        // Shared single calendar pool (`form_id`: `"appintmentformgeneral"`). Bookings use GENERAL_APPOINTMENT_* env on the server.
-        appintmentformgeneral: {
-          titleByLanguage: {
-            en: "Appointment",
-            hi: "अपॉइंटमेंट",
-            mr: "अपॉइंटमेंट"
-          },
-          subtitleByLanguage: {
-            en: "One shared schedule for the clinic. Red = already booked.",
-            hi: "क्लिनिक का एक साझा शेड्यूल। लाल = पहले से बुक।",
-            mr: "क्लिनिकचे एक समायोजन. लाल = आधीच बुक."
-          },
-          showSubtitle: true,
-          maxCardHeightPx: 540,
-          chatSummaryFieldNames: ["name", "mobile", "email", "appointmentdate", "appointmenttime"],
-          fields: [
-            {
-              id: "afg-appt",
-              name: "appointmentdate",
-              type: "appointmentgeneral",
-              required: true,
-              icon: "calendar",
-              hiddenDateId: "afg-appt-date",
-              hiddenTimeId: "afg-appt-time",
-              i18nSummaryLabel: "summaryDateLabel",
-              placeholderByLanguage: {
-                en: "Calendar below",
-                hi: "नीचे कैलेंडर",
-                mr: "खाली दिनदर्शिका"
-              }
-            },
-            { id: "afg-name", name: "name", type: "text", required: true, icon: "user", i18nPlaceholder: "namePlaceholder", i18nSummaryLabel: "summaryNameLabel", autocomplete: "name" },
-            { id: "afg-mobile", name: "mobile", type: "tel", required: true, icon: "phone", i18nPlaceholder: "mobilePlaceholder", i18nSummaryLabel: "summaryMobileLabel", autocomplete: "tel", inputMode: "tel" },
-            { id: "afg-email", name: "email", type: "email", required: true, icon: "email", validateAs: "email", i18nPlaceholder: "emailPlaceholder", i18nSummaryLabel: "summaryEmailLabel", autocomplete: "email" }
-          ]
-        },
-        // OTP: first screen = OTP only + “change mobile”; second = mobile only + submit (`form_id`: `"otp"`).
-        otp: {
-          titleByLanguage: {
-            en: "Verify OTP",
-            hi: "OTP सत्यापित करें",
-            mr: "OTP सत्यापित करा"
-          },
-          subtitleByLanguage: {
-            en: "Enter the code we sent.",
-            hi: "भेजा गया कोड दर्ज करें।",
-            mr: "पाठवलेला कोड टाका."
-          },
-          // Shown on the “change mobile” step (optional i18n fallback in company.js).
-          subtitleMobileByLanguage: {
-            en: "Enter the correct mobile number and submit. We will send a new code.",
-            hi: "सही मोबाइल नंबर दर्ज करें और जमा करें।",
-            mr: "योग्य मोबाईल क्रमांक टाका आणि सबमिट करा. नवा कोड पाठवू."
-          },
-          showSubtitle: true,
-          maxCardHeightPx: 240,
-          chatSummaryFieldNames: ["mobile", "otp"],
-          // OTP field first, then mobile (UI groups into two steps in company.js).
-          fields: [
-            {
-              id: "o-otp",
-              name: "otp",
-              type: "text",
-              required: true,
-              icon: "key",
-              maxLength: 8,
-              minLength: 4,
-              inputMode: "numeric",
-              pattern: "^[0-9]{4,8}$",
-              i18nPlaceholder: "otpCodePlaceholder",
-              i18nSummaryLabel: "summaryOtpLabel",
-              i18nInvalidMessage: "invalidOtp",
-              autocomplete: "one-time-code"
-            },
-            {
-              id: "o-mobile",
-              name: "mobile",
-              type: "tel",
-              required: false,
-              icon: "phone",
-              validateAs: "phone",
-              i18nPlaceholder: "mobilePlaceholder",
-              i18nSummaryLabel: "summaryMobileLabel",
-              autocomplete: "tel",
-              inputMode: "tel",
-              placeholderByLanguage: {
-                en: "Mobile number",
-                hi: "मोबाइल नंबर",
-                mr: "मोबाईल नंबर"
-              }
-            }
-          ]
-        },
-        // Upload document — `form_id`: `"uploadDocument"`. Mobile for Drive folders comes from stored client_context
-        // (saved after Contact / OTP forms); no separate tel field on this form.
-        uploadDocument: {
-          titleByLanguage: {
-            en: "Upload document",
-            hi: "दस्तावेज़ अपलोड करें",
-            mr: "दस्तऐवज अपलोड करा"
-          },
-          subtitleByLanguage: {
-            en: "You can select one or more files. Use Contact us first so we have your mobile for your upload folder.",
-            hi: "एक या अधिक फ़ाइल चुन सकते हैं। अपलोड फ़ोल्डर के लिए पहले «संपर्क करें» भरें।",
-            mr: "एक किंवा अनेक फाइल निवडा. अपलोड फोल्डरसाठी आधी संपर्क फॉर्म भरा."
-          },
-          showSubtitle: true,
-          maxCardHeightPx: 300,
-          chatSummaryFieldNames: ["document"],
-          fields: [
-            {
-              id: "u-document",
-              name: "document",
-              type: "file",
-              required: true,
-              multiple: true,
-              icon: "file",
-              i18nSummaryLabel: "summaryDocumentLabel",
-              accept: "image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.rtf,.odt,.ods,.odp,.zip,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,text/plain,text/csv,application/zip,application/x-zip-compressed",
-              placeholderByLanguage: {
-                en: "Choose one or more files…",
-                hi: "एक या अधिक फ़ाइलें चुनें…",
-                mr: "एक किंवा अनेक फाइल निवडा…"
-              }
-            }
-          ]
-        }
-      }
+      forms: Object.assign(
+        {},
+        typeof window !== "undefined" &&
+          window.__DFCHAT_FORMS__ &&
+          typeof window.__DFCHAT_FORMS__ === "object"
+          ? window.__DFCHAT_FORMS__
+          : {}
+      ),
     },
 
     // -------------------------------------------------------------------------

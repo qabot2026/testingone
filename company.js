@@ -52,7 +52,7 @@ const LANGUAGE_STORAGE_KEY = "company_ui_language";
 if (typeof window === "object" && window != null && typeof window.COMPANY_CHAT_UI_CONFIG === "undefined") {
     // eslint-disable-next-line  no-console
     console.error(
-        "Company: static/company.config.js did not run (script order or a syntax error in that file). UI features and chat layout are disabled until it loads."
+        "Company: static/company.config.js did not run (script order: load `forms/*.js` before company.config.js, or a syntax error in those files). UI features and chat layout are disabled until it loads."
     );
 }
 const COMPANY_UI_CONFIG = readCompanyUiConfig();
@@ -5733,6 +5733,36 @@ function syncAppointmentDoctorHiddenFromSession() {
     }
 }
 
+/** Hide name/mobile/email rows on appointment forms when session already has name + mobile (email optional). */
+function syncSuppressAppointmentContactRows_() {
+    try {
+        const cfg = readContactFormConfig();
+        const fk = cfg.formKey;
+        if (fk !== "appintmentformdocot" && fk !== "appintmentformgeneral") {
+            return;
+        }
+        const suppress = sessionHasNameAndMobileForSkip_();
+        const fields = Array.isArray(cfg.fields) ? cfg.fields : [];
+        for (let i = 0; i < fields.length; i += 1) {
+            const field = fields[i];
+            if (!field || !field.id || typeof field.name !== "string") {
+                continue;
+            }
+            const nm = String(field.name).trim().toLowerCase();
+            if (nm !== "name" && nm !== "mobile" && nm !== "email") {
+                continue;
+            }
+            const el = document.getElementById(field.id);
+            const row = el && el.closest(".dfchat-contact-form__row");
+            if (row) {
+                row.style.display = suppress ? "none" : "";
+            }
+        }
+    } catch {
+        /* ignore */
+    }
+}
+
 /**
  * Wider/taller scroll area for appointment forms — base CSS caps `#dfchat-contact-form-inputs` at 220px
  * and docked layout used to cap at 240px, which hid slot chips below the calendar.
@@ -5776,6 +5806,8 @@ function mountContactFormFieldsFromConfig() {
     setupOtpFormTwoStepIfNeeded();
     syncContactFormAppointmentModeClass_();
     syncAppointmentDoctorHiddenFromSession();
+    applyStoredContactHintsToOpenContactForm_();
+    syncSuppressAppointmentContactRows_();
 }
 
 function applyContactFormLayoutFromConfig() {
@@ -11574,6 +11606,8 @@ function handleDfResponseReceived(event) {
         applyLanguage(requestedLanguage);
     }
 
+    mergePhoneFromDialogflowParametersIntoStoredContext(event);
+
     const willOpenForm = shouldOpenContactForm(event);
     const openFormId = extractOpenFormIdFromEvent(event);
     if (openFormId) {
@@ -11583,14 +11617,20 @@ function handleDfResponseReceived(event) {
     }
 
     if (willOpenForm) {
-        contactFormOpenPending = true;
         pendingOpenFormPrefill = extractOpenFormPrefillFromEvent(event);
         if (pendingOpenFormPrefill) {
             mergePhoneFromOpenFormPrefillIntoStoredContext(pendingOpenFormPrefill);
+            mergeContactHintsFromOpenFormPrefillIntoStoredContext(pendingOpenFormPrefill);
+        }
+        const skipContactUi =
+            readContactFormConfig().formKey === "contact" && sessionHasNameAndMobileForSkip_();
+        if (skipContactUi) {
+            contactFormOpenPending = false;
+            pendingOpenFormPrefill = null;
+        } else {
+            contactFormOpenPending = true;
         }
     }
-
-    mergePhoneFromDialogflowParametersIntoStoredContext(event);
 
     if (messages.length > 0) {
         const ms = activeDfMessenger;
@@ -12122,6 +12162,7 @@ function openContactForm() {
     }
     window.setTimeout(() => {
         applyStoredContactHintsToOpenContactForm_();
+        syncSuppressAppointmentContactRows_();
     }, 0);
     syncContactFormAppointmentModeClass_();
     syncAppointmentDoctorHiddenFromSession();
@@ -14362,6 +14403,42 @@ function mergePhoneFromOpenFormPrefillIntoStoredContext(prefill) {
         }
     }
     return false;
+}
+
+/**
+ * Persist name / email hints from `open_form` payload into session storage (same turn as skip-open check).
+ * @param {Record<string, string | number | unknown> | null} prefill
+ */
+function mergeContactHintsFromOpenFormPrefillIntoStoredContext(prefill) {
+    if (!prefill || typeof prefill !== "object") {
+        return;
+    }
+    try {
+        const prev = readStoredClientContext();
+        const next = Object.assign({}, prev);
+        const nameRaw =
+            prefill.name ?? prefill.customer_name ?? prefill.full_name ?? prefill.person_name;
+        const ns = typeof nameRaw === "string" ? nameRaw.trim().slice(0, 200) : "";
+        if (ns) {
+            next.name = ns;
+        }
+        const emRaw = prefill.email ?? prefill.user_email;
+        const es = typeof emRaw === "string" ? emRaw.trim() : "";
+        if (es && EMAIL_VALIDATION_RE.test(es)) {
+            next.email = es;
+        }
+        persistClientContext(next);
+    } catch {
+        /* ignore */
+    }
+}
+
+/** True when session already has both visitor name and mobile (skip opening default contact form). */
+function sessionHasNameAndMobileForSkip_() {
+    const s = readStoredClientContext();
+    const n = s && typeof s.name === "string" && s.name.trim() ? s.name.trim() : "";
+    const m = s && typeof s.mobile === "string" && s.mobile.trim() ? s.mobile.trim() : "";
+    return !!(n && m);
 }
 
 /** When parameter names are custom (not phone aliases), pick the longest plausible mobile digit span. */
