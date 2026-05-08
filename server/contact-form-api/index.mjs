@@ -749,6 +749,36 @@ function normalizeLower_(s) {
     return normalizeStr_(s).toLowerCase();
 }
 
+/** CX session: catalog doctors are keyed by `BranchId` — prefer this over city. */
+function sessionBranchIdFromParams_(params) {
+    const p = params && typeof params === "object" ? params : {};
+    return normalizeStr_(p.branch_id ?? p.branchId ?? p.branchid ?? "");
+}
+
+/**
+ * Prefer explicit `branch_id` / `branchId`. If absent, use city only when it maps to **exactly one** branch row.
+ * @returns {{ branchId: string, ambiguousCity: boolean }}
+ */
+async function resolveCatalogBranchIdFromSession_(params) {
+    const direct = sessionBranchIdFromParams_(params);
+    if (direct) {
+        return { branchId: direct, ambiguousCity: false };
+    }
+    const city = normalizeStr_(params.city);
+    if (!city) {
+        return { branchId: "", ambiguousCity: false };
+    }
+    const branches = await listBranches();
+    const hits = branches.filter((b) => normalizeLower_(b.City) === normalizeLower_(city));
+    if (hits.length === 1) {
+        return { branchId: normalizeStr_(hits[0].BranchId), ambiguousCity: false };
+    }
+    if (hits.length > 1) {
+        return { branchId: "", ambiguousCity: true };
+    }
+    return { branchId: "", ambiguousCity: false };
+}
+
 function cxDateToISO_(dateObj) {
     const d = dateObj && typeof dateObj === "object" ? dateObj : {};
     const year = Number(d.year) || 0;
@@ -996,27 +1026,22 @@ app.post("/webhook", express.json({ limit: "512kb" }), async (req, res) => {
         }
 
         if (tag === "get_specializations") {
-            /** CX may send branch_id (snake) or branchId after branch picker; catalog doctors are keyed by BranchId. */
-            const branchId = normalizeStr_(params.branch_id ?? params.branchId ?? "");
-            const city = normalizeStr_(params.city);
-            /** @type {Awaited<ReturnType<typeof listDoctors>>} */
-            let filtered;
-            if (branchId) {
-                filtered = await listDoctors({ branchId });
-            } else if (city) {
-                const docs = await listDoctors();
-                filtered = docs.filter((d) => normalizeLower_(d.City) === normalizeLower_(city));
-            } else {
-                return fallback("Please select a branch or city first.");
+            const { branchId, ambiguousCity } = await resolveCatalogBranchIdFromSession_(params);
+            if (ambiguousCity) {
+                return fallback(
+                    "Several branches serve this city — set session parameter branch_id (catalog BranchId), then try again."
+                );
             }
+            if (!branchId) {
+                return fallback("Please select a branch first (session parameter branch_id / branchId).");
+            }
+            const filtered = await listDoctors({ branchId });
             const specs = Array.from(
                 new Set(filtered.map((d) => normalizeStr_(d.Specialization)).filter(Boolean))
             ).sort((a, b) => a.localeCompare(b));
             if (!specs.length) {
                 return fallback(
-                    branchId
-                        ? "No specializations found for this branch. Check doctor CSV: BranchId must match the branch, and the Specialization column must be filled."
-                        : "No specializations found for this city. Check doctor CSV City and Specialization columns."
+                    "No specializations found for this branch. Check doctor catalog: BranchId must match, and Specialization must be set."
                 );
             }
             return res.json({
@@ -1030,15 +1055,21 @@ app.post("/webhook", express.json({ limit: "512kb" }), async (req, res) => {
         }
 
         if (tag === "get_doctors_by_city_and_spec") {
-            const city = normalizeStr_(params.city);
             const specialization = normalizeStr_(params.specialization);
-            const docs = await listDoctors();
-            const filtered = docs.filter((d) => {
-                if (city && normalizeLower_(d.City) !== normalizeLower_(city)) return false;
-                if (specialization && normalizeStr_(d.Specialization) !== specialization) return false;
-                return true;
+            const { branchId, ambiguousCity } = await resolveCatalogBranchIdFromSession_(params);
+            if (ambiguousCity) {
+                return fallback(
+                    "Several branches in this city — set branch_id on the session to list doctors."
+                );
+            }
+            if (!branchId) {
+                return fallback("Please select a branch first (branch_id). Doctors are listed per branch, not by city alone.");
+            }
+            const filtered = await listDoctors({
+                branchId,
+                department: specialization || undefined
             });
-            if (!filtered.length) return fallback("No doctors found.");
+            if (!filtered.length) return fallback("No doctors found for this branch and specialization.");
             return res.json({
                 fulfillment_response: {
                     messages: [
@@ -1056,16 +1087,24 @@ app.post("/webhook", express.json({ limit: "512kb" }), async (req, res) => {
             const doctornameParam = normalizeStr_(params.doctorname);
             const rawName = doctornameParam.replace(/^Dr\.?\s*/i, "").trim();
             const idFromParam = doctornameParam.replace(/^doctor_/i, "").trim();
+            const branchFilter = sessionBranchIdFromParams_(params);
             const docs = await listDoctors();
-            // Card carousel sends ctaValue = DoctorId when present (see doctorToCarouselCard_).
-            const match = docs.find((d) => {
+            const pool = branchFilter
+                ? docs.filter((d) => String(d.BranchId || "").trim() === branchFilter)
+                : docs;
+            const byId = (d) => {
                 const id = normalizeStr_(d.DoctorId);
                 return id !== "" && id === idFromParam;
-            })
-                || docs.find((d) => normalizeLower_(d.DoctorName) === normalizeLower_(rawName))
-                || docs.find((d) => normalizeLower_(d.DisplayDoctorName) === normalizeLower_(doctornameParam))
-                || null;
-            if (!match) return fallback("Doctor not found.");
+            };
+            const byRaw = (d) => normalizeLower_(d.DoctorName) === normalizeLower_(rawName);
+            const byDisplay = (d) => normalizeLower_(d.DisplayDoctorName) === normalizeLower_(doctornameParam);
+            let match = pool.find(byId) || pool.find(byRaw) || pool.find(byDisplay) || null;
+            if (!match && !branchFilter) {
+                match = docs.find(byId) || docs.find(byRaw) || docs.find(byDisplay) || null;
+            }
+            if (!match) {
+                return fallback(branchFilter ? "Doctor not found at this branch." : "Doctor not found.");
+            }
             const sessionDoctorName = normalizeStr_(match.DoctorName).replace(/^Dr\.?\s*/i, "").trim();
             const days = normalizeStr_(match.Days);
             const start = normalizeStr_(match.Start);
@@ -1080,7 +1119,13 @@ app.post("/webhook", express.json({ limit: "512kb" }), async (req, res) => {
                 `🕒 Timings: ${timing}\n` +
                 (normalizeStr_(match.PageUrl) ? `🔗 Profile: ${normalizeStr_(match.PageUrl)}` : "");
             return res.json({
-                sessionInfo: { parameters: { doctorname: sessionDoctorName, city: normalizeStr_(match.City) } },
+                sessionInfo: {
+                    parameters: {
+                        doctorname: sessionDoctorName,
+                        city: normalizeStr_(match.City),
+                        branch_id: normalizeStr_(match.BranchId)
+                    }
+                },
                 fulfillment_response: { messages: [cxText_(details, lang)] }
             });
         }
@@ -1089,17 +1134,25 @@ app.post("/webhook", express.json({ limit: "512kb" }), async (req, res) => {
             const dateISO = cxDateToISO_(params.appointmentdate);
             const timeLabel = cxTimeTo12h_(params.appointmenttime);
             const doctorName = normalizeStr_(params.doctorname).replace(/^Dr\.?\s*/i, "").trim();
-            const city = normalizeStr_(params.city);
 
-            if (!dateISO || !timeLabel || !doctorName || !city) {
-                return fallback("Missing appointment details (doctor/date/time/city).");
+            if (!dateISO || !timeLabel || !doctorName) {
+                return fallback("Missing appointment details (doctor, date, or time).");
             }
 
-            const docs = await listDoctors();
-            const doc = docs.find((d) => normalizeLower_(d.DoctorName) === normalizeLower_(doctorName) && normalizeLower_(d.City) === normalizeLower_(city))
-                || docs.find((d) => normalizeLower_(d.DoctorName) === normalizeLower_(doctorName))
+            const { branchId: resolvedBranch, ambiguousCity } = await resolveCatalogBranchIdFromSession_(params);
+            if (ambiguousCity) {
+                return fallback("Several branches in this city — set branch_id on the session before booking.");
+            }
+            if (!resolvedBranch) {
+                return fallback("Missing branch — set session parameter branch_id (catalog BranchId).");
+            }
+
+            const branchDocs = await listDoctors({ branchId: resolvedBranch });
+            const doc =
+                branchDocs.find((d) => normalizeLower_(d.DoctorName) === normalizeLower_(doctorName))
+                || branchDocs.find((d) => normalizeLower_(d.DisplayDoctorName) === normalizeLower_(normalizeStr_(params.doctorname)))
                 || null;
-            if (!doc) return fallback("Doctor not found.");
+            if (!doc) return fallback("Doctor not found at this branch.");
 
             const wd = weekdayShort_(dateISO);
             if (!dayInDaysField_(wd, doc.Days)) {
@@ -1114,7 +1167,7 @@ app.post("/webhook", express.json({ limit: "512kb" }), async (req, res) => {
             try {
                 await bookAppointment({
                     doctorId: normalizeStr_(doc.DoctorId),
-                    branchId: normalizeStr_(doc.BranchId || "500"),
+                    branchId: normalizeStr_(doc.BranchId || resolvedBranch || "500"),
                     department: normalizeStr_(doc.Specialization),
                     dateISO,
                     slotLabel: timeLabel,
@@ -1132,9 +1185,10 @@ app.post("/webhook", express.json({ limit: "512kb" }), async (req, res) => {
                 return fallback(msg);
             }
 
+            const placeLabel = normalizeStr_(doc.City) || `branch ${resolvedBranch}`;
             return res.json({
                 fulfillment_response: {
-                    messages: [cxText_(`✅ Appointment booked with Dr. ${doctorName} on ${dateISO} at ${timeLabel} (${city}).`, lang)]
+                    messages: [cxText_(`✅ Appointment booked with Dr. ${doctorName} on ${dateISO} at ${timeLabel} (${placeLabel}).`, lang)]
                 }
             });
         }
