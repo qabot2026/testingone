@@ -1595,7 +1595,10 @@ const UI_TRANSLATIONS = {
         appointmentSlotAlreadyBooked: "This time slot is already booked. Please choose another.",
         appointmentPickerSelected: "Selected",
         appointmentPickerPickDayIntro: "Pick a day, then a time slot.",
-        appointmentPickerChooseTime: "Choose a time slot below."
+        appointmentPickerChooseTime: "Choose a time slot below.",
+        appointmentPickTimeSlot: "Please pick a time slot.",
+        appointmentPickDate: "Please pick a date on the calendar.",
+        appointmentPickDateAndTime: "Please choose a date and a time slot."
     },
     hi: {
         contactFormTitle: "संपर्क करें",
@@ -1641,7 +1644,10 @@ const UI_TRANSLATIONS = {
         appointmentSlotAlreadyBooked: "यह समय पहले से बुक है। कृपया कोई और समय चुनें।",
         appointmentPickerSelected: "चयनित",
         appointmentPickerPickDayIntro: "पहले दिन चुनें, फिर समय।",
-        appointmentPickerChooseTime: "नीचे समय चुनें।"
+        appointmentPickerChooseTime: "नीचे समय चुनें।",
+        appointmentPickTimeSlot: "कृपया समय चुनें।",
+        appointmentPickDate: "कृपया कैलेंडर से तारीख चुनें।",
+        appointmentPickDateAndTime: "कृपया तारीख और समय चुनें।"
     },
     mr: {
         contactFormTitle: "आमच्याशी संपर्क करा",
@@ -1687,7 +1693,10 @@ const UI_TRANSLATIONS = {
         appointmentSlotAlreadyBooked: "ही वेळ आधीच बुक आहे. कृपया दुसरी वेळ निवडा.",
         appointmentPickerSelected: "निवडलेले",
         appointmentPickerPickDayIntro: "आधी दिवस निवडा, मग वेळ.",
-        appointmentPickerChooseTime: "खाली वेळ निवडा."
+        appointmentPickerChooseTime: "खाली वेळ निवडा.",
+        appointmentPickTimeSlot: "कृपया वेळ निवडा.",
+        appointmentPickDate: "कृपया दिनदर्शिकेतून तारीख निवडा.",
+        appointmentPickDateAndTime: "कृपया तारीख आणि वेळ निवडा."
     }
 };
 
@@ -11750,27 +11759,40 @@ function postSessionQueriesToSheetRow_() {
 }
 
 /**
- * If mobile was already saved for this browser session, prefill the contact form so we do not ask again.
+ * Prefill contact fields from session `client_context` when Dialogflow already captured mobile / name / email.
  */
-function applyStoredMobileToOpenContactForm_() {
+function applyStoredContactHintsToOpenContactForm_() {
     try {
         const stored = readStoredClientContext();
-        const m =
-            stored && typeof stored.mobile === "string" && stored.mobile.trim()
-                ? stored.mobile.trim()
-                : "";
-        if (!m) {
-            return;
-        }
+        const hints = {
+            mobile:
+                stored && typeof stored.mobile === "string" && stored.mobile.trim()
+                    ? stored.mobile.trim()
+                    : "",
+            name:
+                stored && typeof stored.name === "string" && stored.name.trim()
+                    ? stored.name.trim()
+                    : "",
+            email:
+                stored && typeof stored.email === "string" && stored.email.trim()
+                    ? stored.email.trim()
+                    : ""
+        };
         const cfg = readContactFormConfig();
         const fields = Array.isArray(cfg.fields) ? cfg.fields : [];
-        for (const def of fields) {
-            if (!def || def.name !== "mobile" || !def.id) {
+        for (let i = 0; i < fields.length; i += 1) {
+            const def = fields[i];
+            if (!def || !def.name || !def.id) {
+                continue;
+            }
+            const nm = String(def.name).trim();
+            const hint = nm === "mobile" ? hints.mobile : nm === "name" ? hints.name : nm === "email" ? hints.email : "";
+            if (!hint) {
                 continue;
             }
             const el = document.getElementById(def.id);
             if (el && "value" in el && !String(el.value || "").trim()) {
-                el.value = m;
+                el.value = hint;
             }
         }
     } catch {
@@ -12099,7 +12121,7 @@ function openContactForm() {
         pendingOpenFormPrefill = null;
     }
     window.setTimeout(() => {
-        applyStoredMobileToOpenContactForm_();
+        applyStoredContactHintsToOpenContactForm_();
     }, 0);
     syncContactFormAppointmentModeClass_();
     syncAppointmentDoctorHiddenFromSession();
@@ -12193,6 +12215,14 @@ function submitContactForm(event) {
             stored && typeof stored.mobile === "string" && stored.mobile.trim()
                 ? stored.mobile.trim()
                 : "";
+        const storedName =
+            stored && typeof stored.name === "string" && stored.name.trim()
+                ? stored.name.trim()
+                : "";
+        const storedEmail =
+            stored && typeof stored.email === "string" && stored.email.trim()
+                ? stored.email.trim()
+                : "";
         for (const def of fieldDefs) {
             if (!def || !def.id || !def.name) {
                 continue;
@@ -12212,13 +12242,31 @@ function submitContactForm(event) {
                 const tEl = document.getElementById(hidTimeId);
                 const dv = dEl && "value" in dEl ? String(dEl.value).trim() : "";
                 const tv = tEl && "value" in tEl ? String(tEl.value).trim() : "";
-                if (def.required !== false && (!dv || !tv)) {
-                    if (status) {
-                        status.textContent = getTranslation("fieldRequired");
-                        status.classList.add("is-error");
-                        status.classList.remove("is-success");
+                if (def.required !== false) {
+                    if (!dv && !tv) {
+                        if (status) {
+                            status.textContent = getTranslation("appointmentPickDateAndTime");
+                            status.classList.add("is-error");
+                            status.classList.remove("is-success");
+                        }
+                        return;
                     }
-                    return;
+                    if (dv && !tv) {
+                        if (status) {
+                            status.textContent = getTranslation("appointmentPickTimeSlot");
+                            status.classList.add("is-error");
+                            status.classList.remove("is-success");
+                        }
+                        return;
+                    }
+                    if (!dv && tv) {
+                        if (status) {
+                            status.textContent = getTranslation("appointmentPickDate");
+                            status.classList.add("is-error");
+                            status.classList.remove("is-success");
+                        }
+                        return;
+                    }
                 }
                 payload.appointmentdate = dv;
                 payload.appointmenttime = tv;
@@ -12280,6 +12328,26 @@ function submitContactForm(event) {
                     /* ignore */
                 }
             }
+            if (!v && def.name === "name" && storedName) {
+                v = storedName;
+                try {
+                    if (el && "value" in el) {
+                        el.value = v;
+                    }
+                } catch {
+                    /* ignore */
+                }
+            }
+            if (!v && def.name === "email" && storedEmail) {
+                v = storedEmail;
+                try {
+                    if (el && "value" in el) {
+                        el.value = v;
+                    }
+                } catch {
+                    /* ignore */
+                }
+            }
             const check = validateContactFormField(def, v);
             if (!check.valid) {
                 if (status) {
@@ -12315,6 +12383,29 @@ function submitContactForm(event) {
             payload.mobile = sessionMobileForPayload;
             if (chatSummaryPayload) {
                 chatSummaryPayload.mobile = sessionMobileForPayload;
+            }
+        }
+        const cx = payload.client_context && typeof payload.client_context === "object"
+            ? payload.client_context
+            : null;
+        const sessionNameForPayload =
+            cx && typeof cx.name === "string" ? cx.name.trim() : "";
+        const payloadNameStr =
+            payload.name !== undefined && payload.name !== null ? String(payload.name).trim() : "";
+        if (sessionNameForPayload && !payloadNameStr) {
+            payload.name = sessionNameForPayload;
+            if (chatSummaryPayload) {
+                chatSummaryPayload.name = sessionNameForPayload;
+            }
+        }
+        const sessionEmailForPayload =
+            cx && typeof cx.email === "string" ? cx.email.trim() : "";
+        const payloadEmailStr =
+            payload.email !== undefined && payload.email !== null ? String(payload.email).trim() : "";
+        if (sessionEmailForPayload && !payloadEmailStr) {
+            payload.email = sessionEmailForPayload;
+            if (chatSummaryPayload) {
+                chatSummaryPayload.email = sessionEmailForPayload;
             }
         }
     }
@@ -12368,16 +12459,40 @@ function submitContactForm(event) {
                 const tEl = document.getElementById(hidTimeId);
                 const dv = dEl && "value" in dEl ? String(dEl.value).trim() : "";
                 const tv = tEl && "value" in tEl ? String(tEl.value).trim() : "";
-                if (def.required !== false && (!dv || !tv)) {
-                    if (status) {
-                        status.textContent = getTranslation("fieldRequired");
-                        status.classList.add("is-error");
-                        status.classList.remove("is-success");
+                if (def.required !== false) {
+                    if (!dv && !tv) {
+                        if (status) {
+                            status.textContent = getTranslation("appointmentPickDateAndTime");
+                            status.classList.add("is-error");
+                            status.classList.remove("is-success");
+                        }
+                        if (submitButton) {
+                            submitButton.disabled = false;
+                        }
+                        return;
                     }
-                    if (submitButton) {
-                        submitButton.disabled = false;
+                    if (dv && !tv) {
+                        if (status) {
+                            status.textContent = getTranslation("appointmentPickTimeSlot");
+                            status.classList.add("is-error");
+                            status.classList.remove("is-success");
+                        }
+                        if (submitButton) {
+                            submitButton.disabled = false;
+                        }
+                        return;
                     }
-                    return;
+                    if (!dv && tv) {
+                        if (status) {
+                            status.textContent = getTranslation("appointmentPickDate");
+                            status.classList.add("is-error");
+                            status.classList.remove("is-success");
+                        }
+                        if (submitButton) {
+                            submitButton.disabled = false;
+                        }
+                        return;
+                    }
                 }
                 fd.append("appointmentdate", dv);
                 fd.append("appointmenttime", tv);
@@ -14529,6 +14644,49 @@ function mergeVisitorMobileFromQueryResultUtterance(qr) {
 }
 
 /**
+ * Persist name / email from CX parameters into session storage when the bot fills them (alongside mobile).
+ * @param {Record<string, string>} slice
+ */
+function mergeOptionalContactFieldsFromParameterSlice_(slice) {
+    if (!slice || typeof slice !== "object") {
+        return;
+    }
+    try {
+        const prev = readStoredClientContext();
+        /** @type {Record<string, unknown>} */
+        const next = Object.assign({}, prev);
+        /** @type {Record<string, string>} */
+        const norm = {};
+        const keys = Object.keys(slice);
+        for (let ki = 0; ki < keys.length; ki += 1) {
+            const kk = keys[ki];
+            const raw = slice[kk];
+            const s = dfParameterScalarToString(raw);
+            if (s && String(s).trim()) {
+                norm[String(kk).toLowerCase().replace(/[^a-z0-9]/g, "")] = String(s).trim();
+            }
+        }
+        const nameKeys = ["name", "customername", "fullname", "personname", "username", "guestname"];
+        for (let ni = 0; ni < nameKeys.length; ni += 1) {
+            if (norm[nameKeys[ni]]) {
+                const nm = norm[nameKeys[ni]];
+                if (nm.length <= 200) {
+                    next.name = nm;
+                }
+                break;
+            }
+        }
+        const em = norm.email || norm.useremail || norm.mail || norm.contactemail;
+        if (em && EMAIL_VALIDATION_RE.test(em)) {
+            next.email = em;
+        }
+        persistClientContext(next);
+    } catch {
+        /* ignore */
+    }
+}
+
+/**
  * When the bot fills Dialogflow/CX parameters (e.g. $session.params.mobile / @sys.phone-number),
  * persist a phone-like value into session `client_context` so Sheets uploads see column D without `open_form`.
  * @param {Event | undefined | null} event
@@ -14557,6 +14715,7 @@ function mergePhoneFromDialogflowParametersIntoStoredContext(event) {
     var sliceMerged = Object.keys(mergedSlice).length ? mergedSlice : null;
 
     if (sliceMerged) {
+        mergeOptionalContactFieldsFromParameterSlice_(sliceMerged);
         var fromAliases = mergePhoneFromOpenFormPrefillIntoStoredContext(sliceMerged);
         if (!fromAliases) {
             mergeDfParameterDigitsFallback(sliceMerged);
