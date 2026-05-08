@@ -1591,7 +1591,9 @@ const UI_TRANSLATIONS = {
         documentUploadAria: "Choose a file to upload",
         summaryDocumentLabel: "Document",
         invalidVideoFile: "Video files are not allowed. Use images, PDF, Word, or other documents.",
-        clearFileSelectionButton: "Cancel selection"
+        clearFileSelectionButton: "Cancel selection",
+        appointmentSlotAlreadyBooked: "This time slot is already booked. Please choose another.",
+        appointmentPickerSelected: "Selected"
     },
     hi: {
         contactFormTitle: "संपर्क करें",
@@ -1633,7 +1635,9 @@ const UI_TRANSLATIONS = {
         documentUploadAria: "अपलोड के लिए फ़ाइल चुनें",
         summaryDocumentLabel: "दस्तावेज़",
         invalidVideoFile: "वीडियो फ़ाइलें मान्य नहीं। छवि, PDF या Word आदि भेजें।",
-        clearFileSelectionButton: "चयन रद्द करें"
+        clearFileSelectionButton: "चयन रद्द करें",
+        appointmentSlotAlreadyBooked: "यह समय पहले से बुक है। कृपया कोई और समय चुनें।",
+        appointmentPickerSelected: "चयनित"
     },
     mr: {
         contactFormTitle: "आमच्याशी संपर्क करा",
@@ -1675,7 +1679,9 @@ const UI_TRANSLATIONS = {
         documentUploadAria: "अपलोडसाठी फाइल निवडा",
         summaryDocumentLabel: "दस्तऐवज",
         invalidVideoFile: "व्हिडिओ फाइल्सना परवानगी नाही. प्रतिमा, PDF किंवा Word वापरा.",
-        clearFileSelectionButton: "निवड रद्द करा"
+        clearFileSelectionButton: "निवड रद्द करा",
+        appointmentSlotAlreadyBooked: "ही वेळ आधीच बुक आहे. कृपया दुसरी वेळ निवडा.",
+        appointmentPickerSelected: "निवडलेले"
     }
 };
 
@@ -5436,7 +5442,9 @@ function mountContactFormAppointmentPicker(hostEl, field, isDoctor) {
     grid.style.cssText = "display:grid;grid-template-columns:repeat(7,1fr);gap:3px;margin-bottom:8px";
 
     const slotsHint = document.createElement("div");
-    slotsHint.style.cssText = "font:600 11px/1.3 Manrope,sans-serif;color:rgba(15,23,42,0.65);margin:6px 0 4px";
+    slotsHint.setAttribute("role", "status");
+    slotsHint.setAttribute("aria-live", "polite");
+    slotsHint.style.cssText = "font:600 11px/1.35 Manrope,sans-serif;color:rgba(15,23,42,0.75);margin:6px 0 4px;min-height:1.35em";
     slotsHint.textContent = "Pick a day, then a time slot.";
 
     const slotsFlex = document.createElement("div");
@@ -5449,6 +5457,23 @@ function mountContactFormAppointmentPicker(hostEl, field, isDoctor) {
     hostEl.appendChild(slotsFlex);
 
     const view = { y: new Date().getFullYear(), m: new Date().getMonth() + 1 };
+
+    /** @type {HTMLButtonElement | null} */
+    let selectedSlotEl = null;
+
+    const STYLE_APPT_SLOT_FREE =
+        "appearance:none;border-radius:8px;padding:6px 10px;min-width:52px;font:800 11px/1.2 Manrope,sans-serif;"
+        + "border:1px solid rgba(34,197,94,0.5);background:rgba(34,197,94,0.14);color:#166534;cursor:pointer;"
+        + "transition:box-shadow .15s ease,transform .12s ease,border-color .15s ease";
+    const STYLE_APPT_SLOT_BOOKED =
+        "appearance:none;border-radius:8px;padding:6px 10px;min-width:52px;font:800 11px/1.2 Manrope,sans-serif;"
+        + "border:1px solid rgba(239,68,68,0.5);background:rgba(239,68,68,0.2);color:#991b1b;cursor:not-allowed;"
+        + "opacity:0.95";
+    const STYLE_APPT_SLOT_SELECTED =
+        "appearance:none;border-radius:8px;padding:6px 10px;min-width:52px;font:800 11px/1.2 Manrope,sans-serif;"
+        + "border:2px solid rgba(37,99,235,0.95);background:rgba(59,130,246,0.3);color:#1e3a8a;cursor:pointer;"
+        + "box-shadow:0 0 0 3px rgba(37,99,235,0.4),0 3px 10px rgba(37,99,235,0.22);transform:scale(1.04);"
+        + "z-index:1;position:relative";
 
     /** @type {Record<string, { working?: boolean, bookedCount?: number, totalSlots?: number }> | null} */
     let overviewDays = null;
@@ -5543,9 +5568,12 @@ function mountContactFormAppointmentPicker(hostEl, field, isDoctor) {
     }
 
     async function loadSlots(dateISO) {
+        selectedSlotEl = null;
         hidD.value = dateISO;
         hidT.value = "";
         slotsFlex.innerHTML = "";
+        slotsHint.style.color = "";
+        slotsHint.style.fontWeight = "";
         slotsHint.textContent = `Times for ${dateISO}`;
         const apiUrl = getApiEndpoint(isDoctor ? "/api/slots" : "/api/general-slots");
         if (!apiUrl) {
@@ -5566,19 +5594,43 @@ function mountContactFormAppointmentPicker(hostEl, field, isDoctor) {
             }
             statuses.forEach((row) => {
                 const label = row && row.label ? String(row.label) : "";
+                if (!label) {
+                    return;
+                }
                 const booked = row && row.status === "booked";
                 const b = document.createElement("button");
                 b.type = "button";
                 b.textContent = label;
-                b.style.cssText = booked
-                    ? "appearance:none;border-radius:8px;padding:6px 8px;font:700 10px/1 Manrope,sans-serif;border:1px solid rgba(239,68,68,0.4);background:rgba(239,68,68,0.15);color:#991b1b;cursor:not-allowed"
-                    : "appearance:none;border-radius:8px;padding:6px 8px;font:700 10px/1 Manrope,sans-serif;border:1px solid rgba(34,197,94,0.45);background:rgba(34,197,94,0.15);color:#166534;cursor:pointer";
+                b.setAttribute("aria-pressed", "false");
                 if (booked) {
-                    b.disabled = true;
+                    b.style.cssText = STYLE_APPT_SLOT_BOOKED;
+                    b.setAttribute("aria-disabled", "true");
+                    b.title = getTranslation("appointmentSlotAlreadyBooked");
+                    b.addEventListener("click", (ev) => {
+                        ev.preventDefault();
+                        slotsHint.textContent = getTranslation("appointmentSlotAlreadyBooked");
+                        slotsHint.style.color = "#991b1b";
+                        slotsHint.style.fontWeight = "700";
+                        window.setTimeout(() => {
+                            slotsHint.style.color = "";
+                            slotsHint.style.fontWeight = "";
+                        }, 5000);
+                    });
                 } else {
+                    b.style.cssText = STYLE_APPT_SLOT_FREE;
                     b.addEventListener("click", () => {
+                        if (selectedSlotEl && selectedSlotEl !== b) {
+                            selectedSlotEl.style.cssText = STYLE_APPT_SLOT_FREE;
+                            selectedSlotEl.setAttribute("aria-pressed", "false");
+                        }
+                        selectedSlotEl = b;
+                        b.style.cssText = STYLE_APPT_SLOT_SELECTED;
+                        b.setAttribute("aria-pressed", "true");
                         hidT.value = label;
-                        slotsHint.textContent = `Selected: ${dateISO} · ${label}`;
+                        slotsHint.style.color = "";
+                        slotsHint.style.fontWeight = "";
+                        slotsHint.textContent =
+                            `${getTranslation("appointmentPickerSelected")}: ${dateISO} · ${label}`;
                     });
                 }
                 slotsFlex.appendChild(b);
