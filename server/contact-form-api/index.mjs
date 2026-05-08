@@ -426,6 +426,24 @@ function slotsForDoctorOnDate_(d, dateISO) {
     return [];
 }
 
+/** RTDB doctor id for shared “general” appointments (`GENERAL_APPOINTMENT_BOOKING_ID`, default `general`). */
+function generalAppointmentBookingId_() {
+    return normalizeStr_(process.env.GENERAL_APPOINTMENT_BOOKING_ID || "general");
+}
+
+/**
+ * One shared schedule for the general appointment form (env-tunable).
+ * Default: Mon–Fri, 9:00 AM – 5:00 PM, same slot step as doctors.
+ */
+function slotsForGeneralAppointment_(dateISO) {
+    const wdShort = weekdayShort_(dateISO);
+    const days = normalizeStr_(process.env.GENERAL_APPOINTMENT_DAYS || "Mon-Fri");
+    if (!dayInDaysField_(wdShort, days)) return [];
+    const start = normalizeStr_(process.env.GENERAL_APPOINTMENT_START || "9:00 AM");
+    const end = normalizeStr_(process.env.GENERAL_APPOINTMENT_END || "5:00 PM");
+    return expandTimeRangeToSlotLabels_(`${start} - ${end}`, appointmentSlotMinutes_());
+}
+
 // JSON helpers for CX webhooks (easier to consume than XML)
 app.get("/api/branches", (_req, res) => {
     if (firebaseInitError) {
@@ -489,7 +507,7 @@ app.get("/api/doctor-month-overview", async (req, res) => {
     if (!d) {
         return res.status(404).json({ ok: false, error: "Doctor not found." });
     }
-    const daysInMonth = new Date(Date.UTC(y, mo, 0)).getUTCDate();
+    const daysInMonth = new Date(y, mo, 0).getDate();
     const iv = appointmentSlotMinutes_();
     /** @type {Record<string, { working: boolean, totalSlots: number, bookedCount: number, availableCount: number }>} */
     const days = {};
@@ -551,14 +569,96 @@ app.get("/api/slots", async (req, res) => {
     }
     const bookedSet = new Set(booked);
     const available = slots.filter((s) => !bookedSet.has(s));
+    const slotStatuses = slots.map((label) => ({
+        label,
+        status: bookedSet.has(label) ? "booked" : "available"
+    }));
     return res.status(200).json({
         ok: true,
         doctorId,
         dateISO,
         weekday: weekdayKey,
+        slotMinutes: appointmentSlotMinutes_(),
         slots,
         booked,
-        available
+        available,
+        slotStatuses
+    });
+});
+
+app.get("/api/general-slots", async (req, res) => {
+    const dateISO = typeof req.query.date === "string" ? req.query.date.trim() : "";
+    if (!dateISO) {
+        return res.status(400).json({ ok: false, error: "Missing date (YYYY-MM-DD)." });
+    }
+    if (firebaseInitError) {
+        return res.status(503).json({ ok: false, error: `Firebase init failed: ${firebaseInitError}` });
+    }
+    const doctorId = generalAppointmentBookingId_();
+    const slots = slotsForGeneralAppointment_(dateISO);
+    let booked = [];
+    try {
+        booked = await listBookedSlots({ doctorId, dateISO });
+    } catch {
+        booked = [];
+    }
+    const bookedSet = new Set(booked);
+    const slotStatuses = slots.map((label) => ({
+        label,
+        status: bookedSet.has(label) ? "booked" : "available"
+    }));
+    return res.status(200).json({
+        ok: true,
+        doctorId,
+        dateISO,
+        slotMinutes: appointmentSlotMinutes_(),
+        slots,
+        booked,
+        available: slots.filter((s) => !bookedSet.has(s)),
+        slotStatuses
+    });
+});
+
+app.get("/api/general-month-overview", async (req, res) => {
+    const month = typeof req.query.month === "string" ? req.query.month.trim() : "";
+    const mRe = /^(\d{4})-(\d{2})$/.exec(month);
+    if (!mRe) {
+        return res.status(400).json({ ok: false, error: "Missing month (YYYY-MM)." });
+    }
+    if (firebaseInitError) {
+        return res.status(503).json({ ok: false, error: `Firebase init failed: ${firebaseInitError}` });
+    }
+    const y = parseInt(mRe[1], 10);
+    const mo = parseInt(mRe[2], 10);
+    const doctorId = generalAppointmentBookingId_();
+    const daysInMonth = new Date(y, mo, 0).getDate();
+    const iv = appointmentSlotMinutes_();
+    /** @type {Record<string, { working: boolean, totalSlots: number, bookedCount: number, availableCount: number }>} */
+    const days = {};
+    for (let day = 1; day <= daysInMonth; day += 1) {
+        const dateISO = `${y}-${String(mo).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+        const slots = slotsForGeneralAppointment_(dateISO);
+        let booked = [];
+        try {
+            booked = await listBookedSlots({ doctorId, dateISO });
+        } catch {
+            booked = [];
+        }
+        const bookedSet = new Set(booked);
+        const bookedCount = slots.filter((s) => bookedSet.has(s)).length;
+        days[dateISO] = {
+            working: slots.length > 0,
+            totalSlots: slots.length,
+            bookedCount,
+            availableCount: slots.length - bookedCount
+        };
+    }
+    return res.status(200).json({
+        ok: true,
+        doctorId,
+        month,
+        slotMinutes: iv,
+        days
     });
 });
 
@@ -1032,6 +1132,151 @@ app.post("/webhook", express.json({ limit: "512kb" }), async (req, res) => {
     }
 });
 
+/**
+ * Reserve RTDB slot when submitting doctor/general appointment contact forms.
+ * @param {string} formId
+ * @param {Record<string, string>} fields
+ */
+async function tryReserveAppointmentSlotFromContactForm_(formId, fields) {
+    const fid = normalizeStr_(formId);
+    if (fid !== "appintmentformdocot" && fid !== "appintmentformgeneral") {
+        return { skip: true };
+    }
+    const dateISO = normalizeStr_(fields.appointmentdate);
+    const slotLabel = normalizeStr_(fields.appointmenttime);
+    if (!dateISO || !slotLabel) {
+        return { ok: false, status: 400, error: "Missing appointment date or time.", block: true };
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateISO)) {
+        return { ok: false, status: 400, error: "Invalid appointment date.", block: true };
+    }
+    if (firebaseInitError) {
+        return {
+            ok: false,
+            status: 503,
+            error: `Firebase init failed: ${firebaseInitError}`,
+            block: true
+        };
+    }
+
+    if (fid === "appintmentformgeneral") {
+        const slots = slotsForGeneralAppointment_(dateISO);
+        if (!slots.includes(slotLabel)) {
+            return {
+                ok: false,
+                status: 400,
+                error: "That time is outside general clinic hours.",
+                block: true
+            };
+        }
+        let booked = [];
+        try {
+            booked = await listBookedSlots({ doctorId: generalAppointmentBookingId_(), dateISO });
+        } catch {
+            booked = [];
+        }
+        if (booked.includes(slotLabel)) {
+            return { ok: false, status: 409, error: "That slot is already booked.", block: true };
+        }
+        try {
+            await bookAppointment({
+                doctorId: generalAppointmentBookingId_(),
+                branchId: normalizeStr_(process.env.GENERAL_APPOINTMENT_BRANCH_ID || "500"),
+                department: normalizeStr_(process.env.GENERAL_APPOINTMENT_DEPARTMENT || "General"),
+                dateISO,
+                slotLabel,
+                userId: ""
+            });
+        } catch (e) {
+            const msg = e && e.message ? e.message : String(e);
+            if (/already booked/i.test(msg)) {
+                return {
+                    ok: false,
+                    status: 409,
+                    error: "That slot was just booked. Please choose another.",
+                    block: true
+                };
+            }
+            return { ok: false, status: 400, error: msg, block: true };
+        }
+        return { ok: true, block: true };
+    }
+
+    const doctorId = normalizeStr_(fields.doctorId);
+    if (!doctorId) {
+        return {
+            ok: false,
+            status: 400,
+            error: "Choose a doctor from the chat first (doctor carousel), then open this form.",
+            block: true
+        };
+    }
+    let doc = null;
+    try {
+        const docs = await listDoctors();
+        doc = docs.find((x) => String(x.DoctorId || "").trim() === doctorId) || null;
+    } catch (e) {
+        return {
+            ok: false,
+            status: 500,
+            error: e && e.message ? e.message : String(e),
+            block: true
+        };
+    }
+    if (!doc) {
+        return { ok: false, status: 404, error: "Doctor not found.", block: true };
+    }
+    const wd = weekdayShort_(dateISO);
+    if (!dayInDaysField_(wd, doc.Days)) {
+        return {
+            ok: false,
+            status: 400,
+            error: "This doctor is not available on that day.",
+            block: true
+        };
+    }
+    const slots = slotsForDoctorOnDate_(doc, dateISO);
+    if (!slots.includes(slotLabel)) {
+        return {
+            ok: false,
+            status: 400,
+            error: "That time is outside this doctor's schedule.",
+            block: true
+        };
+    }
+    let booked = [];
+    try {
+        booked = await listBookedSlots({ doctorId, dateISO });
+    } catch {
+        booked = [];
+    }
+    if (booked.includes(slotLabel)) {
+        return { ok: false, status: 409, error: "That slot is already booked for this doctor.", block: true };
+    }
+    try {
+        await bookAppointment({
+            doctorId,
+            branchId: normalizeStr_(doc.BranchId || "500"),
+            department: normalizeStr_(doc.Specialization || "General"),
+            dateISO,
+            slotLabel,
+            userId: ""
+        });
+    } catch (e) {
+        const msg = e && e.message ? e.message : String(e);
+        if (/already booked/i.test(msg)) {
+            return {
+                ok: false,
+                status: 409,
+                error: "That slot was just booked. Please choose another.",
+                block: true
+            };
+        }
+        return { ok: false, status: 400, error: msg, block: true };
+    }
+    return { ok: true, block: true };
+}
+
 app.post(
     PATHNAME,
     (req, res, next) => {
@@ -1081,6 +1326,21 @@ app.post(
                     fields[k] = s;
                 }
             }
+        }
+
+        try {
+            const rsv = await tryReserveAppointmentSlotFromContactForm_(formId, fields);
+            if (rsv && rsv.skip) {
+                /* not an appointment booking form */
+            } else if (rsv && rsv.ok === false) {
+                return res.status(typeof rsv.status === "number" ? rsv.status : 400).json({
+                    ok: false,
+                    error: typeof rsv.error === "string" && rsv.error.trim() ? rsv.error.trim() : "Booking failed."
+                });
+            }
+        } catch (be) {
+            const msg = be && be.message ? be.message : String(be);
+            return res.status(500).json({ ok: false, error: msg });
         }
 
         const name = fields.name ?? "";

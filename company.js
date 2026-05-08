@@ -1565,6 +1565,7 @@ const UI_TRANSLATIONS = {
         summaryEmailLabel: "Email",
         summaryDateLabel: "Date",
         summaryTimeLabel: "Time",
+        summaryDoctorIdLabel: "Doctor",
         summaryLocationLabel: "Location",
         summaryOtpLabel: "OTP",
         submitButton: "Submit",
@@ -1606,6 +1607,7 @@ const UI_TRANSLATIONS = {
         summaryEmailLabel: "ईमेल",
         summaryDateLabel: "तिथि",
         summaryTimeLabel: "समय",
+        summaryDoctorIdLabel: "डॉक्टर",
         summaryLocationLabel: "स्थान",
         summaryOtpLabel: "OTP",
         submitButton: "जमा करें",
@@ -1647,6 +1649,7 @@ const UI_TRANSLATIONS = {
         summaryEmailLabel: "ईमेल",
         summaryDateLabel: "तारीख",
         summaryTimeLabel: "वेळ",
+        summaryDoctorIdLabel: "डॉक्टर",
         summaryLocationLabel: "ठिकाण",
         summaryOtpLabel: "OTP",
         submitButton: "सबमिट",
@@ -4462,7 +4465,7 @@ const CONTACT_FORM_SVG_ICONS = {
 };
 
 const CONTACT_FORM_INPUT_TYPES = new Set([
-    "text", "email", "tel", "date", "time", "datetime-local", "number", "url", "password", "search", "week", "month", "color"
+    "text", "email", "tel", "date", "time", "datetime-local", "number", "url", "password", "search", "week", "month", "color", "hidden"
 ]);
 
 const EMAIL_VALIDATION_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -4942,11 +4945,15 @@ function setActiveContactFormId(formId) {
     if (typeof formId !== "string" || !formId.trim()) {
         return;
     }
-    const id = formId.trim();
+    let id = formId.trim();
+    const c = readCommonFormConfigRoot();
+    const alias = typeof c.legacyAppointmentFormAlias === "string" ? c.legacyAppointmentFormAlias.trim() : "";
+    if (id === "appointment" && alias && c.forms && typeof c.forms === "object" && c.forms[alias]) {
+        id = alias;
+    }
     if (activeContactFormId === id) {
         return;
     }
-    const c = readCommonFormConfigRoot();
     if (!c.forms || typeof c.forms !== "object" || !c.forms[id]) {
         return;
     }
@@ -5094,6 +5101,9 @@ function resolveContactFormFieldIconKey(field) {
         return "url";
     }
     if (t === "date" || t === "datetime-local" || t === "week" || t === "month") {
+        return "calendar";
+    }
+    if (t === "appointmentdoctor" || t === "appointmentgeneral") {
         return "calendar";
     }
     if (t === "time") {
@@ -5300,6 +5310,29 @@ function buildContactFormFieldRow(field) {
         fileWrap.className = "dfchat-contact-form__file-wrap";
         fileWrap.appendChild(control);
         fileWrap.appendChild(clearBtn);
+    } else if (t === "hidden") {
+        control = document.createElement("input");
+        control.type = "hidden";
+        control.id = field.id;
+        control.className = "dfchat-contact-form__control";
+        control.name = typeof field.name === "string" ? field.name : field.id;
+        if (typeof field.value === "string" && field.value) {
+            control.value = field.value;
+        }
+        row.style.display = "none";
+        row.appendChild(control);
+        return row;
+    } else if (t === "appointmentdoctor" || t === "appointmentgeneral") {
+        const shell = document.createElement("div");
+        shell.className = "dfchat-contact-form__appointment-shell";
+        shell.style.cssText = "width:100%;max-width:100%;box-sizing:border-box";
+        row.classList.add("dfchat-contact-form__row--appointment");
+        row.appendChild(iconWrap);
+        row.appendChild(shell);
+        window.queueMicrotask(() => {
+            mountContactFormAppointmentPicker(shell, field, t === "appointmentdoctor");
+        });
+        return row;
     } else {
         control = document.createElement("input");
         control.id = field.id;
@@ -5339,6 +5372,257 @@ function buildContactFormFieldRow(field) {
     return row;
 }
 
+/**
+ * Month + slot picker for contact-form appointment fields (doctor-specific or shared general pool).
+ * @param {HTMLElement} hostEl
+ * @param {Record<string, unknown>} field
+ * @param {boolean} isDoctor
+ */
+function mountContactFormAppointmentPicker(hostEl, field, isDoctor) {
+    const hidD = document.createElement("input");
+    hidD.type = "hidden";
+    hidD.id = typeof field.hiddenDateId === "string" && field.hiddenDateId.trim()
+        ? field.hiddenDateId.trim()
+        : `${field.id}__date`;
+    hidD.value = "";
+
+    const hidT = document.createElement("input");
+    hidT.type = "hidden";
+    hidT.id = typeof field.hiddenTimeId === "string" && field.hiddenTimeId.trim()
+        ? field.hiddenTimeId.trim()
+        : `${field.id}__time`;
+    hidT.value = "";
+
+    hostEl.appendChild(hidD);
+    hostEl.appendChild(hidT);
+
+    const doctorId = isDoctor && typeof window !== "undefined" && window.__dfchatBookingDoctorId
+        ? String(window.__dfchatBookingDoctorId).trim()
+        : "";
+
+    if (isDoctor && !doctorId) {
+        const w = document.createElement("div");
+        w.style.cssText = "font:600 12px/1.35 Manrope,sans-serif;color:#b45309;padding:6px 0";
+        w.textContent = "Choose a doctor from the chat carousel first, then open this form again.";
+        hostEl.appendChild(w);
+        return;
+    }
+
+    const legend = document.createElement("div");
+    legend.style.cssText = "font:600 11px/1.3 Manrope,sans-serif;color:rgba(15,23,42,0.7);margin:0 0 8px";
+    legend.textContent = "Green = available · Red = booked · Grey = closed";
+
+    const nav = document.createElement("div");
+    nav.style.cssText = "display:flex;align-items:center;justify-content:space-between;margin:0 0 6px";
+
+    const monthLabel = document.createElement("div");
+    monthLabel.style.cssText = "font:700 12px/1.2 Manrope,sans-serif";
+
+    const prevBtn = document.createElement("button");
+    prevBtn.type = "button";
+    prevBtn.textContent = "◀";
+    prevBtn.style.cssText = "appearance:none;border:1px solid rgba(148,163,184,0.45);border-radius:8px;background:#fff;padding:2px 8px;cursor:pointer;font-size:12px";
+
+    const nextBtn = document.createElement("button");
+    nextBtn.type = "button";
+    nextBtn.textContent = "▶";
+    nextBtn.style.cssText = prevBtn.style.cssText;
+
+    nav.appendChild(prevBtn);
+    nav.appendChild(monthLabel);
+    nav.appendChild(nextBtn);
+
+    const grid = document.createElement("div");
+    grid.style.cssText = "display:grid;grid-template-columns:repeat(7,1fr);gap:3px;margin-bottom:8px";
+
+    const slotsHint = document.createElement("div");
+    slotsHint.style.cssText = "font:600 11px/1.3 Manrope,sans-serif;color:rgba(15,23,42,0.65);margin:6px 0 4px";
+    slotsHint.textContent = "Pick a day, then a time slot.";
+
+    const slotsFlex = document.createElement("div");
+    slotsFlex.style.cssText = "display:flex;flex-wrap:wrap;gap:5px";
+
+    hostEl.appendChild(legend);
+    hostEl.appendChild(nav);
+    hostEl.appendChild(grid);
+    hostEl.appendChild(slotsHint);
+    hostEl.appendChild(slotsFlex);
+
+    const view = { y: new Date().getFullYear(), m: new Date().getMonth() + 1 };
+
+    /** @type {Record<string, { working?: boolean, bookedCount?: number, totalSlots?: number }> | null} */
+    let overviewDays = null;
+
+    async function fetchOverview() {
+        const monthKey = `${view.y}-${String(view.m).padStart(2, "0")}`;
+        const ep = isDoctor ? "/api/doctor-month-overview" : "/api/general-month-overview";
+        const apiBase = getApiEndpoint(ep);
+        if (!apiBase) {
+            overviewDays = null;
+            return;
+        }
+        const u = new URL(apiBase);
+        if (isDoctor) {
+            u.searchParams.set("doctorId", doctorId);
+        }
+        u.searchParams.set("month", monthKey);
+        try {
+            const r = await fetch(u.toString(), { credentials: "omit" });
+            const j = await r.json();
+            overviewDays = j && j.ok && j.days ? /** @type {Record<string, { working?: boolean, bookedCount?: number, totalSlots?: number }>} */ (j.days) : null;
+        } catch {
+            overviewDays = null;
+        }
+    }
+
+    function monthLabelFmt() {
+        return new Date(view.y, view.m - 1, 1).toLocaleString(undefined, { month: "long", year: "numeric" });
+    }
+
+    async function renderCal() {
+        monthLabel.textContent = monthLabelFmt();
+        while (grid.firstChild) {
+            grid.removeChild(grid.firstChild);
+        }
+        await fetchOverview();
+
+        const dow = document.createElement("div");
+        dow.style.cssText = "grid-column:1/-1;display:grid;grid-template-columns:repeat(7,1fr);gap:3px;font:600 9px/1 Manrope,sans-serif;color:rgba(15,23,42,0.5);text-align:center;margin-bottom:2px";
+        ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"].forEach((d) => {
+            const x = document.createElement("div");
+            x.textContent = d;
+            dow.appendChild(x);
+        });
+        grid.appendChild(dow);
+
+        const firstDow = new Date(view.y, view.m - 1, 1).getDay();
+        const monOffset = (firstDow + 6) % 7;
+        const dim = new Date(view.y, view.m, 0).getDate();
+        for (let i = 0; i < monOffset; i += 1) {
+            grid.appendChild(document.createElement("div"));
+        }
+        const ty = new Date().getFullYear();
+        const tm = new Date().getMonth() + 1;
+        const td = new Date().getDate();
+
+        for (let day = 1; day <= dim; day += 1) {
+            const dateISO = `${view.y}-${String(view.m).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+            const btn = document.createElement("button");
+            btn.type = "button";
+            btn.textContent = String(day);
+            btn.style.cssText = "border-radius:6px;padding:4px 0;font:700 11px/1 Manrope,sans-serif;border:1px solid transparent";
+            const info = overviewDays ? overviewDays[dateISO] : null;
+            if (!info || !info.working) {
+                btn.style.background = "rgba(148,163,184,0.22)";
+                btn.style.color = "rgba(15,23,42,0.35)";
+                btn.disabled = true;
+            } else {
+                const booked = Number(info.bookedCount || 0);
+                const total = Number(info.totalSlots || 0);
+                if (total > 0 && booked >= total) {
+                    btn.style.background = "rgba(239,68,68,0.18)";
+                    btn.style.borderColor = "rgba(239,68,68,0.35)";
+                    btn.style.color = "#991b1b";
+                } else if (booked > 0) {
+                    btn.style.background = "rgba(234,179,8,0.15)";
+                    btn.style.borderColor = "rgba(234,179,8,0.4)";
+                } else {
+                    btn.style.background = "rgba(34,197,94,0.14)";
+                    btn.style.borderColor = "rgba(34,197,94,0.4)";
+                    btn.style.color = "#166534";
+                }
+                if (ty === view.y && tm === view.m && td === day) {
+                    btn.style.boxShadow = "0 0 0 2px rgba(3,105,161,0.35)";
+                }
+                btn.addEventListener("click", () => {
+                    void loadSlots(dateISO);
+                });
+            }
+            grid.appendChild(btn);
+        }
+    }
+
+    async function loadSlots(dateISO) {
+        hidD.value = dateISO;
+        hidT.value = "";
+        slotsFlex.innerHTML = "";
+        slotsHint.textContent = `Times for ${dateISO}`;
+        const apiUrl = getApiEndpoint(isDoctor ? "/api/slots" : "/api/general-slots");
+        if (!apiUrl) {
+            return;
+        }
+        const u = new URL(apiUrl);
+        if (isDoctor) {
+            u.searchParams.set("doctorId", doctorId);
+        }
+        u.searchParams.set("date", dateISO);
+        try {
+            const r = await fetch(u.toString(), { credentials: "omit" });
+            const j = await r.json();
+            const statuses = j && Array.isArray(j.slotStatuses) ? j.slotStatuses : [];
+            if (!statuses.length) {
+                slotsHint.textContent = "No slots this day.";
+                return;
+            }
+            statuses.forEach((row) => {
+                const label = row && row.label ? String(row.label) : "";
+                const booked = row && row.status === "booked";
+                const b = document.createElement("button");
+                b.type = "button";
+                b.textContent = label;
+                b.style.cssText = booked
+                    ? "appearance:none;border-radius:8px;padding:6px 8px;font:700 10px/1 Manrope,sans-serif;border:1px solid rgba(239,68,68,0.4);background:rgba(239,68,68,0.15);color:#991b1b;cursor:not-allowed"
+                    : "appearance:none;border-radius:8px;padding:6px 8px;font:700 10px/1 Manrope,sans-serif;border:1px solid rgba(34,197,94,0.45);background:rgba(34,197,94,0.15);color:#166534;cursor:pointer";
+                if (booked) {
+                    b.disabled = true;
+                } else {
+                    b.addEventListener("click", () => {
+                        hidT.value = label;
+                        slotsHint.textContent = `Selected: ${dateISO} · ${label}`;
+                    });
+                }
+                slotsFlex.appendChild(b);
+            });
+        } catch {
+            slotsHint.textContent = "Could not load slots.";
+        }
+    }
+
+    prevBtn.addEventListener("click", () => {
+        view.m -= 1;
+        if (view.m < 1) {
+            view.m = 12;
+            view.y -= 1;
+        }
+        void renderCal();
+    });
+    nextBtn.addEventListener("click", () => {
+        view.m += 1;
+        if (view.m > 12) {
+            view.m = 1;
+            view.y += 1;
+        }
+        void renderCal();
+    });
+
+    void renderCal();
+}
+
+function syncAppointmentDoctorHiddenFromSession() {
+    try {
+        const cfg = readContactFormConfig();
+        if (cfg.formKey !== "appintmentformdocot") {
+            return;
+        }
+        const docEl = document.getElementById("afd-doctor");
+        if (docEl && typeof window !== "undefined" && window.__dfchatBookingDoctorId) {
+            docEl.value = String(window.__dfchatBookingDoctorId).trim();
+        }
+    } catch {
+        /* ignore */
+    }
+}
+
 function mountContactFormFieldsFromConfig() {
     const slot = document.getElementById("dfchat-contact-form-inputs");
     if (!slot) {
@@ -5356,6 +5640,7 @@ function mountContactFormFieldsFromConfig() {
     }
     syncContactFormNoValidateForActiveForm();
     setupOtpFormTwoStepIfNeeded();
+    syncAppointmentDoctorHiddenFromSession();
 }
 
 function applyContactFormLayoutFromConfig() {
@@ -11676,6 +11961,7 @@ function openContactForm() {
     window.setTimeout(() => {
         applyStoredMobileToOpenContactForm_();
     }, 0);
+    syncAppointmentDoctorHiddenFromSession();
 }
 
 function closeForm() {
@@ -11771,6 +12057,34 @@ function submitContactForm(event) {
                 continue;
             }
             if (isOtpForm && otpStep === "otp" && def.name === "mobile") {
+                continue;
+            }
+            const apptType = String(def.type || "").toLowerCase();
+            if (apptType === "appointmentdoctor" || apptType === "appointmentgeneral") {
+                const hidDateId = typeof def.hiddenDateId === "string" && def.hiddenDateId.trim()
+                    ? def.hiddenDateId.trim()
+                    : `${def.id}__date`;
+                const hidTimeId = typeof def.hiddenTimeId === "string" && def.hiddenTimeId.trim()
+                    ? def.hiddenTimeId.trim()
+                    : `${def.id}__time`;
+                const dEl = document.getElementById(hidDateId);
+                const tEl = document.getElementById(hidTimeId);
+                const dv = dEl && "value" in dEl ? String(dEl.value).trim() : "";
+                const tv = tEl && "value" in tEl ? String(tEl.value).trim() : "";
+                if (def.required !== false && (!dv || !tv)) {
+                    if (status) {
+                        status.textContent = getTranslation("fieldRequired");
+                        status.classList.add("is-error");
+                        status.classList.remove("is-success");
+                    }
+                    return;
+                }
+                payload.appointmentdate = dv;
+                payload.appointmenttime = tv;
+                if (chatSummaryPayload) {
+                    chatSummaryPayload.appointmentdate = dv;
+                    chatSummaryPayload.appointmenttime = tv;
+                }
                 continue;
             }
             const el = document.getElementById(def.id);
@@ -11901,6 +12215,33 @@ function submitContactForm(event) {
             if (isOtpForm && otpStep === "otp" && def.name === "mobile") {
                 continue;
             }
+            const apptType = String(def.type || "").toLowerCase();
+            if (apptType === "appointmentdoctor" || apptType === "appointmentgeneral") {
+                const hidDateId = typeof def.hiddenDateId === "string" && def.hiddenDateId.trim()
+                    ? def.hiddenDateId.trim()
+                    : `${def.id}__date`;
+                const hidTimeId = typeof def.hiddenTimeId === "string" && def.hiddenTimeId.trim()
+                    ? def.hiddenTimeId.trim()
+                    : `${def.id}__time`;
+                const dEl = document.getElementById(hidDateId);
+                const tEl = document.getElementById(hidTimeId);
+                const dv = dEl && "value" in dEl ? String(dEl.value).trim() : "";
+                const tv = tEl && "value" in tEl ? String(tEl.value).trim() : "";
+                if (def.required !== false && (!dv || !tv)) {
+                    if (status) {
+                        status.textContent = getTranslation("fieldRequired");
+                        status.classList.add("is-error");
+                        status.classList.remove("is-success");
+                    }
+                    if (submitButton) {
+                        submitButton.disabled = false;
+                    }
+                    return;
+                }
+                fd.append("appointmentdate", dv);
+                fd.append("appointmenttime", tv);
+                continue;
+            }
             const el = document.getElementById(def.id);
             const fieldType = String(def.type || "text").toLowerCase();
             if (fieldType === "file") {
@@ -12002,6 +12343,24 @@ function submitContactForm(event) {
                 if (!def || !def.id) {
                     continue;
                 }
+                const apptReset = String(def.type || "").toLowerCase();
+                if (apptReset === "appointmentdoctor" || apptReset === "appointmentgeneral") {
+                    const hidDateId = typeof def.hiddenDateId === "string" && def.hiddenDateId.trim()
+                        ? def.hiddenDateId.trim()
+                        : `${def.id}__date`;
+                    const hidTimeId = typeof def.hiddenTimeId === "string" && def.hiddenTimeId.trim()
+                        ? def.hiddenTimeId.trim()
+                        : `${def.id}__time`;
+                    const dEl = document.getElementById(hidDateId);
+                    const tEl = document.getElementById(hidTimeId);
+                    if (dEl && "value" in dEl) {
+                        dEl.value = "";
+                    }
+                    if (tEl && "value" in tEl) {
+                        tEl.value = "";
+                    }
+                    continue;
+                }
                 const el = document.getElementById(def.id);
                 if (el && "value" in el) {
                     el.value = "";
@@ -12035,7 +12394,18 @@ function renderContactFormSubmissionResponse(payload) {
         const v = payload && key in payload ? String(payload[key] || "").trim() : "";
         const field = getContactFormFieldByPayloadName(key);
         const labelKey = field && field.i18nSummaryLabel;
-        const label = labelKey ? getTranslation(labelKey) : String(key);
+        let label;
+        if (labelKey) {
+            label = getTranslation(labelKey);
+        } else if (key === "appointmenttime") {
+            label = getTranslation("summaryTimeLabel");
+        } else if (key === "appointmentdate") {
+            label = getTranslation("summaryDateLabel");
+        } else if (key === "doctorId") {
+            label = getTranslation("summaryDoctorIdLabel");
+        } else {
+            label = String(key);
+        }
         lines.push(`${label} - ${v || "-"}`);
     }
     lines.push(getTranslation("contactResponseThanks"));

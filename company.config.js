@@ -336,6 +336,8 @@ window.COMPANY_CHAT_UI_CONFIG = {
     form: {
       // Form to use when Dialogflow sends only `{ "action": "open_form" }` (no `form_id`), and on first load.
       defaultFormId: "contact",
+      // If Dialogflow still uses `form_id: "appointment"`, load this form instead (e.g. shared general calendar).
+      legacyAppointmentFormAlias: "appintmentformgeneral",
       // Shared defaults when a form does not set its own (this form uses per-form chatSummaryFieldNames).
       // Align keys with CX session parameters — e.g. name, mobile, email (field `name` → POST JSON key).
       chatSummaryFieldNames: ["name", "mobile", "email"],
@@ -437,6 +439,80 @@ window.COMPANY_CHAT_UI_CONFIG = {
               i18nSummaryLabel: "summaryTimeLabel",
               placeholderByLanguage: { en: "Time", hi: "समय", mr: "वेळ" }
             }
+          ]
+        },
+        // Per-doctor booking (`form_id`: `"appintmentformdocot"`). Requires user to pick a doctor in chat first;
+        // conflict checks and RTDB keys are per doctorId.
+        appintmentformdocot: {
+          titleByLanguage: {
+            en: "Doctor appointment",
+            hi: "डॉक्टर अपॉइंटमेंट",
+            mr: "डॉक्टर अपॉइंटमेंट"
+          },
+          subtitleByLanguage: {
+            en: "Choose a date and time for the doctor you selected. Red = booked for this doctor.",
+            hi: "चयनित डॉक्टर के लिए तारीख और समय चुनें। लाल = इस डॉक्टर के लिए बुक।",
+            mr: "निवडलेल्या डॉक्टरसाठी तारीख आणि वेळ निवडा. लाल = या डॉक्टरसाठी बुक."
+          },
+          showSubtitle: true,
+          maxCardHeightPx: 420,
+          chatSummaryFieldNames: ["doctorId", "name", "mobile", "email", "appointmentdate", "appointmenttime"],
+          fields: [
+            { id: "afd-doctor", name: "doctorId", type: "hidden", required: true, value: "", i18nSummaryLabel: "summaryDoctorIdLabel" },
+            {
+              id: "afd-appt",
+              name: "appointmentdate",
+              type: "appointmentdoctor",
+              required: true,
+              icon: "calendar",
+              hiddenDateId: "afd-appt-date",
+              hiddenTimeId: "afd-appt-time",
+              i18nSummaryLabel: "summaryDateLabel",
+              placeholderByLanguage: {
+                en: "Calendar below",
+                hi: "नीचे कैलेंडर",
+                mr: "खाली दिनदर्शिका"
+              }
+            },
+            { id: "afd-name", name: "name", type: "text", required: true, icon: "user", i18nPlaceholder: "namePlaceholder", i18nSummaryLabel: "summaryNameLabel", autocomplete: "name" },
+            { id: "afd-mobile", name: "mobile", type: "tel", required: true, icon: "phone", i18nPlaceholder: "mobilePlaceholder", i18nSummaryLabel: "summaryMobileLabel", autocomplete: "tel", inputMode: "tel" },
+            { id: "afd-email", name: "email", type: "email", required: true, icon: "email", validateAs: "email", i18nPlaceholder: "emailPlaceholder", i18nSummaryLabel: "summaryEmailLabel", autocomplete: "email" }
+          ]
+        },
+        // Shared single calendar pool (`form_id`: `"appintmentformgeneral"`). Bookings use GENERAL_APPOINTMENT_* env on the server.
+        appintmentformgeneral: {
+          titleByLanguage: {
+            en: "Appointment",
+            hi: "अपॉइंटमेंट",
+            mr: "अपॉइंटमेंट"
+          },
+          subtitleByLanguage: {
+            en: "One shared schedule for the clinic. Red = already booked.",
+            hi: "क्लिनिक का एक साझा शेड्यूल। लाल = पहले से बुक।",
+            mr: "क्लिनिकचे एक समायोजन. लाल = आधीच बुक."
+          },
+          showSubtitle: true,
+          maxCardHeightPx: 420,
+          chatSummaryFieldNames: ["name", "mobile", "email", "appointmentdate", "appointmenttime"],
+          fields: [
+            {
+              id: "afg-appt",
+              name: "appointmentdate",
+              type: "appointmentgeneral",
+              required: true,
+              icon: "calendar",
+              hiddenDateId: "afg-appt-date",
+              hiddenTimeId: "afg-appt-time",
+              i18nSummaryLabel: "summaryDateLabel",
+              placeholderByLanguage: {
+                en: "Calendar below",
+                hi: "नीचे कैलेंडर",
+                mr: "खाली दिनदर्शिका"
+              }
+            },
+            { id: "afg-name", name: "name", type: "text", required: true, icon: "user", i18nPlaceholder: "namePlaceholder", i18nSummaryLabel: "summaryNameLabel", autocomplete: "name" },
+            { id: "afg-mobile", name: "mobile", type: "tel", required: true, icon: "phone", i18nPlaceholder: "mobilePlaceholder", i18nSummaryLabel: "summaryMobileLabel", autocomplete: "tel", inputMode: "tel" },
+            { id: "afg-email", name: "email", type: "email", required: true, icon: "email", validateAs: "email", i18nPlaceholder: "emailPlaceholder", i18nSummaryLabel: "summaryEmailLabel", autocomplete: "email" }
           ]
         },
         // OTP: first screen = OTP only + “change mobile”; second = mobile only + submit (`form_id`: `"otp"`).
