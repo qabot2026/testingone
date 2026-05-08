@@ -4,6 +4,8 @@ COPY package.json ./
 RUN npm install --omit=dev
 COPY index.mjs ./
 COPY lib ./lib
+COPY scripts ./scripts
+COPY data ./data
 ENV NODE_ENV=production
 # Railway injects PORT; 8080 is the default for local Docker.
 ENV PORT=8080

@@ -504,6 +504,10 @@ function cxAccordion_({ title, subtitle, text, imageUrl }) {
     };
 }
 
+function cxPayload_(payloadObj) {
+    return { payload: payloadObj && typeof payloadObj === "object" ? payloadObj : {} };
+}
+
 function normalizeStr_(s) {
     return String(s || "").trim();
 }
@@ -558,6 +562,38 @@ function dayInDaysField_(weekdayShort, daysField) {
     }
     const tokens = raw.split(/[,\s]+/).map((x) => x.trim().slice(0, 3)).filter(Boolean);
     return tokens.includes(w);
+}
+
+function doctorTimingLabel_(d) {
+    const days = normalizeStr_(d.Days);
+    const start = normalizeStr_(d.Start);
+    const end = normalizeStr_(d.End);
+    if (days && start && end) return `${days}: ${start} - ${end}`;
+    return "";
+}
+
+function doctorToCarouselCard_(d) {
+    const doctorId = normalizeStr_(d.DoctorId);
+    const title = normalizeStr_(d.DisplayDoctorName || d.DoctorName || "Doctor");
+    const spec = normalizeStr_(d.Specialization);
+    const desig = normalizeStr_(d.Designation);
+    const city = normalizeStr_(d.City);
+    const timing = doctorTimingLabel_(d);
+    const subtitleParts = [
+        [spec, desig].filter(Boolean).join(" • "),
+        city ? `City: ${city}` : "",
+        timing ? `Timings: ${timing}` : ""
+    ].filter(Boolean);
+    const imageUrl = normalizeStr_(d.ImageUrl);
+
+    return {
+        ctaLabel: "View",
+        subtitle: subtitleParts.join(" • "),
+        id: doctorId ? `doctor_${doctorId}` : `doctor_${Math.random().toString(16).slice(2)}`,
+        title,
+        ctaValue: doctorId || title,
+        ...(imageUrl ? { imageUrl } : {})
+    };
 }
 
 app.post("/webhook", express.json({ limit: "512kb" }), async (req, res) => {
@@ -756,13 +792,14 @@ app.post("/webhook", express.json({ limit: "512kb" }), async (req, res) => {
                 return true;
             });
             if (!filtered.length) return fallback("No doctors found.");
-            const lines = filtered.slice(0, 12).map((d, i) => `${i + 1}) ${normalizeStr_(d.DisplayDoctorName || d.DoctorName || "Doctor")} — ${normalizeStr_(d.Designation)}`);
-            const chipNames = filtered.slice(0, 12).map((d) => normalizeStr_(d.DisplayDoctorName || d.DoctorName)).filter(Boolean);
             return res.json({
                 fulfillment_response: {
                     messages: [
-                        cxText_(lines.join("\n"), lang),
-                        ...(chipNames.length ? [cxChips_(chipNames)] : [])
+                        cxPayload_({
+                            cards: filtered.slice(0, 12).map(doctorToCarouselCard_),
+                            message: "Pick one option:",
+                            action: "open_card_carousel"
+                        })
                     ]
                 }
             });
