@@ -1,0 +1,63 @@
+{
+  "trainingPhrases": [ {
+    "parts": [ {
+      "text": "book"
+    }, {
+      "text": " krna "
+    }, {
+      "text": "he"
+    } ],
+    "repeatCount": 1,
+    "languageCode": "hi"
+  }, {
+    "parts": [ {
+      "text": "appointment "
+    }, {
+      "text": "book"
+    }, {
+      "text": " krna "
+    }, {
+      "text": "he"
+    } ],
+    "repeatCount": 1,
+    "languageCode": "hi"
+  }, {
+    "parts": [ {
+      "text": "अपॉइनमेंट"
+    } ],
+    "repeatCount": 1,
+    "languageCode": "hi"
+  }, {
+    "parts": [ {
+      "text": "अपॉइनमेंट "
+    }, {
+      "text": "लेना"
+    }, {
+      "text": " "
+    }, {
+      "text": "है"
+    } ],
+    "repeatCount": 1,
+    "languageCode": "hi"
+  }, {
+    "parts": [ {
+      "text": "बुक करें"
+    } ],
+    "repeatCount": 1,
+    "languageCode": "hi"
+  }, {
+    "parts": [ {
+      "text": "परामर्श"
+    } ],
+    "repeatCount": 1,
+    "languageCode": "hi"
+  }, {
+    "parts": [ {
+      "text": "परामर्श"
+    }, {
+      "text": " बुक करें"
+    } ],
+    "repeatCount": 1,
+    "languageCode": "hi"
+  } ]
+}

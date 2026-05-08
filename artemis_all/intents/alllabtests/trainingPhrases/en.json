@@ -1,0 +1,88 @@
+{
+  "trainingPhrases": [ {
+    "parts": [ {
+      "text": "want to test "
+    }, {
+      "text": "rbc",
+      "parameterId": "any"
+    } ],
+    "repeatCount": 1,
+    "languageCode": "en"
+  }, {
+    "parts": [ {
+      "text": "book for "
+    }, {
+      "text": "wbc",
+      "parameterId": "any"
+    } ],
+    "repeatCount": 1,
+    "languageCode": "en"
+  }, {
+    "parts": [ {
+      "text": "requesting for "
+    }, {
+      "text": "CBC",
+      "parameterId": "any"
+    } ],
+    "repeatCount": 1,
+    "languageCode": "en"
+  }, {
+    "parts": [ {
+      "text": "want to test "
+    }, {
+      "text": "COVID-19 RT-PCR",
+      "parameterId": "any"
+    } ],
+    "repeatCount": 1,
+    "languageCode": "en"
+  }, {
+    "parts": [ {
+      "text": "COVID-19 RT-PCR",
+      "parameterId": "any"
+    } ],
+    "repeatCount": 1,
+    "languageCode": "en"
+  }, {
+    "parts": [ {
+      "text": "Vitamin D \u0026 B12",
+      "parameterId": "any"
+    } ],
+    "repeatCount": 1,
+    "languageCode": "en"
+  }, {
+    "parts": [ {
+      "text": "Book Vitamin D \u0026 B12",
+      "parameterId": "any"
+    } ],
+    "repeatCount": 1,
+    "languageCode": "en"
+  }, {
+    "parts": [ {
+      "text": "Electrolytes",
+      "parameterId": "any"
+    } ],
+    "repeatCount": 1,
+    "languageCode": "en"
+  }, {
+    "parts": [ {
+      "text": "I want Electrolytes",
+      "parameterId": "any"
+    } ],
+    "repeatCount": 1,
+    "languageCode": "en"
+  }, {
+    "parts": [ {
+      "text": "I want to book for Blood Glucose",
+      "parameterId": "any"
+    } ],
+    "repeatCount": 1,
+    "languageCode": "en"
+  }, {
+    "parts": [ {
+      "text": "Blood Glucose",
+      "parameterId": "any"
+    } ],
+    "repeatCount": 1,
+    "languageCode": "en"
+  } ]
+}

@@ -1,0 +1,45 @@
+{
+  "trainingPhrases": [ {
+    "parts": [ {
+      "text": "सेवा",
+      "auto": true
+    }, {
+      "text": " ",
+      "auto": true
+    }, {
+      "text": "बुक करें",
+      "auto": true
+    } ],
+    "repeatCount": 1,
+    "languageCode": "hi"
+  }, {
+    "parts": [ {
+      "text": "एक",
+      "auto": true
+    }, {
+      "text": " और ",
+      "auto": true
+    }, {
+      "text": "सेवा",
+      "auto": true
+    }, {
+      "text": " ",
+      "auto": true
+    }, {
+      "text": "बुक करें",
+      "auto": true
+    } ],
+    "repeatCount": 1,
+    "languageCode": "hi"
+  }, {
+    "parts": [ {
+      "text": "एक",
+      "auto": true
+    }, {
+      "text": " और बुक करें",
+      "auto": true
+    } ],
+    "repeatCount": 1,
+    "languageCode": "hi"
+  } ]
+}

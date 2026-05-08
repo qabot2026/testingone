@@ -1,0 +1,13 @@
+{
+  "name": "0c60ce02-db6b-4432-9c73-5d82c55e6491",
+  "displayName": "diagroute",
+  "transitionRoutes": [ {
+    "intent": "diagservices",
+    "condition": "$session.params.diagnostics != null",
+    "triggerFulfillment": {
+    
+    },
+    "targetFlow": "4-DiagnosticsFlow",
+    "name": "5a20bcff-d22f-4b3d-b724-114d50205f9e"
+  } ]
+}

@@ -1,0 +1,11 @@
+{
+  "name": "20ece286-1ec6-48d0-b481-c2a4c993b165",
+  "displayName": "Webhook",
+  "genericWebService": {
+    "uri": "https://artmiscode-315486562182.asia-south1.run.app/webhook",
+    "webhookType": "STANDARD"
+  },
+  "timeout": {
+    "seconds": 5
+  }
+}

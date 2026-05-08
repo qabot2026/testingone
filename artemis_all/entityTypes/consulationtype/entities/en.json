@@ -1,0 +1,11 @@
+{
+  "entities": [ {
+    "value": "OPD Consultation",
+    "synonyms": [ "🏥 OPD Consultation", "opd", "OPD", "OPD Consultation" ],
+    "languageCode": "en"
+  }, {
+    "value": "Teleconsultation",
+    "synonyms": [ "📞 Teleconsultation", "tele", "Tele", "Teleconsultation" ],
+    "languageCode": "en"
+  } ]
+}

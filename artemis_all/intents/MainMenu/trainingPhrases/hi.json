@@ -1,0 +1,35 @@
+{
+  "trainingPhrases": [ {
+    "parts": [ {
+      "text": "मुख्य मेनू पर जाएं"
+    } ],
+    "repeatCount": 2,
+    "languageCode": "hi"
+  }, {
+    "parts": [ {
+      "text": "menu"
+    } ],
+    "repeatCount": 1,
+    "languageCode": "hi"
+  }, {
+    "parts": [ {
+      "text": "कैसे "
+    }, {
+      "text": "हो"
+    } ],
+    "repeatCount": 1,
+    "languageCode": "hi"
+  }, {
+    "parts": [ {
+      "text": "मेनू"
+    } ],
+    "repeatCount": 1,
+    "languageCode": "hi"
+  }, {
+    "parts": [ {
+      "text": "मुख्य मेनू"
+    } ],
+    "repeatCount": 1,
+    "languageCode": "hi"
+  } ]
+}

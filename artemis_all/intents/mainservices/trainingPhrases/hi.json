@@ -1,0 +1,83 @@
+{
+  "trainingPhrases": [ {
+    "parts": [ {
+      "text": "एम्बुलेंस ",
+      "auto": true
+    }, {
+      "text": "सेवा",
+      "auto": true
+    } ],
+    "repeatCount": 1,
+    "languageCode": "hi"
+  }, {
+    "parts": [ {
+      "text": "किराए पर मेडिकल उपकरण",
+      "parameterId": "Homecare"
+    } ],
+    "repeatCount": 1,
+    "languageCode": "hi"
+  }, {
+    "parts": [ {
+      "text": "घर से लैब सैंपल कलेक्शन",
+      "parameterId": "Homecare"
+    } ],
+    "repeatCount": 1,
+    "languageCode": "hi"
+  }, {
+    "parts": [ {
+      "text": "घर पर डायलिसिस",
+      "parameterId": "Homecare"
+    } ],
+    "repeatCount": 1,
+    "languageCode": "hi"
+  }, {
+    "parts": [ {
+      "text": "जांच सेवाएं",
+      "parameterId": "Homecare"
+    } ],
+    "repeatCount": 1,
+    "languageCode": "hi"
+  }, {
+    "parts": [ {
+      "text": "होम हेल्थ अटेंडेंट",
+      "parameterId": "Homecare"
+    } ],
+    "repeatCount": 1,
+    "languageCode": "hi"
+  }, {
+    "parts": [ {
+      "text": "फार्मेसी होम डिलीवरी",
+      "parameterId": "Homecare"
+    } ],
+    "repeatCount": 1,
+    "languageCode": "hi"
+  }, {
+    "parts": [ {
+      "text": "वृद्ध देखभाल",
+      "parameterId": "Homecare"
+    } ],
+    "repeatCount": 1,
+    "languageCode": "hi"
+  }, {
+    "parts": [ {
+      "text": "डॉक्टर विज़िट",
+      "parameterId": "Homecare"
+    } ],
+    "repeatCount": 1,
+    "languageCode": "hi"
+  }, {
+    "parts": [ {
+      "text": "फिजियोथेरेपी",
+      "parameterId": "Homecare"
+    } ],
+    "repeatCount": 1,
+    "languageCode": "hi"
+  }, {
+    "parts": [ {
+      "text": "नर्सिंग",
+      "parameterId": "Homecare"
+    } ],
+    "repeatCount": 1,
+    "languageCode": "hi"
+  } ]
+}

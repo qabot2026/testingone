@@ -1,0 +1,10 @@
+{
+  "name": "7664df09-74e8-4b9e-b171-22d3506fef66",
+  "displayName": "confirmation",
+  "parameters": [ {
+    "id": "confirmation",
+    "entityType": "@confirmation"
+  } ],
+  "priority": 500000,
+  "numTrainingPhrases": 11
+}

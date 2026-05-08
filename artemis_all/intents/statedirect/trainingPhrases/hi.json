@@ -1,0 +1,27 @@
+{
+  "trainingPhrases": [ {
+    "parts": [ {
+      "text": "उत्तर प्रदेश",
+      "parameterId": "state",
+      "auto": true
+    } ],
+    "repeatCount": 1,
+    "languageCode": "hi"
+  }, {
+    "parts": [ {
+      "text": "तेलंगाना",
+      "parameterId": "state",
+      "auto": true
+    } ],
+    "repeatCount": 1,
+    "languageCode": "hi"
+  }, {
+    "parts": [ {
+      "text": "महाराष्ट्र",
+      "parameterId": "state",
+      "auto": true
+    } ],
+    "repeatCount": 1,
+    "languageCode": "hi"
+  } ]
+}

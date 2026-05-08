@@ -1,0 +1,29 @@
+{
+  "name": "320552b2-3a6a-48e7-9cb3-f7a85df02d72",
+  "displayName": "2-branch_selectcity",
+  "form": {
+    "parameters": [ {
+      "displayName": "city",
+      "required": true,
+      "entityType": "@sys.any",
+      "fillBehavior": {
+        "initialPromptFulfillment": {
+          "webhook": "Webhook",
+          "tag": "get_cities",
+          "setParameterActions": [ {
+            "parameter": "city",
+            "value": null
+          } ]
+        }
+      }
+    } ]
+  },
+  "transitionRoutes": [ {
+    "condition": "$session.params.city != null",
+    "triggerFulfillment": {
+    
+    },
+    "targetPage": "3-branch_showaddress",
+    "name": "63b5d3c2-bfe2-4f6d-a6cc-2915605e0ccd"
+  } ]
+}

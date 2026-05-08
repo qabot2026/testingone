@@ -1,0 +1,74 @@
+{
+  "name": "bd0e90cc-ac5a-4d95-8d5e-17eb55814cab",
+  "displayName": "3-diag_whattoedit",
+  "form": {
+  
+  },
+  "entryFulfillment": {
+  
+  },
+  "transitionRoutes": [ {
+    "intent": "fieldtoedit",
+    "triggerFulfillment": {
+    
+    },
+    "targetPage": "4-diag_editfield",
+    "name": "b659a3be-9ecb-4edc-810e-afb08bb9292e"
+  }, {
+    "condition": "true",
+    "triggerFulfillment": {
+      "messages": [ {
+        "text": {
+          "text": [ "What would you like to edit?" ]
+        },
+        "languageCode": "en"
+      }, {
+        "payload": {
+          "richContent": [ [ {
+            "options": [ {
+              "text": "Name"
+            }, {
+              "text": "Mobile"
+            }, {
+              "text": "Age"
+            }, {
+              "text": "Test"
+            }, {
+              "text": "Date"
+            }, {
+              "text": "All"
+            } ],
+            "type": "chips"
+          } ] ]
+        },
+        "languageCode": "en"
+      }, {
+        "text": {
+          "text": [ "आप क्या बदलना चाहेंगे?" ]
+        },
+        "languageCode": "hi"
+      }, {
+        "payload": {
+          "richContent": [ [ {
+            "options": [ {
+              "text": "नाम"
+            }, {
+              "text": "मोबाइल"
+            }, {
+              "text": "आयु"
+            }, {
+              "text": "जांच"
+            }, {
+              "text": "तारीख"
+            }, {
+              "text": "सभी"
+            } ],
+            "type": "chips"
+          } ] ]
+        },
+        "languageCode": "hi"
+      } ]
+    },
+    "name": "7c4a30ae-5a33-41af-a81b-0bc19c88c2d4"
+  } ]
+}

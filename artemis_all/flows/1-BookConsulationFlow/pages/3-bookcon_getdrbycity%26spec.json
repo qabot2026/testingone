@@ -1,0 +1,32 @@
+{
+  "name": "6fe682ee-6f22-4e4b-9166-7adcec83640a",
+  "displayName": "3-bookcon_getdrbycity\u0026spec",
+  "form": {
+    "parameters": [ {
+      "displayName": "doctorname",
+      "required": true,
+      "entityType": "@sys.any",
+      "fillBehavior": {
+        "initialPromptFulfillment": {
+          "messages": [ {
+            "text": {
+              "text": [ "Select a doctor." ]
+            },
+            "languageCode": "en"
+          } ],
+          "webhook": "Webhook",
+          "tag": "get_doctors_by_city_and_spec"
+        }
+      }
+    } ]
+  },
+  "transitionRoutes": [ {
+    "condition": "$session.params.doctorname != null",
+    "triggerFulfillment": {
+      "webhook": "Webhook",
+      "tag": "get_doctor_details_by_name"
+    },
+    "targetPage": "4-bookcon_getuserdetails",
+    "name": "5b4b9fa5-a458-4bd8-82a9-f5c88006dc09"
+  } ]
+}

@@ -1,0 +1,51 @@
+{
+  "name": "0c9b30d4-6912-4908-9770-0817323fd928",
+  "displayName": "5-bookcon_getdatetime",
+  "form": {
+    "parameters": [ {
+      "displayName": "appointmentdate",
+      "required": true,
+      "entityType": "@sys.date",
+      "fillBehavior": {
+        "initialPromptFulfillment": {
+          "messages": [ {
+            "text": {
+              "text": [ "Please enter your preferred date for consultation 📅." ]
+            },
+            "languageCode": "en"
+          } ],
+          "setParameterActions": [ {
+            "parameter": "appointmentdate",
+            "value": null
+          } ]
+        }
+      }
+    }, {
+      "displayName": "appointmenttime",
+      "required": true,
+      "entityType": "@sys.time",
+      "fillBehavior": {
+        "initialPromptFulfillment": {
+          "messages": [ {
+            "text": {
+              "text": [ "And preferred time 🕒?" ]
+            },
+            "languageCode": "en"
+          } ],
+          "setParameterActions": [ {
+            "parameter": "appointmenttime",
+            "value": null
+          } ]
+        }
+      }
+    } ]
+  },
+  "transitionRoutes": [ {
+    "condition": "$session.params.appointmentdate != null AND $session.params.appointmenttime != null",
+    "triggerFulfillment": {
+    
+    },
+    "targetPage": "6-bookcon_confirm",
+    "name": "57e57768-7aaa-42eb-b2eb-05e74b8299af"
+  } ]
+}

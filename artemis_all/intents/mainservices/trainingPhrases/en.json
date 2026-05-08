@@ -1,0 +1,86 @@
+{
+  "trainingPhrases": [ {
+    "parts": [ {
+      "text": "Home Health Attendant",
+      "parameterId": "Homecare",
+      "auto": true
+    } ],
+    "repeatCount": 1,
+    "languageCode": "en"
+  }, {
+    "parts": [ {
+      "text": "Investigations",
+      "parameterId": "Homecare",
+      "auto": true
+    } ],
+    "repeatCount": 1,
+    "languageCode": "en"
+  }, {
+    "parts": [ {
+      "text": "Dialysis at Home",
+      "parameterId": "Homecare",
+      "auto": true
+    } ],
+    "repeatCount": 1,
+    "languageCode": "en"
+  }, {
+    "parts": [ {
+      "text": "Lab sample collection at home",
+      "parameterId": "Homecare",
+      "auto": true
+    } ],
+    "repeatCount": 1,
+    "languageCode": "en"
+  }, {
+    "parts": [ {
+      "text": "Medical Equipment on Rent",
+      "parameterId": "Homecare",
+      "auto": true
+    } ],
+    "repeatCount": 1,
+    "languageCode": "en"
+  }, {
+    "parts": [ {
+      "text": "Ambulance Service",
+      "parameterId": "Homecare",
+      "auto": true
+    } ],
+    "repeatCount": 1,
+    "languageCode": "en"
+  }, {
+    "parts": [ {
+      "text": "Pharmacy Home Delivery",
+      "parameterId": "Homecare"
+    } ],
+    "repeatCount": 1,
+    "languageCode": "en"
+  }, {
+    "parts": [ {
+      "text": "Elderly Care",
+      "parameterId": "Homecare"
+    } ],
+    "repeatCount": 1,
+    "languageCode": "en"
+  }, {
+    "parts": [ {
+      "text": "Doctor Visit",
+      "parameterId": "Homecare"
+    } ],
+    "repeatCount": 1,
+    "languageCode": "en"
+  }, {
+    "parts": [ {
+      "text": "Physiotherapy",
+      "parameterId": "Homecare"
+    } ],
+    "repeatCount": 1,
+    "languageCode": "en"
+  }, {
+    "parts": [ {
+      "text": "Nursing",
+      "parameterId": "Homecare"
+    } ],
+    "repeatCount": 1,
+    "languageCode": "en"
+  } ]
+}

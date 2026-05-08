@@ -1,0 +1,82 @@
+{
+  "name": "35c10390-6202-4e3e-97df-bb7ed4dad15a",
+  "displayName": "1-SO_getuserdetails",
+  "form": {
+    "parameters": [ {
+      "displayName": "patientname",
+      "required": true,
+      "entityType": "@sys.any",
+      "fillBehavior": {
+        "initialPromptFulfillment": {
+          "messages": [ {
+            "text": {
+              "text": [ "आपका नाम दर्ज करें।" ]
+            },
+            "languageCode": "hi"
+          }, {
+            "text": {
+              "text": [ "Enter your name." ]
+            },
+            "languageCode": "en"
+          } ]
+        }
+      }
+    }, {
+      "displayName": "patientmobile",
+      "required": true,
+      "entityType": "@mobile",
+      "fillBehavior": {
+        "initialPromptFulfillment": {
+          "messages": [ {
+            "text": {
+              "text": [ "अपना मोबाइल नंबर दर्ज करें।" ]
+            },
+            "languageCode": "hi"
+          }, {
+            "text": {
+              "text": [ "Enter your mobile No." ]
+            },
+            "languageCode": "en"
+          } ]
+        }
+      }
+    }, {
+      "displayName": "soquery",
+      "required": true,
+      "entityType": "@sys.any",
+      "fillBehavior": {
+        "initialPromptFulfillment": {
+          "messages": [ {
+            "text": {
+              "text": [ "कृपया अपनी समस्या बताएं।" ]
+            },
+            "languageCode": "hi"
+          }, {
+            "text": {
+              "text": [ "Please share your query." ]
+            },
+            "languageCode": "en"
+          } ]
+        }
+      }
+    } ]
+  },
+  "transitionRoutes": [ {
+    "condition": "$session.params.patientname != null AND $session.params.patientmobile != null AND $session.params.soquery != null",
+    "triggerFulfillment": {
+      "messages": [ {
+        "text": {
+          "text": [ "आपकी जानकारी के लिए धन्यवाद। हमारी टीम जल्द ही आपकी सहायता के लिए आपसे संपर्क करेगी।" ]
+        },
+        "languageCode": "hi"
+      }, {
+        "text": {
+          "text": [ "Thank you for sharing your details with us. Your information has been received. A representative shall get in touch with you shortly to assist with your query." ]
+        },
+        "languageCode": "en"
+      } ]
+    },
+    "targetFlow": "MainMenuFlow",
+    "name": "511fc095-4c8c-4325-bbee-b135912c5fc3"
+  } ]
+}

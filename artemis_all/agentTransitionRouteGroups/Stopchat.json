@@ -1,0 +1,53 @@
+{
+  "name": "507417a6-1318-48e7-a520-6b43d3be049c",
+  "displayName": "Stopchat",
+  "transitionRoutes": [ {
+    "intent": "Bye",
+    "triggerFulfillment": {
+      "messages": [ {
+        "text": {
+          "text": [ "Goodbye! Wishing you good health. Take care and stay safe." ]
+        },
+        "languageCode": "en"
+      } ]
+    },
+    "targetPage": "End Session",
+    "name": "83aab43e-fcd9-40b9-8063-8991b5901097"
+  }, {
+    "intent": "ThankYou",
+    "triggerFulfillment": {
+      "messages": [ {
+        "text": {
+          "text": [ "You’re welcome! If you need any more assistance with Artemis Hospital, feel free to ask." ]
+        },
+        "languageCode": "en"
+      }, {
+        "payload": {
+          "richContent": [ [ {
+            "options": [ {
+              "text": "🩺 Book Consultation"
+            }, {
+              "text": "🏥 Our Branches"
+            }, {
+              "text": "🧪 Lab Investigation"
+            }, {
+              "text": "🖥️ Diagnostics"
+            }, {
+              "text": "🛡️ Preventive Health"
+            }, {
+              "text": "🏠 Home Care"
+            }, {
+              "text": "🧠 Second Opinion"
+            }, {
+              "text": "📞 Request Callback"
+            } ],
+            "type": "chips"
+          } ] ]
+        },
+        "languageCode": "en"
+      } ]
+    },
+    "targetPage": "End Session",
+    "name": "fc33eeb0-90b8-4999-b782-c7b726fb327c"
+  } ]
+}

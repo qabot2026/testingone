@@ -1,0 +1,143 @@
+{
+  "entities": [ {
+    "value": "Neurosurgery",
+    "synonyms": [ "Brain Surgery", "Neuro Surgery", "neurosurgeon", "Neurosurgery" ],
+    "languageCode": "en"
+  }, {
+    "value": "Pathology",
+    "synonyms": [ "Lab Medicine", "Pathologist", "Pathology" ],
+    "languageCode": "en"
+  }, {
+    "value": "Radiology",
+    "synonyms": [ "Medical Imaging", "Radiologst", "Radiology" ],
+    "languageCode": "en"
+  }, {
+    "value": "Orthopedics",
+    "synonyms": [ "Bone Specialist", "knee pain", "Orthopedic", "Orthopedics" ],
+    "languageCode": "en"
+  }, {
+    "value": "Gynaecology",
+    "synonyms": [ "Gynaecologist", "Gynaecology", "Gynecology", "women health", "Women's Health" ],
+    "languageCode": "en"
+  }, {
+    "value": "Nuclear Medicine",
+    "synonyms": [ "Nuclear", "Nuclear Medicine", "Radioisotope", "Radioisotope Therapy" ],
+    "languageCode": "en"
+  }, {
+    "value": "Urology",
+    "synonyms": [ "Kidney Specialist", "Urinary Specialist", "Urologist", "Urology" ],
+    "languageCode": "en"
+  }, {
+    "value": "Oncology",
+    "synonyms": [ "Cancer", "Cancer Specialist", "Cancer Treatment", "Oncologist", "Oncology" ],
+    "languageCode": "en"
+  }, {
+    "value": "Cardiology",
+    "synonyms": [ "Cardiac", "Cardiology", "chest pain", "heart pain", "Heart Specialist" ],
+    "languageCode": "en"
+  }, {
+    "value": "Nephrology",
+    "synonyms": [ "Kidney Doctor", "Kidney specialist", "Kidney stone", "Nephrologist", "Nephrology", "Renal Specialist" ],
+    "languageCode": "en"
+  }, {
+    "value": "Rheumatology",
+    "synonyms": [ "Autoimmune Specialist", "joint", "Joint Specialist", "Rheumatologist", "Rheumatology" ],
+    "languageCode": "en"
+  }, {
+    "value": "Anaesthesiology",
+    "synonyms": [ "Anaesthesiology", "Anesthesia", "Anesthetist" ],
+    "languageCode": "en"
+  }, {
+    "value": "Organ Transplant",
+    "synonyms": [ "organ", "Organ Transplant", "Transplant Specialist", "Transplant Surgery" ],
+    "languageCode": "en"
+  }, {
+    "value": "Paediatrics",
+    "synonyms": [ "child doctor", "kid's doctor", "kids doctor", "Paediatric", "Paediatrics", "Pediatrician" ],
+    "languageCode": "en"
+  }, {
+    "value": "Endocrinology",
+    "synonyms": [ "Diabetes", "Diabetes Specialist", "Endocrinologist", "Endocrinology", "Hormone", "Hormone Specialist" ],
+    "languageCode": "en"
+  }, {
+    "value": "Critical Care",
+    "synonyms": [ "Critical", "Critical Care", "emergency", "icu", "ICU Specialist", "Intensive Care" ],
+    "languageCode": "en"
+  }, {
+    "value": "Neurology",
+    "synonyms": [ "Nerve", "Nerve Specialist", "Neurologist", "Neurology" ],
+    "languageCode": "en"
+  }, {
+    "value": "Mental Health",
+    "synonyms": [ "Mental Health", "Psychiatry", "Psychologist" ],
+    "languageCode": "en"
+  }, {
+    "value": "Dermatology",
+    "synonyms": [ "Dermatologist", "Dermatology", "face doctor", "skin", "Skin Doctor", "Skin Specialist" ],
+    "languageCode": "en"
+  }, {
+    "value": "Respiratory Medicine",
+    "synonyms": [ "Lung Specialist", "Pulmonologist", "Pulmonology", "Respiratory", "Respiratory Medicine" ],
+    "languageCode": "en"
+  }, {
+    "value": "Fetal Medicine",
+    "synonyms": [ "Fetal Medicine", "Obstetric Ultrasound", "Prenatal Care" ],
+    "languageCode": "en"
+  }, {
+    "value": "Medicine",
+    "synonyms": [ "General Medicine", "Internal Medicine", "Medicine" ],
+    "languageCode": "en"
+  }, {
+    "value": "Gastroenterology",
+    "synonyms": [ "Digestive Specialist", "Gastroenterology", "GI Specialist" ],
+    "languageCode": "en"
+  }, {
+    "value": "General Surgery",
+    "synonyms": [ "General Surgery", "Surgeon", "Surgical Specialist" ],
+    "languageCode": "en"
+  }, {
+    "value": "Dental",
+    "synonyms": [ "Dental", "Dentist", "Oral Specialist" ],
+    "languageCode": "en"
+  }, {
+    "value": "Reproductive Medicine",
+    "synonyms": [ "Fertility", "Fertility Specialist", "ivf", "IVF Specialist", "Reproductive", "Reproductive Medicine" ],
+    "languageCode": "en"
+  }, {
+    "value": "ENT",
+    "synonyms": [ "ear", "Ear Nose Throat", "ENT", "nose", "Otolaryngology", "throat" ],
+    "languageCode": "en"
+  }, {
+    "value": "Psychology",
+    "synonyms": [ "Counselor", "Psychology", "Therapist" ],
+    "languageCode": "en"
+  }, {
+    "value": "Nutrition",
+    "synonyms": [ "Dietician", "Nutrition", "Nutritionist" ],
+    "languageCode": "en"
+  }, {
+    "value": "Pulmonology",
+    "synonyms": [ "Lung Doctor", "Pulmonology", "Respiratory Specialist" ],
+    "languageCode": "en"
+  }, {
+    "value": "Plastic Surgery",
+    "synonyms": [ "Cosmetic Surgery", "Plastic Surgery", "Reconstructive Surgery" ],
+    "languageCode": "en"
+  }, {
+    "value": "Ophthalmology",
+    "synonyms": [ "Eye Specialist", "Ophthalmology", "Optometrist" ],
+    "languageCode": "en"
+  }, {
+    "value": "Physiotherapy",
+    "synonyms": [ "Physical Therapy", "Physiotherapy", "Rehab Specialist" ],
+    "languageCode": "en"
+  }, {
+    "value": "Geriatric Medicine",
+    "synonyms": [ "Elderly Care", "Geriatric Medicine", "Senior Medicine" ],
+    "languageCode": "en"
+  }, {
+    "value": "Orthopaedics",
+    "synonyms": [ "Orthopaedics" ],
+    "languageCode": "en"
+  } ]
+}

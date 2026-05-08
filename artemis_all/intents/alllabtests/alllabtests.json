@@ -1,0 +1,10 @@
+{
+  "name": "743c46de-cdcd-4cc1-a4eb-d6a763bd8e89",
+  "displayName": "alllabtests",
+  "parameters": [ {
+    "id": "any",
+    "entityType": "@sys.any"
+  } ],
+  "priority": 500000,
+  "numTrainingPhrases": 11
+}

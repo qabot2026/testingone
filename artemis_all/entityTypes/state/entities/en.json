@@ -1,0 +1,15 @@
+{
+  "entities": [ {
+    "value": "Maharashtra",
+    "synonyms": [ "maharashtra", "Maharashtra" ],
+    "languageCode": "en"
+  }, {
+    "value": "Telangana",
+    "synonyms": [ "telangana", "Telangana" ],
+    "languageCode": "en"
+  }, {
+    "value": "Uttar Pradesh",
+    "synonyms": [ "up", "uttar pradesh", "Uttar Pradesh" ],
+    "languageCode": "en"
+  } ]
+}

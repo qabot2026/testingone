@@ -1,0 +1,64 @@
+{
+  "trainingPhrases": [ {
+    "parts": [ {
+      "text": "want to book dr. "
+    }, {
+      "text": "Sanjay Mehta",
+      "parameterId": "doctorname"
+    } ],
+    "repeatCount": 1,
+    "languageCode": "en"
+  }, {
+    "parts": [ {
+      "text": "Want to book "
+    }, {
+      "text": "Sanjay Mehta",
+      "parameterId": "doctorname"
+    } ],
+    "repeatCount": 1,
+    "languageCode": "en"
+  }, {
+    "parts": [ {
+      "text": "doctor "
+    }, {
+      "text": "Renu Raina Sehgal",
+      "parameterId": "doctorname"
+    } ],
+    "repeatCount": 1,
+    "languageCode": "en"
+  }, {
+    "parts": [ {
+      "text": "I want to book dr "
+    }, {
+      "text": "Renu Raina Sehgal",
+      "parameterId": "doctorname"
+    } ],
+    "repeatCount": 1,
+    "languageCode": "en"
+  }, {
+    "parts": [ {
+      "text": "Renu Raina Sehgal",
+      "parameterId": "doctorname"
+    } ],
+    "repeatCount": 1,
+    "languageCode": "en"
+  }, {
+    "parts": [ {
+      "text": "dr "
+    }, {
+      "text": "Renu Raina Sehgal",
+      "parameterId": "doctorname"
+    } ],
+    "repeatCount": 1,
+    "languageCode": "en"
+  }, {
+    "parts": [ {
+      "text": "Dr. "
+    }, {
+      "text": "Sanjay Mehta",
+      "parameterId": "doctorname"
+    } ],
+    "repeatCount": 1,
+    "languageCode": "en"
+  } ]
+}

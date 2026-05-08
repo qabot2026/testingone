@@ -1,0 +1,84 @@
+{
+  "name": "8413c3a0-9aa3-4b0e-aafe-b3659be9a568",
+  "displayName": "1-hc-getservicename",
+  "form": {
+  
+  },
+  "entryFulfillment": {
+  
+  },
+  "transitionRoutes": [ {
+    "intent": "mainservices",
+    "triggerFulfillment": {
+    
+    },
+    "targetPage": "2-hc_userdetails",
+    "name": "8f4bfd67-1c37-47e3-bbc0-231ce314dab8"
+  }, {
+    "intent": "hcother",
+    "triggerFulfillment": {
+      "setParameterActions": [ {
+        "parameter": "Homecare",
+        "value": null
+      } ]
+    },
+    "targetPage": "2-hc_userdetails",
+    "name": "c6772aae-18b6-41d4-b1f7-3ac6abb09cbc"
+  }, {
+    "condition": "true",
+    "triggerFulfillment": {
+      "messages": [ {
+        "text": {
+          "text": [ "Please select a homecare service 👵." ]
+        },
+        "languageCode": "en"
+      }, {
+        "payload": {
+          "richContent": [ [ {
+            "options": [ {
+              "text": "Nursing"
+            }, {
+              "text": "Physiotherapy"
+            }, {
+              "text": "Doctor Visit"
+            }, {
+              "text": "Elderly Care"
+            }, {
+              "text": "Pharmacy Home Delivery"
+            }, {
+              "text": "Others"
+            } ],
+            "type": "chips"
+          } ] ]
+        },
+        "languageCode": "en"
+      }, {
+        "text": {
+          "text": [ "👉 सेवा चुनिए।" ]
+        },
+        "languageCode": "hi"
+      }, {
+        "payload": {
+          "richContent": [ [ {
+            "options": [ {
+              "text": "नर्सिंग"
+            }, {
+              "text": "फिजियोथेरेपी"
+            }, {
+              "text": "डॉक्टर विज़िट"
+            }, {
+              "text": "वृद्ध देखभाल"
+            }, {
+              "text": "फार्मेसी होम डिलीवरी"
+            }, {
+              "text": "अन्य"
+            } ],
+            "type": "chips"
+          } ] ]
+        },
+        "languageCode": "hi"
+      } ]
+    },
+    "name": "1fcbe337-be79-41bf-91aa-26f61ab44640"
+  } ]
+}

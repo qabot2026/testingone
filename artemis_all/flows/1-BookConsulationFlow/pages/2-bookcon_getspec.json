@@ -1,0 +1,25 @@
+{
+  "name": "e0ae8ad7-440f-4d65-ba2d-48296351f67e",
+  "displayName": "2-bookcon_getspec",
+  "form": {
+    "parameters": [ {
+      "displayName": "specialization",
+      "required": true,
+      "entityType": "@specialization",
+      "fillBehavior": {
+        "initialPromptFulfillment": {
+          "webhook": "Webhook",
+          "tag": "get_specializations"
+        }
+      }
+    } ]
+  },
+  "transitionRoutes": [ {
+    "condition": "$session.params.specialization != null",
+    "triggerFulfillment": {
+    
+    },
+    "targetPage": "3-bookcon_getdrbycity\u0026spec",
+    "name": "0e234b8d-ee2d-4a43-9198-f8cc278a14a9"
+  } ]
+}

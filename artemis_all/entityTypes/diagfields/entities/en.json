@@ -1,0 +1,23 @@
+{
+  "entities": [ {
+    "value": "Test",
+    "synonyms": [ "test", "Test" ],
+    "languageCode": "en"
+  }, {
+    "value": "Mobile",
+    "synonyms": [ "mobile", "Mobile", "phone", "Phone" ],
+    "languageCode": "en"
+  }, {
+    "value": "Name",
+    "synonyms": [ "name", "Name" ],
+    "languageCode": "en"
+  }, {
+    "value": "Date",
+    "synonyms": [ "date", "Date" ],
+    "languageCode": "en"
+  }, {
+    "value": "Age",
+    "synonyms": [ "age", "Age" ],
+    "languageCode": "en"
+  } ]
+}

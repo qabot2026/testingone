@@ -1,0 +1,10 @@
+{
+  "name": "8aa0b5c7-e73b-440b-b6ad-5efa25d447f2",
+  "displayName": "alldiagnostics",
+  "parameters": [ {
+    "id": "diagnostics",
+    "entityType": "@Diagnostics"
+  } ],
+  "priority": 500000,
+  "numTrainingPhrases": 15
+}

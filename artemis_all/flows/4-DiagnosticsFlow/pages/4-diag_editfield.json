@@ -1,0 +1,155 @@
+{
+  "name": "59ac4d5e-9278-4c34-94d7-fd747b1bff27",
+  "displayName": "4-diag_editfield",
+  "form": {
+  
+  },
+  "entryFulfillment": {
+  
+  },
+  "transitionRoutes": [ {
+    "condition": "$session.params.diagfields = नाम",
+    "triggerFulfillment": {
+      "setParameterActions": [ {
+        "parameter": "patientname",
+        "value": null
+      } ]
+    },
+    "targetPage": "2-diag_userdetails",
+    "name": "2e539304-6e90-44be-a725-bb7a320fe77f"
+  }, {
+    "condition": "$session.params.diagfields = मोबाइल",
+    "triggerFulfillment": {
+      "setParameterActions": [ {
+        "parameter": "patientmobile",
+        "value": null
+      } ]
+    },
+    "targetPage": "2-diag_userdetails",
+    "name": "e3b92f63-3e74-41f6-9714-f6e11bc6d826"
+  }, {
+    "condition": "$session.params.diagfields = आयु",
+    "triggerFulfillment": {
+      "setParameterActions": [ {
+        "parameter": "patientage",
+        "value": null
+      } ]
+    },
+    "targetPage": "2-diag_userdetails",
+    "name": "970d9fb8-e6a4-4cc7-ad98-e233f61eb7ff"
+  }, {
+    "condition": "$session.params.diagfields = तारीख",
+    "triggerFulfillment": {
+      "setParameterActions": [ {
+        "parameter": "testdate",
+        "value": null
+      } ]
+    },
+    "targetPage": "2-diag_userdetails",
+    "name": "8a2cdcae-3a0e-424c-9f89-bb62f68c99b3"
+  }, {
+    "condition": "$session.params.diagfields = जांच",
+    "triggerFulfillment": {
+      "setParameterActions": [ {
+        "parameter": "diagnostics",
+        "value": null
+      } ]
+    },
+    "targetPage": "1-select_diagnostic",
+    "name": "ad651dad-8606-499b-ae4a-9e9282d8966b"
+  }, {
+    "condition": "$session.params.diagfields = सभी",
+    "triggerFulfillment": {
+      "setParameterActions": [ {
+        "parameter": "patientname",
+        "value": null
+      }, {
+        "parameter": "patientmobile",
+        "value": null
+      }, {
+        "parameter": "patientage",
+        "value": null
+      }, {
+        "parameter": "diagnostics",
+        "value": null
+      }, {
+        "parameter": "testdate",
+        "value": null
+      } ]
+    },
+    "targetPage": "1-select_diagnostic",
+    "name": "8fe778e9-c169-4c3c-865e-2b872eadf0f7"
+  }, {
+    "condition": "$session.params.diagfields = Name",
+    "triggerFulfillment": {
+      "setParameterActions": [ {
+        "parameter": "patientname",
+        "value": null
+      } ]
+    },
+    "targetPage": "2-diag_userdetails",
+    "name": "534405bf-b653-43ac-aafb-e4763fe706d2"
+  }, {
+    "condition": "$session.params.diagfields = Mobile",
+    "triggerFulfillment": {
+      "setParameterActions": [ {
+        "parameter": "patientmobile",
+        "value": null
+      } ]
+    },
+    "targetPage": "2-diag_userdetails",
+    "name": "6a93cd50-cec8-410e-83a2-ca071f48ce69"
+  }, {
+    "condition": "$session.params.diagfields = Age",
+    "triggerFulfillment": {
+      "setParameterActions": [ {
+        "parameter": "patientage",
+        "value": null
+      } ]
+    },
+    "targetPage": "2-diag_userdetails",
+    "name": "40df7af0-5e82-4777-b182-2eb49aee21c0"
+  }, {
+    "condition": "$session.params.diagfields = Test",
+    "triggerFulfillment": {
+      "setParameterActions": [ {
+        "parameter": "diagnostics",
+        "value": null
+      } ]
+    },
+    "targetPage": "1-select_diagnostic",
+    "name": "8c1d0261-12dc-4d96-a2d7-ff8e75597e5e"
+  }, {
+    "condition": "$session.params.diagfields = Date",
+    "triggerFulfillment": {
+      "setParameterActions": [ {
+        "parameter": "testdate",
+        "value": null
+      } ]
+    },
+    "targetPage": "2-diag_userdetails",
+    "name": "f498c32c-e498-4d47-88ad-e32b883063dd"
+  }, {
+    "condition": "$session.params.diagfields = All",
+    "triggerFulfillment": {
+      "setParameterActions": [ {
+        "parameter": "patientname",
+        "value": null
+      }, {
+        "parameter": "patientage",
+        "value": null
+      }, {
+        "parameter": "diagnostics",
+        "value": null
+      }, {
+        "parameter": "testdate",
+        "value": null
+      }, {
+        "parameter": "patientmobile",
+        "value": null
+      } ]
+    },
+    "targetPage": "1-select_diagnostic",
+    "name": "e25c015e-5702-449c-a953-83c7aaa6903d"
+  } ]
+}

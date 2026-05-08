@@ -1,0 +1,140 @@
+{
+  "name": "37318f57-f97d-4a93-a814-abc8e14d2041",
+  "displayName": "MainMenuFlow",
+  "transitionRoutes": [ {
+    "intent": "MainMenu",
+    "condition": "true",
+    "triggerFulfillment": {
+    
+    },
+    "targetPage": "Start Page",
+    "name": "62919c79-0987-4b24-a022-c1d6e0a644d6"
+  }, {
+    "condition": "true",
+    "triggerFulfillment": {
+      "messages": [ {
+        "text": {
+          "text": [ "Select an option." ]
+        },
+        "languageCode": "en"
+      }, {
+        "payload": {
+          "richContent": [ [ {
+            "options": [ {
+              "text": "🩺 Book Consultation"
+            }, {
+              "text": "🏥 Our Branches"
+            }, {
+              "text": "🧪 Lab Investigation"
+            }, {
+              "text": "🖥️ Diagnostics"
+            }, {
+              "text": "🛡️ Preventive Health"
+            }, {
+              "text": "🏠 Home Care"
+            }, {
+              "text": "🧠 Second Opinion"
+            }, {
+              "text": "📞 Request Callback"
+            } ],
+            "type": "chips"
+          } ] ]
+        },
+        "languageCode": "en"
+      }, {
+        "text": {
+          "text": [ "कोई विकल्प चुनें।" ]
+        },
+        "languageCode": "hi"
+      }, {
+        "payload": {
+          "richContent": [ [ {
+            "options": [ {
+              "text": "परामर्श बुक करें"
+            }, {
+              "text": "हमारी शाखाएँ"
+            }, {
+              "text": "लैब जांच"
+            }, {
+              "text": "निदान"
+            }, {
+              "text": "स्वास्थ्य सुरक्षा"
+            }, {
+              "text": "होम केयर"
+            }, {
+              "text": "सेकंड ओपिनियन"
+            }, {
+              "text": "कॉल बैक का अनुरोध करें"
+            } ],
+            "type": "chips"
+          } ] ]
+        },
+        "languageCode": "hi"
+      } ]
+    },
+    "name": "0b3ff1f6-58a9-41fe-9639-4bb51f5e0401"
+  } ],
+  "eventHandlers": [ {
+    "event": "sys.no-match-default",
+    "triggerFulfillment": {
+      "messages": [ {
+        "text": {
+          "text": [ "Sorry, didn’t get that. Please pick from the main menu." ]
+        },
+        "languageCode": "en"
+      }, {
+        "payload": {
+          "richContent": [ [ {
+            "options": [ {
+              "text": "Main Menu"
+            } ],
+            "type": "chips"
+          } ] ]
+        },
+        "languageCode": "en"
+      } ]
+    },
+    "name": "c7abf7c0-894d-4229-b53f-6c29a881def6"
+  }, {
+    "event": "sys.no-input-default",
+    "triggerFulfillment": {
+      "messages": [ {
+        "text": {
+          "text": [ "Sorry, didn’t get that. Please pick from the main menu." ]
+        },
+        "languageCode": "en"
+      }, {
+        "payload": {
+          "richContent": [ [ {
+            "options": [ {
+              "text": "Main Menu"
+            } ],
+            "type": "chips"
+          } ] ]
+        },
+        "languageCode": "en"
+      } ]
+    },
+    "name": "87112b12-0964-43eb-9add-158d945807d2"
+  } ],
+  "nluSettings": {
+    "modelType": "MODEL_TYPE_ADVANCED",
+    "classificationThreshold": 0.30000001
+  },
+  "nluSettingsList": [ {
+    "modelType": "MODEL_TYPE_ADVANCED",
+    "classificationThreshold": 0.30000001,
+    "customConfigKey": "2159e0da-203a-41b8-8f5a-1e47ee5f806e",
+    "languageCode": "en"
+  }, {
+    "modelType": "MODEL_TYPE_ADVANCED",
+    "classificationThreshold": 0.30000001,
+    "customConfigKey": "2159e0da-203a-41b8-8f5a-1e47ee5f806e",
+    "languageCode": "hi"
+  } ],
+  "agentTransitionRouteGroups": [ "Gateway", "diagroute", "homecareroute", "Stopchat" ],
+  "multiLanguageSettings": {
+    "enableMultiLanguageDetection": true,
+    "supportedResponseLanguageCodes": [ "hi", "en" ]
+  }
+}

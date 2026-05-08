@@ -8557,6 +8557,7 @@ function closeVideoLightbox() {
 const DFCHAT_INLINE_GALLERY_CLASS = "dfchat-inline-gallery";
 const DFCHAT_INLINE_VIDEO_CLASS = "dfchat-inline-video";
 const DFCHAT_INLINE_CARD_CAROUSEL_CLASS = "dfchat-inline-card-carousel";
+const DFCHAT_INLINE_BOOKING_CAL_CLASS = "dfchat-inline-booking-calendar";
 
 /**
  * Remove ALL injected inline galleries across messenger roots.
@@ -8647,7 +8648,9 @@ function isDfchatInlineSyntheticRow(el) {
     return !!(el
         && el instanceof Element
         && el.classList
-        && (el.classList.contains(DFCHAT_INLINE_GALLERY_CLASS) || el.classList.contains(DFCHAT_INLINE_VIDEO_CLASS)));
+        && (el.classList.contains(DFCHAT_INLINE_GALLERY_CLASS)
+            || el.classList.contains(DFCHAT_INLINE_VIDEO_CLASS)
+            || el.classList.contains(DFCHAT_INLINE_BOOKING_CAL_CLASS)));
 }
 
 /**
@@ -9741,12 +9744,21 @@ let dfchatInlineGalleryInjectSeq = 0;
 /** Invalidate pending inline-card-carousel append attempts between turns. */
 let dfchatInlineCardCarouselInjectSeq = 0;
 
+/** Most recent booking calendar strip (doctor slots). */
+/** @type {HTMLElement | null} */
+let dfchatLastInlineBookingCalWrapEl = null;
+
+/** Invalidate pending booking-calendar append attempts between turns. */
+let dfchatInlineBookingCalendarInjectSeq = 0;
+
 function clearOpenGalleryUrlDedupeState() {
     dfchatOpenGalleryUrlSetSignaturesSeen = new Set();
     dfchatLastInlineGalleryWrapEl = null;
     dfchatLastInlineVideoWrapEl = null;
     dfchatOpenCardCarouselSignaturesSeen = new Set();
     dfchatLastInlineCardCarouselWrapEl = null;
+    dfchatInlineBookingCalendarInjectSeq += 1;
+    dfchatLastInlineBookingCalWrapEl = null;
 }
 
 /**
@@ -10339,6 +10351,17 @@ function scheduleInjectInlineCardCarousel(dfMessenger, cards, messageText) {
                     /* ignore */
                 }
 
+                try {
+                    const idRaw = String(c.id || "").replace(/^doctor_/i, "").trim();
+                    if (idRaw && /^\d+$/.test(idRaw)) {
+                        window.__dfchatBookingDoctorId = idRaw;
+                    } else if (c.ctaValue && /^\d+$/.test(String(c.ctaValue).trim())) {
+                        window.__dfchatBookingDoctorId = String(c.ctaValue).trim();
+                    }
+                } catch {
+                    /* ignore */
+                }
+
                 if (ms && c.ctaValue) {
                     try {
                         removeDfchatLastInlineGalleryIfPresent();
@@ -10444,6 +10467,489 @@ function tryOpenCardCarouselFromBotResponseMessages(messages, event) {
     } catch (e) {
         if (typeof console !== "undefined" && typeof console.warn === "function") {
             console.warn("[company.js] Card carousel payload skipped (never breaks bot replies)", e);
+        }
+    }
+}
+
+/**
+ * @param {unknown[]} messages
+ * @returns {string[]}
+ */
+function collectCxResponsePlainTexts(messages) {
+    /** @type {string[]} */
+    const out = [];
+    if (!Array.isArray(messages)) {
+        return out;
+    }
+    for (let i = 0; i < messages.length; i += 1) {
+        const message = messages[i];
+        if (!message || typeof message !== "object") {
+            continue;
+        }
+        /** @type {Record<string, unknown>} */
+        const m = /** @type {Record<string, unknown>} */ (message);
+        const txt = m.text && typeof m.text === "object" ? /** @type {{ text?: unknown }} */ (m.text).text : null;
+        if (Array.isArray(txt)) {
+            for (let j = 0; j < txt.length; j += 1) {
+                out.push(String(txt[j] || ""));
+            }
+        }
+    }
+    return out;
+}
+
+/**
+ * Bot asks for appointment/consultation date (Book Consultation flow page 5).
+ * @param {string[]} texts
+ * @returns {boolean}
+ */
+function shouldOpenBookingCalendarFromTexts(texts) {
+    const blob = texts.join("\n").toLowerCase();
+    return (/preferred date/.test(blob) && (/consultation/.test(blob) || /appointment/.test(blob)))
+        || (/pick/.test(blob) && /date/.test(blob) && /time/.test(blob));
+}
+
+function removeDfchatLastBookingCalendarIfPresent() {
+    dfchatInlineBookingCalendarInjectSeq += 1;
+    const el = dfchatLastInlineBookingCalWrapEl;
+    dfchatLastInlineBookingCalWrapEl = null;
+    if (el && el.parentNode) {
+        try {
+            el.parentNode.removeChild(el);
+        } catch {
+            /* ignore */
+        }
+    }
+}
+
+/**
+ * @param {unknown[]} messages
+ * @param {Event | null | undefined} event
+ */
+function pruneStaleInlineBookingCalendarForCxResponse(messages, event) {
+    try {
+        const texts = collectCxResponsePlainTexts(messages);
+        const gateOk = passesInlineRichMediaIntentGate(event);
+        const promptOk = gateOk && shouldOpenBookingCalendarFromTexts(texts);
+        const doctorReady =
+            typeof window !== "undefined"
+            && typeof window.__dfchatBookingDoctorId === "string"
+            && window.__dfchatBookingDoctorId.trim().length > 0;
+        if (promptOk && doctorReady) {
+            return;
+        }
+        removeDfchatLastBookingCalendarIfPresent();
+    } catch {
+        /* ignore */
+    }
+}
+
+/**
+ * @param {HTMLElement | null | undefined} dfMessenger
+ * @param {string} doctorId
+ * @param {string} [doctorTitle]
+ */
+function scheduleInjectBookingCalendar(dfMessenger, doctorId, doctorTitle) {
+    const did = String(doctorId || "").trim();
+    if (!did) {
+        return;
+    }
+    const injectSeq = (dfchatInlineBookingCalendarInjectSeq += 1);
+    /** @type {ReturnType<typeof setTimeout>[] | undefined} */
+    let pendingTimers;
+
+    async function tryAppend() {
+        if (injectSeq !== dfchatInlineBookingCalendarInjectSeq) {
+            return;
+        }
+        const msResolved =
+            dfMessenger
+            || (typeof activeDfMessenger !== "undefined" ? activeDfMessenger : null)
+            || (typeof document !== "undefined" ? document.querySelector("df-messenger") : null);
+        const ml = findMessengerMessageListRoot(msResolved);
+        if (!ml || typeof ml.appendChild !== "function") {
+            return;
+        }
+
+        const prevWrap = dfchatLastInlineBookingCalWrapEl;
+        if (prevWrap && prevWrap.parentNode) {
+            try {
+                prevWrap.parentNode.removeChild(prevWrap);
+            } catch {
+                /* ignore */
+            }
+        }
+        dfchatLastInlineBookingCalWrapEl = null;
+
+        let resolvedTitle = typeof doctorTitle === "string" ? doctorTitle.trim() : "";
+        if (!resolvedTitle) {
+            try {
+                const url = getApiEndpoint("/api/doctors");
+                if (url) {
+                    const r = await fetch(url, { credentials: "omit" });
+                    const j = await r.json();
+                    const docs = j && j.doctors;
+                    if (Array.isArray(docs)) {
+                        const row = docs.find((x) => String(x.DoctorId || "").trim() === did);
+                        if (row) {
+                            resolvedTitle = String(row.DisplayDoctorName || row.DoctorName || "").trim();
+                        }
+                    }
+                }
+            } catch {
+                /* ignore */
+            }
+        }
+
+        const wrap = document.createElement("div");
+        wrap.className = DFCHAT_INLINE_BOOKING_CAL_CLASS;
+        wrap.setAttribute("data-dfchat-no-translate", "true");
+        wrap.style.cssText = [
+            "box-sizing:border-box",
+            "margin:10px 0 12px",
+            "padding:12px",
+            "width:100%",
+            "max-width:100%",
+            "border-radius:14px",
+            "border:1px solid rgba(148,163,184,0.35)",
+            "background:#fff",
+            "color:#0f172a",
+            "pointer-events:auto",
+            "font-family:Manrope,Segoe UI,system-ui,sans-serif"
+        ].join(";");
+
+        const head = document.createElement("div");
+        head.textContent = `${resolvedTitle || `Doctor ${did}`} — pick a date, then a time slot`;
+        head.style.cssText = "font:700 13px/1.3 Manrope,Segoe UI,sans-serif;margin:0 0 10px;color:#0f172a";
+
+        const legend = document.createElement("div");
+        legend.style.cssText =
+            "display:flex;gap:12px;flex-wrap:wrap;font:600 11px/1.2 Manrope,sans-serif;margin:0 0 10px;color:rgba(15,23,42,0.75)";
+        legend.innerHTML =
+            "<span><span style=\"display:inline-block;width:10px;height:10px;border-radius:3px;background:#22c55e;vertical-align:middle;margin-right:6px\"></span>Available</span>"
+            + "<span><span style=\"display:inline-block;width:10px;height:10px;border-radius:3px;background:#ef4444;vertical-align:middle;margin-right:6px\"></span>Booked</span>"
+            + "<span><span style=\"display:inline-block;width:10px;height:10px;border-radius:3px;background:rgba(148,163,184,0.45);vertical-align:middle;margin-right:6px\"></span>Closed</span>";
+
+        const nav = document.createElement("div");
+        nav.style.cssText = "display:flex;align-items:center;justify-content:space-between;margin:0 0 8px";
+
+        const monthLabel = document.createElement("div");
+        monthLabel.style.cssText = "font:700 13px/1.2 Manrope,sans-serif";
+
+        const prevBtn = document.createElement("button");
+        prevBtn.type = "button";
+        prevBtn.setAttribute("aria-label", "Previous month");
+        prevBtn.textContent = "◀";
+        prevBtn.style.cssText =
+            "appearance:none;border:1px solid rgba(148,163,184,0.45);border-radius:8px;background:#fff;padding:4px 10px;cursor:pointer;font-size:14px";
+
+        const nextBtn = document.createElement("button");
+        nextBtn.type = "button";
+        nextBtn.setAttribute("aria-label", "Next month");
+        nextBtn.textContent = "▶";
+        nextBtn.style.cssText = prevBtn.style.cssText;
+
+        nav.appendChild(prevBtn);
+        nav.appendChild(monthLabel);
+        nav.appendChild(nextBtn);
+
+        const gridWrap = document.createElement("div");
+        gridWrap.style.cssText = "margin-bottom:10px";
+
+        const dow = document.createElement("div");
+        dow.style.cssText =
+            "display:grid;grid-template-columns:repeat(7,1fr);gap:4px;font:600 10px/1 Manrope,sans-serif;color:rgba(15,23,42,0.55);margin-bottom:4px;text-align:center";
+        ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"].forEach((dLabel) => {
+            const c0 = document.createElement("div");
+            c0.textContent = dLabel;
+            dow.appendChild(c0);
+        });
+
+        const grid = document.createElement("div");
+        grid.style.cssText = "display:grid;grid-template-columns:repeat(7,1fr);gap:4px";
+
+        const slotsPanel = document.createElement("div");
+        slotsPanel.style.cssText =
+            "margin-top:10px;padding-top:10px;border-top:1px solid rgba(148,163,184,0.35);min-height:48px";
+
+        const slotsHint = document.createElement("div");
+        slotsHint.style.cssText =
+            "font:600 11px/1.3 Manrope,sans-serif;color:rgba(15,23,42,0.65);margin-bottom:8px";
+        slotsHint.textContent = "Select a date to load time slots.";
+
+        const slotsFlex = document.createElement("div");
+        slotsFlex.style.cssText = "display:flex;flex-wrap:wrap;gap:6px";
+
+        slotsPanel.appendChild(slotsHint);
+        slotsPanel.appendChild(slotsFlex);
+
+        gridWrap.appendChild(dow);
+        gridWrap.appendChild(grid);
+
+        wrap.appendChild(head);
+        wrap.appendChild(legend);
+        wrap.appendChild(nav);
+        wrap.appendChild(gridWrap);
+        wrap.appendChild(slotsPanel);
+
+        /** @type {{ y: number, m: number }} */
+        const view = { y: new Date().getFullYear(), m: new Date().getMonth() + 1 };
+
+        /** @type {Record<string, { working?: boolean, bookedCount?: number, totalSlots?: number }> | null} */
+        let overviewDays = null;
+
+        function monthKeyStr() {
+            return `${view.y}-${String(view.m).padStart(2, "0")}`;
+        }
+
+        function fmtMonthLabel() {
+            const dt = new Date(view.y, view.m - 1, 1);
+            return dt.toLocaleString(undefined, { month: "long", year: "numeric" });
+        }
+
+        async function fetchOverview() {
+            const apiUrl = getApiEndpoint("/api/doctor-month-overview");
+            if (!apiUrl) {
+                overviewDays = null;
+                return;
+            }
+            const u = new URL(apiUrl);
+            u.searchParams.set("doctorId", did);
+            u.searchParams.set("month", monthKeyStr());
+            try {
+                const r = await fetch(u.toString(), { credentials: "omit" });
+                const j = await r.json();
+                if (j && j.ok && j.days && typeof j.days === "object") {
+                    overviewDays = /** @type {Record<string, { working?: boolean, bookedCount?: number, totalSlots?: number }>} */ (j.days);
+                } else {
+                    overviewDays = null;
+                }
+            } catch {
+                overviewDays = null;
+            }
+        }
+
+        /**
+         * @param {HTMLElement} el
+         * @param {{ working?: boolean, bookedCount?: number, totalSlots?: number } | null | undefined} info
+         * @param {boolean} isToday
+         */
+        function styleDayCell(el, info, isToday) {
+            el.style.cssText =
+                "border-radius:8px;padding:6px 0;text-align:center;font:700 12px/1 Manrope,sans-serif;cursor:pointer;border:1px solid transparent";
+            if (!info || !info.working) {
+                el.style.background = "rgba(148,163,184,0.22)";
+                el.style.color = "rgba(15,23,42,0.35)";
+                el.style.cursor = "default";
+                return;
+            }
+            const booked = Number(info.bookedCount || 0);
+            const total = Number(info.totalSlots || 0);
+            if (total > 0 && booked >= total) {
+                el.style.background = "rgba(239,68,68,0.18)";
+                el.style.borderColor = "rgba(239,68,68,0.45)";
+                el.style.color = "#991b1b";
+            } else if (booked > 0) {
+                el.style.background = "rgba(234,179,8,0.15)";
+                el.style.borderColor = "rgba(234,179,8,0.45)";
+                el.style.color = "#92400e";
+            } else {
+                el.style.background = "rgba(34,197,94,0.14)";
+                el.style.borderColor = "rgba(34,197,94,0.45)";
+                el.style.color = "#166534";
+            }
+            if (isToday) {
+                el.style.boxShadow = "0 0 0 2px rgba(3,105,161,0.45)";
+            }
+        }
+
+        async function loadSlotsForDate(dateISO) {
+            slotsFlex.innerHTML = "";
+            slotsHint.textContent = `Time slots for ${dateISO}`;
+            const apiUrl = getApiEndpoint("/api/slots");
+            if (!apiUrl) {
+                slotsHint.textContent = "API base URL not configured.";
+                return;
+            }
+            const u = new URL(apiUrl);
+            u.searchParams.set("doctorId", did);
+            u.searchParams.set("date", dateISO);
+            try {
+                const r = await fetch(u.toString(), { credentials: "omit" });
+                const j = await r.json();
+                if (!j || !j.ok) {
+                    slotsHint.textContent = "Could not load slots.";
+                    return;
+                }
+                const statuses = Array.isArray(j.slotStatuses) ? j.slotStatuses : [];
+                if (statuses.length === 0) {
+                    slotsHint.textContent = "No slots on this day.";
+                    return;
+                }
+                for (let si = 0; si < statuses.length; si += 1) {
+                    const row = statuses[si];
+                    const label = row && row.label ? String(row.label) : "";
+                    const booked = row && row.status === "booked";
+                    const btn = document.createElement("button");
+                    btn.type = "button";
+                    btn.textContent = label;
+                    btn.style.cssText = [
+                        "appearance:none",
+                        "border-radius:10px",
+                        "padding:8px 10px",
+                        "font:700 11px/1 Manrope,sans-serif",
+                        "cursor:pointer",
+                        "border:1px solid rgba(148,163,184,0.45)",
+                        booked
+                            ? "background:rgba(239,68,68,0.2);color:#991b1b;cursor:not-allowed"
+                            : "background:rgba(34,197,94,0.18);color:#166534"
+                    ].join(";");
+                    if (booked) {
+                        btn.disabled = true;
+                    } else {
+                        btn.addEventListener("click", () => {
+                            const ms = msResolved || activeDfMessenger;
+                            if (!ms || !dateISO || !label) {
+                                return;
+                            }
+                            sendUserTextViaDfMessenger(ms, dateISO, true);
+                            window.setTimeout(() => {
+                                sendUserTextViaDfMessenger(ms, label, true);
+                            }, 380);
+                            try {
+                                removeDfchatLastBookingCalendarIfPresent();
+                            } catch {
+                                /* ignore */
+                            }
+                        });
+                    }
+                    slotsFlex.appendChild(btn);
+                }
+            } catch {
+                slotsHint.textContent = "Could not load slots.";
+            }
+        }
+
+        async function renderCalendar() {
+            monthLabel.textContent = fmtMonthLabel();
+            grid.innerHTML = "";
+            await fetchOverview();
+
+            const firstDow = new Date(view.y, view.m - 1, 1).getDay();
+            const monOffset = (firstDow + 6) % 7;
+            const dim = new Date(view.y, view.m, 0).getDate();
+
+            for (let i = 0; i < monOffset; i += 1) {
+                const ph = document.createElement("div");
+                ph.style.cssText = "visibility:hidden";
+                grid.appendChild(ph);
+            }
+
+            const today = new Date();
+            const ty = today.getFullYear();
+            const tm = today.getMonth() + 1;
+            const td = today.getDate();
+
+            for (let day = 1; day <= dim; day += 1) {
+                const dateISO = `${view.y}-${String(view.m).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+                const cell = document.createElement("button");
+                cell.type = "button";
+                cell.textContent = String(day);
+                const info = overviewDays ? overviewDays[dateISO] : null;
+                const isToday = ty === view.y && tm === view.m && td === day;
+                styleDayCell(cell, info, isToday);
+
+                if (!info || !info.working) {
+                    cell.disabled = true;
+                } else {
+                    cell.addEventListener("click", () => {
+                        void loadSlotsForDate(dateISO);
+                    });
+                }
+                grid.appendChild(cell);
+            }
+        }
+
+        prevBtn.addEventListener("click", () => {
+            view.m -= 1;
+            if (view.m < 1) {
+                view.m = 12;
+                view.y -= 1;
+            }
+            void renderCalendar();
+        });
+        nextBtn.addEventListener("click", () => {
+            view.m += 1;
+            if (view.m > 12) {
+                view.m = 1;
+                view.y += 1;
+            }
+            void renderCalendar();
+        });
+
+        await renderCalendar();
+
+        const beforeNode = resolveGalleryInsertBeforeByCxOrder(ml);
+        if (beforeNode && beforeNode.parentNode === ml && typeof ml.insertBefore === "function") {
+            ml.insertBefore(wrap, beforeNode);
+        } else {
+            ml.appendChild(wrap);
+        }
+        dfchatLastInlineBookingCalWrapEl = wrap;
+
+        try {
+            ml.scrollTop = ml.scrollHeight;
+        } catch {
+            /* ignore */
+        }
+
+        if (Array.isArray(pendingTimers)) {
+            for (let ti = 0; ti < pendingTimers.length; ti += 1) {
+                clearTimeout(pendingTimers[ti]);
+            }
+            pendingTimers = undefined;
+        }
+    }
+
+    const delaysMs = [72, 180, 400, 800, 1600];
+    delaysMs.forEach((delayMs) => {
+        const tid = window.setTimeout(() => {
+            void tryAppend();
+        }, delayMs);
+        if (!pendingTimers) {
+            pendingTimers = [];
+        }
+        pendingTimers.push(tid);
+    });
+}
+
+/**
+ * @param {unknown[]} messages
+ * @param {Event | null | undefined} [event]
+ */
+function tryOpenBookingCalendarFromBotResponse(messages, event) {
+    try {
+        if (!Array.isArray(messages) || messages.length === 0) {
+            return;
+        }
+        if (!passesInlineRichMediaIntentGate(event)) {
+            return;
+        }
+        const texts = collectCxResponsePlainTexts(messages);
+        if (!shouldOpenBookingCalendarFromTexts(texts)) {
+            return;
+        }
+        const doctorId =
+            typeof window !== "undefined" && typeof window.__dfchatBookingDoctorId === "string"
+                ? window.__dfchatBookingDoctorId.trim()
+                : "";
+        if (!doctorId) {
+            return;
+        }
+        scheduleInjectBookingCalendar(activeDfMessenger, doctorId, "");
+    } catch (e) {
+        if (typeof console !== "undefined" && typeof console.warn === "function") {
+            console.warn("[company.js] Booking calendar skipped", e);
         }
     }
 }
@@ -10626,6 +11132,8 @@ function handleDfResponseReceived(event) {
     tryOpenVideoFromBotResponseMessages(cxResponseMessagesMerged, event);
     pruneStaleInlineCardCarouselForCxResponse(cxResponseMessagesMerged, event);
     tryOpenCardCarouselFromBotResponseMessages(cxResponseMessagesMerged, event);
+    pruneStaleInlineBookingCalendarForCxResponse(cxResponseMessagesMerged, event);
+    tryOpenBookingCalendarFromBotResponse(cxResponseMessagesMerged, event);
 
     const requestedLanguage = extractLanguageFromResponse(event);
     if (requestedLanguage) {

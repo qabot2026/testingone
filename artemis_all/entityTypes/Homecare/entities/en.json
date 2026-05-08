@@ -1,0 +1,43 @@
+{
+  "entities": [ {
+    "value": "Ambulance Service",
+    "synonyms": [ "ambulance", "Ambulance", "Ambulance Service" ],
+    "languageCode": "en"
+  }, {
+    "value": "Nursing",
+    "synonyms": [ "nurse", "Nursing" ],
+    "languageCode": "en"
+  }, {
+    "value": "Physiotherapy",
+    "synonyms": [ "physiotherapy", "Physiotherapy" ],
+    "languageCode": "en"
+  }, {
+    "value": "Doctor Visit",
+    "synonyms": [ "dcotor", "doctor", "Doctor", "Doctor Visit" ],
+    "languageCode": "en"
+  }, {
+    "value": "Elderly Care",
+    "synonyms": [ "aged person", "elderly", "Elderly", "Elderly Care", "parent", "parent support" ],
+    "languageCode": "en"
+  }, {
+    "value": "Home Health Attendant",
+    "synonyms": [ "health attendant", "Health Attendant", "Home Health Attendant" ],
+    "languageCode": "en"
+  }, {
+    "value": "Investigations",
+    "synonyms": [ "Investigate", "investigations", "Investigations" ],
+    "languageCode": "en"
+  }, {
+    "value": "Dialysis at Home",
+    "synonyms": [ "dialysis", "Dialysis", "Dialysis at Home" ],
+    "languageCode": "en"
+  }, {
+    "value": "Lab sample collection at home",
+    "synonyms": [ "Lab sample collection", "Lab sample collection at home", "sample collection" ],
+    "languageCode": "en"
+  }, {
+    "value": "Medical Equipment on Rent",
+    "synonyms": [ "Equipment", "Medical Equipment", "Medical Equipment on Rent", "on rent" ],
+    "languageCode": "en"
+  } ]
+}

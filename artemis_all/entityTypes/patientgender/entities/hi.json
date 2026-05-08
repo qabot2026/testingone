@@ -1,0 +1,11 @@
+{
+  "entities": [ {
+    "value": "पुरुष",
+    "synonyms": [ "पुरुष" ],
+    "languageCode": "hi"
+  }, {
+    "value": "महिला",
+    "synonyms": [ "महिला" ],
+    "languageCode": "hi"
+  } ]
+}

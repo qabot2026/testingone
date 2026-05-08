@@ -1,0 +1,45 @@
+{
+  "trainingPhrases": [ {
+    "parts": [ {
+      "text": "एक्स रे",
+      "parameterId": "diagnostics"
+    } ],
+    "repeatCount": 1,
+    "languageCode": "hi"
+  }, {
+    "parts": [ {
+      "text": "मैमोग्राफी",
+      "parameterId": "diagnostics"
+    } ],
+    "repeatCount": 1,
+    "languageCode": "hi"
+  }, {
+    "parts": [ {
+      "text": "अल्ट्रासाउंड",
+      "parameterId": "diagnostics"
+    } ],
+    "repeatCount": 1,
+    "languageCode": "hi"
+  }, {
+    "parts": [ {
+      "text": "एक्स-रे",
+      "parameterId": "diagnostics"
+    } ],
+    "repeatCount": 1,
+    "languageCode": "hi"
+  }, {
+    "parts": [ {
+      "text": "सीटी स्कैन",
+      "parameterId": "diagnostics"
+    } ],
+    "repeatCount": 1,
+    "languageCode": "hi"
+  }, {
+    "parts": [ {
+      "text": "एमआरआई",
+      "parameterId": "diagnostics"
+    } ],
+    "repeatCount": 1,
+    "languageCode": "hi"
+  } ]
+}

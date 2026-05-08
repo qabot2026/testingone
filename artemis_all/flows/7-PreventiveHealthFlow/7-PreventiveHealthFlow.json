@@ -1,0 +1,91 @@
+{
+  "name": "94b09961-89a9-41b4-ba35-6d952f060fa8",
+  "displayName": "7-PreventiveHealthFlow",
+  "transitionRoutes": [ {
+    "intent": "Preventive Health",
+    "triggerFulfillment": {
+      "setParameterActions": [ {
+        "parameter": "patientgender",
+        "value": null
+      } ]
+    },
+    "targetPage": "1-packages_knowgender",
+    "name": "bdd43c69-c28c-40c0-859c-9557b823ac4f"
+  }, {
+    "intent": "MainMenu",
+    "triggerFulfillment": {
+    
+    },
+    "targetFlow": "MainMenuFlow",
+    "name": "8fad3ddc-ff17-4977-8536-6b8a51462f28"
+  } ],
+  "eventHandlers": [ {
+    "event": "sys.no-match-default",
+    "triggerFulfillment": {
+      "messages": [ {
+        "text": {
+          "text": [ "Sorry, didn’t get that. Please pick from the main menu." ]
+        },
+        "languageCode": "en"
+      }, {
+        "payload": {
+          "richContent": [ [ {
+            "options": [ {
+              "text": "Main Menu"
+            } ],
+            "type": "chips"
+          } ] ]
+        },
+        "languageCode": "en"
+      } ]
+    },
+    "name": "55adf78e-49f2-4426-b21c-8e8304e5a100"
+  }, {
+    "event": "sys.no-input-default",
+    "triggerFulfillment": {
+      "messages": [ {
+        "text": {
+          "text": [ "Sorry, didn’t get that. Please pick from the main menu." ]
+        },
+        "languageCode": "en"
+      }, {
+        "payload": {
+          "richContent": [ [ {
+            "options": [ {
+              "text": "Main Menu"
+            } ],
+            "type": "chips"
+          } ] ]
+        },
+        "languageCode": "en"
+      } ]
+    },
+    "name": "0d4862e3-cc51-40e9-8f48-dfa9ecda7c2a"
+  } ],
+  "nluSettings": {
+    "modelType": "MODEL_TYPE_ADVANCED",
+    "classificationThreshold": 0.30000001,
+    "modelTrainingMode": "MODEL_TRAINING_MODE_AUTOMATIC"
+  },
+  "advancedSettings": {
+    "enabled": true
+  },
+  "nluSettingsList": [ {
+    "modelType": "MODEL_TYPE_ADVANCED",
+    "classificationThreshold": 0.30000001,
+    "modelTrainingMode": "MODEL_TRAINING_MODE_AUTOMATIC",
+    "customConfigKey": "7f530deb-6a60-4ef4-a541-c2e6ae36ef81",
+    "languageCode": "en"
+  }, {
+    "modelType": "MODEL_TYPE_ADVANCED",
+    "classificationThreshold": 0.30000001,
+    "modelTrainingMode": "MODEL_TRAINING_MODE_AUTOMATIC",
+    "customConfigKey": "7f530deb-6a60-4ef4-a541-c2e6ae36ef81",
+    "languageCode": "hi"
+  } ],
+  "agentTransitionRouteGroups": [ "Gateway", "diagroute", "homecareroute", "Stopchat" ],
+  "multiLanguageSettings": {
+    "enableMultiLanguageDetection": true,
+    "supportedResponseLanguageCodes": [ "hi", "en" ]
+  }
+}

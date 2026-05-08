@@ -1,0 +1,81 @@
+{
+  "trainingPhrases": [ {
+    "parts": [ {
+      "text": "homecare",
+      "parameterId": "selectedoption",
+      "auto": true
+    } ],
+    "repeatCount": 1,
+    "languageCode": "en"
+  }, {
+    "parts": [ {
+      "text": "request callback",
+      "parameterId": "selectedoption"
+    } ],
+    "repeatCount": 1,
+    "languageCode": "en"
+  }, {
+    "parts": [ {
+      "text": "second opinion",
+      "parameterId": "selectedoption"
+    } ],
+    "repeatCount": 1,
+    "languageCode": "en"
+  }, {
+    "parts": [ {
+      "text": "home care",
+      "parameterId": "selectedoption"
+    } ],
+    "repeatCount": 1,
+    "languageCode": "en"
+  }, {
+    "parts": [ {
+      "text": "preventive health",
+      "parameterId": "selectedoption"
+    } ],
+    "repeatCount": 1,
+    "languageCode": "en"
+  }, {
+    "parts": [ {
+      "text": "diagnostic",
+      "parameterId": "selectedoption"
+    } ],
+    "repeatCount": 1,
+    "languageCode": "en"
+  }, {
+    "parts": [ {
+      "text": "diagnostics",
+      "parameterId": "selectedoption"
+    } ],
+    "repeatCount": 1,
+    "languageCode": "en"
+  }, {
+    "parts": [ {
+      "text": "lab investigation",
+      "parameterId": "selectedoption"
+    } ],
+    "repeatCount": 1,
+    "languageCode": "en"
+  }, {
+    "parts": [ {
+      "text": "our branches",
+      "parameterId": "selectedoption"
+    } ],
+    "repeatCount": 1,
+    "languageCode": "en"
+  }, {
+    "parts": [ {
+      "text": "book consulation",
+      "parameterId": "selectedoption"
+    } ],
+    "repeatCount": 1,
+    "languageCode": "en"
+  }, {
+    "parts": [ {
+      "text": "book appointment",
+      "parameterId": "selectedoption"
+    } ],
+    "repeatCount": 1,
+    "languageCode": "en"
+  } ]
+}

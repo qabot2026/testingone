@@ -1,0 +1,10 @@
+{
+  "name": "d1b5ef1c-5e1c-408a-a8b0-b067aed19de0",
+  "displayName": "getdoctordetails",
+  "parameters": [ {
+    "id": "doctorname",
+    "entityType": "@sys.any"
+  } ],
+  "priority": 500000,
+  "numTrainingPhrases": 7
+}

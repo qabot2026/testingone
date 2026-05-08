@@ -1,0 +1,23 @@
+{
+  "trainingPhrases": [ {
+    "parts": [ {
+      "text": "Opinion"
+    } ],
+    "repeatCount": 1,
+    "languageCode": "en"
+  }, {
+    "parts": [ {
+      "text": "SecondOpinion"
+    } ],
+    "repeatCount": 1,
+    "languageCode": "en"
+  }, {
+    "parts": [ {
+      "text": "Second"
+    }, {
+      "text": " Opinion"
+    } ],
+    "repeatCount": 1,
+    "languageCode": "en"
+  } ]
+}

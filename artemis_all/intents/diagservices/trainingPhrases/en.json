@@ -1,0 +1,96 @@
+{
+  "trainingPhrases": [ {
+    "parts": [ {
+      "text": "ct scan",
+      "parameterId": "diagnostics",
+      "auto": true
+    }, {
+      "text": " for ",
+      "auto": true
+    }, {
+      "text": "8 August",
+      "parameterId": "testdate",
+      "auto": true
+    }, {
+      "text": " my mobile no is ",
+      "auto": true
+    }, {
+      "text": "8767878565",
+      "parameterId": "patientmobile",
+      "auto": true
+    } ],
+    "repeatCount": 1,
+    "languageCode": "en"
+  }, {
+    "parts": [ {
+      "text": "x ray",
+      "parameterId": "diagnostics",
+      "auto": true
+    }, {
+      "text": " for ",
+      "auto": true
+    }, {
+      "text": "tomorrow",
+      "parameterId": "testdate",
+      "auto": true
+    } ],
+    "repeatCount": 1,
+    "languageCode": "en"
+  }, {
+    "parts": [ {
+      "text": "CT-Scan",
+      "parameterId": "diagnostics",
+      "auto": true
+    } ],
+    "repeatCount": 1,
+    "languageCode": "en"
+  }, {
+    "parts": [ {
+      "text": "MRI",
+      "parameterId": "diagnostics",
+      "auto": true
+    } ],
+    "repeatCount": 1,
+    "languageCode": "en"
+  }, {
+    "parts": [ {
+      "text": "mammography",
+      "parameterId": "diagnostics",
+      "auto": true
+    } ],
+    "repeatCount": 1,
+    "languageCode": "en"
+  }, {
+    "parts": [ {
+      "text": "ultrasound",
+      "parameterId": "diagnostics",
+      "auto": true
+    } ],
+    "repeatCount": 1,
+    "languageCode": "en"
+  }, {
+    "parts": [ {
+      "text": "x ray",
+      "parameterId": "diagnostics",
+      "auto": true
+    } ],
+    "repeatCount": 1,
+    "languageCode": "en"
+  }, {
+    "parts": [ {
+      "text": "ct scan",
+      "parameterId": "diagnostics",
+      "auto": true
+    } ],
+    "repeatCount": 1,
+    "languageCode": "en"
+  }, {
+    "parts": [ {
+      "text": "mri",
+      "parameterId": "diagnostics",
+      "auto": true
+    } ],
+    "repeatCount": 1,
+    "languageCode": "en"
+  } ]
+}

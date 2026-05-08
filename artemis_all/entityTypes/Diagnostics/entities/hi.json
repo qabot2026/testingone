@@ -1,0 +1,27 @@
+{
+  "entities": [ {
+    "value": "एमआरआई",
+    "synonyms": [ "एमआरआई", "एमआरआय", "mri" ],
+    "languageCode": "hi"
+  }, {
+    "value": "सीटी स्कैन",
+    "synonyms": [ "ct scan", "सीटी स्कॅन", "सीटी स्कैन" ],
+    "languageCode": "hi"
+  }, {
+    "value": "एक्स-रे",
+    "synonyms": [ "x ray", "x-ray", "एक्स रे", "एक्स-रे" ],
+    "languageCode": "hi"
+  }, {
+    "value": "अल्ट्रासाउंड",
+    "synonyms": [ "ultra sound", "ultrasound", "अल्ट्रासाउंड" ],
+    "languageCode": "hi"
+  }, {
+    "value": "मैमोग्राफी",
+    "synonyms": [ "Mammography", "मैमो ग्राफी", "मैमोग्राफी" ],
+    "languageCode": "hi"
+  }, {
+    "value": "अन्य",
+    "synonyms": [ "other", "others", "अन्य" ],
+    "languageCode": "hi"
+  } ]
+}

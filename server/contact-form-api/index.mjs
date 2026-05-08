@@ -305,13 +305,92 @@ function weekdayKeyFromDateIso_(dateISO) {
     return wd === 0 ? "sun" : wd === 1 ? "mon" : wd === 2 ? "tue" : wd === 3 ? "wed" : wd === 4 ? "thu" : wd === 5 ? "fri" : "sat";
 }
 
+/** Slot step (minutes). Override with APPOINTMENT_SLOT_MINUTES (e.g. 15, 30, 60). */
+function appointmentSlotMinutes_() {
+    const n = Number(process.env.APPOINTMENT_SLOT_MINUTES);
+    if (Number.isFinite(n) && n >= 5 && n <= 180) {
+        return Math.floor(n);
+    }
+    return 30;
+}
+
+/** @returns {number} minutes from midnight, NaN if invalid */
+function parseClockToMinutes_(s) {
+    const t = String(s || "").trim();
+    if (!t) return NaN;
+    const m = t.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+    if (!m) return NaN;
+    let h = parseInt(m[1], 10);
+    const min = parseInt(m[2], 10);
+    const ap = m[3].toUpperCase();
+    if (!Number.isFinite(h) || !Number.isFinite(min)) return NaN;
+    if (ap === "PM" && h !== 12) h += 12;
+    if (ap === "AM" && h === 12) h = 0;
+    return h * 60 + min;
+}
+
+/** Match Dialogflow CX webhook `cxTimeTo12h_` output so bookings line up with `bookAppointment`. */
+function formatMinutesAsSlotLabel_(totalMinutes) {
+    const h24 = Math.floor(totalMinutes / 60);
+    const m = totalMinutes % 60;
+    const ampm = h24 >= 12 ? "PM" : "AM";
+    let h = h24 % 12;
+    if (h === 0) h = 12;
+    return `${h}:${String(m).padStart(2, "0")} ${ampm}`;
+}
+
+/**
+ * Expand one range into discrete slot **start** labels (same format as `cxTimeTo12h_`).
+ * Accepts "10:00 AM - 4:00 PM" or "10:00 AM-4:00 PM".
+ */
+function expandTimeRangeToSlotLabels_(rangeStr, intervalMin) {
+    const raw = String(rangeStr || "").trim();
+    if (!raw) return [];
+    const m = raw.match(/(\d{1,2}:\d{2}\s*(?:AM|PM))\s*-\s*(\d{1,2}:\d{2}\s*(?:AM|PM))/i);
+    if (!m) return [];
+    const startMin = parseClockToMinutes_(m[1]);
+    const endMin = parseClockToMinutes_(m[2]);
+    if (!Number.isFinite(startMin) || !Number.isFinite(endMin) || endMin <= startMin) {
+        return [];
+    }
+    const step = Math.max(5, intervalMin);
+    /** @type {string[]} */
+    const out = [];
+    for (let t = startMin; t + step <= endMin; t += step) {
+        out.push(formatMinutesAsSlotLabel_(t));
+    }
+    return out;
+}
+
+/**
+ * TimingPattern segment after weekday colon: comma-separated ranges or single times.
+ * @example "10:00 AM - 1:00 PM,5:00 PM-7:00 PM"
+ */
+function expandTimingPatternDaySegment_(segment, intervalMin) {
+    const s = String(segment || "").trim();
+    if (!s) return [];
+    const chunks = s.split(",").map((x) => x.trim()).filter(Boolean);
+    /** @type {string[]} */
+    const out = [];
+    for (const ch of chunks) {
+        if (/\d{1,2}:\d{2}\s*(?:AM|PM)\s*-\s*\d{1,2}:\d{2}\s*(?:AM|PM)/i.test(ch)) {
+            out.push(...expandTimeRangeToSlotLabels_(ch, intervalMin));
+        } else {
+            const mins = parseClockToMinutes_(ch);
+            if (Number.isFinite(mins)) {
+                out.push(formatMinutesAsSlotLabel_(mins));
+            }
+        }
+    }
+    return out;
+}
+
 /**
  * TimingPattern (sample format):
  * "mon:10:00 AM-1:00 PM,5:00 PM-7:00 PM; wed:10:00 AM-1:00 PM; fri:5:00 PM-7:00 PM"
- *
- * Returns a list of slot labels for one weekday. For now we keep slots as the ranges themselves.
  */
 function slotsFromTimingPattern_(timingPattern, weekdayKey) {
+    const iv = appointmentSlotMinutes_();
     const s = String(timingPattern || "");
     if (!s.trim()) return [];
     const parts = s.split(";").map((x) => x.trim()).filter(Boolean);
@@ -321,10 +400,7 @@ function slotsFromTimingPattern_(timingPattern, weekdayKey) {
         const day = p.slice(0, idx).trim().toLowerCase();
         if (day !== weekdayKey) continue;
         const slotsStr = p.slice(idx + 1).trim();
-        return slotsStr
-            .split(",")
-            .map((x) => x.trim())
-            .filter(Boolean);
+        return expandTimingPatternDaySegment_(slotsStr, iv);
     }
     return [];
 }
@@ -335,6 +411,7 @@ function slotsFromTimingPattern_(timingPattern, weekdayKey) {
 function slotsForDoctorOnDate_(d, dateISO) {
     const weekdayKey = weekdayKeyFromDateIso_(dateISO);
     const wdShort = weekdayShort_(dateISO);
+    const iv = appointmentSlotMinutes_();
     const tp = normalizeStr_(d.TimingPattern);
     if (tp) {
         return slotsFromTimingPattern_(tp, weekdayKey);
@@ -343,7 +420,9 @@ function slotsForDoctorOnDate_(d, dateISO) {
     const start = normalizeStr_(d.Start);
     const end = normalizeStr_(d.End);
     if (!dayInDaysField_(wdShort, days)) return [];
-    if (start && end) return [`${start} - ${end}`];
+    if (start && end) {
+        return expandTimeRangeToSlotLabels_(`${start} - ${end}`, iv);
+    }
     return [];
 }
 
@@ -385,6 +464,60 @@ app.get("/api/doctors", (req, res) => {
             const msg = e && e.message ? e.message : String(e);
             res.status(500).json({ ok: false, error: msg });
         });
+});
+
+app.get("/api/doctor-month-overview", async (req, res) => {
+    const doctorId = typeof req.query.doctorId === "string" ? req.query.doctorId.trim() : "";
+    const month = typeof req.query.month === "string" ? req.query.month.trim() : "";
+    const mRe = /^(\d{4})-(\d{2})$/.exec(month);
+    if (!doctorId || !mRe) {
+        return res.status(400).json({ ok: false, error: "Missing doctorId or month (YYYY-MM)." });
+    }
+    if (firebaseInitError) {
+        return res.status(503).json({ ok: false, error: `Firebase init failed: ${firebaseInitError}` });
+    }
+    const y = parseInt(mRe[1], 10);
+    const mo = parseInt(mRe[2], 10);
+    let d;
+    try {
+        const docs = await listDoctors();
+        d = docs.find((x) => String(x.DoctorId || "").trim() === doctorId) || null;
+    } catch (e) {
+        const msg = e && e.message ? e.message : String(e);
+        return res.status(500).json({ ok: false, error: msg });
+    }
+    if (!d) {
+        return res.status(404).json({ ok: false, error: "Doctor not found." });
+    }
+    const daysInMonth = new Date(Date.UTC(y, mo, 0)).getUTCDate();
+    const iv = appointmentSlotMinutes_();
+    /** @type {Record<string, { working: boolean, totalSlots: number, bookedCount: number, availableCount: number }>} */
+    const days = {};
+    for (let day = 1; day <= daysInMonth; day += 1) {
+        const dateISO = `${y}-${String(mo).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+        const slots = slotsForDoctorOnDate_(d, dateISO);
+        let booked = [];
+        try {
+            booked = await listBookedSlots({ doctorId, dateISO });
+        } catch {
+            booked = [];
+        }
+        const bookedSet = new Set(booked);
+        const bookedCount = slots.filter((s) => bookedSet.has(s)).length;
+        days[dateISO] = {
+            working: slots.length > 0,
+            totalSlots: slots.length,
+            bookedCount,
+            availableCount: slots.length - bookedCount
+        };
+    }
+    return res.status(200).json({
+        ok: true,
+        doctorId,
+        month,
+        slotMinutes: iv,
+        days
+    });
 });
 
 app.get("/api/slots", async (req, res) => {
@@ -614,9 +747,9 @@ app.post("/webhook", express.json({ limit: "512kb" }), async (req, res) => {
             const diagnosticName = normalizeStr_(params.diagnostics || "diagnostic");
             const data = {
                 appointment_date: dateISO,
-                patient_name: normalizeStr_(params.patientname),
-                phone: normalizeStr_(params.patientmobile),
-                age: normalizeStr_(params.patientage),
+                patient_name: normalizeStr_(params.name),
+                phone: normalizeStr_(params.mobile),
+                age: normalizeStr_(params.age),
                 test: diagnosticName,
                 createdAt: new Date().toISOString()
             };
@@ -636,9 +769,9 @@ app.post("/webhook", express.json({ limit: "512kb" }), async (req, res) => {
             const dateISO = cxDateToISO_(params.hcservicedate);
             const data = {
                 service_date: dateISO,
-                name: normalizeStr_(params.patientname),
-                phone: normalizeStr_(params.patientmobile),
-                age: normalizeStr_(params.patientage),
+                name: normalizeStr_(params.name),
+                phone: normalizeStr_(params.mobile),
+                age: normalizeStr_(params.age),
                 selected_service: normalizeStr_(params.homecare),
                 createdAt: new Date().toISOString()
             };
@@ -839,8 +972,8 @@ app.post("/webhook", express.json({ limit: "512kb" }), async (req, res) => {
         }
 
         if (tag === "book_doctor_appointment") {
-            const dateISO = cxDateToISO_(params.consultationdate);
-            const timeLabel = cxTimeTo12h_(params.consultationtime);
+            const dateISO = cxDateToISO_(params.appointmentdate);
+            const timeLabel = cxTimeTo12h_(params.appointmenttime);
             const doctorName = normalizeStr_(params.doctorname).replace(/^Dr\.?\s*/i, "").trim();
             const city = normalizeStr_(params.city);
 
@@ -857,7 +990,7 @@ app.post("/webhook", express.json({ limit: "512kb" }), async (req, res) => {
             const wd = weekdayShort_(dateISO);
             if (!dayInDaysField_(wd, doc.Days)) {
                 return res.json({
-                    sessionInfo: { parameters: { consultationdate: null, consultationtime: null } },
+                    sessionInfo: { parameters: { appointmentdate: null, appointmenttime: null } },
                     fulfillment_response: {
                         messages: [cxText_(`❌ ${normalizeStr_(doc.DisplayDoctorName || ("Dr. " + doctorName))} is not available on ${dateISO} (${wd}). Please select another date.`, lang)]
                     }

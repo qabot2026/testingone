@@ -1,0 +1,7 @@
+{
+  "entities": [ {
+    "value": "^\\d{1,2}(\\.\\d{1,2})?(\\syears?)?(\\s\\d{1,2}\\smonths?)?$",
+    "synonyms": [ "^\\d{1,2}(\\.\\d{1,2})?(\\syears?)?(\\s\\d{1,2}\\smonths?)?$" ],
+    "languageCode": "en"
+  } ]
+}

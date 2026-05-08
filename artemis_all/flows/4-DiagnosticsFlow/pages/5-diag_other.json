@@ -1,0 +1,37 @@
+{
+  "name": "444393ab-1b06-42a1-beec-3239e0ae36c3",
+  "displayName": "5-diag_other",
+  "form": {
+    "parameters": [ {
+      "displayName": "diagnostics",
+      "required": true,
+      "entityType": "@sys.any",
+      "fillBehavior": {
+        "initialPromptFulfillment": {
+          "messages": [ {
+            "text": {
+              "text": [ "आप कौन सी टेस्ट करवाना चाहते हैं?" ]
+            },
+            "languageCode": "hi"
+          }, {
+            "text": {
+              "text": [ "Please mention the test or investigation required." ]
+            },
+            "languageCode": "en"
+          } ]
+        }
+      }
+    } ]
+  },
+  "entryFulfillment": {
+  
+  },
+  "transitionRoutes": [ {
+    "condition": "$session.params.diagnostics != null",
+    "triggerFulfillment": {
+    
+    },
+    "targetPage": "2-diag_userdetails",
+    "name": "0a596981-0de7-4148-86f0-ba6de24bf15a"
+  } ]
+}

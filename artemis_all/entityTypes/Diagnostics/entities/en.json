@@ -1,0 +1,27 @@
+{
+  "entities": [ {
+    "value": "MRI",
+    "synonyms": [ "mri", "MRI", "Mri" ],
+    "languageCode": "en"
+  }, {
+    "value": "CT Scan",
+    "synonyms": [ "ct", "ct scan", "CT Scan" ],
+    "languageCode": "en"
+  }, {
+    "value": "X-Ray",
+    "synonyms": [ " ray", "x ray", "X-Ray" ],
+    "languageCode": "en"
+  }, {
+    "value": "Ultrasound",
+    "synonyms": [ "ultra sound", "Ultrasound" ],
+    "languageCode": "en"
+  }, {
+    "value": "Mammography",
+    "synonyms": [ "mammography", "Mammography", "mamography" ],
+    "languageCode": "en"
+  }, {
+    "value": "Others",
+    "synonyms": [ "other", "Others" ],
+    "languageCode": "en"
+  } ]
+}

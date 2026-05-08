@@ -1,0 +1,10 @@
+{
+  "name": "7a36c0d0-10aa-4403-93f2-434e975c7850",
+  "displayName": "fieldtoedit",
+  "parameters": [ {
+    "id": "diagfields",
+    "entityType": "@diagfields"
+  } ],
+  "priority": 500000,
+  "numTrainingPhrases": 22
+}

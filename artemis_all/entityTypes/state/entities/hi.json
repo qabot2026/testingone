@@ -1,0 +1,15 @@
+{
+  "entities": [ {
+    "value": "महाराष्ट्र",
+    "synonyms": [ "महाराष्ट्र" ],
+    "languageCode": "hi"
+  }, {
+    "value": "तेलंगाना",
+    "synonyms": [ "तेलंगाना" ],
+    "languageCode": "hi"
+  }, {
+    "value": "उत्तर प्रदेश",
+    "synonyms": [ "उत्तर प्रदेश" ],
+    "languageCode": "hi"
+  } ]
+}

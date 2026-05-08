@@ -1,0 +1,125 @@
+{
+  "trainingPhrases": [ {
+    "parts": [ {
+      "text": "chest pain",
+      "parameterId": "specialization",
+      "auto": true
+    } ],
+    "repeatCount": 1,
+    "languageCode": "en"
+  }, {
+    "parts": [ {
+      "text": "heart doctor",
+      "parameterId": "specialization"
+    } ],
+    "repeatCount": 2,
+    "languageCode": "en"
+  }, {
+    "parts": [ {
+      "text": "radiology",
+      "parameterId": "specialization",
+      "auto": true
+    }, {
+      "text": " in ",
+      "auto": true
+    }, {
+      "text": "pune",
+      "parameterId": "city",
+      "auto": true
+    } ],
+    "repeatCount": 1,
+    "languageCode": "en"
+  }, {
+    "parts": [ {
+      "text": "cardiologist",
+      "parameterId": "specialization",
+      "auto": true
+    }, {
+      "text": " in ",
+      "auto": true
+    }, {
+      "text": "pune",
+      "parameterId": "city",
+      "auto": true
+    } ],
+    "repeatCount": 1,
+    "languageCode": "en"
+  }, {
+    "parts": [ {
+      "text": "radioogist",
+      "parameterId": "specialization"
+    } ],
+    "repeatCount": 1,
+    "languageCode": "en"
+  }, {
+    "parts": [ {
+      "text": "radiology",
+      "parameterId": "specialization"
+    }, {
+      "text": " doctor"
+    } ],
+    "repeatCount": 1,
+    "languageCode": "en"
+  }, {
+    "parts": [ {
+      "text": "show me "
+    }, {
+      "text": "cardiologist",
+      "parameterId": "specialization"
+    } ],
+    "repeatCount": 1,
+    "languageCode": "en"
+  }, {
+    "parts": [ {
+      "text": "show me doctors",
+      "auto": true
+    } ],
+    "repeatCount": 1,
+    "languageCode": "en"
+  }, {
+    "parts": [ {
+      "text": "show doctor",
+      "auto": true
+    } ],
+    "repeatCount": 1,
+    "languageCode": "en"
+  }, {
+    "parts": [ {
+      "text": "doctors",
+      "auto": true
+    } ],
+    "repeatCount": 1,
+    "languageCode": "en"
+  }, {
+    "parts": [ {
+      "text": "show me dr",
+      "auto": true
+    } ],
+    "repeatCount": 1,
+    "languageCode": "en"
+  }, {
+    "parts": [ {
+      "text": "book app"
+    } ],
+    "repeatCount": 1,
+    "languageCode": "en"
+  }, {
+    "parts": [ {
+      "text": "book appointment"
+    } ],
+    "repeatCount": 1,
+    "languageCode": "en"
+  }, {
+    "parts": [ {
+      "text": "consultation"
+    } ],
+    "repeatCount": 1,
+    "languageCode": "en"
+  }, {
+    "parts": [ {
+      "text": "Book consultation"
+    } ],
+    "repeatCount": 1,
+    "languageCode": "en"
+  } ]
+}

@@ -1,0 +1,25 @@
+{
+  "trainingPhrases": [ {
+    "parts": [ {
+      "text": "konse packages ",
+      "auto": true
+    }, {
+      "text": "he",
+      "auto": true
+    } ],
+    "repeatCount": 1,
+    "languageCode": "hi"
+  }, {
+    "parts": [ {
+      "text": "प्रिवेंटिव हेल्थ"
+    } ],
+    "repeatCount": 1,
+    "languageCode": "hi"
+  }, {
+    "parts": [ {
+      "text": "स्वास्थ्य सुरक्षा"
+    } ],
+    "repeatCount": 1,
+    "languageCode": "hi"
+  } ]
+}

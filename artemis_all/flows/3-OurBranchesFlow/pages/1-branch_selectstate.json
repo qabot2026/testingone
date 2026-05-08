@@ -1,0 +1,25 @@
+{
+  "name": "31e0df0b-13ae-405a-8f9a-8ca6fcf47263",
+  "displayName": "1-branch_selectstate",
+  "form": {
+    "parameters": [ {
+      "displayName": "state",
+      "required": true,
+      "entityType": "@sys.any",
+      "fillBehavior": {
+        "initialPromptFulfillment": {
+          "webhook": "Webhook",
+          "tag": "get_states"
+        }
+      }
+    } ]
+  },
+  "transitionRoutes": [ {
+    "condition": "$session.params.state != null",
+    "triggerFulfillment": {
+    
+    },
+    "targetPage": "2-branch_selectcity",
+    "name": "9cf74929-50b7-4a17-83a0-5cc7b9fe9448"
+  } ]
+}

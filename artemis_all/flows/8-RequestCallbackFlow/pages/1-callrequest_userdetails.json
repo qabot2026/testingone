@@ -1,0 +1,112 @@
+{
+  "name": "08fa5036-7415-4232-a4ad-09d2461e829b",
+  "displayName": "1-callrequest_userdetails",
+  "form": {
+    "parameters": [ {
+      "displayName": "patientname",
+      "required": true,
+      "entityType": "@sys.any",
+      "fillBehavior": {
+        "initialPromptFulfillment": {
+          "messages": [ {
+            "text": {
+              "text": [ "अपना नाम दर्ज करें।" ]
+            },
+            "languageCode": "hi"
+          }, {
+            "text": {
+              "text": [ "Enter your name." ]
+            },
+            "languageCode": "en"
+          } ]
+        }
+      }
+    }, {
+      "displayName": "patientmobile",
+      "required": true,
+      "entityType": "@mobile",
+      "fillBehavior": {
+        "initialPromptFulfillment": {
+          "messages": [ {
+            "text": {
+              "text": [ "मोबाइल नंबर दर्ज करें." ]
+            },
+            "languageCode": "hi"
+          }, {
+            "text": {
+              "text": [ "Enter mobile No." ]
+            },
+            "languageCode": "en"
+          } ]
+        }
+      }
+    }, {
+      "displayName": "callbackdate",
+      "required": true,
+      "entityType": "@sys.date",
+      "fillBehavior": {
+        "initialPromptFulfillment": {
+          "messages": [ {
+            "text": {
+              "text": [ "कॉल के लिए कोई सही तारीख बताएं।" ]
+            },
+            "languageCode": "hi"
+          }, {
+            "text": {
+              "text": [ "Enter a suitable date for the call." ]
+            },
+            "languageCode": "en"
+          } ],
+          "setParameterActions": [ {
+            "parameter": "callbackdate",
+            "value": null
+          } ]
+        }
+      }
+    }, {
+      "displayName": "callbacktime",
+      "required": true,
+      "entityType": "@sys.time",
+      "fillBehavior": {
+        "initialPromptFulfillment": {
+          "messages": [ {
+            "text": {
+              "text": [ "और कॉल का समय भी बताएं।" ]
+            },
+            "languageCode": "hi"
+          }, {
+            "text": {
+              "text": [ "And time?" ]
+            },
+            "languageCode": "en"
+          } ],
+          "setParameterActions": [ {
+            "parameter": "callbacktime",
+            "value": null
+          } ]
+        }
+      }
+    } ]
+  },
+  "entryFulfillment": {
+  
+  },
+  "transitionRoutes": [ {
+    "condition": "$session.params.patientname != null AND $session.params.patientmobile != null AND $session.params.callbackdate != null AND $session.params.callbacktime != null",
+    "triggerFulfillment": {
+      "messages": [ {
+        "text": {
+          "text": [ "**$session.params.patientname**, विवरण साझा करने के लिए धन्यवाद। हमारी टीम का एक सदस्य आपको **$session.params.callbackdate** को, **$session.params.callbacktime** बजे, आपके मोबाइल नंबर **$session.params.patientmobile** पर कॉल करेगा।" ]
+        },
+        "languageCode": "hi"
+      }, {
+        "text": {
+          "text": [ "Thank you for sharing the details, **$session.params.patientname**. One of our team members will call you on **$session.params.callbackdate** at **$session.params.callbacktime** at **$session.params.patientmobile**." ]
+        },
+        "languageCode": "en"
+      } ]
+    },
+    "targetFlow": "MainMenuFlow",
+    "name": "d2a7b4a5-5a8c-4426-8921-76e282a068d6"
+  } ]
+}

@@ -1,0 +1,85 @@
+{
+  "name": "7117f181-8d69-439c-ab65-dd7ee75c80ae",
+  "displayName": "5-packages_booknow",
+  "form": {
+    "parameters": [ {
+      "displayName": "patientname",
+      "required": true,
+      "entityType": "@sys.any",
+      "fillBehavior": {
+        "initialPromptFulfillment": {
+          "messages": [ {
+            "text": {
+              "text": [ "अपना नाम दर्ज करें।" ]
+            },
+            "languageCode": "hi"
+          }, {
+            "text": {
+              "text": [ "Enter your name." ]
+            },
+            "languageCode": "en"
+          } ]
+        }
+      }
+    }, {
+      "displayName": "patientmobile",
+      "required": true,
+      "entityType": "@mobile",
+      "fillBehavior": {
+        "initialPromptFulfillment": {
+          "messages": [ {
+            "text": {
+              "text": [ "अपना मोबाइल नंबर दर्ज करें।" ]
+            },
+            "languageCode": "hi"
+          }, {
+            "text": {
+              "text": [ "Enter your mobile No." ]
+            },
+            "languageCode": "en"
+          } ]
+        }
+      }
+    }, {
+      "displayName": "patientage",
+      "required": true,
+      "entityType": "@patientage",
+      "fillBehavior": {
+        "initialPromptFulfillment": {
+          "messages": [ {
+            "text": {
+              "text": [ "कृपया उम्र बताएं।" ]
+            },
+            "languageCode": "hi"
+          }, {
+            "text": {
+              "text": [ "Enter patient's age." ]
+            },
+            "languageCode": "en"
+          } ]
+        }
+      }
+    } ]
+  },
+  "entryFulfillment": {
+  
+  },
+  "transitionRoutes": [ {
+    "condition": "$session.params.patientname != null AND $session.params.patientmobile != null AND $session.params.patientage != null",
+    "triggerFulfillment": {
+      "messages": [ {
+        "text": {
+          "text": [ "आर्टेमिस हॉस्पिटल्स से संपर्क करने के लिए धन्यवाद। हम आपकी सेवाओं में रुचि की सराहना करते हैं। हमारी टीम का एक प्रतिनिधि जल्द ही आपसे संपर्क करेगा ताकि आपकी स्वास्थ्य संबंधी आवश्यकताओं में सहायता की जा सके।\n" ]
+        },
+        "languageCode": "hi"
+      }, {
+        "text": {
+          "text": [ "Thank you for reaching out to Artemis Hospitals. We appreciate your interest in our services. One of our executives will connect with you to assist with your healthcare needs." ]
+        },
+        "languageCode": "en"
+      } ]
+    },
+    "targetFlow": "MainMenuFlow",
+    "name": "e1045bf1-d982-4d61-bc33-957ade729148"
+  } ]
+}

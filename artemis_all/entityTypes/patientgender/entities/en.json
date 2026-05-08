@@ -1,0 +1,11 @@
+{
+  "entities": [ {
+    "value": "Male",
+    "synonyms": [ "male", "Male", "man" ],
+    "languageCode": "en"
+  }, {
+    "value": "Female",
+    "synonyms": [ "female", "Female", "girl" ],
+    "languageCode": "en"
+  } ]
+}

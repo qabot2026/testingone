@@ -1,0 +1,19 @@
+{
+  "name": "fb10c6d9-018e-4ef7-b5a7-3951a801517f",
+  "displayName": "directapp",
+  "parameters": [ {
+    "id": "doctorname",
+    "entityType": "@sys.any"
+  }, {
+    "id": "appointmentdate",
+    "entityType": "@sys.date"
+  }, {
+    "id": "appointmenttime",
+    "entityType": "@sys.time"
+  }, {
+    "id": "city",
+    "entityType": "@city"
+  } ],
+  "priority": 500000,
+  "numTrainingPhrases": 7
+}

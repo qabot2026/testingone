@@ -1,0 +1,82 @@
+{
+  "name": "e4e0c403-aee6-4aea-ba43-bf6f4c60d705",
+  "displayName": "9-SecondOpinionFlow",
+  "transitionRoutes": [ {
+    "intent": "Secondopinion",
+    "triggerFulfillment": {
+    
+    },
+    "targetPage": "1-SO_getuserdetails",
+    "name": "aa05e59a-c0c4-4aa7-a42f-796f72f63d28"
+  }, {
+    "intent": "MainMenu",
+    "triggerFulfillment": {
+    
+    },
+    "targetFlow": "MainMenuFlow",
+    "name": "349a104a-04c7-4a1e-a9df-3ea77f35bfec"
+  } ],
+  "eventHandlers": [ {
+    "event": "sys.no-match-default",
+    "triggerFulfillment": {
+      "messages": [ {
+        "text": {
+          "text": [ "Sorry, didn’t get that. Please pick from the main menu." ]
+        },
+        "languageCode": "en"
+      }, {
+        "payload": {
+          "richContent": [ [ {
+            "options": [ {
+              "text": "Main Menu"
+            } ],
+            "type": "chips"
+          } ] ]
+        },
+        "languageCode": "en"
+      } ]
+    },
+    "name": "1723a460-6545-43cf-940c-dbbc604bef58"
+  }, {
+    "event": "sys.no-input-default",
+    "triggerFulfillment": {
+      "messages": [ {
+        "text": {
+          "text": [ "Sorry, didn’t get that. Please pick from the main menu." ]
+        },
+        "languageCode": "en"
+      }, {
+        "payload": {
+          "richContent": [ [ {
+            "options": [ {
+              "text": "Main Menu"
+            } ],
+            "type": "chips"
+          } ] ]
+        },
+        "languageCode": "en"
+      } ]
+    },
+    "name": "6b5ca5fa-2963-4279-82f6-f8df218f9c1b"
+  } ],
+  "nluSettings": {
+    "modelType": "MODEL_TYPE_ADVANCED",
+    "classificationThreshold": 0.30000001,
+    "modelTrainingMode": "MODEL_TRAINING_MODE_AUTOMATIC"
+  },
+  "advancedSettings": {
+    "enabled": true
+  },
+  "nluSettingsList": [ {
+    "modelType": "MODEL_TYPE_ADVANCED",
+    "classificationThreshold": 0.30000001,
+    "modelTrainingMode": "MODEL_TRAINING_MODE_AUTOMATIC",
+    "customConfigKey": "7fdf186f-589c-415f-8a82-68f10d84eeb7",
+    "languageCode": "en"
+  } ],
+  "agentTransitionRouteGroups": [ "Gateway", "diagroute", "homecareroute", "Stopchat" ],
+  "multiLanguageSettings": {
+    "enableMultiLanguageDetection": true,
+    "supportedResponseLanguageCodes": [ "hi", "en" ]
+  }
+}

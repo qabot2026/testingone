@@ -1,0 +1,16 @@
+{
+  "name": "86e6a391-0698-40bb-8d5a-9bd508cd1b80",
+  "displayName": "Showcityaddress",
+  "form": {
+  
+  },
+  "transitionRoutes": [ {
+    "condition": "$session.params.city != null",
+    "triggerFulfillment": {
+      "webhook": "Webhook",
+      "tag": "get_address_by_city_only"
+    },
+    "targetFlow": "MainMenuFlow",
+    "name": "368698e9-7eba-46fc-8b56-17ad674b910e"
+  } ]
+}

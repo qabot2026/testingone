@@ -1,0 +1,145 @@
+{
+  "name": "52cbb937-0ffb-4941-8875-581c57fb01df",
+  "displayName": "2-diag_userdetails",
+  "form": {
+    "parameters": [ {
+      "displayName": "patientname",
+      "required": true,
+      "entityType": "@sys.any",
+      "fillBehavior": {
+        "initialPromptFulfillment": {
+          "messages": [ {
+            "text": {
+              "text": [ "मरीज़ का नाम दर्ज करें।" ]
+            },
+            "languageCode": "hi"
+          }, {
+            "text": {
+              "text": [ "Enter patient's name." ]
+            },
+            "languageCode": "en"
+          } ]
+        }
+      }
+    }, {
+      "displayName": "patientmobile",
+      "required": true,
+      "entityType": "@mobile",
+      "fillBehavior": {
+        "initialPromptFulfillment": {
+          "messages": [ {
+            "text": {
+              "text": [ "मोबाइल नंबर दर्ज करें।" ]
+            },
+            "languageCode": "hi"
+          }, {
+            "text": {
+              "text": [ "Enter mobile No." ]
+            },
+            "languageCode": "en"
+          } ]
+        }
+      }
+    }, {
+      "displayName": "patientage",
+      "required": true,
+      "entityType": "@patientage",
+      "fillBehavior": {
+        "initialPromptFulfillment": {
+          "messages": [ {
+            "text": {
+              "text": [ "आयु दर्ज करें।" ]
+            },
+            "languageCode": "hi"
+          }, {
+            "text": {
+              "text": [ "Enter the age." ]
+            },
+            "languageCode": "en"
+          } ]
+        }
+      }
+    }, {
+      "displayName": "testdate",
+      "required": true,
+      "entityType": "@sys.date",
+      "fillBehavior": {
+        "initialPromptFulfillment": {
+          "messages": [ {
+            "text": {
+              "text": [ "अपॉइंटमेंट की इच्छित तारीख बताएं।" ]
+            },
+            "languageCode": "hi"
+          }, {
+            "text": {
+              "text": [ "Tell me your preferred date." ]
+            },
+            "languageCode": "en"
+          } ]
+        }
+      }
+    } ]
+  },
+  "entryFulfillment": {
+  
+  },
+  "transitionRoutes": [ {
+    "intent": "editinfo",
+    "triggerFulfillment": {
+    
+    },
+    "targetPage": "3-diag_whattoedit",
+    "name": "151df543-585f-49db-9005-e8dcdf96831b"
+  }, {
+    "intent": "confirmation",
+    "triggerFulfillment": {
+    
+    },
+    "targetPage": "6-diag_flowend",
+    "name": "24b8f8da-606a-4e31-b6b3-22dc63b88584"
+  }, {
+    "condition": "$session.params.patientname != null AND $session.params.patientmobile != null AND $session.params.patientage != null AND $session.params.testdate != null",
+    "triggerFulfillment": {
+      "messages": [ {
+        "text": {
+          "text": [ "**हमने आपकी जानकारी एकत्र कर ली है।**\r\nनाम - $session.params.patientname\r\nमोबाइल नंबर - $session.params.patientmobile\r\nआयु - $session.params.patientage\r\nजांच - $session.params.diagnostics\r\nपसंदीदा तारीख - $session.params.testdate\r\n**क्या आप बुकिंग की पुष्टि करना चाहेंगे? ✅**" ]
+        },
+        "languageCode": "hi"
+      }, {
+        "payload": {
+          "richContent": [ [ {
+            "options": [ {
+              "text": "हाँ"
+            }, {
+              "text": "नहीं"
+            }, {
+              "text": "जानकारी बदलें"
+            } ],
+            "type": "chips"
+          } ] ]
+        },
+        "languageCode": "hi"
+      }, {
+        "text": {
+          "text": [ "**We have collected your information.** \nName - $session.params.patientname\nMobile No. - $session.params.patientmobile\nAge - $session.params.patientage\nTest - $session.params.diagnostics\nPreferred Date - $session.params.testdate\n**Would you like to confirm the booking?**" ]
+        },
+        "languageCode": "en"
+      }, {
+        "payload": {
+          "richContent": [ [ {
+            "options": [ {
+              "text": "Yes"
+            }, {
+              "text": "No"
+            }, {
+              "text": "Edit Info"
+            } ],
+            "type": "chips"
+          } ] ]
+        },
+        "languageCode": "en"
+      } ]
+    },
+    "name": "41a00f01-9caf-4149-a271-bb6d081010b0"
+  } ]
+}

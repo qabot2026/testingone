@@ -1,0 +1,31 @@
+{
+  "trainingPhrases": [ {
+    "parts": [ {
+      "text": "नही",
+      "parameterId": "confirmation"
+    } ],
+    "repeatCount": 1,
+    "languageCode": "hi"
+  }, {
+    "parts": [ {
+      "text": "हा",
+      "parameterId": "confirmation"
+    } ],
+    "repeatCount": 1,
+    "languageCode": "hi"
+  }, {
+    "parts": [ {
+      "text": "नहीं",
+      "parameterId": "confirmation"
+    } ],
+    "repeatCount": 1,
+    "languageCode": "hi"
+  }, {
+    "parts": [ {
+      "text": "हाँ",
+      "parameterId": "confirmation"
+    } ],
+    "repeatCount": 1,
+    "languageCode": "hi"
+  } ]
+}

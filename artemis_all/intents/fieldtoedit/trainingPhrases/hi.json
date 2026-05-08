@@ -1,0 +1,45 @@
+{
+  "trainingPhrases": [ {
+    "parts": [ {
+      "text": "सभी",
+      "parameterId": "diagfields"
+    } ],
+    "repeatCount": 1,
+    "languageCode": "hi"
+  }, {
+    "parts": [ {
+      "text": "तारीख",
+      "parameterId": "diagfields"
+    } ],
+    "repeatCount": 1,
+    "languageCode": "hi"
+  }, {
+    "parts": [ {
+      "text": "जांच",
+      "parameterId": "diagfields"
+    } ],
+    "repeatCount": 1,
+    "languageCode": "hi"
+  }, {
+    "parts": [ {
+      "text": "आयु",
+      "parameterId": "diagfields"
+    } ],
+    "repeatCount": 1,
+    "languageCode": "hi"
+  }, {
+    "parts": [ {
+      "text": "मोबाइल",
+      "parameterId": "diagfields"
+    } ],
+    "repeatCount": 1,
+    "languageCode": "hi"
+  }, {
+    "parts": [ {
+      "text": "नाम",
+      "parameterId": "diagfields"
+    } ],
+    "repeatCount": 1,
+    "languageCode": "hi"
+  } ]
+}

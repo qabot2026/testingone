@@ -1,0 +1,34 @@
+{
+  "trainingPhrases": [ {
+    "parts": [ {
+      "text": "janch",
+      "auto": true
+    }, {
+      "text": " krna ",
+      "auto": true
+    }, {
+      "text": "he",
+      "auto": true
+    } ],
+    "repeatCount": 1,
+    "languageCode": "hi"
+  }, {
+    "parts": [ {
+      "text": "डायग्नोस्टिक"
+    } ],
+    "repeatCount": 1,
+    "languageCode": "hi"
+  }, {
+    "parts": [ {
+      "text": "डायग्नोस्टिक्स"
+    } ],
+    "repeatCount": 1,
+    "languageCode": "hi"
+  }, {
+    "parts": [ {
+      "text": "निदान"
+    } ],
+    "repeatCount": 1,
+    "languageCode": "hi"
+  } ]
+}

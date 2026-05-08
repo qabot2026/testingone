@@ -1,0 +1,16 @@
+{
+  "name": "3f73bf85-23c0-4acf-a8ed-80ef0107d680",
+  "displayName": "DirectCity",
+  "form": {
+  
+  },
+  "transitionRoutes": [ {
+    "condition": "$session.params.city != null",
+    "triggerFulfillment": {
+      "webhook": "Webhook",
+      "tag": "get_address_by_city_only"
+    },
+    "targetFlow": "MainMenuFlow",
+    "name": "8998c574-e94c-4534-97fb-2d184aa14bb8"
+  } ]
+}
