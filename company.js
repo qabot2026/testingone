@@ -1593,7 +1593,9 @@ const UI_TRANSLATIONS = {
         invalidVideoFile: "Video files are not allowed. Use images, PDF, Word, or other documents.",
         clearFileSelectionButton: "Cancel selection",
         appointmentSlotAlreadyBooked: "This time slot is already booked. Please choose another.",
-        appointmentPickerSelected: "Selected"
+        appointmentPickerSelected: "Selected",
+        appointmentPickerPickDayIntro: "Pick a day, then a time slot.",
+        appointmentPickerChooseTime: "Choose a time slot below."
     },
     hi: {
         contactFormTitle: "संपर्क करें",
@@ -1637,7 +1639,9 @@ const UI_TRANSLATIONS = {
         invalidVideoFile: "वीडियो फ़ाइलें मान्य नहीं। छवि, PDF या Word आदि भेजें।",
         clearFileSelectionButton: "चयन रद्द करें",
         appointmentSlotAlreadyBooked: "यह समय पहले से बुक है। कृपया कोई और समय चुनें।",
-        appointmentPickerSelected: "चयनित"
+        appointmentPickerSelected: "चयनित",
+        appointmentPickerPickDayIntro: "पहले दिन चुनें, फिर समय।",
+        appointmentPickerChooseTime: "नीचे समय चुनें।"
     },
     mr: {
         contactFormTitle: "आमच्याशी संपर्क करा",
@@ -1681,7 +1685,9 @@ const UI_TRANSLATIONS = {
         invalidVideoFile: "व्हिडिओ फाइल्सना परवानगी नाही. प्रतिमा, PDF किंवा Word वापरा.",
         clearFileSelectionButton: "निवड रद्द करा",
         appointmentSlotAlreadyBooked: "ही वेळ आधीच बुक आहे. कृपया दुसरी वेळ निवडा.",
-        appointmentPickerSelected: "निवडलेले"
+        appointmentPickerSelected: "निवडलेले",
+        appointmentPickerPickDayIntro: "आधी दिवस निवडा, मग वेळ.",
+        appointmentPickerChooseTime: "खाली वेळ निवडा."
     }
 };
 
@@ -5445,7 +5451,7 @@ function mountContactFormAppointmentPicker(hostEl, field, isDoctor) {
     slotsHint.setAttribute("role", "status");
     slotsHint.setAttribute("aria-live", "polite");
     slotsHint.style.cssText = "font:600 11px/1.35 Manrope,sans-serif;color:rgba(15,23,42,0.75);margin:6px 0 4px;min-height:1.35em";
-    slotsHint.textContent = "Pick a day, then a time slot.";
+    slotsHint.textContent = getTranslation("appointmentPickerPickDayIntro");
 
     const slotsFlex = document.createElement("div");
     slotsFlex.style.cssText = "display:flex;flex-wrap:wrap;gap:5px";
@@ -5457,6 +5463,9 @@ function mountContactFormAppointmentPicker(hostEl, field, isDoctor) {
     hostEl.appendChild(slotsFlex);
 
     const view = { y: new Date().getFullYear(), m: new Date().getMonth() + 1 };
+
+    /** YYYY-MM-DD of the day cell currently highlighted as chosen (must match a working day). */
+    let selectedCalendarDateISO = "";
 
     /** @type {HTMLButtonElement | null} */
     let selectedSlotEl = null;
@@ -5559,8 +5568,23 @@ function mountContactFormAppointmentPicker(hostEl, field, isDoctor) {
                 if (ty === view.y && tm === view.m && td === day) {
                     btn.style.boxShadow = "0 0 0 2px rgba(3,105,161,0.35)";
                 }
+                if (selectedCalendarDateISO && dateISO === selectedCalendarDateISO) {
+                    btn.style.boxShadow = "0 0 0 3px rgba(37,99,235,0.55),0 2px 8px rgba(37,99,235,0.2)";
+                    btn.style.borderColor = "rgba(37,99,235,0.95)";
+                    btn.style.borderWidth = "2px";
+                    btn.style.transform = "scale(1.06)";
+                    btn.style.zIndex = "2";
+                    btn.style.position = "relative";
+                    btn.setAttribute("aria-pressed", "true");
+                } else {
+                    btn.setAttribute("aria-pressed", "false");
+                }
                 btn.addEventListener("click", () => {
-                    void loadSlots(dateISO);
+                    selectedCalendarDateISO = dateISO;
+                    void (async () => {
+                        await renderCal();
+                        await loadSlots(dateISO);
+                    })();
                 });
             }
             grid.appendChild(btn);
@@ -5574,7 +5598,8 @@ function mountContactFormAppointmentPicker(hostEl, field, isDoctor) {
         slotsFlex.innerHTML = "";
         slotsHint.style.color = "";
         slotsHint.style.fontWeight = "";
-        slotsHint.textContent = `Times for ${dateISO}`;
+        slotsHint.textContent =
+            `${getTranslation("appointmentPickerChooseTime")} (${dateISO})`;
         const apiUrl = getApiEndpoint(isDoctor ? "/api/slots" : "/api/general-slots");
         if (!apiUrl) {
             return;
@@ -5635,9 +5660,31 @@ function mountContactFormAppointmentPicker(hostEl, field, isDoctor) {
                 }
                 slotsFlex.appendChild(b);
             });
+            window.requestAnimationFrame(() => {
+                try {
+                    slotsFlex.scrollIntoView({ block: "nearest", behavior: "smooth" });
+                } catch {
+                    slotsFlex.scrollIntoView({ block: "nearest" });
+                }
+                const firstPick = slotsFlex.querySelector("button:not([aria-disabled=\"true\"])");
+                if (firstPick && typeof firstPick.focus === "function") {
+                    firstPick.focus({ preventScroll: true });
+                }
+            });
         } catch {
             slotsHint.textContent = "Could not load slots.";
         }
+    }
+
+    function resetAppointmentPickerMonthNav_() {
+        selectedCalendarDateISO = "";
+        selectedSlotEl = null;
+        hidD.value = "";
+        hidT.value = "";
+        slotsFlex.innerHTML = "";
+        slotsHint.style.color = "";
+        slotsHint.style.fontWeight = "";
+        slotsHint.textContent = getTranslation("appointmentPickerPickDayIntro");
     }
 
     prevBtn.addEventListener("click", () => {
@@ -5646,6 +5693,7 @@ function mountContactFormAppointmentPicker(hostEl, field, isDoctor) {
             view.m = 12;
             view.y -= 1;
         }
+        resetAppointmentPickerMonthNav_();
         void renderCal();
     });
     nextBtn.addEventListener("click", () => {
@@ -5654,6 +5702,7 @@ function mountContactFormAppointmentPicker(hostEl, field, isDoctor) {
             view.m = 1;
             view.y += 1;
         }
+        resetAppointmentPickerMonthNav_();
         void renderCal();
     });
 

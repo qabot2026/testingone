@@ -455,7 +455,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
             mr: "निवडलेल्या डॉक्टरसाठी तारीख आणि वेळ निवडा. लाल = या डॉक्टरसाठी बुक."
           },
           showSubtitle: true,
-          maxCardHeightPx: 420,
+          maxCardHeightPx: 540,
           chatSummaryFieldNames: ["doctorId", "name", "mobile", "email", "appointmentdate", "appointmenttime"],
           fields: [
             { id: "afd-doctor", name: "doctorId", type: "hidden", required: true, value: "", i18nSummaryLabel: "summaryDoctorIdLabel" },
@@ -492,7 +492,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
             mr: "क्लिनिकचे एक समायोजन. लाल = आधीच बुक."
           },
           showSubtitle: true,
-          maxCardHeightPx: 420,
+          maxCardHeightPx: 540,
           chatSummaryFieldNames: ["name", "mobile", "email", "appointmentdate", "appointmenttime"],
           fields: [
             {
