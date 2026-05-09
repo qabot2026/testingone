@@ -1,22 +1,20 @@
 /**
- * Notify your team when a visitor submits contact details (name / email / mobile).
+ * New lead email: company → your team, body = visitor name, email, phone.
  *
- * Configure via environment variables (Railway / .env — never commit secrets):
+ * WHERE TO SET VALUES (no secrets in code):
+ *   1) Railway: Project → your contact-form-api service → Variables.
+ *   2) Or file: server/contact-form-api/.env  (next to index.mjs), only on your PC.
  *
- *   CONTACT_LEAD_NOTIFY_TO     Comma-separated inbox(es) that receive leads (required to send).
- *   SMTP_HOST                  e.g. smtp.gmail.com, smtp.sendgrid.net
- *   SMTP_PORT                  Default 587 (STARTTLS). Use 465 with SMTP_SECURE=1.
- *   SMTP_USER                  SMTP login (Gmail = full address; SendGrid = "apikey").
- *   SMTP_PASS or SMTP_PASSWORD App password / SMTP secret.
- *   SMTP_SECURE                Set to "1" or "true" for TLS on 465.
- *   MAIL_FROM                  From address shown to recipients (defaults to SMTP_USER).
- *   CONTACT_LEAD_NOTIFY_SUBJECT  Optional subject prefix (default: "New chat lead").
+ * See also: ../env.example.txt  (copy-paste cheat sheet).
  *
- * Optional:
- *   CONTACT_LEAD_NOTIFY_ON_MOBILE_SYNC=1 — also send when POST /contact-form-mobile-sheet-sync succeeds
- *     (only if name or visitor email is present, to limit noise).
+ * Variables:
+ *   MAIL_FROM                 — "From" (your company email).
+ *   CONTACT_LEAD_NOTIFY_TO    — "To" (who gets the lead). Commas = many addresses.
+ *   CONTACT_LEAD_NOTIFY_CC      — "Cc" (optional). Commas = many addresses.
+ *   SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS — mail server login.
+ *   CONTACT_LEAD_NOTIFY_SUBJECT — optional subject prefix.
  *
- * Sending runs after a successful save; failures are logged and do not fail the HTTP response.
+ * Optional: CONTACT_LEAD_NOTIFY_ON_MOBILE_SYNC=1 (see index.mjs comment).
  */
 
 import nodemailer from "nodemailer";
@@ -173,13 +171,22 @@ export async function maybeSendContactLeadNotifyEmail(args) {
 
     try {
         const tx = getTransporter_();
-        await tx.sendMail({
+        const ccRaw = (process.env.CONTACT_LEAD_NOTIFY_CC || "").trim();
+        const ccList = ccRaw
+            .split(",")
+            .map((x) => x.trim())
+            .filter(Boolean);
+        const mail = {
             from: fromAddr,
             to: toList.join(", "),
             subject,
             text,
             html
-        });
+        };
+        if (ccList.length) {
+            mail.cc = ccList.join(", ");
+        }
+        await tx.sendMail(mail);
         return { sent: true };
     } catch (e) {
         const msg = e && e.message ? e.message : String(e);

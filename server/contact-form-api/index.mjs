@@ -24,8 +24,8 @@
  *   SHEETS_CONV_DATETIME_TZ — optional IANA zone for Sheets “Conv.” column (12h display); unset defaults Asia/Kolkata; empty = server-local.
  *   Common (“general-purpose”) appointment hours: `company.config.js` → `common.generalAppointment` (any industry). Env overrides GENERAL_APPOINTMENT_*.
  *
- * Lead email to your team (optional): `lib/contact-lead-notify-email.mjs` — set CONTACT_LEAD_NOTIFY_TO + SMTP_HOST, SMTP_USER, SMTP_PASS, MAIL_FROM.
- *   CONTACT_LEAD_NOTIFY_ON_MOBILE_SYNC=1 — also notify on `/contact-form-mobile-sheet-sync` when name or email is present (see module comment).
+ * Lead email (optional): see `env.example.txt` and `lib/contact-lead-notify-email.mjs` — MAIL_FROM, CONTACT_LEAD_NOTIFY_TO, CONTACT_LEAD_NOTIFY_CC, SMTP_*.
+ *   CONTACT_LEAD_NOTIFY_ON_MOBILE_SYNC=1 — also notify on mobile-sheet-sync when name or email is present.
  *
  * Chat-only mobile → Sheet row (no file upload): POST JSON `/contact-form-mobile-sheet-sync`.
  * Optional: CONTACT_FORM_MOBILE_SHEET_SYNC_SECRET → client must send `X-Contact-Form-Mobile-Sync-Secret`.
