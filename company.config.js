@@ -353,6 +353,42 @@ window.COMPANY_CHAT_UI_CONFIG = {
     },
 
     // -------------------------------------------------------------------------
+    // **Common (“general-purpose”) appointment form** — `form_id` / key `appintmentformgeneral`.
+    //
+    // Naming: “General” here means **the default reusable contact-form calendar**, usable for
+    // **any client or industry** — hospitals, real estate, services, salons, etc. It is **not**
+    // a clinical “General medicine” department (see `department` below).
+    //
+    // One shared time grid for that form + optional Firebase tags (`bookingId`, `branchId`,
+    // `department`). The API reads this block from this file (Mon–Fri 9–5 style, 12h AM/PM).
+    // Env on the server still overrides if set: GENERAL_APPOINTMENT_START / _END / _DAYS /
+    // _BOOKING_ID / _BRANCH_ID / _DEPARTMENT.
+    //
+    // Why `branchId` / `department`? Legacy **names in the booking API** — required non-empty
+    // strings in RTDB, but **semantic meaning is yours**: office/region, booking category, etc.
+    // Slot conflicts use only `bookingId` + date + time, not branch/department.
+    // Example (non-hospital): bookingId `"consultations"`, branchId `"downtown-office"`,
+    // department `"Property viewing"` or `"Appointment"`.
+    // -------------------------------------------------------------------------
+    generalAppointment: {
+      /** RTDB **calendar pool id** for this common form (`"general"` is just an id — not “General dept”). */
+      bookingId: "general",
+      /** Same syntax as doctor CSV Days, e.g. "Mon-Fri", "Mon,Wed,Fri". */
+      days: "Mon-Fri",
+      start: "9:00 AM",
+      end: "5:00 PM",
+      /** Stored on each slot; arbitrary label — e.g. office code (non-hospital: site, region). */
+      branchId: "500",
+      /** Stored tag — **not** “hospital department”. Name of visit type / product line / default “Appointment”. */
+      department: "Appointment",
+      /**
+       * Optional slot length in minutes for this calendar only (5–180).
+       * Omit to use APPOINTMENT_SLOT_MINUTES env or server default (30).
+       */
+      slotMinutes: 60,
+    },
+
+    // -------------------------------------------------------------------------
     // FLOATING CHAT BUTTON (when the chat window is closed)
     // -------------------------------------------------------------------------
     // This is the small button that stays on the screen so visitors can open chat again.

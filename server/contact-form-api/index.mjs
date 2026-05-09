@@ -21,6 +21,7 @@
  *   GOOGLE_DRIVE_OAUTH_* (Drive API path; optional if Apps Script URL set)
  *   PORT, FIREBASE_SERVICE_ACCOUNT_JSON / GOOGLE_SERVICE_ACCOUNT_JSON / GOOGLE_APPLICATION_CREDENTIALS
  *   DISABLE_FIRESTORE=1, FIRESTORE_DATABASE_ID, CORS_ORIGIN, SHEETS_*, DISABLE_SHEETS=1
+ *   Common (“general-purpose”) appointment hours: `company.config.js` → `common.generalAppointment` (any industry). Env overrides GENERAL_APPOINTMENT_*.
  *
  * Chat-only mobile → Sheet row (no file upload): POST JSON `/contact-form-mobile-sheet-sync`.
  * Optional: CONTACT_FORM_MOBILE_SHEET_SYNC_SECRET → client must send `X-Contact-Form-Mobile-Sync-Secret`.
@@ -59,6 +60,10 @@ import {
 import { bookAppointment, listBookedSlots } from "./lib/appointments.mjs";
 import { listBranches, listDepartments, listDoctors } from "./lib/catalog-rtdb.mjs";
 import { upsertCatalogFromCsvFiles } from "./lib/catalog-csv-ingest.mjs";
+import {
+    generalAppointmentSlotStepMinutes_,
+    mergedGeneralAppointmentSchedule_
+} from "./lib/company-general-appointment.mjs";
 
 const APPS_SCRIPT_WEBAPP_URL = (process.env.GOOGLE_APPS_SCRIPT_WEBAPP_URL || "").trim();
 
@@ -516,22 +521,24 @@ function slotsForDoctorOnDate_(d, dateISO) {
     return [];
 }
 
-/** RTDB doctor id for shared “general” appointments (`GENERAL_APPOINTMENT_BOOKING_ID`, default `general`). */
+/** RTDB doctor id for shared “general” appointments — from `company.config.js` → `common.generalAppointment`, overridable by env. */
 function generalAppointmentBookingId_() {
-    return normalizeStr_(process.env.GENERAL_APPOINTMENT_BOOKING_ID || "general");
+    return normalizeStr_(mergedGeneralAppointmentSchedule_().bookingId);
 }
 
 /**
- * One shared schedule for the general appointment form (env-tunable).
- * Default: Mon–Fri, 9:00 AM – 5:00 PM, same slot step as doctors.
+ * One shared schedule for the general appointment form — defaults in `company.config.js` (`common.generalAppointment`).
+ * Env vars override when set on the server.
  */
 function slotsForGeneralAppointment_(dateISO) {
+    const cfg = mergedGeneralAppointmentSchedule_();
     const wdShort = weekdayShort_(dateISO);
-    const days = normalizeStr_(process.env.GENERAL_APPOINTMENT_DAYS || "Mon-Fri");
+    const days = normalizeStr_(cfg.days);
     if (!dayInDaysField_(wdShort, days)) return [];
-    const start = normalizeStr_(process.env.GENERAL_APPOINTMENT_START || "9:00 AM");
-    const end = normalizeStr_(process.env.GENERAL_APPOINTMENT_END || "5:00 PM");
-    return expandTimeRangeToSlotLabels_(`${start} - ${end}`, appointmentSlotMinutes_());
+    const start = normalizeStr_(cfg.start);
+    const end = normalizeStr_(cfg.end);
+    const iv = generalAppointmentSlotStepMinutes_(appointmentSlotMinutes_);
+    return expandTimeRangeToSlotLabels_(`${start} - ${end}`, iv);
 }
 
 // JSON helpers for CX webhooks (easier to consume than XML)
@@ -697,11 +704,12 @@ app.get("/api/general-slots", async (req, res) => {
         label,
         status: bookedSet.has(label) ? "booked" : "available"
     }));
+    const gm = generalAppointmentSlotStepMinutes_(appointmentSlotMinutes_);
     return res.status(200).json({
         ok: true,
         doctorId,
         dateISO,
-        slotMinutes: appointmentSlotMinutes_(),
+        slotMinutes: gm,
         slots,
         booked,
         available: slots.filter((s) => !bookedSet.has(s)),
@@ -722,7 +730,7 @@ app.get("/api/general-month-overview", async (req, res) => {
     const mo = parseInt(mRe[2], 10);
     const doctorId = generalAppointmentBookingId_();
     const daysInMonth = new Date(y, mo, 0).getDate();
-    const iv = appointmentSlotMinutes_();
+    const iv = generalAppointmentSlotStepMinutes_(appointmentSlotMinutes_);
     /** @type {Record<string, { working: boolean, totalSlots: number, bookedCount: number, availableCount: number }>} */
     const days = {};
     for (let day = 1; day <= daysInMonth; day += 1) {
@@ -1348,10 +1356,11 @@ async function tryReserveAppointmentSlotFromContactForm_(formId, fields) {
             return { ok: false, status: 409, error: "That slot is already booked.", block: true };
         }
         try {
+            const ga = mergedGeneralAppointmentSchedule_();
             await bookAppointment({
                 doctorId: generalAppointmentBookingId_(),
-                branchId: normalizeStr_(process.env.GENERAL_APPOINTMENT_BRANCH_ID || "500"),
-                department: normalizeStr_(process.env.GENERAL_APPOINTMENT_DEPARTMENT || "General"),
+                branchId: normalizeStr_(ga.branchId),
+                department: normalizeStr_(ga.department),
                 dateISO,
                 slotLabel,
                 userId: ""
