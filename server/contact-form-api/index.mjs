@@ -132,7 +132,7 @@ function resolveSourceUrlForSheet(cx) {
 function normalizeSheetFormId(explicit) {
     const t = typeof explicit === "string" ? explicit.trim() : "";
     if (t) {
-        return t;
+        return t === "appintmentformdocot" ? "appintmentformdoctor" : t;
     }
     const envDefault = (process.env.DEFAULT_SHEET_FORM_ID || "").trim();
     return envDefault || "web";
@@ -1303,8 +1303,12 @@ app.post("/webhook", express.json({ limit: "512kb" }), async (req, res) => {
  * @param {Record<string, string>} fields
  */
 async function tryReserveAppointmentSlotFromContactForm_(formId, fields) {
-    const fid = normalizeStr_(formId);
-    if (fid !== "appintmentformdocot" && fid !== "appintmentformgeneral") {
+    let fid = normalizeStr_(formId);
+    /** Legacy typo id from older CX payloads / configs. */
+    if (fid === "appintmentformdocot") {
+        fid = "appintmentformdoctor";
+    }
+    if (fid !== "appintmentformdoctor" && fid !== "appintmentformgeneral") {
         return { skip: true };
     }
     const dateISO = normalizeStr_(fields.appointmentdate);

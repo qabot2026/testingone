@@ -5116,6 +5116,10 @@ function setActiveContactFormId(formId) {
         return;
     }
     let id = canonicalContactFormId_(formId.trim());
+    /** Historically misspelled; map to canonical doctor appointment form key. */
+    if (id === "appintmentformdocot") {
+        id = "appintmentformdoctor";
+    }
     const c = readCommonFormConfigRoot();
     const alias = typeof c.legacyAppointmentFormAlias === "string" ? c.legacyAppointmentFormAlias.trim() : "";
     if (id === "appointment" && alias && c.forms && typeof c.forms === "object" && c.forms[alias]) {
@@ -5870,7 +5874,7 @@ function mountContactFormAppointmentPicker(hostEl, field, isDoctor) {
 function syncAppointmentDoctorHiddenFromSession() {
     try {
         const cfg = readContactFormConfig();
-        if (cfg.formKey !== "appintmentformdocot") {
+        if (cfg.formKey !== "appintmentformdoctor") {
             return;
         }
         const docEl = document.getElementById("afd-doctor");
@@ -5887,7 +5891,7 @@ function syncSuppressAppointmentContactRows_() {
     try {
         const cfg = readContactFormConfig();
         const fk = cfg.formKey;
-        if (fk !== "appintmentformdocot" && fk !== "appintmentformgeneral") {
+        if (fk !== "appintmentformdoctor" && fk !== "appintmentformgeneral") {
             return;
         }
         const suppress = sessionHasNameAndMobileForSkip_();

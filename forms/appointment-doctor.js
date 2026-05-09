@@ -1,9 +1,9 @@
 /**
- * Form: per-doctor booking — `form_id`: "appintmentformdocot".
+ * Form: per-doctor booking — `form_id`: "appintmentformdoctor".
  */
 (function (w) {
   w.__DFCHAT_FORMS__ = w.__DFCHAT_FORMS__ || {};
-  w.__DFCHAT_FORMS__.appintmentformdocot = {
+  w.__DFCHAT_FORMS__.appintmentformdoctor = {
     titleByLanguage: {
       en: "Doctor appointment",
       hi: "डॉक्टर अपॉइंटमेंट",
