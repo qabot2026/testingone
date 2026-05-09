@@ -51,6 +51,65 @@ function mobileDigitsOnly(s) {
     return String(s || "").replace(/\D/g, "");
 }
 
+/**
+ * Normalize a phone-like cell to a comparable key.
+ * - Extract digits (handles "+91 98..." etc.)
+ * - If it's longer than 10 digits, compare by the last 10 digits (India-centric; avoids country code mismatch)
+ * - Attempt to expand scientific notation strings (e.g. "9.19876E+11") to digits when safe
+ *
+ * @param {unknown} rawCell
+ */
+function mobileKeyFromCell_(rawCell) {
+    const s0 = sheetCellString_(rawCell);
+    if (!s0) {
+        return "";
+    }
+    let s = s0;
+    // Sheets sometimes stores long numbers in scientific notation (string or number).
+    if (/[eE][+-]?\d+/.test(s)) {
+        const n = Number(s);
+        // Avoid tiny/invalid parses; 9 digits minimum to resemble a phone.
+        if (Number.isFinite(n) && n >= 1e8 && n <= 1e15) {
+            // toFixed(0) expands without decimals; may still be rounded if the sheet already lost precision.
+            s = n.toFixed(0);
+        }
+    }
+    let digits = mobileDigitsOnly(s);
+    if (!digits) {
+        return "";
+    }
+    // Prefer comparing by last 10 digits to ignore country codes / prefixes.
+    if (digits.length > 10) {
+        digits = digits.slice(-10);
+    }
+    return digits;
+}
+
+/** Best-effort mobile key from a whole sheet row (handles column reorders). @param {unknown[]} r */
+function mobileKeyFromRow_(r) {
+    if (!Array.isArray(r) || !r.length) {
+        return "";
+    }
+    // Prefer the default schema column D first.
+    const primary = mobileKeyFromCell_(r[3]);
+    if (primary) {
+        return primary;
+    }
+    // Fallback: scan all cells for any phone-like value.
+    let best = "";
+    for (let i = 0; i < r.length; i += 1) {
+        const k = mobileKeyFromCell_(r[i]);
+        if (k.length > best.length) {
+            best = k;
+        }
+        if (best.length === 10) {
+            // Can't do better than a full 10-digit key.
+            return best;
+        }
+    }
+    return best;
+}
+
 /** Values API often returns numbers (e.g. phone) instead of strings — normalize for compares + blank checks. */
 function sheetCellString_(v) {
     if (v == null) {
@@ -146,24 +205,30 @@ async function scanSheetTailForDedupeAndRepeat_(sheets, row) {
     const tail = rows.slice(Math.max(0, rows.length - DEDUP_LOOKBACK_ROWS));
     const tailOffset = rows.length - tail.length; // 0-based offset into full sheet rows
     const incomingSid = typeof row.clientSessionId === "string" ? row.clientSessionId.trim() : "";
-    const incomingMobileDigits = mobileDigitsOnly(row.mobile);
+    const incomingMobileDigits = mobileKeyFromCell_(row.mobile);
     let repeatedAcrossSessions = false;
 
-    for (let i = tail.length - 1; i >= 0; i--) {
-        const r = tail[i] || [];
-        const existingMobile = sheetCellString_(r[3]);
-        const existingSid = sheetCellString_(r[5]);
-        const rowNumber = tailOffset + i + 1; // 1-based row number in the sheet
-
-        // Repeated (same mobile). We mark "Yes" when the mobile already exists in *any other* row.
-        // If we have a session id and this row is the same session, do not count it as "repeated".
-        const existingMobileDigits = mobileDigitsOnly(existingMobile);
-        if (incomingMobileDigits && existingMobileDigits && incomingMobileDigits === existingMobileDigits) {
+    // Repeated check: scan the full sheet, not just the tail.
+    if (incomingMobileDigits) {
+        for (let i = 0; i < rows.length; i += 1) {
+            const r = rows[i] || [];
+            const existingSid = Array.isArray(r) ? sheetCellString_(r[5]) : "";
+            const existingKey = mobileKeyFromRow_(/** @type {unknown[]} */ (r));
+            if (!existingKey || existingKey !== incomingMobileDigits) {
+                continue;
+            }
             const sameSession = incomingSid && existingSid && incomingSid === existingSid;
             if (!sameSession) {
                 repeatedAcrossSessions = true;
+                break;
             }
         }
+    }
+
+    for (let i = tail.length - 1; i >= 0; i--) {
+        const r = tail[i] || [];
+        const existingSid = sheetCellString_(r[5]);
+        const rowNumber = tailOffset + i + 1; // 1-based row number in the sheet
 
         // If we have a session id, enforce "only once per session".
         if (key && incomingSid && existingSid && incomingSid === existingSid) {
