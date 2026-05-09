@@ -12409,18 +12409,9 @@ function applyStoredContactHintsToOpenContactForm_() {
     try {
         const stored = readStoredClientContext();
         const hints = {
-            mobile:
-                stored && typeof stored.mobile === "string" && stored.mobile.trim()
-                    ? stored.mobile.trim()
-                    : "",
-            name:
-                stored && typeof stored.name === "string" && stored.name.trim()
-                    ? stored.name.trim()
-                    : "",
-            email:
-                stored && typeof stored.email === "string" && stored.email.trim()
-                    ? stored.email.trim()
-                    : ""
+            mobile: dfParameterScalarToString(stored && stored.mobile != null ? stored.mobile : ""),
+            name: dfParameterScalarToString(stored && stored.name != null ? stored.name : ""),
+            email: dfParameterScalarToString(stored && stored.email != null ? stored.email : "")
         };
         const cfg = readContactFormConfig();
         const fields = Array.isArray(cfg.fields) ? cfg.fields : [];
@@ -12592,12 +12583,15 @@ function shallowPrefillFromOpenFormPayload(payload) {
             continue;
         }
         if (typeof value === "string") {
-            const t = value.trim();
+            const t = dfParameterScalarToString(value);
             if (t) {
                 out[key] = t;
             }
         } else if (typeof value === "number" && Number.isFinite(value)) {
-            out[key] = String(value);
+            const t = dfParameterScalarToString(value);
+            if (t) {
+                out[key] = t;
+            }
         }
     }
     return Object.keys(out).length ? out : null;
@@ -12762,7 +12756,7 @@ function applyContactFormPrefill(values) {
             continue;
         }
         const v = values[def.name];
-        const s = v != null ? String(v).trim() : "";
+        const s = dfParameterScalarToString(v != null ? v : "");
         if (!s) {
             continue;
         }
@@ -12971,18 +12965,9 @@ function submitContactForm(event) {
     } else {
         chatSummaryPayload = {};
         const stored = readStoredClientContext();
-        const storedMobile =
-            stored && typeof stored.mobile === "string" && stored.mobile.trim()
-                ? stored.mobile.trim()
-                : "";
-        const storedName =
-            stored && typeof stored.name === "string" && stored.name.trim()
-                ? stored.name.trim()
-                : "";
-        const storedEmail =
-            stored && typeof stored.email === "string" && stored.email.trim()
-                ? stored.email.trim()
-                : "";
+        const storedMobile = dfParameterScalarToString(stored && stored.mobile != null ? stored.mobile : "");
+        const storedName = dfParameterScalarToString(stored && stored.name != null ? stored.name : "");
+        const storedEmail = dfParameterScalarToString(stored && stored.email != null ? stored.email : "");
         for (const def of fieldDefs) {
             if (!def || !def.id || !def.name) {
                 continue;
@@ -13081,8 +13066,7 @@ function submitContactForm(event) {
                 }
                 continue;
             }
-            const raw = el && "value" in el ? el.value : "";
-            let v = typeof raw === "string" ? raw.trim() : "";
+            let v = dfParameterScalarToString(el && "value" in el ? el.value : "");
             // If mobile is already known for this session, reuse it and don't force the user to type again.
             if (!v && def.name === "mobile" && storedMobile) {
                 v = storedMobile;
@@ -13282,8 +13266,7 @@ function submitContactForm(event) {
                     }
                 }
             } else {
-                const raw = el && "value" in el ? el.value : "";
-                const v = typeof raw === "string" ? raw.trim() : "";
+                let v = dfParameterScalarToString(el && "value" in el ? el.value : "");
                 fd.append(def.name, v);
                 if (def.name === "mobile") {
                     formMobileValue = v;
@@ -13298,22 +13281,23 @@ function submitContactForm(event) {
         }
         if (isOtpForm && otpStep === "otp") {
             const mEl = document.getElementById("o-mobile");
-            const mRaw = mEl && "value" in mEl ? mEl.value : "";
-            const m = typeof mRaw === "string" ? mRaw.trim() : "";
+            const m = dfParameterScalarToString(mEl && "value" in mEl ? mEl.value : "");
             if (m) {
                 fd.append("mobile", m);
                 formMobileValue = m;
             }
         }
         const sessionMobile =
-            typeof clientSnapshot.mobile === "string" ? clientSnapshot.mobile.trim() : "";
+            dfParameterScalarToString(
+                clientSnapshot && clientSnapshot.mobile != null ? clientSnapshot.mobile : ""
+            );
         if (sessionMobile && !formMobileValue) {
             fd.append("mobile", sessionMobile);
         }
         const snapNameTrim =
-            typeof clientSnapshot.name === "string" ? clientSnapshot.name.trim() : "";
+            dfParameterScalarToString(clientSnapshot && clientSnapshot.name != null ? clientSnapshot.name : "");
         const snapEmailTrim =
-            typeof clientSnapshot.email === "string" ? clientSnapshot.email.trim() : "";
+            dfParameterScalarToString(clientSnapshot && clientSnapshot.email != null ? clientSnapshot.email : "");
         if (snapNameTrim && !String(formNameValue || "").trim()) {
             fd.append("name", snapNameTrim);
         }
@@ -15006,7 +14990,22 @@ function readStoredClientContext() {
         }
 
         const parsedValue = JSON.parse(rawValue);
-        return parsedValue && typeof parsedValue === "object" ? parsedValue : {};
+        if (!parsedValue || typeof parsedValue !== "object") {
+            return {};
+        }
+        const out = /** @type {Record<string, unknown>} */ ({ ...parsedValue });
+        for (const key of ["name", "email", "mobile"]) {
+            if (!(key in out)) {
+                continue;
+            }
+            const cleaned = dfParameterScalarToString(out[key]);
+            if (!cleaned) {
+                delete out[key];
+                continue;
+            }
+            out[key] = cleaned;
+        }
+        return out;
     } catch {
         return {};
     }
@@ -15256,7 +15255,7 @@ function mergeContactHintsFromOpenFormPrefillIntoStoredContext(prefill) {
         const next = Object.assign({}, prev);
         const nameRaw =
             prefill.name ?? prefill.customer_name ?? prefill.full_name ?? prefill.person_name;
-        let ns = typeof nameRaw === "string" ? nameRaw.trim().slice(0, 200) : "";
+        let ns = dfParameterScalarToString(nameRaw != null ? nameRaw : "").slice(0, 200);
         if (!ns) {
             const g = dfParameterScalarToString(
                 prefill.given_name
@@ -15282,7 +15281,7 @@ function mergeContactHintsFromOpenFormPrefillIntoStoredContext(prefill) {
             next.name = ns;
         }
         const emRaw = prefill.email ?? prefill.user_email;
-        const es = typeof emRaw === "string" ? emRaw.trim() : "";
+        const es = dfParameterScalarToString(emRaw != null ? emRaw : "");
         if (es && EMAIL_VALIDATION_RE.test(es)) {
             next.email = es;
         }
@@ -15295,8 +15294,8 @@ function mergeContactHintsFromOpenFormPrefillIntoStoredContext(prefill) {
 /** True when session already has both visitor name and mobile (skip opening default contact form). */
 function sessionHasNameAndMobileForSkip_() {
     const s = readStoredClientContext();
-    const n = s && typeof s.name === "string" && s.name.trim() ? s.name.trim() : "";
-    const m = s && typeof s.mobile === "string" && s.mobile.trim() ? s.mobile.trim() : "";
+    const n = dfParameterScalarToString(s && s.name != null ? s.name : "");
+    const m = dfParameterScalarToString(s && s.mobile != null ? s.mobile : "");
     return !!(n && m);
 }
 
@@ -15338,9 +15337,11 @@ function dfParameterScalarToString(val) {
     }
     if (typeof val === "string") {
         var t = val.trim();
-        // Guard: sometimes CX payloads contain literal template placeholders like "$session.params.name".
-        // If we persist those, uploads can later submit them to Sheets as if they were real values.
+        // Guard: CX sometimes sends unresolved template refs (literal text, not resolved parameters).
         if (/^\$session\.params\.[a-z0-9_]+$/i.test(t) || t.indexOf("$session.params.") !== -1) {
+            return "";
+        }
+        if (/^\$request\.[\w.]+\.[a-z0-9_]+$/i.test(t) || /\$parameter\.\w+/i.test(t)) {
             return "";
         }
         return t;
@@ -15354,21 +15355,21 @@ function dfParameterScalarToString(val) {
     if (typeof val === "object") {
         var o = /** @type {Record<string, unknown>} */ (val);
         if (typeof o.stringValue === "string") {
-            return o.stringValue.trim();
+            return dfParameterScalarToString(o.stringValue);
         }
         if (typeof o.numberValue === "number" && Number.isFinite(o.numberValue)) {
             return String(o.numberValue);
         }
         if (typeof o.original === "string") {
-            return o.original.trim();
+            return dfParameterScalarToString(o.original);
         }
         if (typeof o.resolved === "string") {
-            return o.resolved.trim();
+            return dfParameterScalarToString(o.resolved);
         }
         try {
             var c = convertDialogflowValue(val);
             if (typeof c === "string" && c.trim()) {
-                return c.trim();
+                return dfParameterScalarToString(c);
             }
             if (typeof c === "number" && Number.isFinite(c)) {
                 return String(c);
