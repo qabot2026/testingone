@@ -61,8 +61,8 @@ import { bookAppointment, listBookedSlots } from "./lib/appointments.mjs";
 import { listBranches, listDepartments, listDoctors } from "./lib/catalog-rtdb.mjs";
 import { upsertCatalogFromCsvFiles } from "./lib/catalog-csv-ingest.mjs";
 import {
-    generalAppointmentSlotStepMinutes_,
-    mergedGeneralAppointmentSchedule_
+    mergedGeneralAppointmentSchedule_,
+    resolvedGeneralAppointmentSlotMinutes_
 } from "./lib/company-general-appointment.mjs";
 
 const APPS_SCRIPT_WEBAPP_URL = (process.env.GOOGLE_APPS_SCRIPT_WEBAPP_URL || "").trim();
@@ -530,14 +530,15 @@ function generalAppointmentBookingId_() {
  * One shared schedule for the general appointment form — defaults in `company.config.js` (`common.generalAppointment`).
  * Env vars override when set on the server.
  */
-function slotsForGeneralAppointment_(dateISO) {
+/** @param {{ querySlotMinutes?: string, formSlotMinutes?: string }} [hints] */
+function slotsForGeneralAppointment_(dateISO, hints = undefined) {
     const cfg = mergedGeneralAppointmentSchedule_();
     const wdShort = weekdayShort_(dateISO);
     const days = normalizeStr_(cfg.days);
     if (!dayInDaysField_(wdShort, days)) return [];
     const start = normalizeStr_(cfg.start);
     const end = normalizeStr_(cfg.end);
-    const iv = generalAppointmentSlotStepMinutes_(appointmentSlotMinutes_);
+    const iv = resolvedGeneralAppointmentSlotMinutes_(hints || {}, appointmentSlotMinutes_);
     return expandTimeRangeToSlotLabels_(`${start} - ${end}`, iv);
 }
 
@@ -691,8 +692,12 @@ app.get("/api/general-slots", async (req, res) => {
     if (firebaseInitError) {
         return res.status(503).json({ ok: false, error: `Firebase init failed: ${firebaseInitError}` });
     }
+    const hints = {
+        querySlotMinutes:
+            typeof req.query.generalSlotMinutes === "string" ? req.query.generalSlotMinutes.trim() : ""
+    };
     const doctorId = generalAppointmentBookingId_();
-    const slots = slotsForGeneralAppointment_(dateISO);
+    const slots = slotsForGeneralAppointment_(dateISO, hints);
     let booked = [];
     try {
         booked = await listBookedSlots({ doctorId, dateISO });
@@ -704,7 +709,7 @@ app.get("/api/general-slots", async (req, res) => {
         label,
         status: bookedSet.has(label) ? "booked" : "available"
     }));
-    const gm = generalAppointmentSlotStepMinutes_(appointmentSlotMinutes_);
+    const gm = resolvedGeneralAppointmentSlotMinutes_(hints, appointmentSlotMinutes_);
     return res.status(200).json({
         ok: true,
         doctorId,
@@ -728,14 +733,18 @@ app.get("/api/general-month-overview", async (req, res) => {
     }
     const y = parseInt(mRe[1], 10);
     const mo = parseInt(mRe[2], 10);
+    const hints = {
+        querySlotMinutes:
+            typeof req.query.generalSlotMinutes === "string" ? req.query.generalSlotMinutes.trim() : ""
+    };
     const doctorId = generalAppointmentBookingId_();
     const daysInMonth = new Date(y, mo, 0).getDate();
-    const iv = generalAppointmentSlotStepMinutes_(appointmentSlotMinutes_);
+    const iv = resolvedGeneralAppointmentSlotMinutes_(hints, appointmentSlotMinutes_);
     /** @type {Record<string, { working: boolean, totalSlots: number, bookedCount: number, availableCount: number }>} */
     const days = {};
     for (let day = 1; day <= daysInMonth; day += 1) {
         const dateISO = `${y}-${String(mo).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-        const slots = slotsForGeneralAppointment_(dateISO);
+        const slots = slotsForGeneralAppointment_(dateISO, hints);
         let booked = [];
         try {
             booked = await listBookedSlots({ doctorId, dateISO });
@@ -1337,7 +1346,11 @@ async function tryReserveAppointmentSlotFromContactForm_(formId, fields) {
     }
 
     if (fid === "appintmentformgeneral") {
-        const slots = slotsForGeneralAppointment_(dateISO);
+        const gsmHint =
+            scalarFormValue(fields.generalAppointmentSlotMinutes) ||
+            scalarFormValue(fields.generalappointmentslotminutes);
+        const hints = gsmHint ? { formSlotMinutes: gsmHint } : {};
+        const slots = slotsForGeneralAppointment_(dateISO, hints);
         if (!slots.includes(slotLabel)) {
             return {
                 ok: false,

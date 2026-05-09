@@ -10,6 +10,8 @@ import vm from "node:vm";
 import { fileURLToPath } from "node:url";
 
 const __dirname_lib = path.dirname(fileURLToPath(import.meta.url));
+/** Contact-form-api root (`index.mjs` lives here): ship `company.config.js` beside it for flattened deploys. */
+const apiRootDir_ = path.join(__dirname_lib, "..");
 const COMPANY_CONFIG_FALLBACK_REL = path.join(__dirname_lib, "..", "..", "..", "company.config.js");
 
 function trimStrEnv(x) {
@@ -26,6 +28,8 @@ function resolveReadableCompanyConfigPath() {
     const cwd = process.cwd();
     /** @type {string[]} */
     const candidates = [
+        path.join(apiRootDir_, "company.config.js"),
+        path.join(apiRootDir_, "..", "..", "company.config.js"),
         COMPANY_CONFIG_FALLBACK_REL,
         path.join(cwd, "company.config.js"),
         path.join(cwd, "..", "company.config.js"),
@@ -113,24 +117,64 @@ export function mergedGeneralAppointmentSchedule_() {
     };
 }
 
+function clampAppointmentSlotMinutes_(raw) {
+    const n =
+        typeof raw === "number" && Number.isFinite(raw)
+            ? raw
+            : Number(String(raw == null ? "" : raw).trim());
+    if (!Number.isFinite(n) || n < 5 || n > 180) {
+        return null;
+    }
+    return Math.floor(n);
+}
+
 /**
- * Slot step (minutes) for the general calendar only.
- * Priority: GENERAL_APPOINTMENT_SLOT_MINUTES env → `generalAppointment.slotMinutes` in company.config.js
- * → global `appointmentSlotMinutes_()` (APPOINTMENT_SLOT_MINUTES / 30).
+ * Slot step for the shared general calendar.
+ * Priority: GENERAL_APPOINTMENT_SLOT_MINUTES → explicit `generalAppointment.slotMinutes` in loaded
+ * `company.config.js` → optional client hints (`generalSlotMinutes` query / `generalAppointmentSlotMinutes`
+ * form field — same UI config the browser reads) → global `appointmentSlotMinutes_()` / 30.
+ * Client hints apply only when the server did **not** read a usable `slotMinutes` from disk.
+ * @param {{ querySlotMinutes?: string, formSlotMinutes?: string }} [hints]
  * @param {() => number} globalSlotMinutesFn
  */
-export function generalAppointmentSlotStepMinutes_(globalSlotMinutesFn) {
-    const eg = trimStrEnv(process.env.GENERAL_APPOINTMENT_SLOT_MINUTES);
-    if (eg !== "") {
-        const nEnv = Number(eg);
-        if (Number.isFinite(nEnv) && nEnv >= 5 && nEnv <= 180) {
-            return Math.floor(nEnv);
+export function resolvedGeneralAppointmentSlotMinutes_(hints, globalSlotMinutesFn) {
+    const fromEnv = clampAppointmentSlotMinutes_(trimStrEnv(process.env.GENERAL_APPOINTMENT_SLOT_MINUTES));
+    if (fromEnv != null) {
+        return fromEnv;
+    }
+
+    const blob = loadCompanyChatUiConfig();
+    const c = generalAppointmentFromCompany_();
+    if (
+        blob !== null &&
+        c &&
+        typeof c === "object" &&
+        Object.prototype.hasOwnProperty.call(c, "slotMinutes")
+    ) {
+        const fromFile = clampAppointmentSlotMinutes_(/** @type {unknown} */ (c).slotMinutes);
+        if (fromFile != null) {
+            return fromFile;
         }
     }
-    const c = generalAppointmentFromCompany_();
-    const n = Number(c.slotMinutes);
-    if (Number.isFinite(n) && n >= 5 && n <= 180) {
-        return Math.floor(n);
+
+    if (hints) {
+        const raw =
+            hints.formSlotMinutes !== undefined && String(hints.formSlotMinutes).trim() !== ""
+                ? hints.formSlotMinutes
+                : hints.querySlotMinutes;
+        const fromHint = clampAppointmentSlotMinutes_(raw);
+        if (fromHint != null) {
+            return fromHint;
+        }
     }
+
     return globalSlotMinutesFn();
+}
+
+/**
+ * @param {() => number} globalSlotMinutesFn
+ * @param {{ querySlotMinutes?: string, formSlotMinutes?: string }} [hints]
+ */
+export function generalAppointmentSlotStepMinutes_(globalSlotMinutesFn, hints) {
+    return resolvedGeneralAppointmentSlotMinutes_(hints || {}, globalSlotMinutesFn);
 }

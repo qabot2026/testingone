@@ -65,6 +65,29 @@ const COMPANY_UI_CONFIG = readCompanyUiConfig();
 const COMMON_CONFIG = COMPANY_UI_CONFIG.common && typeof COMPANY_UI_CONFIG.common === "object"
     ? COMPANY_UI_CONFIG.common
     : {};
+/**
+ * Explicit `generalAppointment.slotMinutes` from `company.config.js` (sent to API + form POST) so grids match
+ * when the backend cannot read `company.config.js`.
+ * @returns {number | null}
+ */
+function readConfiguredGeneralAppointmentSlotMinutes_() {
+    const ga =
+        COMMON_CONFIG.generalAppointment &&
+        typeof COMMON_CONFIG.generalAppointment === "object"
+            ? COMMON_CONFIG.generalAppointment
+            : null;
+    if (
+        !ga ||
+        !Object.prototype.hasOwnProperty.call(ga, "slotMinutes")
+    ) {
+        return null;
+    }
+    const n = Number(/** @type {{ slotMinutes?: unknown }} */ (ga).slotMinutes);
+    if (!Number.isFinite(n) || n < 5 || n > 180) {
+        return null;
+    }
+    return Math.floor(n);
+}
 const FOOTER_ACTION_BAR_LAYOUT = readFooterActionBarLayoutConfig();
 /**
  * Pixels: added to `common.footerActionBar.nudgeUpPx` for the *fixed* (non-inline) action bar.
@@ -5662,6 +5685,12 @@ function mountContactFormAppointmentPicker(hostEl, field, isDoctor) {
             u.searchParams.set("doctorId", doctorId);
         }
         u.searchParams.set("month", monthKey);
+        if (!isDoctor) {
+            const gsm = readConfiguredGeneralAppointmentSlotMinutes_();
+            if (gsm != null) {
+                u.searchParams.set("generalSlotMinutes", String(gsm));
+            }
+        }
         try {
             const r = await fetch(u.toString(), { credentials: "omit" });
             const j = await r.json();
@@ -5771,6 +5800,12 @@ function mountContactFormAppointmentPicker(hostEl, field, isDoctor) {
             u.searchParams.set("doctorId", doctorId);
         }
         u.searchParams.set("date", dateISO);
+        if (!isDoctor) {
+            const gsmLs = readConfiguredGeneralAppointmentSlotMinutes_();
+            if (gsmLs != null) {
+                u.searchParams.set("generalSlotMinutes", String(gsmLs));
+            }
+        }
         try {
             const r = await fetch(u.toString(), { credentials: "omit" });
             const j = await r.json();
@@ -12995,6 +13030,12 @@ function submitContactForm(event) {
                 }
                 payload.appointmentdate = dv;
                 payload.appointmenttime = tv;
+                if (String(apptType) === "appointmentgeneral") {
+                    const gsmSubmit = readConfiguredGeneralAppointmentSlotMinutes_();
+                    if (gsmSubmit != null) {
+                        payload.generalAppointmentSlotMinutes = String(gsmSubmit);
+                    }
+                }
                 if (chatSummaryPayload) {
                     chatSummaryPayload.appointmentdate = dv;
                     chatSummaryPayload.appointmenttime = tv;
@@ -13223,6 +13264,12 @@ function submitContactForm(event) {
                 }
                 fd.append("appointmentdate", dv);
                 fd.append("appointmenttime", tv);
+                if (String(apptType) === "appointmentgeneral") {
+                    const gsmFd = readConfiguredGeneralAppointmentSlotMinutes_();
+                    if (gsmFd != null) {
+                        fd.append("generalAppointmentSlotMinutes", String(gsmFd));
+                    }
+                }
                 continue;
             }
             const el = document.getElementById(def.id);

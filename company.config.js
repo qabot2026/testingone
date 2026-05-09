@@ -383,11 +383,11 @@ window.COMPANY_CHAT_UI_CONFIG = {
       department: "Appointment",
       /**
        * Optional slot length in minutes for this calendar only (5–180).
-       * The **contact-form API** must read this file (or set GENERAL_APPOINTMENT_SLOT_MINUTES on the server);
-       * the browser config alone does not change slots. If hosted separately, copy `company.config.js` into the
-       * API deployment or set env `COMPANY_CHAT_UI_CONFIG_PATH` to its absolute path, then restart the API.
+       * The contact-form API uses this value when `company.config.js` is bundled with the API; otherwise
+       * **`company.js` sends `generalSlotMinutes=<this>` on general-calendar API calls + form submits** so
+       * grids still match. Fallbacks: GENERAL_APPOINTMENT_SLOT_MINUTES env, then APPOINTMENT_SLOT_MINUTES / 30.
        */
-      slotMinutes: 45,
+      slotMinutes: 60,
     },
 
     // -------------------------------------------------------------------------
