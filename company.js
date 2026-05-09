@@ -12190,7 +12190,27 @@ function postSessionQueriesToSheetRow_() {
             credentials: "omit",
             body: JSON.stringify({ client_context, _contactFormId: "chat" }),
             keepalive: true
-        }).catch(() => {});
+        })
+            .then(async (resp) => {
+                if (resp.ok) {
+                    return;
+                }
+                let detail = "";
+                try {
+                    detail = (await resp.text()).slice(0, 240);
+                } catch {
+                    /* ignore */
+                }
+                if (typeof console !== "undefined" && console.warn) {
+                    console.warn(
+                        "[dfchat] Session query sheet sync failed:",
+                        resp.status,
+                        detail || resp.statusText,
+                        "— check API base URL, CORS, and X-Contact-Form-Mobile-Sync-Secret if Railway sets CONTACT_FORM_MOBILE_SHEET_SYNC_SECRET."
+                    );
+                }
+            })
+            .catch(() => {});
     } catch {
         /* ignore */
     }
@@ -14604,6 +14624,10 @@ function derivePagePartsFromHref(href) {
 
 function getClientContext() {
     const storedContext = readStoredClientContext();
+    const persistedSessionId =
+        typeof storedContext.client_session_id === "string"
+            ? storedContext.client_session_id.trim()
+            : "";
     const userAgent = navigator.userAgent || "";
     const browserName = detectBrowserName(userAgent);
     const browserVersion = detectBrowserVersion(userAgent);
@@ -14613,7 +14637,8 @@ function getClientContext() {
     const pageFromParent = embedParentHref ? derivePagePartsFromHref(embedParentHref) : null;
     const clientContext = {
         ...storedContext,
-        client_session_id: storedContext.client_session_id || createClientSessionId(),
+        // Whitespace-only ids used to break chat→Sheet sync (postCapturedMobileToSheetRow required a non-empty sid).
+        client_session_id: persistedSessionId || createClientSessionId(),
         source_url: embedParentHref || window.location.href || "",
         page_origin: pageFromParent ? pageFromParent.origin : window.location.origin || "",
         page_path: pageFromParent ? pageFromParent.path : window.location.pathname || "",
@@ -14714,9 +14739,24 @@ function postCapturedMobileToSheetRow(mobileValue) {
         /* ignore */
     }
 
-    const clientSnapshot = getClientContext();
-    const sid =
+    let clientSnapshot = getClientContext();
+    let sid =
         typeof clientSnapshot.client_session_id === "string" ? clientSnapshot.client_session_id.trim() : "";
+    if (!sid) {
+        try {
+            persistClientContext({
+                ...readStoredClientContext(),
+                client_session_id: createClientSessionId()
+            });
+            clientSnapshot = getClientContext();
+            sid =
+                typeof clientSnapshot.client_session_id === "string"
+                    ? clientSnapshot.client_session_id.trim()
+                    : "";
+        } catch {
+            /* ignore */
+        }
+    }
     const mobileDigits = String(mobileValue || "").replace(/\D/g, "");
     const dedupeKey = `${sid}|${mobileDigits}`;
     if (!sid || !mobileDigits) {
@@ -14744,6 +14784,22 @@ function postCapturedMobileToSheetRow(mobileValue) {
     })
         .then(async (resp) => {
             if (!resp.ok) {
+                let detail = "";
+                try {
+                    detail = (await resp.text()).slice(0, 240);
+                } catch {
+                    /* ignore */
+                }
+                if (typeof console !== "undefined" && console.warn) {
+                    console.warn(
+                        "[dfchat] Mobile sheet sync failed:",
+                        resp.status,
+                        detail || resp.statusText,
+                        resp.status === 401
+                            ? "— add <meta name=\"dfchat-contact-form-mobile-sync-secret\" content=\"…\"> matching Railway CONTACT_FORM_MOBILE_SHEET_SYNC_SECRET, or remove the secret on the server."
+                            : "— check API base URL (meta dfchat-api-base-url), CORS, and Railway logs."
+                    );
+                }
                 return;
             }
             chatMobileSheetSyncLastOkKey = dedupeKey;
