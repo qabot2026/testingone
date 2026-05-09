@@ -387,7 +387,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
        * **`company.js` sends `generalSlotMinutes=<this>` on general-calendar API calls + form submits** so
        * grids still match. Fallbacks: GENERAL_APPOINTMENT_SLOT_MINUTES env, then APPOINTMENT_SLOT_MINUTES / 30.
        */
-      slotMinutes: 60,
+      slotMinutes: 45,
     },
 
     // -------------------------------------------------------------------------
