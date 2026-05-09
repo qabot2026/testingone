@@ -2284,11 +2284,28 @@ app.post(
 
 app.get("/health", (_req, res) => res.status(200).send("ok"));
 
+/** True when the client is a normal browser tab (readable HTML), not JSON-only tools. */
+function wantsContactFormEmailHealthHtml_(req) {
+    const q = req.query && typeof req.query === "object" ? req.query : {};
+    if (String(q.format || "").toLowerCase() === "json") {
+        return false;
+    }
+    if (String(q.html || "").toLowerCase() === "1") {
+        return true;
+    }
+    if (String(q.format || "").toLowerCase() === "html") {
+        return true;
+    }
+    const a = req.get("accept") || "";
+    return /\btext\/html\b/i.test(a);
+}
+
 /** Debugging: Sheets env + optional live read probe (spreadsheet tabs / permissions). */
-/** JSON: which lead-email env vars are set (no secrets). Open after deploy to verify Railway. */
-app.get("/contact-form-email-health", (_req, res) => {
+/** JSON (or HTML in the browser): which lead-email env vars are set (no secrets). Open after deploy to verify Railway. */
+app.get("/contact-form-email-health", (req, res) => {
     const missing = missingContactLeadEmailEnvKeys_();
-    return res.status(200).json({
+    const delayMs = resolveContactLeadEmailDelayMs_();
+    const payload = {
         ok: missing.length === 0,
         lead_email_ready: missing.length === 0,
         missing_env: missing,
@@ -2298,12 +2315,53 @@ app.get("/contact-form-email-health", (_req, res) => {
         has_smtp_pass: !!(process.env.SMTP_PASS || process.env.SMTP_PASSWORD || "").trim(),
         mail_from_set: !!(process.env.MAIL_FROM || "").trim(),
         smtp_port: Number(process.env.SMTP_PORT) || 587,
-        lead_email_delay_ms_after_http_200: resolveContactLeadEmailDelayMs_(),
+        lead_email_delay_ms_after_http_200: delayMs,
         hint:
             missing.length
                 ? "Set the missing_* names in Railway Variables for this service, redeploy, then submit the contact form with name + phone or email."
                 : "Env looks complete. If still no mail: check Railway Logs for [contact-lead-notify-email], set CONTACT_LEAD_EMAIL_DEBUG=1, submit form again, use a real App Password for Gmail."
-    });
+    };
+    if (!wantsContactFormEmailHealthHtml_(req)) {
+        return res.status(200).json(payload);
+    }
+    /** @type {(s: unknown) => string} */
+    const esc = (s) =>
+        String(s)
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;");
+    const yesNo = (b) =>
+        `<span style="font-weight:600;color:${b ? "#0a7" : "#c22"}">${b ? "yes" : "no"}</span>`;
+    const rows = [
+        ["ok", payload.ok],
+        ["lead_email_ready", payload.lead_email_ready],
+        ["CONTACT_LEAD_NOTIFY_TO set", payload.has_notify_to],
+        ["SMTP_HOST set", payload.has_smtp_host],
+        ["SMTP_USER set", payload.has_smtp_user],
+        ["SMTP_PASS (or SMTP_PASSWORD) set", payload.has_smtp_pass],
+        ["MAIL_FROM set", payload.mail_from_set],
+        ["SMTP_PORT", payload.smtp_port],
+        ["lead_email_delay_ms_after_http_200", delayMs],
+        ["missing_env (must be [])", payload.missing_env.length ? payload.missing_env.join(", ") : "(none)"],
+        ["hint", payload.hint]
+    ];
+    const tr = rows
+        .map(([k, v]) => `<tr><td style="padding:6px 12px;border:1px solid #ccc">${esc(k)}</td>` +
+            `<td style="padding:6px 12px;border:1px solid #ccc">${
+                typeof v === "boolean" ? yesNo(v) : esc(v)
+            }</td></tr>`)
+        .join("");
+    const html = `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Lead email env</title></head>`
+        + `<body style="font-family:system-ui,Segoe UI,sans-serif;padding:24px;background:#fafafa">`
+        + `<h1 style="margin-top:0">Contact form — lead email health</h1>`
+        + `<p>This page reads environment flags only — no passwords are printed.</p>`
+        + `<table style="border-collapse:collapse;background:#fff;max-width:720px">${tr}</table>`
+        + `<p style="margin-top:20px;color:#666;font-size:14px">`
+        + `<a href="?format=json">Open as JSON</a> · `
+        + `Use <code>curl -H \"Accept: application/json\" …</code> for scripts.</p>`
+        + `</body></html>`;
+    return res.status(200).type("html; charset=utf-8").send(html);
 });
 
 /** POST: send exactly one ping mail to CONTACT_LEAD_NOTIFY_TO (proves SMTP, not only env parser). Requires CONTACT_LEAD_EMAIL_TEST_SECRET + matching header/body.secret. */
