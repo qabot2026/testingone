@@ -6,6 +6,8 @@ let contactFormOpenTimer = null;
 let contactFormOpenPending = false;
 /** Extra keys from the latest `open_form` custom payload; applied when the contact form opens (e.g. name, mobile, email). */
 let pendingOpenFormPrefill = /** @type {Record<string, string> | null} */ (null);
+/** Optional: next form to open after this form submits (set via Dialogflow `open_form` payload). */
+let pendingNextFormIdAfterSubmit = "";
 /** @type {string | null} Which `common.form.forms[…]` is active; `null` until first `readContactFormConfig()`. */
 let activeContactFormId = null;
 let activeDfMessenger = null;
@@ -12020,11 +12022,13 @@ function handleDfResponseReceived(event) {
             mergePhoneFromOpenFormPrefillIntoStoredContext(pendingOpenFormPrefill);
             mergeContactHintsFromOpenFormPrefillIntoStoredContext(pendingOpenFormPrefill);
         }
+        pendingNextFormIdAfterSubmit = extractNextFormIdFromOpenFormEvent_(event);
         const skipContactUi =
             readContactFormConfig().formKey === "contact" && sessionHasNameAndMobileForSkip_();
         if (skipContactUi) {
             contactFormOpenPending = false;
             pendingOpenFormPrefill = null;
+            pendingNextFormIdAfterSubmit = "";
         } else {
             contactFormOpenPending = true;
         }
@@ -12445,6 +12449,39 @@ function extractOpenFormPrefillFromEvent(event) {
         }
     }
     return Object.keys(merged).length ? merged : null;
+}
+
+/**
+ * Read `next_form_id` / `nextFormId` from any `open_form` payload.
+ * Used to chain forms dynamically: contact → upload/appointment/feedback/otp (decided by intent).
+ * @param {Event} event
+ * @returns {string}
+ */
+function extractNextFormIdFromOpenFormEvent_(event) {
+    const responseMessages = event && event.detail && event.detail.raw && event.detail.raw.queryResult
+        && Array.isArray(event.detail.raw.queryResult.responseMessages)
+        ? event.detail.raw.queryResult.responseMessages
+        : [];
+    const messengerMessages = event && event.detail && event.detail.data && Array.isArray(event.detail.data.messages)
+        ? event.detail.data.messages
+        : [];
+    for (const message of [...responseMessages, ...messengerMessages]) {
+        const payload = extractPayload(message);
+        if (!payload || payload.action !== CONTACT_FORM_OPEN_ACTION) {
+            continue;
+        }
+        const raw =
+            (payload.next_form_id != null && String(payload.next_form_id).trim()
+                ? String(payload.next_form_id).trim()
+                : "")
+            || (payload.nextFormId != null && String(payload.nextFormId).trim()
+                ? String(payload.nextFormId).trim()
+                : "");
+        if (raw) {
+            return canonicalContactFormId_(raw);
+        }
+    }
+    return "";
 }
 
 /**
@@ -13139,10 +13176,13 @@ function submitContactForm(event) {
             try {
                 const fr = readCommonFormConfigRoot();
                 const forms = fr && fr.forms && typeof fr.forms === "object" ? fr.forms : null;
-                const nextFormId =
-                    cfg0 && typeof cfg0.nextFormId === "string" ? cfg0.nextFormId.trim() : "";
+                const nextFormIdRaw =
+                    pendingNextFormIdAfterSubmit
+                    || (cfg0 && typeof cfg0.nextFormId === "string" ? cfg0.nextFormId.trim() : "");
+                const nextFormId = typeof nextFormIdRaw === "string" ? nextFormIdRaw.trim() : "";
                 if (nextFormId && forms && forms[canonicalContactFormId_(nextFormId)]) {
                     const resolvedNext = canonicalContactFormId_(nextFormId);
+                    pendingNextFormIdAfterSubmit = "";
                     window.setTimeout(() => {
                         setActiveContactFormId(resolvedNext);
                         openContactForm();
