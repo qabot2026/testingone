@@ -28,7 +28,8 @@
  * Optional: CONTACT_LEAD_NOTIFY_ON_MOBILE_SYNC=1 (see index.mjs comment).
  */
 
-import nodemailer from "nodemailer";
+import { getMailTransport_ } from "./mail/smtp-transport.mjs";
+import { sendTimedMail_ } from "./mail/smtp-send.mjs";
 
 /** @returns {string[]} */
 export function missingContactLeadEmailEnvKeys_() {
@@ -100,37 +101,6 @@ function t_(s) {
     return typeof s === "string" ? s.trim() : "";
 }
 
-let transporterCache = null;
-
-function getTransporter_() {
-    if (transporterCache) {
-        return transporterCache;
-    }
-    const host = (process.env.SMTP_HOST || "").trim();
-    const port = Number(process.env.SMTP_PORT) || 587;
-    const user = (process.env.SMTP_USER || "").trim();
-    const pass = (process.env.SMTP_PASS || process.env.SMTP_PASSWORD || "").trim();
-    const secureRaw = (process.env.SMTP_SECURE || "").trim().toLowerCase();
-    const secure = secureRaw === "1" || secureRaw === "true" || port === 465;
-    /** Connect/TLS handshake; keep below huge values so bogus hosts fail in reasonable time on boot. */
-    const connMs = Math.min(
-        Math.max(Number(process.env.CONTACT_LEAD_SMTP_CONNECT_TIMEOUT_MS) || 20000, 3000),
-        120000
-    );
-    transporterCache = nodemailer.createTransport({
-        host,
-        port,
-        secure,
-        auth: { user, pass },
-        connectionTimeout: connMs,
-        greetingTimeout: Math.min(connMs, 10000),
-        socketTimeout: Math.min(connMs + 5000, 120000),
-        // Port 587 = STARTTLS; helps Gmail / Office365 refuse less often.
-        ...(!secure && port === 587 ? { requireTLS: true } : {})
-    });
-    return transporterCache;
-}
-
 /**
  * Quick SMTP login test (runs after server boot). Logs only success/failure message.
  */
@@ -151,7 +121,7 @@ export async function verifyContactLeadSmtpOnBoot() {
     );
     try {
         await Promise.race([
-            getTransporter_().verify(),
+            getMailTransport_().verify(),
             new Promise((_, rej) => {
                 globalThis.setTimeout(() => rej(new Error(`verify timeout after ${verifyMs}ms`)), verifyMs);
             })
@@ -324,7 +294,6 @@ export async function maybeSendContactLeadNotifyEmail(args) {
     )}</pre>`;
 
     try {
-        const tx = getTransporter_();
         const ccRaw = (process.env.CONTACT_LEAD_NOTIFY_CC || "").trim();
         const ccList = ccRaw
             .split(",")
@@ -340,24 +309,7 @@ export async function maybeSendContactLeadNotifyEmail(args) {
         if (ccList.length) {
             mail.cc = ccList.join(", ");
         }
-        const sendMs = Math.min(
-            Math.max(Number(process.env.CONTACT_LEAD_SEND_TIMEOUT_MS) || 20000, 5000),
-            180000
-        );
-        await Promise.race([
-            tx.sendMail(mail),
-            new Promise((_, rej) => {
-                globalThis.setTimeout(
-                    () =>
-                        rej(
-                            new Error(
-                                `SMTP send stalled after ${sendMs}ms (wrong host/port, firewall, or provider blocking)`
-                            )
-                        ),
-                    sendMs
-                );
-            })
-        ]);
+        await sendTimedMail_(mail);
         const ok = /** @type {const} */ ({ sent: true });
         logOutcome_(ok);
         return ok;

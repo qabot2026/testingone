@@ -24,7 +24,7 @@
  *   SHEETS_CONV_DATETIME_TZ — optional IANA zone for Sheets “Conv.” column (12h display); unset defaults Asia/Kolkata; empty = server-local.
  *   Common (“general-purpose”) appointment hours: `company.config.js` → `common.generalAppointment` (any industry). Env overrides GENERAL_APPOINTMENT_*.
  *
- * Lead email (optional): see `env.example.txt` and `lib/contact-lead-notify-email.mjs` — MAIL_FROM, CONTACT_LEAD_NOTIFY_TO, CONTACT_LEAD_NOTIFY_CC, SMTP_*.
+ * Lead email (optional): staff + visitor mail — see `env.example.txt`, `lib/contact-lead-notify-email.mjs`, `lib/mail/client-lead-ack-email.mjs`, `lib/mail/appointment-client-ack-email.mjs`, `lib/mail/appointment-chatbot-staff-notify-email.mjs`. SMTP_* MAIL_FROM CONTACT_LEAD_* CONTACT_APPOINTMENT_*.
  *   CONTACT_LEAD_NOTIFY_ON_MOBILE_SYNC=1 — also notify on mobile-sheet-sync when name or email is present.
  *
  * Faster contact-form submit (Sheets + Firestore both on): `CONTACT_FORM_DEFER_FIRESTORE_AFTER_RESPONSE=1` persists Firestore **after** HTTP 200 (Sheet row still authoritative for that request).
@@ -80,6 +80,9 @@ import {
     sendContactLeadMailboxSelfTestPing,
     verifyContactLeadSmtpOnBoot
 } from "./lib/contact-lead-notify-email.mjs";
+import { maybeSendClientLeadAckEmail } from "./lib/mail/client-lead-ack-email.mjs";
+import { maybeSendAppointmentChatbotStaffNotifyEmail } from "./lib/mail/appointment-chatbot-staff-notify-email.mjs";
+import { maybeSendAppointmentClientAckEmail } from "./lib/mail/appointment-client-ack-email.mjs";
 
 const APPS_SCRIPT_WEBAPP_URL = (process.env.GOOGLE_APPS_SCRIPT_WEBAPP_URL || "").trim();
 
@@ -224,6 +227,90 @@ function scheduleContactPostSuccessTail_(res, work) {
             }
         }
         try {
+            const p =
+                work.leadEmailPayload && typeof work.leadEmailPayload === "object"
+                    ? work.leadEmailPayload
+                    : {};
+            const nm = typeof p.name === "string" ? p.name.trim() : "";
+            const visitorEmail = typeof p.email === "string" ? p.email.trim() : "";
+            const mob = typeof p.mobile === "string" ? p.mobile.trim() : "";
+            const ct = typeof p.city === "string" ? p.city.trim() : "";
+            const src = typeof p.source === "string" ? p.source.trim() : "contact-form";
+            const surl = typeof p.sourceUrl === "string" ? p.sourceUrl.trim() : "";
+            const subAt = typeof p.submittedAtIso === "string" ? p.submittedAtIso.trim() : "";
+
+            const ackLead = await maybeSendClientLeadAckEmail({
+                name: nm,
+                email: visitorEmail,
+                mobile: mob,
+                city: ct,
+                source: src,
+                sourceUrl: surl,
+                submittedAtIso: subAt
+            });
+            if ((process.env.CONTACT_LEAD_EMAIL_DEBUG || "").trim() === "1" && !(ackLead && ackLead.sent)) {
+                console.log(
+                    "[contact-form] client_lead_ack:",
+                    "skipped" in ackLead ? `skipped:${ackLead.reason}` : ("error" in ackLead ? `error:${ackLead.error}` : "?")
+                );
+            }
+
+            const apBk =
+                typeof p.appointmentBooked === "string" ? p.appointmentBooked.trim() : "";
+            const apDt =
+                typeof p.appointmentDate === "string" ? p.appointmentDate.trim() : "";
+            const apTm =
+                typeof p.appointmentTime === "string" ? p.appointmentTime.trim() : "";
+            const bookedServerSide =
+                /^yes$/i.test(apBk) && Boolean(apDt && apTm) && visitorEmail;
+            if (bookedServerSide) {
+                const fieldsReady =
+                    p.fields
+                    && typeof p.fields === "object"
+                    && !Array.isArray(p.fields);
+                const fieldsRaw = fieldsReady
+                    ? /** @type {Record<string, unknown>} */ (p.fields)
+                    : {};
+                /** @type {Record<string, string>} */
+                const lc = {};
+                for (const [fk, fv] of Object.entries(fieldsRaw)) {
+                    if (typeof fv === "string" && fv.trim()) {
+                        lc[String(fk).toLowerCase()] = fv.trim();
+                    }
+                }
+                const dn =
+                    lc.doctornamedisplay ||
+                    lc.doctordisplay ||
+                    lc.doctorname ||
+                    lc.doctor_name ||
+                    lc.doctor ||
+                    "";
+                const doctorDisplayGuess = dn ? (/\bdr\.?\s/i.test(dn) ? dn : `Dr. ${dn}`) : "";
+
+                const apAck = await maybeSendAppointmentClientAckEmail({
+                    toEmail: visitorEmail,
+                    recipientName: nm,
+                    doctorDisplay:
+                        doctorDisplayGuess || lc.displaydoctorname || "Your appointment slot",
+                    specialization: lc.specialization || lc.department || lc.dept || "",
+                    branchId: "",
+                    dateISO: apDt,
+                    slotLabel: apTm,
+                    cityOrPlace: ct,
+                    source: "contact-form-submission",
+                    mobile: mob
+                });
+                if (
+                    (process.env.CONTACT_LEAD_EMAIL_DEBUG || "").trim() === "1"
+                    && !(apAck && apAck.sent)
+                ) {
+                    console.log(
+                        "[contact-form] appointment_client_ack:",
+                        "skipped" in apAck ? `skipped:${apAck.reason}` : ("error" in apAck ? `error:${apAck.error}` : "?")
+                    );
+                }
+            }
+
             const delayMs = resolveContactLeadEmailDelayMs_();
             if (delayMs > 0) {
                 console.log(`[contact-form] lead_email_delay_wait_ms=${delayMs}`);
@@ -946,8 +1033,45 @@ app.post("/api/book-appointment", express.json({ limit: "256kb" }), async (req, 
     const dateISO = typeof body.date === "string" ? body.date.trim() : "";
     const slotLabel = typeof body.slot === "string" ? body.slot.trim() : "";
     const userId = typeof body.userId === "string" ? body.userId.trim() : "";
+    const contactEmail = typeof body.contactEmail === "string" ? body.contactEmail.trim() : "";
+    const contactName =
+        typeof body.contactName === "string" ? body.contactName.trim() : "";
+    const contactMobile =
+        typeof body.contactMobile === "string" ? body.contactMobile.trim() : "";
+    const doctorDisplay =
+        typeof body.doctorDisplay === "string"
+            ? body.doctorDisplay.trim()
+            : (doctorId ? `Doctor (${doctorId})` : "");
+    const cityOrPlaceBook =
+        typeof body.cityOrPlace === "string" ? body.cityOrPlace.trim() : "";
     try {
         const out = await bookAppointment({ doctorId, branchId, department, dateISO, slotLabel, userId });
+        if (contactEmail) {
+            void (async () => {
+                try {
+                    const rr = await maybeSendAppointmentClientAckEmail({
+                        toEmail: contactEmail,
+                        recipientName: contactName,
+                        doctorDisplay: doctorDisplay || "Your appointment",
+                        specialization: department,
+                        branchId,
+                        dateISO,
+                        slotLabel,
+                        cityOrPlace: cityOrPlaceBook || branchId,
+                        source: "rest-book-appointment",
+                        mobile: contactMobile
+                    });
+                    if ((process.env.CONTACT_LEAD_EMAIL_DEBUG || "").trim() === "1" && !(rr && rr.sent)) {
+                        console.log(
+                            "[api/book-appointment] client_ack:",
+                            "skipped" in rr ? rr.reason : rr.error || "?"
+                        );
+                    }
+                } catch (be) {
+                    console.error("[api/book-appointment] client_ack defer", be && be.message ? be.message : be);
+                }
+            })();
+        }
         return res.status(200).json(out);
     } catch (e) {
         const msg = e && e.message ? e.message : String(e);
@@ -1443,6 +1567,65 @@ app.post("/webhook", express.json({ limit: "512kb" }), async (req, res) => {
             }
 
             const placeLabel = normalizeStr_(doc.City) || `branch ${resolvedBranch}`;
+            const doctorDisplayCx =
+                normalizeStr_(doc.DisplayDoctorName || `Dr. ${doctorName}`);
+            const chatGuestEmail = normalizeStr_(
+                params.email
+                    || params.user_email
+                    || params.guest_email
+                    || params.person_email
+            );
+            const chatGuestName = normalizeStr_(
+                params.person_name || params.name || params.customer_name || params.personname
+            );
+            const chatGuestMobile = normalizeStr_(
+                params.mobile || params.phone_number || params.phone || params.phonenumber
+            );
+            void (async () => {
+                try {
+                    const staffR = await maybeSendAppointmentChatbotStaffNotifyEmail({
+                        doctorDisplay: doctorDisplayCx,
+                        doctorName,
+                        specialization: normalizeStr_(doc.Specialization),
+                        branchId: normalizeStr_(doc.BranchId || resolvedBranch || ""),
+                        dateISO,
+                        slotLabel: timeLabel,
+                        cityOrPlace: placeLabel
+                    });
+                    if ((process.env.CONTACT_LEAD_EMAIL_DEBUG || "").trim() === "1" && !(staffR && staffR.sent)) {
+                        console.log(
+                            "[cx book_doctor_appointment] staff_notify:",
+                            "skipped" in staffR ? staffR.reason : staffR.error || "?"
+                        );
+                    }
+                    if (chatGuestEmail) {
+                        const cr = await maybeSendAppointmentClientAckEmail({
+                            toEmail: chatGuestEmail,
+                            recipientName: chatGuestName,
+                            doctorDisplay: doctorDisplayCx,
+                            specialization: normalizeStr_(doc.Specialization),
+                            branchId: normalizeStr_(doc.BranchId || resolvedBranch || ""),
+                            dateISO,
+                            slotLabel: timeLabel,
+                            cityOrPlace: placeLabel,
+                            source: "dialogflow-cx-chatbot",
+                            mobile: chatGuestMobile
+                        });
+                        if (
+                            (process.env.CONTACT_LEAD_EMAIL_DEBUG || "").trim() === "1"
+                            && !(cr && cr.sent)
+                        ) {
+                            console.log(
+                                "[cx book_doctor_appointment] client_ack:",
+                                "skipped" in cr ? cr.reason : cr.error || "?"
+                            );
+                        }
+                    }
+                } catch (mailErr) {
+                    console.error("[cx book_doctor_appointment] mail deferred error", mailErr);
+                }
+            })();
+
             return res.json({
                 fulfillment_response: {
                     messages: [cxText_(`✅ Appointment booked with Dr. ${doctorName} on ${dateISO} at ${timeLabel} (${placeLabel}).`, lang)]
