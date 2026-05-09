@@ -15394,6 +15394,22 @@ function mergeOptionalContactFieldsFromParameterSlice_(slice) {
         if (em && EMAIL_VALIDATION_RE.test(em)) {
             next.email = em;
         }
+        const cityPick =
+            norm.city
+            || norm.visitorcity
+            || norm.usercity
+            || norm.selectedcity
+            || norm.geocity
+            || norm.homecity
+            || "";
+        if (!cityPick && norm.location && norm.location.length <= 96) {
+            const locStr = norm.location;
+            if (locStr && !/^https?:\/\//i.test(locStr)) {
+                next.city = locStr.trim().slice(0, 200);
+            }
+        } else if (cityPick && cityPick.length <= 200) {
+            next.city = cityPick;
+        }
         persistClientContext(next);
     } catch {
         /* ignore */

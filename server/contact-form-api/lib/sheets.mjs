@@ -207,6 +207,7 @@ async function getUserQueriesColumnInfo_(sheets, tab) {
                 "chatqueries",
                 "conversationqueries",
                 "visitorqueries",
+                "userquery",
                 "chathistory",
                 "dialogflowqueries"
             ].map(normalizedHeaderKey_)
@@ -834,6 +835,9 @@ async function writeLeadRowByHeader_(sheets, tab, rowNumber, lead) {
     const updates = [];
     const put = (aliases, fallbackIdx, value) => {
         const v = sheetOutboundCell_(value);
+        if (!String(v || "").trim()) {
+            return;
+        }
         const idx0 = getIdx(aliases, fallbackIdx);
         updates.push({ range: `${tab}!${col(idx0)}${rowNumber}`, values: [[v]] });
     };
@@ -845,7 +849,15 @@ async function writeLeadRowByHeader_(sheets, tab, rowNumber, lead) {
     put(["email"], 3, lead.email);
     put(["channel"], 4, lead.channel);
     put(
-        ["userqueries", "user_queries", "queries", "chatqueries"],
+        [
+            "userqueries",
+            "user_queries",
+            "queries",
+            "chatqueries",
+            "userquery",
+            "visitorqueries",
+            "conversationqueries"
+        ],
         5,
         lead.userQueriesCsv
     );
@@ -854,13 +866,21 @@ async function writeLeadRowByHeader_(sheets, tab, rowNumber, lead) {
     put(["sessionid", "session", "sessioni id", "clientsessionid", "client_session_id"], 8, lead.clientSessionId);
     put(["device", "devicetype"], 9, lead.deviceType);
     put(["browser", "browsername"], 10, lead.browserName);
-    put(["city"], 11, lead.city);
+    put(
+        ["city", "visitorcity", "usercity", "cityname", "location", "preferredcity"],
+        11,
+        lead.city
+    );
     put(["ip", "ipaddress", "ip_address"], 12, lead.ip);
     // Prefer exact "Appointment Booked" match only — aliases like `appointment` would hit Date/Time headers.
     put(["appointmentbooked", "appointment_booked", "isappointmentbooked"], 13, lead.appointmentBooked);
     put(["appointmentdate"], 14, lead.appointmentDate);
     put(["appointmenttime"], 15, lead.appointmentTime);
     put(["drivefilelink", "drive file link", "drivefile", "filelink", "filelinks", "drivelink"], 16, lead.driveFileLink);
+
+    if (!updates.length) {
+        return;
+    }
 
     await sheets.spreadsheets.values.batchUpdate({
         spreadsheetId: SPREADSHEET_ID,

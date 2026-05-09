@@ -251,18 +251,62 @@ function extractRequestIp(req) {
     return ra || "";
 }
 
+function stringifyClientContextCsvHint_(maybe) {
+    const s = typeof maybe === "string" ? maybe.trim() : "";
+    return s.length && s.length <= 8000 ? s : "";
+}
+
+function collectUserQueriesLinesFromContext_(ctx) {
+    if (!ctx || typeof ctx !== "object") {
+        return [];
+    }
+    /** @type {string[]} */
+    const out = [];
+    const keys = ["user_queries", "chat_queries", "visitor_queries", "dialog_queries", "conversation_queries"];
+    for (let i = 0; i < keys.length; i += 1) {
+        const a = ctx[keys[i]];
+        if (!Array.isArray(a)) {
+            continue;
+        }
+        for (let j = 0; j < a.length; j += 1) {
+            const cell = typeof a[j] === "string" ? a[j].trim() : "";
+            if (cell && cell.length <= 500) {
+                out.push(cell);
+            }
+        }
+    }
+    return out;
+}
+
 function normalizeUserQueriesCsvFromClientContext(clientContext) {
     const ctx = clientContext && typeof clientContext === "object" ? clientContext : {};
-    const arr = Array.isArray(ctx.user_queries) ? ctx.user_queries : null;
-    if (arr) {
-        const cleaned = arr
-            .filter((x) => typeof x === "string")
-            .map((s) => s.trim())
-            .filter(Boolean);
-        return sanitizeUserQueriesCsvForSheet(cleaned.join(", "));
+
+    const fromArrays = collectUserQueriesLinesFromContext_(ctx);
+    let csv = sanitizeUserQueriesCsvForSheet(fromArrays.join(", "));
+    const extraCsv =
+        stringifyClientContextCsvHint_(ctx.user_queries_csv)
+        || stringifyClientContextCsvHint_(ctx.chat_queries_csv)
+        || stringifyClientContextCsvHint_(ctx.queries_csv);
+    const extraSan = sanitizeUserQueriesCsvForSheet(extraCsv);
+    if (extraSan) {
+        csv = sanitizeUserQueriesCsvForSheet(csv ? `${csv}, ${extraSan}` : extraSan);
     }
-    const raw = typeof ctx.user_queries_csv === "string" ? ctx.user_queries_csv.trim() : "";
-    return sanitizeUserQueriesCsvForSheet(raw);
+    return csv;
+}
+
+/** First non-empty string among common Dialogflow/widget keys sent in `client_context`. */
+function pickCityFromClientContextMerged_(ctx) {
+    if (!ctx || typeof ctx !== "object") {
+        return "";
+    }
+    const aliases = ["city", "user_city", "visitor_city", "selected_city", "geo_city", "preferred_city", "home_city"];
+    for (let i = 0; i < aliases.length; i += 1) {
+        const v = typeof ctx[aliases[i]] === "string" ? ctx[aliases[i]].trim() : "";
+        if (v && v.length <= 200 && !/^\$session\.params\./i.test(v)) {
+            return v;
+        }
+    }
+    return "";
 }
 
 const GEOIP_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
@@ -1593,7 +1637,7 @@ app.post(
         const iso = new Date().toISOString();
         const ip = extractRequestIp(req);
         const cityFromFields = typeof fields.city === "string" ? fields.city.trim() : "";
-        const cityFromContext = typeof mergedClientContext.city === "string" ? mergedClientContext.city.trim() : "";
+        const cityFromContext = pickCityFromClientContextMerged_(mergedClientContext);
         const city = cityFromFields || cityFromContext || await resolveCityForRequest(req);
         const userQueriesCsv = normalizeUserQueriesCsvFromClientContext(mergedClientContext);
         const sourceUrl = resolveSourceUrlForSheet(mergedClientContext);
@@ -1820,9 +1864,8 @@ app.post(
 
         const iso = new Date().toISOString();
         const ip = extractRequestIp(req);
-        const cityFromCtx =
-            typeof mergedClientContext.city === "string" ? mergedClientContext.city.trim() : "";
-        const city = cityFromCtx || await resolveCityForRequest(req);
+        const city = pickCityFromClientContextMerged_(mergedClientContext)
+            || (await resolveCityForRequest(req));
         const userQueriesCsv = normalizeUserQueriesCsvFromClientContext(mergedClientContext);
         const sourceUrl = resolveSourceUrlForSheet(mergedClientContext);
 
@@ -1882,7 +1925,7 @@ app.post(
     }
 );
 
-/** Live-sync accumulated user_queries (Column N) for the chat session — no mobile required. */
+/** Live-sync accumulated user_queries (sheet “User Queries” column, typically F in A–Q layout). */
 app.post(
     PATHNAME_SESSION_SHEET_SYNC,
     express.json({ limit: "512kb" }),
@@ -1965,9 +2008,8 @@ app.post(
 
         const iso = new Date().toISOString();
         const ip = extractRequestIp(req);
-        const cityFromCtx =
-            typeof mergedClientContext.city === "string" ? mergedClientContext.city.trim() : "";
-        const city = cityFromCtx || await resolveCityForRequest(req);
+        const city = pickCityFromClientContextMerged_(mergedClientContext)
+            || (await resolveCityForRequest(req));
         const sourceUrl = resolveSourceUrlForSheet(mergedClientContext);
 
         try {
