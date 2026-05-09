@@ -17,6 +17,9 @@
     },
     showSubtitle: true,
     maxCardHeightPx: 300,
+    // After a successful contact submit, automatically open the upload form.
+    // (Used to support “back-to-back” forms for a single intent.)
+    nextFormId: "uploadDocument",
     chatSummaryFieldNames: ["name", "mobile", "email"],
     fields: [
       { id: "c-name", name: "name", type: "text", required: true, icon: "user", i18nPlaceholder: "namePlaceholder", i18nSummaryLabel: "summaryNameLabel", autocomplete: "name" },

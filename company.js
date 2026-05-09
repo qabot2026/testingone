@@ -13134,6 +13134,23 @@ function submitContactForm(event) {
             }
 
             closeForm();
+            // Optional chaining: open another named form right after a successful submit.
+            // Useful for "contact → upload" flows driven by a single intent.
+            try {
+                const fr = readCommonFormConfigRoot();
+                const forms = fr && fr.forms && typeof fr.forms === "object" ? fr.forms : null;
+                const nextFormId =
+                    cfg0 && typeof cfg0.nextFormId === "string" ? cfg0.nextFormId.trim() : "";
+                if (nextFormId && forms && forms[canonicalContactFormId_(nextFormId)]) {
+                    const resolvedNext = canonicalContactFormId_(nextFormId);
+                    window.setTimeout(() => {
+                        setActiveContactFormId(resolvedNext);
+                        openContactForm();
+                    }, 250);
+                }
+            } catch {
+                /* ignore */
+            }
         })
         .catch((error) => {
             if (status) {
