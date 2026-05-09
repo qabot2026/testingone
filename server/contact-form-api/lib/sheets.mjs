@@ -124,7 +124,7 @@ function buildDedupeKey(row) {
 /**
  * Scan recent sheet rows for:
  * - duplicate for the same session id (only one row per session id)
- * - repeated: same mobile already exists under a different session id
+ * - repeated: same mobile already exists anywhere else in the sheet tail
  *
  * @param {import("googleapis").sheets_v4.Sheets} sheets
  * @param {{ iso: string, mobile: string, clientSessionId: string }} row
@@ -132,9 +132,6 @@ function buildDedupeKey(row) {
  */
 async function scanSheetTailForDedupeAndRepeat_(sheets, row) {
     const key = buildDedupeKey(row);
-    if (!key) {
-        return { duplicate: false, matchedRowNumber: 0, repeatedAcrossSessions: false };
-    }
     const tab = tabNameFromRange(RANGE);
     const res = await sheets.spreadsheets.values.get({
         spreadsheetId: SPREADSHEET_ID,
@@ -158,25 +155,27 @@ async function scanSheetTailForDedupeAndRepeat_(sheets, row) {
         const existingSid = sheetCellString_(r[5]);
         const rowNumber = tailOffset + i + 1; // 1-based row number in the sheet
 
+        // Repeated (same mobile). We mark "Yes" when the mobile already exists in *any other* row.
+        // If we have a session id and this row is the same session, do not count it as "repeated".
+        const existingMobileDigits = mobileDigitsOnly(existingMobile);
+        if (incomingMobileDigits && existingMobileDigits && incomingMobileDigits === existingMobileDigits) {
+            const sameSession = incomingSid && existingSid && incomingSid === existingSid;
+            if (!sameSession) {
+                repeatedAcrossSessions = true;
+            }
+        }
+
         // If we have a session id, enforce "only once per session".
-        if (incomingSid && existingSid && incomingSid === existingSid) {
+        if (key && incomingSid && existingSid && incomingSid === existingSid) {
             return { duplicate: true, matchedRowNumber: rowNumber, repeatedAcrossSessions };
         }
         // Some sheets have different column ordering; scan the whole row for the session id string.
-        if (incomingSid && Array.isArray(r)) {
+        if (key && incomingSid && Array.isArray(r)) {
             for (let c = 0; c < r.length; c++) {
                 const cell = sheetCellString_(r[c]);
                 if (cell && cell === incomingSid) {
                     return { duplicate: true, matchedRowNumber: rowNumber, repeatedAcrossSessions };
                 }
-            }
-        }
-
-        // Repeated (same mobile, different session).
-        const existingMobileDigits = mobileDigitsOnly(existingMobile);
-        if (incomingMobileDigits && existingMobileDigits && incomingMobileDigits === existingMobileDigits) {
-            if (incomingSid && existingSid && incomingSid !== existingSid) {
-                repeatedAcrossSessions = true;
             }
         }
     }
@@ -228,7 +227,7 @@ function mergeCsvUnique_(existingCsv, incomingCsv, limit = 40) {
  * @param {import("googleapis").sheets_v4.Sheets} sheets
  * @param {string} tab
  * @param {number} rowNumber 1-based sheet row
- * @param {{ formId: string, name: string, mobile: string, email: string, browserName: string, deviceType: string, channel: string, fileLinks?: string, city?: string, ip?: string, userQueriesCsv?: string }} incoming
+ * @param {{ formId: string, name: string, mobile: string, email: string, browserName: string, deviceType: string, channel: string, repeated?: string, fileLinks?: string, city?: string, ip?: string, userQueriesCsv?: string }} incoming
  * @param {{ preferIncomingContact?: boolean }} [options] when true (contact-form POST), B–E use incoming whenever non-empty; chat/sync fills blanks only.
  */
 /** @returns {Promise<{ applied: boolean, googleBatch?: { totalUpdatedCells?: number, totalUpdatedRows?: number, updatedRanges: string[] } }>} */
@@ -271,6 +270,10 @@ async function updateExistingSessionRow_(sheets, tab, rowNumber, incoming, optio
         incoming.city && isBlankSheetCell_(row[10]) ? incoming.city.trim() : "";
     const ip =
         incoming.ip && isBlankSheetCell_(row[11]) ? incoming.ip.trim() : "";
+    const repeatedIncoming = typeof incoming.repeated === "string" ? incoming.repeated.trim() : "";
+    const existingRepeated = sheetCellString_(row[12]);
+    const repeated =
+        repeatedIncoming && repeatedIncoming !== existingRepeated ? repeatedIncoming : "";
     const existingQueries = sheetCellString_(row[13]);
     const mergedQueries = mergeCsvUnique_(existingQueries, incoming.userQueriesCsv || "", 200);
     const userQueriesCsv = mergedQueries && mergedQueries !== existingQueries ? mergedQueries : "";
@@ -287,6 +290,7 @@ async function updateExistingSessionRow_(sheets, tab, rowNumber, incoming, optio
     if (fileLinks) data.push({ range: `${tab}!J${rowNumber}`, values: [[fileLinks]] });
     if (city) data.push({ range: `${tab}!K${rowNumber}`, values: [[city]] });
     if (ip) data.push({ range: `${tab}!L${rowNumber}`, values: [[ip]] });
+    if (repeated) data.push({ range: `${tab}!M${rowNumber}`, values: [[repeated]] });
     if (userQueriesCsv) data.push({ range: `${tab}!N${rowNumber}`, values: [[userQueriesCsv]] });
 
     if (!data.length) {
@@ -374,8 +378,10 @@ export async function appendContactRowToSheet(row, opts) {
     const tab = tabNameFromRange(RANGE);
     const appendRangeUsed = appendRangeSchemaWidth_(RANGE);
     if (scan.duplicate) {
+        const repeated = scanFull.repeatedAcrossSessions ? "Yes" : "No";
         const up = await updateExistingSessionRow_(sheets, tab, scan.matchedRowNumber, row, {
-            preferIncomingContact: !!(opts && opts.preferIncomingContact)
+            preferIncomingContact: !!(opts && opts.preferIncomingContact),
+            repeated
         });
         const patched = !!(up && up.applied);
         const prefer = !!(opts && opts.preferIncomingContact);
