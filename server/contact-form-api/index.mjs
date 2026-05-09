@@ -1443,15 +1443,23 @@ app.post(
             ? clientContext.device_type.trim()
             : "";
 
+        /** DRIVE_ONLY turns Firestore off; file uploads remain optional unless the user attaches files. */
         if (DRIVE_ONLY) {
             const hasBytes = uploadedFiles.some(
                 (f) => f && Buffer.isBuffer(f.buffer) && f.buffer.length > 0
             );
-            if (!hasBytes) {
+            if (!hasBytes && uploadedFiles.length > 0) {
                 return res.status(400).json({
                     ok: false,
                     error:
-                        "DRIVE_ONLY=1: include at least one file with data in the form, or remove DRIVE_ONLY to allow text-only submissions (Firestore / Sheet without attachments)."
+                        "DRIVE_ONLY=1: file field(s) were sent but contain no file data. Add a valid attachment or remove empty file inputs."
+                });
+            }
+            if (!hasBytes && uploadedFiles.length === 0 && SHEETS_DISABLED) {
+                return res.status(400).json({
+                    ok: false,
+                    error:
+                        "DRIVE_ONLY=1: Firestore is off in this mode. For text-only contact leads enable Google Sheets (set SHEETS_SPREADSHEET_ID and share the spreadsheet with the service account), attach a file, or remove DRIVE_ONLY."
                 });
             }
         }
