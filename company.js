@@ -12027,8 +12027,18 @@ function handleDfResponseReceived(event) {
             readContactFormConfig().formKey === "contact" && sessionHasNameAndMobileForSkip_();
         if (skipContactUi) {
             contactFormOpenPending = false;
-            pendingOpenFormPrefill = null;
+            const chainNextRaw = pendingNextFormIdAfterSubmit;
             pendingNextFormIdAfterSubmit = "";
+            const frSkip = readCommonFormConfigRoot();
+            const formsSkip = frSkip && frSkip.forms && typeof frSkip.forms === "object" ? frSkip.forms : null;
+            const chainNext = chainNextRaw ? canonicalContactFormId_(chainNextRaw) : "";
+            if (chainNext && formsSkip && formsSkip[chainNext]) {
+                // Contact already satisfied in session (e.g. filled in another intent) — open chained form now.
+                setActiveContactFormId(chainNext);
+                contactFormOpenPending = true;
+            } else {
+                pendingOpenFormPrefill = null;
+            }
         } else {
             contactFormOpenPending = true;
         }
