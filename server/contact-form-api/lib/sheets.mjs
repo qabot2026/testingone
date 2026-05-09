@@ -196,22 +196,35 @@ function mergeCsvUnique_(existingCsv, incomingCsv, limit = 40) {
  * @param {string} tab
  * @param {number} rowNumber 1-based sheet row
  * @param {{ formId: string, name: string, mobile: string, email: string, browserName: string, deviceType: string, channel: string, fileLinks?: string, city?: string, ip?: string, userQueriesCsv?: string }} incoming
+ * @param {{ preferIncomingContact?: boolean }} [options] when true (contact-form POST), B–E use incoming whenever non-empty; chat/sync fills blanks only.
  */
-async function updateExistingSessionRow_(sheets, tab, rowNumber, incoming) {
+async function updateExistingSessionRow_(sheets, tab, rowNumber, incoming, options = {}) {
     if (!rowNumber || rowNumber < 1) {
         return;
     }
-    // Read the current row so we only fill blanks (don’t overwrite existing values).
+    const preferIncomingContact = !!(options && options.preferIncomingContact);
     const got = await sheets.spreadsheets.values.get({
         spreadsheetId: SPREADSHEET_ID,
         range: `${tab}!A${rowNumber}:N${rowNumber}`
     });
     const row = Array.isArray(got.data.values) && got.data.values[0] ? got.data.values[0] : [];
 
-    const formId = incoming.formId && isBlankSheetCell_(row[1]) ? incoming.formId.trim() : "";
-    const name = incoming.name && isBlankSheetCell_(row[2]) ? incoming.name.trim() : "";
-    const mobile = incoming.mobile && isBlankSheetCell_(row[3]) ? incoming.mobile.trim() : "";
-    const email = incoming.email && isBlankSheetCell_(row[4]) ? incoming.email.trim() : "";
+    /** B–E: contact-form submits should overwrite an older chat-sync row when values are present. */
+    const contactPatchFor = (v, colIdx) => {
+        const s = typeof v === "string" ? v.trim() : "";
+        if (!s) {
+            return "";
+        }
+        if (preferIncomingContact) {
+            return s;
+        }
+        return isBlankSheetCell_(row[colIdx]) ? s : "";
+    };
+
+    const formId = contactPatchFor(typeof incoming.formId === "string" ? incoming.formId : "", 1);
+    const name = contactPatchFor(typeof incoming.name === "string" ? incoming.name : "", 2);
+    const mobile = contactPatchFor(typeof incoming.mobile === "string" ? incoming.mobile : "", 3);
+    const email = contactPatchFor(typeof incoming.email === "string" ? incoming.email : "", 4);
     const browserName =
         incoming.browserName && isBlankSheetCell_(row[6]) ? incoming.browserName.trim() : "";
     const deviceType =
@@ -243,6 +256,11 @@ async function updateExistingSessionRow_(sheets, tab, rowNumber, incoming) {
     if (userQueriesCsv) data.push({ range: `${tab}!N${rowNumber}`, values: [[userQueriesCsv]] });
 
     if (!data.length) {
+        if (preferIncomingContact) {
+            console.warn(
+                "[contact-form-api] Sheets duplicate-session row update applied no patches (incoming contact/query fields empty or unchanged)."
+            );
+        }
         return;
     }
     await sheets.spreadsheets.values.batchUpdate({
@@ -291,8 +309,9 @@ async function getSheetsAuthClient() {
  * N user_queries (comma-separated)
  *
  * @param {{ iso: string, formId: string, name: string, mobile: string, email: string, clientSessionId: string, browserName: string, deviceType: string, channel: string, fileLinks?: string, city?: string, ip?: string, userQueriesCsv?: string }} row
+ * @param {{ preferIncomingContact?: boolean }} [opts] set on official contact-form submissions so duplicate rows update B–E with form values (not chat placeholders).
  */
-export async function appendContactRowToSheet(row) {
+export async function appendContactRowToSheet(row, opts) {
     if (!SPREADSHEET_ID) {
         throw new Error("Missing SHEETS_SPREADSHEET_ID in env (or set DISABLE_SHEETS=1).");
     }
@@ -304,7 +323,9 @@ export async function appendContactRowToSheet(row) {
     const scan = await scanSheetTailForDedupeAndRepeat_(sheets, row);
     const tab = tabNameFromRange(RANGE);
     if (scan.duplicate) {
-        await updateExistingSessionRow_(sheets, tab, scan.matchedRowNumber, row);
+        await updateExistingSessionRow_(sheets, tab, scan.matchedRowNumber, row, {
+            preferIncomingContact: !!(opts && opts.preferIncomingContact)
+        });
         return;
     }
 
@@ -425,19 +446,25 @@ export async function upsertSessionQueriesInSheet(row) {
         }
         // Chat may append a row on mobile first (empty C/E), then capture name/email later; session
         // query sync still hits this path — fill blank contact columns without touching N again.
-        await updateExistingSessionRow_(sheets, tab, rowNumber, {
-            formId: typeof row.formId === "string" ? row.formId : "",
-            name: typeof row.name === "string" ? row.name : "",
-            mobile: typeof row.mobile === "string" ? row.mobile : "",
-            email: typeof row.email === "string" ? row.email : "",
-            browserName: typeof row.browserName === "string" ? row.browserName : "",
-            deviceType: typeof row.deviceType === "string" ? row.deviceType : "",
-            channel: typeof row.channel === "string" ? row.channel : "",
-            fileLinks: typeof row.fileLinks === "string" ? row.fileLinks : "",
-            city: typeof row.city === "string" ? row.city : "",
-            ip: typeof row.ip === "string" ? row.ip : "",
-            userQueriesCsv: ""
-        });
+        await updateExistingSessionRow_(
+            sheets,
+            tab,
+            rowNumber,
+            {
+                formId: typeof row.formId === "string" ? row.formId : "",
+                name: typeof row.name === "string" ? row.name : "",
+                mobile: typeof row.mobile === "string" ? row.mobile : "",
+                email: typeof row.email === "string" ? row.email : "",
+                browserName: typeof row.browserName === "string" ? row.browserName : "",
+                deviceType: typeof row.deviceType === "string" ? row.deviceType : "",
+                channel: typeof row.channel === "string" ? row.channel : "",
+                fileLinks: typeof row.fileLinks === "string" ? row.fileLinks : "",
+                city: typeof row.city === "string" ? row.city : "",
+                ip: typeof row.ip === "string" ? row.ip : "",
+                userQueriesCsv: ""
+            },
+            {}
+        );
         return;
     }
 

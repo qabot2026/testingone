@@ -1577,21 +1577,24 @@ app.post(
             let wroteToSheets = false;
             if (!SHEETS_DISABLED) {
                 try {
-                    await appendContactRowToSheet({
-                        iso,
-                        formId,
-                        name,
-                        mobile,
-                        email,
-                        clientSessionId,
-                        browserName,
-                        deviceType,
-                        channel,
-                        fileLinks: fileLinksForSheet,
-                        ip,
-                        city,
-                        userQueriesCsv
-                    });
+                    await appendContactRowToSheet(
+                        {
+                            iso,
+                            formId,
+                            name,
+                            mobile,
+                            email,
+                            clientSessionId,
+                            browserName,
+                            deviceType,
+                            channel,
+                            fileLinks: fileLinksForSheet,
+                            ip,
+                            city,
+                            userQueriesCsv
+                        },
+                        { preferIncomingContact: true }
+                    );
                     wroteToSheets = true;
                 } catch (se) {
                     const detail = se && se.message ? se.message : String(se);
