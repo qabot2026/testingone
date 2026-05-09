@@ -77,6 +77,7 @@ import {
     logContactLeadEmailBoot,
     maybeSendContactLeadNotifyEmail,
     missingContactLeadEmailEnvKeys_,
+    sendContactLeadMailboxSelfTestPing,
     verifyContactLeadSmtpOnBoot
 } from "./lib/contact-lead-notify-email.mjs";
 
@@ -203,9 +204,20 @@ function scheduleContactPostSuccessTail_(res, work) {
                 );
             }
         }
-        void maybeSendContactLeadNotifyEmail(work.leadEmailPayload).catch((e) => {
-            console.error("[contact-form-api] lead notify email", e && e.message ? e.message : e);
-        });
+        try {
+            const mailOut = await maybeSendContactLeadNotifyEmail(work.leadEmailPayload);
+            if (!(mailOut && mailOut.sent)) {
+                console.warn(
+                    "[contact-form] lead_notify_tail:",
+                    JSON.stringify(formatLeadEmailOutcomeForJson(mailOut))
+                );
+            }
+        } catch (leadErr) {
+            console.error(
+                "[contact-form-api] lead notify email (unexpected throw)",
+                leadErr && leadErr.message ? leadErr.message : leadErr
+            );
+        }
     };
     const kick = () => {
         void runner();
@@ -2303,6 +2315,41 @@ app.get("/contact-form-email-health", (_req, res) => {
     });
 });
 
+/** POST: send exactly one ping mail to CONTACT_LEAD_NOTIFY_TO (proves SMTP, not only env parser). Requires CONTACT_LEAD_EMAIL_TEST_SECRET + matching header/body.secret. */
+app.post("/contact-form-email-self-test", express.json({ limit: "2kb" }), async (req, res) => {
+    const want = (process.env.CONTACT_LEAD_EMAIL_TEST_SECRET || "").trim();
+    if (!want || want.length < 8) {
+        return res.status(503).json({
+            ok: false,
+            error:
+                "Set CONTACT_LEAD_EMAIL_TEST_SECRET (8+ random chars) in Railway Variables for this service, redeploy, then POST with header X-Contact-Lead-Email-Test-Secret."
+        });
+    }
+    const gotHdr = typeof req.headers["x-contact-lead-email-test-secret"] === "string"
+        ? req.headers["x-contact-lead-email-test-secret"].trim()
+        : "";
+    const body = req.body && typeof req.body === "object" ? req.body : {};
+    const gotBody = typeof /** @type {{ secret?: unknown }} */ (body).secret === "string"
+        ? String(body.secret).trim()
+        : "";
+    const got = gotHdr || gotBody;
+    if (got !== want) {
+        return res.status(403).json({
+            ok: false,
+            error: "Forbidden — send X-Contact-Lead-Email-Test-Secret (or JSON { secret }) matching CONTACT_LEAD_EMAIL_TEST_SECRET."
+        });
+    }
+    try {
+        const out = await sendContactLeadMailboxSelfTestPing();
+        const shaped = formatLeadEmailOutcomeForJson(out);
+        const okPing = shaped.status === "sent";
+        return res.status(okPing ? 200 : 500).json({ ok: okPing, outcome: shaped });
+    } catch (e) {
+        const msg = e && /** @type {{ message?: string }} */ (e).message ? String(e.message) : String(e);
+        return res.status(500).json({ ok: false, error: msg });
+    }
+});
+
 app.get("/contact-form-sheets-health", async (_req, res) => {
     try {
         const id = (process.env.SHEETS_SPREADSHEET_ID || "").trim();
@@ -2350,6 +2397,7 @@ app.get("/", (_req, res) => {
             `GET /health → health check.`,
             `GET /contact-form-sheets-health → JSON: Sheets env + tab names (spreadsheet READ probe).`,
             `GET /contact-form-email-health → JSON: lead email env (no secrets; check missing_env).`,
+            `POST /contact-form-email-self-test (+ CONTACT_LEAD_EMAIL_TEST_SECRET header) → sends one SMTP ping.`,
             CATALOG_SYNC_SECRET
                 ? `POST ${PATHNAME_CATALOG_SYNC} + X-Catalog-Sync-Secret → push doctors/branches catalog (JSON) to RTDB.`
                 : `Set CATALOG_SYNC_SECRET + redeploy → POST ${PATHNAME_CATALOG_SYNC} to sync catalog JSON to RTDB.`,

@@ -209,6 +209,25 @@ function formatFieldsBlock_(fields, maxLen) {
  * }} args
  * @returns {Promise<{ skipped: true, reason: string } | { sent: true } | { error: string }>}
  */
+/**
+ * Sends one real mail to CONTACT_LEAD_NOTIFY_TO (same SMTP path as leads). Used by POST /contact-form-email-self-test.
+ *
+ * @returns {Promise<{ skipped: true, reason: string } | { sent: true } | { error: string }>}
+ */
+export async function sendContactLeadMailboxSelfTestPing() {
+    return maybeSendContactLeadNotifyEmail({
+        source: "mailbox-self-test",
+        formId: "__self_test__",
+        name: "SMTP self-test (safe to delete)",
+        email: "",
+        mobile: "",
+        fields: {
+            note: "If you see this mail, CONTACT_LEAD_NOTIFY_TO and SMTP_* are wired correctly."
+        },
+        submittedAtIso: new Date().toISOString()
+    });
+}
+
 export async function maybeSendContactLeadNotifyEmail(args) {
     if (!isContactLeadEmailConfigured()) {
         const r = { skipped: true, reason: "not_configured", missing_env: missingContactLeadEmailEnvKeys_() };
