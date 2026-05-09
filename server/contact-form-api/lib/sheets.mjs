@@ -406,6 +406,21 @@ export async function upsertSessionQueriesInSheet(row) {
                 }
             });
         }
+        // Chat may append a row on mobile first (empty C/E), then capture name/email later; session
+        // query sync still hits this path — fill blank contact columns without touching N again.
+        await updateExistingSessionRow_(sheets, tab, rowNumber, {
+            formId: typeof row.formId === "string" ? row.formId : "",
+            name: typeof row.name === "string" ? row.name : "",
+            mobile: typeof row.mobile === "string" ? row.mobile : "",
+            email: typeof row.email === "string" ? row.email : "",
+            browserName: typeof row.browserName === "string" ? row.browserName : "",
+            deviceType: typeof row.deviceType === "string" ? row.deviceType : "",
+            channel: typeof row.channel === "string" ? row.channel : "",
+            fileLinks: typeof row.fileLinks === "string" ? row.fileLinks : "",
+            city: typeof row.city === "string" ? row.city : "",
+            ip: typeof row.ip === "string" ? row.ip : "",
+            userQueriesCsv: ""
+        });
         return;
     }
 

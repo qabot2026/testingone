@@ -133,6 +133,131 @@ export function resolveContactMobile(fields, body, clientContext) {
     return "";
 }
 
+/** @param {string} s */
+function trimNameCell_(s) {
+    const t = String(s || "").trim();
+    if (!t) {
+        return "";
+    }
+    return t.length > 200 ? t.slice(0, 200) : t;
+}
+
+const CONTACT_NAME_KEYS = ["name"];
+
+const CONTACT_NAME_ALIASES = [
+    "customer_name",
+    "full_name",
+    "person_name",
+    "username",
+    "guest_name",
+    "guestname"
+];
+
+const EMAIL_SUFFIX_KEYS_NORMALIZED = new Set(["email", "useremail", "mail", "contactemail"]);
+
+/** @type {(cx: Record<string, unknown>) => string} */
+function pickNameFromLooseKeys_(cx) {
+    for (const [rk, rv] of Object.entries(cx)) {
+        const nk = normalizedFormKey(rk);
+        const v = scalarFormValue(rv);
+        if (!v) {
+            continue;
+        }
+        if (CONTACT_NAME_ALIASES.some((alias) => normalizedFormKey(alias) === nk)) {
+            return trimNameCell_(v);
+        }
+        if (
+            nk === "firstname" ||
+            nk === "first_name" ||
+            nk === "lastname" ||
+            nk === "last_name" ||
+            nk === "middlename"
+        ) {
+            return trimNameCell_(v);
+        }
+    }
+    return "";
+}
+
+/**
+ * Name for Sheets / Firestore — form fields win, then nested `client_context` (matches chat/widget session storage keys).
+ *
+ * @param {Record<string, string>} fields
+ * @param {Record<string, unknown>} body
+ * @param {Record<string, unknown>} [clientContext]
+ */
+export function resolveContactName(fields, body, clientContext) {
+    for (const k of CONTACT_NAME_KEYS) {
+        const v =
+            scalarFormValue(fields[k])
+            || (body && typeof body === "object" ? scalarFormValue(body[k]) : "");
+        const t = trimNameCell_(v);
+        if (t) {
+            return t;
+        }
+    }
+    if (clientContext && typeof clientContext === "object") {
+        const cx = /** @type {Record<string, unknown>} */ (clientContext);
+        for (const k of CONTACT_NAME_KEYS) {
+            const t = trimNameCell_(scalarFormValue(cx[k]));
+            if (t) {
+                return t;
+            }
+        }
+        const loose = pickNameFromLooseKeys_(cx);
+        if (loose) {
+            return loose;
+        }
+    }
+    return "";
+}
+
+/** @type {(cx: Record<string, unknown>) => string} */
+function pickEmailFromLooseKeys_(cx) {
+    for (const [rk, rv] of Object.entries(cx)) {
+        const nk = normalizedFormKey(rk);
+        if (
+            EMAIL_SUFFIX_KEYS_NORMALIZED.has(nk)
+            || nk.endsWith("email")
+            || nk.includes("mailto")
+            || nk === "e_mail"
+        ) {
+            const v = scalarFormValue(rv);
+            if (v) {
+                return v.trim();
+            }
+        }
+    }
+    return "";
+}
+
+/**
+ * Email — form fields win, then nested `client_context` (matches chat session storage keys).
+ *
+ * @param {Record<string, string>} fields
+ * @param {Record<string, unknown>} body
+ * @param {Record<string, unknown>} [clientContext]
+ */
+export function resolveContactEmail(fields, body, clientContext) {
+    for (const k of ["email"]) {
+        const v =
+            scalarFormValue(fields[k])
+            || (body && typeof body === "object" ? scalarFormValue(body[k]) : "");
+        if (v) {
+            return v.trim();
+        }
+    }
+    if (clientContext && typeof clientContext === "object") {
+        const cx = /** @type {Record<string, unknown>} */ (clientContext);
+        const direct = scalarFormValue(cx.email) || scalarFormValue(cx.user_email);
+        if (direct) {
+            return direct.trim();
+        }
+        return pickEmailFromLooseKeys_(cx);
+    }
+    return "";
+}
+
 /**
  * Flat merge for mobile resolution when forwarding to Apps Script (fields + client_context may both hold the number).
  *

@@ -43,7 +43,13 @@ import { appendContactRowToSheet, upsertSessionQueriesInSheet } from "./lib/shee
 import { uploadSubmissionFilesToDrive } from "./lib/drive-upload.mjs";
 import { hasDriveUploadCredentials } from "./lib/drive-auth.mjs";
 import { forwardSubmissionToAppsScript } from "./lib/apps-script-upload.mjs";
-import { resolveContactMobile, resolveSubmissionMobileDigits, scalarFormValue } from "./lib/contact-mobile.mjs";
+import {
+    resolveContactMobile,
+    resolveContactEmail,
+    resolveContactName,
+    resolveSubmissionMobileDigits,
+    scalarFormValue
+} from "./lib/contact-mobile.mjs";
 import { bookAppointment, listBookedSlots } from "./lib/appointments.mjs";
 import { listBranches, listDepartments, listDoctors } from "./lib/catalog-rtdb.mjs";
 import { upsertCatalogFromCsvFiles } from "./lib/catalog-csv-ingest.mjs";
@@ -1418,8 +1424,8 @@ app.post(
             return res.status(500).json({ ok: false, error: msg });
         }
 
-        const name = fields.name ?? "";
-        const email = fields.email ?? "";
+        const name = resolveContactName(fields, body, mergedClientContext);
+        const email = resolveContactEmail(fields, body, mergedClientContext);
         let mobile = resolveContactMobile(fields, body, mergedClientContext);
         if (!mobile) {
             const digitsFromContext = resolveSubmissionMobileDigits(fields, body, mergedClientContext);
@@ -1677,8 +1683,8 @@ app.post(
         const deviceType = typeof clientContext.device_type === "string"
             ? clientContext.device_type.trim()
             : "";
-        const name = fields.name ?? "";
-        const email = fields.email ?? "";
+        const name = resolveContactName(fields, body, mergedClientContext);
+        const email = resolveContactEmail(fields, body, mergedClientContext);
 
         if (!mobile) {
             return res.status(400).json({ ok: false, error: "Missing mobile (send mobile or client_context.mobile)." });
@@ -1795,8 +1801,8 @@ app.post(
             resolveContactMobile(fields, body, mergedClientContext)
             || resolveSubmissionMobileDigits(fields, body, mergedClientContext)
             || "";
-        const name = fields.name ?? "";
-        const email = fields.email ?? "";
+        const name = resolveContactName(fields, body, mergedClientContext);
+        const email = resolveContactEmail(fields, body, mergedClientContext);
 
         const iso = new Date().toISOString();
         const ip = extractRequestIp(req);
