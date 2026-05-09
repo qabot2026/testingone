@@ -365,9 +365,63 @@ function buildDedupeKey(row) {
 }
 
 /**
+ * Rows from `values.get` are indexed 0 = sheet row 1.
+ *
+ * @param {unknown[]} rows
+ * @param {string} incomingDigits
+ * @param {number} mobileColIdx
+ * @param {number} excludeSheetRow1Based skip this sheet row when counting (session-dedupe update target row)
+ */
+function countOtherRowsWithSameMobile_(rows, incomingDigits, mobileColIdx, excludeSheetRow1Based) {
+    if (!incomingDigits || !rows.length) {
+        return 0;
+    }
+    let n = 0;
+    for (let i = HEADER_SKIP_ROWS_0; i < rows.length; i += 1) {
+        const sheetRow = i + 1;
+        if (excludeSheetRow1Based && sheetRow === excludeSheetRow1Based) {
+            continue;
+        }
+        const r = rows[i] || [];
+        /** @type {unknown[]} */
+        const ra = Array.isArray(r) ? r : [];
+        let k = mobileKeyFromRow_(ra, mobileColIdx);
+        if (!k && ra.length > 3) {
+            k = mobileKeyFromCell_(ra[3]);
+        }
+        if (k && k === incomingDigits) {
+            n += 1;
+        }
+    }
+    return n;
+}
+
+/**
+ * @param {unknown[][]} colRows cells from `${Col}:${Col}` get
+ */
+function countColumnMatchesExcludingRow_(colRows, incomingDigits, excludeSheetRow1Based) {
+    if (!incomingDigits || !colRows.length) {
+        return 0;
+    }
+    let n = 0;
+    for (let i = HEADER_SKIP_ROWS_0; i < colRows.length; i += 1) {
+        const sheetRow = i + 1;
+        if (excludeSheetRow1Based && sheetRow === excludeSheetRow1Based) {
+            continue;
+        }
+        const cell = colRows[i] && colRows[i][0] !== undefined ? colRows[i][0] : "";
+        const k = mobileKeyFromCell_(cell);
+        if (k && k === incomingDigits) {
+            n += 1;
+        }
+    }
+    return n;
+}
+
+/**
  * Scan recent sheet rows for:
  * - duplicate for the same session id (only one row per session id)
- * - repeated: same mobile already exists anywhere else in the sheet tail
+ * - repeated: same mobile exists on **another** sheet row (exclude current row when updating by session dedupe)
  *
  * @param {import("googleapis").sheets_v4.Sheets} sheets
  * @param {{ iso: string, mobile: string, clientSessionId: string }} row
@@ -398,44 +452,8 @@ async function scanSheetTailForDedupeAndRepeat_(sheets, row) {
             || mobileKeyFromCell_(ro.tel)
             || mobileKeyFromCell_(ro.contact_mobile);
     }
-    let repeatedAcrossSessions = false;
 
-    // Repeated check: scan the full sheet (skip header rows).
-    // Semantics: "Yes" if this mobile matches any earlier data row.
-    if (incomingMobileDigits) {
-        for (let i = HEADER_SKIP_ROWS_0; i < rows.length; i += 1) {
-            const r = rows[i] || [];
-            const existingKey = mobileKeyFromRow_(/** @type {unknown[]} */ (r), mobileCol.mobileColIdx);
-            if (!existingKey || existingKey !== incomingMobileDigits) {
-                continue;
-            }
-            repeatedAcrossSessions = true;
-            break;
-        }
-    }
-
-    // Fallback: scan the entire mobile column directly (more reliable for very large sheets).
-    // This ignores column reorders, but if your sheet follows the documented schema (mobile in column D),
-    // it avoids missing repeats due to API truncation / row-width quirks.
-    if (incomingMobileDigits && !repeatedAcrossSessions) {
-        try {
-            const col = await sheets.spreadsheets.values.get({
-                spreadsheetId: SPREADSHEET_ID,
-                range: `${tab}!${mobileCol.mobileColLetter}:${mobileCol.mobileColLetter}`
-            });
-            const colRows = Array.isArray(col.data.values) ? col.data.values : [];
-            for (let i = HEADER_SKIP_ROWS_0; i < colRows.length; i += 1) {
-                const cell = colRows[i] && colRows[i][0] !== undefined ? colRows[i][0] : "";
-                const existingKey = mobileKeyFromCell_(cell);
-                if (existingKey && existingKey === incomingMobileDigits) {
-                    repeatedAcrossSessions = true;
-                    break;
-                }
-            }
-        } catch {
-            /* ignore: keep repeatedAcrossSessions from the primary scan */
-        }
-    }
+    let duplicateRowNum = 0;
 
     for (let i = tail.length - 1; i >= 0; i--) {
         const r = tail[i] || [];
@@ -444,19 +462,55 @@ async function scanSheetTailForDedupeAndRepeat_(sheets, row) {
 
         // If we have a session id, enforce "only once per session".
         if (key && incomingSid && existingSid && incomingSid === existingSid) {
-            return { duplicate: true, matchedRowNumber: rowNumber, repeatedAcrossSessions };
+            duplicateRowNum = rowNumber;
+            break;
         }
         // Some sheets have different column ordering; scan the whole row for the session id string.
         if (key && incomingSid && Array.isArray(r)) {
             for (let c = 0; c < r.length; c++) {
                 const cell = sheetCellString_(r[c]);
                 if (cell && cell === incomingSid) {
-                    return { duplicate: true, matchedRowNumber: rowNumber, repeatedAcrossSessions };
+                    duplicateRowNum = rowNumber;
+                    break;
                 }
+            }
+            if (duplicateRowNum) {
+                break;
             }
         }
     }
 
+    const excludeForRepeat = duplicateRowNum || 0;
+    let otherMatches = 0;
+    if (incomingMobileDigits) {
+        otherMatches = countOtherRowsWithSameMobile_(
+            /** @type {unknown[][]} */ (rows),
+            incomingMobileDigits,
+            mobileCol.mobileColIdx,
+            excludeForRepeat
+        );
+    }
+    if (incomingMobileDigits && otherMatches === 0) {
+        try {
+            const col = await sheets.spreadsheets.values.get({
+                spreadsheetId: SPREADSHEET_ID,
+                range: `${tab}!${mobileCol.mobileColLetter}:${mobileCol.mobileColLetter}`
+            });
+            const colRows = Array.isArray(col.data.values) ? col.data.values : [];
+            otherMatches = countColumnMatchesExcludingRow_(
+                /** @type {unknown[][]} */ (colRows),
+                incomingMobileDigits,
+                excludeForRepeat
+            );
+        } catch {
+            /* ignore */
+        }
+    }
+    const repeatedAcrossSessions = otherMatches >= 1;
+
+    if (duplicateRowNum) {
+        return { duplicate: true, matchedRowNumber: duplicateRowNum, repeatedAcrossSessions };
+    }
     return { duplicate: false, matchedRowNumber: 0, repeatedAcrossSessions };
 }
 
