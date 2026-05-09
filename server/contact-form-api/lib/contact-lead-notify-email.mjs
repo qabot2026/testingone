@@ -16,12 +16,14 @@
  *
  * Debug (Railway Logs):
  *   CONTACT_LEAD_EMAIL_DEBUG=1 — log every outcome (skipped / sent / SMTP error).
- *   CONTACT_LEAD_ATTACH_OUTCOME_IN_JSON=1 — add `lead_email` to POST /contact-form-submissions JSON (debug only).
+ *   CONTACT_LEAD_ATTACH_OUTCOME_IN_JSON=1 — add non-blocking `lead_email` stub to JSON ({ status:"scheduled", delay_ms }); never waits on SMTP.
+ *
+ * Timing: CONTACT_LEAD_EMAIL_DELAY_MS (default 60000) waits after flush + deferred Firestore before SMTP; set to 0 for immediate send after response.
  *
  * Sends when there is ANY of: visitor name/email/mobile OR a picked appointment slot (date + time).
  * The API schedules sending **after** HTTP 200 is flushed (`scheduleContactPostSuccessTail_` in index.mjs),
- * with a time fallback — not during the “submitting” wait. Inline Firestore completes first unless
- * CONTACT_FORM_DEFER_FIRESTORE_AFTER_RESPONSE=1 moves it into the same tail runner.
+ * with a time fallback — not during the form request. Deferred Firestore runs in the same tail unless
+ * CONTACT_FORM_DEFER_FIRESTORE_AFTER_RESPONSE=1 moves Firestore-only work there (see index).
  *
  * Optional: CONTACT_LEAD_NOTIFY_ON_MOBILE_SYNC=1 (see index.mjs comment).
  */

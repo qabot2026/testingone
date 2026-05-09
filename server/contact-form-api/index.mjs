@@ -168,11 +168,30 @@ function normalizeSheetFormId(explicit) {
 }
 
 /**
+ * Milliseconds to wait **after** response flush (and deferred Firestore, if any) before SMTP send.
+ * Default 60000 (1 min); set CONTACT_LEAD_EMAIL_DELAY_MS=0 for immediate sending.
+ */
+function resolveContactLeadEmailDelayMs_() {
+    const rawStr = (process.env.CONTACT_LEAD_EMAIL_DELAY_MS ?? "").trim();
+    if (!rawStr) {
+        return 60000;
+    }
+    const n = Number(rawStr);
+    if (!Number.isFinite(n)) {
+        return 60000;
+    }
+    return Math.min(Math.max(Math.round(n), 0), 15 * 60 * 1000);
+}
+
+/**
  * After HTTP **200 OK** is flushed, run optional deferred Firestore + lead email exactly once.
  * Uses `finish` plus a fallback timeout (Railway/CDN quirks can delay or skip `finish`).
  *
  * @param {import('express').Response | null | undefined} res
- * @param {{ deferFirestoreRecord?: Record<string, unknown> | null, leadEmailPayload: Record<string, unknown> }} work
+ * @param {{
+ *   deferFirestoreRecord?: Record<string, unknown> | null,
+ *   leadEmailPayload: Record<string, unknown>,
+ * }} work
  */
 function scheduleContactPostSuccessTail_(res, work) {
     const fallbackMs = Math.min(
@@ -205,6 +224,11 @@ function scheduleContactPostSuccessTail_(res, work) {
             }
         }
         try {
+            const delayMs = resolveContactLeadEmailDelayMs_();
+            if (delayMs > 0) {
+                console.log(`[contact-form] lead_email_delay_wait_ms=${delayMs}`);
+                await new Promise((r) => globalThis.setTimeout(r, delayMs));
+            }
             const mailOut = await maybeSendContactLeadNotifyEmail(work.leadEmailPayload);
             if (!(mailOut && mailOut.sent)) {
                 console.warn(
@@ -1953,54 +1977,18 @@ app.post(
             };
             const attachLeadEmail =
                 (process.env.CONTACT_LEAD_ATTACH_OUTCOME_IN_JSON || "").trim() === "1";
-            /** Default ~32s: matches typical CONTACT_LEAD_SMTP_CONNECT_TIMEOUT_MS (12k) + CONTACT_LEAD_SEND_TIMEOUT_MS (20k) ceilings so diagnostics don't false-timeout while SMTP still works. */
-            const attachWaitMs = Math.min(
-                Math.max(Number(process.env.CONTACT_LEAD_EMAIL_ATTACH_WAIT_MS) || 32000, 3000),
-                90000
-            );
             if (attachLeadEmail) {
-                if (deferFirestoreRecord) {
-                    try {
-                        await persistToFirestore(record);
-                        console.log("[contact-form] firestore_wall_ms=inline_attach_diag");
-                        deferFirestoreRecord = null;
-                    } catch (fe) {
-                        const detail = fe && fe.message ? fe.message : String(fe);
-                        console.error("[contact-form-api] Firestore (attach-diagnostic)", detail, fe);
-                        if (!wroteToSheets) {
-                            throw new Error(`Firestore: ${detail}`);
-                        }
-                    }
-                }
-                try {
-                    const er = await Promise.race([
-                        maybeSendContactLeadNotifyEmail(leadEmailPayload),
-                        new Promise((_, rej) => {
-                            globalThis.setTimeout(
-                                () =>
-                                    rej(
-                                        new Error(
-                                            `lead_email_diag_wait_exceeded_${attachWaitMs}ms — remove CONTACT_LEAD_ATTACH_OUTCOME_IN_JSON or fix SMTP`
-                                        )
-                                    ),
-                                attachWaitMs
-                            );
-                        })
-                    ]);
-                    out.lead_email = formatLeadEmailOutcomeForJson(er);
-                } catch (em) {
-                    out.lead_email = {
-                        status: "error",
-                        detail: em && em.message ? String(em.message).slice(0, 400) : String(em)
-                    };
-                }
-            } else {
-                /** Deferred Firestore (optional) + lead email — after flush, with fallback if `finish` never fires. */
-                scheduleContactPostSuccessTail_(res, {
-                    deferFirestoreRecord,
-                    leadEmailPayload
-                });
+                out.lead_email = {
+                    status: "scheduled",
+                    delay_ms: resolveContactLeadEmailDelayMs_(),
+                    note: "Lead email is not sent during this request; it runs in the background after HTTP 200. Use Railway logs or POST /contact-form-email-self-test. Unset CONTACT_LEAD_ATTACH_OUTCOME_IN_JSON to hide this field."
+                };
             }
+            /** Deferred Firestore (optional) + lead email — after flush; email waits CONTACT_LEAD_EMAIL_DELAY_MS (default 1 min). */
+            scheduleContactPostSuccessTail_(res, {
+                deferFirestoreRecord,
+                leadEmailPayload
+            });
             return res.status(200).json(out);
         } catch (err) {
             const message = err && err.message ? err.message : "Save failed";
@@ -2112,6 +2100,32 @@ app.post(
                 appointmentTime: "",
                 userQueriesCsv
             });
+            if ((process.env.CONTACT_LEAD_NOTIFY_ON_MOBILE_SYNC || "").trim() === "1") {
+                const nm = typeof name === "string" ? name.trim() : "";
+                const em = typeof email === "string" ? email.trim() : "";
+                if (nm || em) {
+                    scheduleContactPostSuccessTail_(res, {
+                        deferFirestoreRecord: null,
+                        leadEmailPayload: {
+                            source: "mobile-sheet-sync",
+                            formId,
+                            name,
+                            email,
+                            mobile,
+                            city,
+                            channel,
+                            sourceUrl,
+                            clientSessionId,
+                            appointmentDate: "",
+                            appointmentTime: "",
+                            appointmentBooked: "No",
+                            submittedAtIso: new Date().toISOString(),
+                            fields,
+                            ip
+                        }
+                    });
+                }
+            }
             return res.status(200).json({
                 ok: true,
                 message: "Sheet updated.",
@@ -2140,31 +2154,6 @@ app.post(
                     }
                 }
             });
-            if ((process.env.CONTACT_LEAD_NOTIFY_ON_MOBILE_SYNC || "").trim() === "1") {
-                const nm = typeof name === "string" ? name.trim() : "";
-                const em = typeof email === "string" ? email.trim() : "";
-                if (nm || em) {
-                    void maybeSendContactLeadNotifyEmail({
-                        source: "mobile-sheet-sync",
-                        formId,
-                        name,
-                        email,
-                        mobile,
-                        city,
-                        channel,
-                        sourceUrl,
-                        clientSessionId,
-                        appointmentDate: "",
-                        appointmentTime: "",
-                        appointmentBooked: "No",
-                        submittedAtIso: new Date().toISOString(),
-                        fields,
-                        ip
-                    }).catch((e) => {
-                        console.error("[contact-form-api] lead notify email (mobile sync)", e && e.message ? e.message : e);
-                    });
-                }
-            }
         } catch (se) {
             const detail = se && se.message ? se.message : String(se);
             console.error("[contact-form-api] mobile-sheet-sync", detail, se);
@@ -2309,6 +2298,7 @@ app.get("/contact-form-email-health", (_req, res) => {
         has_smtp_pass: !!(process.env.SMTP_PASS || process.env.SMTP_PASSWORD || "").trim(),
         mail_from_set: !!(process.env.MAIL_FROM || "").trim(),
         smtp_port: Number(process.env.SMTP_PORT) || 587,
+        lead_email_delay_ms_after_http_200: resolveContactLeadEmailDelayMs_(),
         hint:
             missing.length
                 ? "Set the missing_* names in Railway Variables for this service, redeploy, then submit the contact form with name + phone or email."
