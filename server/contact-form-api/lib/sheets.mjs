@@ -21,20 +21,17 @@ const DEDUP_WINDOW_MS = Math.max(
 const SPREADSHEET_SCOPES = ["https://www.googleapis.com/auth/spreadsheets"];
 
 /**
- * Google Sheets `append` uses the range width as the table width. `Sheet1!A:H` drops
- * any column past H (e.g. channel in I). We keep the tab from env but append with A:Z.
+ * Force append into our schema columns (A–N).
+ *
+ * We previously used `A:Z` to avoid truncation when env was set to `A:H`, but `values.append`
+ * may choose a "table" anchored later in the sheet and append at an unexpected start column
+ * (e.g. `W:AJ`), making the lead look "missing" in A–N.
+ *
  * @param {string} raw same as `SHEETS_RANGE` / default
  */
-function appendRangeFullWidth(raw) {
-    const s = (raw || "").trim();
-    if (!s) {
-        return "Sheet1!A:Z";
-    }
-    const bang = s.indexOf("!");
-    if (bang === -1) {
-        return `${s}!A:Z`;
-    }
-    return `${s.slice(0, bang)}!A:Z`;
+function appendRangeSchemaWidth_(raw) {
+    const tab = tabNameFromRange(raw);
+    return `${tab}!A:N`;
 }
 
 function tabNameFromRange(raw) {
@@ -375,7 +372,7 @@ export async function appendContactRowToSheet(row, opts) {
         ? { duplicate: false, matchedRowNumber: 0, repeatedAcrossSessions: scanFull.repeatedAcrossSessions }
         : scanFull;
     const tab = tabNameFromRange(RANGE);
-    const appendRangeUsed = appendRangeFullWidth(RANGE);
+    const appendRangeUsed = appendRangeSchemaWidth_(RANGE);
     if (scan.duplicate) {
         const up = await updateExistingSessionRow_(sheets, tab, scan.matchedRowNumber, row, {
             preferIncomingContact: !!(opts && opts.preferIncomingContact)
