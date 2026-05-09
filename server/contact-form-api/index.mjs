@@ -1560,6 +1560,12 @@ app.post(
         const ip = extractRequestIp(req);
         const city = await resolveCityForRequest(req);
         const userQueriesCsv = normalizeUserQueriesCsvFromClientContext(mergedClientContext);
+        const sourceUrl = typeof mergedClientContext.source_url === "string"
+            ? mergedClientContext.source_url.trim()
+            : "";
+        const appointmentDate = typeof fields.appointmentdate === "string" ? String(fields.appointmentdate).trim() : "";
+        const appointmentTime = typeof fields.appointmenttime === "string" ? String(fields.appointmenttime).trim() : "";
+        const appointmentBooked = appointmentDate && appointmentTime ? "Yes" : "No";
         /** Firestore-safe payload (flattened for querying) */
         const fileLinksForSheet = drive_uploads
             .map((u) => (typeof u.web_view_link === "string" ? u.web_view_link : ""))
@@ -1611,6 +1617,10 @@ app.post(
                             fileLinks: fileLinksForSheet,
                             ip,
                             city,
+                            sourceUrl,
+                            appointmentBooked,
+                            appointmentDate,
+                            appointmentTime,
                             userQueriesCsv
                         },
                         {

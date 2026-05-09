@@ -6,8 +6,8 @@ import { google } from "googleapis";
 import { getServiceAccountCredentials } from "./google-service-account.mjs";
 
 const SPREADSHEET_ID = (process.env.SHEETS_SPREADSHEET_ID || "").trim();
-// Default includes extra columns for city/ip/repeated/user queries (A–N).
-const RANGE = (process.env.SHEETS_RANGE || "Sheet1!A:N").trim();
+// Default includes extra columns for repeated/source URL/appointments/drive links (A–Q).
+const RANGE = (process.env.SHEETS_RANGE || "Sheet1!A:Q").trim();
 const DEDUP_LOOKBACK_ROWS = Math.max(
     10,
     Number.parseInt(process.env.SHEETS_DEDUP_LOOKBACK_ROWS || "500", 10) || 500
@@ -31,7 +31,7 @@ const SPREADSHEET_SCOPES = ["https://www.googleapis.com/auth/spreadsheets"];
  */
 function appendRangeSchemaWidth_(raw) {
     const tab = tabNameFromRange(raw);
-    return `${tab}!A:N`;
+    return `${tab}!A:Q`;
 }
 
 function tabNameFromRange(raw) {
@@ -542,6 +542,94 @@ async function getSheetsAuthClient() {
     return auth.getClient();
 }
 
+let sheetSchemaCache_ = { tab: "", at: 0, byKey: /** @type {Record<string, number>} */ ({}) };
+
+async function getHeaderIndexMap_(sheets, tab) {
+    const now = Date.now();
+    if (sheetSchemaCache_.tab === tab && now - sheetSchemaCache_.at < HEADER_CACHE_TTL_MS) {
+        return sheetSchemaCache_.byKey;
+    }
+    /** @type {Record<string, number>} */
+    const byKey = {};
+    try {
+        const got = await sheets.spreadsheets.values.get({
+            spreadsheetId: SPREADSHEET_ID,
+            range: `${tab}!1:1`
+        });
+        const header = Array.isArray(got.data.values) && got.data.values[0] ? got.data.values[0] : [];
+        for (let i = 0; i < header.length; i += 1) {
+            const k = normalizedHeaderKey_(sheetCellString_(header[i]));
+            if (k && byKey[k] === undefined) {
+                byKey[k] = i;
+            }
+        }
+    } catch {
+        // ignore
+    }
+    sheetSchemaCache_ = { tab, at: now, byKey };
+    return byKey;
+}
+
+function pickHeaderIndex_(map, aliases, fallbackIdx) {
+    for (let i = 0; i < aliases.length; i += 1) {
+        const k = normalizedHeaderKey_(aliases[i]);
+        if (k && map[k] !== undefined) {
+            return map[k];
+        }
+    }
+    return fallbackIdx;
+}
+
+function rowNumberFromUpdatedRange_(updatedRange) {
+    const s = typeof updatedRange === "string" ? updatedRange : "";
+    const m = s.match(/!([A-Z]+)(\d+)(?::[A-Z]+(\d+))?$/);
+    const rowNumber = m && m[2] ? Number.parseInt(m[2], 10) : 0;
+    return Number.isFinite(rowNumber) ? rowNumber : 0;
+}
+
+async function writeLeadRowByHeader_(sheets, tab, rowNumber, lead) {
+    if (!rowNumber) {
+        return;
+    }
+    const headerMap = await getHeaderIndexMap_(sheets, tab);
+    const getIdx = (aliases, fallbackIdx) => pickHeaderIndex_(headerMap, aliases, fallbackIdx);
+
+    const col = (idx0) => columnLetterFromIndex_(idx0);
+
+    const updates = [];
+    const put = (aliases, fallbackIdx, value) => {
+        const v = sheetOutboundCell_(value);
+        const idx0 = getIdx(aliases, fallbackIdx);
+        updates.push({ range: `${tab}!${col(idx0)}${rowNumber}`, values: [[v]] });
+    };
+
+    put(["convdateandtime", "conversiondatetime", "date", "datetime", "timestamp", "submittedat"], 0, lead.iso);
+    put(["formid", "form_id"], 1, lead.formId);
+    put(["name"], 2, lead.name);
+    put(["mobile", "phone", "phonenumber", "mobilenumber", "mobile_number"], 3, lead.mobile);
+    put(["email"], 4, lead.email);
+    put(["sessionid", "session", "clientsessionid", "client_session_id"], 5, lead.clientSessionId);
+    put(["device", "devicetype"], 6, lead.deviceType);
+    put(["browser", "browsername"], 7, lead.browserName);
+    put(["channel"], 8, lead.channel);
+    put(["city"], 9, lead.city);
+    put(["ip", "ipaddress", "ip_address"], 10, lead.ip);
+    put(["repeateduser", "repeated", "duplicate", "existinguser"], 11, lead.repeated);
+    put(["sourceurl", "source_url", "url", "pageurl"], 12, lead.sourceUrl);
+    put(["appointmentbooked", "booked", "appointment"], 13, lead.appointmentBooked);
+    put(["appointmentdate"], 14, lead.appointmentDate);
+    put(["appointmenttime"], 15, lead.appointmentTime);
+    put(["drivefilelink", "drivefile", "filelink", "filelinks", "drivelink"], 16, lead.driveFileLink);
+
+    await sheets.spreadsheets.values.batchUpdate({
+        spreadsheetId: SPREADSHEET_ID,
+        requestBody: {
+            valueInputOption: "USER_ENTERED",
+            data: updates
+        }
+    });
+}
+
 /**
  * Columns A–M:
  * A iso
@@ -559,7 +647,7 @@ async function getSheetsAuthClient() {
  * M repeated (Yes|No)
  * N user_queries (comma-separated)
  *
- * @param {{ iso: string, formId: string, name: string, mobile: string, email: string, clientSessionId: string, browserName: string, deviceType: string, channel: string, fileLinks?: string, city?: string, ip?: string, userQueriesCsv?: string }} row
+ * @param {{ iso: string, formId: string, name: string, mobile: string, email: string, clientSessionId: string, browserName: string, deviceType: string, channel: string, fileLinks?: string, city?: string, ip?: string, sourceUrl?: string, appointmentBooked?: string, appointmentDate?: string, appointmentTime?: string, userQueriesCsv?: string }} row
  * @param {{ preferIncomingContact?: boolean, skipSessionDedup?: boolean }} [opts] `skipSessionDedup` (with `preferIncomingContact`) skips “one row per session” and always appends — default for main contact-form POST.
  * @returns {Promise<{ action: "appended"|"duplicate_updated"|"duplicate_noop", patched: boolean, tab: string, appendRangeUsed?: string, sheetRowNumber?: number, googleAppend?: { updatedRange?: string, updatedRows?: number, spreadsheetId?: string }, googleBatch?: { totalUpdatedCells?: number, totalUpdatedRows?: number, updatedRanges: string[] } }>}
  */
@@ -620,23 +708,15 @@ export async function appendContactRowToSheet(row, opts) {
             : "";
     const city = typeof row.city === "string" ? row.city.trim() : "";
     const ip = typeof row.ip === "string" ? row.ip.trim() : "";
+    const sourceUrl = typeof row.sourceUrl === "string" ? row.sourceUrl.trim() : "";
+    const appointmentBooked = typeof row.appointmentBooked === "string" ? row.appointmentBooked.trim() : "";
+    const appointmentDate = typeof row.appointmentDate === "string" ? row.appointmentDate.trim() : "";
+    const appointmentTime = typeof row.appointmentTime === "string" ? row.appointmentTime.trim() : "";
     const userQueriesCsv = typeof row.userQueriesCsv === "string" ? row.userQueriesCsv.trim() : "";
     const repeated = scanFull.repeatedAcrossSessions ? "Yes" : "No";
+    // Append a blank A–Q row, then populate correct columns by header names.
     const values = [[
-        sheetOutboundCell_(row.iso),
-        sheetOutboundCell_(row.formId),
-        sheetOutboundCell_(row.name),
-        sheetOutboundCell_(row.mobile),
-        sheetOutboundCell_(row.email),
-        sheetOutboundCell_(row.clientSessionId),
-        sheetOutboundCell_(row.browserName),
-        sheetOutboundCell_(row.deviceType),
-        sheetOutboundCell_(ch),
-        sheetOutboundCell_(fileLinks),
-        sheetOutboundCell_(city),
-        sheetOutboundCell_(ip),
-        sheetOutboundCell_(repeated),
-        sheetOutboundCell_(userQueriesCsv)
+        "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""
     ]];
     const appendRes = await sheets.spreadsheets.values.append({
         spreadsheetId: SPREADSHEET_ID,
@@ -665,19 +745,27 @@ export async function appendContactRowToSheet(row, opts) {
         );
     }
 
-    // Ensure the visible "Repeated" column gets set even if your sheet columns are rearranged.
-    // We use the header-detected column and the row number from the append response range.
     try {
-        const updatedRange = typeof googleAppend.updatedRange === "string" ? googleAppend.updatedRange : "";
-        const m = updatedRange.match(/!([A-Z]+)(\d+)(?::[A-Z]+(\d+))?$/);
-        const rowNumber = m && m[2] ? Number.parseInt(m[2], 10) : 0;
+        const rowNumber = rowNumberFromUpdatedRange_(googleAppend.updatedRange);
         if (rowNumber) {
-            const repCol = await getRepeatedColumnInfo_(sheets, tabResolved);
-            await sheets.spreadsheets.values.update({
-                spreadsheetId: SPREADSHEET_ID,
-                range: `${tabResolved}!${repCol.repeatedColLetter}${rowNumber}`,
-                valueInputOption: "USER_ENTERED",
-                requestBody: { values: [[repeated]] }
+            await writeLeadRowByHeader_(sheets, tabResolved, rowNumber, {
+                iso: row.iso,
+                formId: row.formId,
+                name: row.name,
+                mobile: row.mobile,
+                email: row.email,
+                clientSessionId: row.clientSessionId,
+                deviceType,
+                browserName: row.browserName,
+                channel: ch,
+                city,
+                ip,
+                repeated,
+                sourceUrl,
+                appointmentBooked,
+                appointmentDate,
+                appointmentTime,
+                driveFileLink: fileLinks
             });
         }
     } catch {
