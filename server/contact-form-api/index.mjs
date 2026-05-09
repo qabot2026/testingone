@@ -1655,6 +1655,15 @@ app.post(
                     action: sheetOutcome.action,
                     patched: sheetOutcome.patched,
                     tab: sheetOutcome.tab || "",
+                    appendRangeUsed: typeof sheetOutcome.appendRangeUsed === "string"
+                        ? sheetOutcome.appendRangeUsed
+                        : "",
+                    sheetRowNumber:
+                        typeof sheetOutcome.sheetRowNumber === "number"
+                            ? sheetOutcome.sheetRowNumber
+                            : null,
+                    googleAppend: sheetOutcome.googleAppend || null,
+                    googleBatch: sheetOutcome.googleBatch || null,
                     sessionDedupeMode: !SHEETS_CONTACT_FORM_APPEND_FREELY
                         ? "strict_single_row_per_session"
                         : clientSessionId.trim()
@@ -1764,7 +1773,7 @@ app.post(
         const userQueriesCsv = normalizeUserQueriesCsvFromClientContext(mergedClientContext);
 
         try {
-            await appendContactRowToSheet({
+            const sheetOutcome = await appendContactRowToSheet({
                 iso,
                 formId,
                 name,
@@ -1779,7 +1788,34 @@ app.post(
                 city,
                 userQueriesCsv
             });
-            return res.status(200).json({ ok: true, message: "Sheet updated." });
+            return res.status(200).json({
+                ok: true,
+                message: "Sheet updated.",
+                sheet_integration: {
+                    enabled: true,
+                    write: {
+                        action: sheetOutcome.action,
+                        patched: sheetOutcome.patched,
+                        tab: sheetOutcome.tab || "",
+                        appendRangeUsed: typeof sheetOutcome.appendRangeUsed === "string"
+                            ? sheetOutcome.appendRangeUsed
+                            : "",
+                        sheetRowNumber:
+                            typeof sheetOutcome.sheetRowNumber === "number"
+                                ? sheetOutcome.sheetRowNumber
+                                : null,
+                        googleAppend: sheetOutcome.googleAppend || null,
+                        googleBatch: sheetOutcome.googleBatch || null,
+                        sessionDedupeMode: "strict_single_row_per_session",
+                        hadName: typeof name === "string" ? name.trim().length > 0 : false,
+                        hadMobile: true,
+                        hadEmail: typeof email === "string" ? email.trim().length > 0 : false,
+                        hadSessionId: typeof clientSessionId === "string"
+                            ? clientSessionId.trim().length > 0
+                            : false
+                    }
+                }
+            });
         } catch (se) {
             const detail = se && se.message ? se.message : String(se);
             console.error("[contact-form-api] mobile-sheet-sync", detail, se);
@@ -1877,7 +1913,7 @@ app.post(
         const city = await resolveCityForRequest(req);
 
         try {
-            await upsertSessionQueriesInSheet({
+            const syncDetail = await upsertSessionQueriesInSheet({
                 iso,
                 formId,
                 name,
@@ -1892,7 +1928,11 @@ app.post(
                 city,
                 userQueriesCsv
             });
-            return res.status(200).json({ ok: true, message: "Queries synced." });
+            return res.status(200).json({
+                ok: true,
+                message: "Queries synced.",
+                sheet_integration: { enabled: true, result: syncDetail }
+            });
         } catch (se) {
             const detail = se && se.message ? se.message : String(se);
             console.error("[contact-form-api] session-sheet-sync", detail, se);

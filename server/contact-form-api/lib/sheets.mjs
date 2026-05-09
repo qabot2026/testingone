@@ -76,6 +76,42 @@ function isBlankSheetCell_(rawCell) {
     return !sheetCellString_(rawCell);
 }
 
+/** Coerce outbound row cells to plain strings — API payloads must not contain `undefined` (can break inserts). */
+function sheetOutboundCell_(v) {
+    if (v == null) {
+        return "";
+    }
+    if (typeof v === "string") {
+        return v.trim();
+    }
+    if (typeof v === "number" && Number.isFinite(v)) {
+        return String(v);
+    }
+    if (typeof v === "boolean") {
+        return v ? "true" : "false";
+    }
+    return String(v);
+}
+
+/** @param {import("googleapis").gaxios.GaxiosResponse<import("googleapis").sheets_v4.Schema$BatchUpdateValuesResponse> | null | undefined} batchRes */
+function googleBatchSummaryFromResponse_(batchRes) {
+    const br = batchRes && batchRes.data ? batchRes.data : {};
+    const updatedRanges = Array.isArray(br.responses)
+        ? br.responses.map((r) => (r && typeof r.updatedRange === "string" ? r.updatedRange : "")).filter(Boolean)
+        : [];
+    return {
+        totalUpdatedCells:
+            typeof br.totalUpdatedCells === "number"
+                ? br.totalUpdatedCells
+                : undefined,
+        totalUpdatedRows:
+            typeof br.totalUpdatedRows === "number"
+                ? br.totalUpdatedRows
+                : undefined,
+        updatedRanges
+    };
+}
+
 /**
  * Dedupe strategy:
  * - Primary key: clientSessionId when session id exists (only one Sheet row per session)
@@ -198,10 +234,10 @@ function mergeCsvUnique_(existingCsv, incomingCsv, limit = 40) {
  * @param {{ formId: string, name: string, mobile: string, email: string, browserName: string, deviceType: string, channel: string, fileLinks?: string, city?: string, ip?: string, userQueriesCsv?: string }} incoming
  * @param {{ preferIncomingContact?: boolean }} [options] when true (contact-form POST), B–E use incoming whenever non-empty; chat/sync fills blanks only.
  */
-/** @returns {Promise<boolean>} true if Sheets batchUpdate ran */
+/** @returns {Promise<{ applied: boolean, googleBatch?: { totalUpdatedCells?: number, totalUpdatedRows?: number, updatedRanges: string[] } }>} */
 async function updateExistingSessionRow_(sheets, tab, rowNumber, incoming, options = {}) {
     if (!rowNumber || rowNumber < 1) {
-        return false;
+        return { applied: false };
     }
     const preferIncomingContact = !!(options && options.preferIncomingContact);
     const got = await sheets.spreadsheets.values.get({
@@ -262,16 +298,19 @@ async function updateExistingSessionRow_(sheets, tab, rowNumber, incoming, optio
                 "[contact-form-api] Sheets duplicate-session row update applied no patches (incoming contact/query fields empty or unchanged)."
             );
         }
-        return false;
+        return { applied: false };
     }
-    await sheets.spreadsheets.values.batchUpdate({
+    const batchRes = await sheets.spreadsheets.values.batchUpdate({
         spreadsheetId: SPREADSHEET_ID,
         requestBody: {
             valueInputOption: "USER_ENTERED",
             data
         }
     });
-    return true;
+    return {
+        applied: true,
+        googleBatch: googleBatchSummaryFromResponse_(batchRes)
+    };
 }
 
 async function getSheetsAuthClient() {
@@ -312,7 +351,7 @@ async function getSheetsAuthClient() {
  *
  * @param {{ iso: string, formId: string, name: string, mobile: string, email: string, clientSessionId: string, browserName: string, deviceType: string, channel: string, fileLinks?: string, city?: string, ip?: string, userQueriesCsv?: string }} row
  * @param {{ preferIncomingContact?: boolean, skipSessionDedup?: boolean }} [opts] `skipSessionDedup` (with `preferIncomingContact`) skips “one row per session” and always appends — default for main contact-form POST.
- * @returns {Promise<{ action: "appended"|"duplicate_updated"|"duplicate_noop", patched: boolean, tab: string }>}
+ * @returns {Promise<{ action: "appended"|"duplicate_updated"|"duplicate_noop", patched: boolean, tab: string, appendRangeUsed?: string, sheetRowNumber?: number, googleAppend?: { updatedRange?: string, updatedRows?: number, spreadsheetId?: string }, googleBatch?: { totalUpdatedCells?: number, totalUpdatedRows?: number, updatedRanges: string[] } }>}
  */
 export async function appendContactRowToSheet(row, opts) {
     const tabResolved = tabNameFromRange(RANGE);
@@ -336,22 +375,27 @@ export async function appendContactRowToSheet(row, opts) {
         ? { duplicate: false, matchedRowNumber: 0, repeatedAcrossSessions: scanFull.repeatedAcrossSessions }
         : scanFull;
     const tab = tabNameFromRange(RANGE);
+    const appendRangeUsed = appendRangeFullWidth(RANGE);
     if (scan.duplicate) {
-        const patched = await updateExistingSessionRow_(sheets, tab, scan.matchedRowNumber, row, {
+        const up = await updateExistingSessionRow_(sheets, tab, scan.matchedRowNumber, row, {
             preferIncomingContact: !!(opts && opts.preferIncomingContact)
         });
+        const patched = !!(up && up.applied);
         const prefer = !!(opts && opts.preferIncomingContact);
         if (prefer && !patched) {
             console.warn(
                 "[contact-form-api] Contact form Sheets write: duplicate session row matched but batchUpdate skipped (nothing changed). ",
-                `tab="${tabResolved}" spreadsheet tail …${String(SPREADSHEET_ID).slice(-8)}.`,
+                `tab="${tabResolved}" row=${scan.matchedRowNumber} spreadsheet tail …${String(SPREADSHEET_ID).slice(-8)}.`,
                 'Confirm SHEETS_RANGE tab matches your open sheet; ensure POST includes name/mobile/email in body or client_context.'
             );
         }
         return {
             action: patched ? "duplicate_updated" : "duplicate_noop",
             patched,
-            tab: tabResolved
+            tab: tabResolved,
+            appendRangeUsed,
+            sheetRowNumber: scan.matchedRowNumber,
+            googleBatch: up.googleBatch
         };
     }
 
@@ -367,29 +411,54 @@ export async function appendContactRowToSheet(row, opts) {
     const userQueriesCsv = typeof row.userQueriesCsv === "string" ? row.userQueriesCsv.trim() : "";
     const repeated = scanFull.repeatedAcrossSessions ? "Yes" : "No";
     const values = [[
-        row.iso,
-        row.formId,
-        row.name,
-        row.mobile,
-        row.email,
-        row.clientSessionId,
-        row.browserName,
-        row.deviceType,
-        ch,
-        fileLinks,
-        city,
-        ip,
-        repeated,
-        userQueriesCsv
+        sheetOutboundCell_(row.iso),
+        sheetOutboundCell_(row.formId),
+        sheetOutboundCell_(row.name),
+        sheetOutboundCell_(row.mobile),
+        sheetOutboundCell_(row.email),
+        sheetOutboundCell_(row.clientSessionId),
+        sheetOutboundCell_(row.browserName),
+        sheetOutboundCell_(row.deviceType),
+        sheetOutboundCell_(ch),
+        sheetOutboundCell_(fileLinks),
+        sheetOutboundCell_(city),
+        sheetOutboundCell_(ip),
+        sheetOutboundCell_(repeated),
+        sheetOutboundCell_(userQueriesCsv)
     ]];
-    await sheets.spreadsheets.values.append({
+    const appendRes = await sheets.spreadsheets.values.append({
         spreadsheetId: SPREADSHEET_ID,
-        range: appendRangeFullWidth(RANGE),
+        range: appendRangeUsed,
         valueInputOption: "USER_ENTERED",
         insertDataOption: "INSERT_ROWS",
         requestBody: { values }
     });
-    return { action: "appended", patched: true, tab: tabResolved };
+    const up = appendRes && appendRes.data && appendRes.data.updates ? appendRes.data.updates : {};
+    /** @type {{ updatedRange?: string, updatedRows?: number, spreadsheetId?: string }} */
+    const googleAppend = {};
+    if (typeof up.updatedRange === "string") {
+        googleAppend.updatedRange = up.updatedRange;
+    }
+    if (typeof up.updatedRows === "number") {
+        googleAppend.updatedRows = up.updatedRows;
+    }
+    if (typeof up.spreadsheetId === "string") {
+        googleAppend.spreadsheetId = up.spreadsheetId;
+    }
+    if (!googleAppend.updatedRange) {
+        console.warn(
+            "[contact-form-api] Sheets append succeeded but updates.updatedRange missing; check SHEETS_RANGE tab and spreadsheet id.",
+            `tab="${tabResolved}"`,
+            appendRangeUsed
+        );
+    }
+    return {
+        action: "appended",
+        patched: true,
+        tab: tabResolved,
+        appendRangeUsed,
+        googleAppend: Object.keys(googleAppend).length ? googleAppend : undefined
+    };
 }
 
 /**
@@ -443,7 +512,7 @@ export async function upsertSessionQueriesInSheet(row) {
     }
     const incomingQ = typeof row.userQueriesCsv === "string" ? row.userQueriesCsv.trim() : "";
     if (!incomingQ) {
-        return;
+        return { mode: "skipped_empty_queries" };
     }
     const client = await getSheetsAuthClient();
     const sheets = google.sheets({ version: "v4", auth: client });
@@ -462,18 +531,22 @@ export async function upsertSessionQueriesInSheet(row) {
         const r0 = Array.isArray(got.data.values) && got.data.values[0] ? got.data.values[0] : [];
         const existingCsv = sheetCellString_(r0[13]);
         const merged = mergeCsvUnique_(existingCsv, incomingQ, 200);
-        if (merged !== existingCsv) {
-            await sheets.spreadsheets.values.batchUpdate({
+        const queryColumnWritten = merged !== existingCsv;
+        /** @type {{ totalUpdatedCells?: number, totalUpdatedRows?: number, updatedRanges: string[] } | null} */
+        let googleBatchQueries = null;
+        if (queryColumnWritten) {
+            const nBatch = await sheets.spreadsheets.values.batchUpdate({
                 spreadsheetId: SPREADSHEET_ID,
                 requestBody: {
                     valueInputOption: "USER_ENTERED",
                     data: [{ range: `${tab}!N${rowNumber}`, values: [[merged]] }]
                 }
             });
+            googleBatchQueries = googleBatchSummaryFromResponse_(nBatch);
         }
         // Chat may append a row on mobile first (empty C/E), then capture name/email later; session
         // query sync still hits this path — fill blank contact columns without touching N again.
-        await updateExistingSessionRow_(
+        const contact = await updateExistingSessionRow_(
             sheets,
             tab,
             rowNumber,
@@ -492,10 +565,21 @@ export async function upsertSessionQueriesInSheet(row) {
             },
             {}
         );
-        return;
+        return {
+            mode: "merge_into_existing_row",
+            tab,
+            sheetRowNumber: rowNumber,
+            queryColumnWritten,
+            googleBatchQueries,
+            contactFill: {
+                applied: contact.applied,
+                googleBatch: contact.googleBatch
+            }
+        };
     }
 
-    await appendContactRowToSheet(row);
+    const sheetOutcome = await appendContactRowToSheet(row);
+    return { mode: "appended_new_row", sheetOutcome };
 }
 
 /**
