@@ -36,7 +36,7 @@ const OPEN_FORM_PAYLOAD_META_KEYS = new Set(["action", "form_id", "formId"]);
 const CONTACT_FORM_ENDPOINT = "/contact-form-submissions";
 /** POST JSON: append Sheets row when chat captured mobile (no file upload). Matches contact-form-api. */
 const CONTACT_FORM_MOBILE_SHEET_SYNC_ENDPOINT = "/contact-form-mobile-sheet-sync";
-/** Live-sync user_queries to Sheets (session column N); optional secret header matches Railway. */
+/** Live-sync user_queries to Sheets (User Queries column; optional secret matches Railway CONTACT_FORM_MOBILE_SHEET_SYNC_SECRET). */
 const CONTACT_FORM_SESSION_SHEET_SYNC_ENDPOINT = "/contact-form-session-sheet-sync";
 const API_BASE_URL_META_NAME = "dfchat-api-base-url";
 const MOBILE_CHAT_BREAKPOINT_PX = 768;
@@ -3845,6 +3845,94 @@ function syncLauncherInputStripI18n() {
 /** Dedupes overlapping `df-user-input-entered` + `df-request-sent` triggers for typed “restart”. */
 let restartFromUserPhraseTimerId = null;
 
+/** Keep in sync with server `collectUserQueriesLinesFromContext_` per-line ceiling (truncation, not omission). */
+const MAX_STORED_CHAT_USER_QUERY_CHARS = 500;
+
+/** @param {unknown} maybeBody */
+function extractOutboundQueryTextFromMessengerRequestBody_(maybeBody) {
+    if (!maybeBody || typeof maybeBody !== "object") {
+        return "";
+    }
+    const body = /** @type {Record<string, unknown>} */ (maybeBody);
+    const qi = body.queryInput || body.query_input;
+    if (!qi || typeof qi !== "object") {
+        return "";
+    }
+    const q = /** @type {Record<string, unknown>} */ (qi);
+    const tBlock = q.text;
+    if (tBlock && typeof tBlock === "object") {
+        const tb = /** @type {Record<string, unknown>} */ (tBlock);
+        if (typeof tb.text === "string" && tb.text.trim()) {
+            return tb.text.trim();
+        }
+        if (typeof tb.stringValue === "string" && tb.stringValue.trim()) {
+            return tb.stringValue.trim();
+        }
+    }
+    if (typeof tBlock === "string" && tBlock.trim()) {
+        return tBlock.trim();
+    }
+    if (typeof q.text === "string" && q.text.trim()) {
+        return q.text.trim();
+    }
+    const ev = q.event;
+    if (ev && typeof ev === "object") {
+        const e = /** @type {Record<string, unknown>} */ (ev);
+        if (typeof e.event === "string" && e.event.trim()) {
+            return e.event.trim();
+        }
+        if (typeof e.name === "string" && e.name.trim()) {
+            return e.name.trim();
+        }
+        if (typeof e.displayName === "string" && e.displayName.trim()) {
+            return e.displayName.trim();
+        }
+    }
+    return "";
+}
+
+/** @param {Event | undefined | null} event */
+function extractQueryTextFromDfRequestSentEvent_(event) {
+    const d = event && event.detail;
+    if (!d || typeof d !== "object") {
+        return "";
+    }
+    /** @type {unknown[]} */
+    const candidates = [];
+    const dn = /** @type {Record<string, unknown>} */ (d);
+    if (dn.data && typeof dn.data === "object") {
+        const data = /** @type {Record<string, unknown>} */ (dn.data);
+        candidates.push(data.requestBody);
+        candidates.push(data.body);
+        candidates.push(data.rawRequest);
+        if (data.queryInput || data.query_input) {
+            candidates.push(data);
+        }
+    }
+    candidates.push(dn.requestBody);
+    for (let i = 0; i < candidates.length; i += 1) {
+        const t = extractOutboundQueryTextFromMessengerRequestBody_(candidates[i]);
+        if (t) {
+            return t;
+        }
+    }
+    return "";
+}
+
+/** @param {unknown} detail `event.detail` for chip / button / list rich-reply selectors (CX messenger). */
+function dfMessengerRichChoiceDetailToPhrase_(detail) {
+    if (!detail || typeof detail !== "object") {
+        return "";
+    }
+    const o = /** @type {Record<string, unknown>} */ (detail);
+    const txt = typeof o.text === "string" ? o.text.trim() : "";
+    if (txt) {
+        return txt;
+    }
+    const title = typeof o.title === "string" ? o.title.trim() : "";
+    return title || "";
+}
+
 function extractDfUserInputEnteredText(event) {
     try {
         const d = event && event.detail;
@@ -3854,8 +3942,27 @@ function extractDfUserInputEnteredText(event) {
         if (typeof d.input === "string") {
             return d.input;
         }
+        if (d.input != null && typeof d.input !== "object") {
+            const coerced = String(d.input).trim();
+            if (coerced) {
+                return coerced;
+            }
+        }
         if (typeof d.message === "string") {
             return d.message;
+        }
+        if (typeof d.text === "string" && d.text.trim()) {
+            return d.text.trim();
+        }
+        if (typeof d.value === "string" && d.value.trim()) {
+            return d.value.trim();
+        }
+        const dd = /** @type {Record<string, unknown>} */ (d).detail;
+        if (dd && typeof dd === "object") {
+            const inner = /** @type {Record<string, unknown>} */ (dd).input;
+            if (typeof inner === "string" && inner.trim()) {
+                return inner.trim();
+            }
         }
         const data = d.data && typeof d.data === "object" ? d.data : null;
         if (data && typeof data.input === "string") {
@@ -12067,71 +12174,104 @@ function attachPersonaHandlers(dfMessenger) {
     }
     companyPersonaWindowListenersAttached = true;
 
-    window.addEventListener("df-user-input-entered", (event) => {
-        const typed = extractDfUserInputEnteredText(event);
-        if (isRestartChatEnabled() && isUserTypingRestartChatCommand(typed)) {
-            try {
-                if (typeof event.preventDefault === "function") {
-                    event.preventDefault();
+    /** Capture phase: typed input often originates under `df-messenger` shadow; bubble listeners can miss `detail.input`. */
+    window.addEventListener(
+        "df-user-input-entered",
+        (event) => {
+            const typed = extractDfUserInputEnteredText(event);
+            if (isRestartChatEnabled() && isUserTypingRestartChatCommand(typed)) {
+                try {
+                    if (typeof event.preventDefault === "function") {
+                        event.preventDefault();
+                    }
+                } catch {
+                    /* ignore */
                 }
-            } catch {
-                /* ignore */
+                scheduleRestartChatSessionFromUserPhrase();
+                return;
             }
-            scheduleRestartChatSessionFromUserPhrase();
-            return;
-        }
-        if (consumeLanguageSwitchFromUserFlowPhrase(typed, event)) {
-            return;
-        }
-        trackChatUserQueryInSessionContext_(typed);
-        mergeLikelyMobileFromChatText(typed);
-        const ms = activeDfMessenger;
-        if (ms && typeof ms.renderCustomText === "function") {
-            renderUserPersona(ms);
-        }
-    }, true);
-
-    window.addEventListener("df-request-sent", (event) => {
-        const requestBody = event.detail && event.detail.data ? event.detail.data.requestBody : null;
-        const queryText = requestBody && requestBody.queryInput && requestBody.queryInput.text
-            ? requestBody.queryInput.text.text
-            : "";
-
-        if (typeof queryText === "string"
-            && isRestartChatEnabled()
-            && isUserTypingRestartChatCommand(queryText)) {
-            scheduleRestartChatSessionFromUserPhrase();
-            return;
-        }
-
-        if (consumeLanguageSwitchFromUserFlowPhrase(queryText)) {
-            return;
-        }
-
-        trackChatUserQueryInSessionContext_(queryText);
-        mergeLikelyMobileFromChatText(queryText);
-
-        if (typeof queryText === "string" && queryText.trim()) {
+            if (consumeLanguageSwitchFromUserFlowPhrase(typed, event)) {
+                return;
+            }
+            trackChatUserQueryInSessionContext_(typed);
+            mergeLikelyMobileFromChatText(typed);
             const ms = activeDfMessenger;
             if (ms && typeof ms.renderCustomText === "function") {
                 renderUserPersona(ms);
             }
+        },
+        true
+    );
+
+    window.addEventListener(
+        "df-request-sent",
+        (event) => {
+            const queryText =
+                extractQueryTextFromDfRequestSentEvent_(event);
+
+            if (typeof queryText === "string"
+                && isRestartChatEnabled()
+                && isUserTypingRestartChatCommand(queryText)) {
+                scheduleRestartChatSessionFromUserPhrase();
+                return;
+            }
+
+            if (consumeLanguageSwitchFromUserFlowPhrase(queryText)) {
+                return;
+            }
+
+            trackChatUserQueryInSessionContext_(queryText);
+            mergeLikelyMobileFromChatText(queryText);
+
+            if (typeof queryText === "string" && queryText.trim()) {
+                const ms = activeDfMessenger;
+                if (ms && typeof ms.renderCustomText === "function") {
+                    renderUserPersona(ms);
+                }
+            }
+        },
+        true
+    );
+
+    /** Fallback when rich controls emit selection events whose payload does not replay as `detail.input`. */
+    const trackRichMessengerPhraseAndPersona = (phrase) => {
+        const q = typeof phrase === "string" ? phrase.trim() : "";
+        if (!q) {
+            return;
         }
+        trackChatUserQueryInSessionContext_(q);
+        const ms = activeDfMessenger;
+        if (ms && typeof ms.renderCustomText === "function") {
+            renderUserPersona(ms);
+        }
+    };
+    ["df-chip-clicked", "df-button-clicked"].forEach((evtName) => {
+        window.addEventListener(evtName, (event) => {
+            const phrase = dfMessengerRichChoiceDetailToPhrase_(event && event.detail);
+            if (phrase) {
+                trackRichMessengerPhraseAndPersona(phrase);
+            }
+        }, true);
     });
+    window.addEventListener("df-list-element-clicked", (event) => {
+        const phrase = dfMessengerRichChoiceDetailToPhrase_(event && event.detail);
+        if (phrase) {
+            trackRichMessengerPhraseAndPersona(phrase);
+        }
+    }, true);
 
     /** Capture:true helps when messenger dispatches inside shadow/custom element trees. */
     window.addEventListener("df-response-received", handleDfResponseReceived, true);
 }
 
 function trackChatUserQueryInSessionContext_(raw) {
-    const t = typeof raw === "string" ? raw.trim() : "";
-    if (!t) {
+    const tRaw = typeof raw === "string" ? raw.trim() : "";
+    if (!tRaw) {
         return;
     }
-    // Avoid storing very long blobs; keep lightweight history.
-    if (t.length > 200) {
-        return;
-    }
+    const t = tRaw.length > MAX_STORED_CHAT_USER_QUERY_CHARS
+        ? `${tRaw.slice(0, MAX_STORED_CHAT_USER_QUERY_CHARS)}…`
+        : tRaw;
     try {
         const prev = readStoredClientContext();
         const existing = prev && Array.isArray(prev.user_queries) ? prev.user_queries : [];
@@ -12142,11 +12282,7 @@ function trackChatUserQueryInSessionContext_(raw) {
         if (last && last === t) {
             return;
         }
-        const lastAt = typeof prev.user_queries_last_at === "number" ? prev.user_queries_last_at : 0;
         const now = Date.now();
-        if (last && last === t && now - lastAt < 1500) {
-            return;
-        }
 
         next.push(t);
         // Cap to keep long sessions useful (matches server-side merge limit).
