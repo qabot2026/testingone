@@ -107,11 +107,19 @@ function getTransporter_() {
     const pass = (process.env.SMTP_PASS || process.env.SMTP_PASSWORD || "").trim();
     const secureRaw = (process.env.SMTP_SECURE || "").trim().toLowerCase();
     const secure = secureRaw === "1" || secureRaw === "true" || port === 465;
+    /** Nodemailer default connectionTimeout is ~60s — makes the contact form feel “stuck”. */
+    const connMs = Math.min(
+        Math.max(Number(process.env.CONTACT_LEAD_SMTP_CONNECT_TIMEOUT_MS) || 12000, 3000),
+        120000
+    );
     transporterCache = nodemailer.createTransport({
         host,
         port,
         secure,
         auth: { user, pass },
+        connectionTimeout: connMs,
+        greetingTimeout: Math.min(connMs, 10000),
+        socketTimeout: Math.min(connMs + 5000, 120000),
         // Port 587 = STARTTLS; helps Gmail / Office365 refuse less often.
         ...(!secure && port === 587 ? { requireTLS: true } : {})
     });
@@ -125,8 +133,17 @@ export async function verifyContactLeadSmtpOnBoot() {
     if (!isContactLeadEmailConfigured()) {
         return;
     }
+    const verifyMs = Math.min(
+        Math.max(Number(process.env.CONTACT_LEAD_SMTP_VERIFY_TIMEOUT_MS) || 12000, 3000),
+        60000
+    );
     try {
-        await getTransporter_().verify();
+        await Promise.race([
+            getTransporter_().verify(),
+            new Promise((_, rej) => {
+                globalThis.setTimeout(() => rej(new Error(`verify timeout after ${verifyMs}ms`)), verifyMs);
+            })
+        ]);
         console.log("[contact-lead-notify-email] SMTP verify OK (login/host reachable).");
     } catch (e) {
         const msg = e && e.message ? e.message : String(e);
@@ -286,7 +303,24 @@ export async function maybeSendContactLeadNotifyEmail(args) {
         if (ccList.length) {
             mail.cc = ccList.join(", ");
         }
-        await tx.sendMail(mail);
+        const sendMs = Math.min(
+            Math.max(Number(process.env.CONTACT_LEAD_SEND_TIMEOUT_MS) || 20000, 5000),
+            180000
+        );
+        await Promise.race([
+            tx.sendMail(mail),
+            new Promise((_, rej) => {
+                globalThis.setTimeout(
+                    () =>
+                        rej(
+                            new Error(
+                                `SMTP send stalled after ${sendMs}ms (wrong host/port, firewall, or provider blocking)`
+                            )
+                        ),
+                    sendMs
+                );
+            })
+        ]);
         const ok = /** @type {const} */ ({ sent: true });
         logOutcome_(ok);
         return ok;

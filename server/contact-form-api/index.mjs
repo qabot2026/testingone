@@ -1862,9 +1862,26 @@ app.post(
             };
             const attachLeadEmail =
                 (process.env.CONTACT_LEAD_ATTACH_OUTCOME_IN_JSON || "").trim() === "1";
+            const attachWaitMs = Math.min(
+                Math.max(Number(process.env.CONTACT_LEAD_EMAIL_ATTACH_WAIT_MS) || 12000, 3000),
+                45000
+            );
             if (attachLeadEmail) {
                 try {
-                    const er = await maybeSendContactLeadNotifyEmail(leadEmailPayload);
+                    const er = await Promise.race([
+                        maybeSendContactLeadNotifyEmail(leadEmailPayload),
+                        new Promise((_, rej) => {
+                            globalThis.setTimeout(
+                                () =>
+                                    rej(
+                                        new Error(
+                                            `lead_email_diag_wait_exceeded_${attachWaitMs}ms — remove CONTACT_LEAD_ATTACH_OUTCOME_IN_JSON or fix SMTP`
+                                        )
+                                    ),
+                                attachWaitMs
+                            );
+                        })
+                    ]);
                     out.lead_email = formatLeadEmailOutcomeForJson(er);
                 } catch (em) {
                     out.lead_email = {
@@ -1873,8 +1890,11 @@ app.post(
                     };
                 }
             } else {
-                void maybeSendContactLeadNotifyEmail(leadEmailPayload).catch((e) => {
-                    console.error("[contact-form-api] lead notify email", e && e.message ? e.message : e);
+                /** Send mail after HTTP response begins so SMTP slowness never blocks form submit UX. */
+                setImmediate(() => {
+                    void maybeSendContactLeadNotifyEmail(leadEmailPayload).catch((e) => {
+                        console.error("[contact-form-api] lead notify email", e && e.message ? e.message : e);
+                    });
                 });
             }
             return res.status(200).json(out);
