@@ -1581,11 +1581,13 @@ app.post(
                     error: "Neither Firestore nor Sheets is enabled, and files were not stored (no Drive upload and no Apps Script success). Set SHEETS_SPREADSHEET_ID and/or Firestore, or configure GOOGLE_APPS_SCRIPT_WEBAPP_URL / Drive uploads."
                 });
             }
-            /** Sheets must not be skipped when Firestore fails (Firestore runs after Sheets). */
+            /** True only if Google Sheets ran a successful append or batchUpdate (duplicate_noop=false positive). */
             let wroteToSheets = false;
+            /** @type {{ action: string, patched: boolean, tab?: string } | null} */
+            let sheetOutcome = null;
             if (!SHEETS_DISABLED) {
                 try {
-                    await appendContactRowToSheet(
+                    sheetOutcome = await appendContactRowToSheet(
                         {
                             iso,
                             formId,
@@ -1603,7 +1605,7 @@ app.post(
                         },
                         { preferIncomingContact: true }
                     );
-                    wroteToSheets = true;
+                    wroteToSheets = !!(sheetOutcome && sheetOutcome.patched);
                 } catch (se) {
                     const detail = se && se.message ? se.message : String(se);
                     throw new Error(`Sheets: ${detail}`);
@@ -1620,7 +1622,19 @@ app.post(
                     }
                 }
             }
-            return res.status(200).json({ ok: true, message: "Saved." });
+            /** @type {Record<string, unknown>} */
+            const out = { ok: true, message: "Saved." };
+            if (!SHEETS_DISABLED && sheetOutcome) {
+                out.sheet = {
+                    action: sheetOutcome.action,
+                    patched: sheetOutcome.patched,
+                    tab: sheetOutcome.tab || ""
+                };
+            }
+            if (SHEETS_DISABLED) {
+                out.sheet = null;
+            }
+            return res.status(200).json(out);
         } catch (err) {
             const message = err && err.message ? err.message : "Save failed";
             console.error("[contact-form-api]", message, err);

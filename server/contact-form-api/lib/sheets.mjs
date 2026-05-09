@@ -198,9 +198,10 @@ function mergeCsvUnique_(existingCsv, incomingCsv, limit = 40) {
  * @param {{ formId: string, name: string, mobile: string, email: string, browserName: string, deviceType: string, channel: string, fileLinks?: string, city?: string, ip?: string, userQueriesCsv?: string }} incoming
  * @param {{ preferIncomingContact?: boolean }} [options] when true (contact-form POST), B–E use incoming whenever non-empty; chat/sync fills blanks only.
  */
+/** @returns {Promise<boolean>} true if Sheets batchUpdate ran */
 async function updateExistingSessionRow_(sheets, tab, rowNumber, incoming, options = {}) {
     if (!rowNumber || rowNumber < 1) {
-        return;
+        return false;
     }
     const preferIncomingContact = !!(options && options.preferIncomingContact);
     const got = await sheets.spreadsheets.values.get({
@@ -261,7 +262,7 @@ async function updateExistingSessionRow_(sheets, tab, rowNumber, incoming, optio
                 "[contact-form-api] Sheets duplicate-session row update applied no patches (incoming contact/query fields empty or unchanged)."
             );
         }
-        return;
+        return false;
     }
     await sheets.spreadsheets.values.batchUpdate({
         spreadsheetId: SPREADSHEET_ID,
@@ -270,6 +271,7 @@ async function updateExistingSessionRow_(sheets, tab, rowNumber, incoming, optio
             data
         }
     });
+    return true;
 }
 
 async function getSheetsAuthClient() {
@@ -310,8 +312,10 @@ async function getSheetsAuthClient() {
  *
  * @param {{ iso: string, formId: string, name: string, mobile: string, email: string, clientSessionId: string, browserName: string, deviceType: string, channel: string, fileLinks?: string, city?: string, ip?: string, userQueriesCsv?: string }} row
  * @param {{ preferIncomingContact?: boolean }} [opts] set on official contact-form submissions so duplicate rows update B–E with form values (not chat placeholders).
+ * @returns {Promise<{ action: "appended"|"duplicate_updated"|"duplicate_noop", patched: boolean, tab: string }>}
  */
 export async function appendContactRowToSheet(row, opts) {
+    const tabResolved = tabNameFromRange(RANGE);
     if (!SPREADSHEET_ID) {
         throw new Error("Missing SHEETS_SPREADSHEET_ID in env (or set DISABLE_SHEETS=1).");
     }
@@ -323,10 +327,22 @@ export async function appendContactRowToSheet(row, opts) {
     const scan = await scanSheetTailForDedupeAndRepeat_(sheets, row);
     const tab = tabNameFromRange(RANGE);
     if (scan.duplicate) {
-        await updateExistingSessionRow_(sheets, tab, scan.matchedRowNumber, row, {
+        const patched = await updateExistingSessionRow_(sheets, tab, scan.matchedRowNumber, row, {
             preferIncomingContact: !!(opts && opts.preferIncomingContact)
         });
-        return;
+        const prefer = !!(opts && opts.preferIncomingContact);
+        if (prefer && !patched) {
+            console.warn(
+                "[contact-form-api] Contact form Sheets write: duplicate session row matched but batchUpdate skipped (nothing changed). ",
+                `tab="${tabResolved}" spreadsheet tail …${String(SPREADSHEET_ID).slice(-8)}.`,
+                'Confirm SHEETS_RANGE tab matches your open sheet; ensure POST includes name/mobile/email in body or client_context.'
+            );
+        }
+        return {
+            action: patched ? "duplicate_updated" : "duplicate_noop",
+            patched,
+            tab: tabResolved
+        };
     }
 
     const ch = typeof row.channel === "string" && row.channel.trim()
@@ -363,6 +379,7 @@ export async function appendContactRowToSheet(row, opts) {
         insertDataOption: "INSERT_ROWS",
         requestBody: { values }
     });
+    return { action: "appended", patched: true, tab: tabResolved };
 }
 
 /**

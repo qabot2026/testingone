@@ -13039,7 +13039,23 @@ function submitContactForm(event) {
             }
 
             if (status) {
-                status.textContent = responsePayload.message || getTranslation("statusSubmitted");
+                let line = responsePayload.message || getTranslation("statusSubmitted");
+                const sh =
+                    responsePayload.sheet && typeof responsePayload.sheet === "object"
+                        ? responsePayload.sheet
+                        : null;
+                if (
+                    sh
+                    && sh.action === "duplicate_noop"
+                    && sh.patched === false
+                ) {
+                    const tabHint =
+                        typeof sh.tab === "string" && sh.tab.trim()
+                            ? ` (${sh.tab})`
+                            : "";
+                    line += ` Sheet: no cell changes (duplicate session row)${tabHint}. Check column F matches this visit or verify Railway SHEETS_RANGE / spreadsheet tab.`;
+                }
+                status.textContent = line;
                 status.classList.add("is-success");
                 status.classList.remove("is-error");
             }
