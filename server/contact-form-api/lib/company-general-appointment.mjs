@@ -1,6 +1,8 @@
 /**
- * Reads `company.config.js` (repo root) so general appointment hours match the chat UI config.
- * Env vars still override when set: GENERAL_APPOINTMENT_* and branch/department.
+ * Reads `company.config.js` so general appointment hours match the chat UI config.
+ * Env: optional absolute path COMPANY_CHAT_UI_CONFIG_PATH (or COMPANY_CONFIG_JS_PATH).
+ * Fallbacks: cwd, parent dirs, or three levels above this file (monorepo root).
+ * GENERAL_APPOINTMENT_SLOT_MINUTES forces general-slot step without reading config (deploy-friendly).
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -8,7 +10,39 @@ import vm from "node:vm";
 import { fileURLToPath } from "node:url";
 
 const __dirname_lib = path.dirname(fileURLToPath(import.meta.url));
-const COMPANY_CONFIG_PATH = path.join(__dirname_lib, "..", "..", "..", "company.config.js");
+const COMPANY_CONFIG_FALLBACK_REL = path.join(__dirname_lib, "..", "..", "..", "company.config.js");
+
+function trimStrEnv(x) {
+    return String(x ?? "").trim();
+}
+
+function resolveReadableCompanyConfigPath() {
+    const fromEnv =
+        trimStrEnv(process.env.COMPANY_CHAT_UI_CONFIG_PATH) ||
+        trimStrEnv(process.env.COMPANY_CONFIG_JS_PATH);
+    if (fromEnv && fs.existsSync(fromEnv)) {
+        return fromEnv;
+    }
+    const cwd = process.cwd();
+    /** @type {string[]} */
+    const candidates = [
+        COMPANY_CONFIG_FALLBACK_REL,
+        path.join(cwd, "company.config.js"),
+        path.join(cwd, "..", "company.config.js"),
+        path.join(cwd, "..", "..", "company.config.js")
+    ];
+    for (const p of candidates) {
+        try {
+            const abs = path.resolve(p);
+            if (fs.existsSync(abs)) {
+                return abs;
+            }
+        } catch {
+            /* ignore */
+        }
+    }
+    return path.resolve(COMPANY_CONFIG_FALLBACK_REL);
+}
 
 /** @type {object | null | undefined} undefined = not loaded */
 let cachedChatUiConfig = undefined;
@@ -17,6 +51,7 @@ function loadCompanyChatUiConfig() {
     if (cachedChatUiConfig !== undefined) {
         return cachedChatUiConfig;
     }
+    const COMPANY_CONFIG_PATH = resolveReadableCompanyConfigPath();
     try {
         const src = fs.readFileSync(COMPANY_CONFIG_PATH, "utf8");
         const sandbox = {};
@@ -28,7 +63,7 @@ function loadCompanyChatUiConfig() {
         cachedChatUiConfig = sandbox.COMPANY_CHAT_UI_CONFIG || null;
     } catch (e) {
         console.warn(
-            "[contact-form-api] Could not load company.config.js for general appointment; using env/defaults.",
+            `[contact-form-api] Could not load company.config.js (tried ${COMPANY_CONFIG_PATH}); using env/defaults.`,
             e && e.message ? e.message : e
         );
         cachedChatUiConfig = null;
@@ -79,11 +114,19 @@ export function mergedGeneralAppointmentSchedule_() {
 }
 
 /**
- * Slot step (minutes) for the general calendar only. Optional `generalAppointment.slotMinutes`
- * in company.config.js; otherwise same as global `appointmentSlotMinutes_()`.
+ * Slot step (minutes) for the general calendar only.
+ * Priority: GENERAL_APPOINTMENT_SLOT_MINUTES env → `generalAppointment.slotMinutes` in company.config.js
+ * → global `appointmentSlotMinutes_()` (APPOINTMENT_SLOT_MINUTES / 30).
  * @param {() => number} globalSlotMinutesFn
  */
 export function generalAppointmentSlotStepMinutes_(globalSlotMinutesFn) {
+    const eg = trimStrEnv(process.env.GENERAL_APPOINTMENT_SLOT_MINUTES);
+    if (eg !== "") {
+        const nEnv = Number(eg);
+        if (Number.isFinite(nEnv) && nEnv >= 5 && nEnv <= 180) {
+            return Math.floor(nEnv);
+        }
+    }
     const c = generalAppointmentFromCompany_();
     const n = Number(c.slotMinutes);
     if (Number.isFinite(n) && n >= 5 && n <= 180) {

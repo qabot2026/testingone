@@ -383,9 +383,11 @@ window.COMPANY_CHAT_UI_CONFIG = {
       department: "Appointment",
       /**
        * Optional slot length in minutes for this calendar only (5–180).
-       * Omit to use APPOINTMENT_SLOT_MINUTES env or server default (30).
+       * The **contact-form API** must read this file (or set GENERAL_APPOINTMENT_SLOT_MINUTES on the server);
+       * the browser config alone does not change slots. If hosted separately, copy `company.config.js` into the
+       * API deployment or set env `COMPANY_CHAT_UI_CONFIG_PATH` to its absolute path, then restart the API.
        */
-      slotMinutes: 60,
+      slotMinutes: 45,
     },
 
     // -------------------------------------------------------------------------
