@@ -1,0 +1,52 @@
+<!--
+  Staff new-lead — edit freely. Tokens (escaped on send except you only type static HTML here):
+    lead_intro, customer_name, mobile, email, service, city, message, timestamp,
+    lead_source, technical_notes, company_name, company_website
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>New lead</title>
+</head>
+<body style="font-family:Calibri,Arial,sans-serif;font-size:15px;line-height:1.5;color:#111;">
+<p>Hello Team,</p>
+
+<p>{{lead_intro}}</p>
+
+<p><strong>Lead Details:</strong></p>
+
+<p style="margin:0 0 6px;">
+Name: {{customer_name}}<br/>
+Mobile: {{mobile}}<br/>
+Email: {{email}}<br/>
+Service Interested: {{service}}<br/>
+City: {{city}}<br/>
+</p>
+
+<p><strong>Message:</strong><br/>{{message}}</p>
+
+<p>
+<strong>Source:</strong><br/>
+{{lead_source}}
+</p>
+
+<p>
+<strong>Date &amp; Time:</strong><br/>
+{{timestamp}}
+</p>
+
+<p>Please contact the customer as soon as possible.</p>
+
+<p style="margin-top:20px;">
+Regards,<br/>
+{{company_name}}<br/>
+{{company_website}}
+</p>
+
+<hr style="border:none;border-top:1px solid #ddd;margin:20px 0;" />
+
+<p style="font-size:13px;color:#555;line-height:1.45;"><strong>More details:</strong><br/>
+{{technical_notes}}</p>
+</body>
+</html>

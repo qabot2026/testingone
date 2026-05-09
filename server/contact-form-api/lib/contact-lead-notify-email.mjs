@@ -26,10 +26,15 @@
  * CONTACT_FORM_DEFER_FIRESTORE_AFTER_RESPONSE=1 moves Firestore-only work there (see index).
  *
  * Optional: CONTACT_LEAD_NOTIFY_ON_MOBILE_SYNC=1 (see index.mjs comment).
+ *
+ * Staff email HTML layout: templates/staff-new-lead-simple.html (override CONTACT_LEAD_STAFF_MAIL_TEMPLATE).
  */
+
+import path from "node:path";
 
 import { getMailTransport_ } from "./mail/smtp-transport.mjs";
 import { sendTimedMail_ } from "./mail/smtp-send.mjs";
+import { escapeMailHtml_, renderEmailTemplateHtml_ } from "./mail/render-email-template.mjs";
 
 /** @returns {string[]} */
 export function missingContactLeadEmailEnvKeys_() {
@@ -174,6 +179,120 @@ function formatFieldsBlock_(fields, maxLen) {
     return lines.join("\n");
 }
 
+/** @returns {Record<string, string>} */
+function fieldsLc_(fields) {
+    /** @type {Record<string, string>} */
+    const o = {};
+    if (!fields || typeof fields !== "object") {
+        return o;
+    }
+    for (const [k, v] of Object.entries(fields)) {
+        if (typeof v !== "string" || !v.trim()) {
+            continue;
+        }
+        o[String(k).toLowerCase()] = v.trim();
+    }
+    return o;
+}
+
+function escNl_(txt) {
+    return escapeMailHtml_(txt ?? "").replace(/\r\n|\n|\r/g, "<br/>\n");
+}
+
+/** Prefer common form keys for “service interested”. */
+function pickServiceLc_(fl) {
+    const keys = [
+        "service",
+        "serviceinterested",
+        "service_interested",
+        "specialization",
+        "specialisation",
+        "department",
+        "dept",
+        "treatment"
+    ];
+    for (let i = 0; i < keys.length; i += 1) {
+        const v = fl[keys[i]];
+        if (v) {
+            return v;
+        }
+    }
+    return "";
+}
+
+/** Concatenate typical free-text lead fields — trim long. */
+function pickMessageLc_(fl, /** @type {number} */ cap) {
+    const keys = [
+        "message",
+        "comments",
+        "remarks",
+        "notes",
+        "note",
+        "description",
+        "enquiry",
+        "inquiry",
+        "question",
+        "query",
+        "text",
+        "body",
+        "user_queries",
+        "userqueries",
+        "user_message",
+        "usermessage"
+    ];
+    const parts = [];
+    for (let i = 0; i < keys.length; i += 1) {
+        const v = fl[keys[i]];
+        if (!v || !v.trim()) {
+            continue;
+        }
+        const label =
+            keys[i] === "user_queries" || keys[i] === "userqueries"
+                ? "User queries"
+                : keys[i].replace(/_/g, " ");
+        parts.push(`${label}: ${v.trim()}`);
+    }
+    const out = parts.join("\n\n").trim();
+    if (!out.length) return "";
+    if (out.length > cap) {
+        return `${out.slice(0, cap)}…`;
+    }
+    return out;
+}
+
+/** One line describing where the submission came from (shown to staff). */
+function prettyLeadSourceStaff_(technicalSourceSlug) {
+    const custom = (process.env.CONTACT_LEAD_STAFF_LEAD_SOURCE_LABEL || "").trim();
+    if (custom) {
+        return custom;
+    }
+    const s = (technicalSourceSlug || "").trim().toLowerCase();
+    if (s === "mobile-sheet-sync") {
+        return "Website chat → mobile Sheet sync";
+    }
+    if (s === "mailbox-self-test") {
+        return "SMTP self-test ping";
+    }
+    if (!s || s === "contact-form") {
+        return (
+            (process.env.CONTACT_LEAD_STAFF_LEAD_SOURCE_FALLBACK || "").trim() || "Website Chatbot"
+        );
+    }
+    return technicalSourceSlug || "Website";
+}
+
+function companyBrandNameStaff_() {
+    return (
+        (process.env.CONTACT_MAIL_COMPANY_NAME || "").trim()
+        || (process.env.CONTACT_MAIL_BRAND_TITLE || "").trim()
+        || "Medical team"
+    );
+}
+
+function companyWebsiteStaff_() {
+    return ((process.env.CONTACT_MAIL_COMPANY_WEBSITE || "").trim() || "—").replace(/^https?:\/\//i, "");
+}
+
 /**
  * @param {{
  *   source?: string,
@@ -257,41 +376,121 @@ export async function maybeSendContactLeadNotifyEmail(args) {
         name || email || mobile || (hasAppointmentPick ? `${apptDEarly} ${apptTEarly}`.trim() : "lead");
     const subject = `${subjectPrefix} — ${subjectTail}`;
 
-    const lines = [
-        `Source: ${source}`,
-        `Form: ${t_(args.formId) || "unknown"}`,
-        "",
-        `Name: ${name || "—"}`,
-        `Email: ${email || "—"}`,
-        `Mobile: ${mobile || "—"}`,
-        `City: ${t_(args.city) || "—"}`,
-        `Channel: ${t_(args.channel) || "—"}`,
-        `Page / source URL: ${t_(args.sourceUrl) || "—"}`,
-        `Session: ${t_(args.clientSessionId) || "—"}`,
-        `Submitted (UTC): ${t_(args.submittedAtIso) || "—"}`,
-        `IP: ${t_(args.ip) || "—"}`,
-        ""
-    ];
+    const fl = fieldsLc_(args.fields || {});
+    let serviceTxt = pickServiceLc_(fl) || "—";
+    let messageTxt = pickMessageLc_(fl, 3800).trim();
+    if (!messageTxt) {
+        const snap = formatFieldsBlock_(args.fields || {}, 480).trim();
+        if (snap && snap !== "(none)") {
+            messageTxt = snap.length > 3800 ? `${snap.slice(0, 3800)}…` : snap;
+        }
+    }
+    messageTxt = messageTxt && messageTxt.trim() ? messageTxt.trim() : "—";
 
+    const ts = t_(args.submittedAtIso) || new Date().toISOString();
+    const leadPretty = prettyLeadSourceStaff_(source);
+    const introLeadDefault = "A new lead has been captured from the chatbot.";
+    const introLead =
+        (process.env.CONTACT_LEAD_STAFF_MAIL_INTRO || "").trim() || introLeadDefault;
+
+    const custName = name || fl.name || "—";
+    const custEmail = email || fl.email || "—";
+    const custMob = mobile || fl.mobile || "—";
+    const custCity = t_(args.city) || fl.city || fl.location || "—";
+
+    /** Extra lines for Ops (shown under “More details”). */
+    const techBits = [
+        `Backend source id: ${source}`,
+        `Form id: ${t_(args.formId) || "—"}`,
+        `Channel: ${t_(args.channel) || "—"}`,
+        `Page URL: ${t_(args.sourceUrl) || "—"}`,
+        `Session: ${t_(args.clientSessionId) || "—"}`,
+        `IP: ${t_(args.ip) || "—"}`
+    ];
     if (apptDEarly || apptTEarly) {
-        lines.push(
-            `Appointment: ${apptDEarly || "—"} ${apptTEarly || ""}`.trim(),
-            `Appointment booked: ${t_(args.appointmentBooked) || "—"}`,
-            ""
-        );
+        techBits.push(`Appointment slot: ${apptDEarly || ""} ${apptTEarly || ""}`.trim());
+        techBits.push(`Appointment booked flag: ${t_(args.appointmentBooked) || "—"}`);
+    }
+    techBits.push("", "All captured form fields:");
+    techBits.push(formatFieldsBlock_(args.fields || {}, 600));
+    let technicalNotesTxt = techBits.join("\n");
+    const techCap = 2600;
+    if (technicalNotesTxt.length > techCap) {
+        technicalNotesTxt = `${technicalNotesTxt.slice(0, techCap)}…`;
     }
 
-    lines.push("All fields:", formatFieldsBlock_(args.fields || {}, 800));
-    const text = lines.join("\n");
+    const corp = companyBrandNameStaff_();
+    const web = companyWebsiteStaff_();
 
-    const esc = (s) =>
-        String(s)
-            .replace(/&/g, "&amp;")
-            .replace(/</g, "&lt;")
-            .replace(/>/g, "&gt;");
-    const html = `<pre style="font-family:system-ui,Segoe UI,sans-serif;font-size:14px;line-height:1.45;white-space:pre-wrap">${esc(
-        text
-    )}</pre>`;
+    const textPlain = [
+        "Hello Team,",
+        "",
+        introLead,
+        "",
+        "Lead Details:",
+        "",
+        `Name: ${custName}`,
+        `Mobile: ${custMob}`,
+        `Email: ${custEmail}`,
+        `Service Interested: ${serviceTxt}`,
+        `City: ${custCity}`,
+        "",
+        "Message:",
+        messageTxt,
+        "",
+        "Source:",
+        leadPretty,
+        "",
+        "Date & Time:",
+        ts,
+        "",
+        "Please contact the customer as soon as possible.",
+        "",
+        `Regards,`,
+        corp,
+        web,
+        "",
+        "--- More details ---",
+        technicalNotesTxt,
+        ""
+    ].join("\n");
+
+    /** @returns {string} */
+    let staffHtmlTpl = (
+        typeof process.env.CONTACT_LEAD_STAFF_MAIL_TEMPLATE === "string"
+            ? process.env.CONTACT_LEAD_STAFF_MAIL_TEMPLATE.trim()
+            : ""
+    ) || "staff-new-lead-simple.html";
+    staffHtmlTpl = path.basename(staffHtmlTpl);
+    if (!/^[-\w.]+\.html$/i.test(staffHtmlTpl) || staffHtmlTpl.includes("..")) {
+        console.warn("[contact-lead-notify-email] bad CONTACT_LEAD_STAFF_MAIL_TEMPLATE → using default.");
+        staffHtmlTpl = "staff-new-lead-simple.html";
+    }
+    let html;
+    try {
+        html = renderEmailTemplateHtml_(staffHtmlTpl, {
+            lead_intro: escapeMailHtml_(introLead),
+            customer_name: escapeMailHtml_(custName),
+            mobile: escapeMailHtml_(custMob),
+            email: escapeMailHtml_(custEmail),
+            service: escapeMailHtml_(serviceTxt),
+            city: escapeMailHtml_(custCity),
+            message: escNl_(messageTxt),
+            timestamp: escapeMailHtml_(ts),
+            lead_source: escNl_(leadPretty),
+            technical_notes: escNl_(technicalNotesTxt),
+            company_name: escapeMailHtml_(corp),
+            company_website: escapeMailHtml_(web === "—" ? "" : web)
+        });
+    } catch (ge) {
+        const why = ge && /** @type {{ message?: string }} */ (ge).message ? ge.message : String(ge);
+        console.warn("[contact-lead-notify-email] HTML template render failed:", why, "; falling back to plain text HTML.");
+        html = `<pre style="font-family:Calibri,sans-serif;font-size:14px;white-space:pre-wrap;line-height:1.45">${escNl_(
+            textPlain
+        )}</pre>`;
+    }
+
+    const text = textPlain;
 
     try {
         const ccRaw = (process.env.CONTACT_LEAD_NOTIFY_CC || "").trim();

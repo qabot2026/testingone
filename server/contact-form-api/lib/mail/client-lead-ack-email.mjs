@@ -4,7 +4,7 @@
  * HTML layout: templates/client-lead-ack.html — edit branding/colours/copy there.
  *
  * Enable: CONTACT_LEAD_CLIENT_ACK_ENABLED=1
- * Optional: CONTACT_LEAD_CLIENT_ACK_SUBJECT, CONTACT_LEAD_CLIENT_ACK_HTML_TITLE, CONTACT_MAIL_BRAND_TITLE, CONTACT_LEAD_CLIENT_ACK_REPLY_TO
+ * Optional: CONTACT_LEAD_CLIENT_ACK_SUBJECT, CONTACT_MAIL_* company lines, CONTACT_LEAD_CLIENT_ACK_REPLY_TO
  */
 
 import { isSmtpCredentialEnvPresent_, sendTimedMail_ } from "./smtp-send.mjs";
@@ -50,39 +50,57 @@ export async function maybeSendClientLeadAckEmail(args) {
     ).trim();
     const name = t_(args.name);
     const subject = `${subjPrefix}${name ? ` — ${name}` : ""}`;
-    const lines = [
-        "Hi" + (name ? ` ${name}` : ""),
-        "",
-        "Thanks for contacting us. We have received your details and our team will get back to you soon.",
-        "",
-        "Summary (please keep this email for reference):",
-        `  Name: ${name || "—"}`,
-        `  Mobile: ${t_(args.mobile) || "—"}`,
-        `  Email: ${toAddr}`,
-        `  City: ${t_(args.city) || "—"}`,
-        `  Source: ${t_(args.source) || "—"}`,
-        `  Page: ${t_(args.sourceUrl) || "—"}`,
-        `  Submitted (UTC): ${t_(args.submittedAtIso) || "—"}`,
-        "",
-        "This is an automated confirmation message."
-    ];
-    const text = lines.join("\n");
-    const brandTitle = (
-        (process.env.CONTACT_LEAD_CLIENT_ACK_HTML_TITLE || "").trim()
-            || (process.env.CONTACT_MAIL_BRAND_TITLE || "").trim()
-            || subjPrefix
+    const corp =
+        (process.env.CONTACT_MAIL_COMPANY_NAME || "").trim()
+        || (process.env.CONTACT_MAIL_BRAND_TITLE || "").trim()
+        || "Medical team";
+    let webStrip = ((process.env.CONTACT_MAIL_COMPANY_WEBSITE || "").trim() || "—").replace(
+        /^https?:\/\//i,
+        ""
     );
+
+    const surl = t_(args.sourceUrl);
+    const ssrc = t_(args.source);
+    const pageOrSourceLine = surl ? surl : ssrc ? ssrc : "—";
+
     const greetPlain = name ? `Hi ${name},` : "Hi,";
+    const ts = t_(args.submittedAtIso) || "—";
+
+    /** @type {string[]} */
+    const textParts = [
+        greetPlain,
+        "",
+        "Thanks for contacting us. We received your enquiry and our team will get back to you soon.",
+        "",
+        "What you sent:",
+        "",
+        `Name: ${name || "—"}`,
+        `Mobile: ${t_(args.mobile) || "—"}`,
+        `Email: ${toAddr}`,
+        `City: ${t_(args.city) || "—"}`,
+        `Page / source URL: ${pageOrSourceLine}`,
+        `Submitted (UTC): ${ts}`,
+        "",
+        "This email was sent automatically.",
+        "",
+        "Regards,",
+        corp
+    ];
+    if (webStrip !== "—") {
+        textParts.push(webStrip);
+    }
+    const text = textParts.join("\n");
+
     const html = renderEmailTemplateHtml_("client-lead-ack.html", {
-        BRAND_TITLE: escapeMailHtml_(brandTitle),
-        VISITOR_GREET: escapeMailHtml_(greetPlain),
-        NAME: escapeMailHtml_(name || "—"),
-        EMAIL: escapeMailHtml_(toAddr),
-        MOBILE: escapeMailHtml_(t_(args.mobile) || "—"),
-        CITY: escapeMailHtml_(t_(args.city) || "—"),
-        SOURCE: escapeMailHtml_(t_(args.source) || "—"),
-        PAGE_URL: escapeMailHtml_(t_(args.sourceUrl) || "—"),
-        SUBMITTED_UTC: escapeMailHtml_(t_(args.submittedAtIso) || "—")
+        visitor_greeting_one_line: escapeMailHtml_(greetPlain),
+        visitor_name: escapeMailHtml_(name || "—"),
+        email: escapeMailHtml_(toAddr),
+        mobile: escapeMailHtml_(t_(args.mobile) || "—"),
+        city: escapeMailHtml_(t_(args.city) || "—"),
+        page_or_source: escapeMailHtml_(pageOrSourceLine),
+        timestamp: escapeMailHtml_(ts),
+        company_name: escapeMailHtml_(corp),
+        company_website: escapeMailHtml_(webStrip === "—" ? "" : webStrip)
     });
     const replyToRaw = (process.env.CONTACT_LEAD_CLIENT_ACK_REPLY_TO || "").trim();
     /** @type {Record<string, string>} */

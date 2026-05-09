@@ -22,12 +22,18 @@ export function escapeMailHtml_(val) {
 /**
  * @param {string} fileName Must end with .html inside templates/
  * @param {Record<string, string>} variables Escaped fragments only (caller runs escapeMailHtml_)
+ * @param {Record<string, string>} rawHtmlFragments Trusted HTML only (never user input — inserted unescaped).
  */
-export function renderEmailTemplateHtml_(fileName, variables) {
+export function renderEmailTemplateHtml_(fileName, variables, rawHtmlFragments) {
     const safeBase = path.basename(fileName);
     const fullPath = path.join(templatesDir, safeBase);
     let raw = fs.readFileSync(fullPath, "utf8");
-    for (const [key, escapedValue] of Object.entries(variables)) {
+    if (rawHtmlFragments && typeof rawHtmlFragments === "object") {
+        for (const [key, htmlVal] of Object.entries(rawHtmlFragments)) {
+            raw = raw.split(`{{${key}}}`).join(String(htmlVal ?? ""));
+        }
+    }
+    for (const [key, escapedValue] of Object.entries(variables || {})) {
         raw = raw.split(`{{${key}}}`).join(escapedValue);
     }
     if (/\{\{[A-Za-z0-9_]+\}\}/.test(raw)) {

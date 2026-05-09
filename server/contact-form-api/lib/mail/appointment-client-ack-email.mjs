@@ -4,7 +4,7 @@
  * HTML layout: templates/appointment-client-ack.html (+ optional CONTEXT_BADGE for chat bookings).
  *
  * Enable: CONTACT_APPOINTMENT_CLIENT_ACK_ENABLED=1
- * Optional: CONTACT_MAIL_BRAND_TITLE, CONTACT_APPOINTMENT_CLIENT_ACK_HTML_TITLE, subjects CONTACT_APPOINTMENT_CLIENT_ACK_SUBJECT / _CHATBOT
+ * Optional: CONTACT_MAIL_* (company footer), CONTACT_APPOINTMENT_CLIENT_ACK_SUBJECT / _CHATBOT
  */
 
 import { isSmtpCredentialEnvPresent_, sendTimedMail_ } from "./smtp-send.mjs";
@@ -89,31 +89,39 @@ export async function maybeSendAppointmentClientAckEmail(args) {
         ""
     ].join("\n");
 
-    const apptBannerTitle =
-        (process.env.CONTACT_APPOINTMENT_CLIENT_ACK_HTML_TITLE || "").trim()
+    const corp =
+        (process.env.CONTACT_MAIL_COMPANY_NAME || "").trim()
         || (process.env.CONTACT_MAIL_BRAND_TITLE || "").trim()
-        || "Appointment confirmed";
+        || "Medical team";
+    let webStrip = ((process.env.CONTACT_MAIL_COMPANY_WEBSITE || "").trim() || "—").replace(
+        /^https?:\/\//i,
+        ""
+    );
+
     const greetPlain = name ? `Hi ${name},` : "Hi,";
     const badgeHtmlCx =
         src === "dialogflow-cx-chatbot"
-            ? '<p style="margin:0 0 14px 0;background:#eef6ff;color:#174ea6;padding:10px 12px;border-radius:8px;font-size:13px;line-height:1.45;">'
-                  + '<strong>Chat assistant</strong> — you completed this booking through our conversational assistant.</p>'
+            ? '<p style="margin:0 0 14px;background:#eef6ff;color:#174ea6;padding:10px 12px;border-radius:8px;font-size:13px;line-height:1.45;"><strong>Chat assistant</strong> — you booked via our conversational assistant.</p>'
             : "";
 
     const sentUtcNow = new Date().toISOString();
-    const html = renderEmailTemplateHtml_("appointment-client-ack.html", {
-        BRAND_TITLE: escapeMailHtml_(apptBannerTitle),
-        CONTEXT_BADGE_HTML: badgeHtmlCx,
-        VISITOR_GREET: escapeMailHtml_(greetPlain),
-        DOCTOR: escapeMailHtml_(dr),
-        SPECIALIZATION: escapeMailHtml_(t_(args.specialization) || "—"),
-        DATE_ISO: escapeMailHtml_(t_(args.dateISO)),
-        TIME_SLOT: escapeMailHtml_(t_(args.slotLabel)),
-        LOCATION_LINE: escapeMailHtml_(locationLine),
-        SOURCE_REF: escapeMailHtml_(t_(args.source) || "booking"),
-        MOBILE: escapeMailHtml_(t_(args.mobile) || "—"),
-        SENT_UTC: escapeMailHtml_(sentUtcNow)
-    });
+    const html = renderEmailTemplateHtml_(
+        "appointment-client-ack.html",
+        {
+            recipient_greeting_one_line: escapeMailHtml_(greetPlain),
+            doctor_display: escapeMailHtml_(dr),
+            specialization: escapeMailHtml_(t_(args.specialization) || "—"),
+            date_iso: escapeMailHtml_(t_(args.dateISO)),
+            time_slot: escapeMailHtml_(t_(args.slotLabel)),
+            location_line: escapeMailHtml_(locationLine),
+            source_ref: escapeMailHtml_(t_(args.source) || "booking"),
+            mobile: escapeMailHtml_(t_(args.mobile) || "—"),
+            sent_utc: escapeMailHtml_(sentUtcNow),
+            company_name: escapeMailHtml_(corp),
+            company_website: escapeMailHtml_(webStrip === "—" ? "" : webStrip)
+        },
+        { CONTEXT_BADGE_HTML: badgeHtmlCx }
+    );
     const replyToRaw = (process.env.CONTACT_APPOINTMENT_CLIENT_ACK_REPLY_TO || "").trim();
     /** @type {Record<string, string>} */
     const mail = {

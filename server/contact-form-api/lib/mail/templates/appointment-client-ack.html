@@ -1,59 +1,39 @@
 <!--
-  Outbound visitor email — appointment confirmation (easy to edit).
-  Tokens: BRAND_TITLE, CONTEXT_BADGE_HTML (server-built only), VISITOR_GREET,
-  DOCTOR, SPECIALIZATION, DATE_ISO, TIME_SLOT, LOCATION_LINE, SOURCE_REF, MOBILE, SENT_UTC
+  Simple appointment confirmation — edit wording freely.
+  {{CONTEXT_BADGE_HTML}} optional — filled only by server (trusted HTML snippet).
+  Other {{tokens}} — plain text escaped on send.
 -->
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>{{BRAND_TITLE}}</title>
 </head>
-<body style="margin:0;padding:0;background:#f4f5f7;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#222;">
-  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;background:#f4f5f7;">
-    <tr>
-      <td align="center" style="padding:24px 12px;">
-        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:560px;background:#ffffff;border-radius:10px;border:1px solid #e4e7ec;overflow:hidden;">
-          <tr>
-            <td style="padding:22px 24px;background:#0f7a54;color:#fff;font-size:17px;font-weight:600;line-height:1.35;">
-              {{BRAND_TITLE}}
-            </td>
-          </tr>
-          <tr>
-            <td style="padding:22px 24px 18px;font-size:15px;line-height:1.55;color:#30353c;">
-              {{CONTEXT_BADGE_HTML}}
+<body style="font-family:Calibri,Arial,sans-serif;font-size:15px;line-height:1.5;color:#111;">
+{{CONTEXT_BADGE_HTML}}
 
-              <p style="margin:0 0 14px 0;"><strong>{{VISITOR_GREET}}</strong></p>
-              <p style="margin:0 0 18px 0;">
-                This confirms your appointment booking with us. Please review the details below.
-              </p>
+<p>{{recipient_greeting_one_line}}</p>
 
-              <table width="100%" cellspacing="0" cellpadding="8" style="border-collapse:collapse;font-size:14px;line-height:1.45;color:#30353c;border:1px solid #eef0f3;border-radius:8px;margin-bottom:12px;">
-                <tbody>
-                  <tr style="border-bottom:1px solid #f0f2f6;"><td width="155" style="color:#59606b;">Doctor</td><td><strong>{{DOCTOR}}</strong></td></tr>
-                  <tr style="border-bottom:1px solid #f0f2f6;"><td style="color:#59606b;">Specialization</td><td>{{SPECIALIZATION}}</td></tr>
-                  <tr style="border-bottom:1px solid #f0f2f6;"><td style="color:#59606b;">Date</td><td>{{DATE_ISO}}</td></tr>
-                  <tr style="border-bottom:1px solid #f0f2f6;"><td style="color:#59606b;">Time</td><td>{{TIME_SLOT}}</td></tr>
-                  <tr style="border-bottom:1px solid #f0f2f6;"><td style="color:#59606b;">Location / branch</td><td>{{LOCATION_LINE}}</td></tr>
-                  <tr style="border-bottom:1px solid #f0f2f6;"><td style="color:#59606b;">Booking source</td><td>{{SOURCE_REF}}</td></tr>
-                  <tr style="border-bottom:1px solid #f0f2f6;"><td style="color:#59606b;">Mobile on file</td><td>{{MOBILE}}</td></tr>
-                  <tr><td style="color:#59606b;">Confirmed (UTC)</td><td>{{SENT_UTC}}</td></tr>
-                </tbody>
-              </table>
+<p>Your appointment is confirmed. Summary:</p>
 
-              <p style="margin:14px 0 0;font-size:13px;line-height:1.5;color:#4a515a;">
-                Please carry a government photo ID when you visit. If you did not request this booking, please contact the clinic immediately.
-              </p>
-              <p style="margin:12px 0 0;font-size:12px;line-height:1.45;color:#8b939e;">
-                This is an automated confirmation.
-              </p>
-            </td>
-          </tr>
-        </table>
-      </td>
-    </tr>
-  </table>
+<p style="margin:0;">
+Doctor: {{doctor_display}}<br/>
+Specialization: {{specialization}}<br/>
+Date: {{date_iso}}<br/>
+Time: {{time_slot}}<br/>
+Location / branch: {{location_line}}<br/>
+Booking reference: {{source_ref}}<br/>
+Mobile on file: {{mobile}}<br/>
+Confirmed (UTC): {{sent_utc}}<br/>
+</p>
+
+<p>Please carry a government photo ID when you visit. If this booking wasn’t yours, please contact the clinic immediately.</p>
+
+<p style="margin-top:20px;color:#444;font-size:14px;"><em>Automated message.</em></p>
+
+<p style="margin-top:20px;">
+Regards,<br/>
+{{company_name}}<br/>
+{{company_website}}
+</p>
 </body>
 </html>
