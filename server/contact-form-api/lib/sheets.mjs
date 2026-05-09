@@ -6,7 +6,7 @@ import { google } from "googleapis";
 import { getServiceAccountCredentials } from "./google-service-account.mjs";
 
 const SPREADSHEET_ID = (process.env.SHEETS_SPREADSHEET_ID || "").trim();
-// Default schema: no Form ID (A–Q). Conv. date, name, mobile, email, channel, user queries, repeated, source, session, …
+// Default schema: no Form ID (A–Q). Conv. date (12h UI string, see formatConversationDateTimeForSheet), name, …
 const RANGE = (process.env.SHEETS_RANGE || "Sheet1!A:Q").trim();
 const DEDUP_LOOKBACK_ROWS = Math.max(
     10,
@@ -25,6 +25,46 @@ const HEADER_SKIP_ROWS_0 = (() => {
 })();
 
 const SPREADSHEET_SCOPES = ["https://www.googleapis.com/auth/spreadsheets"];
+
+/**
+ * IANA zone for the “Conv.” column (12h display). Omit env or set empty for **server local** time.
+ * Default `Asia/Kolkata` matches typical `company.config.js` chat persona clock.
+ */
+function conversationDateTimeZoneForIntl_() {
+    const raw = process.env.SHEETS_CONV_DATETIME_TZ;
+    if (raw === undefined || raw === null) {
+        return "Asia/Kolkata";
+    }
+    const t = String(raw).trim();
+    return t === "" ? undefined : t;
+}
+
+/**
+ * Human-readable conversation timestamp for the Sheets **Conv.** column (12-hour clock).
+ * @param {Date} [d]
+ * @returns {string}
+ */
+export function formatConversationDateTimeForSheet(d = new Date()) {
+    const dt = d instanceof Date && !Number.isNaN(d.getTime()) ? d : new Date();
+    const tz = conversationDateTimeZoneForIntl_();
+    try {
+        const opts = /** @type {Intl.DateTimeFormatOptions} */ ({
+            dateStyle: "medium",
+            timeStyle: "medium",
+            hour12: true
+        });
+        if (tz) {
+            opts.timeZone = tz;
+        }
+        return new Intl.DateTimeFormat("en-IN", opts).format(dt);
+    } catch {
+        try {
+            return dt.toLocaleString("en-US", { hour12: true });
+        } catch {
+            return dt.toISOString();
+        }
+    }
+}
 
 /**
  * Force append into our schema columns (A–Q, no Form ID).
@@ -896,7 +936,7 @@ async function writeLeadRowByHeader_(sheets, tab, rowNumber, lead) {
  * Conv. Date, Name, Mobile, Email, Channel, User Queries, Repeated User, Source URL, Session id,
  * Device, Browser, City, IP, Appointment booked/date/time, Drive link.
  *
- * @param {{ iso: string, formId?: string, name: string, mobile: string, email: string, clientSessionId: string, browserName: string, deviceType: string, channel: string, fileLinks?: string, city?: string, ip?: string, sourceUrl?: string, appointmentBooked?: string, appointmentDate?: string, appointmentTime?: string, userQueriesCsv?: string }} row `formId` is ignored for Sheets (still used upstream / Firestore).
+ * @param {{ iso: string, formId?: string, name: string, mobile: string, email: string, clientSessionId: string, browserName: string, deviceType: string, channel: string, fileLinks?: string, city?: string, ip?: string, sourceUrl?: string, appointmentBooked?: string, appointmentDate?: string, appointmentTime?: string, userQueriesCsv?: string }} row `iso` = conv. datetime label for column A (12h formatted). `formId` ignored for Sheets.
  * @param {{ preferIncomingContact?: boolean, skipSessionDedup?: boolean }} [opts] `skipSessionDedup` (with `preferIncomingContact`) skips “one row per session” and always appends — default for main contact-form POST.
  * @returns {Promise<{ action: "appended"|"duplicate_updated"|"duplicate_noop", patched: boolean, tab: string, appendRangeUsed?: string, sheetRowNumber?: number, googleAppend?: { updatedRange?: string, updatedRows?: number, spreadsheetId?: string }, googleBatch?: { totalUpdatedCells?: number, totalUpdatedRows?: number, updatedRanges: string[] } }>}
  */

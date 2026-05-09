@@ -21,6 +21,7 @@
  *   GOOGLE_DRIVE_OAUTH_* (Drive API path; optional if Apps Script URL set)
  *   PORT, FIREBASE_SERVICE_ACCOUNT_JSON / GOOGLE_SERVICE_ACCOUNT_JSON / GOOGLE_APPLICATION_CREDENTIALS
  *   DISABLE_FIRESTORE=1, FIRESTORE_DATABASE_ID, CORS_ORIGIN, SHEETS_*, DISABLE_SHEETS=1
+ *   SHEETS_CONV_DATETIME_TZ — optional IANA zone for Sheets “Conv.” column (12h display); unset defaults Asia/Kolkata; empty = server-local.
  *   Common (“general-purpose”) appointment hours: `company.config.js` → `common.generalAppointment` (any industry). Env overrides GENERAL_APPOINTMENT_*.
  *
  * Chat-only mobile → Sheet row (no file upload): POST JSON `/contact-form-mobile-sheet-sync`.
@@ -42,6 +43,7 @@ import { firebaseAdminInit } from "./lib/firebase-admin-init.mjs";
 import { persistToFirestore } from "./lib/firestore.mjs";
 import {
     appendContactRowToSheet,
+    formatConversationDateTimeForSheet,
     upsertSessionQueriesInSheet,
     probeSheetsSpreadsheetAccess,
     sanitizeUserQueriesCsvForSheet
@@ -1660,7 +1662,8 @@ app.post(
             }
         }
 
-        const iso = new Date().toISOString();
+        const submittedAtIso = new Date().toISOString();
+        const convSheetDateTime = formatConversationDateTimeForSheet(new Date());
         const ip = extractRequestIp(req);
         const cityFromFields = typeof fields.city === "string" ? fields.city.trim() : "";
         const cityFromContext = pickCityFromClientContextMerged_(mergedClientContext);
@@ -1687,7 +1690,7 @@ app.post(
             .join(", ");
 
         const record = {
-            submitted_at: iso,
+            submitted_at: submittedAtIso,
             form_id: formId,
             name,
             email,
@@ -1719,7 +1722,7 @@ app.post(
                 try {
                     sheetOutcome = await appendContactRowToSheet(
                         {
-                            iso,
+                            iso: convSheetDateTime,
                             formId,
                             name,
                             mobile,
@@ -1888,7 +1891,7 @@ app.post(
             return res.status(400).json({ ok: false, error: "Missing mobile (send mobile or client_context.mobile)." });
         }
 
-        const iso = new Date().toISOString();
+        const convSheetDateTime = formatConversationDateTimeForSheet(new Date());
         const ip = extractRequestIp(req);
         const city = pickCityFromClientContextMerged_(mergedClientContext)
             || (await resolveCityForRequest(req));
@@ -1897,7 +1900,7 @@ app.post(
 
         try {
             const sheetOutcome = await appendContactRowToSheet({
-                iso,
+                iso: convSheetDateTime,
                 formId,
                 name,
                 mobile,
@@ -2032,7 +2035,7 @@ app.post(
         const name = resolveContactName(fields, body, mergedClientContext);
         const email = resolveContactEmail(fields, body, mergedClientContext);
 
-        const iso = new Date().toISOString();
+        const convSheetDateTime = formatConversationDateTimeForSheet(new Date());
         const ip = extractRequestIp(req);
         const city = pickCityFromClientContextMerged_(mergedClientContext)
             || (await resolveCityForRequest(req));
@@ -2040,7 +2043,7 @@ app.post(
 
         try {
             const syncDetail = await upsertSessionQueriesInSheet({
-                iso,
+                iso: convSheetDateTime,
                 formId,
                 name,
                 mobile,
