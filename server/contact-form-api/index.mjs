@@ -1419,6 +1419,8 @@ app.post(
             }
         }
 
+        /** True when this request successfully booked an appointment slot (server-side). */
+        let appointmentBookedServer = false;
         try {
             const rsv = await tryReserveAppointmentSlotFromContactForm_(formId, fields);
             if (rsv && rsv.skip) {
@@ -1428,6 +1430,8 @@ app.post(
                     ok: false,
                     error: typeof rsv.error === "string" && rsv.error.trim() ? rsv.error.trim() : "Booking failed."
                 });
+            } else if (rsv && rsv.ok === true) {
+                appointmentBookedServer = true;
             }
         } catch (be) {
             const msg = be && be.message ? be.message : String(be);
@@ -1558,14 +1562,20 @@ app.post(
 
         const iso = new Date().toISOString();
         const ip = extractRequestIp(req);
-        const city = await resolveCityForRequest(req);
+        const cityFromFields = typeof fields.city === "string" ? fields.city.trim() : "";
+        const cityFromContext = typeof mergedClientContext.city === "string" ? mergedClientContext.city.trim() : "";
+        const city = cityFromFields || cityFromContext || await resolveCityForRequest(req);
         const userQueriesCsv = normalizeUserQueriesCsvFromClientContext(mergedClientContext);
-        const sourceUrl = typeof mergedClientContext.source_url === "string"
-            ? mergedClientContext.source_url.trim()
-            : "";
+        const sourceUrl =
+            (typeof mergedClientContext.source_url === "string" ? mergedClientContext.source_url.trim() : "")
+            || (typeof mergedClientContext.sourceUrl === "string" ? mergedClientContext.sourceUrl.trim() : "")
+            || (typeof mergedClientContext.page_url === "string" ? mergedClientContext.page_url.trim() : "")
+            || (typeof mergedClientContext.url === "string" ? mergedClientContext.url.trim() : "")
+            || "";
         const appointmentDate = typeof fields.appointmentdate === "string" ? String(fields.appointmentdate).trim() : "";
         const appointmentTime = typeof fields.appointmenttime === "string" ? String(fields.appointmenttime).trim() : "";
-        const appointmentBooked = appointmentDate && appointmentTime ? "Yes" : "No";
+        const appointmentBooked =
+            appointmentBookedServer || (appointmentDate && appointmentTime) ? "Yes" : "No";
         /** Firestore-safe payload (flattened for querying) */
         const fileLinksForSheet = drive_uploads
             .map((u) => (typeof u.web_view_link === "string" ? u.web_view_link : ""))
