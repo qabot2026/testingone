@@ -19,6 +19,8 @@
  *   CONTACT_LEAD_ATTACH_OUTCOME_IN_JSON=1 — add `lead_email` to POST /contact-form-submissions JSON (debug only).
  *
  * Sends when there is ANY of: visitor name/email/mobile OR a picked appointment slot (date + time).
+ * The API schedules this **after** HTTP 200 finishes (see `scheduleContactLeadNotifyAfterResponseFinished_`
+ * in index.mjs); not during the client “submitting” wait, and only after Sheets/Firestore save succeeded.
  *
  * Optional: CONTACT_LEAD_NOTIFY_ON_MOBILE_SYNC=1 (see index.mjs comment).
  */

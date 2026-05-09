@@ -155,6 +155,27 @@ function normalizeSheetFormId(explicit) {
     return envDefault || "web";
 }
 
+/**
+ * Sends the **lead-notification email only after** the browser has finished receiving HTTP 200
+ * (Express `finish`). Sheets/Firestore write must already have succeeded — this schedules mail
+ * strictly after submit success completes on the wire.
+ *
+ * @param {import('express').Response | null | undefined} res
+ * @param {Record<string, unknown>} payload Passed to maybeSendContactLeadNotifyEmail(...).
+ */
+function scheduleContactLeadNotifyAfterResponseFinished_(res, payload) {
+    const run = () => {
+        void maybeSendContactLeadNotifyEmail(payload).catch((e) => {
+            console.error("[contact-form-api] lead notify email", e && e.message ? e.message : e);
+        });
+    };
+    if (res && typeof res.once === "function") {
+        res.once("finish", run);
+        return;
+    }
+    globalThis.setImmediate(run);
+}
+
 function corsOriginOption() {
     const raw = (process.env.CORS_ORIGIN || "").trim();
     if (!raw) {
@@ -1890,12 +1911,8 @@ app.post(
                     };
                 }
             } else {
-                /** Send mail after HTTP response begins so SMTP slowness never blocks form submit UX. */
-                setImmediate(() => {
-                    void maybeSendContactLeadNotifyEmail(leadEmailPayload).catch((e) => {
-                        console.error("[contact-form-api] lead notify email", e && e.message ? e.message : e);
-                    });
-                });
+                /** Email only **after** 200 OK is fully delivered (never during “submitting” spinner UX). */
+                scheduleContactLeadNotifyAfterResponseFinished_(res, leadEmailPayload);
             }
             return res.status(200).json(out);
         } catch (err) {
