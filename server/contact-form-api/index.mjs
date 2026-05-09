@@ -24,6 +24,9 @@
  *   SHEETS_CONV_DATETIME_TZ — optional IANA zone for Sheets “Conv.” column (12h display); unset defaults Asia/Kolkata; empty = server-local.
  *   Common (“general-purpose”) appointment hours: `company.config.js` → `common.generalAppointment` (any industry). Env overrides GENERAL_APPOINTMENT_*.
  *
+ * Lead email to your team (optional): `lib/contact-lead-notify-email.mjs` — set CONTACT_LEAD_NOTIFY_TO + SMTP_HOST, SMTP_USER, SMTP_PASS, MAIL_FROM.
+ *   CONTACT_LEAD_NOTIFY_ON_MOBILE_SYNC=1 — also notify on `/contact-form-mobile-sheet-sync` when name or email is present (see module comment).
+ *
  * Chat-only mobile → Sheet row (no file upload): POST JSON `/contact-form-mobile-sheet-sync`.
  * Optional: CONTACT_FORM_MOBILE_SHEET_SYNC_SECRET → client must send `X-Contact-Form-Mobile-Sync-Secret`.
  *
@@ -66,6 +69,7 @@ import {
     mergedGeneralAppointmentSchedule_,
     resolvedGeneralAppointmentSlotMinutes_
 } from "./lib/company-general-appointment.mjs";
+import { maybeSendContactLeadNotifyEmail } from "./lib/contact-lead-notify-email.mjs";
 
 const APPS_SCRIPT_WEBAPP_URL = (process.env.GOOGLE_APPS_SCRIPT_WEBAPP_URL || "").trim();
 
@@ -1833,6 +1837,25 @@ app.post(
                 };
                 out.sheet = writeBlock;
             }
+            void maybeSendContactLeadNotifyEmail({
+                source: "contact-form",
+                formId,
+                name,
+                email,
+                mobile,
+                city,
+                channel,
+                sourceUrl,
+                clientSessionId,
+                appointmentDate,
+                appointmentTime,
+                appointmentBooked,
+                submittedAtIso,
+                fields,
+                ip
+            }).catch((e) => {
+                console.error("[contact-form-api] lead notify email", e && e.message ? e.message : e);
+            });
             return res.status(200).json(out);
         } catch (err) {
             const message = err && err.message ? err.message : "Save failed";
@@ -1972,6 +1995,31 @@ app.post(
                     }
                 }
             });
+            if ((process.env.CONTACT_LEAD_NOTIFY_ON_MOBILE_SYNC || "").trim() === "1") {
+                const nm = typeof name === "string" ? name.trim() : "";
+                const em = typeof email === "string" ? email.trim() : "";
+                if (nm || em) {
+                    void maybeSendContactLeadNotifyEmail({
+                        source: "mobile-sheet-sync",
+                        formId,
+                        name,
+                        email,
+                        mobile,
+                        city,
+                        channel,
+                        sourceUrl,
+                        clientSessionId,
+                        appointmentDate: "",
+                        appointmentTime: "",
+                        appointmentBooked: "No",
+                        submittedAtIso: new Date().toISOString(),
+                        fields,
+                        ip
+                    }).catch((e) => {
+                        console.error("[contact-form-api] lead notify email (mobile sync)", e && e.message ? e.message : e);
+                    });
+                }
+            }
         } catch (se) {
             const detail = se && se.message ? se.message : String(se);
             console.error("[contact-form-api] mobile-sheet-sync", detail, se);
