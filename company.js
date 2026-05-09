@@ -12851,8 +12851,9 @@ function extractPayload(message) {
         if (t.startsWith("{")) {
             try {
                 const o = JSON.parse(t);
-                if (o && typeof o === "object" && typeof o.action === "string") {
-                    return o;
+                if (o && typeof o === "object") {
+                    const unpacked = extractPayload({ payload: o });
+                    return unpacked ?? null;
                 }
             } catch (e) {
                 /* ignore */
@@ -12864,16 +12865,50 @@ function extractPayload(message) {
         return null;
     }
 
-    if (typeof raw.action === "string") {
-        return raw;
+    /** @type {Record<string, unknown>} */
+    const rec = /** @type {Record<string, unknown>} */ (raw);
+
+    if (rec.fields) {
+        const c = convertStructFieldsToObject(rec.fields);
+        const unpacked = extractPayload({ payload: c });
+        return unpacked ?? /** @type {Record<string, unknown>} */ (c);
     }
 
-    if (raw.fields) {
-        return convertStructFieldsToObject(raw.fields);
+    if (rec.structValue && rec.structValue.fields) {
+        const c = convertStructFieldsToObject(rec.structValue.fields);
+        const unpacked = extractPayload({ payload: c });
+        return unpacked ?? /** @type {Record<string, unknown>} */ (c);
     }
 
-    if (raw.structValue && raw.structValue.fields) {
-        return convertStructFieldsToObject(raw.structValue.fields);
+    if (typeof rec.action === "string") {
+        return rec;
+    }
+
+    /**
+     * CX often sends a single `payload` whose body is the webhook-shaped envelope
+     * `{ fulfillment_response: { messages: [ { text }, { payload: { action, ... } } ] } }`
+     * instead of putting `action` on the top-level payload. Peel it so `dfchat_inline_select`
+     * and other actions are found.
+     */
+    const fr = rec.fulfillment_response;
+    if (fr && typeof fr === "object") {
+        const msgs = /** @type {{ messages?: unknown[] }} */ (fr).messages;
+        if (Array.isArray(msgs)) {
+            for (let mi = 0; mi < msgs.length; mi += 1) {
+                const m = msgs[mi];
+                if (!m || typeof m !== "object") {
+                    continue;
+                }
+                const ip = /** @type {Record<string, unknown>} */ (m).payload;
+                if (ip == null) {
+                    continue;
+                }
+                const unpacked = extractPayload({ payload: ip });
+                if (unpacked) {
+                    return unpacked;
+                }
+            }
+        }
     }
 
     return null;
