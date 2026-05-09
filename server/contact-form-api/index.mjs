@@ -75,6 +75,11 @@ const SHEETS_DISABLED =
     !(process.env.SHEETS_SPREADSHEET_ID || "").trim();
 /** When set, file fields are not accepted; use Sheet + service account only (no Drive/OAuth). */
 const DISABLE_DRIVE_UPLOAD = process.env.DISABLE_DRIVE_UPLOAD === "1";
+/**
+ * Session-id dedupe (update row instead of append) caused “Saved” rows invisible when the wrong Sheet tab/SHEETS_RANGE was used or the patch became a noop.
+ * Default: OFF — each contact-form POST appends one row so leads always appear. Set SHEETS_STRICT_SESSION_DEDUP=1 for previous “single row per session” behaviour (chat sync + dedupe updates).
+ */
+const SHEETS_CONTACT_FORM_APPEND_FREELY = process.env.SHEETS_STRICT_SESSION_DEDUP !== "1";
 
 function hasFirebaseCredentials() {
     if ((process.env.FIREBASE_SERVICE_ACCOUNT_JSON || "").trim()) {
@@ -1603,7 +1608,10 @@ app.post(
                             city,
                             userQueriesCsv
                         },
-                        { preferIncomingContact: true }
+                        {
+                            preferIncomingContact: true,
+                            skipSessionDedup: SHEETS_CONTACT_FORM_APPEND_FREELY
+                        }
                     );
                     wroteToSheets = !!(sheetOutcome && sheetOutcome.patched);
                 } catch (se) {
@@ -1628,7 +1636,16 @@ app.post(
                 out.sheet = {
                     action: sheetOutcome.action,
                     patched: sheetOutcome.patched,
-                    tab: sheetOutcome.tab || ""
+                    tab: sheetOutcome.tab || "",
+                    sessionDedupeMode: !SHEETS_CONTACT_FORM_APPEND_FREELY
+                        ? "strict_single_row_per_session"
+                        : clientSessionId.trim()
+                          ? "append_each_form_submit"
+                          : "append_no_session_client_id",
+                    hadName: typeof name === "string" ? name.trim().length > 0 : false,
+                    hadMobile: typeof mobile === "string" ? mobile.trim().length > 0 : false,
+                    hadEmail: typeof email === "string" ? email.trim().length > 0 : false,
+                    hadSessionId: typeof clientSessionId === "string" ? clientSessionId.trim().length > 0 : false
                 };
             }
             if (SHEETS_DISABLED) {

@@ -311,7 +311,7 @@ async function getSheetsAuthClient() {
  * N user_queries (comma-separated)
  *
  * @param {{ iso: string, formId: string, name: string, mobile: string, email: string, clientSessionId: string, browserName: string, deviceType: string, channel: string, fileLinks?: string, city?: string, ip?: string, userQueriesCsv?: string }} row
- * @param {{ preferIncomingContact?: boolean }} [opts] set on official contact-form submissions so duplicate rows update B–E with form values (not chat placeholders).
+ * @param {{ preferIncomingContact?: boolean, skipSessionDedup?: boolean }} [opts] `skipSessionDedup` (with `preferIncomingContact`) skips “one row per session” and always appends — default for main contact-form POST.
  * @returns {Promise<{ action: "appended"|"duplicate_updated"|"duplicate_noop", patched: boolean, tab: string }>}
  */
 export async function appendContactRowToSheet(row, opts) {
@@ -322,9 +322,19 @@ export async function appendContactRowToSheet(row, opts) {
     const client = await getSheetsAuthClient();
     const sheets = google.sheets({ version: "v4", auth: client });
 
+    const preferIncoming = !!(opts && opts.preferIncomingContact);
+    const skipSessionDedup =
+        !!(opts && opts.skipSessionDedup)
+        && preferIncoming
+        && typeof row.clientSessionId === "string"
+        && row.clientSessionId.trim();
+
     // Prevent double-write when chat mobile sync and form submission both hit Sheets,
     // but *update* the existing session row when the contact-form later provides name/email.
-    const scan = await scanSheetTailForDedupeAndRepeat_(sheets, row);
+    const scanFull = await scanSheetTailForDedupeAndRepeat_(sheets, row);
+    const scan = skipSessionDedup
+        ? { duplicate: false, matchedRowNumber: 0, repeatedAcrossSessions: scanFull.repeatedAcrossSessions }
+        : scanFull;
     const tab = tabNameFromRange(RANGE);
     if (scan.duplicate) {
         const patched = await updateExistingSessionRow_(sheets, tab, scan.matchedRowNumber, row, {
@@ -355,7 +365,7 @@ export async function appendContactRowToSheet(row, opts) {
     const city = typeof row.city === "string" ? row.city.trim() : "";
     const ip = typeof row.ip === "string" ? row.ip.trim() : "";
     const userQueriesCsv = typeof row.userQueriesCsv === "string" ? row.userQueriesCsv.trim() : "";
-    const repeated = scan.repeatedAcrossSessions ? "Yes" : "No";
+    const repeated = scanFull.repeatedAcrossSessions ? "Yes" : "No";
     const values = [[
         row.iso,
         row.formId,
