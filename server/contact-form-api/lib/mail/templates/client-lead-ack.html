@@ -1,0 +1,52 @@
+<!--
+  Outbound visitor email — lead acknowledgement (easy to edit).
+  Tokens in markup: BRAND_TITLE, VISITOR_GREET, NAME, EMAIL, MOBILE, CITY, SOURCE, PAGE_URL, SUBMITTED_UTC
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>{{BRAND_TITLE}}</title>
+</head>
+<body style="margin:0;padding:0;background:#f4f5f7;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#222;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;background:#f4f5f7;">
+    <tr>
+      <td align="center" style="padding:24px 12px;">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:560px;background:#ffffff;border-radius:10px;border:1px solid #e4e7ec;overflow:hidden;">
+          <tr>
+            <td style="padding:22px 24px;background:#163d7a;color:#fff;font-size:18px;font-weight:600;line-height:1.35;">
+              {{BRAND_TITLE}}
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:22px 24px 16px;font-size:15px;line-height:1.55;color:#30353c;">
+              <p style="margin:0 0 14px 0;"><strong>{{VISITOR_GREET}}</strong></p>
+              <p style="margin:0 0 18px 0;">
+                Thanks for contacting us. We have received your message and our team will get back to you soon.
+              </p>
+              <p style="margin:0 0 12px 0;color:#59606b;font-size:13px;text-transform:uppercase;letter-spacing:0.04em;">
+                Your details (for reference)
+              </p>
+              <table width="100%" cellspacing="0" cellpadding="8" style="border-collapse:collapse;font-size:14px;line-height:1.45;color:#30353c;border:1px solid #eef0f3;border-radius:8px;margin-bottom:12px;">
+                <tbody>
+                  <tr style="border-bottom:1px solid #f0f2f6;"><td width="140" style="color:#59606b;">Name</td><td><strong>{{NAME}}</strong></td></tr>
+                  <tr style="border-bottom:1px solid #f0f2f6;"><td style="color:#59606b;">Email</td><td>{{EMAIL}}</td></tr>
+                  <tr style="border-bottom:1px solid #f0f2f6;"><td style="color:#59606b;">Mobile</td><td>{{MOBILE}}</td></tr>
+                  <tr style="border-bottom:1px solid #f0f2f6;"><td style="color:#59606b;">City</td><td>{{CITY}}</td></tr>
+                  <tr style="border-bottom:1px solid #f0f2f6;"><td style="color:#59606b;">Source</td><td>{{SOURCE}}</td></tr>
+                  <tr style="border-bottom:1px solid #f0f2f6;"><td style="color:#59606b;">Page</td><td>{{PAGE_URL}}</td></tr>
+                  <tr><td style="color:#59606b;">Submitted (UTC)</td><td>{{SUBMITTED_UTC}}</td></tr>
+                </tbody>
+              </table>
+              <p style="margin:14px 0 0;font-size:12px;line-height:1.45;color:#8b939e;">
+                This is an automated message. Please do not reply unless you normally email this inbox.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

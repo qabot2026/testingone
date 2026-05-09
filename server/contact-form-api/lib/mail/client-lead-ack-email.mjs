@@ -1,11 +1,14 @@
 /**
  * Visitor-facing acknowledgement: “we received your enquiry” (does not notify staff — see contact-lead-notify-email).
  *
+ * HTML layout: templates/client-lead-ack.html — edit branding/colours/copy there.
+ *
  * Enable: CONTACT_LEAD_CLIENT_ACK_ENABLED=1
- * Optional: CONTACT_LEAD_CLIENT_ACK_SUBJECT, CONTACT_LEAD_CLIENT_ACK_REPLY_TO (one address)
+ * Optional: CONTACT_LEAD_CLIENT_ACK_SUBJECT, CONTACT_LEAD_CLIENT_ACK_HTML_TITLE, CONTACT_MAIL_BRAND_TITLE, CONTACT_LEAD_CLIENT_ACK_REPLY_TO
  */
 
 import { isSmtpCredentialEnvPresent_, sendTimedMail_ } from "./smtp-send.mjs";
+import { escapeMailHtml_, renderEmailTemplateHtml_ } from "./render-email-template.mjs";
 
 /** @param {string | undefined} s */
 function t_(s) {
@@ -64,14 +67,23 @@ export async function maybeSendClientLeadAckEmail(args) {
         "This is an automated confirmation message."
     ];
     const text = lines.join("\n");
-    const esc = (s) =>
-        String(s)
-            .replace(/&/g, "&amp;")
-            .replace(/</g, "&lt;")
-            .replace(/>/g, "&gt;");
-    const html = `<pre style="font-family:system-ui,Segoe UI,sans-serif;font-size:14px;line-height:1.45;white-space:pre-wrap">${esc(
-        text
-    )}</pre>`;
+    const brandTitle = (
+        (process.env.CONTACT_LEAD_CLIENT_ACK_HTML_TITLE || "").trim()
+            || (process.env.CONTACT_MAIL_BRAND_TITLE || "").trim()
+            || subjPrefix
+    );
+    const greetPlain = name ? `Hi ${name},` : "Hi,";
+    const html = renderEmailTemplateHtml_("client-lead-ack.html", {
+        BRAND_TITLE: escapeMailHtml_(brandTitle),
+        VISITOR_GREET: escapeMailHtml_(greetPlain),
+        NAME: escapeMailHtml_(name || "—"),
+        EMAIL: escapeMailHtml_(toAddr),
+        MOBILE: escapeMailHtml_(t_(args.mobile) || "—"),
+        CITY: escapeMailHtml_(t_(args.city) || "—"),
+        SOURCE: escapeMailHtml_(t_(args.source) || "—"),
+        PAGE_URL: escapeMailHtml_(t_(args.sourceUrl) || "—"),
+        SUBMITTED_UTC: escapeMailHtml_(t_(args.submittedAtIso) || "—")
+    });
     const replyToRaw = (process.env.CONTACT_LEAD_CLIENT_ACK_REPLY_TO || "").trim();
     /** @type {Record<string, string>} */
     const mail = { from: fromAddr, to: toAddr, subject, text, html };

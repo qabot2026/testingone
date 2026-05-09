@@ -1,11 +1,14 @@
 /**
  * Visitor confirmation: booked appointment summary (CX chatbot, contact-form appointment flows, REST when email provided).
  *
+ * HTML layout: templates/appointment-client-ack.html (+ optional CONTEXT_BADGE for chat bookings).
+ *
  * Enable: CONTACT_APPOINTMENT_CLIENT_ACK_ENABLED=1
- * Optional subjects: CONTACT_APPOINTMENT_CLIENT_ACK_SUBJECT_CHATBOT vs generic — single CONTACT_APPOINTMENT_CLIENT_ACK_SUBJECT for all if set.
+ * Optional: CONTACT_MAIL_BRAND_TITLE, CONTACT_APPOINTMENT_CLIENT_ACK_HTML_TITLE, subjects CONTACT_APPOINTMENT_CLIENT_ACK_SUBJECT / _CHATBOT
  */
 
 import { isSmtpCredentialEnvPresent_, sendTimedMail_ } from "./smtp-send.mjs";
+import { escapeMailHtml_, renderEmailTemplateHtml_ } from "./render-email-template.mjs";
 
 /** @param {string | undefined} s */
 function t_(s) {
@@ -60,6 +63,13 @@ export async function maybeSendAppointmentClientAckEmail(args) {
     const subject =
         `${subjectBase} — ${dr} — ${t_(args.dateISO)}`.slice(0, 900);
     const name = t_(args.recipientName);
+    const branchParts = [];
+    const br = t_(args.branchId);
+    const city = t_(args.cityOrPlace);
+    if (br) branchParts.push(br);
+    if (city) branchParts.push(city.includes("branch") ? city : `(${city})`);
+    const locationLine = branchParts.join(" ").trim() || "—";
+
     const text = [
         "Hi" + (name ? ` ${name}` : ""),
         "",
@@ -69,7 +79,7 @@ export async function maybeSendAppointmentClientAckEmail(args) {
         `  Specialization: ${t_(args.specialization) || "—"}`,
         `  Date: ${t_(args.dateISO)}`,
         `  Time: ${t_(args.slotLabel)}`,
-        `  Branch / office: ${t_(args.branchId) || "—"} ${t_(args.cityOrPlace) ? `(${t_(args.cityOrPlace)})` : ""}`,
+        `  Branch / office: ${locationLine}`,
         `  Reference (source): ${t_(args.source) || "booking"}`,
         `  Mobile on file: ${t_(args.mobile) || "—"}`,
         "",
@@ -78,14 +88,32 @@ export async function maybeSendAppointmentClientAckEmail(args) {
         `Sent UTC: ${new Date().toISOString()}`,
         ""
     ].join("\n");
-    const esc = (s) =>
-        String(s)
-            .replace(/&/g, "&amp;")
-            .replace(/</g, "&lt;")
-            .replace(/>/g, "&gt;");
-    const html = `<pre style="font-family:system-ui,Segoe UI,sans-serif;font-size:14px;line-height:1.45;white-space:pre-wrap">${esc(
-        text
-    )}</pre>`;
+
+    const apptBannerTitle =
+        (process.env.CONTACT_APPOINTMENT_CLIENT_ACK_HTML_TITLE || "").trim()
+        || (process.env.CONTACT_MAIL_BRAND_TITLE || "").trim()
+        || "Appointment confirmed";
+    const greetPlain = name ? `Hi ${name},` : "Hi,";
+    const badgeHtmlCx =
+        src === "dialogflow-cx-chatbot"
+            ? '<p style="margin:0 0 14px 0;background:#eef6ff;color:#174ea6;padding:10px 12px;border-radius:8px;font-size:13px;line-height:1.45;">'
+                  + '<strong>Chat assistant</strong> — you completed this booking through our conversational assistant.</p>'
+            : "";
+
+    const sentUtcNow = new Date().toISOString();
+    const html = renderEmailTemplateHtml_("appointment-client-ack.html", {
+        BRAND_TITLE: escapeMailHtml_(apptBannerTitle),
+        CONTEXT_BADGE_HTML: badgeHtmlCx,
+        VISITOR_GREET: escapeMailHtml_(greetPlain),
+        DOCTOR: escapeMailHtml_(dr),
+        SPECIALIZATION: escapeMailHtml_(t_(args.specialization) || "—"),
+        DATE_ISO: escapeMailHtml_(t_(args.dateISO)),
+        TIME_SLOT: escapeMailHtml_(t_(args.slotLabel)),
+        LOCATION_LINE: escapeMailHtml_(locationLine),
+        SOURCE_REF: escapeMailHtml_(t_(args.source) || "booking"),
+        MOBILE: escapeMailHtml_(t_(args.mobile) || "—"),
+        SENT_UTC: escapeMailHtml_(sentUtcNow)
+    });
     const replyToRaw = (process.env.CONTACT_APPOINTMENT_CLIENT_ACK_REPLY_TO || "").trim();
     /** @type {Record<string, string>} */
     const mail = {
