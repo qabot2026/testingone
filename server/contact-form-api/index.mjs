@@ -1573,14 +1573,8 @@ app.post(
                     error: "Neither Firestore nor Sheets is enabled, and files were not stored (no Drive upload and no Apps Script success). Set SHEETS_SPREADSHEET_ID and/or Firestore, or configure GOOGLE_APPS_SCRIPT_WEBAPP_URL / Drive uploads."
                 });
             }
-            if (!FIRESTORE_DISABLED) {
-                try {
-                    await persistToFirestore(record);
-                } catch (fe) {
-                    const detail = fe && fe.message ? fe.message : String(fe);
-                    throw new Error(`Firestore: ${detail}`);
-                }
-            }
+            /** Sheets must not be skipped when Firestore fails (Firestore runs after Sheets). */
+            let wroteToSheets = false;
             if (!SHEETS_DISABLED) {
                 try {
                     await appendContactRowToSheet({
@@ -1598,9 +1592,21 @@ app.post(
                         city,
                         userQueriesCsv
                     });
+                    wroteToSheets = true;
                 } catch (se) {
                     const detail = se && se.message ? se.message : String(se);
                     throw new Error(`Sheets: ${detail}`);
+                }
+            }
+            if (!FIRESTORE_DISABLED) {
+                try {
+                    await persistToFirestore(record);
+                } catch (fe) {
+                    const detail = fe && fe.message ? fe.message : String(fe);
+                    console.error("[contact-form-api] Firestore persist failed (Sheets already attempted)", detail, fe);
+                    if (!wroteToSheets) {
+                        throw new Error(`Firestore: ${detail}`);
+                    }
                 }
             }
             return res.status(200).json({ ok: true, message: "Saved." });

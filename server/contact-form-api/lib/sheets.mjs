@@ -54,6 +54,28 @@ function mobileDigitsOnly(s) {
     return String(s || "").replace(/\D/g, "");
 }
 
+/** Values API often returns numbers (e.g. phone) instead of strings — normalize for compares + blank checks. */
+function sheetCellString_(v) {
+    if (v == null) {
+        return "";
+    }
+    if (typeof v === "string") {
+        return v.trim();
+    }
+    if (typeof v === "number" && Number.isFinite(v)) {
+        return String(v);
+    }
+    if (typeof v === "boolean") {
+        return v ? "true" : "false";
+    }
+    return "";
+}
+
+/** @param {unknown} rawCell sheet cell value before coercion */
+function isBlankSheetCell_(rawCell) {
+    return !sheetCellString_(rawCell);
+}
+
 /**
  * Dedupe strategy:
  * - Primary key: clientSessionId when session id exists (only one Sheet row per session)
@@ -99,8 +121,8 @@ async function scanSheetTailForDedupeAndRepeat_(sheets, row) {
 
     for (let i = tail.length - 1; i >= 0; i--) {
         const r = tail[i] || [];
-        const existingMobile = typeof r[3] === "string" ? r[3].trim() : "";
-        const existingSid = typeof r[5] === "string" ? r[5].trim() : "";
+        const existingMobile = sheetCellString_(r[3]);
+        const existingSid = sheetCellString_(r[5]);
         const rowNumber = tailOffset + i + 1; // 1-based row number in the sheet
 
         // If we have a session id, enforce "only once per session".
@@ -110,7 +132,7 @@ async function scanSheetTailForDedupeAndRepeat_(sheets, row) {
         // Some sheets have different column ordering; scan the whole row for the session id string.
         if (incomingSid && Array.isArray(r)) {
             for (let c = 0; c < r.length; c++) {
-                const cell = typeof r[c] === "string" ? r[c].trim() : "";
+                const cell = sheetCellString_(r[c]);
                 if (cell && cell === incomingSid) {
                     return { duplicate: true, matchedRowNumber: rowNumber, repeatedAcrossSessions };
                 }
@@ -127,10 +149,6 @@ async function scanSheetTailForDedupeAndRepeat_(sheets, row) {
     }
 
     return { duplicate: false, matchedRowNumber: 0, repeatedAcrossSessions };
-}
-
-function isBlankCell_(v) {
-    return !(typeof v === "string" && v.trim());
 }
 
 function splitCsvValues_(raw) {
@@ -189,25 +207,24 @@ async function updateExistingSessionRow_(sheets, tab, rowNumber, incoming) {
         range: `${tab}!A${rowNumber}:N${rowNumber}`
     });
     const row = Array.isArray(got.data.values) && got.data.values[0] ? got.data.values[0] : [];
-    const existing = (idx) => (typeof row[idx] === "string" ? row[idx].trim() : "");
 
-    const formId = incoming.formId && isBlankCell_(existing(1)) ? incoming.formId.trim() : "";
-    const name = incoming.name && isBlankCell_(existing(2)) ? incoming.name.trim() : "";
-    const mobile = incoming.mobile && isBlankCell_(existing(3)) ? incoming.mobile.trim() : "";
-    const email = incoming.email && isBlankCell_(existing(4)) ? incoming.email.trim() : "";
+    const formId = incoming.formId && isBlankSheetCell_(row[1]) ? incoming.formId.trim() : "";
+    const name = incoming.name && isBlankSheetCell_(row[2]) ? incoming.name.trim() : "";
+    const mobile = incoming.mobile && isBlankSheetCell_(row[3]) ? incoming.mobile.trim() : "";
+    const email = incoming.email && isBlankSheetCell_(row[4]) ? incoming.email.trim() : "";
     const browserName =
-        incoming.browserName && isBlankCell_(existing(6)) ? incoming.browserName.trim() : "";
+        incoming.browserName && isBlankSheetCell_(row[6]) ? incoming.browserName.trim() : "";
     const deviceType =
-        incoming.deviceType && isBlankCell_(existing(7)) ? incoming.deviceType.trim() : "";
+        incoming.deviceType && isBlankSheetCell_(row[7]) ? incoming.deviceType.trim() : "";
     const channel =
-        incoming.channel && isBlankCell_(existing(8)) ? incoming.channel.trim() : "";
+        incoming.channel && isBlankSheetCell_(row[8]) ? incoming.channel.trim() : "";
     const fileLinks =
-        incoming.fileLinks && isBlankCell_(existing(9)) ? incoming.fileLinks.trim() : "";
+        incoming.fileLinks && isBlankSheetCell_(row[9]) ? incoming.fileLinks.trim() : "";
     const city =
-        incoming.city && isBlankCell_(existing(10)) ? incoming.city.trim() : "";
+        incoming.city && isBlankSheetCell_(row[10]) ? incoming.city.trim() : "";
     const ip =
-        incoming.ip && isBlankCell_(existing(11)) ? incoming.ip.trim() : "";
-    const existingQueries = existing(13);
+        incoming.ip && isBlankSheetCell_(row[11]) ? incoming.ip.trim() : "";
+    const existingQueries = sheetCellString_(row[13]);
     const mergedQueries = mergeCsvUnique_(existingQueries, incoming.userQueriesCsv || "", 200);
     const userQueriesCsv = mergedQueries && mergedQueries !== existingQueries ? mergedQueries : "";
 
@@ -350,13 +367,13 @@ async function findSessionRowNumberBySessionId_(sheets, tab, sessionId) {
     const tailOffset = rows.length - tail.length;
     for (let i = tail.length - 1; i >= 0; i--) {
         const r = tail[i] || [];
-        const existingSid = typeof r[5] === "string" ? r[5].trim() : "";
+        const existingSid = sheetCellString_(r[5]);
         if (existingSid === sid) {
             return tailOffset + i + 1;
         }
         if (Array.isArray(r)) {
             for (let c = 0; c < r.length; c++) {
-                const cell = typeof r[c] === "string" ? r[c].trim() : "";
+                const cell = sheetCellString_(r[c]);
                 if (cell && cell === sid) {
                     return tailOffset + i + 1;
                 }
@@ -395,7 +412,7 @@ export async function upsertSessionQueriesInSheet(row) {
             range: `${tab}!A${rowNumber}:N${rowNumber}`
         });
         const r0 = Array.isArray(got.data.values) && got.data.values[0] ? got.data.values[0] : [];
-        const existingCsv = typeof r0[13] === "string" ? r0[13].trim() : "";
+        const existingCsv = sheetCellString_(r0[13]);
         const merged = mergeCsvUnique_(existingCsv, incomingQ, 200);
         if (merged !== existingCsv) {
             await sheets.spreadsheets.values.batchUpdate({
