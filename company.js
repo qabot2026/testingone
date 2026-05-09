@@ -14923,7 +14923,28 @@ function mergeContactHintsFromOpenFormPrefillIntoStoredContext(prefill) {
         const next = Object.assign({}, prev);
         const nameRaw =
             prefill.name ?? prefill.customer_name ?? prefill.full_name ?? prefill.person_name;
-        const ns = typeof nameRaw === "string" ? nameRaw.trim().slice(0, 200) : "";
+        let ns = typeof nameRaw === "string" ? nameRaw.trim().slice(0, 200) : "";
+        if (!ns) {
+            const g = dfParameterScalarToString(
+                prefill.given_name
+                ?? prefill["given-name"]
+                ?? prefill.givenname
+                ?? prefill.first_name
+                ?? prefill.firstname
+            );
+            const f = dfParameterScalarToString(
+                prefill.family_name
+                ?? prefill["family-name"]
+                ?? prefill.lastname
+                ?? prefill.last_name
+                ?? prefill.surname
+            );
+            if (g && f) {
+                ns = `${g} ${f}`.trim().slice(0, 200);
+            } else if (g || f) {
+                ns = (g || f).trim().slice(0, 200);
+            }
+        }
         if (ns) {
             next.name = ns;
         }
@@ -15248,15 +15269,47 @@ function mergeOptionalContactFieldsFromParameterSlice_(slice) {
                 norm[String(kk).toLowerCase().replace(/[^a-z0-9]/g, "")] = String(s).trim();
             }
         }
-        const nameKeys = ["name", "customername", "fullname", "personname", "username", "guestname"];
+        const nameKeys = [
+            "name",
+            "customername",
+            "fullname",
+            "personname",
+            "username",
+            "guestname",
+            "displayname"
+        ];
+        let nameFromKeys = "";
         for (let ni = 0; ni < nameKeys.length; ni += 1) {
             if (norm[nameKeys[ni]]) {
                 const nm = norm[nameKeys[ni]];
                 if (nm.length <= 200) {
-                    next.name = nm;
+                    nameFromKeys = nm;
                 }
                 break;
             }
+        }
+        if (!nameFromKeys) {
+            const gn =
+                norm.givenname ||
+                norm.firstname ||
+                norm.first ||
+                norm.fname ||
+                "";
+            const fn =
+                norm.familyname ||
+                norm.lastname ||
+                norm.surname ||
+                norm.lname ||
+                norm.secondname ||
+                "";
+            if (gn && fn) {
+                nameFromKeys = `${gn} ${fn}`.trim().slice(0, 200);
+            } else if (gn || fn) {
+                nameFromKeys = (gn || fn).trim().slice(0, 200);
+            }
+        }
+        if (nameFromKeys) {
+            next.name = nameFromKeys;
         }
         const em = norm.email || norm.useremail || norm.mail || norm.contactemail;
         if (em && EMAIL_VALIDATION_RE.test(em)) {

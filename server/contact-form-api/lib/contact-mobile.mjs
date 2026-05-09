@@ -160,6 +160,9 @@ const LOOSE_EMAIL_FALSE_POSITIVE = new Set(["lastname", "middlename"]);
 
 /** @type {(cx: Record<string, unknown>) => string} */
 function pickNameFromLooseKeys_(cx) {
+    let firstPart = "";
+    let lastPart = "";
+
     for (const [rk, rv] of Object.entries(cx)) {
         if (typeof rk === "string" && rk.startsWith("_")) {
             continue;
@@ -172,17 +175,36 @@ function pickNameFromLooseKeys_(cx) {
         if (CONTACT_NAME_ALIASES.some((alias) => normalizedFormKey(alias) === nk)) {
             return trimNameCell_(v);
         }
-        if (
-            nk === "firstname" ||
-            nk === "first_name" ||
-            nk === "lastname" ||
-            nk === "last_name" ||
-            nk === "middlename"
-        ) {
+        /** Dialogflow @sys.person / CX often uses given-name · family-name (→ givenname · familyname). */
+        if (nk === "displayname" || nk === "persondisplayname" || nk === "callername") {
             return trimNameCell_(v);
         }
+        if (
+            nk === "firstname"
+            || nk === "givenname"
+            || nk === "first"
+            || nk === "fname"
+        ) {
+            firstPart = trimNameCell_(v);
+            continue;
+        }
+        if (
+            nk === "lastname"
+            || nk === "familyname"
+            || nk === "surname"
+            || nk === "secondname"
+            || nk === "lname"
+        ) {
+            lastPart = trimNameCell_(v);
+            continue;
+        }
+        if (nk === "middlename") {
+            continue;
+        }
     }
-    return "";
+
+    const composite = [firstPart, lastPart].filter(Boolean).join(" ").trim();
+    return composite ? trimNameCell_(composite) : "";
 }
 
 /**
