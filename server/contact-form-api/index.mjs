@@ -39,7 +39,12 @@ import admin from "firebase-admin";
 import "firebase-admin/database";
 import { firebaseAdminInit } from "./lib/firebase-admin-init.mjs";
 import { persistToFirestore } from "./lib/firestore.mjs";
-import { appendContactRowToSheet, upsertSessionQueriesInSheet } from "./lib/sheets.mjs";
+import {
+    appendContactRowToSheet,
+    upsertSessionQueriesInSheet,
+    probeSheetsSpreadsheetAccess
+} from "./lib/sheets.mjs";
+import { getServiceAccountCredentials } from "./lib/google-service-account.mjs";
 import { uploadSubmissionFilesToDrive } from "./lib/drive-upload.mjs";
 import { hasDriveUploadCredentials } from "./lib/drive-auth.mjs";
 import { forwardSubmissionToAppsScript } from "./lib/apps-script-upload.mjs";
@@ -1632,8 +1637,21 @@ app.post(
             }
             /** @type {Record<string, unknown>} */
             const out = { ok: true, message: "Saved." };
-            if (!SHEETS_DISABLED && sheetOutcome) {
-                out.sheet = {
+            if (SHEETS_DISABLED) {
+                out.sheet_integration = {
+                    enabled: false,
+                    reason:
+                        process.env.DISABLE_SHEETS === "1"
+                            ? "DISABLE_SHEETS=1 — server skips Google Sheets writes."
+                            : "SHEETS_SPREADSHEET_ID is not set — server skips Google Sheets writes.",
+                    hint:
+                        process.env.DISABLE_SHEETS === "1"
+                            ? "Remove DISABLE_SHEETS or set it to 0, then redeploy."
+                            : "In Railway Variables set SHEETS_SPREADSHEET_ID (spreadsheet id from the Google Sheet URL); share that sheet with the service account client_email from FIREBASE_SERVICE_ACCOUNT_JSON as Editor."
+                };
+                out.sheet = null;
+            } else if (sheetOutcome) {
+                const writeBlock = {
                     action: sheetOutcome.action,
                     patched: sheetOutcome.patched,
                     tab: sheetOutcome.tab || "",
@@ -1647,9 +1665,11 @@ app.post(
                     hadEmail: typeof email === "string" ? email.trim().length > 0 : false,
                     hadSessionId: typeof clientSessionId === "string" ? clientSessionId.trim().length > 0 : false
                 };
-            }
-            if (SHEETS_DISABLED) {
-                out.sheet = null;
+                out.sheet_integration = {
+                    enabled: true,
+                    write: writeBlock
+                };
+                out.sheet = writeBlock;
             }
             return res.status(200).json(out);
         } catch (err) {
@@ -1883,6 +1903,31 @@ app.post(
 
 app.get("/health", (_req, res) => res.status(200).send("ok"));
 
+/** Debugging: Sheets env + optional live read probe (spreadsheet tabs / permissions). */
+app.get("/contact-form-sheets-health", async (_req, res) => {
+    try {
+        const id = (process.env.SHEETS_SPREADSHEET_ID || "").trim();
+        /** @type {Record<string, unknown>} */
+        const body = {
+            ok: true,
+            sheets_writes_enabled: !SHEETS_DISABLED,
+            disable_sheets_flag: process.env.DISABLE_SHEETS === "1",
+            spreadsheet_id_configured: !!id,
+            spreadsheet_id_suffix: id ? id.slice(-8) : "",
+            sheets_default_range_env: (process.env.SHEETS_RANGE || "Sheet1!A:N").trim(),
+            strict_session_dedup: process.env.SHEETS_STRICT_SESSION_DEDUP === "1",
+            service_account_credentials_present: !!getServiceAccountCredentials()
+        };
+        if (!SHEETS_DISABLED && getServiceAccountCredentials()) {
+            body.read_probe = await probeSheetsSpreadsheetAccess();
+        }
+        return res.status(200).json(body);
+    } catch (e) {
+        const detail = e && /** @type {{ message?: string }} */ (e).message ? String(e.message) : String(e);
+        return res.status(500).json({ ok: false, error: detail });
+    }
+});
+
 /** Reception/staff: same-slot view as the chat widget (reads RTDB via /api/slots). */
 const RECEPTION_SCHEDULE_HTML = path.join(__dirname_api, "public", "reception-schedule.html");
 app.get("/reception-schedule", (_req, res) => {
@@ -1904,6 +1949,7 @@ app.get("/", (_req, res) => {
             `POST JSON (chat mobile) → ${PATHNAME_MOBILE_SHEET_SYNC}`,
             `POST JSON (session queries) → ${PATHNAME_SESSION_SHEET_SYNC}`,
             `GET /health → health check.`,
+            `GET /contact-form-sheets-health → JSON: Sheets env + tab names (spreadsheet READ probe).`,
             CATALOG_SYNC_SECRET
                 ? `POST ${PATHNAME_CATALOG_SYNC} + X-Catalog-Sync-Secret → push doctors/branches catalog (JSON) to RTDB.`
                 : `Set CATALOG_SYNC_SECRET + redeploy → POST ${PATHNAME_CATALOG_SYNC} to sync catalog JSON to RTDB.`,

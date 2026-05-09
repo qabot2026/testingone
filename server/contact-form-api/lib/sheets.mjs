@@ -497,3 +497,45 @@ export async function upsertSessionQueriesInSheet(row) {
 
     await appendContactRowToSheet(row);
 }
+
+/**
+ * Read-only spreadsheet metadata for ops debugging (wrong tab / permissions / spreadsheet id).
+ * @returns {Promise<{ ok: true, title: string, tabNames: string[], configuredRangeTab: string } | { ok: false, code: string, message?: string }>}
+ */
+export async function probeSheetsSpreadsheetAccess() {
+    if (!SPREADSHEET_ID) {
+        return { ok: false, code: "missing_spreadsheet_env" };
+    }
+    try {
+        const client = await getSheetsAuthClient();
+        const sheetsApi = google.sheets({ version: "v4", auth: client });
+        const got = await sheetsApi.spreadsheets.get({
+            spreadsheetId: SPREADSHEET_ID,
+            fields: "properties.title,sheets.properties(title)"
+        });
+        /** @type {Array<{ properties?: { title?: string } }>} */
+        const sh = Array.isArray(got.data.sheets) ? got.data.sheets : [];
+        const tabNames = sh
+            .map((x) =>
+                x && x.properties && typeof x.properties.title === "string"
+                    ? x.properties.title.trim()
+                    : ""
+            )
+            .filter(Boolean);
+        const title =
+            got.data.properties && typeof got.data.properties.title === "string"
+                ? got.data.properties.title.trim()
+                : "";
+        return {
+            ok: true,
+            title,
+            tabNames,
+            configuredRangeTab: tabNameFromRange(RANGE)
+        };
+    } catch (e) {
+        const msg = e && /** @type {{ message?: string }} */ (e).message
+            ? String(/** @type {{ message?: string }} */ (e).message)
+            : String(e);
+        return { ok: false, code: "spreadsheets_get_failed", message: msg.slice(0, 500) };
+    }
+}

@@ -13040,24 +13040,37 @@ function submitContactForm(event) {
 
             if (status) {
                 let line = responsePayload.message || getTranslation("statusSubmitted");
+                const si =
+                    responsePayload.sheet_integration && typeof responsePayload.sheet_integration === "object"
+                        ? responsePayload.sheet_integration
+                        : null;
                 const sh =
                     responsePayload.sheet && typeof responsePayload.sheet === "object"
                         ? responsePayload.sheet
                         : null;
-                if (
-                    sh
-                    && sh.action === "duplicate_noop"
-                    && sh.patched === false
-                ) {
-                    const tabHint =
-                        typeof sh.tab === "string" && sh.tab.trim()
-                            ? ` (${sh.tab})`
-                            : "";
-                    line += ` Sheet: no cell changes (duplicate session row)${tabHint}. Check column F matches this visit or verify Railway SHEETS_RANGE / spreadsheet tab.`;
+                if (si && si.enabled === false) {
+                    const r = typeof si.reason === "string" ? si.reason.trim() : "";
+                    const h = typeof si.hint === "string" ? si.hint.trim() : "";
+                    line = `${line} • Sheets: OFF — ${r}${h ? ` ${h}` : ""}`.trim();
+                    status.textContent = line;
+                    status.classList.remove("is-success");
+                    status.classList.add("is-error");
+                } else {
+                    if (
+                        sh
+                        && sh.action === "duplicate_noop"
+                        && sh.patched === false
+                    ) {
+                        const tabHint =
+                            typeof sh.tab === "string" && sh.tab.trim()
+                                ? ` (${sh.tab})`
+                                : "";
+                        line += ` Sheet: no cell changes (duplicate session row)${tabHint}. Check column F matches this visit or verify Railway SHEETS_RANGE / spreadsheet tab.`;
+                    }
+                    status.textContent = line;
+                    status.classList.add("is-success");
+                    status.classList.remove("is-error");
                 }
-                status.textContent = line;
-                status.classList.add("is-success");
-                status.classList.remove("is-error");
             }
 
             const summaryForChat = chatSummaryPayload != null ? chatSummaryPayload : payload;
