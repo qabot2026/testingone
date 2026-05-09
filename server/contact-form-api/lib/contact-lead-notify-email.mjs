@@ -16,6 +16,9 @@
  *
  * Debug (Railway Logs):
  *   CONTACT_LEAD_EMAIL_DEBUG=1 — log every outcome (skipped / sent / SMTP error).
+ *   CONTACT_LEAD_ATTACH_OUTCOME_IN_JSON=1 — add `lead_email` to POST /contact-form-submissions JSON (debug only).
+ *
+ * Sends when there is ANY of: visitor name/email/mobile OR a picked appointment slot (date + time).
  *
  * Optional: CONTACT_LEAD_NOTIFY_ON_MOBILE_SYNC=1 (see index.mjs comment).
  */
@@ -42,7 +45,7 @@ export function logContactLeadEmailBoot() {
     const missing = missingContactLeadEmailEnvKeys_();
     if (!missing.length) {
         console.log(
-            "[contact-lead-notify-email] READY — lead emails send after successful contact-form save (visitor name/email/mobile)."
+            "[contact-lead-notify-email] READY — after save: visitor name/email/mobile OR appointment date+time triggers email."
         );
         return;
     }
@@ -116,6 +119,35 @@ function getTransporter_() {
 }
 
 /**
+ * Quick SMTP login test (runs after server boot). Logs only success/failure message.
+ */
+export async function verifyContactLeadSmtpOnBoot() {
+    if (!isContactLeadEmailConfigured()) {
+        return;
+    }
+    try {
+        await getTransporter_().verify();
+        console.log("[contact-lead-notify-email] SMTP verify OK (login/host reachable).");
+    } catch (e) {
+        const msg = e && e.message ? e.message : String(e);
+        console.error("[contact-lead-notify-email] SMTP verify FAILED — fix SMTP_* / password / port:", msg);
+    }
+}
+
+/**
+ * @param {{ skipped?: boolean, reason?: string, sent?: boolean, error?: string }} r
+ * @returns {Record<string, string>}
+ */
+export function formatLeadEmailOutcomeForJson(r) {
+    if (r.sent) return { status: "sent" };
+    if (typeof r.error === "string" && r.error.trim()) {
+        return { status: "error", detail: r.error.trim().slice(0, 400) };
+    }
+    if (r.skipped) return { status: "skipped", reason: String(r.reason || "") };
+    return { status: "unknown" };
+}
+
+/**
  * @param {Record<string, string>} fields
  * @param {number} maxLen
  * @returns {string}
@@ -167,7 +199,11 @@ export async function maybeSendContactLeadNotifyEmail(args) {
     const name = t_(args.name);
     const email = t_(args.email);
     const mobile = t_(args.mobile);
-    if (!name && !email && !mobile) {
+    const apptDEarly = t_(args.appointmentDate);
+    const apptTEarly = t_(args.appointmentTime);
+    const hasAppointmentPick = Boolean(apptDEarly && apptTEarly);
+    /** General appointment forms often omit inline name fields; date+time still counts as a lead. */
+    if (!name && !email && !mobile && !hasAppointmentPick) {
         const r = { skipped: true, reason: "no_contact_fields" };
         logOutcome_(r);
         return r;
@@ -193,7 +229,9 @@ export async function maybeSendContactLeadNotifyEmail(args) {
 
     const subjectPrefix = (process.env.CONTACT_LEAD_NOTIFY_SUBJECT || "New chat lead").trim();
     const source = t_(args.source) || "contact-form";
-    const subject = `${subjectPrefix} — ${name || email || mobile || "lead"}`;
+    const subjectTail =
+        name || email || mobile || (hasAppointmentPick ? `${apptDEarly} ${apptTEarly}`.trim() : "lead");
+    const subject = `${subjectPrefix} — ${subjectTail}`;
 
     const lines = [
         `Source: ${source}`,
@@ -211,11 +249,9 @@ export async function maybeSendContactLeadNotifyEmail(args) {
         ""
     ];
 
-    const apptD = t_(args.appointmentDate);
-    const apptT = t_(args.appointmentTime);
-    if (apptD || apptT) {
+    if (apptDEarly || apptTEarly) {
         lines.push(
-            `Appointment: ${apptD || "—"} ${apptT || ""}`.trim(),
+            `Appointment: ${apptDEarly || "—"} ${apptTEarly || ""}`.trim(),
             `Appointment booked: ${t_(args.appointmentBooked) || "—"}`,
             ""
         );

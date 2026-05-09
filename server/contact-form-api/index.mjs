@@ -70,9 +70,11 @@ import {
     resolvedGeneralAppointmentSlotMinutes_
 } from "./lib/company-general-appointment.mjs";
 import {
+    formatLeadEmailOutcomeForJson,
     logContactLeadEmailBoot,
     maybeSendContactLeadNotifyEmail,
-    missingContactLeadEmailEnvKeys_
+    missingContactLeadEmailEnvKeys_,
+    verifyContactLeadSmtpOnBoot
 } from "./lib/contact-lead-notify-email.mjs";
 
 const APPS_SCRIPT_WEBAPP_URL = (process.env.GOOGLE_APPS_SCRIPT_WEBAPP_URL || "").trim();
@@ -1841,7 +1843,7 @@ app.post(
                 };
                 out.sheet = writeBlock;
             }
-            void maybeSendContactLeadNotifyEmail({
+            const leadEmailPayload = {
                 source: "contact-form",
                 formId,
                 name,
@@ -1857,9 +1859,24 @@ app.post(
                 submittedAtIso,
                 fields,
                 ip
-            }).catch((e) => {
-                console.error("[contact-form-api] lead notify email", e && e.message ? e.message : e);
-            });
+            };
+            const attachLeadEmail =
+                (process.env.CONTACT_LEAD_ATTACH_OUTCOME_IN_JSON || "").trim() === "1";
+            if (attachLeadEmail) {
+                try {
+                    const er = await maybeSendContactLeadNotifyEmail(leadEmailPayload);
+                    out.lead_email = formatLeadEmailOutcomeForJson(er);
+                } catch (em) {
+                    out.lead_email = {
+                        status: "error",
+                        detail: em && em.message ? String(em.message).slice(0, 400) : String(em)
+                    };
+                }
+            } else {
+                void maybeSendContactLeadNotifyEmail(leadEmailPayload).catch((e) => {
+                    console.error("[contact-form-api] lead notify email", e && e.message ? e.message : e);
+                });
+            }
             return res.status(200).json(out);
         } catch (err) {
             const message = err && err.message ? err.message : "Save failed";
@@ -2232,6 +2249,7 @@ app.get("/", (_req, res) => {
 
 app.listen(PORT, () => {
     logContactLeadEmailBoot();
+    void verifyContactLeadSmtpOnBoot();
     const sheetHint = SHEETS_DISABLED ? "(Sheets OFF)" : "(Sheets ON)";
     const fsHint = FIRESTORE_DISABLED ? "Firestore OFF" : "Firestore ON";
     const driveHint = DISABLE_DRIVE_UPLOAD
