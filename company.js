@@ -5975,7 +5975,62 @@ function syncContactFormAppointmentModeClass_() {
     formRoot.classList.toggle("dfchat-contact-form--has-appointment", hasAppointment);
 }
 
+/**
+ * Before replacing inline form markup, persist name/mobile/email typed in the current form into
+ * `client_context` so opening the appointment form (or another form step) keeps what the visitor already entered.
+ */
+function mergeContactIdentityFieldsFromLiveDomIntoStoredContext_() {
+    try {
+        const slot = document.getElementById("dfchat-contact-form-inputs");
+        if (!slot) {
+            return;
+        }
+        const prev = readStoredClientContext();
+        /** @type {Record<string, unknown>} */
+        const next = Object.assign({}, prev);
+        let changed = false;
+        /** @type {Record<string, true>} */
+        const tracked = { name: true, email: true, mobile: true };
+        const nodes = slot.querySelectorAll(
+            "input.dfchat-contact-form__control[name], textarea.dfchat-contact-form__control[name]"
+        );
+        for (let i = 0; i < nodes.length; i += 1) {
+            const el = nodes[i];
+            const nmRaw = typeof el.getAttribute === "function" ? el.getAttribute("name") : "";
+            const nm = typeof nmRaw === "string" ? nmRaw.trim() : "";
+            if (!nm || !tracked[nm]) {
+                continue;
+            }
+            const input = /** @type {HTMLInputElement | HTMLTextAreaElement} */ (el);
+            const typ = typeof input.type === "string" ? input.type.toLowerCase() : "";
+            if (typ === "hidden" || typ === "file") {
+                continue;
+            }
+            if (!Object.prototype.hasOwnProperty.call(input, "value")) {
+                continue;
+            }
+            const v = dfParameterScalarToString(input.value);
+            if (!v) {
+                continue;
+            }
+            if (nm === "email" && !EMAIL_VALIDATION_RE.test(v)) {
+                continue;
+            }
+            if (String(next[nm] || "").trim() !== v) {
+                next[nm] = v;
+                changed = true;
+            }
+        }
+        if (changed) {
+            persistClientContext(next);
+        }
+    } catch {
+        /* ignore */
+    }
+}
+
 function mountContactFormFieldsFromConfig() {
+    mergeContactIdentityFieldsFromLiveDomIntoStoredContext_();
     const slot = document.getElementById("dfchat-contact-form-inputs");
     if (!slot) {
         return;
