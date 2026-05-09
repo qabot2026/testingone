@@ -6,8 +6,12 @@ let contactFormOpenTimer = null;
 let contactFormOpenPending = false;
 /** Extra keys from the latest `open_form` custom payload; applied when the contact form opens (e.g. name, mobile, email). */
 let pendingOpenFormPrefill = /** @type {Record<string, string> | null} */ (null);
-/** Optional: next form to open after this form submits (set via Dialogflow `open_form` payload). */
-let pendingNextFormIdAfterSubmit = "";
+/**
+ * Queue of form keys (`common.form.forms`) to open after each successful submit (FIFO).
+ * Populated from Dialogflow `open_form` via `next_form_id`, `next_form_ids`, `following_form_id`, `third_form_id`, …
+ * @type {string[]}
+ */
+let pendingNextFormIdsAfterSubmit = [];
 /** @type {string | null} Which `common.form.forms[…]` is active; `null` until first `readContactFormConfig()`. */
 let activeContactFormId = null;
 let activeDfMessenger = null;
@@ -12117,21 +12121,20 @@ function handleDfResponseReceived(event) {
             mergePhoneFromOpenFormPrefillIntoStoredContext(pendingOpenFormPrefill);
             mergeContactHintsFromOpenFormPrefillIntoStoredContext(pendingOpenFormPrefill);
         }
-        pendingNextFormIdAfterSubmit = extractNextFormIdFromOpenFormEvent_(event);
+        pendingNextFormIdsAfterSubmit = extractNextFormChainFromOpenFormEvent_(event);
         const skipContactUi =
             readContactFormConfig().formKey === "contact" && sessionHasNameAndMobileForSkip_();
         if (skipContactUi) {
             contactFormOpenPending = false;
-            const chainNextRaw = pendingNextFormIdAfterSubmit;
-            pendingNextFormIdAfterSubmit = "";
             const frSkip = readCommonFormConfigRoot();
             const formsSkip = frSkip && frSkip.forms && typeof frSkip.forms === "object" ? frSkip.forms : null;
-            const chainNext = chainNextRaw ? canonicalContactFormId_(chainNextRaw) : "";
-            if (chainNext && formsSkip && formsSkip[chainNext]) {
-                // Contact already satisfied in session (e.g. filled in another intent) — open chained form now.
+            const chainNext = consumeNextRegisteredFormFromPendingChain_(formsSkip);
+            if (chainNext) {
+                // Contact already satisfied in session (e.g. filled in another intent) — open first queued form now.
                 setActiveContactFormId(chainNext);
                 contactFormOpenPending = true;
             } else {
+                pendingNextFormIdsAfterSubmit = [];
                 pendingOpenFormPrefill = null;
             }
         } else {
@@ -12592,12 +12595,30 @@ function extractOpenFormPrefillFromEvent(event) {
 }
 
 /**
- * Read `next_form_id` / `nextFormId` from any `open_form` payload.
- * Used to chain forms dynamically: contact → upload/appointment/feedback/otp (decided by intent).
- * @param {Event} event
- * @returns {string}
+ * Canonical form keys queued for after-submit opens (FIFO). Unknown ids are skipped at consume time.
+ * @param {string} raw
  */
-function extractNextFormIdFromOpenFormEvent_(event) {
+function pushCanonicalChainId_(chain, raw) {
+    const s = raw != null && String(raw).trim() ? String(raw).trim() : "";
+    if (!s) {
+        return;
+    }
+    chain.push(canonicalContactFormId_(s));
+}
+
+/**
+ * Read chained form ids from any `open_form` payload — supports 2+ forms in one intent.
+ *
+ * Accepted shapes (combined in order when present):
+ * - `next_form_ids` / `nextFormIds`: array of form keys (preferred for arbitrary length).
+ * - `next_form_id` / `nextFormId`: first follower.
+ * - `following_form_id` / `followingFormId` / `second_form_id` / `secondFormId`: next after that.
+ * - `third_form_id` / `thirdFormId` (and `fourth_form_id` / `fourthFormId` for a 4-step chain).
+ *
+ * @param {Event} event
+ * @returns {string[]}
+ */
+function extractNextFormChainFromOpenFormEvent_(event) {
     const responseMessages = event && event.detail && event.detail.raw && event.detail.raw.queryResult
         && Array.isArray(event.detail.raw.queryResult.responseMessages)
         ? event.detail.raw.queryResult.responseMessages
@@ -12610,15 +12631,79 @@ function extractNextFormIdFromOpenFormEvent_(event) {
         if (!payload || payload.action !== CONTACT_FORM_OPEN_ACTION) {
             continue;
         }
-        const raw =
-            (payload.next_form_id != null && String(payload.next_form_id).trim()
-                ? String(payload.next_form_id).trim()
-                : "")
-            || (payload.nextFormId != null && String(payload.nextFormId).trim()
-                ? String(payload.nextFormId).trim()
-                : "");
-        if (raw) {
-            return canonicalContactFormId_(raw);
+        /** @type {string[]} */
+        const chain = [];
+        const arr = payload.next_form_ids != null ? payload.next_form_ids : payload.nextFormIds;
+        let builtFromExplicitArrayOnly = false;
+        if (Array.isArray(arr)) {
+            for (let i = 0; i < arr.length; i += 1) {
+                pushCanonicalChainId_(chain, arr[i]);
+            }
+            builtFromExplicitArrayOnly = chain.length > 0;
+        }
+
+        if (!builtFromExplicitArrayOnly) {
+            pushCanonicalChainId_(chain,
+                payload.next_form_id != null && String(payload.next_form_id).trim()
+                    ? String(payload.next_form_id).trim()
+                    : payload.nextFormId != null && String(payload.nextFormId).trim()
+                        ? String(payload.nextFormId).trim()
+                        : "");
+            pushCanonicalChainId_(chain,
+                payload.following_form_id != null && String(payload.following_form_id).trim()
+                    ? String(payload.following_form_id).trim()
+                    : payload.followingFormId != null && String(payload.followingFormId).trim()
+                        ? String(payload.followingFormId).trim()
+                        : payload.second_form_id != null && String(payload.second_form_id).trim()
+                            ? String(payload.second_form_id).trim()
+                            : payload.secondFormId != null && String(payload.secondFormId).trim()
+                                ? String(payload.secondFormId).trim()
+                                : "");
+            pushCanonicalChainId_(chain,
+                payload.third_form_id != null && String(payload.third_form_id).trim()
+                    ? String(payload.third_form_id).trim()
+                    : payload.thirdFormId != null && String(payload.thirdFormId).trim()
+                        ? String(payload.thirdFormId).trim()
+                        : "");
+            pushCanonicalChainId_(chain,
+                payload.fourth_form_id != null && String(payload.fourth_form_id).trim()
+                    ? String(payload.fourth_form_id).trim()
+                    : payload.fourthFormId != null && String(payload.fourthFormId).trim()
+                        ? String(payload.fourthFormId).trim()
+                        : "");
+        }
+
+        if (chain.length) {
+            /** De-dupe consecutive duplicates often caused by overlapping keys. */
+            const deduped = [];
+            let prev = "";
+            for (let d = 0; d < chain.length; d += 1) {
+                const cur = chain[d];
+                if (cur && cur !== prev) {
+                    deduped.push(cur);
+                    prev = cur;
+                }
+            }
+            return deduped.length ? deduped : [];
+        }
+    }
+    return [];
+}
+
+/**
+ * Pop until the head is registered in `forms`; mutates {@link pendingNextFormIdsAfterSubmit}.
+ * @param {Record<string, unknown> | null} forms `common.form.forms`
+ * @returns {string} canonical registered id or ""
+ */
+function consumeNextRegisteredFormFromPendingChain_(forms) {
+    if (!forms || typeof forms !== "object" || !pendingNextFormIdsAfterSubmit.length) {
+        return "";
+    }
+    while (pendingNextFormIdsAfterSubmit.length) {
+        const head = pendingNextFormIdsAfterSubmit.shift();
+        const id = head ? canonicalContactFormId_(String(head).trim()) : "";
+        if (id && Object.prototype.hasOwnProperty.call(forms, id)) {
+            return id;
         }
     }
     return "";
@@ -13311,18 +13396,18 @@ function submitContactForm(event) {
             }
 
             closeForm();
-            // Optional chaining: open another named form right after a successful submit.
-            // Useful for "contact → upload" flows driven by a single intent.
+            // Optional chaining: open the next queued form after each successful submit (FIFO).
             try {
                 const fr = readCommonFormConfigRoot();
                 const forms = fr && fr.forms && typeof fr.forms === "object" ? fr.forms : null;
-                const nextFormIdRaw =
-                    pendingNextFormIdAfterSubmit
-                    || (cfg0 && typeof cfg0.nextFormId === "string" ? cfg0.nextFormId.trim() : "");
-                const nextFormId = typeof nextFormIdRaw === "string" ? nextFormIdRaw.trim() : "";
-                if (nextFormId && forms && forms[canonicalContactFormId_(nextFormId)]) {
-                    const resolvedNext = canonicalContactFormId_(nextFormId);
-                    pendingNextFormIdAfterSubmit = "";
+                let resolvedNext = consumeNextRegisteredFormFromPendingChain_(forms);
+                if (!resolvedNext && cfg0 && typeof cfg0.nextFormId === "string" && cfg0.nextFormId.trim()) {
+                    const cand = canonicalContactFormId_(cfg0.nextFormId.trim());
+                    if (forms && forms[cand]) {
+                        resolvedNext = cand;
+                    }
+                }
+                if (resolvedNext && forms && forms[resolvedNext]) {
                     window.setTimeout(() => {
                         setActiveContactFormId(resolvedNext);
                         openContactForm();

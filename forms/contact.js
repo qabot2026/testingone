@@ -17,7 +17,7 @@
     },
     showSubtitle: true,
     maxCardHeightPx: 300,
-    // Optional static chaining. Prefer Dialogflow-controlled chaining via `next_form_id` in the `open_form` payload.
+    // Optional static chaining. Prefer Dialogflow `open_form`: `next_form_id` + `following_form_id` + `third_form_id`, or `next_form_ids` array.
     // nextFormId: "uploadDocument",
     chatSummaryFieldNames: ["name", "mobile", "email"],
     fields: [
