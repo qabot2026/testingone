@@ -69,7 +69,11 @@ import {
     mergedGeneralAppointmentSchedule_,
     resolvedGeneralAppointmentSlotMinutes_
 } from "./lib/company-general-appointment.mjs";
-import { maybeSendContactLeadNotifyEmail } from "./lib/contact-lead-notify-email.mjs";
+import {
+    logContactLeadEmailBoot,
+    maybeSendContactLeadNotifyEmail,
+    missingContactLeadEmailEnvKeys_
+} from "./lib/contact-lead-notify-email.mjs";
 
 const APPS_SCRIPT_WEBAPP_URL = (process.env.GOOGLE_APPS_SCRIPT_WEBAPP_URL || "").trim();
 
@@ -2151,6 +2155,26 @@ app.post(
 app.get("/health", (_req, res) => res.status(200).send("ok"));
 
 /** Debugging: Sheets env + optional live read probe (spreadsheet tabs / permissions). */
+/** JSON: which lead-email env vars are set (no secrets). Open after deploy to verify Railway. */
+app.get("/contact-form-email-health", (_req, res) => {
+    const missing = missingContactLeadEmailEnvKeys_();
+    return res.status(200).json({
+        ok: missing.length === 0,
+        lead_email_ready: missing.length === 0,
+        missing_env: missing,
+        has_notify_to: !!(process.env.CONTACT_LEAD_NOTIFY_TO || "").trim(),
+        has_smtp_host: !!(process.env.SMTP_HOST || "").trim(),
+        has_smtp_user: !!(process.env.SMTP_USER || "").trim(),
+        has_smtp_pass: !!(process.env.SMTP_PASS || process.env.SMTP_PASSWORD || "").trim(),
+        mail_from_set: !!(process.env.MAIL_FROM || "").trim(),
+        smtp_port: Number(process.env.SMTP_PORT) || 587,
+        hint:
+            missing.length
+                ? "Set the missing_* names in Railway Variables for this service, redeploy, then submit the contact form with name + phone or email."
+                : "Env looks complete. If still no mail: check Railway Logs for [contact-lead-notify-email], set CONTACT_LEAD_EMAIL_DEBUG=1, submit form again, use a real App Password for Gmail."
+    });
+});
+
 app.get("/contact-form-sheets-health", async (_req, res) => {
     try {
         const id = (process.env.SHEETS_SPREADSHEET_ID || "").trim();
@@ -2197,6 +2221,7 @@ app.get("/", (_req, res) => {
             `POST JSON (session queries) → ${PATHNAME_SESSION_SHEET_SYNC}`,
             `GET /health → health check.`,
             `GET /contact-form-sheets-health → JSON: Sheets env + tab names (spreadsheet READ probe).`,
+            `GET /contact-form-email-health → JSON: lead email env (no secrets; check missing_env).`,
             CATALOG_SYNC_SECRET
                 ? `POST ${PATHNAME_CATALOG_SYNC} + X-Catalog-Sync-Secret → push doctors/branches catalog (JSON) to RTDB.`
                 : `Set CATALOG_SYNC_SECRET + redeploy → POST ${PATHNAME_CATALOG_SYNC} to sync catalog JSON to RTDB.`,
@@ -2206,6 +2231,7 @@ app.get("/", (_req, res) => {
 });
 
 app.listen(PORT, () => {
+    logContactLeadEmailBoot();
     const sheetHint = SHEETS_DISABLED ? "(Sheets OFF)" : "(Sheets ON)";
     const fsHint = FIRESTORE_DISABLED ? "Firestore OFF" : "Firestore ON";
     const driveHint = DISABLE_DRIVE_UPLOAD

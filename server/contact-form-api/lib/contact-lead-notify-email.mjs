@@ -14,10 +14,64 @@
  *   SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS — mail server login.
  *   CONTACT_LEAD_NOTIFY_SUBJECT — optional subject prefix.
  *
+ * Debug (Railway Logs):
+ *   CONTACT_LEAD_EMAIL_DEBUG=1 — log every outcome (skipped / sent / SMTP error).
+ *
  * Optional: CONTACT_LEAD_NOTIFY_ON_MOBILE_SYNC=1 (see index.mjs comment).
  */
 
 import nodemailer from "nodemailer";
+
+/** @returns {string[]} */
+export function missingContactLeadEmailEnvKeys_() {
+    /** @type {string[]} */
+    const missing = [];
+    if (!(process.env.CONTACT_LEAD_NOTIFY_TO || "").trim()) missing.push("CONTACT_LEAD_NOTIFY_TO");
+    if (!(process.env.SMTP_HOST || "").trim()) missing.push("SMTP_HOST");
+    if (!(process.env.SMTP_USER || "").trim()) missing.push("SMTP_USER");
+    if (!(process.env.SMTP_PASS || process.env.SMTP_PASSWORD || "").trim()) {
+        missing.push("SMTP_PASS (or SMTP_PASSWORD)");
+    }
+    return missing;
+}
+
+/**
+ * Call once when the server starts (see index.mjs). No secrets logged.
+ */
+export function logContactLeadEmailBoot() {
+    const missing = missingContactLeadEmailEnvKeys_();
+    if (!missing.length) {
+        console.log(
+            "[contact-lead-notify-email] READY — lead emails send after successful contact-form save (visitor name/email/mobile)."
+        );
+        return;
+    }
+    const hinted = !!(process.env.CONTACT_LEAD_NOTIFY_TO || "").trim()
+        || !!(process.env.SMTP_HOST || "").trim();
+    if (hinted) {
+        console.warn(
+            `[contact-lead-notify-email] NOT ready — missing env: ${missing.join(", ")}. Fix in Railway Variables, redeploy.`
+        );
+    }
+}
+
+/** @param {{ skipped?: boolean, reason?: string, sent?: boolean, error?: string, missing_env?: string[] }} r */
+function logOutcome_(r) {
+    const dbg = (process.env.CONTACT_LEAD_EMAIL_DEBUG || "").trim() === "1";
+    if (dbg) {
+        const extra =
+            r.missing_env && r.missing_env.length ? ` missing_env=${r.missing_env.join(",")}` : "";
+        console.log(
+            "[contact-lead-notify-email] outcome:",
+            r.sent ? "sent_ok" : r.error ? `error:${r.error}` : `skipped:${r.reason || "?"}${extra}`
+        );
+        return;
+    }
+    if (r.sent) return;
+    if (r.skipped && r.reason === "not_configured") return;
+    if (r.skipped) console.warn("[contact-lead-notify-email] skipped:", r.reason);
+    if (typeof r.error === "string" && r.error.trim()) console.error("[contact-lead-notify-email] SMTP:", r.error.trim());
+}
 
 /**
  * @returns {boolean}
@@ -54,7 +108,9 @@ function getTransporter_() {
         host,
         port,
         secure,
-        auth: { user, pass }
+        auth: { user, pass },
+        // Port 587 = STARTTLS; helps Gmail / Office365 refuse less often.
+        ...(!secure && port === 587 ? { requireTLS: true } : {})
     });
     return transporterCache;
 }
@@ -103,14 +159,18 @@ function formatFieldsBlock_(fields, maxLen) {
  */
 export async function maybeSendContactLeadNotifyEmail(args) {
     if (!isContactLeadEmailConfigured()) {
-        return { skipped: true, reason: "not_configured" };
+        const r = { skipped: true, reason: "not_configured", missing_env: missingContactLeadEmailEnvKeys_() };
+        logOutcome_(r);
+        return r;
     }
 
     const name = t_(args.name);
     const email = t_(args.email);
     const mobile = t_(args.mobile);
     if (!name && !email && !mobile) {
-        return { skipped: true, reason: "no_contact_fields" };
+        const r = { skipped: true, reason: "no_contact_fields" };
+        logOutcome_(r);
+        return r;
     }
 
     const toRaw = (process.env.CONTACT_LEAD_NOTIFY_TO || "").trim();
@@ -119,12 +179,16 @@ export async function maybeSendContactLeadNotifyEmail(args) {
         .map((x) => x.trim())
         .filter(Boolean);
     if (!toList.length) {
-        return { skipped: true, reason: "no_recipients" };
+        const r = { skipped: true, reason: "no_recipients" };
+        logOutcome_(r);
+        return r;
     }
 
     const fromAddr = (process.env.MAIL_FROM || process.env.SMTP_USER || "").trim();
     if (!fromAddr) {
-        return { skipped: true, reason: "no_from" };
+        const r = { skipped: true, reason: "no_from_set_MAIL_FROM_or_SMTP_USER" };
+        logOutcome_(r);
+        return r;
     }
 
     const subjectPrefix = (process.env.CONTACT_LEAD_NOTIFY_SUBJECT || "New chat lead").trim();
@@ -187,10 +251,14 @@ export async function maybeSendContactLeadNotifyEmail(args) {
             mail.cc = ccList.join(", ");
         }
         await tx.sendMail(mail);
-        return { sent: true };
+        const ok = /** @type {const} */ ({ sent: true });
+        logOutcome_(ok);
+        return ok;
     } catch (e) {
         const msg = e && e.message ? e.message : String(e);
         console.error("[contact-lead-notify-email] send failed:", msg);
-        return { error: msg };
+        const r = { error: msg };
+        logOutcome_(r);
+        return r;
     }
 }
