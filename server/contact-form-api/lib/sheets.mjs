@@ -46,6 +46,74 @@ function tabNameFromRange(raw) {
     return s.slice(0, bang) || "Sheet1";
 }
 
+function normalizedHeaderKey_(s) {
+    return String(s || "")
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, "");
+}
+
+function columnLetterFromIndex_(idx0) {
+    let n = idx0 + 1; // 1-based
+    let out = "";
+    while (n > 0) {
+        const rem = (n - 1) % 26;
+        out = String.fromCharCode(65 + rem) + out;
+        n = Math.floor((n - 1) / 26);
+    }
+    return out;
+}
+
+let headerCache_ = { tab: "", at: 0, mobileColIdx: 3, mobileColLetter: "D" };
+const HEADER_CACHE_TTL_MS = 5 * 60 * 1000;
+
+/**
+ * Detect mobile column position by header row.
+ * Falls back to the default schema (column D) if not found.
+ *
+ * @param {import("googleapis").sheets_v4.Sheets} sheets
+ * @param {string} tab
+ */
+async function getMobileColumnInfo_(sheets, tab) {
+    const now = Date.now();
+    if (headerCache_.tab === tab && now - headerCache_.at < HEADER_CACHE_TTL_MS) {
+        return headerCache_;
+    }
+    let mobileColIdx = 3;
+    let mobileColLetter = "D";
+    try {
+        const got = await sheets.spreadsheets.values.get({
+            spreadsheetId: SPREADSHEET_ID,
+            range: `${tab}!1:1`
+        });
+        const header = Array.isArray(got.data.values) && got.data.values[0] ? got.data.values[0] : [];
+        const want = new Set([
+            "mobile",
+            "phone",
+            "phonenumber",
+            "mobile_number",
+            "mobilenumber",
+            "contact",
+            "contactnumber",
+            "contactno",
+            "whatsapp",
+            "whatsappnumber"
+        ].map(normalizedHeaderKey_));
+        for (let i = 0; i < header.length; i += 1) {
+            const k = normalizedHeaderKey_(sheetCellString_(header[i]));
+            if (k && want.has(k)) {
+                mobileColIdx = i;
+                mobileColLetter = columnLetterFromIndex_(i);
+                break;
+            }
+        }
+    } catch {
+        // ignore
+    }
+    headerCache_ = { tab, at: now, mobileColIdx, mobileColLetter };
+    return headerCache_;
+}
+
 /** @param {string} s */
 function mobileDigitsOnly(s) {
     return String(s || "").replace(/\D/g, "");
@@ -85,13 +153,16 @@ function mobileKeyFromCell_(rawCell) {
     return digits;
 }
 
-/** Best-effort mobile key from a whole sheet row (handles column reorders). @param {unknown[]} r */
-function mobileKeyFromRow_(r) {
+/** Best-effort mobile key from a whole sheet row (handles column reorders). @param {unknown[]} r @param {number} mobileColIdx */
+function mobileKeyFromRow_(r, mobileColIdx) {
     if (!Array.isArray(r) || !r.length) {
         return "";
     }
-    // Prefer the default schema column D first.
-    const primary = mobileKeyFromCell_(r[3]);
+    const idx = typeof mobileColIdx === "number" && Number.isFinite(mobileColIdx)
+        ? mobileColIdx
+        : 3;
+    // Prefer detected mobile column first.
+    const primary = mobileKeyFromCell_(r[idx]);
     if (primary) {
         return primary;
     }
@@ -192,6 +263,7 @@ function buildDedupeKey(row) {
 async function scanSheetTailForDedupeAndRepeat_(sheets, row) {
     const key = buildDedupeKey(row);
     const tab = tabNameFromRange(RANGE);
+    const mobileCol = await getMobileColumnInfo_(sheets, tab);
     const res = await sheets.spreadsheets.values.get({
         spreadsheetId: SPREADSHEET_ID,
         // Use a wide range so dedupe works even if your sheet has more columns than expected
@@ -214,7 +286,7 @@ async function scanSheetTailForDedupeAndRepeat_(sheets, row) {
     if (incomingMobileDigits) {
         for (let i = 0; i < rows.length; i += 1) {
             const r = rows[i] || [];
-            const existingKey = mobileKeyFromRow_(/** @type {unknown[]} */ (r));
+            const existingKey = mobileKeyFromRow_(/** @type {unknown[]} */ (r), mobileCol.mobileColIdx);
             if (!existingKey || existingKey !== incomingMobileDigits) {
                 continue;
             }
@@ -230,7 +302,7 @@ async function scanSheetTailForDedupeAndRepeat_(sheets, row) {
         try {
             const col = await sheets.spreadsheets.values.get({
                 spreadsheetId: SPREADSHEET_ID,
-                range: `${tab}!D:D`
+                range: `${tab}!${mobileCol.mobileColLetter}:${mobileCol.mobileColLetter}`
             });
             const colRows = Array.isArray(col.data.values) ? col.data.values : [];
             for (let i = 0; i < colRows.length; i += 1) {
