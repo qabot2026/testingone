@@ -112,9 +112,9 @@ function getTransporter_() {
     const pass = (process.env.SMTP_PASS || process.env.SMTP_PASSWORD || "").trim();
     const secureRaw = (process.env.SMTP_SECURE || "").trim().toLowerCase();
     const secure = secureRaw === "1" || secureRaw === "true" || port === 465;
-    /** Nodemailer default connectionTimeout is ~60s — makes the contact form feel “stuck”. */
+    /** Connect/TLS handshake; keep below huge values so bogus hosts fail in reasonable time on boot. */
     const connMs = Math.min(
-        Math.max(Number(process.env.CONTACT_LEAD_SMTP_CONNECT_TIMEOUT_MS) || 12000, 3000),
+        Math.max(Number(process.env.CONTACT_LEAD_SMTP_CONNECT_TIMEOUT_MS) || 20000, 3000),
         120000
     );
     transporterCache = nodemailer.createTransport({
@@ -138,9 +138,16 @@ export async function verifyContactLeadSmtpOnBoot() {
     if (!isContactLeadEmailConfigured()) {
         return;
     }
+    const port = Number(process.env.SMTP_PORT) || 587;
+    const host = (process.env.SMTP_HOST || "").trim();
+    /** Must exceed TCP+STARTTLS/handshake (`CONTACT_LEAD_SMTP_CONNECT_TIMEOUT_MS`), or races short and looks like flaky SMTP on Railway/cloud. */
     const verifyMs = Math.min(
-        Math.max(Number(process.env.CONTACT_LEAD_SMTP_VERIFY_TIMEOUT_MS) || 12000, 3000),
-        60000
+        Math.max(Number(process.env.CONTACT_LEAD_SMTP_VERIFY_TIMEOUT_MS) || 45000, 8000),
+        90000
+    );
+    console.log(
+        `[contact-lead-notify-email] SMTP verify starting host=${host || "(empty)"} port=${port} ` +
+            `(outer budget ${verifyMs}ms — raise CONTACT_LEAD_SMTP_VERIFY_TIMEOUT_MS / CONTACT_LEAD_SMTP_CONNECT_TIMEOUT_MS if needed)`
     );
     try {
         await Promise.race([
@@ -152,7 +159,13 @@ export async function verifyContactLeadSmtpOnBoot() {
         console.log("[contact-lead-notify-email] SMTP verify OK (login/host reachable).");
     } catch (e) {
         const msg = e && e.message ? e.message : String(e);
-        console.error("[contact-lead-notify-email] SMTP verify FAILED — fix SMTP_* / password / port:", msg);
+        console.error(
+            "[contact-lead-notify-email] SMTP verify FAILED — host=" +
+                `${host || "(empty)"} port=${port}: ` +
+                msg +
+                " | Fix SMTP_HOST/SMTP_PORT/SMTP_SECURE, App Password / auth, outbound firewall." +
+                " Try CONTACT_LEAD_SMTP_CONNECT_TIMEOUT_MS=25000 CONTACT_LEAD_SMTP_VERIFY_TIMEOUT_MS=60000"
+        );
     }
 }
 
