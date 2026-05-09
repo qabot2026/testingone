@@ -225,6 +225,31 @@ async function scanSheetTailForDedupeAndRepeat_(sheets, row) {
         }
     }
 
+    // Fallback: scan the entire mobile column directly (more reliable for very large sheets).
+    // This ignores column reorders, but if your sheet follows the documented schema (mobile in column D),
+    // it avoids missing repeats due to API truncation / row-width quirks.
+    if (incomingMobileDigits && !repeatedAcrossSessions) {
+        try {
+            const col = await sheets.spreadsheets.values.get({
+                spreadsheetId: SPREADSHEET_ID,
+                range: `${tab}!D:D`
+            });
+            const colRows = Array.isArray(col.data.values) ? col.data.values : [];
+            for (let i = 0; i < colRows.length; i += 1) {
+                const cell = colRows[i] && colRows[i][0] !== undefined ? colRows[i][0] : "";
+                const existingKey = mobileKeyFromCell_(cell);
+                if (existingKey && existingKey === incomingMobileDigits) {
+                    // We can't safely exclude same-session here (session id isn't in this fetch),
+                    // but repeated is only meaningful for appends (non-duplicate path).
+                    repeatedAcrossSessions = true;
+                    break;
+                }
+            }
+        } catch {
+            /* ignore: keep repeatedAcrossSessions from the primary scan */
+        }
+    }
+
     for (let i = tail.length - 1; i >= 0; i--) {
         const r = tail[i] || [];
         const existingSid = sheetCellString_(r[5]);
