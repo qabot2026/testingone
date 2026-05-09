@@ -114,6 +114,56 @@ async function getMobileColumnInfo_(sheets, tab) {
     return headerCache_;
 }
 
+let repeatedHeaderCache_ = { tab: "", at: 0, repeatedColIdx: 12, repeatedColLetter: "M" };
+
+/**
+ * Detect "Repeated" column position by header row.
+ * Falls back to the default schema (column M) if not found.
+ *
+ * @param {import("googleapis").sheets_v4.Sheets} sheets
+ * @param {string} tab
+ */
+async function getRepeatedColumnInfo_(sheets, tab) {
+    const now = Date.now();
+    if (repeatedHeaderCache_.tab === tab && now - repeatedHeaderCache_.at < HEADER_CACHE_TTL_MS) {
+        return repeatedHeaderCache_;
+    }
+    let repeatedColIdx = 12;
+    let repeatedColLetter = "M";
+    try {
+        const got = await sheets.spreadsheets.values.get({
+            spreadsheetId: SPREADSHEET_ID,
+            range: `${tab}!1:1`
+        });
+        const header = Array.isArray(got.data.values) && got.data.values[0] ? got.data.values[0] : [];
+        const want = new Set(
+            [
+                "repeated",
+                "repeat",
+                "isrepeated",
+                "repeatuser",
+                "repeateduser",
+                "duplicate",
+                "duplicatelead",
+                "existing",
+                "existinguser"
+            ].map(normalizedHeaderKey_)
+        );
+        for (let i = 0; i < header.length; i += 1) {
+            const k = normalizedHeaderKey_(sheetCellString_(header[i]));
+            if (k && want.has(k)) {
+                repeatedColIdx = i;
+                repeatedColLetter = columnLetterFromIndex_(i);
+                break;
+            }
+        }
+    } catch {
+        // ignore
+    }
+    repeatedHeaderCache_ = { tab, at: now, repeatedColIdx, repeatedColLetter };
+    return repeatedHeaderCache_;
+}
+
 /** @param {string} s */
 function mobileDigitsOnly(s) {
     return String(s || "").replace(/\D/g, "");
@@ -394,6 +444,7 @@ async function updateExistingSessionRow_(sheets, tab, rowNumber, incoming, optio
         return { applied: false };
     }
     const preferIncomingContact = !!(options && options.preferIncomingContact);
+    const repeatedCol = await getRepeatedColumnInfo_(sheets, tab);
     const got = await sheets.spreadsheets.values.get({
         spreadsheetId: SPREADSHEET_ID,
         range: `${tab}!A${rowNumber}:N${rowNumber}`
@@ -448,7 +499,7 @@ async function updateExistingSessionRow_(sheets, tab, rowNumber, incoming, optio
     if (fileLinks) data.push({ range: `${tab}!J${rowNumber}`, values: [[fileLinks]] });
     if (city) data.push({ range: `${tab}!K${rowNumber}`, values: [[city]] });
     if (ip) data.push({ range: `${tab}!L${rowNumber}`, values: [[ip]] });
-    if (repeated) data.push({ range: `${tab}!M${rowNumber}`, values: [[repeated]] });
+    if (repeated) data.push({ range: `${tab}!${repeatedCol.repeatedColLetter}${rowNumber}`, values: [[repeated]] });
     if (userQueriesCsv) data.push({ range: `${tab}!N${rowNumber}`, values: [[userQueriesCsv]] });
 
     if (!data.length) {
@@ -612,6 +663,25 @@ export async function appendContactRowToSheet(row, opts) {
             `tab="${tabResolved}"`,
             appendRangeUsed
         );
+    }
+
+    // Ensure the visible "Repeated" column gets set even if your sheet columns are rearranged.
+    // We use the header-detected column and the row number from the append response range.
+    try {
+        const updatedRange = typeof googleAppend.updatedRange === "string" ? googleAppend.updatedRange : "";
+        const m = updatedRange.match(/!([A-Z]+)(\d+)(?::[A-Z]+(\d+))?$/);
+        const rowNumber = m && m[2] ? Number.parseInt(m[2], 10) : 0;
+        if (rowNumber) {
+            const repCol = await getRepeatedColumnInfo_(sheets, tabResolved);
+            await sheets.spreadsheets.values.update({
+                spreadsheetId: SPREADSHEET_ID,
+                range: `${tabResolved}!${repCol.repeatedColLetter}${rowNumber}`,
+                valueInputOption: "USER_ENTERED",
+                requestBody: { values: [[repeated]] }
+            });
+        }
+    } catch {
+        /* ignore */
     }
     return {
         action: "appended",
