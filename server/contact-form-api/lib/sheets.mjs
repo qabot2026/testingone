@@ -209,19 +209,17 @@ async function scanSheetTailForDedupeAndRepeat_(sheets, row) {
     let repeatedAcrossSessions = false;
 
     // Repeated check: scan the full sheet, not just the tail.
+    // Semantics: "Yes" means the mobile already exists in the sheet (including the current session row
+    // when strict session dedupe updates an existing row).
     if (incomingMobileDigits) {
         for (let i = 0; i < rows.length; i += 1) {
             const r = rows[i] || [];
-            const existingSid = Array.isArray(r) ? sheetCellString_(r[5]) : "";
             const existingKey = mobileKeyFromRow_(/** @type {unknown[]} */ (r));
             if (!existingKey || existingKey !== incomingMobileDigits) {
                 continue;
             }
-            const sameSession = incomingSid && existingSid && incomingSid === existingSid;
-            if (!sameSession) {
-                repeatedAcrossSessions = true;
-                break;
-            }
+            repeatedAcrossSessions = true;
+            break;
         }
     }
 
@@ -239,8 +237,6 @@ async function scanSheetTailForDedupeAndRepeat_(sheets, row) {
                 const cell = colRows[i] && colRows[i][0] !== undefined ? colRows[i][0] : "";
                 const existingKey = mobileKeyFromCell_(cell);
                 if (existingKey && existingKey === incomingMobileDigits) {
-                    // We can't safely exclude same-session here (session id isn't in this fetch),
-                    // but repeated is only meaningful for appends (non-duplicate path).
                     repeatedAcrossSessions = true;
                     break;
                 }
