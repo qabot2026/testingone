@@ -12879,6 +12879,8 @@ function submitContactForm(event) {
         fd.append("_contactFormId", cfg0.formKey);
         /** Form `mobile` field value if any (may be empty when chatbot collected the number). */
         let formMobileValue = "";
+        let formNameValue = "";
+        let formEmailValue = "";
         for (const def of fieldDefs) {
             if (!def || !def.id || !def.name) {
                 continue;
@@ -12953,6 +12955,12 @@ function submitContactForm(event) {
                 if (def.name === "mobile") {
                     formMobileValue = v;
                 }
+                if (def.name === "name") {
+                    formNameValue = v;
+                }
+                if (def.name === "email") {
+                    formEmailValue = v;
+                }
             }
         }
         if (isOtpForm && otpStep === "otp") {
@@ -12968,6 +12976,20 @@ function submitContactForm(event) {
             typeof clientSnapshot.mobile === "string" ? clientSnapshot.mobile.trim() : "";
         if (sessionMobile && !formMobileValue) {
             fd.append("mobile", sessionMobile);
+        }
+        const snapNameTrim =
+            typeof clientSnapshot.name === "string" ? clientSnapshot.name.trim() : "";
+        const snapEmailTrim =
+            typeof clientSnapshot.email === "string" ? clientSnapshot.email.trim() : "";
+        if (snapNameTrim && !String(formNameValue || "").trim()) {
+            fd.append("name", snapNameTrim);
+        }
+        if (
+            snapEmailTrim
+            && !String(formEmailValue || "").trim()
+            && EMAIL_VALIDATION_RE.test(snapEmailTrim)
+        ) {
+            fd.append("email", snapEmailTrim);
         }
         fetchBody = fd;
         fetchHeaders = undefined;

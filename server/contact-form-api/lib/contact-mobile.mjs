@@ -155,9 +155,15 @@ const CONTACT_NAME_ALIASES = [
 
 const EMAIL_SUFFIX_KEYS_NORMALIZED = new Set(["email", "useremail", "mail", "contactemail"]);
 
+/** Keys that end with `"email"` but are names ( middlename → false positive for nk.endsWith("email") ). */
+const LOOSE_EMAIL_FALSE_POSITIVE = new Set(["lastname", "middlename"]);
+
 /** @type {(cx: Record<string, unknown>) => string} */
 function pickNameFromLooseKeys_(cx) {
     for (const [rk, rv] of Object.entries(cx)) {
+        if (typeof rk === "string" && rk.startsWith("_")) {
+            continue;
+        }
         const nk = normalizedFormKey(rk);
         const v = scalarFormValue(rv);
         if (!v) {
@@ -196,6 +202,17 @@ export function resolveContactName(fields, body, clientContext) {
             return t;
         }
     }
+    /** Custom form `name=` values (full_name, contact_name, …) plus flat multipart fields. */
+    const looseFields = pickNameFromLooseKeys_(/** @type {Record<string, unknown>} */ (fields));
+    if (looseFields) {
+        return looseFields;
+    }
+    if (body && typeof body === "object") {
+        const looseBody = pickNameFromLooseKeys_(body);
+        if (looseBody) {
+            return looseBody;
+        }
+    }
     if (clientContext && typeof clientContext === "object") {
         const cx = /** @type {Record<string, unknown>} */ (clientContext);
         for (const k of CONTACT_NAME_KEYS) {
@@ -215,13 +232,15 @@ export function resolveContactName(fields, body, clientContext) {
 /** @type {(cx: Record<string, unknown>) => string} */
 function pickEmailFromLooseKeys_(cx) {
     for (const [rk, rv] of Object.entries(cx)) {
+        if (typeof rk === "string" && rk.startsWith("_")) {
+            continue;
+        }
         const nk = normalizedFormKey(rk);
-        if (
+        const looksLikeEmailKey =
             EMAIL_SUFFIX_KEYS_NORMALIZED.has(nk)
-            || nk.endsWith("email")
-            || nk.includes("mailto")
             || nk === "e_mail"
-        ) {
+            || (nk.endsWith("email") && !LOOSE_EMAIL_FALSE_POSITIVE.has(nk));
+        if (looksLikeEmailKey) {
             const v = scalarFormValue(rv);
             if (v) {
                 return v.trim();
@@ -239,12 +258,24 @@ function pickEmailFromLooseKeys_(cx) {
  * @param {Record<string, unknown>} [clientContext]
  */
 export function resolveContactEmail(fields, body, clientContext) {
-    for (const k of ["email"]) {
+    const canonicalEmailKeys = ["email", "user_email", "contact_email"];
+    for (let i = 0; i < canonicalEmailKeys.length; i += 1) {
+        const k = canonicalEmailKeys[i];
         const v =
             scalarFormValue(fields[k])
             || (body && typeof body === "object" ? scalarFormValue(body[k]) : "");
         if (v) {
             return v.trim();
+        }
+    }
+    const looseF = pickEmailFromLooseKeys_(/** @type {Record<string, unknown>} */ (fields));
+    if (looseF) {
+        return looseF.trim();
+    }
+    if (body && typeof body === "object") {
+        const looseB = pickEmailFromLooseKeys_(body);
+        if (looseB) {
+            return looseB.trim();
         }
     }
     if (clientContext && typeof clientContext === "object") {
