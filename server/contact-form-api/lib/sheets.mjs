@@ -603,12 +603,13 @@ async function writeLeadRowByHeader_(sheets, tab, rowNumber, lead) {
         updates.push({ range: `${tab}!${col(idx0)}${rowNumber}`, values: [[v]] });
     };
 
+    // Prefer your declared A–Q schema order, but still match by header aliases when columns moved.
     put(["convdateandtime", "conversiondatetime", "date", "datetime", "timestamp", "submittedat"], 0, lead.iso);
     put(["formid", "form_id"], 1, lead.formId);
     put(["name"], 2, lead.name);
     put(["mobile", "phone", "phonenumber", "mobilenumber", "mobile_number"], 3, lead.mobile);
     put(["email"], 4, lead.email);
-    put(["sessionid", "session", "clientsessionid", "client_session_id"], 5, lead.clientSessionId);
+    put(["sessionid", "session", "sessioni id", "clientsessionid", "client_session_id"], 5, lead.clientSessionId);
     put(["device", "devicetype"], 6, lead.deviceType);
     put(["browser", "browsername"], 7, lead.browserName);
     put(["channel"], 8, lead.channel);
@@ -619,7 +620,7 @@ async function writeLeadRowByHeader_(sheets, tab, rowNumber, lead) {
     put(["appointmentbooked", "booked", "appointment"], 13, lead.appointmentBooked);
     put(["appointmentdate"], 14, lead.appointmentDate);
     put(["appointmenttime"], 15, lead.appointmentTime);
-    put(["drivefilelink", "drivefile", "filelink", "filelinks", "drivelink"], 16, lead.driveFileLink);
+    put(["drivefilelink", "drive file link", "drivefile", "filelink", "filelinks", "drivelink"], 16, lead.driveFileLink);
 
     await sheets.spreadsheets.values.batchUpdate({
         spreadsheetId: SPREADSHEET_ID,
@@ -714,9 +715,26 @@ export async function appendContactRowToSheet(row, opts) {
     const appointmentTime = typeof row.appointmentTime === "string" ? row.appointmentTime.trim() : "";
     const userQueriesCsv = typeof row.userQueriesCsv === "string" ? row.userQueriesCsv.trim() : "";
     const repeated = scanFull.repeatedAcrossSessions ? "Yes" : "No";
-    // Append a blank A–Q row, then populate correct columns by header names.
+    // Append A–Q values directly (matches your declared sheet schema), then optionally correct by headers.
+    // This makes Sheets writes robust even if header-based patching fails.
     const values = [[
-        "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""
+        sheetOutboundCell_(row.iso), // A Conv. Date and Time
+        sheetOutboundCell_(row.formId), // B Form ID
+        sheetOutboundCell_(row.name), // C Name
+        sheetOutboundCell_(row.mobile), // D Mobile
+        sheetOutboundCell_(row.email), // E Email
+        sheetOutboundCell_(row.clientSessionId), // F SessionI ID
+        sheetOutboundCell_(row.deviceType), // G Device
+        sheetOutboundCell_(row.browserName), // H Browser
+        sheetOutboundCell_(ch), // I Channel
+        sheetOutboundCell_(city), // J City
+        sheetOutboundCell_(ip), // K IP Address
+        sheetOutboundCell_(repeated), // L Repeated User
+        sheetOutboundCell_(sourceUrl), // M Source URL
+        sheetOutboundCell_(appointmentBooked), // N Appointment Booked
+        sheetOutboundCell_(appointmentDate), // O Appointment Date
+        sheetOutboundCell_(appointmentTime), // P Appointment Time
+        sheetOutboundCell_(fileLinks) // Q Drive file link
     ]];
     const appendRes = await sheets.spreadsheets.values.append({
         spreadsheetId: SPREADSHEET_ID,
@@ -768,8 +786,9 @@ export async function appendContactRowToSheet(row, opts) {
                 driveFileLink: fileLinks
             });
         }
-    } catch {
-        /* ignore */
+    } catch (e) {
+        const msg = e && e.message ? e.message : String(e);
+        console.error("[contact-form-api] Sheets header-mapped patch failed; row still appended.", msg);
     }
     return {
         action: "appended",
