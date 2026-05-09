@@ -1953,9 +1953,10 @@ app.post(
             };
             const attachLeadEmail =
                 (process.env.CONTACT_LEAD_ATTACH_OUTCOME_IN_JSON || "").trim() === "1";
+            /** Default ~32s: matches typical CONTACT_LEAD_SMTP_CONNECT_TIMEOUT_MS (12k) + CONTACT_LEAD_SEND_TIMEOUT_MS (20k) ceilings so diagnostics don't false-timeout while SMTP still works. */
             const attachWaitMs = Math.min(
-                Math.max(Number(process.env.CONTACT_LEAD_EMAIL_ATTACH_WAIT_MS) || 12000, 3000),
-                45000
+                Math.max(Number(process.env.CONTACT_LEAD_EMAIL_ATTACH_WAIT_MS) || 32000, 3000),
+                90000
             );
             if (attachLeadEmail) {
                 if (deferFirestoreRecord) {
