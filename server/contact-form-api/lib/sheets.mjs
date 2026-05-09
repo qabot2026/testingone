@@ -18,10 +18,16 @@ const DEDUP_WINDOW_MS = Math.max(
         || (10 * 60 * 1000)
 );
 
+/** Skip leading sheet rows when matching mobiles / repeats (row 1 = headers). Set SHEETS_HEADER_SKIP_ROWS=0 if you have no header row. */
+const HEADER_SKIP_ROWS_0 = (() => {
+    const n = Number.parseInt(process.env.SHEETS_HEADER_SKIP_ROWS ?? "1", 10);
+    return Number.isFinite(n) ? Math.max(0, Math.min(20, n)) : 1;
+})();
+
 const SPREADSHEET_SCOPES = ["https://www.googleapis.com/auth/spreadsheets"];
 
 /**
- * Force append into our schema columns (A–N).
+ * Force append into our schema columns (A–Q).
  *
  * We previously used `A:Z` to avoid truncation when env was set to `A:H`, but `values.append`
  * may choose a "table" anchored later in the sheet and append at an unexpected start column
@@ -137,25 +143,32 @@ async function getRepeatedColumnInfo_(sheets, tab) {
             range: `${tab}!1:1`
         });
         const header = Array.isArray(got.data.values) && got.data.values[0] ? got.data.values[0] : [];
-        const want = new Set(
-            [
-                "repeated",
-                "repeat",
-                "isrepeated",
-                "repeatuser",
-                "repeateduser",
-                "duplicate",
-                "duplicatelead",
-                "existing",
-                "existinguser"
-            ].map(normalizedHeaderKey_)
-        );
+        /** Avoid matching generic “Duplicate…” / “Existing…” columns ahead of Repeated User (wrong column patches). */
+        const wantPreferred = [
+            "repeateduser",
+            "repeatusern",
+            "repuser",
+            "isrepeated",
+            "repeatedcustomer",
+            "returningcustomer"
+        ].map(normalizedHeaderKey_);
+        const preferredSet = new Set(wantPreferred.filter(Boolean));
         for (let i = 0; i < header.length; i += 1) {
             const k = normalizedHeaderKey_(sheetCellString_(header[i]));
-            if (k && want.has(k)) {
+            if (k && preferredSet.has(k)) {
                 repeatedColIdx = i;
                 repeatedColLetter = columnLetterFromIndex_(i);
                 break;
+            }
+        }
+        if (repeatedColIdx === 11) {
+            for (let i = 0; i < header.length; i += 1) {
+                const k = normalizedHeaderKey_(sheetCellString_(header[i]));
+                if (k.includes("repeat") && k.includes("user")) {
+                    repeatedColIdx = i;
+                    repeatedColLetter = columnLetterFromIndex_(i);
+                    break;
+                }
             }
         }
     } catch {
@@ -377,14 +390,20 @@ async function scanSheetTailForDedupeAndRepeat_(sheets, row) {
     const tail = rows.slice(Math.max(0, rows.length - DEDUP_LOOKBACK_ROWS));
     const tailOffset = rows.length - tail.length; // 0-based offset into full sheet rows
     const incomingSid = typeof row.clientSessionId === "string" ? row.clientSessionId.trim() : "";
-    const incomingMobileDigits = mobileKeyFromCell_(row.mobile);
+    let incomingMobileDigits = mobileKeyFromCell_(row.mobile);
+    if (!incomingMobileDigits && row && typeof row === "object") {
+        const ro = /** @type {Record<string, unknown>} */ (row);
+        incomingMobileDigits =
+            mobileKeyFromCell_(ro.phone)
+            || mobileKeyFromCell_(ro.tel)
+            || mobileKeyFromCell_(ro.contact_mobile);
+    }
     let repeatedAcrossSessions = false;
 
-    // Repeated check: scan the full sheet, not just the tail.
-    // Semantics: "Yes" means the mobile already exists in the sheet (including the current session row
-    // when strict session dedupe updates an existing row).
+    // Repeated check: scan the full sheet (skip header rows).
+    // Semantics: "Yes" if this mobile matches any earlier data row.
     if (incomingMobileDigits) {
-        for (let i = 0; i < rows.length; i += 1) {
+        for (let i = HEADER_SKIP_ROWS_0; i < rows.length; i += 1) {
             const r = rows[i] || [];
             const existingKey = mobileKeyFromRow_(/** @type {unknown[]} */ (r), mobileCol.mobileColIdx);
             if (!existingKey || existingKey !== incomingMobileDigits) {
@@ -405,7 +424,7 @@ async function scanSheetTailForDedupeAndRepeat_(sheets, row) {
                 range: `${tab}!${mobileCol.mobileColLetter}:${mobileCol.mobileColLetter}`
             });
             const colRows = Array.isArray(col.data.values) ? col.data.values : [];
-            for (let i = 0; i < colRows.length; i += 1) {
+            for (let i = HEADER_SKIP_ROWS_0; i < colRows.length; i += 1) {
                 const cell = colRows[i] && colRows[i][0] !== undefined ? colRows[i][0] : "";
                 const existingKey = mobileKeyFromCell_(cell);
                 if (existingKey && existingKey === incomingMobileDigits) {
@@ -439,6 +458,68 @@ async function scanSheetTailForDedupeAndRepeat_(sheets, row) {
     }
 
     return { duplicate: false, matchedRowNumber: 0, repeatedAcrossSessions };
+}
+
+function normalizedUserQueryNoiseKey_(raw) {
+    return String(raw || "")
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, "");
+}
+
+/** Short chat / intent tokens that shouldn’t occupy the User Queries column (e.g. “upload” alone). */
+const USER_QUERY_NOISE_KEYS = new Set(
+    [
+        "upload",
+        "uploading",
+        "uploader",
+        "uploaddocument",
+        "documents",
+        "document",
+        "docs",
+        "doc",
+        "file",
+        "files",
+        "attachment",
+        "attachments",
+        "pdf",
+        "yes",
+        "no",
+        "y",
+        "n",
+        "ok",
+        "okay",
+        "yeah",
+        "sure",
+        "hi",
+        "hello",
+        "hey",
+        "thanks",
+        "thankyou",
+        "bye",
+        "stop"
+    ].map(normalizedUserQueryNoiseKey_)
+);
+
+/** @param {string} csv */
+export function sanitizeUserQueriesCsvForSheet(csv) {
+    const s = typeof csv === "string" ? csv.trim() : "";
+    if (!s) {
+        return "";
+    }
+    const kept = [];
+    for (const p of splitCsvValues_(csv)) {
+        const t = String(p || "").trim();
+        if (!t) {
+            continue;
+        }
+        const nk = normalizedUserQueryNoiseKey_(t);
+        if (nk && USER_QUERY_NOISE_KEYS.has(nk)) {
+            continue;
+        }
+        kept.push(t);
+    }
+    return kept.join(", ");
 }
 
 function splitCsvValues_(raw) {
@@ -540,9 +621,25 @@ async function updateExistingSessionRow_(sheets, tab, rowNumber, incoming, optio
     const ip = patchScalarInto(typeof incoming.ip === "string" ? incoming.ip : "", 10);
 
     const repeatedIncoming = typeof incoming.repeated === "string" ? incoming.repeated.trim() : "";
-    const existingRepeated = sheetCellString_(row[repeatedCol.repeatedColIdx]);
-    const repeated =
-        repeatedIncoming && repeatedIncoming !== existingRepeated ? repeatedIncoming : "";
+    const existingRepeatedRaw = sheetCellString_(row[repeatedCol.repeatedColIdx]);
+    let repeated = "";
+    let repeatedNorm = "";
+    if (/^yes$/i.test(repeatedIncoming)) {
+        repeatedNorm = "Yes";
+    } else if (/^no$/i.test(repeatedIncoming)) {
+        repeatedNorm = "No";
+    }
+    if (repeatedNorm) {
+        const ex = existingRepeatedRaw.trim();
+        const exIsYes = /^yes$/i.test(ex);
+        const exIsNo = /^no$/i.test(ex);
+        const needPatch =
+            preferIncomingContact
+            || (repeatedNorm === "Yes" ? !exIsYes : repeatedNorm === "No" ? !exIsNo : false);
+        if (needPatch) {
+            repeated = repeatedNorm;
+        }
+    }
 
     const sourceUrl = patchScalarInto(
         typeof incoming.sourceUrl === "string" ? incoming.sourceUrl : "",
@@ -703,7 +800,7 @@ async function writeLeadRowByHeader_(sheets, tab, rowNumber, lead) {
     put(["channel"], 8, lead.channel);
     put(["city"], 9, lead.city);
     put(["ip", "ipaddress", "ip_address"], 10, lead.ip);
-    put(["repeateduser", "repeated", "duplicate", "existinguser"], 11, lead.repeated);
+    put(["repeateduser", "repeated_user", "isrepeated", "repuser"], 11, lead.repeated);
     put(["sourceurl", "source_url", "pageurl", "embedurl"], 12, lead.sourceUrl);
     // Prefer exact "Appointment Booked" match only — aliases like `appointment` would hit Date/Time headers.
     put(["appointmentbooked", "appointment_booked", "isappointmentbooked"], 13, lead.appointmentBooked);
@@ -937,7 +1034,8 @@ export async function upsertSessionQueriesInSheet(row) {
     if (!SPREADSHEET_ID) {
         throw new Error("Missing SHEETS_SPREADSHEET_ID in env (or set DISABLE_SHEETS=1).");
     }
-    const incomingQ = typeof row.userQueriesCsv === "string" ? row.userQueriesCsv.trim() : "";
+    const incomingQRaw = typeof row.userQueriesCsv === "string" ? row.userQueriesCsv.trim() : "";
+    const incomingQ = sanitizeUserQueriesCsvForSheet(incomingQRaw);
     if (!incomingQ) {
         return { mode: "skipped_empty_queries" };
     }
@@ -957,7 +1055,7 @@ export async function upsertSessionQueriesInSheet(row) {
             range: `${tab}!A${rowNumber}:R${rowNumber}`
         });
         const r0 = Array.isArray(got.data.values) && got.data.values[0] ? got.data.values[0] : [];
-        const existingCsv = sheetCellString_(r0[queriesCol.colIdx]);
+        const existingCsv = sanitizeUserQueriesCsvForSheet(sheetCellString_(r0[queriesCol.colIdx]));
         const merged = mergeCsvUnique_(existingCsv, incomingQ, 200);
         const queryColumnWritten = merged !== existingCsv;
         /** @type {{ totalUpdatedCells?: number, totalUpdatedRows?: number, updatedRanges: string[] } | null} */

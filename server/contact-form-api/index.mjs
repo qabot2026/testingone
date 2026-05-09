@@ -42,7 +42,8 @@ import { persistToFirestore } from "./lib/firestore.mjs";
 import {
     appendContactRowToSheet,
     upsertSessionQueriesInSheet,
-    probeSheetsSpreadsheetAccess
+    probeSheetsSpreadsheetAccess,
+    sanitizeUserQueriesCsvForSheet
 } from "./lib/sheets.mjs";
 import { getServiceAccountCredentials } from "./lib/google-service-account.mjs";
 import { uploadSubmissionFilesToDrive } from "./lib/drive-upload.mjs";
@@ -258,10 +259,10 @@ function normalizeUserQueriesCsvFromClientContext(clientContext) {
             .filter((x) => typeof x === "string")
             .map((s) => s.trim())
             .filter(Boolean);
-        return cleaned.join(", ");
+        return sanitizeUserQueriesCsvForSheet(cleaned.join(", "));
     }
     const raw = typeof ctx.user_queries_csv === "string" ? ctx.user_queries_csv.trim() : "";
-    return raw;
+    return sanitizeUserQueriesCsvForSheet(raw);
 }
 
 const GEOIP_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
