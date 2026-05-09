@@ -5570,6 +5570,20 @@ function buildContactFormFieldRow(field) {
 }
 
 /**
+ * Value stored in the hidden field and sent as `appointmentdate`: DD-MM-YYYY.
+ * Slot APIs still use YYYY-MM-DD from the calendar grid.
+ * @param {string} dateISO
+ * @returns {string}
+ */
+function formatAppointmentDateCapturedFromIso_(dateISO) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(dateISO || "").trim());
+    if (!m) {
+        return String(dateISO || "").trim();
+    }
+    return `${m[3]}-${m[2]}-${m[1]}`;
+}
+
+/**
  * Month + slot picker for contact-form appointment fields (doctor-specific or shared general pool).
  * @param {HTMLElement} hostEl
  * @param {Record<string, unknown>} field
@@ -5784,13 +5798,14 @@ function mountContactFormAppointmentPicker(hostEl, field, isDoctor) {
 
     async function loadSlots(dateISO) {
         selectedSlotEl = null;
-        hidD.value = dateISO;
+        const capturedDate = formatAppointmentDateCapturedFromIso_(dateISO);
+        hidD.value = capturedDate;
         hidT.value = "";
         slotsFlex.innerHTML = "";
         slotsHint.style.color = "";
         slotsHint.style.fontWeight = "";
         slotsHint.textContent =
-            `${getTranslation("appointmentPickerChooseTime")} (${dateISO})`;
+            `${getTranslation("appointmentPickerChooseTime")} (${capturedDate})`;
         const apiUrl = getApiEndpoint(isDoctor ? "/api/slots" : "/api/general-slots");
         if (!apiUrl) {
             return;
@@ -5852,7 +5867,7 @@ function mountContactFormAppointmentPicker(hostEl, field, isDoctor) {
                         slotsHint.style.color = "";
                         slotsHint.style.fontWeight = "";
                         slotsHint.textContent =
-                            `${getTranslation("appointmentPickerSelected")}: ${dateISO} · ${label}`;
+                            `${getTranslation("appointmentPickerSelected")}: ${capturedDate} · ${label}`;
                     });
                 }
                 slotsFlex.appendChild(b);

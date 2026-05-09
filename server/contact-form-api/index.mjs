@@ -402,6 +402,29 @@ function weekdayKeyFromDateIso_(dateISO) {
     return wd === 0 ? "sun" : wd === 1 ? "mon" : wd === 2 ? "tue" : wd === 3 ? "wed" : wd === 4 ? "thu" : wd === 5 ? "fri" : "sat";
 }
 
+/**
+ * Normalize a contact-form or CX string to YYYY-MM-DD.
+ * Accepts ISO YYYY-MM-DD or day-first DD-MM-YYYY (e.g. 13-05-2026).
+ * @param {unknown} raw
+ * @returns {string}
+ */
+function appointmentDateInputToIso_(raw) {
+    const t = normalizeStr_(raw);
+    if (!t) return "";
+    if (/^\d{4}-\d{2}-\d{2}$/.test(t)) return t;
+    const m = /^(\d{2})-(\d{2})-(\d{4})$/.exec(t);
+    if (!m) return "";
+    const dd = m[1];
+    const mm = m[2];
+    const yyyy = m[3];
+    const d = parseInt(dd, 10);
+    const mo = parseInt(mm, 10);
+    const y = parseInt(yyyy, 10);
+    if (!Number.isFinite(d) || !Number.isFinite(mo) || !Number.isFinite(y)) return "";
+    if (mo < 1 || mo > 12 || d < 1 || d > 31 || y < 1900 || y > 2100) return "";
+    return `${yyyy}-${mm}-${dd}`;
+}
+
 /** Slot step (minutes). Override with APPOINTMENT_SLOT_MINUTES (e.g. 15, 30, 60). */
 function appointmentSlotMinutes_() {
     const n = Number(process.env.APPOINTMENT_SLOT_MINUTES);
@@ -889,6 +912,9 @@ async function resolveCatalogBranchIdFromSession_(params) {
 }
 
 function cxDateToISO_(dateObj) {
+    if (typeof dateObj === "string") {
+        return appointmentDateInputToIso_(dateObj);
+    }
     const d = dateObj && typeof dateObj === "object" ? dateObj : {};
     const year = Number(d.year) || 0;
     const month = Number(d.month) || 0;
@@ -1330,7 +1356,7 @@ async function tryReserveAppointmentSlotFromContactForm_(formId, fields) {
     if (fid !== "appintmentformdoctor" && fid !== "appintmentformgeneral") {
         return { skip: true };
     }
-    const dateISO = normalizeStr_(fields.appointmentdate);
+    const dateISO = appointmentDateInputToIso_(fields.appointmentdate);
     const slotLabel = normalizeStr_(fields.appointmenttime);
     if (!dateISO || !slotLabel) {
         return { ok: false, status: 400, error: "Missing appointment date or time.", block: true };
