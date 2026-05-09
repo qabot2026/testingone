@@ -1,7 +1,12 @@
 <!--
-  Staff new-lead — edit freely. Tokens (escaped on send except you only type static HTML here):
-    lead_intro, customer_name, mobile, email, service, city, message, timestamp,
-    lead_source, technical_notes, company_name, company_website
+  Staff new-lead notification — aligns with bot / form terminology:
+
+    lead_intro
+    name, mobile, email, service (service interested), city, message
+    source — human-readable source line shown to staff ("Website Chatbot", etc.)
+    submitted_at — when the lead was captured (UTC string)
+    technical_notes — session / IP / full field dump for ops
+    company_name, company_website — footer signatures
 -->
 <!DOCTYPE html>
 <html lang="en">
@@ -17,7 +22,7 @@
 <p><strong>Lead Details:</strong></p>
 
 <p style="margin:0 0 6px;">
-Name: {{customer_name}}<br/>
+Name: {{name}}<br/>
 Mobile: {{mobile}}<br/>
 Email: {{email}}<br/>
 Service Interested: {{service}}<br/>
@@ -28,12 +33,12 @@ City: {{city}}<br/>
 
 <p>
 <strong>Source:</strong><br/>
-{{lead_source}}
+{{source}}
 </p>
 
 <p>
 <strong>Date &amp; Time:</strong><br/>
-{{timestamp}}
+{{submitted_at}}
 </p>
 
 <p>Please contact the customer as soon as possible.</p>

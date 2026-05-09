@@ -22,7 +22,7 @@ export function escapeMailHtml_(val) {
 /**
  * @param {string} fileName Must end with .html inside templates/
  * @param {Record<string, string>} variables Escaped fragments only (caller runs escapeMailHtml_)
- * @param {Record<string, string>} rawHtmlFragments Trusted HTML only (never user input — inserted unescaped).
+ * @param {Record<string, string>} rawHtmlFragments Trusted HTML only — e.g. appointment_banner_html — never inject user-supplied markup.
  */
 export function renderEmailTemplateHtml_(fileName, variables, rawHtmlFragments) {
     const safeBase = path.basename(fileName);

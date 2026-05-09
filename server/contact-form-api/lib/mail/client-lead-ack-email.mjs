@@ -92,13 +92,13 @@ export async function maybeSendClientLeadAckEmail(args) {
     const text = textParts.join("\n");
 
     const html = renderEmailTemplateHtml_("client-lead-ack.html", {
-        visitor_greeting_one_line: escapeMailHtml_(greetPlain),
-        visitor_name: escapeMailHtml_(name || "—"),
+        greeting_line: escapeMailHtml_(greetPlain),
+        name: escapeMailHtml_(name || "—"),
         email: escapeMailHtml_(toAddr),
         mobile: escapeMailHtml_(t_(args.mobile) || "—"),
         city: escapeMailHtml_(t_(args.city) || "—"),
-        page_or_source: escapeMailHtml_(pageOrSourceLine),
-        timestamp: escapeMailHtml_(ts),
+        source_url: escapeMailHtml_(pageOrSourceLine),
+        submitted_at: escapeMailHtml_(ts),
         company_name: escapeMailHtml_(corp),
         company_website: escapeMailHtml_(webStrip === "—" ? "" : webStrip)
     });

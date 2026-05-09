@@ -1,7 +1,15 @@
 <!--
-  Simple appointment confirmation — edit wording freely.
-  {{CONTEXT_BADGE_HTML}} optional — filled only by server (trusted HTML snippet).
-  Other {{tokens}} — plain text escaped on send.
+  Appointment confirmation for the patient — bot-aligned tokens:
+
+  appointment_banner_html — optional HTML snippet (chat booking notice), server-provided only
+  greeting_line — e.g. "Hi Ganesh,"
+  doctor_name, specialization
+  appointment_date, appointment_time
+  branch — location / branch line
+  source — backend route id (dialogflow-cx-chatbot / contact-form-submission / …)
+  mobile
+  submitted_at — confirmed-at UTC ISO string
+  company_name, company_website
 -->
 <!DOCTYPE html>
 <html lang="en">
@@ -9,21 +17,21 @@
   <meta charset="utf-8" />
 </head>
 <body style="font-family:Calibri,Arial,sans-serif;font-size:15px;line-height:1.5;color:#111;">
-{{CONTEXT_BADGE_HTML}}
+{{appointment_banner_html}}
 
-<p>{{recipient_greeting_one_line}}</p>
+<p>{{greeting_line}}</p>
 
 <p>Your appointment is confirmed. Summary:</p>
 
 <p style="margin:0;">
-Doctor: {{doctor_display}}<br/>
+Doctor: {{doctor_name}}<br/>
 Specialization: {{specialization}}<br/>
-Date: {{date_iso}}<br/>
-Time: {{time_slot}}<br/>
-Location / branch: {{location_line}}<br/>
-Booking reference: {{source_ref}}<br/>
+Date: {{appointment_date}}<br/>
+Time: {{appointment_time}}<br/>
+Location / branch: {{branch}}<br/>
+Booking reference: {{source}}<br/>
 Mobile on file: {{mobile}}<br/>
-Confirmed (UTC): {{sent_utc}}<br/>
+Confirmed (UTC): {{submitted_at}}<br/>
 </p>
 
 <p>Please carry a government photo ID when you visit. If this booking wasn’t yours, please contact the clinic immediately.</p>

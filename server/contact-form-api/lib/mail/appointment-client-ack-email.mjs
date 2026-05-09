@@ -1,7 +1,7 @@
 /**
  * Visitor confirmation: booked appointment summary (CX chatbot, contact-form appointment flows, REST when email provided).
  *
- * HTML layout: templates/appointment-client-ack.html (+ optional CONTEXT_BADGE for chat bookings).
+ * HTML layout: templates/appointment-client-ack.html (+ optional appointment_banner_html for chat bookings).
  *
  * Enable: CONTACT_APPOINTMENT_CLIENT_ACK_ENABLED=1
  * Optional: CONTACT_MAIL_* (company footer), CONTACT_APPOINTMENT_CLIENT_ACK_SUBJECT / _CHATBOT
@@ -108,19 +108,19 @@ export async function maybeSendAppointmentClientAckEmail(args) {
     const html = renderEmailTemplateHtml_(
         "appointment-client-ack.html",
         {
-            recipient_greeting_one_line: escapeMailHtml_(greetPlain),
-            doctor_display: escapeMailHtml_(dr),
+            greeting_line: escapeMailHtml_(greetPlain),
+            doctor_name: escapeMailHtml_(dr),
             specialization: escapeMailHtml_(t_(args.specialization) || "—"),
-            date_iso: escapeMailHtml_(t_(args.dateISO)),
-            time_slot: escapeMailHtml_(t_(args.slotLabel)),
-            location_line: escapeMailHtml_(locationLine),
-            source_ref: escapeMailHtml_(t_(args.source) || "booking"),
+            appointment_date: escapeMailHtml_(t_(args.dateISO)),
+            appointment_time: escapeMailHtml_(t_(args.slotLabel)),
+            branch: escapeMailHtml_(locationLine),
+            source: escapeMailHtml_(t_(args.source) || "booking"),
             mobile: escapeMailHtml_(t_(args.mobile) || "—"),
-            sent_utc: escapeMailHtml_(sentUtcNow),
+            submitted_at: escapeMailHtml_(sentUtcNow),
             company_name: escapeMailHtml_(corp),
             company_website: escapeMailHtml_(webStrip === "—" ? "" : webStrip)
         },
-        { CONTEXT_BADGE_HTML: badgeHtmlCx }
+        { appointment_banner_html: badgeHtmlCx }
     );
     const replyToRaw = (process.env.CONTACT_APPOINTMENT_CLIENT_ACK_REPLY_TO || "").trim();
     /** @type {Record<string, string>} */

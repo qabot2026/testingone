@@ -470,14 +470,14 @@ export async function maybeSendContactLeadNotifyEmail(args) {
     try {
         html = renderEmailTemplateHtml_(staffHtmlTpl, {
             lead_intro: escapeMailHtml_(introLead),
-            customer_name: escapeMailHtml_(custName),
+            name: escapeMailHtml_(custName),
             mobile: escapeMailHtml_(custMob),
             email: escapeMailHtml_(custEmail),
             service: escapeMailHtml_(serviceTxt),
             city: escapeMailHtml_(custCity),
             message: escNl_(messageTxt),
-            timestamp: escapeMailHtml_(ts),
-            lead_source: escNl_(leadPretty),
+            submitted_at: escapeMailHtml_(ts),
+            source: escNl_(leadPretty),
             technical_notes: escNl_(technicalNotesTxt),
             company_name: escapeMailHtml_(corp),
             company_website: escapeMailHtml_(web === "—" ? "" : web)

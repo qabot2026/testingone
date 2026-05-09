@@ -1,8 +1,11 @@
 <!--
-  Simple visitor acknowledgement. Tokens escaped by server:
-    visitor_greeting_one_line — e.g. "Hi Ganesh,"
-    visitor_name, email, mobile, city, page_or_source, timestamp,
-    company_name, company_website
+  Visitor “thank you” mail — aligns with bot/form fields:
+
+  greeting_line — e.g. "Hi Ganesh,"
+  name, email, mobile, city
+  source_url — page URL (or fallback to source id)
+  submitted_at — UTC timestamp string
+  company_name, company_website — footer from CONTACT_MAIL_* env
 -->
 <!DOCTYPE html>
 <html lang="en">
@@ -10,19 +13,19 @@
   <meta charset="utf-8" />
 </head>
 <body style="font-family:Calibri,Arial,sans-serif;font-size:15px;line-height:1.5;color:#111;">
-<p>{{visitor_greeting_one_line}}</p>
+<p>{{greeting_line}}</p>
 
 <p>Thanks for contacting us. We received your enquiry and our team will get back to you soon.</p>
 
 <p><strong>What you sent:</strong></p>
 
 <p style="margin:0;">
-Name: {{visitor_name}}<br/>
+Name: {{name}}<br/>
 Mobile: {{mobile}}<br/>
 Email: {{email}}<br/>
 City: {{city}}<br/>
-Page / source URL: {{page_or_source}}<br/>
-Submitted (UTC): {{timestamp}}<br/>
+Page / source URL: {{source_url}}<br/>
+Submitted (UTC): {{submitted_at}}<br/>
 </p>
 
 <p style="margin-top:20px;color:#444;font-size:14px;"><em>This email was sent automatically—please reply only if needed.</em></p>
