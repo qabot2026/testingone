@@ -12188,11 +12188,17 @@ function postSessionQueriesToSheetRow_() {
     }
     try {
         const client_context = getClientContext();
+        /** Use resolved form key (default form when overlay never opened — not literal "chat"). */
+        const sessCfg = readContactFormConfig();
+        const fk = typeof sessCfg.formKey === "string" ? sessCfg.formKey.trim() : "";
         fetch(endpoint, {
             method: "POST",
             headers,
             credentials: "omit",
-            body: JSON.stringify({ client_context, _contactFormId: "chat" }),
+            body: JSON.stringify({
+                client_context,
+                _contactFormId: fk || getDefaultContactFormId()
+            }),
             keepalive: true
         })
             .then(async (resp) => {

@@ -108,6 +108,35 @@ function normalizeLeadChannel(raw) {
     return s === "whatsapp" ? "whatsapp" : "web";
 }
 
+/** Source page URL for Sheets (from `company.js` `getClientContext()` + fallbacks). */
+function resolveSourceUrlForSheet(cx) {
+    const o = cx && typeof cx === "object" ? cx : {};
+    const direct =
+        (typeof o.source_url === "string" ? o.source_url.trim() : "")
+        || (typeof o.sourceUrl === "string" ? o.sourceUrl.trim() : "")
+        || (typeof o.page_url === "string" ? o.page_url.trim() : "")
+        || (typeof o.url === "string" ? o.url.trim() : "");
+    if (direct) {
+        return direct;
+    }
+    const po = typeof o.page_origin === "string" ? o.page_origin.trim() : "";
+    const pp = typeof o.page_path === "string" ? o.page_path.trim() : "";
+    if (po && pp) {
+        return `${po}${pp}`;
+    }
+    return typeof o.referrer_url === "string" ? o.referrer_url.trim() : "";
+}
+
+/** Normalize `_contactFormId` for Sheets; chat-only rows use `web` unless `DEFAULT_SHEET_FORM_ID` is set. */
+function normalizeSheetFormId(explicit) {
+    const t = typeof explicit === "string" ? explicit.trim() : "";
+    if (t) {
+        return t;
+    }
+    const envDefault = (process.env.DEFAULT_SHEET_FORM_ID || "").trim();
+    return envDefault || "web";
+}
+
 function corsOriginOption() {
     const raw = (process.env.CORS_ORIGIN || "").trim();
     if (!raw) {
@@ -1566,16 +1595,20 @@ app.post(
         const cityFromContext = typeof mergedClientContext.city === "string" ? mergedClientContext.city.trim() : "";
         const city = cityFromFields || cityFromContext || await resolveCityForRequest(req);
         const userQueriesCsv = normalizeUserQueriesCsvFromClientContext(mergedClientContext);
-        const sourceUrl =
-            (typeof mergedClientContext.source_url === "string" ? mergedClientContext.source_url.trim() : "")
-            || (typeof mergedClientContext.sourceUrl === "string" ? mergedClientContext.sourceUrl.trim() : "")
-            || (typeof mergedClientContext.page_url === "string" ? mergedClientContext.page_url.trim() : "")
-            || (typeof mergedClientContext.url === "string" ? mergedClientContext.url.trim() : "")
-            || "";
-        const appointmentDate = typeof fields.appointmentdate === "string" ? String(fields.appointmentdate).trim() : "";
-        const appointmentTime = typeof fields.appointmenttime === "string" ? String(fields.appointmenttime).trim() : "";
-        const appointmentBooked =
-            appointmentBookedServer || (appointmentDate && appointmentTime) ? "Yes" : "No";
+        const sourceUrl = resolveSourceUrlForSheet(mergedClientContext);
+        const appointmentDate =
+            typeof fields.appointmentdate === "string" ? String(fields.appointmentdate).trim() : "";
+        const appointmentTime =
+            typeof fields.appointmenttime === "string" ? String(fields.appointmenttime).trim() : "";
+        const rawAppointmentBooked =
+            scalarFormValue(fields.appointmentbooked) || scalarFormValue(fields.appointment_booked);
+        let appointmentBooked =
+            (appointmentBookedServer || (appointmentDate && appointmentTime)) ? "Yes" : "No";
+        if (/^yes$/i.test(rawAppointmentBooked || "")) {
+            appointmentBooked = "Yes";
+        } else if (/^no$/i.test(rawAppointmentBooked || "")) {
+            appointmentBooked = "No";
+        }
         /** Firestore-safe payload (flattened for querying) */
         const fileLinksForSheet = drive_uploads
             .map((u) => (typeof u.web_view_link === "string" ? u.web_view_link : ""))
@@ -1763,10 +1796,7 @@ app.post(
             }
         }
 
-        const formId =
-            typeof body._contactFormId === "string" && body._contactFormId.trim()
-                ? body._contactFormId.trim()
-                : "chat";
+        const formId = normalizeSheetFormId(body._contactFormId);
         let mobile =
             resolveContactMobile(fields, body, mergedClientContext)
             || resolveSubmissionMobileDigits(fields, body, mergedClientContext)
@@ -1789,8 +1819,11 @@ app.post(
 
         const iso = new Date().toISOString();
         const ip = extractRequestIp(req);
-        const city = await resolveCityForRequest(req);
+        const cityFromCtx =
+            typeof mergedClientContext.city === "string" ? mergedClientContext.city.trim() : "";
+        const city = cityFromCtx || await resolveCityForRequest(req);
         const userQueriesCsv = normalizeUserQueriesCsvFromClientContext(mergedClientContext);
+        const sourceUrl = resolveSourceUrlForSheet(mergedClientContext);
 
         try {
             const sheetOutcome = await appendContactRowToSheet({
@@ -1806,6 +1839,10 @@ app.post(
                 fileLinks: "",
                 ip,
                 city,
+                sourceUrl,
+                appointmentBooked: "No",
+                appointmentDate: "",
+                appointmentTime: "",
                 userQueriesCsv
             });
             return res.status(200).json({
@@ -1905,10 +1942,7 @@ app.post(
         const deviceType = typeof clientContext.device_type === "string"
             ? clientContext.device_type.trim()
             : "";
-        const formId =
-            typeof body._contactFormId === "string" && body._contactFormId.trim()
-                ? body._contactFormId.trim()
-                : "chat";
+        const formId = normalizeSheetFormId(body._contactFormId);
 
         /** @type {Record<string, string>} */
         const fields = {};
@@ -1930,7 +1964,10 @@ app.post(
 
         const iso = new Date().toISOString();
         const ip = extractRequestIp(req);
-        const city = await resolveCityForRequest(req);
+        const cityFromCtx =
+            typeof mergedClientContext.city === "string" ? mergedClientContext.city.trim() : "";
+        const city = cityFromCtx || await resolveCityForRequest(req);
+        const sourceUrl = resolveSourceUrlForSheet(mergedClientContext);
 
         try {
             const syncDetail = await upsertSessionQueriesInSheet({
@@ -1946,6 +1983,10 @@ app.post(
                 fileLinks: "",
                 ip,
                 city,
+                sourceUrl,
+                appointmentBooked: "No",
+                appointmentDate: "",
+                appointmentTime: "",
                 userQueriesCsv
             });
             return res.status(200).json({
@@ -1974,7 +2015,7 @@ app.get("/contact-form-sheets-health", async (_req, res) => {
             disable_sheets_flag: process.env.DISABLE_SHEETS === "1",
             spreadsheet_id_configured: !!id,
             spreadsheet_id_suffix: id ? id.slice(-8) : "",
-            sheets_default_range_env: (process.env.SHEETS_RANGE || "Sheet1!A:N").trim(),
+            sheets_default_range_env: (process.env.SHEETS_RANGE || "Sheet1!A:Q").trim(),
             strict_session_dedup: process.env.SHEETS_STRICT_SESSION_DEDUP === "1",
             service_account_credentials_present: !!getServiceAccountCredentials()
         };

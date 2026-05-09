@@ -114,7 +114,7 @@ async function getMobileColumnInfo_(sheets, tab) {
     return headerCache_;
 }
 
-let repeatedHeaderCache_ = { tab: "", at: 0, repeatedColIdx: 12, repeatedColLetter: "M" };
+let repeatedHeaderCache_ = { tab: "", at: 0, repeatedColIdx: 11, repeatedColLetter: "L" };
 
 /**
  * Detect "Repeated" column position by header row.
@@ -128,8 +128,9 @@ async function getRepeatedColumnInfo_(sheets, tab) {
     if (repeatedHeaderCache_.tab === tab && now - repeatedHeaderCache_.at < HEADER_CACHE_TTL_MS) {
         return repeatedHeaderCache_;
     }
-    let repeatedColIdx = 12;
-    let repeatedColLetter = "M";
+    /** Default A–Q schema: Repeated User is column L (index 11). */
+    let repeatedColIdx = 11;
+    let repeatedColLetter = "L";
     try {
         const got = await sheets.spreadsheets.values.get({
             spreadsheetId: SPREADSHEET_ID,
@@ -162,6 +163,55 @@ async function getRepeatedColumnInfo_(sheets, tab) {
     }
     repeatedHeaderCache_ = { tab, at: now, repeatedColIdx, repeatedColLetter };
     return repeatedHeaderCache_;
+}
+
+let userQueriesHeaderCache_ = { tab: "", at: 0, colIdx: 17, colLetter: "R" };
+
+/**
+ * Column for merged live-chat `user_queries` CSV — does not overlap A–Q lead fields.
+ * Default R (index 17) unless a matching header exists in row 1.
+ *
+ * @param {import("googleapis").sheets_v4.Sheets} sheets
+ * @param {string} tab
+ */
+async function getUserQueriesColumnInfo_(sheets, tab) {
+    const now = Date.now();
+    if (userQueriesHeaderCache_.tab === tab && now - userQueriesHeaderCache_.at < HEADER_CACHE_TTL_MS) {
+        return userQueriesHeaderCache_;
+    }
+    let colIdx = 17;
+    let colLetter = "R";
+    try {
+        const got = await sheets.spreadsheets.values.get({
+            spreadsheetId: SPREADSHEET_ID,
+            range: `${tab}!1:1`
+        });
+        const header = Array.isArray(got.data.values) && got.data.values[0] ? got.data.values[0] : [];
+        const want = new Set(
+            [
+                "userqueries",
+                "user_queries",
+                "queries",
+                "chatqueries",
+                "conversationqueries",
+                "visitorqueries",
+                "chathistory",
+                "dialogflowqueries"
+            ].map(normalizedHeaderKey_)
+        );
+        for (let i = 0; i < header.length; i += 1) {
+            const k = normalizedHeaderKey_(sheetCellString_(header[i]));
+            if (k && want.has(k)) {
+                colIdx = i;
+                colLetter = columnLetterFromIndex_(i);
+                break;
+            }
+        }
+    } catch {
+        // ignore
+    }
+    userQueriesHeaderCache_ = { tab, at: now, colIdx, colLetter };
+    return userQueriesHeaderCache_;
 }
 
 /** @param {string} s */
@@ -435,7 +485,7 @@ function mergeCsvUnique_(existingCsv, incomingCsv, limit = 40) {
  * @param {import("googleapis").sheets_v4.Sheets} sheets
  * @param {string} tab
  * @param {number} rowNumber 1-based sheet row
- * @param {{ formId: string, name: string, mobile: string, email: string, browserName: string, deviceType: string, channel: string, repeated?: string, fileLinks?: string, city?: string, ip?: string, userQueriesCsv?: string }} incoming
+ * @param {{ formId: string, name: string, mobile: string, email: string, browserName: string, deviceType: string, channel: string, repeated?: string, fileLinks?: string, city?: string, ip?: string, sourceUrl?: string, appointmentBooked?: string, appointmentDate?: string, appointmentTime?: string, userQueriesCsv?: string }} incoming
  * @param {{ preferIncomingContact?: boolean }} [options] when true (contact-form POST), B–E use incoming whenever non-empty; chat/sync fills blanks only.
  */
 /** @returns {Promise<{ applied: boolean, googleBatch?: { totalUpdatedCells?: number, totalUpdatedRows?: number, updatedRanges: string[] } }>} */
@@ -445,9 +495,10 @@ async function updateExistingSessionRow_(sheets, tab, rowNumber, incoming, optio
     }
     const preferIncomingContact = !!(options && options.preferIncomingContact);
     const repeatedCol = await getRepeatedColumnInfo_(sheets, tab);
+    const queriesCol = await getUserQueriesColumnInfo_(sheets, tab);
     const got = await sheets.spreadsheets.values.get({
         spreadsheetId: SPREADSHEET_ID,
-        range: `${tab}!A${rowNumber}:N${rowNumber}`
+        range: `${tab}!A${rowNumber}:R${rowNumber}`
     });
     const row = Array.isArray(got.data.values) && got.data.values[0] ? got.data.values[0] : [];
 
@@ -463,27 +514,58 @@ async function updateExistingSessionRow_(sheets, tab, rowNumber, incoming, optio
         return isBlankSheetCell_(row[colIdx]) ? s : "";
     };
 
+    /** Fills blanks unless preferIncomingContact. @param {string} raw @param {number} idx */
+    const patchScalarInto = (raw, idx) => {
+        const s = typeof raw === "string" ? raw.trim() : "";
+        if (!s) {
+            return "";
+        }
+        if (preferIncomingContact) {
+            return s;
+        }
+        return isBlankSheetCell_(row[idx]) ? s : "";
+    };
+
     const formId = contactPatchFor(typeof incoming.formId === "string" ? incoming.formId : "", 1);
     const name = contactPatchFor(typeof incoming.name === "string" ? incoming.name : "", 2);
     const mobile = contactPatchFor(typeof incoming.mobile === "string" ? incoming.mobile : "", 3);
     const email = contactPatchFor(typeof incoming.email === "string" ? incoming.email : "", 4);
-    const browserName =
-        incoming.browserName && isBlankSheetCell_(row[6]) ? incoming.browserName.trim() : "";
+    // Schema A–Q: col G=device, H=browser (was wrongly swapped vs old mapping).
     const deviceType =
-        incoming.deviceType && isBlankSheetCell_(row[7]) ? incoming.deviceType.trim() : "";
-    const channel =
-        incoming.channel && isBlankSheetCell_(row[8]) ? incoming.channel.trim() : "";
-    const fileLinks =
-        incoming.fileLinks && isBlankSheetCell_(row[9]) ? incoming.fileLinks.trim() : "";
-    const city =
-        incoming.city && isBlankSheetCell_(row[10]) ? incoming.city.trim() : "";
-    const ip =
-        incoming.ip && isBlankSheetCell_(row[11]) ? incoming.ip.trim() : "";
+        patchScalarInto(typeof incoming.deviceType === "string" ? incoming.deviceType : "", 6);
+    const browserName =
+        patchScalarInto(typeof incoming.browserName === "string" ? incoming.browserName : "", 7);
+    const channel = patchScalarInto(typeof incoming.channel === "string" ? incoming.channel : "", 8);
+    const city = patchScalarInto(typeof incoming.city === "string" ? incoming.city : "", 9);
+    const ip = patchScalarInto(typeof incoming.ip === "string" ? incoming.ip : "", 10);
+
     const repeatedIncoming = typeof incoming.repeated === "string" ? incoming.repeated.trim() : "";
-    const existingRepeated = sheetCellString_(row[12]);
+    const existingRepeated = sheetCellString_(row[repeatedCol.repeatedColIdx]);
     const repeated =
         repeatedIncoming && repeatedIncoming !== existingRepeated ? repeatedIncoming : "";
-    const existingQueries = sheetCellString_(row[13]);
+
+    const sourceUrl = patchScalarInto(
+        typeof incoming.sourceUrl === "string" ? incoming.sourceUrl : "",
+        12
+    );
+    const appointmentBooked = patchScalarInto(
+        typeof incoming.appointmentBooked === "string" ? incoming.appointmentBooked : "",
+        13
+    );
+    const appointmentDate = patchScalarInto(
+        typeof incoming.appointmentDate === "string" ? incoming.appointmentDate : "",
+        14
+    );
+    const appointmentTime = patchScalarInto(
+        typeof incoming.appointmentTime === "string" ? incoming.appointmentTime : "",
+        15
+    );
+    const fileLinks = patchScalarInto(
+        typeof incoming.fileLinks === "string" ? incoming.fileLinks : "",
+        16
+    );
+
+    const existingQueries = sheetCellString_(row[queriesCol.colIdx]);
     const mergedQueries = mergeCsvUnique_(existingQueries, incoming.userQueriesCsv || "", 200);
     const userQueriesCsv = mergedQueries && mergedQueries !== existingQueries ? mergedQueries : "";
 
@@ -493,14 +575,20 @@ async function updateExistingSessionRow_(sheets, tab, rowNumber, incoming, optio
     if (name) data.push({ range: `${tab}!C${rowNumber}`, values: [[name]] });
     if (mobile) data.push({ range: `${tab}!D${rowNumber}`, values: [[mobile]] });
     if (email) data.push({ range: `${tab}!E${rowNumber}`, values: [[email]] });
-    if (browserName) data.push({ range: `${tab}!G${rowNumber}`, values: [[browserName]] });
-    if (deviceType) data.push({ range: `${tab}!H${rowNumber}`, values: [[deviceType]] });
+    if (deviceType) data.push({ range: `${tab}!G${rowNumber}`, values: [[deviceType]] });
+    if (browserName) data.push({ range: `${tab}!H${rowNumber}`, values: [[browserName]] });
     if (channel) data.push({ range: `${tab}!I${rowNumber}`, values: [[channel]] });
-    if (fileLinks) data.push({ range: `${tab}!J${rowNumber}`, values: [[fileLinks]] });
-    if (city) data.push({ range: `${tab}!K${rowNumber}`, values: [[city]] });
-    if (ip) data.push({ range: `${tab}!L${rowNumber}`, values: [[ip]] });
+    if (city) data.push({ range: `${tab}!J${rowNumber}`, values: [[city]] });
+    if (ip) data.push({ range: `${tab}!K${rowNumber}`, values: [[ip]] });
     if (repeated) data.push({ range: `${tab}!${repeatedCol.repeatedColLetter}${rowNumber}`, values: [[repeated]] });
-    if (userQueriesCsv) data.push({ range: `${tab}!N${rowNumber}`, values: [[userQueriesCsv]] });
+    if (sourceUrl) data.push({ range: `${tab}!M${rowNumber}`, values: [[sourceUrl]] });
+    if (appointmentBooked) data.push({ range: `${tab}!N${rowNumber}`, values: [[appointmentBooked]] });
+    if (appointmentDate) data.push({ range: `${tab}!O${rowNumber}`, values: [[appointmentDate]] });
+    if (appointmentTime) data.push({ range: `${tab}!P${rowNumber}`, values: [[appointmentTime]] });
+    if (fileLinks) data.push({ range: `${tab}!Q${rowNumber}`, values: [[fileLinks]] });
+    if (userQueriesCsv) {
+        data.push({ range: `${tab}!${queriesCol.colLetter}${rowNumber}`, values: [[userQueriesCsv]] });
+    }
 
     if (!data.length) {
         if (preferIncomingContact) {
@@ -616,8 +704,9 @@ async function writeLeadRowByHeader_(sheets, tab, rowNumber, lead) {
     put(["city"], 9, lead.city);
     put(["ip", "ipaddress", "ip_address"], 10, lead.ip);
     put(["repeateduser", "repeated", "duplicate", "existinguser"], 11, lead.repeated);
-    put(["sourceurl", "source_url", "url", "pageurl"], 12, lead.sourceUrl);
-    put(["appointmentbooked", "booked", "appointment"], 13, lead.appointmentBooked);
+    put(["sourceurl", "source_url", "pageurl", "embedurl"], 12, lead.sourceUrl);
+    // Prefer exact "Appointment Booked" match only — aliases like `appointment` would hit Date/Time headers.
+    put(["appointmentbooked", "appointment_booked", "isappointmentbooked"], 13, lead.appointmentBooked);
     put(["appointmentdate"], 14, lead.appointmentDate);
     put(["appointmenttime"], 15, lead.appointmentTime);
     put(["drivefilelink", "drive file link", "drivefile", "filelink", "filelinks", "drivelink"], 16, lead.driveFileLink);
@@ -862,12 +951,13 @@ export async function upsertSessionQueriesInSheet(row) {
 
     const rowNumber = await findSessionRowNumberBySessionId_(sheets, tab, sid);
     if (rowNumber > 0) {
+        const queriesCol = await getUserQueriesColumnInfo_(sheets, tab);
         const got = await sheets.spreadsheets.values.get({
             spreadsheetId: SPREADSHEET_ID,
-            range: `${tab}!A${rowNumber}:N${rowNumber}`
+            range: `${tab}!A${rowNumber}:R${rowNumber}`
         });
         const r0 = Array.isArray(got.data.values) && got.data.values[0] ? got.data.values[0] : [];
-        const existingCsv = sheetCellString_(r0[13]);
+        const existingCsv = sheetCellString_(r0[queriesCol.colIdx]);
         const merged = mergeCsvUnique_(existingCsv, incomingQ, 200);
         const queryColumnWritten = merged !== existingCsv;
         /** @type {{ totalUpdatedCells?: number, totalUpdatedRows?: number, updatedRanges: string[] } | null} */
@@ -877,7 +967,7 @@ export async function upsertSessionQueriesInSheet(row) {
                 spreadsheetId: SPREADSHEET_ID,
                 requestBody: {
                     valueInputOption: "USER_ENTERED",
-                    data: [{ range: `${tab}!N${rowNumber}`, values: [[merged]] }]
+                    data: [{ range: `${tab}!${queriesCol.colLetter}${rowNumber}`, values: [[merged]] }]
                 }
             });
             googleBatchQueries = googleBatchSummaryFromResponse_(nBatch);
@@ -899,6 +989,13 @@ export async function upsertSessionQueriesInSheet(row) {
                 fileLinks: typeof row.fileLinks === "string" ? row.fileLinks : "",
                 city: typeof row.city === "string" ? row.city : "",
                 ip: typeof row.ip === "string" ? row.ip : "",
+                sourceUrl: typeof row.sourceUrl === "string" ? row.sourceUrl : "",
+                appointmentBooked:
+                    typeof row.appointmentBooked === "string" ? row.appointmentBooked : "",
+                appointmentDate:
+                    typeof row.appointmentDate === "string" ? row.appointmentDate : "",
+                appointmentTime:
+                    typeof row.appointmentTime === "string" ? row.appointmentTime : "",
                 userQueriesCsv: ""
             },
             {}
