@@ -3875,19 +3875,7 @@ function extractOutboundQueryTextFromMessengerRequestBody_(maybeBody) {
     if (typeof q.text === "string" && q.text.trim()) {
         return q.text.trim();
     }
-    const ev = q.event;
-    if (ev && typeof ev === "object") {
-        const e = /** @type {Record<string, unknown>} */ (ev);
-        if (typeof e.event === "string" && e.event.trim()) {
-            return e.event.trim();
-        }
-        if (typeof e.name === "string" && e.name.trim()) {
-            return e.name.trim();
-        }
-        if (typeof e.displayName === "string" && e.displayName.trim()) {
-            return e.displayName.trim();
-        }
-    }
+    // Do not synthesize phrases from `queryInput.event` (custom event IDs are not user utterances).
     return "";
 }
 
