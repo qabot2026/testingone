@@ -139,6 +139,10 @@ function trimNameCell_(s) {
     if (!t) {
         return "";
     }
+    // Defensive: ignore unrendered CX/session template placeholders (should never go to Sheets).
+    if (/^\$session\.params\.[a-z0-9_]+$/i.test(t) || t.includes("$session.params.")) {
+        return "";
+    }
     return t.length > 200 ? t.slice(0, 200) : t;
 }
 

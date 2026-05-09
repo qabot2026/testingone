@@ -15061,7 +15061,13 @@ function dfParameterScalarToString(val) {
         return "";
     }
     if (typeof val === "string") {
-        return val.trim();
+        var t = val.trim();
+        // Guard: sometimes CX payloads contain literal template placeholders like "$session.params.name".
+        // If we persist those, uploads can later submit them to Sheets as if they were real values.
+        if (/^\$session\.params\.[a-z0-9_]+$/i.test(t) || t.indexOf("$session.params.") !== -1) {
+            return "";
+        }
+        return t;
     }
     if (typeof val === "number" && Number.isFinite(val)) {
         return String(val);
