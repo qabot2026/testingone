@@ -42,6 +42,8 @@ const CONTACT_FORM_ENDPOINT = "/contact-form-submissions";
 const CONTACT_FORM_MOBILE_SHEET_SYNC_ENDPOINT = "/contact-form-mobile-sheet-sync";
 /** Live-sync user_queries to Sheets (User Queries column; optional secret matches Railway CONTACT_FORM_MOBILE_SHEET_SYNC_SECRET). */
 const CONTACT_FORM_SESSION_SHEET_SYNC_ENDPOINT = "/contact-form-session-sheet-sync";
+/** Caps how long the Submit button waits for the API before aborting (Sheets/Firestore latency). */
+const CONTACT_FORM_SUBMIT_FETCH_TIMEOUT_MS = 90000;
 const API_BASE_URL_META_NAME = "dfchat-api-base-url";
 const MOBILE_CHAT_BREAKPOINT_PX = 768;
 /** Extra `nudgeRight` for Language / Restart + Powered by on small viewports only (see company.config.js mobile layout). */
@@ -13425,6 +13427,20 @@ function submitContactForm(event) {
         fetchInit.headers = fetchHeaders;
     }
 
+    /** So a slow Google API cannot leave “Submitting…” forever (button re-enables in `finally`). */
+    let submitFetchTimeoutId = 0;
+    if (typeof AbortController !== "undefined") {
+        const submitAbort = new AbortController();
+        /** @type {{ signal?: AbortSignal }} */ (fetchInit).signal = submitAbort.signal;
+        submitFetchTimeoutId = window.setTimeout(() => {
+            try {
+                submitAbort.abort();
+            } catch {
+                /* ignore */
+            }
+        }, CONTACT_FORM_SUBMIT_FETCH_TIMEOUT_MS);
+    }
+
     fetch(endpoint, fetchInit)
         .then(async (response) => {
             const responseText = await response.text();
@@ -13559,12 +13575,21 @@ function submitContactForm(event) {
         })
         .catch((error) => {
             if (status) {
-                status.textContent = error.message || getTranslation("statusSubmissionFailed");
+                let line = error.message || getTranslation("statusSubmissionFailed");
+                if (error && error.name === "AbortError") {
+                    line =
+                        "Request timed out (90s) — the server or Google APIs are very slow. Try again. "
+                        + "On Railway you can set CONTACT_FORM_DEFER_FIRESTORE_AFTER_RESPONSE=1 to return faster after Sheets.";
+                }
+                status.textContent = line;
                 status.classList.add("is-error");
                 status.classList.remove("is-success");
             }
         })
         .finally(() => {
+            if (submitFetchTimeoutId) {
+                window.clearTimeout(submitFetchTimeoutId);
+            }
             if (submitButton) {
                 submitButton.disabled = false;
             }

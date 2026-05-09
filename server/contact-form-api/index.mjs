@@ -27,6 +27,9 @@
  * Lead email (optional): see `env.example.txt` and `lib/contact-lead-notify-email.mjs` — MAIL_FROM, CONTACT_LEAD_NOTIFY_TO, CONTACT_LEAD_NOTIFY_CC, SMTP_*.
  *   CONTACT_LEAD_NOTIFY_ON_MOBILE_SYNC=1 — also notify on mobile-sheet-sync when name or email is present.
  *
+ * Faster contact-form submit (Sheets + Firestore both on): `CONTACT_FORM_DEFER_FIRESTORE_AFTER_RESPONSE=1` persists Firestore **after** HTTP 200 (Sheet row still authoritative for that request).
+ *   `CONTACT_FORM_RESPONSE_FINISH_FALLBACK_MS` (default 3500): if `finish` is delayed, tail work (email / deferred FS) still runs.
+ *
  * Chat-only mobile → Sheet row (no file upload): POST JSON `/contact-form-mobile-sheet-sync`.
  * Optional: CONTACT_FORM_MOBILE_SHEET_SYNC_SECRET → client must send `X-Contact-Form-Mobile-Sync-Secret`.
  *
@@ -103,6 +106,14 @@ const DISABLE_DRIVE_UPLOAD = process.env.DISABLE_DRIVE_UPLOAD === "1";
  * Default: OFF — each contact-form POST appends one row so leads always appear. Set SHEETS_STRICT_SESSION_DEDUP=1 for previous “single row per session” behaviour (chat sync + dedupe updates).
  */
 const SHEETS_CONTACT_FORM_APPEND_FREELY = process.env.SHEETS_STRICT_SESSION_DEDUP !== "1";
+/**
+ * When `1`: after a successful Sheets append, defer `persistToFirestore` until **after** HTTP 200 finishes.
+ * Faster “Saved…” for chat users; Sheets remains the authoritative row for this request.
+ */
+const DEFER_FIRESTORE_UNTIL_AFTER_HTTP_RESPONSE =
+    !FIRESTORE_DISABLED &&
+    !SHEETS_DISABLED &&
+    process.env.CONTACT_FORM_DEFER_FIRESTORE_AFTER_RESPONSE === "1";
 
 function hasFirebaseCredentials() {
     if ((process.env.FIREBASE_SERVICE_ACCOUNT_JSON || "").trim()) {
@@ -156,24 +167,61 @@ function normalizeSheetFormId(explicit) {
 }
 
 /**
- * Sends the **lead-notification email only after** the browser has finished receiving HTTP 200
- * (Express `finish`). Sheets/Firestore write must already have succeeded — this schedules mail
- * strictly after submit success completes on the wire.
+ * After HTTP **200 OK** is flushed, run optional deferred Firestore + lead email exactly once.
+ * Uses `finish` plus a fallback timeout (Railway/CDN quirks can delay or skip `finish`).
  *
  * @param {import('express').Response | null | undefined} res
- * @param {Record<string, unknown>} payload Passed to maybeSendContactLeadNotifyEmail(...).
+ * @param {{ deferFirestoreRecord?: Record<string, unknown> | null, leadEmailPayload: Record<string, unknown> }} work
  */
-function scheduleContactLeadNotifyAfterResponseFinished_(res, payload) {
-    const run = () => {
-        void maybeSendContactLeadNotifyEmail(payload).catch((e) => {
+function scheduleContactPostSuccessTail_(res, work) {
+    const fallbackMs = Math.min(
+        Math.max(Number(process.env.CONTACT_FORM_RESPONSE_FINISH_FALLBACK_MS) || 3500, 800),
+        30000
+    );
+    /** @type {boolean} */
+    let ran = false;
+    const runner = async () => {
+        if (ran) {
+            return;
+        }
+        ran = true;
+        if (
+            work.deferFirestoreRecord
+            && typeof work.deferFirestoreRecord === "object"
+            && Object.keys(work.deferFirestoreRecord).length
+        ) {
+            const fsT0 = Date.now();
+            try {
+                await persistToFirestore(work.deferFirestoreRecord);
+                console.log(`[contact-form] deferred_firestore_ms=${Date.now() - fsT0}`);
+            } catch (fe) {
+                const detail = fe && fe.message ? String(fe.message) : String(fe);
+                console.error(
+                    "[contact-form-api] Deferred Firestore failed after HTTP 200 (Sheet row OK):",
+                    detail,
+                    fe
+                );
+            }
+        }
+        void maybeSendContactLeadNotifyEmail(work.leadEmailPayload).catch((e) => {
             console.error("[contact-form-api] lead notify email", e && e.message ? e.message : e);
         });
     };
+    const kick = () => {
+        void runner();
+    };
     if (res && typeof res.once === "function") {
-        res.once("finish", run);
-        return;
+        res.once("finish", kick);
     }
-    globalThis.setImmediate(run);
+    globalThis.setTimeout(() => {
+        if (!ran) {
+            console.warn(
+                `[contact-form] tail work not started after ${fallbackMs}ms (` +
+                    "finish fallback) — running Firestore/email now"
+            );
+            kick();
+        }
+    }, fallbackMs);
 }
 
 function corsOriginOption() {
@@ -1775,6 +1823,7 @@ app.post(
             let wroteToSheets = false;
             /** @type {{ action: string, patched: boolean, tab?: string } | null} */
             let sheetOutcome = null;
+            const sheetsT0Ms = Date.now();
             if (!SHEETS_DISABLED) {
                 try {
                     sheetOutcome = await appendContactRowToSheet(
@@ -1808,9 +1857,18 @@ app.post(
                     throw new Error(`Sheets: ${detail}`);
                 }
             }
-            if (!FIRESTORE_DISABLED) {
+            console.log(`[contact-form] sheets_wall_ms=${Date.now() - sheetsT0Ms}`);
+
+            /** @type {Record<string, unknown> | null} */
+            let deferFirestoreRecord = null;
+            if (!FIRESTORE_DISABLED && DEFER_FIRESTORE_UNTIL_AFTER_HTTP_RESPONSE) {
+                deferFirestoreRecord = record;
+                console.log("[contact-form] Firestore runs after HTTP 200 (+ tail flush) — faster chat submit");
+            } else if (!FIRESTORE_DISABLED) {
+                const fsT0Ms = Date.now();
                 try {
                     await persistToFirestore(record);
+                    console.log(`[contact-form] firestore_wall_ms=${Date.now() - fsT0Ms}`);
                 } catch (fe) {
                     const detail = fe && fe.message ? fe.message : String(fe);
                     console.error("[contact-form-api] Firestore persist failed (Sheets already attempted)", detail, fe);
@@ -1888,6 +1946,19 @@ app.post(
                 45000
             );
             if (attachLeadEmail) {
+                if (deferFirestoreRecord) {
+                    try {
+                        await persistToFirestore(record);
+                        console.log("[contact-form] firestore_wall_ms=inline_attach_diag");
+                        deferFirestoreRecord = null;
+                    } catch (fe) {
+                        const detail = fe && fe.message ? fe.message : String(fe);
+                        console.error("[contact-form-api] Firestore (attach-diagnostic)", detail, fe);
+                        if (!wroteToSheets) {
+                            throw new Error(`Firestore: ${detail}`);
+                        }
+                    }
+                }
                 try {
                     const er = await Promise.race([
                         maybeSendContactLeadNotifyEmail(leadEmailPayload),
@@ -1911,8 +1982,11 @@ app.post(
                     };
                 }
             } else {
-                /** Email only **after** 200 OK is fully delivered (never during “submitting” spinner UX). */
-                scheduleContactLeadNotifyAfterResponseFinished_(res, leadEmailPayload);
+                /** Deferred Firestore (optional) + lead email — after flush, with fallback if `finish` never fires. */
+                scheduleContactPostSuccessTail_(res, {
+                    deferFirestoreRecord,
+                    leadEmailPayload
+                });
             }
             return res.status(200).json(out);
         } catch (err) {
