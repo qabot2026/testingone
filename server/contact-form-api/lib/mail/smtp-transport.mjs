@@ -39,8 +39,9 @@ export function getMailTransport_() {
         secure,
         auth: { user, pass },
         connectionTimeout: connMs,
-        greetingTimeout: Math.min(connMs, 10000),
-        socketTimeout: Math.min(connMs + 5000, 120000),
+        /** Was 10s — slow STARTTLS to e.g. Gmail from Railway needs more headroom. */
+        greetingTimeout: Math.min(connMs, 30000),
+        socketTimeout: Math.min(connMs + 10000, 120000),
         ...(!secure && port === 587 ? { requireTLS: true } : {})
     });
     return transportCache;
