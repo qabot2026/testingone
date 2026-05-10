@@ -317,11 +317,11 @@ function scheduleContactPostSuccessTail_(res, work) {
                 await new Promise((r) => globalThis.setTimeout(r, delayMs));
             }
             const mailOut = await maybeSendContactLeadNotifyEmail(work.leadEmailPayload);
-            if (!(mailOut && mailOut.sent)) {
-                console.warn(
-                    "[contact-form] lead_notify_tail:",
-                    JSON.stringify(formatLeadEmailOutcomeForJson(mailOut))
-                );
+            const outcomeJson = formatLeadEmailOutcomeForJson(mailOut);
+            if (mailOut && mailOut.sent) {
+                console.log("[contact-form] lead_notify_tail:", JSON.stringify(outcomeJson));
+            } else {
+                console.warn("[contact-form] lead_notify_tail:", JSON.stringify(outcomeJson));
             }
         } catch (leadErr) {
             console.error(
@@ -2496,6 +2496,19 @@ function wantsContactFormEmailHealthHtml_(req) {
 app.get("/contact-form-email-health", (req, res) => {
     const missing = missingContactLeadEmailEnvKeys_();
     const delayMs = resolveContactLeadEmailDelayMs_();
+    const smtpPort = Number(process.env.SMTP_PORT) || 587;
+    const smtpSecureRaw = (process.env.SMTP_SECURE || "").trim().toLowerCase();
+    const smtpSecureEffective =
+        smtpSecureRaw === "1" || smtpSecureRaw === "true" || smtpPort === 465;
+    /** @type {string[]} */
+    const troubleshooting_steps = [
+        "Staff lead emails send only after HTTP 200, then CONTACT_LEAD_EMAIL_DELAY_MS wait (often 60000 ms). Set CONTACT_LEAD_EMAIL_DELAY_MS=0 when testing.",
+        'After every form test, search Railway Logs for "[contact-form] lead_notify_tail" — if status is skipped or error, that line tells you why.',
+        "Separate from staff mail: visitor thank-you needs CONTACT_LEAD_CLIENT_ACK_ENABLED=1; visitor appointment confirmation needs CONTACT_APPOINTMENT_CLIENT_ACK_ENABLED=1.",
+        'Chat/mobile-only sync POST may send no mail unless CONTACT_LEAD_NOTIFY_ON_MOBILE_SYNC=1 and name or email is present (mobile alone skips email on that endpoint).',
+        "POST /contact-form-email-self-test (with CONTACT_LEAD_EMAIL_TEST_SECRET header) proves SMTP to CONTACT_LEAD_NOTIFY_TO. If ok:true but inbox empty, check spam and filters.",
+        "Gmail SMTP: MAIL_FROM usually must match SMTP_USER unless your provider documents otherwise — use Google App Password, not normal password."
+    ];
     const payload = {
         ok: missing.length === 0,
         lead_email_ready: missing.length === 0,
@@ -2505,8 +2518,15 @@ app.get("/contact-form-email-health", (req, res) => {
         has_smtp_user: !!(process.env.SMTP_USER || "").trim(),
         has_smtp_pass: !!(process.env.SMTP_PASS || process.env.SMTP_PASSWORD || "").trim(),
         mail_from_set: !!(process.env.MAIL_FROM || "").trim(),
-        smtp_port: Number(process.env.SMTP_PORT) || 587,
+        smtp_port: smtpPort,
+        smtp_secure_effective_hint: smtpSecureEffective ? "implicit TLS mode (typically port 465)" : "STARTTLS typical for port 587",
+        visitor_client_ack_enabled: (process.env.CONTACT_LEAD_CLIENT_ACK_ENABLED || "").trim() === "1",
+        visitor_appointment_ack_enabled:
+            (process.env.CONTACT_APPOINTMENT_CLIENT_ACK_ENABLED || "").trim() === "1",
+        notify_on_mobile_sheet_sync_enabled:
+            (process.env.CONTACT_LEAD_NOTIFY_ON_MOBILE_SYNC || "").trim() === "1",
         lead_email_delay_ms_after_http_200: delayMs,
+        troubleshooting_steps,
         hint:
             missing.length
                 ? "Set the missing_* names in Railway Variables for this service, redeploy, then submit the contact form with name + phone or email."
@@ -2533,7 +2553,11 @@ app.get("/contact-form-email-health", (req, res) => {
         ["SMTP_PASS (or SMTP_PASSWORD) set", payload.has_smtp_pass],
         ["MAIL_FROM set", payload.mail_from_set],
         ["SMTP_PORT", payload.smtp_port],
+        ["smtp_secure_effective_hint", payload.smtp_secure_effective_hint],
         ["lead_email_delay_ms_after_http_200", delayMs],
+        ["CONTACT_LEAD_CLIENT_ACK_ENABLED (=1 visitor thank-you)", payload.visitor_client_ack_enabled],
+        ["CONTACT_APPOINTMENT_CLIENT_ACK_ENABLED (=1 visitor appointment)", payload.visitor_appointment_ack_enabled],
+        ["CONTACT_LEAD_NOTIFY_ON_MOBILE_SYNC (=1 sheet-only mobile POST)", payload.notify_on_mobile_sheet_sync_enabled],
         ["missing_env (must be [])", payload.missing_env.length ? payload.missing_env.join(", ") : "(none)"],
         ["hint", payload.hint]
     ];
@@ -2548,6 +2572,10 @@ app.get("/contact-form-email-health", (req, res) => {
         + `<h1 style="margin-top:0">Contact form — lead email health</h1>`
         + `<p>This page reads environment flags only — no passwords are printed.</p>`
         + `<table style="border-collapse:collapse;background:#fff;max-width:720px">${tr}</table>`
+        + `<h2 style="margin-top:28px;font-size:18px">If mail still doesn’t arrive</h2>`
+        + `<ol style="background:#fff;max-width:720px;line-height:1.5">${(payload.troubleshooting_steps || [])
+            .map((s) => `<li style="margin:8px 0">${esc(s)}</li>`)
+            .join("")}</ol>`
         + `<p style="margin-top:20px;color:#666;font-size:14px">`
         + `<a href="?format=json">Open as JSON</a> · `
         + `Use <code>curl -H \"Accept: application/json\" …</code> for scripts.</p>`
