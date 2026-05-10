@@ -12,6 +12,9 @@ let pendingOpenFormPrefill = /** @type {Record<string, string> | null} */ (null)
  * @type {string[]}
  */
 let pendingNextFormIdsAfterSubmit = [];
+/** Nullable strings parsed from Dialogflow `open_form` payloads — drive CX via Messenger after Submit or form ×. */
+let pendingOpenFormFollowupSubmit = /** @type {string | null} */ (null);
+let pendingOpenFormFollowupCancel = /** @type {string | null} */ (null);
 /** @type {string | null} Which `common.form.forms[…]` is active; `null` until first `readContactFormConfig()`. */
 let activeContactFormId = null;
 let activeDfMessenger = null;
@@ -36,7 +39,27 @@ const CHAT_CLIENT_CONTEXT_STORAGE_KEY = "company_chat_client_context";
 const CONTACT_FORM_OPEN_DELAY_MS = 600;
 const CONTACT_FORM_OPEN_ACTION = "open_form";
 /** Keys stripped when treating an `open_form` payload as field prefill (`action`, `form_id`, … only). */
-const OPEN_FORM_PAYLOAD_META_KEYS = new Set(["action", "form_id", "formId"]);
+const OPEN_FORM_PAYLOAD_META_KEYS = new Set([
+    "action",
+    "form_id",
+    "formId",
+    "onSubmit",
+    "onCancel",
+    "on_submit",
+    "on_cancel",
+    "next_form_id",
+    "nextFormId",
+    "next_form_ids",
+    "nextFormIds",
+    "following_form_id",
+    "followingFormId",
+    "second_form_id",
+    "secondFormId",
+    "third_form_id",
+    "thirdFormId",
+    "fourth_form_id",
+    "fourthFormId",
+]);
 const CONTACT_FORM_ENDPOINT = "/contact-form-submissions";
 /** POST JSON: append Sheets row when chat captured mobile (no file upload). Matches contact-form-api. */
 const CONTACT_FORM_MOBILE_SHEET_SYNC_ENDPOINT = "/contact-form-mobile-sheet-sync";
@@ -2027,7 +2050,7 @@ function initializeHardActionBar() {
     closeButton.textContent = "X";
     closeButton.style.cssText = "width: 44px; height: 44px; border: none; border-radius: 12px; background: transparent; color: #0369a1; display: grid; place-items: center; padding: 0; cursor: pointer; font-size: 28px; margin: 0; transition: background 0.2s ease; font-weight: 500; line-height: 1;";
 
-    closeButton.addEventListener("click", closeForm);
+    closeButton.addEventListener("click", () => closeForm({ userDismissedForm: true }));
 
     headerControls.appendChild(closeButton);
 
@@ -12235,9 +12258,14 @@ function handleDfResponseReceived(event) {
             mergeContactHintsFromOpenFormPrefillIntoStoredContext(pendingOpenFormPrefill);
         }
         pendingNextFormIdsAfterSubmit = extractNextFormChainFromOpenFormEvent_(event);
+        const messengerFollowups = extractOpenFormMessengerFollowupsFromEvent_(event);
+        pendingOpenFormFollowupSubmit = messengerFollowups.submit;
+        pendingOpenFormFollowupCancel = messengerFollowups.cancel;
         const skipContactUi =
             readContactFormConfig().formKey === "contact" && hadNameAndMobileBeforeThisOpenForm;
         if (skipContactUi) {
+            pendingOpenFormFollowupSubmit = null;
+            pendingOpenFormFollowupCancel = null;
             contactFormOpenPending = false;
             const frSkip = readCommonFormConfigRoot();
             const formsSkip = frSkip && frSkip.forms && typeof frSkip.forms === "object" ? frSkip.forms : null;
@@ -12528,7 +12556,7 @@ function initializeContactForm() {
         } catch {
             /* no-op */
         }
-        closeButton.addEventListener("click", closeForm);
+        closeButton.addEventListener("click", () => closeForm({ userDismissedForm: true }));
     }
 
     window.addEventListener("dfchat-open-contact-form", (e) => {
@@ -12797,6 +12825,131 @@ function extractNextFormChainFromOpenFormEvent_(event) {
     return [];
 }
 
+/** @param {unknown} raw */
+function stringifyOpenFormFollowupSlot_(raw) {
+    return dfParameterScalarToString(raw != null ? raw : "").trim();
+}
+
+/**
+ * Map payload string to Messenger `sendRequest`/`sendQuery` (CX custom events vs training phrase).
+ * Prefix `event:` or `e:` forces custom event; `query:` / `q:` forces text; strings starting `CUSTOM.` / `SYS.` use event mode.
+ *
+ * @param {string} s
+ * @returns {{ mode: string, value: string } | null}
+ */
+function coerceOpenFormMessengerFollowup_(s) {
+    const t = typeof s === "string" ? s.trim() : "";
+    if (!t) {
+        return null;
+    }
+    if (/^event:/i.test(t)) {
+        const v = t.slice("event:".length).trim();
+        return v ? { mode: "event", value: v } : null;
+    }
+    if (/^e:/i.test(t)) {
+        const v = t.slice(2).trim();
+        return v ? { mode: "event", value: v } : null;
+    }
+    if (/^query:/i.test(t)) {
+        const v = t.slice("query:".length).trim();
+        return v ? { mode: "query", value: v } : null;
+    }
+    if (/^q:/i.test(t)) {
+        const v = t.slice(2).trim();
+        return v ? { mode: "query", value: v } : null;
+    }
+    if (/^CUSTOM\./i.test(t) || /^SYS\./i.test(t)) {
+        return { mode: "event", value: t };
+    }
+    return { mode: "query", value: t };
+}
+
+/**
+ * Optional `open_form.onSubmit` / `onCancel` (snake_case allowed) consumed by Messenger after Submit or ×.
+ *
+ * @param {Event} event
+ * @returns {{ submit: string | null, cancel: string | null }}
+ */
+function extractOpenFormMessengerFollowupsFromEvent_(event) {
+    const responseMessages = event && event.detail && event.detail.raw && event.detail.raw.queryResult
+        && Array.isArray(event.detail.raw.queryResult.responseMessages)
+        ? event.detail.raw.queryResult.responseMessages
+        : [];
+
+    const messengerMessages = event && event.detail && event.detail.data && Array.isArray(event.detail.data.messages)
+        ? event.detail.data.messages
+        : [];
+
+    /** @type {string | null} */
+    let submit = null;
+    /** @type {string | null} */
+    let cancel = null;
+
+    for (const message of [...responseMessages, ...messengerMessages]) {
+        const payload = extractPayload(message);
+        if (!payload || payload.action !== CONTACT_FORM_OPEN_ACTION) {
+            continue;
+        }
+        const pl = /** @type {Record<string, unknown>} */ (payload);
+        if ("onSubmit" in pl || "on_submit" in pl) {
+            const rawSubmit = Object.prototype.hasOwnProperty.call(pl, "onSubmit")
+                ? pl.onSubmit
+                : pl.on_submit;
+            const st = stringifyOpenFormFollowupSlot_(rawSubmit);
+            submit = st || null;
+        }
+        if ("onCancel" in pl || "on_cancel" in pl) {
+            const rawCancel = Object.prototype.hasOwnProperty.call(pl, "onCancel")
+                ? pl.onCancel
+                : pl.on_cancel;
+            const ct = stringifyOpenFormFollowupSlot_(rawCancel);
+            cancel = ct || null;
+        }
+    }
+
+    return { submit: submit, cancel: cancel };
+}
+
+/**
+ * Clears pending follow-ups; invokes CX via Dialogflow Messenger (see Google `sendQuery` / `sendRequest`).
+ *
+ * @param {"submit" | "cancel"} kind
+ */
+function dispatchPendingOpenFormFollowup_(kind) {
+    const raw =
+        kind === "submit" ? pendingOpenFormFollowupSubmit : pendingOpenFormFollowupCancel;
+    pendingOpenFormFollowupSubmit = null;
+    pendingOpenFormFollowupCancel = null;
+    if (!raw) {
+        return;
+    }
+    const coerced = coerceOpenFormMessengerFollowup_(raw);
+    if (!coerced || !coerced.value) {
+        return;
+    }
+    const ms = activeDfMessenger;
+    if (!ms) {
+        return;
+    }
+    try {
+        if (coerced.mode === "event") {
+            if (typeof /** @type {{ sendRequest?: (t: string, p: string) => unknown }} */ (ms).sendRequest === "function") {
+                /** @type {{ sendRequest: (t: string, p: string) => unknown }} */ (ms).sendRequest("event", coerced.value);
+                return;
+            }
+        }
+        if (typeof /** @type {{ sendQuery?: (q: string) => unknown }} */ (ms).sendQuery === "function") {
+            /** @type {{ sendQuery: (q: string) => unknown }} */ (ms).sendQuery(coerced.value);
+            return;
+        }
+        if (typeof /** @type {{ sendRequest?: (t: string, p: string) => unknown }} */ (ms).sendRequest === "function") {
+            /** @type {{ sendRequest: (t: string, p: string) => unknown }} */ (ms).sendRequest("query", coerced.value);
+        }
+    } catch {
+        /* ignore */
+    }
+}
+
 /**
  * Pop until the head is registered in `forms`; mutates {@link pendingNextFormIdsAfterSubmit}.
  * @param {Record<string, unknown> | null} forms `common.form.forms`
@@ -12990,7 +13143,13 @@ function openContactForm() {
     syncAppointmentDoctorHiddenFromSession();
 }
 
-function closeForm() {
+/**
+ * Collapse the overlay contact/form panel. Passing `{ userDismissedForm: true }` fires `onCancel` when set on `open_form`.
+ *
+ * @param {{ userDismissedForm?: boolean }} [options]
+ */
+function closeForm(options) {
+    const opts = options && typeof options === "object" ? options : {};
     contactFormOpenPending = false;
     if (contactFormOpenTimer) {
         window.clearTimeout(contactFormOpenTimer);
@@ -13008,6 +13167,10 @@ function closeForm() {
     form.setAttribute("aria-hidden", "true");
     resetChatActionBarPositionCaches();
     scheduleSyncChatActionBarPosition();
+
+    if (opts.userDismissedForm === true) {
+        dispatchPendingOpenFormFollowup_("cancel");
+    }
 }
 
 function scheduleContactFormOpen() {
@@ -13554,6 +13717,7 @@ function submitContactForm(event) {
             }
 
             closeForm();
+            dispatchPendingOpenFormFollowup_("submit");
             // Optional chaining: open the next queued form after each successful submit (FIFO).
             try {
                 const fr = readCommonFormConfigRoot();
