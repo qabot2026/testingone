@@ -1,10 +1,9 @@
 import { getMailTransport_, isSmtpCredentialEnvPresent_ } from "./smtp-transport.mjs";
+import { resolveContactLeadSendTimeoutMs_ } from "./smtp-timeouts.mjs";
 
-/** Default 60s: Railway→Gmail cold STARTTLS often exceeds 20s; override via CONTACT_LEAD_SEND_TIMEOUT_MS. */
+/** Default 180s for cloud→Gmail; override via CONTACT_LEAD_SEND_TIMEOUT_MS (max 300s). */
 function sendTimeoutMs_() {
-    const d = Number(process.env.CONTACT_LEAD_SEND_TIMEOUT_MS);
-    const base = Number.isFinite(d) && d > 0 ? d : 60000;
-    return Math.min(Math.max(base, 5000), 180000);
+    return resolveContactLeadSendTimeoutMs_();
 }
 
 /**

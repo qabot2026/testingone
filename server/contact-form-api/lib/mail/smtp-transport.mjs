@@ -3,6 +3,8 @@
 import dns from "node:dns";
 import nodemailer from "nodemailer";
 
+import { resolveContactLeadSendTimeoutMs_ } from "./smtp-timeouts.mjs";
+
 let transportCache = null;
 
 /** Many cloud hosts (Railway, etc.) resolve smtp.gmail.com to IPv6 first; the route can hang. Prefer IPv4. */
@@ -56,6 +58,9 @@ export function getMailTransport_() {
         Math.max(Number(process.env.CONTACT_LEAD_SMTP_CONNECT_TIMEOUT_MS) || 45000, 3000),
         120000
     );
+    const sendBudgetMs = resolveContactLeadSendTimeoutMs_();
+    /** Idle socket cap must cover our outer `sendMail` race or TLS can abort mid-send. */
+    const socketIdleMs = Math.min(Math.max(connMs + 20000, sendBudgetMs), 300000);
     transportCache = nodemailer.createTransport({
         host,
         port,
@@ -63,8 +68,8 @@ export function getMailTransport_() {
         auth: { user, pass },
         connectionTimeout: connMs,
         /** Slow STARTTLS to e.g. Gmail from cloud hosts needs headroom. */
-        greetingTimeout: Math.min(connMs, 45000),
-        socketTimeout: Math.min(connMs + 15000, 120000),
+        greetingTimeout: Math.min(Math.max(connMs, 45000), 90000),
+        socketTimeout: socketIdleMs,
         ...(!secure && port === 587 ? { requireTLS: true } : {})
     });
     return transportCache;
