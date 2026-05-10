@@ -1,7 +1,7 @@
 /**
  * Visitor-facing acknowledgement: “we received your enquiry” (does not notify staff — see contact-lead-notify-email).
  *
- * HTML layout: templates/client-lead-ack.html — edit branding/colours/copy there.
+ * HTML layout: templates/lead_mail_to_client.html — edit branding/colours/copy there.
  *
  * Enable: CONTACT_LEAD_CLIENT_ACK_ENABLED=1
  * Optional: CONTACT_LEAD_CLIENT_ACK_SUBJECT, CONTACT_MAIL_* company lines, CONTACT_LEAD_CLIENT_ACK_REPLY_TO
@@ -91,7 +91,7 @@ export async function maybeSendClientLeadAckEmail(args) {
     }
     const text = textParts.join("\n");
 
-    const html = renderEmailTemplateHtml_("client-lead-ack.html", {
+    const html = renderEmailTemplateHtml_("lead_mail_to_client.html", {
         greeting_line: escapeMailHtml_(greetPlain),
         name: escapeMailHtml_(name || "—"),
         email: escapeMailHtml_(toAddr),

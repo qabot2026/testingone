@@ -24,7 +24,7 @@
  *   SHEETS_CONV_DATETIME_TZ — optional IANA zone for Sheets “Conv.” column (12h display); unset defaults Asia/Kolkata; empty = server-local.
  *   Common (“general-purpose”) appointment hours: `company.config.js` → `common.generalAppointment` (any industry). Env overrides GENERAL_APPOINTMENT_*.
  *
- * Lead email (optional): staff + visitor mail — see `env.example.txt`, `lib/contact-lead-notify-email.mjs`, `lib/mail/client-lead-ack-email.mjs`, `lib/mail/appointment-client-ack-email.mjs`, `lib/mail/appointment-chatbot-staff-notify-email.mjs`. SMTP_* MAIL_FROM CONTACT_LEAD_* CONTACT_APPOINTMENT_*.
+ * Lead email (optional): staff + visitor mail — see `env.example.txt`, `lib/contact-lead-notify-email.mjs`, `lib/mail/client-lead-ack-email.mjs`, `lib/mail/appointment-client-ack-email.mjs`, `lib/mail/appointment-chatbot-staff-notify-email.mjs`; HTML layouts under `lib/mail/templates/` (`lead_mail_to_client.html`, `appointment_mail_to_user.html`, `appointment_mail_to_client.html`). SMTP_* MAIL_FROM CONTACT_LEAD_* CONTACT_APPOINTMENT_*.
  *   CONTACT_LEAD_NOTIFY_ON_MOBILE_SYNC=1 — also notify on mobile-sheet-sync when name or email is present.
  *
  * Faster contact-form submit (Sheets + Firestore both on): `CONTACT_FORM_DEFER_FIRESTORE_AFTER_RESPONSE=1` persists Firestore **after** HTTP 200 (Sheet row still authoritative for that request).
@@ -2467,7 +2467,7 @@ app.post(
 
 app.get("/health", (_req, res) => res.status(200).send("ok"));
 
-/** True when the client is a normal browser tab (readable HTML), not JSON-only tools. */
+/** Default: HTML page (avoids browsers “downloading” bare JSON). JSON only via ?format=json or Accept JSON-only. */
 function wantsContactFormEmailHealthHtml_(req) {
     const q = req.query && typeof req.query === "object" ? req.query : {};
     if (String(q.format || "").toLowerCase() === "json") {
@@ -2479,8 +2479,16 @@ function wantsContactFormEmailHealthHtml_(req) {
     if (String(q.format || "").toLowerCase() === "html") {
         return true;
     }
-    const a = req.get("accept") || "";
-    return /\btext\/html\b/i.test(a);
+    const accept = (req.get("accept") || "").trim();
+    const a = accept.toLowerCase();
+    const hasJson = /\bapplication\/json\b/.test(a);
+    const hasHtml = /\btext\/html\b/.test(a);
+    const wildcard = /\*\/\*/.test(a);
+    /** e.g. curl with Accept application/json only (no text/html, no star-slash-star). */
+    if (hasJson && !hasHtml && !wildcard) {
+        return false;
+    }
+    return true;
 }
 
 /** Debugging: Sheets env + optional live read probe (spreadsheet tabs / permissions). */
@@ -2544,7 +2552,10 @@ app.get("/contact-form-email-health", (req, res) => {
         + `<a href="?format=json">Open as JSON</a> · `
         + `Use <code>curl -H \"Accept: application/json\" …</code> for scripts.</p>`
         + `</body></html>`;
-    return res.status(200).type("html; charset=utf-8").send(html);
+    return res
+        .status(200)
+        .set("Content-Type", "text/html; charset=utf-8")
+        .send(html);
 });
 
 /** POST: send exactly one ping mail to CONTACT_LEAD_NOTIFY_TO (proves SMTP, not only env parser). Requires CONTACT_LEAD_EMAIL_TEST_SECRET + matching header/body.secret. */

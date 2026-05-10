@@ -1,5 +1,9 @@
 <!--
-  Staff new-lead notification — aligns with bot / form terminology:
+  Mail to user (staff / inbox) — NEW LEAD from website/bot (not appointment confirmation):
+
+  Appointment confirmations use appointment_mail_to_client.html instead.
+
+  Tokens:
 
     lead_intro
     name, mobile, email, service (service interested), city, message
@@ -7,6 +11,8 @@
     submitted_at — when the lead was captured (UTC string)
     technical_notes — session / IP / full field dump for ops
     company_name, company_website — footer signatures
+
+  Override template with env CONTACT_LEAD_STAFF_MAIL_TEMPLATE (default filename).
 -->
 <!DOCTYPE html>
 <html lang="en">

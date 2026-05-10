@@ -1,7 +1,7 @@
 /**
  * Visitor confirmation: booked appointment summary (CX chatbot, contact-form appointment flows, REST when email provided).
  *
- * HTML layout: templates/appointment-client-ack.html (+ optional appointment_banner_html for chat bookings).
+ * HTML layout: templates/appointment_mail_to_client.html (+ optional appointment_banner_html for chat bookings).
  *
  * Enable: CONTACT_APPOINTMENT_CLIENT_ACK_ENABLED=1
  * Optional: CONTACT_MAIL_* (company footer), CONTACT_APPOINTMENT_CLIENT_ACK_SUBJECT / _CHATBOT
@@ -106,7 +106,7 @@ export async function maybeSendAppointmentClientAckEmail(args) {
 
     const sentUtcNow = new Date().toISOString();
     const html = renderEmailTemplateHtml_(
-        "appointment-client-ack.html",
+        "appointment_mail_to_client.html",
         {
             greeting_line: escapeMailHtml_(greetPlain),
             doctor_name: escapeMailHtml_(dr),

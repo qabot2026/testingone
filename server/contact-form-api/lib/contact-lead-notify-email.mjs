@@ -27,7 +27,7 @@
  *
  * Optional: CONTACT_LEAD_NOTIFY_ON_MOBILE_SYNC=1 (see index.mjs comment).
  *
- * Staff email HTML layout: templates/staff-new-lead-simple.html (override CONTACT_LEAD_STAFF_MAIL_TEMPLATE).
+ * Staff email HTML layout: templates/appointment_mail_to_user.html (override CONTACT_LEAD_STAFF_MAIL_TEMPLATE).
  */
 
 import path from "node:path";
@@ -66,6 +66,10 @@ export function logContactLeadEmailBoot() {
         console.warn(
             `[contact-lead-notify-email] NOT ready — missing env: ${missing.join(", ")}. Fix in Railway Variables, redeploy.`
         );
+    } else if (missing.length) {
+        console.warn(
+            `[contact-lead-notify-email] NOT ready — missing env: ${missing.join(", ")}. Set CONTACT_LEAD_NOTIFY_TO + SMTP_* on this Railway service (not another project), redeploy.`
+        );
     }
 }
 
@@ -82,7 +86,11 @@ function logOutcome_(r) {
         return;
     }
     if (r.sent) return;
-    if (r.skipped && r.reason === "not_configured") return;
+    if (r.skipped && r.reason === "not_configured") {
+        const me = r.missing_env && r.missing_env.length ? ` (${r.missing_env.join(", ")})` : "";
+        console.warn("[contact-lead-notify-email] skipped: not configured — missing env vars" + me);
+        return;
+    }
     if (r.skipped) console.warn("[contact-lead-notify-email] skipped:", r.reason);
     if (typeof r.error === "string" && r.error.trim()) console.error("[contact-lead-notify-email] SMTP:", r.error.trim());
 }
@@ -460,11 +468,11 @@ export async function maybeSendContactLeadNotifyEmail(args) {
         typeof process.env.CONTACT_LEAD_STAFF_MAIL_TEMPLATE === "string"
             ? process.env.CONTACT_LEAD_STAFF_MAIL_TEMPLATE.trim()
             : ""
-    ) || "staff-new-lead-simple.html";
+    ) || "appointment_mail_to_user.html";
     staffHtmlTpl = path.basename(staffHtmlTpl);
     if (!/^[-\w.]+\.html$/i.test(staffHtmlTpl) || staffHtmlTpl.includes("..")) {
         console.warn("[contact-lead-notify-email] bad CONTACT_LEAD_STAFF_MAIL_TEMPLATE → using default.");
-        staffHtmlTpl = "staff-new-lead-simple.html";
+        staffHtmlTpl = "appointment_mail_to_user.html";
     }
     let html;
     try {
