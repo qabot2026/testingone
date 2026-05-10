@@ -12228,13 +12228,15 @@ function handleDfResponseReceived(event) {
 
     if (willOpenForm) {
         pendingOpenFormPrefill = extractOpenFormPrefillFromEvent(event);
+        /** Skip only when name+mobile were already stored before this turn — not when this payload prefills them. */
+        const hadNameAndMobileBeforeThisOpenForm = sessionHasNameAndMobileForSkip_();
         if (pendingOpenFormPrefill) {
             mergePhoneFromOpenFormPrefillIntoStoredContext(pendingOpenFormPrefill);
             mergeContactHintsFromOpenFormPrefillIntoStoredContext(pendingOpenFormPrefill);
         }
         pendingNextFormIdsAfterSubmit = extractNextFormChainFromOpenFormEvent_(event);
         const skipContactUi =
-            readContactFormConfig().formKey === "contact" && sessionHasNameAndMobileForSkip_();
+            readContactFormConfig().formKey === "contact" && hadNameAndMobileBeforeThisOpenForm;
         if (skipContactUi) {
             contactFormOpenPending = false;
             const frSkip = readCommonFormConfigRoot();
