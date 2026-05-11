@@ -13587,6 +13587,7 @@ function submitContactForm(event) {
         fetchBody = fd;
         fetchHeaders = undefined;
     } else {
+        payload.client_context = getClientContext();
         fetchBody = JSON.stringify(payload);
         fetchHeaders = { "Content-Type": "application/json" };
     }

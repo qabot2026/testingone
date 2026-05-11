@@ -1,0 +1,15 @@
+{
+  "extraColumnMappings": [
+    {
+      "tab": "Sheet1",
+      "entries": [
+        {
+          "startColumn": "R",
+          "valueFrom": "session_params.coursename",
+          "shiftIfOccupied": true,
+          "_note": "Use a free column; A-Q are the default lead fields — C is usually mobile."
+        }
+      ]
+    }
+  ]
+}
