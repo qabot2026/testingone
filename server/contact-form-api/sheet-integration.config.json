@@ -6,8 +6,8 @@
         {
           "startColumn": "B",
           "valueFrom": "session_params.coursename",
-          "shiftIfOccupied": false,
-          "_note": "false = always use startColumn (see server log if it overlaps a lead field). true = first free column to the right (often M when A–L are filled)."
+          "shiftIfOccupied": true,
+          "_note": "true = shift right if startColumn is used by lead row; false = force that column (may overwrite)."
         }
       ]
     }
