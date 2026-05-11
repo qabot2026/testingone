@@ -12245,6 +12245,7 @@ function handleDfResponseReceived(event) {
     const formRegistered = !!(openFormId && fr.forms && typeof fr.forms === "object" && fr.forms[openFormId]);
     if (formRegistered) {
         setActiveContactFormId(openFormId);
+        setTimeout(() => applyFormPrefillFromSession(openFormId), 100);
     } else if (willOpenForm) {
         applyDefaultContactFormForBareOpenFormAction(event);
     }
@@ -12998,6 +12999,29 @@ function applyContactFormPrefill(values) {
     }
 }
 
+function applyFormPrefillFromSession(formId) {
+    const stored = readStoredClientContext();
+    const fr = typeof window !== "undefined" ? window.__DFCHAT_FORMS__ : globalThis.__DFCHAT_FORMS__;
+    const formDef = fr && fr.forms && typeof fr.forms === "object" ? fr.forms[formId] : null;
+    if (!formDef || !formDef.fields || !Array.isArray(formDef.fields)) {
+        return;
+    }
+    for (const def of formDef.fields) {
+        if (!def || !def.id || !def.name) {
+            continue;
+        }
+        const v = stored[def.name];
+        const s = dfParameterScalarToString(v != null ? v : "");
+        if (!s) {
+            continue;
+        }
+        const el = document.getElementById(def.id);
+        if (el && "value" in el) {
+            el.value = s;
+        }
+    }
+}
+
 function extractPayload(message) {
     if (!message || typeof message !== "object") {
         return null;
@@ -13691,6 +13715,13 @@ function submitContactForm(event) {
             if (mobileToRemember) {
                 mergeVisitorMobileIntoStoredContext(mobileToRemember, { syncSheet: false });
             }
+            const updatedContext = { ...readStoredClientContext() };
+            for (const key in payload) {
+                if (typeof payload[key] === 'string' && payload[key].trim()) {
+                    updatedContext[key] = payload[key];
+                }
+            }
+            persistClientContext(updatedContext);
             renderContactFormSubmissionResponse(summaryForChat);
 
             for (const def of fieldDefs) {

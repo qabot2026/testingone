@@ -627,6 +627,30 @@ function appointmentDateInputToIso_(raw) {
     return `${yyyy}-${mm}-${dd}`;
 }
 
+/** Normalize appointment date to DD-MM-YYYY format for Sheets. */
+function normalizeAppointmentDateToDDMMYYYY_(raw) {
+    const t = normalizeStr_(raw);
+    if (!t) return "";
+    if (/^\d{2}-\d{2}-\d{4}$/.test(t)) {
+        const m = /^(\d{2})-(\d{2})-(\d{4})$/.exec(t);
+        const dd = m[1];
+        const mm = m[2];
+        const yyyy = m[3];
+        const d = parseInt(dd, 10);
+        const mo = parseInt(mm, 10);
+        const y = parseInt(yyyy, 10);
+        if (!Number.isFinite(d) || !Number.isFinite(mo) || !Number.isFinite(y)) return "";
+        if (mo < 1 || mo > 12 || d < 1 || d > 31 || y < 1900 || y > 2100) return "";
+        return t; // already DD-MM-YYYY
+    }
+    // If it's ISO, convert to DD-MM-YYYY
+    if (/^\d{4}-\d{2}-\d{2}$/.test(t)) {
+        const [yyyy, mm, dd] = t.split('-');
+        return `${dd}-${mm}-${yyyy}`;
+    }
+    return "";
+}
+
 /** Slot step (minutes). Override with APPOINTMENT_SLOT_MINUTES (e.g. 15, 30, 60). */
 function appointmentSlotMinutes_() {
     const n = Number(process.env.APPOINTMENT_SLOT_MINUTES);
@@ -2000,7 +2024,7 @@ app.post(
             || scalarFormValue(fields.appointment_date)
             || "";
         const appointmentDate =
-            appointmentDateInputToIso_(appointmentDateRaw) || appointmentDateRaw;
+            normalizeAppointmentDateToDDMMYYYY_(appointmentDateRaw);
         const appointmentTimeRaw =
             scalarFormValue(fields.appointmenttime)
             || scalarFormValue(fields.appointmentTime)
