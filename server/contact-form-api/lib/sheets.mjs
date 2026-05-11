@@ -1,10 +1,9 @@
 /**
  * Append one row via Google Sheets API v4 (service account must be shared on the spreadsheet).
  *
- * Optional extra Sheet columns: `../sheet-extra-columns.config.json` (JSON array; loaded at runtime, no
- * static ESM import — avoids startup crashes on Docker/Railway). Example:
- * `[{"tab":"Sheet1","entries":[{"startColumn":"R","valueFrom":"session_params.coursename","shiftIfOccupied":true}]}]`.
- * Override via env `SHEETS_EXTRA_COLUMN_MAPPINGS_JSON`.
+ * Lead row shaping: `../sheet-lead.config.json` — mirror CX flat keys into `session_params`, optional
+ * standard column skips, and extra Sheet cells. Legacy `../sheet-extra-columns.config.json` (JSON array)
+ * still loads if the new file is absent. Override extras only via env `SHEETS_EXTRA_COLUMN_MAPPINGS_JSON`.
  */
 
 import { existsSync, readFileSync } from "fs";
@@ -13,39 +12,104 @@ import { fileURLToPath } from "url";
 import { google } from "googleapis";
 import { getServiceAccountCredentials } from "./google-service-account.mjs";
 
-const SHEET_EXTRA_CONFIG_JSON_PATH = path.join(
-    path.dirname(fileURLToPath(import.meta.url)),
-    "..",
-    "sheet-extra-columns.config.json"
-);
+const SHEET_LEAD_CONFIG_DIR = path.dirname(fileURLToPath(import.meta.url));
+const SHEET_LEAD_CONFIG_JSON_PATH = path.join(SHEET_LEAD_CONFIG_DIR, "..", "sheet-lead.config.json");
+const SHEET_EXTRA_LEGACY_JSON_PATH = path.join(SHEET_LEAD_CONFIG_DIR, "..", "sheet-extra-columns.config.json");
 
-/** @type {unknown[] | null} */
-let diskSheetExtraMappingsCache = null;
+/** @type {{ loaded: boolean, mirrorFlatClientKeysToSessionParams: string[], extraColumnMappings: unknown[], skipStandardColumns: string[] } | null} */
+let sheetLeadConfigCache = null;
 
-function loadSheetExtraMappingsFromDisk_() {
-    if (diskSheetExtraMappingsCache !== null) {
-        return diskSheetExtraMappingsCache;
+function normalizeLeadConfigFromJson_(j) {
+    if (!j || typeof j !== "object") {
+        return { mirrorFlatClientKeysToSessionParams: [], extraColumnMappings: [], skipStandardColumns: [] };
     }
-    diskSheetExtraMappingsCache = [];
-    try {
-        if (!existsSync(SHEET_EXTRA_CONFIG_JSON_PATH)) {
-            return diskSheetExtraMappingsCache;
+    const o = /** @type {Record<string, unknown>} */ (j);
+    /** @type {string[]} */
+    const mirror = [];
+    if (Array.isArray(o.mirrorFlatClientKeysToSessionParams)) {
+        for (const x of o.mirrorFlatClientKeysToSessionParams) {
+            if (typeof x === "string") {
+                const k = x.trim();
+                if (k && !k.startsWith("_")) {
+                    mirror.push(k);
+                }
+            }
         }
-        const raw = readFileSync(SHEET_EXTRA_CONFIG_JSON_PATH, "utf8");
-        const j = JSON.parse(raw);
-        if (Array.isArray(j)) {
-            diskSheetExtraMappingsCache = j;
-        } else if (j && typeof j === "object" && Array.isArray(/** @type {{ mappings?: unknown[] }} */ (j).mappings)) {
-            diskSheetExtraMappingsCache = /** @type {{ mappings: unknown[] }} */ (j).mappings;
+    }
+    /** @type {unknown[]} */
+    let extras = [];
+    if (Array.isArray(o.extraColumnMappings)) {
+        extras = o.extraColumnMappings;
+    } else if (Array.isArray(o.mappings)) {
+        extras = /** @type {unknown[]} */ (o.mappings);
+    }
+    /** @type {string[]} */
+    const skip = [];
+    if (Array.isArray(o.skipStandardColumns)) {
+        for (const x of o.skipStandardColumns) {
+            if (typeof x === "string") {
+                const k = x.trim();
+                if (k && !k.startsWith("_")) {
+                    skip.push(k);
+                }
+            }
+        }
+    }
+    return { mirrorFlatClientKeysToSessionParams: mirror, extraColumnMappings: extras, skipStandardColumns: skip };
+}
+
+function loadSheetLeadConfig_() {
+    if (sheetLeadConfigCache) {
+        return sheetLeadConfigCache;
+    }
+    /** @type {{ mirrorFlatClientKeysToSessionParams: string[], extraColumnMappings: unknown[], skipStandardColumns: string[] }} */
+    let out = { mirrorFlatClientKeysToSessionParams: [], extraColumnMappings: [], skipStandardColumns: [] };
+    try {
+        if (existsSync(SHEET_LEAD_CONFIG_JSON_PATH)) {
+            const raw = readFileSync(SHEET_LEAD_CONFIG_JSON_PATH, "utf8");
+            const j = JSON.parse(raw);
+            if (Array.isArray(j)) {
+                out = {
+                    mirrorFlatClientKeysToSessionParams: ["coursename"],
+                    extraColumnMappings: j,
+                    skipStandardColumns: []
+                };
+            } else {
+                out = normalizeLeadConfigFromJson_(j);
+            }
+        } else if (existsSync(SHEET_EXTRA_LEGACY_JSON_PATH)) {
+            const raw = readFileSync(SHEET_EXTRA_LEGACY_JSON_PATH, "utf8");
+            const j = JSON.parse(raw);
+            const arr = Array.isArray(j)
+                ? j
+                : (j && typeof j === "object" && Array.isArray(/** @type {{ mappings?: unknown[] }} */ (j).mappings)
+                    ? /** @type {{ mappings: unknown[] }} */ (j).mappings
+                    : []);
+            out = {
+                mirrorFlatClientKeysToSessionParams: ["coursename"],
+                extraColumnMappings: arr,
+                skipStandardColumns: []
+            };
         }
     } catch (e) {
         const msg = e && /** @type {{ message?: string }} */ (e).message
             ? String(/** @type {{ message?: string }} */ (e).message)
             : String(e);
-        console.warn("[contact-form-api] sheet-extra-columns.config.json:", msg);
-        diskSheetExtraMappingsCache = [];
+        console.warn("[contact-form-api] sheet-lead.config.json / legacy load:", msg);
+        out = { mirrorFlatClientKeysToSessionParams: [], extraColumnMappings: [], skipStandardColumns: [] };
     }
-    return diskSheetExtraMappingsCache;
+    sheetLeadConfigCache = { loaded: true, ...out };
+    return sheetLeadConfigCache;
+}
+
+/** @returns {Set<string>} normalized ids */
+function skipStandardColumnsSet_() {
+    const cfg = loadSheetLeadConfig_();
+    const set = new Set();
+    for (const x of cfg.skipStandardColumns) {
+        set.add(normalizedHeaderKey_(x));
+    }
+    return set;
 }
 
 const SPREADSHEET_ID = (process.env.SHEETS_SPREADSHEET_ID || "").trim();
@@ -240,6 +304,35 @@ function mergeSheetExtrasSources_(sources) {
         s.fields && typeof s.fields === "object" && !Array.isArray(s.fields)
             ? /** @type {Record<string, unknown>} */ ({ ...s.fields })
             : {};
+    const cfg = loadSheetLeadConfig_();
+    const mirrorKeys = cfg.mirrorFlatClientKeysToSessionParams || [];
+    if (mirrorKeys.length) {
+        const sp =
+            ctx.session_params && typeof ctx.session_params === "object" && !Array.isArray(ctx.session_params)
+                ? /** @type {Record<string, unknown>} */ ({ .../** @type {Record<string, unknown>} */ (ctx.session_params) })
+                : /** @type {Record<string, unknown>} */ ({});
+        for (const mk of mirrorKeys) {
+            const existing = sp[mk];
+            const hasExisting =
+                existing != null && (typeof existing !== "string" || String(existing).trim() !== "");
+            if (hasExisting) {
+                continue;
+            }
+            const flat = ctx[mk];
+            if (flat == null) {
+                continue;
+            }
+            const t = typeof flat === "string" || typeof flat === "number" || typeof flat === "boolean"
+                ? String(flat).trim()
+                : "";
+            if (t) {
+                sp[mk] = t;
+            }
+        }
+        if (Object.keys(sp).length) {
+            ctx.session_params = sp;
+        }
+    }
     return { ...ctx, fields };
 }
 
@@ -258,7 +351,7 @@ function getActiveSheetExtraMappings_() {
             /* fall through */
         }
     }
-    return loadSheetExtraMappingsFromDisk_();
+    return loadSheetLeadConfig_().extraColumnMappings;
 }
 
 /**
@@ -308,13 +401,25 @@ function buildConfiguredExtraCellUpdates_(tab, rowNumber, sources, standardUpdat
             if (!ent || typeof ent !== "object") {
                 continue;
             }
-            const e = /** @type {{ startColumn?: string, valueFrom?: string, shiftIfOccupied?: boolean }} */ (ent);
+            const e = /** @type {{ startColumn?: string, valueFrom?: string|string[], shiftIfOccupied?: boolean }} */ (ent);
             const colLet = typeof e.startColumn === "string" ? e.startColumn.trim() : "";
-            const path = typeof e.valueFrom === "string" ? e.valueFrom.trim() : "";
-            if (!colLet || !path) {
+            const vf = e.valueFrom;
+            /** @type {string[]} */
+            const pathList = Array.isArray(vf)
+                ? vf.map((x) => (typeof x === "string" ? x.trim() : "")).filter(Boolean)
+                : (typeof vf === "string" && vf.trim() ? [vf.trim()] : []);
+            if (!colLet || !pathList.length) {
                 continue;
             }
-            let v = getValueAtDotPath_(mergedRoot, path);
+            let v = "";
+            for (let pi = 0; pi < pathList.length; pi += 1) {
+                const cand = getValueAtDotPath_(mergedRoot, pathList[pi]);
+                const z = sheetOutboundCell_(cand);
+                if (String(z || "").trim()) {
+                    v = z;
+                    break;
+                }
+            }
             v = sheetOutboundCell_(v);
             if (!String(v || "").trim()) {
                 continue;
@@ -333,7 +438,7 @@ function buildConfiguredExtraCellUpdates_(tab, rowNumber, sources, standardUpdat
                     "[contact-form-api] Sheets extra column: could not place value — every column from",
                     colLet,
                     "through the sheet width is already used by this row batch. Skipping valueFrom=",
-                    path
+                    pathList.join(" | ")
                 );
                 continue;
             }
@@ -1114,9 +1219,15 @@ async function buildStandardLeadRowUpdates_(sheets, tab, rowNumber, lead) {
 
     const col = (idx0) => columnLetterFromIndex_(idx0);
 
+    const skip = skipStandardColumnsSet_();
+
     /** @type {Array<{ range: string, values: string[][] }>} */
     const updates = [];
-    const put = (aliases, fallbackIdx, value) => {
+    /** @param {string[]} aliases @param {number} fallbackIdx @param {unknown} value @param {string} [skipId] canonical id for `skipStandardColumns` in sheet-lead.config.json */
+    const put = (aliases, fallbackIdx, value, skipId) => {
+        if (skipId && skip.has(normalizedHeaderKey_(skipId))) {
+            return;
+        }
         const v = sheetOutboundCell_(value);
         if (!String(v || "").trim()) {
             return;
@@ -1126,11 +1237,11 @@ async function buildStandardLeadRowUpdates_(sheets, tab, rowNumber, lead) {
     };
 
     // Prefer your declared A–Q schema (no Form ID); header aliases correct column when order differs.
-    put(["convdateandtime", "conversiondatetime", "date", "datetime", "timestamp", "submittedat"], 0, lead.iso);
-    put(["name"], 1, lead.name);
-    put(["mobile", "phone", "phonenumber", "mobilenumber", "mobile_number"], 2, lead.mobile);
-    put(["email"], 3, lead.email);
-    put(["channel"], 4, lead.channel);
+    put(["convdateandtime", "conversiondatetime", "date", "datetime", "timestamp", "submittedat"], 0, lead.iso, "conv");
+    put(["name"], 1, lead.name, "name");
+    put(["mobile", "phone", "phonenumber", "mobilenumber", "mobile_number"], 2, lead.mobile, "mobile");
+    put(["email"], 3, lead.email, "email");
+    put(["channel"], 4, lead.channel, "channel");
     put(
         [
             "userqueries",
@@ -1142,24 +1253,26 @@ async function buildStandardLeadRowUpdates_(sheets, tab, rowNumber, lead) {
             "conversationqueries"
         ],
         5,
-        lead.userQueriesCsv
+        lead.userQueriesCsv,
+        "userqueries"
     );
-    put(["repeateduser", "repeated_user", "isrepeated", "repuser"], 6, lead.repeated);
-    put(["sourceurl", "source_url", "pageurl", "embedurl"], 7, lead.sourceUrl);
-    put(["sessionid", "session", "sessioni id", "clientsessionid", "client_session_id"], 8, lead.clientSessionId);
-    put(["device", "devicetype"], 9, lead.deviceType);
-    put(["browser", "browsername"], 10, lead.browserName);
+    put(["repeateduser", "repeated_user", "isrepeated", "repuser"], 6, lead.repeated, "repeated");
+    put(["sourceurl", "source_url", "pageurl", "embedurl"], 7, lead.sourceUrl, "sourceurl");
+    put(["sessionid", "session", "sessioni id", "clientsessionid", "client_session_id"], 8, lead.clientSessionId, "sessionid");
+    put(["device", "devicetype"], 9, lead.deviceType, "device");
+    put(["browser", "browsername"], 10, lead.browserName, "browser");
     put(
         ["city", "visitorcity", "usercity", "cityname", "location", "preferredcity"],
         11,
-        lead.city
+        lead.city,
+        "city"
     );
-    put(["ip", "ipaddress", "ip_address"], 12, lead.ip);
+    put(["ip", "ipaddress", "ip_address"], 12, lead.ip, "ip");
     // Prefer exact "Appointment Booked" match only — aliases like `appointment` would hit Date/Time headers.
-    put(["appointmentbooked", "appointment_booked", "isappointmentbooked"], 13, lead.appointmentBooked);
-    put(["appointmentdate"], 14, lead.appointmentDate);
-    put(["appointmenttime"], 15, lead.appointmentTime);
-    put(["drivefilelink", "drive file link", "drivefile", "filelink", "filelinks", "drivelink"], 16, lead.driveFileLink);
+    put(["appointmentbooked", "appointment_booked", "isappointmentbooked"], 13, lead.appointmentBooked, "appointmentbooked");
+    put(["appointmentdate"], 14, lead.appointmentDate, "appointmentdate");
+    put(["appointmenttime"], 15, lead.appointmentTime, "appointmenttime");
+    put(["drivefilelink", "drive file link", "drivefile", "filelink", "filelinks", "drivelink"], 16, lead.driveFileLink, "drivefilelink");
 
     return updates;
 }
@@ -1194,7 +1307,7 @@ async function writeLeadRowByHeader_(sheets, tab, rowNumber, lead, sheetExtrasSo
  * Device, Browser, City, IP, Appointment booked/date/time, Drive link.
  *
  * @param {{ iso: string, formId?: string, name: string, mobile: string, email: string, clientSessionId: string, browserName: string, deviceType: string, channel: string, fileLinks?: string, city?: string, ip?: string, sourceUrl?: string, appointmentBooked?: string, appointmentDate?: string, appointmentTime?: string, userQueriesCsv?: string }} row `iso` = conv. datetime label for column A (12h formatted). `formId` ignored for Sheets.
- * @param {{ preferIncomingContact?: boolean, skipSessionDedup?: boolean, sheetExtrasSources?: { clientContext?: Record<string, unknown> | null, fields?: Record<string, unknown> | null } }} [opts] `skipSessionDedup` (with `preferIncomingContact`) skips “one row per session” and always appends — default for main contact-form POST. `sheetExtrasSources` feeds `sheet-extra-columns.config.mjs` dot paths.
+ * @param {{ preferIncomingContact?: boolean, skipSessionDedup?: boolean, sheetExtrasSources?: { clientContext?: Record<string, unknown> | null, fields?: Record<string, unknown> | null } }} [opts] `sheetExtrasSources` supplies dot paths for `sheet-lead.config.json` `valueFrom` (merged `client_context` + form `fields`).
  * @returns {Promise<{ action: "appended"|"duplicate_updated"|"duplicate_noop", patched: boolean, tab: string, appendRangeUsed?: string, sheetRowNumber?: number, googleAppend?: { updatedRange?: string, updatedRows?: number, spreadsheetId?: string }, googleBatch?: { totalUpdatedCells?: number, totalUpdatedRows?: number, updatedRanges: string[] } }>}
  */
 export async function appendContactRowToSheet(row, opts) {

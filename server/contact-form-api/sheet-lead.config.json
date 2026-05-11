@@ -1,0 +1,16 @@
+{
+  "mirrorFlatClientKeysToSessionParams": ["coursename"],
+  "skipStandardColumns": [],
+  "extraColumnMappings": [
+    {
+      "tab": "Sheet1",
+      "entries": [
+        {
+          "startColumn": "R",
+          "valueFrom": ["session_params.coursename", "coursename"],
+          "shiftIfOccupied": true
+        }
+      ]
+    }
+  ]
+}
