@@ -1181,6 +1181,81 @@ function pickHeaderIndex_(map, aliases, fallbackIdx) {
     return fallbackIdx;
 }
 
+/** Aliases for header row matching when column order differs from legacy A–Q (e.g. extra "Course" column). */
+const SHEET_H_NAME = [
+    "name",
+    "fullname",
+    "full_name",
+    "customername",
+    "customer_name",
+    "personname",
+    "person_name",
+    "username",
+    "guestname",
+    "displayname",
+    "contactname",
+    "contact_name",
+    "yourname",
+    "clientname",
+    "firstlastname",
+    "lastfirstname",
+    "first_name",
+    "lastname",
+    "last_name",
+    "fname",
+    "lname"
+];
+const SHEET_H_MOBILE = [
+    "mobile",
+    "phone",
+    "phonenumber",
+    "mobilenumber",
+    "mobile_number",
+    "tel",
+    "cell",
+    "cellphone",
+    "contactnumber",
+    "contactphone",
+    "whatsapp",
+    "whatsappnumber",
+    "yourmobile",
+    "usermobile",
+    "customermobile",
+    "mobile_no",
+    "mobileno",
+    "phone_no",
+    "phoneno",
+    "cell_number"
+];
+const SHEET_H_EMAIL = [
+    "email",
+    "mail",
+    "e_mail",
+    "email_address",
+    "emailaddress",
+    "useremail",
+    "contactemail",
+    "contact_email",
+    "email_id",
+    "e_mail_address",
+    "mail_id"
+];
+const SHEET_H_SESSION = [
+    "sessionid",
+    "session",
+    "session_id",
+    "sessioniid",
+    "sessioni",
+    "clientsessionid",
+    "client_session_id",
+    "clientsession",
+    "conversationid",
+    "conversation_id",
+    "chatsessionid",
+    "sessioni_id",
+    "session_id_client"
+];
+
 function rowNumberFromUpdatedRange_(updatedRange) {
     const s = typeof updatedRange === "string" ? updatedRange : "";
     const m = s.match(/!([A-Z]+)(\d+)(?::[A-Z]+(\d+))?$/);
@@ -1215,11 +1290,12 @@ async function buildStandardLeadRowUpdates_(sheets, tab, rowNumber, lead) {
         updates.push({ range: `${tab}!${col(idx0)}${rowNumber}`, values: [[v]] });
     };
 
-    // Prefer your declared A–Q schema (no Form ID); header aliases correct column when order differs.
-    put(["convdateandtime", "conversiondatetime", "date", "datetime", "timestamp", "submittedat"], 0, lead.iso);
-    put(["name"], 1, lead.name);
-    put(["mobile", "phone", "phonenumber", "mobilenumber", "mobile_number"], 2, lead.mobile);
-    put(["email"], 3, lead.email);
+    // Prefer your declared A–Q schema (no Form ID); header aliases correct column when order differs
+    // (e.g. "Course" inserted at B — legacy fallbacks 1=name,2=mobile would otherwise land on Course/Name).
+    put(["convdateandtime", "conversiondatetime", "date", "datetime", "timestamp", "submittedat", "conv"], 0, lead.iso);
+    put(SHEET_H_NAME, 1, lead.name);
+    put(SHEET_H_MOBILE, 2, lead.mobile);
+    put(SHEET_H_EMAIL, 3, lead.email);
     put(["channel"], 4, lead.channel);
     put(
         [
@@ -1236,7 +1312,7 @@ async function buildStandardLeadRowUpdates_(sheets, tab, rowNumber, lead) {
     );
     put(["repeateduser", "repeated_user", "isrepeated", "repuser"], 6, lead.repeated);
     put(["sourceurl", "source_url", "pageurl", "embedurl"], 7, lead.sourceUrl);
-    put(["sessionid", "session", "sessioni id", "clientsessionid", "client_session_id"], 8, lead.clientSessionId);
+    put(SHEET_H_SESSION, 8, lead.clientSessionId);
     put(["device", "devicetype"], 9, lead.deviceType);
     put(["browser", "browsername"], 10, lead.browserName);
     put(
