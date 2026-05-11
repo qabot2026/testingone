@@ -12911,15 +12911,19 @@ function extractOpenFormMessengerFollowupsFromEvent_(event) {
 }
 
 /**
- * Clears pending follow-ups; invokes CX via Dialogflow Messenger (see Google `sendQuery` / `sendRequest`).
+ * Clears only the follow-up that was invoked; invokes CX via Dialogflow Messenger (`sendQuery` / `sendRequest`).
+ * Cancel is not cleared on submit so `onCancel` still works when the next form in a client-side chain is closed (×).
  *
  * @param {"submit" | "cancel"} kind
  */
 function dispatchPendingOpenFormFollowup_(kind) {
     const raw =
         kind === "submit" ? pendingOpenFormFollowupSubmit : pendingOpenFormFollowupCancel;
-    pendingOpenFormFollowupSubmit = null;
-    pendingOpenFormFollowupCancel = null;
+    if (kind === "submit") {
+        pendingOpenFormFollowupSubmit = null;
+    } else {
+        pendingOpenFormFollowupCancel = null;
+    }
     if (!raw) {
         return;
     }
