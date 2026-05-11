@@ -76,8 +76,8 @@ const POWERED_BY_STRIP_NUDGE_RIGHT_PX = 110;
 /** Additional downward shift (px) for the strip (`setPoweredByStripGeometry` top). */
 const POWERED_BY_STRIP_NUDGE_DOWN_PX = 5;
 const APPOINTMENT_DATE_CONFIG = {
-    allowToday: false, // Set to false to disable today's date
-    maxDaysAhead: 30 // How many days ahead to allow selection
+    allowToday: today, // Set to false to disable today's date
+    maxDaysAhead: 7 // How many days ahead to allow selection
 };
 const AUTO_START_CHAT_EVENT_NAME = "FRESH";
 const AUTO_START_CHAT_DELAY_MS = 600;
