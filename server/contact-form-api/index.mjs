@@ -1994,12 +1994,26 @@ app.post(
         const city = cityFromFields || cityFromContext || await resolveCityForRequest(req);
         const userQueriesCsv = normalizeUserQueriesCsvFromClientContext(mergedClientContext);
         const sourceUrl = resolveSourceUrlForSheet(mergedClientContext);
+        const appointmentDateRaw =
+            scalarFormValue(fields.appointmentdate)
+            || scalarFormValue(fields.appointmentDate)
+            || scalarFormValue(fields.appointment_date)
+            || "";
         const appointmentDate =
-            typeof fields.appointmentdate === "string" ? String(fields.appointmentdate).trim() : "";
-        const appointmentTime =
-            typeof fields.appointmenttime === "string" ? String(fields.appointmenttime).trim() : "";
+            appointmentDateInputToIso_(appointmentDateRaw) || appointmentDateRaw;
+        const appointmentTimeRaw =
+            scalarFormValue(fields.appointmenttime)
+            || scalarFormValue(fields.appointmentTime)
+            || scalarFormValue(fields.appointment_time)
+            || "";
+        const timeMinutes = parseClockToMinutes_(appointmentTimeRaw);
+        const appointmentTime = Number.isFinite(timeMinutes)
+            ? formatMinutesAsSlotLabel_(timeMinutes)
+            : appointmentTimeRaw;
         const rawAppointmentBooked =
-            scalarFormValue(fields.appointmentbooked) || scalarFormValue(fields.appointment_booked);
+            scalarFormValue(fields.appointmentbooked)
+            || scalarFormValue(fields.appointment_booked)
+            || scalarFormValue(fields.appointmentBooked);
         let appointmentBooked =
             (appointmentBookedServer || (appointmentDate && appointmentTime)) ? "Yes" : "No";
         if (/^yes$/i.test(rawAppointmentBooked || "")) {
