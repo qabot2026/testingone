@@ -15988,6 +15988,52 @@ function mergeOptionalContactFieldsFromParameterSlice_(slice) {
         }
         if (Object.keys(nextSp).length) {
             next.session_params = nextSp;
+            if (nextSp.coursename) {
+                next.coursename = nextSp.coursename;
+            }
+        }
+        persistClientContext(next);
+    } catch {
+        /* ignore */
+    }
+}
+
+/**
+ * CX often keeps session values only under `queryResult.sessionInfo.parameters`; they may not appear in the flat
+ * merged parameter map used elsewhere — merge them into `session_params` for Sheet `valueFrom` paths.
+ * @param {unknown} qr `queryResult`
+ */
+function mergeSessionParamsFromQueryResultIntoStoredContext_(qr) {
+    if (!qr || typeof qr !== "object") {
+        return;
+    }
+    const si = /** @type {Record<string, unknown>} */ (qr).sessionInfo;
+    const params = si && typeof si === "object" ? /** @type {{ parameters?: unknown }} */ (si).parameters : undefined;
+    const sm = stringMapFromDfParametersObject(params);
+    if (!sm || !Object.keys(sm).length) {
+        return;
+    }
+    try {
+        const prev = readStoredClientContext();
+        /** @type {Record<string, unknown>} */
+        const next = Object.assign({}, prev);
+        const prevSp =
+            prev.session_params && typeof prev.session_params === "object" && !Array.isArray(prev.session_params)
+                ? /** @type {Record<string, unknown>} */ ({ ...prev.session_params })
+                : {};
+        const sk = Object.keys(sm);
+        for (let i = 0; i < sk.length; i += 1) {
+            const kk = sk[i];
+            if (sm[kk]) {
+                const nk = String(kk).toLowerCase().replace(/[^a-z0-9]/g, "");
+                if (nk) {
+                    prevSp[nk] = sm[kk];
+                }
+            }
+        }
+        next.session_params = prevSp;
+        if (prevSp.coursename) {
+            next.coursename = prevSp.coursename;
         }
         persistClientContext(next);
     } catch {
@@ -16032,6 +16078,7 @@ function mergePhoneFromDialogflowParametersIntoStoredContext(event) {
     }
 
     var qr = getQueryResultObjectFromDfEvent(event);
+    mergeSessionParamsFromQueryResultIntoStoredContext_(qr);
     if (qr) {
         mergeVisitorMobileFromQueryResultUtterance(qr);
     }

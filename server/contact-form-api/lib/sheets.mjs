@@ -252,7 +252,7 @@ function getValueAtDotPath_(root, dotPath) {
  */
 function mergeSheetExtrasSources_(sources) {
     const s = sources && typeof sources === "object" ? sources : {};
-    const ctx =
+    let ctx =
         s.clientContext && typeof s.clientContext === "object" && !Array.isArray(s.clientContext)
             ? /** @type {Record<string, unknown>} */ ({ ...s.clientContext })
             : {};
@@ -260,7 +260,51 @@ function mergeSheetExtrasSources_(sources) {
         s.fields && typeof s.fields === "object" && !Array.isArray(s.fields)
             ? /** @type {Record<string, unknown>} */ ({ ...s.fields })
             : {};
+    const cn = typeof ctx.coursename === "string" ? ctx.coursename.trim() : "";
+    if (cn) {
+        const sp =
+            ctx.session_params && typeof ctx.session_params === "object" && !Array.isArray(ctx.session_params)
+                ? /** @type {Record<string, unknown>} */ ({ ...ctx.session_params })
+                : {};
+        if (!String(sp.coursename || "").trim()) {
+            sp.coursename = cn;
+        }
+        ctx = { ...ctx, session_params: sp };
+    }
     return { ...ctx, fields };
+}
+
+/**
+ * Resolve `valueFrom` dot path; fall back to last segment at top-level and under `fields` (CX / form quirks).
+ *
+ * @param {Record<string, unknown>} mergedRoot
+ * @param {string} path
+ */
+function resolveExtraCellScalarFromSources_(mergedRoot, path) {
+    const p = String(path || "").trim();
+    if (!p) {
+        return "";
+    }
+    let v = getValueAtDotPath_(mergedRoot, p);
+    v = sheetOutboundCell_(v);
+    if (String(v || "").trim()) {
+        return String(v).trim();
+    }
+    const last = p.includes(".") ? p.slice(p.lastIndexOf(".") + 1).trim() : p;
+    if (!last) {
+        return "";
+    }
+    v = getValueAtDotPath_(mergedRoot, last);
+    v = sheetOutboundCell_(v);
+    if (String(v || "").trim()) {
+        return String(v).trim();
+    }
+    v = getValueAtDotPath_(mergedRoot, `fields.${last}`);
+    v = sheetOutboundCell_(v);
+    if (String(v || "").trim()) {
+        return String(v).trim();
+    }
+    return "";
 }
 
 function getActiveSheetExtraMappings_() {
@@ -351,9 +395,8 @@ function buildConfiguredExtraCellUpdates_(tab, rowNumber, sources, standardUpdat
             if (!colLet || !path) {
                 continue;
             }
-            let v = getValueAtDotPath_(mergedRoot, path);
-            v = sheetOutboundCell_(v);
-            if (!String(v || "").trim()) {
+            const v = resolveExtraCellScalarFromSources_(mergedRoot, path);
+            if (!v) {
                 continue;
             }
             /** If false, write exactly to startColumn (extras are appended after standard in batchUpdate — same cell may be written twice; later entry wins). */
