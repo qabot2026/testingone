@@ -4,10 +4,10 @@
       "tab": "Sheet1",
       "entries": [
         {
-          "startColumn": "R",
+          "startColumn": "C",
           "valueFrom": "session_params.coursename",
           "shiftIfOccupied": true,
-          "_note": "Use a free column; A-Q are the default lead fields — C is usually mobile."
+          "_note": "C overlaps default mobile column — value shifts right (D, E, …) when mobile uses C."
         }
       ]
     }
