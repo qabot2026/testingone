@@ -2689,7 +2689,8 @@ app.get("/", (_req, res) => {
     );
 });
 
-app.listen(PORT, () => {
+// Bind 0.0.0.0 so PaaS (Railway, Docker) healthchecks can reach the process.
+app.listen(PORT, "0.0.0.0", () => {
     logContactLeadEmailBoot();
     void verifyContactLeadSmtpOnBoot();
     const sheetHint = SHEETS_DISABLED ? "(Sheets OFF)" : "(Sheets ON)";
