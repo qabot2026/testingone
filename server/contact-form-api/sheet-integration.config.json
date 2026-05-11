@@ -6,8 +6,8 @@
         {
           "startColumn": "C",
           "valueFrom": "session_params.coursename",
-          "shiftIfOccupied": true,
-          "_note": "C overlaps default mobile column — value shifts right (D, E, …) when mobile uses C."
+          "shiftIfOccupied": false,
+          "_note": "false = always use column C (see server log if it overlaps Mobile). true = find first free column to the right (often ends up at M when A–L are filled)."
         }
       ]
     }

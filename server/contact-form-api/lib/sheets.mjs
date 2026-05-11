@@ -356,16 +356,18 @@ function buildConfiguredExtraCellUpdates_(tab, rowNumber, sources, standardUpdat
             if (!String(v || "").trim()) {
                 continue;
             }
+            /** If false, write exactly to startColumn (extras are appended after standard in batchUpdate — same cell may be written twice; later entry wins). */
             const shift = e.shiftIfOccupied !== false;
             let idx0 = columnLetterToIndex0_(colLet);
             if (idx0 < 0) {
                 idx0 = 0;
             }
-            // Walk right (D, E, F, …) until this row write has no other cell at that index, or sheet end.
+            // Walk right (D, E, F, …) only while shift=true — finds first column index not used by *standard* updates.
+            // That often lands on M when C–L are filled (mobile, email, …) and IP is empty — not the same as “column C”.
             while (used.has(idx0) && shift && idx0 < GOOGLE_SHEETS_LAST_COL_INDEX0) {
                 idx0 += 1;
             }
-            if (used.has(idx0)) {
+            if (shift && used.has(idx0)) {
                 console.warn(
                     "[contact-form-api] Sheets extra column: could not place value — every column from",
                     colLet,
@@ -373,6 +375,14 @@ function buildConfiguredExtraCellUpdates_(tab, rowNumber, sources, standardUpdat
                     path
                 );
                 continue;
+            }
+            if (!shift && used.has(idx0)) {
+                console.warn(
+                    "[contact-form-api] Sheets extra: forced startColumn",
+                    colLet,
+                    "overlaps a standard lead cell in this batch; extra value is still written (later batch entry wins). valueFrom=",
+                    path
+                );
             }
             const letter = columnLetterFromIndex_(idx0);
             out.push({ range: `${tab}!${letter}${rowNumber}`, values: [[v]] });
