@@ -2023,8 +2023,7 @@ app.post(
             || scalarFormValue(fields.appointmentDate)
             || scalarFormValue(fields.appointment_date)
             || "";
-        const appointmentDate =
-            normalizeAppointmentDateToDDMMYYYY_(appointmentDateRaw);
+        const appointmentDate = appointmentDateRaw ? appointmentDateRaw.split('-').reverse().join('-') : "";
         const appointmentTimeRaw =
             scalarFormValue(fields.appointmenttime)
             || scalarFormValue(fields.appointmentTime)
