@@ -4,10 +4,10 @@
       "tab": "Sheet1",
       "entries": [
         {
-          "startColumn": "C",
+          "startColumn": "B",
           "valueFrom": "session_params.coursename",
           "shiftIfOccupied": false,
-          "_note": "false = always use column C (see server log if it overlaps Mobile). true = find first free column to the right (often ends up at M when A–L are filled)."
+          "_note": "false = always use startColumn (see server log if it overlaps a lead field). true = first free column to the right (often M when A–L are filled)."
         }
       ]
     }
