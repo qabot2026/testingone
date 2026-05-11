@@ -1,10 +1,52 @@
 /**
  * Append one row via Google Sheets API v4 (service account must be shared on the spreadsheet).
+ *
+ * Optional extra Sheet columns: `../sheet-extra-columns.config.json` (JSON array; loaded at runtime, no
+ * static ESM import — avoids startup crashes on Docker/Railway). Example:
+ * `[{"tab":"Sheet1","entries":[{"startColumn":"R","valueFrom":"session_params.coursename","shiftIfOccupied":true}]}]`.
+ * Override via env `SHEETS_EXTRA_COLUMN_MAPPINGS_JSON`.
  */
 
+import { existsSync, readFileSync } from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
 import { google } from "googleapis";
 import { getServiceAccountCredentials } from "./google-service-account.mjs";
-import { sheetExtraColumnMappings as fileSheetExtraColumnMappings } from "../sheet-extra-columns.config.mjs";
+
+const SHEET_EXTRA_CONFIG_JSON_PATH = path.join(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "..",
+    "sheet-extra-columns.config.json"
+);
+
+/** @type {unknown[] | null} */
+let diskSheetExtraMappingsCache = null;
+
+function loadSheetExtraMappingsFromDisk_() {
+    if (diskSheetExtraMappingsCache !== null) {
+        return diskSheetExtraMappingsCache;
+    }
+    diskSheetExtraMappingsCache = [];
+    try {
+        if (!existsSync(SHEET_EXTRA_CONFIG_JSON_PATH)) {
+            return diskSheetExtraMappingsCache;
+        }
+        const raw = readFileSync(SHEET_EXTRA_CONFIG_JSON_PATH, "utf8");
+        const j = JSON.parse(raw);
+        if (Array.isArray(j)) {
+            diskSheetExtraMappingsCache = j;
+        } else if (j && typeof j === "object" && Array.isArray(/** @type {{ mappings?: unknown[] }} */ (j).mappings)) {
+            diskSheetExtraMappingsCache = /** @type {{ mappings: unknown[] }} */ (j).mappings;
+        }
+    } catch (e) {
+        const msg = e && /** @type {{ message?: string }} */ (e).message
+            ? String(/** @type {{ message?: string }} */ (e).message)
+            : String(e);
+        console.warn("[contact-form-api] sheet-extra-columns.config.json:", msg);
+        diskSheetExtraMappingsCache = [];
+    }
+    return diskSheetExtraMappingsCache;
+}
 
 const SPREADSHEET_ID = (process.env.SHEETS_SPREADSHEET_ID || "").trim();
 // Default schema: no Form ID (A–Q). Conv. date (12h UI string, see formatConversationDateTimeForSheet), name, …
@@ -216,7 +258,7 @@ function getActiveSheetExtraMappings_() {
             /* fall through */
         }
     }
-    return Array.isArray(fileSheetExtraColumnMappings) ? fileSheetExtraColumnMappings : [];
+    return loadSheetExtraMappingsFromDisk_();
 }
 
 /**

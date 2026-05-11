@@ -3,7 +3,7 @@ WORKDIR /app
 COPY package.json ./
 RUN npm install --omit=dev
 COPY index.mjs ./
-COPY sheet-extra-columns.config.mjs ./
+COPY sheet-extra-columns.config.json ./
 COPY lib ./lib
 COPY scripts ./scripts
 COPY data ./data
