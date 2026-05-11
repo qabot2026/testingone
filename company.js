@@ -15971,6 +15971,23 @@ function mergeOptionalContactFieldsFromParameterSlice_(slice) {
         } else if (cityPick && cityPick.length <= 200) {
             next.city = cityPick;
         }
+        /** Preserve CX session parameters (e.g. coursename) for Sheets `valueFrom` paths like `session_params.coursename`. */
+        const prevSp =
+            prev.session_params && typeof prev.session_params === "object" && !Array.isArray(prev.session_params)
+                ? /** @type {Record<string, string>} */ ({ .../** @type {Record<string, unknown>} */ (prev.session_params) })
+                : /** @type {Record<string, string>} */ ({});
+        const nextSp = /** @type {Record<string, string>} */ ({ ...prevSp });
+        const sn = Object.keys(norm);
+        for (let si = 0; si < sn.length; si += 1) {
+            const nk = sn[si];
+            const nv = norm[nk];
+            if (nv && String(nv).trim()) {
+                nextSp[nk] = String(nv).trim();
+            }
+        }
+        if (Object.keys(nextSp).length) {
+            next.session_params = nextSp;
+        }
         persistClientContext(next);
     } catch {
         /* ignore */
