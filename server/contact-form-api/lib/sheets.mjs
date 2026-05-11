@@ -4,6 +4,7 @@
 
 import { google } from "googleapis";
 import { getServiceAccountCredentials } from "./google-service-account.mjs";
+import { sheetExtraColumnMappings as fileSheetExtraColumnMappings } from "../sheet-extra-columns.config.mjs";
 
 const SPREADSHEET_ID = (process.env.SHEETS_SPREADSHEET_ID || "").trim();
 // Default schema: no Form ID (A–Q). Conv. date (12h UI string, see formatConversationDateTimeForSheet), name, …
@@ -106,6 +107,198 @@ function columnLetterFromIndex_(idx0) {
         const rem = (n - 1) % 26;
         out = String.fromCharCode(65 + rem) + out;
         n = Math.floor((n - 1) / 26);
+    }
+    return out;
+}
+
+/** @param {string} letters */
+function columnLetterToIndex0_(letters) {
+    const s = String(letters || "")
+        .toUpperCase()
+        .replace(/[^A-Z]/g, "");
+    if (!s) {
+        return 0;
+    }
+    let n = 0;
+    for (let i = 0; i < s.length; i += 1) {
+        const code = s.charCodeAt(i);
+        if (code < 65 || code > 90) {
+            continue;
+        }
+        n = n * 26 + (code - 64);
+    }
+    return n - 1;
+}
+
+/** @param {string} tab */
+function normalizedSheetTabKey_(tab) {
+    return String(tab || "")
+        .trim()
+        .toLowerCase();
+}
+
+/**
+ * @param {Array<{ range?: string, values?: unknown[][] }>} updates
+ * @returns {Set<number>}
+ */
+function usedColumnIndexesFromUpdates_(updates) {
+    const used = new Set();
+    if (!Array.isArray(updates)) {
+        return used;
+    }
+    for (const u of updates) {
+        const r = u && typeof u.range === "string" ? u.range : "";
+        const m = r.match(/!([A-Za-z]+)(\d+)/);
+        if (m) {
+            used.add(columnLetterToIndex0_(m[1]));
+        }
+    }
+    return used;
+}
+
+/** @param {unknown} root */
+function getValueAtDotPath_(root, dotPath) {
+    const parts = String(dotPath || "")
+        .split(".")
+        .map((p) => p.trim())
+        .filter(Boolean);
+    if (!parts.length) {
+        return "";
+    }
+    let cur = root;
+    for (const p of parts) {
+        if (cur == null || typeof cur !== "object") {
+            return "";
+        }
+        const o = /** @type {Record<string, unknown>} */ (cur);
+        if (!Object.prototype.hasOwnProperty.call(o, p)) {
+            return "";
+        }
+        cur = o[p];
+    }
+    if (cur == null) {
+        return "";
+    }
+    if (typeof cur === "string" || typeof cur === "number" || typeof cur === "boolean") {
+        return String(cur);
+    }
+    return "";
+}
+
+/**
+ * @param {{ clientContext?: Record<string, unknown> | null, fields?: Record<string, unknown> | null } | null | undefined} sources
+ */
+function mergeSheetExtrasSources_(sources) {
+    const s = sources && typeof sources === "object" ? sources : {};
+    const ctx =
+        s.clientContext && typeof s.clientContext === "object" && !Array.isArray(s.clientContext)
+            ? /** @type {Record<string, unknown>} */ ({ ...s.clientContext })
+            : {};
+    const fields =
+        s.fields && typeof s.fields === "object" && !Array.isArray(s.fields)
+            ? /** @type {Record<string, unknown>} */ ({ ...s.fields })
+            : {};
+    return { ...ctx, fields };
+}
+
+function getActiveSheetExtraMappings_() {
+    const raw = (process.env.SHEETS_EXTRA_COLUMN_MAPPINGS_JSON || "").trim();
+    if (raw) {
+        try {
+            const j = JSON.parse(raw);
+            if (Array.isArray(j)) {
+                return j;
+            }
+            if (j && typeof j === "object" && Array.isArray(/** @type {{ mappings?: unknown }} */ (j).mappings)) {
+                return /** @type {{ mappings: unknown[] }} */ (j).mappings;
+            }
+        } catch {
+            /* fall through */
+        }
+    }
+    return Array.isArray(fileSheetExtraColumnMappings) ? fileSheetExtraColumnMappings : [];
+}
+
+/**
+ * @param {unknown[]} activeMappings
+ * @param {string} tab
+ */
+function sheetExtraMappingsForTab_(activeMappings, tab) {
+    const want = normalizedSheetTabKey_(tab);
+    /** @type {unknown[]} */
+    const out = [];
+    for (const block of activeMappings) {
+        if (!block || typeof block !== "object") {
+            continue;
+        }
+        const b = /** @type {{ tab?: string, entries?: unknown }} */ (block);
+        const bt = typeof b.tab === "string" ? b.tab.trim() : "";
+        if (!bt || normalizedSheetTabKey_(bt) === want) {
+            out.push(block);
+        }
+    }
+    return out;
+}
+
+/** Google Sheets row width (last column ZZZ = index 18277, 0-based). */
+const GOOGLE_SHEETS_LAST_COL_INDEX0 = 18277;
+
+/**
+ * @param {string} tab
+ * @param {number} rowNumber
+ * @param {{ clientContext?: Record<string, unknown> | null, fields?: Record<string, unknown> | null } | null | undefined} sources
+ * @param {Array<{ range?: string, values?: unknown[][] }>} standardUpdates
+ */
+function buildConfiguredExtraCellUpdates_(tab, rowNumber, sources, standardUpdates) {
+    const active = getActiveSheetExtraMappings_();
+    if (!active.length || !rowNumber) {
+        return [];
+    }
+    const used = usedColumnIndexesFromUpdates_(standardUpdates);
+    const mergedRoot = mergeSheetExtrasSources_(sources);
+    /** @type {Array<{ range: string, values: string[][] }>} */
+    const out = [];
+    const blocks = sheetExtraMappingsForTab_(active, tab);
+    for (const block of blocks) {
+        const b = block && typeof block === "object" ? /** @type {{ entries?: unknown }} */ (block) : null;
+        const entries = b && Array.isArray(b.entries) ? b.entries : [];
+        for (const ent of entries) {
+            if (!ent || typeof ent !== "object") {
+                continue;
+            }
+            const e = /** @type {{ startColumn?: string, valueFrom?: string, shiftIfOccupied?: boolean }} */ (ent);
+            const colLet = typeof e.startColumn === "string" ? e.startColumn.trim() : "";
+            const path = typeof e.valueFrom === "string" ? e.valueFrom.trim() : "";
+            if (!colLet || !path) {
+                continue;
+            }
+            let v = getValueAtDotPath_(mergedRoot, path);
+            v = sheetOutboundCell_(v);
+            if (!String(v || "").trim()) {
+                continue;
+            }
+            const shift = e.shiftIfOccupied !== false;
+            let idx0 = columnLetterToIndex0_(colLet);
+            if (idx0 < 0) {
+                idx0 = 0;
+            }
+            // Walk right (D, E, F, …) until this row write has no other cell at that index, or sheet end.
+            while (used.has(idx0) && shift && idx0 < GOOGLE_SHEETS_LAST_COL_INDEX0) {
+                idx0 += 1;
+            }
+            if (used.has(idx0)) {
+                console.warn(
+                    "[contact-form-api] Sheets extra column: could not place value — every column from",
+                    colLet,
+                    "through the sheet width is already used by this row batch. Skipping valueFrom=",
+                    path
+                );
+                continue;
+            }
+            const letter = columnLetterFromIndex_(idx0);
+            out.push({ range: `${tab}!${letter}${rowNumber}`, values: [[v]] });
+            used.add(idx0);
+        }
     }
     return out;
 }
@@ -863,15 +1056,23 @@ function rowNumberFromUpdatedRange_(updatedRange) {
     return Number.isFinite(rowNumber) ? rowNumber : 0;
 }
 
-async function writeLeadRowByHeader_(sheets, tab, rowNumber, lead) {
+/**
+ * @param {import("googleapis").sheets_v4.Sheets} sheets
+ * @param {string} tab
+ * @param {number} rowNumber
+ * @param {*} lead same shape as writeLeadRowByHeader_
+ * @returns {Promise<Array<{ range: string, values: string[][] }>>}
+ */
+async function buildStandardLeadRowUpdates_(sheets, tab, rowNumber, lead) {
     if (!rowNumber) {
-        return;
+        return [];
     }
     const headerMap = await getHeaderIndexMap_(sheets, tab);
     const getIdx = (aliases, fallbackIdx) => pickHeaderIndex_(headerMap, aliases, fallbackIdx);
 
     const col = (idx0) => columnLetterFromIndex_(idx0);
 
+    /** @type {Array<{ range: string, values: string[][] }>} */
     const updates = [];
     const put = (aliases, fallbackIdx, value) => {
         const v = sheetOutboundCell_(value);
@@ -918,6 +1119,20 @@ async function writeLeadRowByHeader_(sheets, tab, rowNumber, lead) {
     put(["appointmenttime"], 15, lead.appointmentTime);
     put(["drivefilelink", "drive file link", "drivefile", "filelink", "filelinks", "drivelink"], 16, lead.driveFileLink);
 
+    return updates;
+}
+
+/**
+ * @param {import("googleapis").sheets_v4.Sheets} sheets
+ * @param {string} tab
+ * @param {number} rowNumber
+ * @param {*} lead
+ * @param {{ clientContext?: Record<string, unknown> | null, fields?: Record<string, unknown> | null } | null | undefined} [sheetExtrasSources]
+ */
+async function writeLeadRowByHeader_(sheets, tab, rowNumber, lead, sheetExtrasSources) {
+    const standard = await buildStandardLeadRowUpdates_(sheets, tab, rowNumber, lead);
+    const extras = buildConfiguredExtraCellUpdates_(tab, rowNumber, sheetExtrasSources, standard);
+    const updates = [...standard, ...extras];
     if (!updates.length) {
         return;
     }
@@ -937,7 +1152,7 @@ async function writeLeadRowByHeader_(sheets, tab, rowNumber, lead) {
  * Device, Browser, City, IP, Appointment booked/date/time, Drive link.
  *
  * @param {{ iso: string, formId?: string, name: string, mobile: string, email: string, clientSessionId: string, browserName: string, deviceType: string, channel: string, fileLinks?: string, city?: string, ip?: string, sourceUrl?: string, appointmentBooked?: string, appointmentDate?: string, appointmentTime?: string, userQueriesCsv?: string }} row `iso` = conv. datetime label for column A (12h formatted). `formId` ignored for Sheets.
- * @param {{ preferIncomingContact?: boolean, skipSessionDedup?: boolean }} [opts] `skipSessionDedup` (with `preferIncomingContact`) skips “one row per session” and always appends — default for main contact-form POST.
+ * @param {{ preferIncomingContact?: boolean, skipSessionDedup?: boolean, sheetExtrasSources?: { clientContext?: Record<string, unknown> | null, fields?: Record<string, unknown> | null } }} [opts] `skipSessionDedup` (with `preferIncomingContact`) skips “one row per session” and always appends — default for main contact-form POST. `sheetExtrasSources` feeds `sheet-extra-columns.config.mjs` dot paths.
  * @returns {Promise<{ action: "appended"|"duplicate_updated"|"duplicate_noop", patched: boolean, tab: string, appendRangeUsed?: string, sheetRowNumber?: number, googleAppend?: { updatedRange?: string, updatedRows?: number, spreadsheetId?: string }, googleBatch?: { totalUpdatedCells?: number, totalUpdatedRows?: number, updatedRanges: string[] } }>}
  */
 export async function appendContactRowToSheet(row, opts) {
@@ -947,6 +1162,11 @@ export async function appendContactRowToSheet(row, opts) {
     }
     const client = await getSheetsAuthClient();
     const sheets = google.sheets({ version: "v4", auth: client });
+
+    const sheetExtrasSources =
+        opts && opts.sheetExtrasSources && typeof opts.sheetExtrasSources === "object"
+            ? opts.sheetExtrasSources
+            : null;
 
     const preferIncoming = !!(opts && opts.preferIncomingContact);
     const skipSessionDedup =
@@ -1076,7 +1296,8 @@ export async function appendContactRowToSheet(row, opts) {
                 appointmentDate,
                 appointmentTime,
                 driveFileLink: fileLinks
-            });
+            },
+                sheetExtrasSources);
         }
     } catch (e) {
         const msg = e && e.message ? e.message : String(e);

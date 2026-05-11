@@ -2067,7 +2067,11 @@ app.post(
                         },
                         {
                             preferIncomingContact: true,
-                            skipSessionDedup: SHEETS_CONTACT_FORM_APPEND_FREELY
+                            skipSessionDedup: SHEETS_CONTACT_FORM_APPEND_FREELY,
+                            sheetExtrasSources: {
+                                clientContext: mergedClientContext,
+                                fields: fields && typeof fields === "object" ? fields : {}
+                            }
                         }
                     );
                     wroteToSheets = !!(sheetOutcome && sheetOutcome.patched);
@@ -2264,25 +2268,33 @@ app.post(
         const sourceUrl = resolveSourceUrlForSheet(mergedClientContext);
 
         try {
-            const sheetOutcome = await appendContactRowToSheet({
-                iso: convSheetDateTime,
-                formId,
-                name,
-                mobile,
-                email,
-                clientSessionId,
-                browserName,
-                deviceType,
-                channel,
-                fileLinks: "",
-                ip,
-                city,
-                sourceUrl,
-                appointmentBooked: "No",
-                appointmentDate: "",
-                appointmentTime: "",
-                userQueriesCsv
-            });
+            const sheetOutcome = await appendContactRowToSheet(
+                {
+                    iso: convSheetDateTime,
+                    formId,
+                    name,
+                    mobile,
+                    email,
+                    clientSessionId,
+                    browserName,
+                    deviceType,
+                    channel,
+                    fileLinks: "",
+                    ip,
+                    city,
+                    sourceUrl,
+                    appointmentBooked: "No",
+                    appointmentDate: "",
+                    appointmentTime: "",
+                    userQueriesCsv
+                },
+                {
+                    sheetExtrasSources: {
+                        clientContext: mergedClientContext,
+                        fields: {}
+                    }
+                }
+            );
             if ((process.env.CONTACT_LEAD_NOTIFY_ON_MOBILE_SYNC || "").trim() === "1") {
                 const nm = typeof name === "string" ? name.trim() : "";
                 const em = typeof email === "string" ? email.trim() : "";
