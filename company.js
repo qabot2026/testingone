@@ -75,6 +75,10 @@ const MOBILE_FOOTER_ICONS_NUDGE_RIGHT_EXTRA_PX = 30;
 const POWERED_BY_STRIP_NUDGE_RIGHT_PX = 110;
 /** Additional downward shift (px) for the strip (`setPoweredByStripGeometry` top). */
 const POWERED_BY_STRIP_NUDGE_DOWN_PX = 5;
+const APPOINTMENT_DATE_CONFIG = {
+    allowToday: true, // Set to false to disable today's date
+    maxDaysAhead: 30 // How many days ahead to allow selection
+};
 const AUTO_START_CHAT_EVENT_NAME = "FRESH";
 const AUTO_START_CHAT_DELAY_MS = 600;
 const AUTO_START_SENDREQUEST_POLL_MS = 120;
@@ -5561,6 +5565,17 @@ function buildContactFormFieldRow(field) {
         control.className = "dfchat-contact-form__control";
         control.name = typeof field.name === "string" ? field.name : field.id;
         control.type = CONTACT_FORM_INPUT_TYPES.has(t) ? t : "text";
+        if (t === "date") {
+            const today = new Date();
+            const minDate = new Date(today);
+            if (!APPOINTMENT_DATE_CONFIG.allowToday) {
+                minDate.setDate(today.getDate() + 1);
+            }
+            const maxDate = new Date(today);
+            maxDate.setDate(today.getDate() + APPOINTMENT_DATE_CONFIG.maxDaysAhead);
+            control.min = minDate.toISOString().split('T')[0];
+            control.max = maxDate.toISOString().split('T')[0];
+        }
         if (pl0 != null) {
             control.setAttribute("placeholder", pl0);
         } else {
@@ -5771,10 +5786,26 @@ function mountContactFormAppointmentPicker(hostEl, field, isDoctor) {
 
         for (let day = 1; day <= dim; day += 1) {
             const dateISO = `${view.y}-${String(view.m).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+            const dateObj = new Date(view.y, view.m - 1, day);
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const minDate = new Date(today);
+            if (!APPOINTMENT_DATE_CONFIG.allowToday) {
+                minDate.setDate(today.getDate() + 1);
+            }
+            const maxDate = new Date(today);
+            maxDate.setDate(today.getDate() + APPOINTMENT_DATE_CONFIG.maxDaysAhead);
             const btn = document.createElement("button");
             btn.type = "button";
             btn.textContent = String(day);
             btn.style.cssText = "border-radius:6px;padding:4px 0;font:700 11px/1 Manrope,sans-serif;border:1px solid transparent";
+            if (dateObj < minDate || dateObj > maxDate) {
+                btn.style.background = "rgba(148,163,184,0.22)";
+                btn.style.color = "rgba(15,23,42,0.35)";
+                btn.disabled = true;
+                grid.appendChild(btn);
+                continue;
+            }
             const info = overviewDays ? overviewDays[dateISO] : null;
             if (!info || !info.working) {
                 btn.style.background = "rgba(148,163,184,0.22)";
