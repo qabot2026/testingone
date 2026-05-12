@@ -356,11 +356,12 @@ window.COMPANY_CHAT_UI_CONFIG = {
     },
 
     // **Open chat card** (the whitish panel: title + message area + input). Google sets one var `--df-messenger-chat-border-radius` on the whole card; we override the panel shell in shadow (`.chat-wrapper`) per corner.
+    // Top corners must match the titlebar's own border-top-*-radius (read from `--df-messenger-chat-border-radius` in df-messenger.js) — otherwise the wrapper's forced-white background bleeds through as visible white edges at the curved top corners of the header. Bottom corners are the panel's own outer rounding.
     // Omit this block to keep the default all-around radius from `dfMessengerTheme`.
     chatPanel: {
       borderRadius: {
-        topLeft: "0",
-        topRight: "0",
+        topLeft: "22px",
+        topRight: "22px",
         bottomLeft: "20px",
         bottomRight: "20px"
       }
