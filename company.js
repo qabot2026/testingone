@@ -1410,7 +1410,7 @@ const originalTextNodeContent = new Map();
 const originalElementAttributes = new Map();
 const googleTranslationCache = new Map();
 
-const COMPANY_JS_BUILD_TAG = "20260513-02";
+const COMPANY_JS_BUILD_TAG = "20260513-03";
 const COMPANY_DEBUG_QUERY_FLAG = "dfchatDebug";
 let debugMountAttemptSeq = 0;
 let debugBadgeLastRenderAt = 0;
@@ -12856,7 +12856,7 @@ function handleDfResponseReceived(event) {
         ? event.detail.data.messages
         : [];
 
-    if (messages.length > 0) {
+    if (messages.length > 0 && !isFormOnlyOpenResponse_(event)) {
         const ms = activeDfMessenger;
         if (ms && typeof ms.renderCustomText === "function") {
             renderBotPersona(ms, Date.now());
@@ -13286,6 +13286,60 @@ function shouldOpenContactForm(event) {
         : [];
 
     return [...responseMessages, ...messengerMessages].some(messageContainsOpenFormAction);
+}
+
+/**
+ * True when the CX response carries any non-empty visible bot text. Used by
+ * {@link handleDfResponseReceived} to decide whether the persona caption row is meaningful for
+ * this turn — for form-only turns (open_form payload + no text) the form bubble is removed when
+ * the user submits, leaving the persona row stranded as `Demo 12:16:37 am`, `Demo 12:16:45 am`,
+ * ... Cover both CX `queryResult.responseMessages[].text.text[]` and the messenger
+ * `event.detail.data.messages[].text` (string) shapes.
+ * @param {Event & { detail?: { raw?: { queryResult?: { responseMessages?: Array<unknown> } }, data?: { messages?: Array<unknown> } } }} event
+ */
+function responseHasVisibleBotText_(event) {
+    const responseMessages = event && event.detail && event.detail.raw && event.detail.raw.queryResult
+        && Array.isArray(event.detail.raw.queryResult.responseMessages)
+        ? event.detail.raw.queryResult.responseMessages
+        : [];
+
+    const messengerMessages = event && event.detail && event.detail.data && Array.isArray(event.detail.data.messages)
+        ? event.detail.data.messages
+        : [];
+
+    for (const m of [...responseMessages, ...messengerMessages]) {
+        if (!m || typeof m !== "object") {
+            continue;
+        }
+        if (messageContainsOpenFormAction(m)) {
+            continue;
+        }
+        // CX queryResult shape: { text: { text: ["..."] } }
+        const cxText = m.text && typeof m.text === "object" && Array.isArray(m.text.text) ? m.text.text : null;
+        if (cxText && cxText.some((s) => typeof s === "string" && s.trim().length > 0)) {
+            return true;
+        }
+        // Messenger event shape: { type: "text", text: "..." }
+        if (typeof m.text === "string" && m.text.trim().length > 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * `true` when the CX response is "form only" — opens a contact / appointment / etc. form and
+ * carries no other visible bot text. Such turns should skip {@link renderBotPersona} so that
+ * multiple back-to-back forms don't leave a stack of orphan `Demo HH:MM:SS am` captions in the
+ * transcript once each form is submitted and its bubble is removed.
+ *
+ * If the agent wants to keep a persona caption for a form-only turn (e.g. as a marker), CX can
+ * also send a short bot text in the same response — the persona will then ride along with that
+ * text instead of being orphaned.
+ * @param {Event} event
+ */
+function isFormOnlyOpenResponse_(event) {
+    return shouldOpenContactForm(event) && !responseHasVisibleBotText_(event);
 }
 
 function extractLanguageFromResponse(event) {
