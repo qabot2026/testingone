@@ -59,8 +59,8 @@ window.COMPANY_CHAT_UI_CONFIG = {
       // chatCollapseIconUrl: "https://example.com/chat-collapse-x.svg"
     },
 
-    // Bot line above each agent reply: small image OR emoji + time (IST-style clock via timeZone).
-    // `mode: "image"` hides the thread-side bot avatar (no duplicate of the persona image). `threadAvatarSizePx` applies when `mode` is `emojiTime`.
+    // Bot row: `mode: "image"` uses `image.url` (e.g. cat) + optional time SVG. User row stays the built-in 🙂 + time SVG badge.
+    // Use `mode: "emojiTime"` only if you want a text 🤖+time caption for the bot instead of the image URL.
     botPersona: {
       mode: "image",
       // Added to 250px baseline — higher = user persona label rows sit farther right.

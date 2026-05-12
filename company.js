@@ -26,7 +26,9 @@ let bubbleUnreadCount = 0;
 let isMessengerLoaded = false;
 let shouldAutoOpenChat = false;
 const PERSONA_TEXT_COLOR = "#8f1d56";
-const PERSONA_FONT_FAMILY = "Arial, sans-serif";
+/** Emoji in persona badges are drawn in SVG `<text>`; Arial alone often omits glyphs — include OS emoji fonts. */
+const PERSONA_FONT_FAMILY =
+    'system-ui, "Segoe UI Emoji", "Segoe UI Symbol", "Apple Color Emoji", "Noto Color Emoji", Arial, sans-serif';
 const PERSONA_FONT_SIZE = "9px";
 const PERSONA_FONT_WEIGHT = "400";
 const PERSONA_VERTICAL_PULL = "0";
