@@ -470,6 +470,10 @@ function readBotPersonaConfig() {
             offsetDownPx: typeof image.offsetDownPx === "number" && Number.isFinite(image.offsetDownPx) && image.offsetDownPx >= 0
                 ? image.offsetDownPx
                 : 6,
+            /** Image+time mode only: nudge the clock text down (px); does not move the avatar (`offsetDownPx` moves both). */
+            timeOffsetDownPx: typeof image.timeOffsetDownPx === "number" && Number.isFinite(image.timeOffsetDownPx) && image.timeOffsetDownPx >= -32 && image.timeOffsetDownPx <= 120
+                ? image.timeOffsetDownPx
+                : 0,
             /** Extra pull toward the reply bubble (adds to base −4px margin under persona row). */
             tightenBelowPx: typeof image.tightenBelowPx === "number" && Number.isFinite(image.tightenBelowPx) && image.tightenBelowPx >= 0
                 ? image.tightenBelowPx
@@ -1390,7 +1394,7 @@ const originalTextNodeContent = new Map();
 const originalElementAttributes = new Map();
 const googleTranslationCache = new Map();
 
-const COMPANY_JS_BUILD_TAG = "20260512-08";
+const COMPANY_JS_BUILD_TAG = "20260512-09";
 const COMPANY_DEBUG_QUERY_FLAG = "dfchatDebug";
 let debugMountAttemptSeq = 0;
 let debugBadgeLastRenderAt = 0;
@@ -17244,6 +17248,7 @@ function getPersonaImageGuardCss() {
     const personaDown = cfg.mode === "image" ? `${img.offsetDownPx}px` : "0px";
     const mobY = `${cfg.mode === "image" ? img.offsetDownPx : 0}`;
     const mobX = `${img.mobileNudgeLeftPx}`;
+    const timeDown = cfg.mode === "image" ? `${img.timeOffsetDownPx}px` : "0px";
     return `
 img[src*="dfchat-bot-persona"],
 img[src*="%23dfchat-bot-persona"] {
@@ -17272,6 +17277,9 @@ img[src*="%23dfchat-bot-persona"] {
 }
 .message.bot-message.markdown:has(img[src*="dfchat-bot-persona"]) p strong,
 .message.bot-message.markdown:has(img[src*="%23dfchat-bot-persona"]) p strong {
+  display: inline-block !important;
+  vertical-align: middle !important;
+  transform: translateY(${timeDown}) !important;
   color: ${PERSONA_TEXT_COLOR} !important;
   font-size: 11px !important;
   font-weight: 600 !important;
