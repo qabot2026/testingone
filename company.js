@@ -237,6 +237,10 @@ function shouldBlockOutgoingChatForMissingMobile_() {
     return getUserQueryCountForChatBlockGate_() >= getBlockChatWithoutMobileLimit_();
 }
 
+/** Dedupe block UI when both `df-user-input-entered` and `df-request-sent` fire for the same utterance. */
+let mobileGateLastSurfacedText_ = "";
+let mobileGateLastSurfacedAt_ = 0;
+
 /**
  * When the visitor is over the query limit without mobile, block the outbound CX request and show a bot line.
  * @param {Event | undefined | null} event
@@ -251,6 +255,20 @@ function tryPreventChatSendForMissingMobileGate_(event, queryText) {
     if (!t) {
         return false;
     }
+    const now = Date.now();
+    if (t === mobileGateLastSurfacedText_ && now - mobileGateLastSurfacedAt_ < 2200) {
+        try {
+            if (event && typeof event.preventDefault === "function") {
+                event.preventDefault();
+            }
+        } catch {
+            /* ignore */
+        }
+        scheduleClearDfMessengerComposerInput_();
+        return true;
+    }
+    mobileGateLastSurfacedText_ = t;
+    mobileGateLastSurfacedAt_ = now;
     try {
         if (event && typeof event.preventDefault === "function") {
             event.preventDefault();
@@ -267,6 +285,7 @@ function tryPreventChatSendForMissingMobileGate_(event, queryText) {
         /* ignore */
     }
     openContactFormAfterMobileBlockGate_();
+    scheduleClearDfMessengerComposerInput_();
     return true;
 }
 
@@ -1146,6 +1165,60 @@ function syncNativeComposerPlaceholders(dfMessenger) {
             }
         }
     }
+}
+
+/**
+ * Clears the Dialogflow Messenger composer (textarea / input inside `df-messenger-user-input` shadow).
+ * @param {unknown} dfMessenger
+ */
+function clearDfMessengerComposerInput_(dfMessenger) {
+    const ms = dfMessenger || activeDfMessenger;
+    if (!ms || typeof ms !== "object") {
+        return;
+    }
+    try {
+        const roots = collectSearchRoots(ms);
+        for (let r = 0; r < roots.length; r += 1) {
+            const root = roots[r];
+            if (!root || !root.querySelectorAll) {
+                continue;
+            }
+            const hosts = root.querySelectorAll("df-messenger-user-input");
+            for (let i = 0; i < hosts.length; i += 1) {
+                const h = hosts[i];
+                if (!h || !h.shadowRoot) {
+                    continue;
+                }
+                const sr = h.shadowRoot;
+                const ta = sr.querySelector("textarea");
+                if (ta && "value" in ta) {
+                    ta.value = "";
+                    try {
+                        ta.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+                    } catch {
+                        /* ignore */
+                    }
+                }
+                const inp = sr.querySelector("input[type=\"text\"], input[type=\"search\"], input:not([type])");
+                if (inp && "value" in inp) {
+                    inp.value = "";
+                    try {
+                        inp.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+                    } catch {
+                        /* ignore */
+                    }
+                }
+            }
+        }
+    } catch {
+        /* ignore */
+    }
+}
+
+function scheduleClearDfMessengerComposerInput_() {
+    window.setTimeout(() => {
+        clearDfMessengerComposerInput_(activeDfMessenger);
+    }, 0);
 }
 
 function applyChatInputPlaceholderToChatBubble(host) {
@@ -4074,6 +4147,8 @@ let restartFromUserPhraseTimerId = null;
 
 /** Keep in sync with server `collectUserQueriesLinesFromContext_` per-line ceiling (truncation, not omission). */
 const MAX_STORED_CHAT_USER_QUERY_CHARS = 500;
+/** Last typed line from `df-user-input-entered` when `df-request-sent` omits text in `detail` (gate + thanks need it). */
+let dfchatPendingTypedUtteranceForGate_ = "";
 
 /** @param {unknown} maybeBody */
 function extractOutboundQueryTextFromMessengerRequestBody_(maybeBody) {
@@ -4536,6 +4611,7 @@ function sendUserTextViaDfMessenger(dfMessenger, text, shouldRenderCustomTextNow
             if (r && typeof r.catch === "function") {
                 r.catch(() => {});
             }
+            scheduleClearDfMessengerComposerInput_();
             return;
         }
         if (typeof dfMessenger.sendRequest === "function") {
@@ -4544,6 +4620,7 @@ function sendUserTextViaDfMessenger(dfMessenger, text, shouldRenderCustomTextNow
                 r.catch(() => {});
             }
         }
+        scheduleClearDfMessengerComposerInput_();
     } catch (e) {
         /* no-op */
     }
@@ -12709,6 +12786,7 @@ function tryRenderThanksAfterMergeSuppressDf_(event, raw, before) {
         renderUserPersona(ms);
     }
     markContactOnlyThanksSuppressQuery_(t);
+    scheduleClearDfMessengerComposerInput_();
     return true;
 }
 
@@ -12811,9 +12889,14 @@ function attachPersonaHandlers(dfMessenger) {
             const typed = extractDfUserInputEnteredText(event);
             const typedTrim = typeof typed === "string" ? typed.trim() : "";
             if (consumeContactOnlyThanksSuppressForQuery_(event, typedTrim)) {
+                dfchatPendingTypedUtteranceForGate_ = "";
                 return;
             }
+            if (typedTrim) {
+                dfchatPendingTypedUtteranceForGate_ = typedTrim;
+            }
             if (isRestartChatEnabled() && isUserTypingRestartChatCommand(typed)) {
+                dfchatPendingTypedUtteranceForGate_ = "";
                 try {
                     if (typeof event.preventDefault === "function") {
                         event.preventDefault();
@@ -12825,19 +12908,20 @@ function attachPersonaHandlers(dfMessenger) {
                 return;
             }
             if (consumeLanguageSwitchFromUserFlowPhrase(typed, event)) {
+                dfchatPendingTypedUtteranceForGate_ = "";
                 return;
             }
             const hadM1 = hasStoredMobileForChatBlockGate_();
             const prev1 = readStoredClientContext();
             const hadE1 = !!(dfParameterScalarToString(prev1 && prev1.email != null ? prev1.email : "").trim());
-            mergeLikelyContactHintsFromChatText_(typed);
-            if (tryRenderThanksAfterMergeSuppressDf_(event, typeof typed === "string" ? typed.trim() : "", { hadMobile: hadM1, hadEmail: hadE1 })) {
+            mergeLikelyContactHintsFromChatText_(typedTrim);
+            if (tryRenderThanksAfterMergeSuppressDf_(event, typedTrim, { hadMobile: hadM1, hadEmail: hadE1 })) {
                 return;
             }
-            if (tryPreventChatSendForMissingMobileGate_(event, typeof typed === "string" ? typed.trim() : "")) {
+            if (tryPreventChatSendForMissingMobileGate_(event, typedTrim)) {
                 return;
             }
-            trackChatUserQueryInSessionContext_(typed);
+            trackChatUserQueryInSessionContext_(typedTrim);
             const ms = activeDfMessenger;
             if (ms && typeof ms.renderCustomText === "function") {
                 renderUserPersona(ms);
@@ -12849,42 +12933,51 @@ function attachPersonaHandlers(dfMessenger) {
     window.addEventListener(
         "df-request-sent",
         (event) => {
-            const queryText =
-                extractQueryTextFromDfRequestSentEvent_(event);
-            const qt = typeof queryText === "string" ? queryText.trim() : "";
-            if (consumeContactOnlyThanksSuppressForQuery_(event, qt)) {
+            const queryRaw = extractQueryTextFromDfRequestSentEvent_(event);
+            const fromReq = typeof queryRaw === "string" ? queryRaw.trim() : "";
+            const pendingSnap =
+                typeof dfchatPendingTypedUtteranceForGate_ === "string"
+                    ? dfchatPendingTypedUtteranceForGate_.trim()
+                    : "";
+            dfchatPendingTypedUtteranceForGate_ = "";
+            const effectiveQuery = fromReq || pendingSnap;
+
+            if (consumeContactOnlyThanksSuppressForQuery_(event, effectiveQuery)) {
                 return;
             }
 
-            if (typeof queryText === "string"
+            if (typeof effectiveQuery === "string"
                 && isRestartChatEnabled()
-                && isUserTypingRestartChatCommand(queryText)) {
+                && isUserTypingRestartChatCommand(effectiveQuery)) {
+                dfchatPendingTypedUtteranceForGate_ = "";
                 scheduleRestartChatSessionFromUserPhrase();
                 return;
             }
 
-            if (consumeLanguageSwitchFromUserFlowPhrase(queryText)) {
+            if (consumeLanguageSwitchFromUserFlowPhrase(effectiveQuery || "")) {
+                dfchatPendingTypedUtteranceForGate_ = "";
                 return;
             }
 
             const hadM2 = hasStoredMobileForChatBlockGate_();
             const prev2 = readStoredClientContext();
             const hadE2 = !!(dfParameterScalarToString(prev2 && prev2.email != null ? prev2.email : "").trim());
-            mergeLikelyContactHintsFromChatText_(queryText);
-            if (tryRenderThanksAfterMergeSuppressDf_(event, typeof queryText === "string" ? queryText.trim() : "", { hadMobile: hadM2, hadEmail: hadE2 })) {
+            mergeLikelyContactHintsFromChatText_(effectiveQuery);
+            if (tryRenderThanksAfterMergeSuppressDf_(event, effectiveQuery, { hadMobile: hadM2, hadEmail: hadE2 })) {
                 return;
             }
-            if (tryPreventChatSendForMissingMobileGate_(event, typeof queryText === "string" ? queryText.trim() : "")) {
+            if (tryPreventChatSendForMissingMobileGate_(event, effectiveQuery)) {
                 return;
             }
 
-            trackChatUserQueryInSessionContext_(queryText);
+            trackChatUserQueryInSessionContext_(effectiveQuery);
 
-            if (typeof queryText === "string" && queryText.trim()) {
+            if (effectiveQuery) {
                 const ms = activeDfMessenger;
                 if (ms && typeof ms.renderCustomText === "function") {
                     renderUserPersona(ms);
                 }
+                scheduleClearDfMessengerComposerInput_();
             }
         },
         true
@@ -12905,6 +12998,7 @@ function attachPersonaHandlers(dfMessenger) {
         if (ms && typeof ms.renderCustomText === "function") {
             renderUserPersona(ms);
         }
+        scheduleClearDfMessengerComposerInput_();
     };
     ["df-chip-clicked", "df-button-clicked"].forEach((evtName) => {
         window.addEventListener(evtName, (event) => {
