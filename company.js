@@ -1396,7 +1396,7 @@ const originalTextNodeContent = new Map();
 const originalElementAttributes = new Map();
 const googleTranslationCache = new Map();
 
-const COMPANY_JS_BUILD_TAG = "20260512-13";
+const COMPANY_JS_BUILD_TAG = "20260512-14";
 const COMPANY_DEBUG_QUERY_FLAG = "dfchatDebug";
 let debugMountAttemptSeq = 0;
 let debugBadgeLastRenderAt = 0;
@@ -17083,19 +17083,18 @@ function renderPersona(dfMessenger, personaType, label, timeLabelForUser) {
         renderBotPersona(dfMessenger, Date.now());
         return;
     }
-    const nonce = `${personaType}-${Date.now()}-${personaSequence += 1}`;
     const timeLabel =
         typeof timeLabelForUser === "string"
             ? timeLabelForUser
             : getIstTimeLabel();
-    // Mirror bot emojiTime mode: compact SVG badge inside the **markdown** lane (`isBot=true`) so the
-    // embedded `<img>` actually renders. Calling with `false` would build a `df-text-message`, which is
-    // plain `pre-wrap` text — Markdown / data-URLs are printed literally inside the user gradient bubble.
-    // The decorator detects PERSONA_MARKER_USER on the resulting img and right-aligns the strip.
-    dfMessenger.renderCustomText(
-        createPersonaBadgeMarkdown(label, timeLabel, nonce, PERSONA_MARKER_USER, true),
-        true
-    );
+    // df-messenger's `renderCustomText` only Markdown-processes when `isBot=true` (see DF_Mti in
+    // df-messenger.js). User lane = `df-text-message` with `<div style="white-space:pre-wrap">` —
+    // no Markdown / no <img>, so SVG data-URLs print literally and `**bold**` shows asterisks.
+    // We render the persona as Markdown bold text in the *bot* lane (so it actually renders), tag it
+    // with an invisible sentinel (USER_PERSONA_TEXT_SENTINEL), then the decorator finds the row,
+    // strips the bot-bubble chrome, and right-aligns it so it visually belongs to the user side.
+    const md = buildUserPersonaMarkdownText_(label, timeLabel);
+    dfMessenger.renderCustomText(md, true);
     schedulePersonaShadowFix(dfMessenger);
 }
 
@@ -17105,18 +17104,21 @@ function sanitizeUserPersonaLabelForMarkdown(label) {
 }
 
 /**
- * Caption string for {@link renderPersona} user lane (`renderCustomText` → `df-text-message`, plain text only — CX does not Markdown user rows).
+ * Markdown caption string for {@link renderPersona}'s user branch. Routed through
+ * `renderCustomText(md, true)` → bot Markdown lane (`df-markdown-message`). df-messenger only
+ * Markdown-processes bot text (DF_Mti) — user lane is pre-wrap plain text. Sentinel lets the
+ * decorator pick this row out from real bot replies so it can strip the bubble + right-align.
  * @param {string} label
  * @param {string} timeLabel
  */
-function buildUserPersonaEmojiMarkdown_(label, timeLabel) {
+function buildUserPersonaMarkdownText_(label, timeLabel) {
     const base = sanitizeUserPersonaLabelForMarkdown(label) || "🙂";
     const t = typeof timeLabel === "string" ? timeLabel.trim() : "";
     if (!t) {
-        return `${USER_PERSONA_TEXT_SENTINEL}${base}`;
+        return `${USER_PERSONA_TEXT_SENTINEL}**${base}**`;
     }
     const safeTime = t.replace(/\*\*/g, "").replace(/\*/g, "×");
-    return `${USER_PERSONA_TEXT_SENTINEL}${base}  ${safeTime}`;
+    return `${USER_PERSONA_TEXT_SENTINEL}**${base}  ${safeTime}**`;
 }
 
 function stripUserPersonaSentinelFromDom_(hostEl) {
@@ -17405,6 +17407,62 @@ df-markdown-message.dfchat-user-persona-md-host,
   align-self: flex-end !important;
   margin-left: auto !important;
   margin-right: 0 !important;
+  background: transparent !important;
+}
+/*
+ * User persona caption rendered as plain Markdown text in the bot lane (current path: dfMessenger
+ * .renderCustomText with isBot=true; df-messenger only Markdown-processes for isBot=true).
+ * Classes are added by applyUserPersonaMarkdownChrome_. Strip bubble chrome + right-align
+ * the entry / stack so the caption sits on the user side without looking like a real message.
+ */
+.message.bot-message.markdown.dfchat-user-persona-md {
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  padding: 0 6px !important;
+  margin: 0 0 0 auto !important;
+  min-height: 0 !important;
+  width: fit-content !important;
+  max-width: min(320px, 100%) !important;
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  font-size: 11px !important;
+  line-height: 1.25 !important;
+}
+.message.bot-message.markdown.dfchat-user-persona-md > p,
+.message.bot-message.markdown.dfchat-user-persona-md p {
+  margin: 0 !important;
+  padding: 0 !important;
+  font-size: 11px !important;
+  line-height: 1.25 !important;
+  color: ${PERSONA_TEXT_COLOR} !important;
+  text-align: right !important;
+}
+.message.bot-message.markdown.dfchat-user-persona-md p strong {
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  color: ${PERSONA_TEXT_COLOR} !important;
+  filter: blur(${PERSONA_SOFT_BLUR}) !important;
+  opacity: ${PERSONA_OPACITY} !important;
+  display: inline-block !important;
+  vertical-align: middle !important;
+}
+.entry.bot.dfchat-user-persona-caption-bot-entry {
+  align-self: flex-end !important;
+  justify-content: flex-end !important;
+  margin-left: auto !important;
+  margin-right: 0 !important;
+  margin-top: 0 !important;
+  margin-bottom: 2px !important;
+  padding: 0 !important;
+  background: transparent !important;
+}
+df-markdown-message.dfchat-user-persona-caption-md-host {
+  align-self: flex-end !important;
+  margin-left: auto !important;
+  margin-right: 0 !important;
+  padding: 0 !important;
   background: transparent !important;
 }
 ${BOT_PERSONA_CONFIG.mode === "emojiTime" ? `
@@ -18113,7 +18171,7 @@ function applyBotEmojiPersonaCaptionChrome(imageNode) {
 /**
  * Strip default **user bubble** chrome (large type, padding, gradients) from the emoji+time persona row only.
  * Mirrors density of bot image-mode caption {@link getPersonaImageGuardCss} via composed-tree `!important` resets.
- * @param {HTMLElement} mdHost `.message.user-message` from `df-text-message` (or markdown path) bearing {@link buildUserPersonaEmojiMarkdown_} text
+ * @param {HTMLElement} mdHost `.message.user-message` OR `.message.bot-message.markdown` bearing {@link buildUserPersonaMarkdownText_} text
  */
 function applyUserPersonaMarkdownChrome_(mdHost) {
     if (!mdHost) {
@@ -18131,8 +18189,13 @@ function applyUserPersonaMarkdownChrome_(mdHost) {
 
         const isTextMessageHost = tag === "DF-TEXT-MESSAGE";
         const isUserMessageDiv = el.classList && el.classList.contains("message") && el.classList.contains("user-message");
+        // Current path: persona text is rendered through the bot Markdown lane (Markdown only
+        // processes for `isBot=true` in df-messenger). We must therefore also strip `.bot-message`
+        // chrome / right-align so it visually masquerades as a user-side caption.
+        const isBotMessageDiv = el.classList && el.classList.contains("message") && el.classList.contains("bot-message");
         const isMessageStack = el.classList && el.classList.contains("message-stack");
         const isUserEntry = el.classList && el.classList.contains("entry") && el.classList.contains("user");
+        const isBotEntry = el.classList && el.classList.contains("entry") && el.classList.contains("bot");
         const isMarkdownMessageHost = tag === "DF-MARKDOWN-MESSAGE";
 
         try {
@@ -18173,9 +18236,82 @@ function applyUserPersonaMarkdownChrome_(mdHost) {
                 el.style.setProperty("padding-left", "0", "important");
                 el.style.setProperty("padding-right", "0", "important");
             }
+            if (isBotEntry) {
+                // Bot lane (current path): the row is an `.entry.bot` because Markdown processing
+                // requires `isBot=true`. Right-align it so it sits on the user side.
+                try {
+                    el.classList.add("dfchat-user-persona-caption-bot-entry");
+                } catch (eBE) {
+                    /* ignore */
+                }
+                el.style.setProperty("align-self", "flex-end", "important");
+                el.style.setProperty("justify-content", "flex-end", "important");
+                el.style.setProperty("margin-left", "auto", "important");
+                el.style.setProperty("margin-right", "0", "important");
+                el.style.setProperty("margin-top", "0", "important");
+                el.style.setProperty("margin-bottom", "2px", "important");
+                el.style.setProperty("padding", "0", "important");
+                el.style.setProperty("background", "transparent", "important");
+            }
             if (isMessageStack) {
                 el.style.setProperty("margin-top", "0", "important");
                 el.style.setProperty("margin-bottom", "0", "important");
+                // Stack carries the user persona caption — pull it to the right side too.
+                el.style.setProperty("align-self", "flex-end", "important");
+                el.style.setProperty("margin-left", "auto", "important");
+                el.style.setProperty("margin-right", "0", "important");
+                el.style.setProperty("background", "transparent", "important");
+            }
+            if (isBotMessageDiv) {
+                const tx = cssUserPersonaTranslateX() || "none";
+                el.style.setProperty("background", "transparent", "important");
+                el.style.setProperty("background-color", "transparent", "important");
+                el.style.setProperty("background-image", "none", "important");
+                el.style.setProperty("padding", "0 6px", "important");
+                el.style.setProperty("margin-top", "0", "important");
+                el.style.setProperty("margin-bottom", "0", "important");
+                el.style.setProperty("margin-left", "auto", "important");
+                el.style.setProperty("margin-right", "0", "important");
+                el.style.setProperty("min-height", "0", "important");
+                el.style.setProperty("max-height", "none", "important");
+                el.style.setProperty("width", "fit-content", "important");
+                el.style.setProperty("max-width", "min(320px,100%)", "important");
+                el.style.setProperty("font-size", "11px", "important");
+                el.style.setProperty("line-height", "1.25", "important");
+                el.style.setProperty("box-shadow", "none", "important");
+                el.style.setProperty("border", "none", "important");
+                el.style.setProperty("outline", "none", "important");
+                el.style.setProperty("border-radius", "0", "important");
+                try {
+                    el.style.setProperty("--df-messenger-message-bot-font-size", "11px", "important");
+                    el.style.setProperty("--df-messenger-message-bot-background", "transparent", "important");
+                    el.style.setProperty("--df-messenger-message-bot-background-color", "transparent", "important");
+                    el.style.setProperty("--df-messenger-message-bot-border", "none", "important");
+                    el.style.setProperty("--df-messenger-message-bot-padding", "0px", "important");
+                    el.style.setProperty("--df-messenger-message-bot-font-color", PERSONA_TEXT_COLOR, "important");
+                } catch {
+                    /* ignore */
+                }
+                el.style.setProperty("transform", tx, "important");
+                el.style.removeProperty("-webkit-filter");
+                // Markdown body wraps in <p>. Style its <strong> as the persona caption: small,
+                // colored, soft-blurred, sitting on one line with the emoji.
+                const pNode = el.querySelector(":scope > p");
+                if (pNode && pNode.style) {
+                    pNode.style.setProperty("margin", "0", "important");
+                    pNode.style.setProperty("padding", "0", "important");
+                    pNode.style.setProperty("font-size", "11px", "important");
+                    pNode.style.setProperty("line-height", "1.25", "important");
+                    pNode.style.setProperty("color", PERSONA_TEXT_COLOR, "important");
+                }
+                const strongNode = el.querySelector(":scope > p strong, :scope p strong");
+                if (strongNode && strongNode.style) {
+                    strongNode.style.setProperty("font-size", "11px", "important");
+                    strongNode.style.setProperty("font-weight", "600", "important");
+                    strongNode.style.setProperty("color", PERSONA_TEXT_COLOR, "important");
+                    strongNode.style.setProperty("filter", `blur(${PERSONA_SOFT_BLUR})`, "important");
+                    strongNode.style.setProperty("opacity", String(PERSONA_OPACITY), "important");
+                }
             }
             if (isUserMessageDiv) {
                 const tx = cssUserPersonaTranslateX() || "none";
@@ -18218,7 +18354,7 @@ function applyUserPersonaMarkdownChrome_(mdHost) {
                     innerDiv.style.setProperty("color", PERSONA_TEXT_COLOR, "important");
                     innerDiv.style.setProperty("opacity", String(PERSONA_OPACITY), "important");
                 }
-            } else if (!isMarkdownMessageHost && !isUserEntry && !isMessageStack && !isUserMessageDiv && !isTextMessageHost) {
+            } else if (!isMarkdownMessageHost && !isUserEntry && !isBotEntry && !isMessageStack && !isUserMessageDiv && !isBotMessageDiv && !isTextMessageHost) {
                 el.style.setProperty("background", "transparent", "important");
                 el.style.setProperty("background-color", "transparent", "important");
                 el.style.setProperty("box-shadow", "none", "important");
@@ -18561,7 +18697,7 @@ function reorderBotPersonaMarkdownToTopOfStack_(imageNode) {
     }
 }
 
-/** Layout wrapper for persona row when the badge is markdown text ({@link buildUserPersonaEmojiMarkdown_}) not an SVG `img`. */
+/** Layout wrapper for persona row when the caption is markdown text ({@link buildUserPersonaMarkdownText_}) not an SVG `img`. */
 function styleUserPersonaMarkdownHost_(container, mdHost) {
     if (!container || !mdHost || mdHost.dataset.companyPersonaStyled === "user") {
         return;
@@ -18658,9 +18794,13 @@ function decorateUserPersonaMarkdownHosts(dfMessenger) {
             candidates = Array.from(
                 root.querySelectorAll(
                     [
+                        // Legacy user-lane row (older builds rendered via `renderCustomText(text, false)`).
                         "df-text-message .message.user-message",
                         ".message.user-message.markdown",
-                        "df-markdown-message .message.user-message"
+                        "df-markdown-message .message.user-message",
+                        // Current bot-Markdown-lane row — Markdown only runs for `isBot=true` (DF_Mti).
+                        "df-markdown-message .message.bot-message.markdown",
+                        ".message.bot-message.markdown"
                     ].join(", ")
                 )
             );
@@ -18773,6 +18913,15 @@ function decoratePersonaMessages(dfMessenger) {
                 applyUserPersonaCaptionChrome_(image);
             }
         }
+    }
+
+    // Markdown-text user persona (current path): emoji+time rendered via Markdown bot lane and
+    // tagged with USER_PERSONA_TEXT_SENTINEL. Image scan above won't match — handle it here so the
+    // bubble is stripped + the row is right-aligned to look like a small caption, not a message.
+    try {
+        decorateUserPersonaMarkdownHosts(dfMessenger);
+    } catch {
+        /* ignore */
     }
 }
 
