@@ -240,6 +240,8 @@ function shouldBlockOutgoingChatForMissingMobile_() {
 /** Dedupe block UI when both `df-user-input-entered` and `df-request-sent` fire for the same utterance. */
 let mobileGateLastSurfacedText_ = "";
 let mobileGateLastSurfacedAt_ = 0;
+/** After chat-captured mobile, block CX/parameter merges from overwriting it for this many ms (wrong Sheet column D). */
+let skipCxMobileOverwriteUntilMs_ = 0;
 
 /**
  * When the visitor is over the query limit without mobile, block the outbound CX request and show a bot line.
@@ -12666,13 +12668,13 @@ function mergeLikelyMobileFromChatText(raw) {
         && digitsOnly.length <= 15
         && /^[\d\s+().\-]+$/i.test(normalized)
     ) {
-        mergeVisitorMobileIntoStoredContext(digitsOnly, { syncSheet: false });
+        mergeVisitorMobileIntoStoredContext(digitsOnly, { syncSheet: false, fromChat: true });
         return;
     }
 
     const extracted = extractLikelyMobileDigitsForMerge_(t);
     if (extracted && extracted.replace(/\D/g, "").length >= 9) {
-        mergeVisitorMobileIntoStoredContext(extracted.replace(/\D/g, ""), { syncSheet: false });
+        mergeVisitorMobileIntoStoredContext(extracted.replace(/\D/g, ""), { syncSheet: false, fromChat: true });
     }
 }
 
@@ -14282,7 +14284,7 @@ function submitContactForm(event) {
                     status.classList.remove("is-error");
                 }
                 if (payload && typeof payload.mobile === "string" && payload.mobile.trim()) {
-                    mergeVisitorMobileIntoStoredContext(payload.mobile, { syncSheet: false });
+                    mergeVisitorMobileIntoStoredContext(payload.mobile, { syncSheet: false, force: true });
                 }
                 setOtpFormStep("otp");
                 const oOtpEl = document.getElementById("o-otp");
@@ -14335,7 +14337,7 @@ function submitContactForm(event) {
                 mobileToRemember = payload.mobile.trim();
             }
             if (mobileToRemember) {
-                mergeVisitorMobileIntoStoredContext(mobileToRemember, { syncSheet: false });
+                mergeVisitorMobileIntoStoredContext(mobileToRemember, { syncSheet: false, force: true });
             }
             const updatedContext = { ...readStoredClientContext() };
             for (const key in payload) {
@@ -15061,6 +15063,7 @@ function restartChatSession() {
     } catch {
         /* ignore */
     }
+    skipCxMobileOverwriteUntilMs_ = 0;
     try {
         stopComposerSpeechRecognition();
     } catch {
@@ -16235,14 +16238,28 @@ function postCapturedMobileToSheetRow(mobileValue) {
  * Remember the visitor’s mobile after Contact / OTP forms so document uploads (no tel field)
  * still send `mobile` inside `client_context` for backend Drive folder naming.
  * @param {string} rawMobile
- * @param {{ syncSheet?: boolean }} [opts] — set `syncSheet: false` after a contact form submit (main POST already appends the row).
+ * @param {{ syncSheet?: boolean, fromChat?: boolean, force?: boolean }} [opts] — `syncSheet: false` after contact form submit; `fromChat: true` when parsed from chat (CX merges skip briefly); `force: true` for form submit / explicit saves.
  */
 function mergeVisitorMobileIntoStoredContext(rawMobile, opts) {
     const v = typeof rawMobile === "string" ? rawMobile.trim() : "";
     if (!v || !/\d/.test(v)) {
         return;
     }
-    const syncSheet = !opts || opts.syncSheet !== false;
+    const o = opts && typeof opts === "object" ? opts : {};
+    const syncSheet = o.syncSheet !== false;
+    const fromChat = o.fromChat === true;
+    const force = o.force === true;
+
+    if (!fromChat && !force && Date.now() < skipCxMobileOverwriteUntilMs_) {
+        return;
+    }
+    if (fromChat) {
+        skipCxMobileOverwriteUntilMs_ = Date.now() + 120000;
+    }
+    if (force) {
+        skipCxMobileOverwriteUntilMs_ = 0;
+    }
+
     try {
         const prev = readStoredClientContext();
         persistClientContext({
