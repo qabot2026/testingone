@@ -400,6 +400,8 @@ const PERSONA_MARKER_BOT = "dfchat-persona-bot";
 const PERSONA_MARKER_BOT_TIME = "dfchat-persona-bot-time";
 const PERSONA_MARKER_USER = "dfchat-persona-user";
 const PERSONA_URL_MARKER_BOT_IMG = "dfchat-bot-persona";
+/** Invisible fingerprint at start of user persona markdown; removed after decorate so transcript stays readable. */
+const USER_PERSONA_TEXT_SENTINEL = "\u2060\u200c\u2060";
 
 function readBotPersonaConfig() {
     const raw = COMMON_CONFIG.botPersona && typeof COMMON_CONFIG.botPersona === "object"
@@ -487,7 +489,7 @@ function readBotPersonaConfig() {
 }
 
 /**
- * Chat “user” row above outgoing bubbles (SVG badge). Layout nudges stay under {@link readBotPersonaConfig} `userPersona*` keys.
+ * Chat “user” row above outgoing bubbles — emoji (+ optional blurred time via markdown bold). Layout nudges stay under {@link readBotPersonaConfig} `userPersona*` keys.
  * @returns {{ label: string, showTime: boolean, timeZone: string }}
  */
 function readUserPersonaConfig() {
@@ -1394,7 +1396,7 @@ const originalTextNodeContent = new Map();
 const originalElementAttributes = new Map();
 const googleTranslationCache = new Map();
 
-const COMPANY_JS_BUILD_TAG = "20260512-09";
+const COMPANY_JS_BUILD_TAG = "20260512-10";
 const COMPANY_DEBUG_QUERY_FLAG = "dfchatDebug";
 let debugMountAttemptSeq = 0;
 let debugBadgeLastRenderAt = 0;
@@ -17081,14 +17083,62 @@ function renderPersona(dfMessenger, personaType, label, timeLabelForUser) {
         renderBotPersona(dfMessenger, Date.now());
         return;
     }
-    const nonce = `${personaType}-${Date.now()}-${personaSequence += 1}`;
     const timeLabel =
         typeof timeLabelForUser === "string"
             ? timeLabelForUser
             : getIstTimeLabel();
-    // `false` = end-user message (right column). `true` would render as agent and breaks layout/CSS.
-    dfMessenger.renderCustomText(createPersonaBadgeMarkdown(label, timeLabel, nonce, PERSONA_MARKER_USER), false);
+    // Emoji + markdown bold time (CX often prints broken `![](data:image/svg+xml…)` badges as ugly raw URLs).
+    // `false` = end-user lane (right column). `true` would render as agent and breaks layout/CSS.
+    dfMessenger.renderCustomText(buildUserPersonaEmojiMarkdown_(label, timeLabel), false);
     schedulePersonaShadowFix(dfMessenger);
+}
+
+function sanitizeUserPersonaLabelForMarkdown(label) {
+    const s = typeof label === "string" ? label.trim() : "";
+    return s.replace(/\*\*/g, "").replace(/\*/g, "×").replace(/</g, "").replace(/>/g, "");
+}
+
+/**
+ * Markdown body for {@link renderPersona} user lane (no SVG / data-URL `![]()`).
+ * @param {string} label
+ * @param {string} timeLabel
+ */
+function buildUserPersonaEmojiMarkdown_(label, timeLabel) {
+    const base = sanitizeUserPersonaLabelForMarkdown(label) || "🙂";
+    const t = typeof timeLabel === "string" ? timeLabel.trim() : "";
+    if (!t) {
+        return `${USER_PERSONA_TEXT_SENTINEL}${base}`;
+    }
+    const safeBold = t.replace(/\*\*/g, "").replace(/\*/g, "×");
+    return `${USER_PERSONA_TEXT_SENTINEL}${base} **${safeBold}**`;
+}
+
+function stripUserPersonaSentinelFromDom_(hostEl) {
+    if (!hostEl || hostEl.dataset.dfchatUserPersonaSentinelStripped === "1") {
+        return;
+    }
+    const sentinel = USER_PERSONA_TEXT_SENTINEL;
+    const walk = (node) => {
+        if (!node) {
+            return false;
+        }
+        if (node.nodeType === Node.TEXT_NODE && node.textContent && node.textContent.includes(sentinel)) {
+            node.textContent = node.textContent.split(sentinel).join("");
+            return true;
+        }
+        if (!node.childNodes) {
+            return false;
+        }
+        for (let i = 0; i < node.childNodes.length; i += 1) {
+            if (walk(node.childNodes[i])) {
+                return true;
+            }
+        }
+        return false;
+    };
+    if (walk(hostEl)) {
+        hostEl.dataset.dfchatUserPersonaSentinelStripped = "1";
+    }
 }
 
 /**
@@ -17318,6 +17368,32 @@ img[src*="dfchat-persona-bot%7C"] {
   display: inline-block !important;
   vertical-align: middle !important;
   box-sizing: border-box !important;
+}
+/* User persona: emoji label + blurred time — plain markdown (no SVG data-URL badges). */
+.message.user-message.markdown.dfchat-user-persona-md,
+.message.user-message.dfchat-user-persona-md {
+  background: transparent !important;
+  background-color: transparent !important;
+  box-shadow: none !important;
+  border: none !important;
+}
+.message.user-message.markdown.dfchat-user-persona-md p,
+.message.user-message.dfchat-user-persona-md p {
+  display: inline-block !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  color: ${PERSONA_TEXT_COLOR} !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  line-height: 1.25 !important;
+}
+.message.user-message.markdown.dfchat-user-persona-md p strong,
+.message.user-message.dfchat-user-persona-md p strong {
+  color: ${PERSONA_TEXT_COLOR} !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  filter: blur(${PERSONA_SOFT_BLUR}) !important;
+  opacity: ${PERSONA_OPACITY} !important;
 }
 ${BOT_PERSONA_CONFIG.mode === "emojiTime" ? `
 /* .entry:has(img) cannot see into df-messenger-utterance shadow — class set in applyBotEmojiPersonaCaptionChrome */
@@ -18264,6 +18340,149 @@ function reorderBotPersonaMarkdownToTopOfStack_(imageNode) {
     }
 }
 
+/** Layout wrapper for persona row when the badge is markdown text ({@link buildUserPersonaEmojiMarkdown_}) not an SVG `img`. */
+function styleUserPersonaMarkdownHost_(container, mdHost) {
+    if (!container || !mdHost || mdHost.dataset.companyPersonaStyled === "user") {
+        return;
+    }
+
+    mdHost.dataset.companyPersonaStyled = "user";
+    mdHost.classList.add("dfchat-user-persona-md");
+    mdHost.style.filter = "";
+    mdHost.style.opacity = "";
+    mdHost.style.display = "block";
+    mdHost.style.marginLeft = "auto";
+    mdHost.style.marginRight = "4px";
+    mdHost.style.marginTop = cssUserPersonaMarginTop();
+    mdHost.style.marginBottom = "0px";
+    mdHost.style.maxWidth = "100%";
+    mdHost.style.width = "fit-content";
+    mdHost.style.height = "auto";
+    {
+        const t = cssUserPersonaTranslateX();
+        mdHost.style.transform = t || "";
+    }
+
+    let current = container;
+    let depth = 0;
+    const personaType = "user";
+    const isBotEmojiCaption = false;
+
+    while (current && current !== document.body && depth < 3) {
+        current.dataset.companyPersonaStyled = personaType;
+        if (!isBotEmojiCaption) {
+            current.style.background = "transparent";
+            current.style.backgroundColor = "transparent";
+            current.style.boxShadow = "none";
+            current.style.border = "0";
+            current.style.outline = "0";
+            current.style.padding = "0";
+        }
+
+        if (depth === 0) {
+            current.style.marginBottom = PERSONA_VERTICAL_PULL;
+            current.style.marginLeft = "0";
+            current.style.marginRight = "0";
+            current.style.marginTop = cssUserPersonaMarginTop();
+            current.style.marginBottom = "0px";
+            current.style.textAlign = "right";
+        }
+
+        current.style.display = "flex";
+        current.style.width = "100%";
+        current.style.maxWidth = "100%";
+        current.style.justifyContent = "flex-end";
+        current.style.marginLeft = "0";
+        current.style.marginRight = "0";
+        current.style.marginTop = cssUserPersonaMarginTop();
+        current.style.marginBottom = "0px";
+        current.style.alignSelf = "flex-end";
+        current.style.justifySelf = "end";
+        current.style.textAlign = "right";
+        current.style.float = "none";
+
+        const tokens = [
+            current.className || "",
+            current.getAttribute("role") || "",
+            current.getAttribute("data-testid") || ""
+        ].join(" ").toLowerCase();
+
+        if (/chat|window|list|panel|container/.test(tokens) && depth > 0) {
+            break;
+        }
+
+        current = current.parentElement;
+        depth += 1;
+    }
+}
+
+function decorateUserPersonaMarkdownHosts(dfMessenger) {
+    const roots = collectSearchRoots(dfMessenger);
+    const sentinel = USER_PERSONA_TEXT_SENTINEL;
+    const label = String(USER_PERSONA_CONFIG.label || "").trim();
+    const zwRe = /[\u2060\u200b\u200c\u200d\ufeff]/g;
+    const showTime = USER_PERSONA_CONFIG.showTime !== false;
+    const normalizedLabel = label.replace(zwRe, "").trim();
+
+    for (const root of roots) {
+        if (!root || !root.querySelectorAll) {
+            continue;
+        }
+
+        let candidates = [];
+        try {
+            candidates = Array.from(
+                root.querySelectorAll(
+                    ".message.user-message.markdown, df-markdown-message .message.user-message, .entry.user .message.user-message.markdown"
+                )
+            );
+            candidates = Array.from(new Set(candidates));
+        } catch {
+            candidates = [];
+        }
+
+        for (let i = 0; i < candidates.length; i += 1) {
+            const el = candidates[i];
+            if (!el || el.nodeType !== Node.ELEMENT_NODE || el.dataset.companyPersonaStyled === "user") {
+                continue;
+            }
+
+            /** Legacy SVG badge row (`createPersonaBadgeMarkdown`) — leave to img decorator. */
+            if (typeof el.querySelector === "function" && el.querySelector(`img[src*="${PERSONA_MARKER_USER}"]`)) {
+                continue;
+            }
+
+            const txt = el.textContent || "";
+            const hasSentinel = Boolean(sentinel) && txt.indexOf(sentinel) !== -1;
+            const stripped = txt.replace(zwRe, "").trim();
+
+            let heuristic = false;
+            if (!hasSentinel && normalizedLabel) {
+                if (stripped.startsWith(normalizedLabel)) {
+                    if (!showTime) {
+                        heuristic = stripped.replace(/\s+/g, " ").trim() === normalizedLabel;
+                    } else {
+                        heuristic = Boolean(el.querySelector("strong"));
+                    }
+                }
+            }
+            if (!hasSentinel && !heuristic) {
+                continue;
+            }
+
+            const container = findPersonaContainer(el, root);
+            if (!container) {
+                continue;
+            }
+
+            if (hasSentinel) {
+                stripUserPersonaSentinelFromDom_(el);
+            }
+            styleUserPersonaMarkdownHost_(container, el);
+        }
+    }
+}
+
 function decoratePersonaMessages(dfMessenger) {
     const roots = collectSearchRoots(dfMessenger);
 
@@ -18312,6 +18531,7 @@ function decoratePersonaMessages(dfMessenger) {
             }
         }
     }
+    decorateUserPersonaMarkdownHosts(dfMessenger);
 }
 
 function getPersonaType(imageNode) {

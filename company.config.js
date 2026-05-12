@@ -95,7 +95,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
       }
     },
 
-    // Shown above each outgoing user bubble (SVG). `emoji` is an alias for `label`.
+    // Shown above each outgoing user bubble: emoji `label` + optional blurred clock (markdown text; avoids huge `![](data:image/svg+xml…)` in transcript).
     userPersona: {
       label: "🙂User",
       showTime: true,
