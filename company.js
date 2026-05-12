@@ -13836,6 +13836,7 @@ function submitContactForm(event) {
                 }
             }
             persistClientContext(updatedContext);
+            syncDfMessengerSessionParametersFromClientContext(activeDfMessenger);
             renderContactFormSubmissionResponse(summaryForChat);
 
             for (const def of fieldDefs) {
@@ -15518,6 +15519,31 @@ function syncDfMessengerSessionParametersFromClientContext(dfMessenger) {
         add("browser_language");
         add("screen_resolution");
         add("viewport_size");
+        add("name");
+        add("mobile");
+        add("email");
+        add("birthdate");
+        add("user_agent");
+        add("platform");
+        add("referrer_url");
+        add("appointmentdate");
+        add("appointmenttime");
+        const spRaw = /** @type {Record<string, unknown>} */ (cx).session_params;
+        if (spRaw && typeof spRaw === "object" && !Array.isArray(spRaw)) {
+            for (const [k, val] of Object.entries(spRaw)) {
+                const nk = String(k || "")
+                    .trim()
+                    .toLowerCase()
+                    .replace(/[^a-z0-9_]/g, "");
+                if (!nk || Object.prototype.hasOwnProperty.call(parameters, nk)) {
+                    continue;
+                }
+                const s = dfParameterScalarToString(val);
+                if (s && s.length <= 500) {
+                    parameters[nk] = s;
+                }
+            }
+        }
         if (!Object.keys(parameters).length) {
             return;
         }
