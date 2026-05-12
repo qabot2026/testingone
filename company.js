@@ -15523,6 +15523,7 @@ function syncDfMessengerSessionParametersFromClientContext(dfMessenger) {
         add("mobile");
         add("email");
         add("birthdate");
+        add("city");
         add("user_agent");
         add("platform");
         add("referrer_url");
