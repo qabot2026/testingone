@@ -266,7 +266,80 @@ function tryPreventChatSendForMissingMobileGate_(event, queryText) {
     } catch {
         /* ignore */
     }
+    openContactFormAfterMobileBlockGate_();
     return true;
+}
+
+function resolveMobileBlockContactFormId_() {
+    const cfg = BLOCK_CHAT_WITHOUT_MOBILE_CONFIG;
+    const explicit = typeof cfg.formIdOnBlock === "string" ? cfg.formIdOnBlock.trim() : "";
+    if (explicit) {
+        return canonicalContactFormId_(explicit);
+    }
+    const fr = readCommonFormConfigRoot();
+    const forms = fr.forms && typeof fr.forms === "object" ? fr.forms : null;
+    if (forms && forms.contact) {
+        return "contact";
+    }
+    return getDefaultContactFormId();
+}
+
+function focusMobileFieldInActiveContactForm_() {
+    const defs = readContactFormConfig().fields;
+    if (!Array.isArray(defs)) {
+        return;
+    }
+    for (let i = 0; i < defs.length; i += 1) {
+        const d = defs[i];
+        if (!d || d.name !== "mobile" || !d.id) {
+            continue;
+        }
+        const el = document.getElementById(d.id);
+        if (el && typeof el.focus === "function") {
+            el.focus();
+            break;
+        }
+    }
+}
+
+/**
+ * When the mobile gate fires, open the contact form (or configured form) so the visitor can enter a number.
+ * Optional `dialogflowEventOnBlock` sends a CX custom event after the form opens (create matching event in the agent).
+ */
+function openContactFormAfterMobileBlockGate_() {
+    const cfg = BLOCK_CHAT_WITHOUT_MOBILE_CONFIG;
+    if (cfg && cfg.openContactFormOnBlock === false) {
+        return;
+    }
+    try {
+        mountDfchatContactFormHostIfNeeded();
+        const formEl = document.getElementById("dfchat-contact-form");
+        if (formEl && formEl.classList.contains("dfchat-is-open")) {
+            focusMobileFieldInActiveContactForm_();
+            return;
+        }
+        const formId = resolveMobileBlockContactFormId_();
+        const fr = readCommonFormConfigRoot();
+        const forms = fr.forms && typeof fr.forms === "object" ? fr.forms : null;
+        if (!formId || !forms || !forms[formId]) {
+            return;
+        }
+        setActiveContactFormId(formId);
+        contactFormOpenPending = false;
+        window.setTimeout(() => {
+            openContactForm();
+            focusMobileFieldInActiveContactForm_();
+            const ev = typeof cfg.dialogflowEventOnBlock === "string" ? cfg.dialogflowEventOnBlock.trim() : "";
+            if (ev) {
+                const ms = activeDfMessenger;
+                if (ms && typeof ms.sendRequest === "function") {
+                    ms.sendRequest("event", ev).catch(() => {});
+                }
+            }
+        }, 0);
+    } catch {
+        /* ignore */
+    }
 }
 
 const POWERED_BY_CONFIG = COMMON_CONFIG.poweredBy && typeof COMMON_CONFIG.poweredBy === "object"

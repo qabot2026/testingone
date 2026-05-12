@@ -141,12 +141,18 @@ window.COMPANY_CHAT_UI_CONFIG = {
        * Client-side gate: stop sending new user messages to Dialogflow if no mobile is stored and the visitor
        * has already sent this many user lines (same `user_queries` list as Sheet sync). Uses `preventDefault`
        * on `df-user-input-entered` / `df-request-sent` when the browser allows it. Set `enabled: false` to turn off.
+       *
+       * When the limit is hit, the bot shows `blockMessage` and opens the contact form (see `openContactFormOnBlock`).
+       * Optional `dialogflowEventOnBlock`: CX custom event name sent after the form opens (define the same event in CX).
        */
       blockChatWithoutMobile: {
         enabled: true,
-        maxUserQueries: 2,
+        maxUserQueries: 20,
         blockMessage:
-          "You've reached the message limit without a mobile number. Please share your mobile number in chat or use the contact form to continue."
+          "You've reached the message limit without a mobile number. Please enter your mobile number in the form that just opened, or type it in chat.",
+        openContactFormOnBlock: true,
+        formIdOnBlock: "",
+        dialogflowEventOnBlock: ""
       },
 
       // POST telemetry to `/chat-client-context` on your API base (see `dfchat-api-base-url`). Static sites
