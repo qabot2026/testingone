@@ -311,6 +311,12 @@ function openContactFormAfterMobileBlockGate_() {
         return;
     }
     try {
+        /**
+         * This overlay is not Dialogflow `open_form`. If an older turn left `onCancel` / `onSubmit` pending,
+         * dismissing × would dispatch it and CX could leave the gated state while mobile is still missing.
+         */
+        pendingOpenFormFollowupSubmit = null;
+        pendingOpenFormFollowupCancel = null;
         mountDfchatContactFormHostIfNeeded();
         const formEl = document.getElementById("dfchat-contact-form");
         if (formEl && formEl.classList.contains("dfchat-is-open")) {
@@ -4465,7 +4471,7 @@ function sendUserTextViaDfMessenger(dfMessenger, text, shouldRenderCustomTextNow
     if (consumeLanguageSwitchFromUserFlowPhrase(t, null, dfMessenger)) {
         return;
     }
-    mergeLikelyMobileFromChatText(t);
+    mergeLikelyContactHintsFromChatText_(t);
     if (tryPreventChatSendForMissingMobileGate_(null, t)) {
         return;
     }
@@ -12482,22 +12488,142 @@ function isChatExpanded(dfMessenger) {
 }
 
 /**
- * Persist chat-typed digits that look like a phone (works even if df-response-received does not reach window).
+ * Pick a digit-only mobile from prose (e.g. “call me on 98 98 123456”, “no. 9876543210”, +91 …).
+ * @param {string} raw
+ * @returns {string}
+ */
+function extractLikelyMobileDigitsForMerge_(raw) {
+    const spaced = typeof raw === "string" ? raw.replace(/\u00a0/g, " ").trim() : "";
+    if (!spaced || spaced.length > 520) {
+        return "";
+    }
+
+    const found = [];
+
+    /**
+     * Indian-style 10 digits after optional +91 / leading 0; digits may be separated by spaces / punctuation.
+     */
+    const reIN = /(?:^|[^\d])(?:\+?91[\s\-.()/]*|0[\s\-.()/]*)?([6-9](?:[\s\-.()/]*\d){9})(?![\d])/g;
+    let m;
+    while ((m = reIN.exec(spaced)) !== null) {
+        const d = m[1].replace(/\D/g, "");
+        if (d.length === 10) {
+            found.push(d);
+        }
+    }
+
+    const keywordRe =
+        /(?:^|[^\w])(?:mobile|mob|mobs?|cell|phones?|whatsapp|whatsapp\s*no|whatsapp\s*number|call\s*me|contact|numbers?|\bno\.|\btel\b|handphone|reach\s*(?:me|us)|at\s*\+?|my\s+number|digit|संपर्क|फोन|मोबाइल)/i;
+
+    const withKeywordWindow = (idxStart, idxEnd) => {
+        const a = Math.max(0, idxStart - 56);
+        const b = Math.min(spaced.length, idxEnd + 32);
+        return keywordRe.test(spaced.slice(a, b));
+    };
+
+    const rePlain = /(?:^|[^\d])(\+?\d[\d\s().\-/]{8,}\d)(?=$|[^\d])/g;
+    while ((m = rePlain.exec(spaced)) !== null) {
+        let d = m[1].replace(/\D/g, "");
+        if (d.length === 12 && d.startsWith("91")) {
+            d = d.slice(2);
+        }
+        if (d.length === 11 && d.startsWith("0")) {
+            d = d.slice(1);
+        }
+        if (d.length === 10 && withKeywordWindow(m.index, m.index + m[0].length)) {
+            found.push(d);
+        } else if (d.length >= 11 && d.length <= 13 && withKeywordWindow(m.index, m.index + m[0].length)) {
+            const tail = d.slice(-10);
+            if (/^[6-9]\d{9}$/.test(tail)) {
+                found.push(tail);
+            }
+        }
+    }
+
+    if (found.length) {
+        return found[found.length - 1];
+    }
+
+    const allD = spaced.replace(/\D/g, "");
+    if (allD.length >= 10 && allD.length <= 13) {
+        for (let end = allD.length; end >= 10; end -= 1) {
+            const tail = allD.slice(end - 10, end);
+            if (/^[6-9]\d{9}$/.test(tail)) {
+                return tail;
+            }
+        }
+    }
+    if (allD.length >= 10 && keywordRe.test(spaced)) {
+        for (let end = allD.length; end >= 10; end -= 1) {
+            const tail = allD.slice(end - 10, end);
+            if (/^[1-9]\d{9}$/.test(tail)) {
+                return tail;
+            }
+        }
+    }
+    return "";
+}
+
+/**
+ * Persist mobile from chat: bare numeric lines (legacy) or numbers embedded in natural language.
  * @param {string} raw
  */
 function mergeLikelyMobileFromChatText(raw) {
     const t = typeof raw === "string" ? raw.trim() : "";
-    if (!t || t.length > 48) {
+    if (!t || t.length > 520) {
         return;
     }
-    const digits = t.replace(/\D/g, "");
-    if (digits.length < 9 || digits.length > 15) {
+    const normalized = t.replace(/\u00a0/g, " ");
+    const digitsOnly = normalized.replace(/\D/g, "");
+
+    /** Legacy: whole message is basically a phone token (digits / + / space / parens / dashes). */
+    if (
+        t.length <= 48
+        && digitsOnly.length >= 9
+        && digitsOnly.length <= 15
+        && /^[\d\s+().\-]+$/i.test(normalized)
+    ) {
+        mergeVisitorMobileIntoStoredContext(digitsOnly);
         return;
     }
-    if (!/^[\d\s+().\-]+$/i.test(t.replace(/\u00a0/g, " "))) {
+
+    const extracted = extractLikelyMobileDigitsForMerge_(t);
+    if (extracted && extracted.replace(/\D/g, "").length >= 9) {
+        mergeVisitorMobileIntoStoredContext(extracted.replace(/\D/g, ""));
+    }
+}
+
+/**
+ * Capture `user@domain.tld` style emails typed in chat into `client_context.email`.
+ * @param {string} raw
+ */
+function mergeLikelyEmailFromChatText(raw) {
+    const t = typeof raw === "string" ? raw.trim() : "";
+    if (!t || t.length > 520) {
         return;
     }
-    mergeVisitorMobileIntoStoredContext(digits);
+    const re =
+        /[A-Za-z0-9](?:[A-Za-z0-9._%+-]*[A-Za-z0-9])?@[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?\.[A-Za-z]{2,}/g;
+    let m;
+    let chosen = "";
+    while ((m = re.exec(t)) !== null) {
+        const s = (m[0] || "").trim();
+        if (s && EMAIL_VALIDATION_RE.test(s)) {
+            chosen = s;
+        }
+    }
+    if (chosen) {
+        mergeVisitorEmailIntoStoredContext(chosen);
+    }
+}
+
+/**
+ * Merge phone / email hints from outgoing chat text before mobile gate and query counting.
+ * @param {string} raw
+ */
+function mergeLikelyContactHintsFromChatText_(raw) {
+    mergeLikelyMobileFromChatText(raw);
+    mergeLikelyEmailFromChatText(raw);
 }
 
 function handleDfResponseReceived(event) {
@@ -12611,7 +12737,7 @@ function attachPersonaHandlers(dfMessenger) {
             if (consumeLanguageSwitchFromUserFlowPhrase(typed, event)) {
                 return;
             }
-            mergeLikelyMobileFromChatText(typed);
+            mergeLikelyContactHintsFromChatText_(typed);
             if (tryPreventChatSendForMissingMobileGate_(event, typeof typed === "string" ? typed.trim() : "")) {
                 return;
             }
@@ -12641,7 +12767,7 @@ function attachPersonaHandlers(dfMessenger) {
                 return;
             }
 
-            mergeLikelyMobileFromChatText(queryText);
+            mergeLikelyContactHintsFromChatText_(queryText);
             if (tryPreventChatSendForMissingMobileGate_(event, typeof queryText === "string" ? queryText.trim() : "")) {
                 return;
             }
@@ -12664,7 +12790,7 @@ function attachPersonaHandlers(dfMessenger) {
         if (!q) {
             return;
         }
-        mergeLikelyMobileFromChatText(q);
+        mergeLikelyContactHintsFromChatText_(q);
         if (tryPreventChatSendForMissingMobileGate_(null, q)) {
             return;
         }
@@ -15884,6 +16010,26 @@ function mergeVisitorMobileIntoStoredContext(rawMobile, opts) {
         if (syncSheet) {
             scheduleSheetRowForCapturedChatMobile(v);
         }
+    } catch {
+        /* ignore */
+    }
+}
+
+/**
+ * Persist an email parsed from chat or other loose sources into `client_context.email`.
+ * @param {string} rawEmail
+ */
+function mergeVisitorEmailIntoStoredContext(rawEmail) {
+    const es = typeof rawEmail === "string" ? rawEmail.trim().slice(0, 240) : "";
+    if (!es || !EMAIL_VALIDATION_RE.test(es)) {
+        return;
+    }
+    try {
+        const prev = readStoredClientContext();
+        persistClientContext({
+            ...prev,
+            email: es
+        });
     } catch {
         /* ignore */
     }
