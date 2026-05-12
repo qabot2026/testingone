@@ -510,12 +510,17 @@ function readUserPersonaConfig() {
 
 const USER_PERSONA_CONFIG = readUserPersonaConfig();
 
-/** Horizontal nudge for user persona badge (px); replaces legacy large margin-left layout. */
+/**
+ * Horizontal nudge for user persona badge (px). `userPersonaShiftRightPx` and
+ * `userPersonaShiftRightDeskExtraPx` may be **negative** to pull the caption left of the right edge
+ * (caption is right-aligned, so transform: translateX(-N) moves it left). Clamps are symmetric:
+ * base ±56px, desk extra ±48px, mobile nudge stays a half-magnitude leftward pull.
+ */
 function cssUserPersonaTranslateX() {
-    const base = Math.max(0, Math.min(56, BOT_PERSONA_CONFIG.userPersonaShiftRightPx ?? 0));
+    const base = Math.max(-56, Math.min(56, BOT_PERSONA_CONFIG.userPersonaShiftRightPx ?? 0));
     const deskExtra =
         typeof isMobileViewport === "function" && !isMobileViewport()
-            ? Math.max(0, Math.min(48, BOT_PERSONA_CONFIG.userPersonaShiftRightDeskExtraPx ?? 0))
+            ? Math.max(-48, Math.min(48, BOT_PERSONA_CONFIG.userPersonaShiftRightDeskExtraPx ?? 0))
             : 0;
     const mobilePull =
         typeof isMobileViewport === "function" && isMobileViewport()
@@ -1396,7 +1401,7 @@ const originalTextNodeContent = new Map();
 const originalElementAttributes = new Map();
 const googleTranslationCache = new Map();
 
-const COMPANY_JS_BUILD_TAG = "20260512-16";
+const COMPANY_JS_BUILD_TAG = "20260512-17";
 const COMPANY_DEBUG_QUERY_FLAG = "dfchatDebug";
 let debugMountAttemptSeq = 0;
 let debugBadgeLastRenderAt = 0;
