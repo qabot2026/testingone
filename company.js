@@ -1396,7 +1396,7 @@ const originalTextNodeContent = new Map();
 const originalElementAttributes = new Map();
 const googleTranslationCache = new Map();
 
-const COMPANY_JS_BUILD_TAG = "20260512-15";
+const COMPANY_JS_BUILD_TAG = "20260512-16";
 const COMPANY_DEBUG_QUERY_FLAG = "dfchatDebug";
 let debugMountAttemptSeq = 0;
 let debugBadgeLastRenderAt = 0;
