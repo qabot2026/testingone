@@ -1385,7 +1385,7 @@ const originalTextNodeContent = new Map();
 const originalElementAttributes = new Map();
 const googleTranslationCache = new Map();
 
-const COMPANY_JS_BUILD_TAG = "20260512-02";
+const COMPANY_JS_BUILD_TAG = "20260512-03";
 const COMPANY_DEBUG_QUERY_FLAG = "dfchatDebug";
 let debugMountAttemptSeq = 0;
 let debugBadgeLastRenderAt = 0;
@@ -17392,7 +17392,7 @@ function schedulePersonaShadowFix(dfMessenger) {
     };
     run();
     window.requestAnimationFrame(run);
-    [0, 24, 80, 200, 500].forEach((ms) => {
+    [0, 24, 80, 200, 500, 750, 1200].forEach((ms) => {
         window.setTimeout(run, ms);
     });
 }
@@ -17931,6 +17931,112 @@ function applyBotEmojiPersonaCaptionChrome(imageNode) {
 }
 
 /**
+ * @param {HTMLImageElement} imageNode
+ * @returns {HTMLElement | null}
+ */
+function resolvePersonaBotMessageElement_(imageNode) {
+    if (!imageNode) {
+        return null;
+    }
+    let personaMessage = typeof imageNode.closest === "function"
+        ? /** @type {HTMLElement | null} */ (/** @type {unknown} */ (imageNode.closest(".message.bot-message.markdown")))
+        : null;
+    if (!personaMessage) {
+        let el = imageNode.parentElement;
+        for (let i = 0; el && i < 26; i += 1) {
+            if (el.classList && el.classList.contains("message") && el.classList.contains("bot-message")) {
+                personaMessage = el;
+                break;
+            }
+            el = el.parentElement;
+        }
+    }
+    return personaMessage || null;
+}
+
+/**
+ * CX often renders each bot snippet as its own `.entry.bot`; persona `renderCustomText` then becomes another entry below those chunks.
+ * Move that entry above the contiguous `.entry.bot` block immediately preceding it so the persona appears before the reply text.
+ * @param {HTMLImageElement} imageNode
+ * @returns {boolean}
+ */
+function reorderBotPersonaEntryBeforeContiguousBotChunks_(imageNode) {
+    const personaType = getPersonaType(imageNode);
+    if (personaType !== "bot") {
+        return false;
+    }
+    if (BOT_PERSONA_CONFIG.mode !== "emojiTime") {
+        const src = imageNode.getAttribute("src") || "";
+        if (!src.includes(`#${PERSONA_URL_MARKER_BOT_IMG}`)) {
+            return false;
+        }
+    }
+    const personaMessage = resolvePersonaBotMessageElement_(imageNode);
+    if (!personaMessage) {
+        return false;
+    }
+    const entry = resolveBotPersonaEntry_(personaMessage);
+    if (!entry || entry.dataset.dfchatBotPersonaEntryMoved === "1") {
+        return false;
+    }
+    const parent = entry.parentElement;
+    if (!parent) {
+        return false;
+    }
+
+    /** @type {HTMLElement | null} */
+    let earliestContiguousBot = null;
+    let probe = entry.previousElementSibling;
+    while (probe && probe.nodeType === Node.ELEMENT_NODE) {
+        const h = /** @type {HTMLElement} */ (probe);
+        if (h.classList && h.classList.contains("entry")) {
+            if (h.classList.contains("bot")) {
+                earliestContiguousBot = h;
+                probe = h.previousElementSibling;
+                continue;
+            }
+            break;
+        }
+        probe = probe.previousElementSibling;
+    }
+    if (!earliestContiguousBot || earliestContiguousBot === entry) {
+        return false;
+    }
+    try {
+        parent.insertBefore(entry, earliestContiguousBot);
+        entry.dataset.dfchatBotPersonaEntryMoved = "1";
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+/** @param {HTMLElement} anywhere */
+function resolveBotPersonaEntry_(anywhere) {
+    if (!anywhere) {
+        return null;
+    }
+    if (typeof anywhere.closest === "function") {
+        const byClosest = anywhere.closest(".entry.bot");
+        if (byClosest) {
+            return /** @type {HTMLElement} */ (byClosest);
+        }
+    }
+    let el = anywhere;
+    for (let i = 0; el && i < 32; i += 1) {
+        if (
+            el.classList
+            && el.classList.contains("entry")
+            && el.classList.contains("bot")
+        ) {
+            return el;
+        }
+        el = el.parentElement || null;
+    }
+    return null;
+}
+
+/**
  * Moves the bot persona markdown bubble to the top of `.message-stack` so it sits above assistant text when
  * {@link renderCustomText} appended it after CX messages (common).
  * @param {HTMLImageElement} imageNode
@@ -17948,20 +18054,7 @@ function reorderBotPersonaMarkdownToTopOfStack_(imageNode) {
         }
     }
 
-    /** @type {HTMLElement | null} */
-    let personaMessage = typeof imageNode.closest === "function"
-        ? /** @type {HTMLElement | null} */ (/** @type {unknown} */ (imageNode.closest(".message.bot-message.markdown")))
-        : null;
-    if (!personaMessage) {
-        let el = imageNode.parentElement;
-        for (let i = 0; el && i < 26; i += 1) {
-            if (el.classList && el.classList.contains("message") && el.classList.contains("bot-message")) {
-                personaMessage = el;
-                break;
-            }
-            el = el.parentElement;
-        }
-    }
+    const personaMessage = resolvePersonaBotMessageElement_(imageNode);
     if (!personaMessage || personaMessage.dataset.dfchatBotPersonaReordered === "1") {
         return false;
     }
@@ -18040,6 +18133,7 @@ function decoratePersonaMessages(dfMessenger) {
             }
             if (personaType === "bot") {
                 reorderBotPersonaMarkdownToTopOfStack_(image);
+                reorderBotPersonaEntryBeforeContiguousBotChunks_(image);
             }
             if (personaType === "bot" && BOT_PERSONA_CONFIG.mode === "emojiTime") {
                 applyBotEmojiPersonaCaptionChrome(image);
