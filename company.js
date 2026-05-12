@@ -1622,6 +1622,8 @@ const UI_TRANSLATIONS = {
         summaryMobileLabel: "Mobile",
         summaryEmailLabel: "Email",
         summaryDateLabel: "Date",
+        summaryBirthDateLabel: "Date of birth",
+        birthDatePlaceholder: "Select your date of birth",
         summaryTimeLabel: "Time",
         summaryDoctorIdLabel: "Doctor",
         summaryLocationLabel: "Location",
@@ -1639,6 +1641,7 @@ const UI_TRANSLATIONS = {
         invalidEmail: "Please enter a valid email address.",
         invalidPhone: "Please enter a valid phone number.",
         invalidPattern: "This value does not match the required format.",
+        invalidPastBirthDate: "Please choose a date of birth in the past (not today or a future date).",
         invalidOtp: "Enter a valid OTP (4–8 digits).",
         changeMobileButton: "Change mobile number",
         backToOtpButton: "Back to OTP",
@@ -1671,6 +1674,8 @@ const UI_TRANSLATIONS = {
         summaryMobileLabel: "मोबाइल",
         summaryEmailLabel: "ईमेल",
         summaryDateLabel: "तिथि",
+        summaryBirthDateLabel: "जन्म तिथि",
+        birthDatePlaceholder: "अपनी जन्म तिथि चुनें",
         summaryTimeLabel: "समय",
         summaryDoctorIdLabel: "डॉक्टर",
         summaryLocationLabel: "स्थान",
@@ -1688,6 +1693,7 @@ const UI_TRANSLATIONS = {
         invalidEmail: "कृपया मान्य ईमेल दर्ज करें।",
         invalidPhone: "कृपया मान्य फोन नंबर दर्ज करें।",
         invalidPattern: "यह मान आवश्यक प्रारूप से मेल नहीं खाता।",
+        invalidPastBirthDate: "कृपया अतीत की जन्म तिथि चुनें (आज या भविष्य की तारीख मान्य नहीं)।",
         invalidOtp: "मान्य OTP दर्ज करें (4–8 अंक)।",
         changeMobileButton: "मोबाइल नंबर बदलें",
         backToOtpButton: "OTP पर वापस",
@@ -1720,6 +1726,8 @@ const UI_TRANSLATIONS = {
         summaryMobileLabel: "मोबाईल",
         summaryEmailLabel: "ईमेल",
         summaryDateLabel: "तारीख",
+        summaryBirthDateLabel: "जन्मतारीख",
+        birthDatePlaceholder: "तुमची जन्मतारीख निवडा",
         summaryTimeLabel: "वेळ",
         summaryDoctorIdLabel: "डॉक्टर",
         summaryLocationLabel: "ठिकाण",
@@ -1737,6 +1745,7 @@ const UI_TRANSLATIONS = {
         invalidEmail: "कृपया वैध ईमेल टाका.",
         invalidPhone: "कृपया वैध फोन क्रमांक टाका.",
         invalidPattern: "हे मूल्य आवश्यक स्वरूपाशी जुळत नाही.",
+        invalidPastBirthDate: "कृपया भूतकाळातील जन्मतारीख निवडा (आज किंवा भविष्यातील तारीख मान्य नाही).",
         invalidOtp: "वैध OTP टाका (४–८ अंक).",
         changeMobileButton: "मोबाईल क्रमांक बदला",
         backToOtpButton: "OTPकडे परत",
@@ -5280,6 +5289,30 @@ function validateContactFormField(def, raw) {
             }
         }
     }
+    if (t === "date" && def.pastDateOnly === true && v !== "") {
+        const picked = parseLocalYMDDate(v);
+        if (!picked) {
+            return { valid: false, messageKey: typeof def.i18nInvalidMessage === "string" && def.i18nInvalidMessage.trim()
+                ? def.i18nInvalidMessage.trim()
+                : "invalidPastBirthDate" };
+        }
+        const today0 = new Date();
+        today0.setHours(0, 0, 0, 0);
+        if (picked >= today0) {
+            return { valid: false, messageKey: typeof def.i18nInvalidMessage === "string" && def.i18nInvalidMessage.trim()
+                ? def.i18nInvalidMessage.trim()
+                : "invalidPastBirthDate" };
+        }
+        const minStr = typeof def.pastDateMin === "string" && /^\d{4}-\d{2}-\d{2}$/.test(def.pastDateMin.trim())
+            ? def.pastDateMin.trim()
+            : "1900-01-01";
+        const minD = parseLocalYMDDate(minStr);
+        if (minD && picked < minD) {
+            return { valid: false, messageKey: typeof def.i18nInvalidMessage === "string" && def.i18nInvalidMessage.trim()
+                ? def.i18nInvalidMessage.trim()
+                : "invalidPastBirthDate" };
+        }
+    }
     return { valid: true };
 }
 
@@ -5342,6 +5375,42 @@ function resolveContactFormFieldIconKey(field) {
         return "key";
     }
     return "user";
+}
+
+/**
+ * Local calendar `YYYY-MM-DD` for `<input type="date">` (avoids UTC shift from `toISOString()`).
+ * @param {Date} d
+ * @returns {string}
+ */
+function formatLocalDateYMD(d) {
+    const y = d.getFullYear();
+    const mo = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${mo}-${day}`;
+}
+
+/**
+ * Parse `YYYY-MM-DD` as local midnight.
+ * @param {string} ymd
+ * @returns {Date | null}
+ */
+function parseLocalYMDDate(ymd) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(ymd || "").trim());
+    if (!m) {
+        return null;
+    }
+    const y = Number(m[1]);
+    const mo = Number(m[2]);
+    const d = Number(m[3]);
+    if (!Number.isFinite(y) || !Number.isFinite(mo) || !Number.isFinite(d)) {
+        return null;
+    }
+    const dt = new Date(y, mo - 1, d);
+    dt.setHours(0, 0, 0, 0);
+    if (dt.getFullYear() !== y || dt.getMonth() !== mo - 1 || dt.getDate() !== d) {
+        return null;
+    }
+    return dt;
 }
 
 function refreshContactFormPlaceholdersFromConfig() {
@@ -5566,15 +5635,27 @@ function buildContactFormFieldRow(field) {
         control.name = typeof field.name === "string" ? field.name : field.id;
         control.type = CONTACT_FORM_INPUT_TYPES.has(t) ? t : "text";
         if (t === "date") {
-            const today = new Date();
-            const minDate = new Date(today);
-            if (!APPOINTMENT_DATE_CONFIG.allowToday) {
-                minDate.setDate(today.getDate() + 1);
+            if (field.pastDateOnly === true) {
+                const today0 = new Date();
+                today0.setHours(0, 0, 0, 0);
+                const yesterday = new Date(today0);
+                yesterday.setDate(yesterday.getDate() - 1);
+                const minRaw = typeof field.pastDateMin === "string" && /^\d{4}-\d{2}-\d{2}$/.test(field.pastDateMin.trim())
+                    ? field.pastDateMin.trim()
+                    : "1900-01-01";
+                control.min = minRaw;
+                control.max = formatLocalDateYMD(yesterday);
+            } else {
+                const today = new Date();
+                const minDate = new Date(today);
+                if (!APPOINTMENT_DATE_CONFIG.allowToday) {
+                    minDate.setDate(today.getDate() + 1);
+                }
+                const maxDate = new Date(today);
+                maxDate.setDate(today.getDate() + APPOINTMENT_DATE_CONFIG.maxDaysAhead);
+                control.min = minDate.toISOString().split('T')[0];
+                control.max = maxDate.toISOString().split('T')[0];
             }
-            const maxDate = new Date(today);
-            maxDate.setDate(today.getDate() + APPOINTMENT_DATE_CONFIG.maxDaysAhead);
-            control.min = minDate.toISOString().split('T')[0];
-            control.max = maxDate.toISOString().split('T')[0];
         }
         if (pl0 != null) {
             control.setAttribute("placeholder", pl0);
