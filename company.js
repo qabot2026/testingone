@@ -1410,7 +1410,7 @@ const originalTextNodeContent = new Map();
 const originalElementAttributes = new Map();
 const googleTranslationCache = new Map();
 
-const COMPANY_JS_BUILD_TAG = "20260513-05";
+const COMPANY_JS_BUILD_TAG = "20260513-06";
 const COMPANY_DEBUG_QUERY_FLAG = "dfchatDebug";
 let debugMountAttemptSeq = 0;
 let debugBadgeLastRenderAt = 0;
@@ -14535,6 +14535,28 @@ function submitContactForm(event) {
         });
 }
 
+/**
+ * Title-case a raw payload field key (e.g. `rating` -> `Rating`, `firstName` -> `First Name`,
+ * `doctor_id` -> `Doctor Id`) so the in-chat form submission summary reads as proper labels
+ * even when the form schema doesn't define an `i18nSummaryLabel` for the field.
+ * @param {string} key
+ */
+function titleCaseSummaryLabel_(key) {
+    if (typeof key !== "string") {
+        return "";
+    }
+    const s = key.trim();
+    if (!s) {
+        return "";
+    }
+    const words = s
+        .replace(/[_-]+/g, " ")
+        .replace(/([a-z])([A-Z])/g, "$1 $2")
+        .trim()
+        .split(/\s+/);
+    return words.map((w) => (w ? w.charAt(0).toUpperCase() + w.slice(1) : w)).join(" ");
+}
+
 function renderContactFormSubmissionResponse(payload) {
     if (!activeDfMessenger || typeof activeDfMessenger.renderCustomText !== "function") {
         return;
@@ -14556,7 +14578,7 @@ function renderContactFormSubmissionResponse(payload) {
         } else if (key === "doctorId") {
             label = getTranslation("summaryDoctorIdLabel");
         } else {
-            label = String(key);
+            label = titleCaseSummaryLabel_(key);
         }
         lines.push(`${label} - ${v || "-"}`);
     }
