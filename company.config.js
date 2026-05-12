@@ -64,6 +64,8 @@ window.COMPANY_CHAT_UI_CONFIG = {
     // Use `mode: "emojiTime"` only if you want a text 🤖+time caption for the bot instead of the image URL.
     botPersona: {
       mode: "image",
+      // Bot persona clock: include calendar date + time when the reply arrives (`false` = time only).
+      messageTimeIncludesDate: true,
       // User badge: small `translateX` right (px); on wide viewports adds `userPersonaShiftRightDeskExtraPx`; on ≤768px subtracts half of `userPersonaMobileNudgeLeftPx` (moves strip slightly left on phones).
       userPersonaShiftRightPx: 16,
       userPersonaShiftRightDeskExtraPx: 10,

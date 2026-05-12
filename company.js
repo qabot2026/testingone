@@ -427,9 +427,12 @@ function readBotPersonaConfig() {
     const userPersonaShiftRightDeskExtraPx = typeof raw.userPersonaShiftRightDeskExtraPx === "number" && Number.isFinite(raw.userPersonaShiftRightDeskExtraPx) && raw.userPersonaShiftRightDeskExtraPx >= 0 && raw.userPersonaShiftRightDeskExtraPx <= 120
         ? raw.userPersonaShiftRightDeskExtraPx
         : 0;
+    /** When true (default), bot persona clock shows calendar date + time for this reply; false = time only. */
+    const messageTimeIncludesDate = raw.messageTimeIncludesDate !== false;
     return {
         mode,
         threadAvatarSizePx,
+        messageTimeIncludesDate,
         userPersonaShiftRightPx,
         userPersonaMobileNudgeLeftPx,
         userPersonaNudgeUpPx,
@@ -12896,10 +12899,11 @@ function handleDfResponseReceived(event) {
         const ms = activeDfMessenger;
         if (ms && typeof ms.renderCustomText === "function") {
             // Defer until after the messenger appends this turn’s bot rows so the persona strip is not lost or reordered.
+            const messageInstantMs = Date.now();
             window.requestAnimationFrame(() => {
                 window.requestAnimationFrame(() => {
                     if (activeDfMessenger === ms) {
-                        renderBotPersona(ms);
+                        renderBotPersona(ms, messageInstantMs);
                     }
                 });
             });
@@ -14488,7 +14492,7 @@ function renderContactFormSubmissionResponse(payload) {
     lines.push(getTranslation("contactResponseThanks"));
     const responseText = lines.join("  \n");
 
-    renderBotPersona(activeDfMessenger);
+    renderBotPersona(activeDfMessenger, Date.now());
     activeDfMessenger.renderCustomText(responseText, true);
 }
 
@@ -17073,7 +17077,7 @@ function renderUserPersona(dfMessenger) {
 
 function renderPersona(dfMessenger, personaType, label, timeLabelForUser) {
     if (personaType === "bot") {
-        renderBotPersona(dfMessenger);
+        renderBotPersona(dfMessenger, Date.now());
         return;
     }
     const nonce = `${personaType}-${Date.now()}-${personaSequence += 1}`;
@@ -17086,15 +17090,22 @@ function renderPersona(dfMessenger, personaType, label, timeLabelForUser) {
     schedulePersonaShadowFix(dfMessenger);
 }
 
-function renderBotPersona(dfMessenger) {
+function renderBotPersona(dfMessenger, messageInstantMs) {
     if (!dfMessenger || typeof dfMessenger.renderCustomText !== "function") {
         return;
     }
+    const when =
+        typeof messageInstantMs === "number" && Number.isFinite(messageInstantMs)
+            ? messageInstantMs
+            : Date.now();
     const nonce = `bot-${Date.now()}-${personaSequence += 1}`;
     const cfg = BOT_PERSONA_CONFIG;
+    const incDate = cfg.messageTimeIncludesDate !== false;
     if (cfg.mode === "emojiTime") {
         const label = cfg.emojiTime.label;
-        const timeLabel = cfg.emojiTime.showTime ? getPersonaTimeLabel(cfg.emojiTime.timeZone) : "";
+        const timeLabel = cfg.emojiTime.showTime
+            ? getBotPersonaMessageTimeLabel(cfg.emojiTime.timeZone, when, incDate)
+            : "";
         dfMessenger.renderCustomText(
             createPersonaBadgeMarkdown(label, timeLabel, nonce, PERSONA_MARKER_BOT, true),
             true
@@ -17105,7 +17116,7 @@ function renderBotPersona(dfMessenger) {
     const img = cfg.image;
     const baseUrl = img.url.split("#")[0].trim();
     if (img.showTime) {
-        const timeUrl = createBotPersonaTimeDataUrl(img, nonce);
+        const timeUrl = createBotPersonaTimeDataUrl(img, nonce, when, incDate);
         dfMessenger.renderCustomText(
             `![](${baseUrl}#${PERSONA_URL_MARKER_BOT_IMG}) ![](${timeUrl})`,
             true
@@ -17126,8 +17137,14 @@ function getIstTimeLabel() {
     }).format(new Date());
 }
 
-function getPersonaTimeLabel(timeZone) {
+function getPersonaTimeLabel(timeZone, instant) {
     const tz = typeof timeZone === "string" && timeZone.trim() ? timeZone.trim() : "Asia/Kolkata";
+    let d = new Date();
+    if (instant instanceof Date && !Number.isNaN(instant.getTime())) {
+        d = instant;
+    } else if (typeof instant === "number" && Number.isFinite(instant)) {
+        d = new Date(instant);
+    }
     try {
         return new Intl.DateTimeFormat("en-IN", {
             timeZone: tz,
@@ -17135,9 +17152,47 @@ function getPersonaTimeLabel(timeZone) {
             minute: "2-digit",
             second: "2-digit",
             hour12: true
-        }).format(new Date());
+        }).format(d);
     } catch {
         return getIstTimeLabel();
+    }
+}
+
+/**
+ * Clock shown on the bot persona row for this reply (`instant` = when the response was handled).
+ * @param {string} timeZone
+ * @param {number | Date | undefined} instant
+ * @param {boolean} includeDate
+ */
+function getBotPersonaMessageTimeLabel(timeZone, instant, includeDate) {
+    const tz = typeof timeZone === "string" && timeZone.trim() ? timeZone.trim() : "Asia/Kolkata";
+    let d = new Date();
+    if (instant instanceof Date && !Number.isNaN(instant.getTime())) {
+        d = instant;
+    } else if (typeof instant === "number" && Number.isFinite(instant)) {
+        d = new Date(instant);
+    }
+    try {
+        if (includeDate) {
+            return new Intl.DateTimeFormat("en-IN", {
+                timeZone: tz,
+                month: "short",
+                day: "numeric",
+                hour: "2-digit",
+                minute: "2-digit",
+                second: "2-digit",
+                hour12: true
+            }).format(d);
+        }
+        return new Intl.DateTimeFormat("en-IN", {
+            timeZone: tz,
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+            hour12: true
+        }).format(d);
+    } catch {
+        return getPersonaTimeLabel(tz, d);
     }
 }
 
@@ -17171,9 +17226,13 @@ function createPersonaBadgeDataUrl(label, timeLabel, nonce = "", personaDescMark
     return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
 }
 
-function createBotPersonaTimeDataUrl(imageCfg, nonce) {
-    const timeLabel = getPersonaTimeLabel(imageCfg.timeZone);
-    const width = Math.max(72, Math.round(timeLabel.length * 5.5 + 16));
+function createBotPersonaTimeDataUrl(imageCfg, nonce, messageInstantMs, includeDate) {
+    const timeLabel = getBotPersonaMessageTimeLabel(
+        imageCfg.timeZone,
+        messageInstantMs,
+        includeDate !== false
+    );
+    const width = Math.max(88, Math.round(timeLabel.length * 5.4 + 20));
     const desc = `${PERSONA_MARKER_BOT_TIME}|${nonce}`;
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="28" viewBox="0 0 ${width} 28">
 <desc>${escapeXml(desc)}</desc>
@@ -17206,7 +17265,7 @@ img[src*="%23dfchat-bot-persona"] {
 img[src*="dfchat-persona-bot-time"] {
   height: 28px !important;
   width: auto !important;
-  max-width: min(220px, 100%) !important;
+  max-width: min(320px, 100%) !important;
   max-height: 28px !important;
   display: inline-block !important;
   vertical-align: middle !important;
