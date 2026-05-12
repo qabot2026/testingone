@@ -429,10 +429,15 @@ function readBotPersonaConfig() {
         : 0;
     /** When true (default), bot persona clock shows calendar date + time for this reply; false = time only. */
     const messageTimeIncludesDate = raw.messageTimeIncludesDate !== false;
+    /** Visible space (px) under the persona row before the assistant reply bubble (`tightenBelowPx` overrides are softened). */
+    const gapBelowAssistantPx = typeof raw.gapBelowAssistantPx === "number" && Number.isFinite(raw.gapBelowAssistantPx) && raw.gapBelowAssistantPx >= 0 && raw.gapBelowAssistantPx <= 64
+        ? raw.gapBelowAssistantPx
+        : 14;
     return {
         mode,
         threadAvatarSizePx,
         messageTimeIncludesDate,
+        gapBelowAssistantPx,
         userPersonaShiftRightPx,
         userPersonaMobileNudgeLeftPx,
         userPersonaNudgeUpPx,
@@ -1385,7 +1390,7 @@ const originalTextNodeContent = new Map();
 const originalElementAttributes = new Map();
 const googleTranslationCache = new Map();
 
-const COMPANY_JS_BUILD_TAG = "20260512-05";
+const COMPANY_JS_BUILD_TAG = "20260512-06";
 const COMPANY_DEBUG_QUERY_FLAG = "dfchatDebug";
 let debugMountAttemptSeq = 0;
 let debugBadgeLastRenderAt = 0;
@@ -17252,6 +17257,10 @@ img[src*="%23dfchat-bot-persona"] {
   box-sizing: border-box !important;
   transform: translateY(${personaDown}) !important;
 }
+.message.bot-message.markdown:has(img[src*="dfchat-bot-persona"]),
+.message.bot-message.markdown:has(img[src*="%23dfchat-bot-persona"]) {
+  margin-bottom: ${BOT_PERSONA_CONFIG.gapBelowAssistantPx}px !important;
+}
 .message.bot-message.markdown:has(img[src*="dfchat-bot-persona"]) p + p,
 .message.bot-message.markdown:has(img[src*="%23dfchat-bot-persona"]) p + p {
   color: ${PERSONA_TEXT_COLOR} !important;
@@ -18472,10 +18481,8 @@ function stylePersonaContainer(container, imageNode, personaType) {
             current.style.justifyContent = "flex-start";
             current.style.marginTop = "0px";
             {
-                const tighten = BOT_PERSONA_CONFIG.mode === "image"
-                    ? 4 + BOT_PERSONA_CONFIG.image.tightenBelowPx
-                    : 4;
-                current.style.marginBottom = `-${tighten}px`;
+                const gap = Math.max(0, Math.min(64, BOT_PERSONA_CONFIG.gapBelowAssistantPx ?? 14));
+                current.style.marginBottom = `${gap}px`;
             }
             current.style.marginLeft = "0px";
             current.style.marginRight = "auto";
