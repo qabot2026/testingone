@@ -442,9 +442,16 @@ function readBotPersonaConfig() {
                 : "Asia/Kolkata"
         },
         image: {
-            url: typeof image.url === "string" && image.url.trim()
-                ? image.url.trim()
-                : "https://storage.googleapis.com/companybucket/Images/cat.png",
+            url: (() => {
+                const top = typeof raw.imageUrl === "string" && raw.imageUrl.trim() ? raw.imageUrl.trim() : "";
+                const u =
+                    typeof image.url === "string" && image.url.trim()
+                        ? image.url.trim()
+                        : typeof image.imageUrl === "string" && image.imageUrl.trim()
+                            ? image.imageUrl.trim()
+                            : top;
+                return u || "https://storage.googleapis.com/companybucket/Images/cat.png";
+            })(),
             widthPx: typeof image.widthPx === "number" && Number.isFinite(image.widthPx) ? image.widthPx : 32,
             heightPx: typeof image.heightPx === "number" && Number.isFinite(image.heightPx) ? image.heightPx : 32,
             showTime: image.showTime !== false,
@@ -466,6 +473,28 @@ function readBotPersonaConfig() {
         }
     };
 }
+
+/**
+ * Chat “user” row above outgoing bubbles (SVG badge). Layout nudges stay under {@link readBotPersonaConfig} `userPersona*` keys.
+ * @returns {{ label: string, showTime: boolean, timeZone: string }}
+ */
+function readUserPersonaConfig() {
+    const raw = COMMON_CONFIG.userPersona && typeof COMMON_CONFIG.userPersona === "object"
+        ? COMMON_CONFIG.userPersona
+        : {};
+    const labelFrom = raw.label != null ? raw.label : raw.emoji;
+    const label = typeof labelFrom === "string" && labelFrom.trim() ? labelFrom.trim() : "🙂User";
+    const timeZone = typeof raw.timeZone === "string" && raw.timeZone.trim()
+        ? raw.timeZone.trim()
+        : "Asia/Kolkata";
+    return {
+        label,
+        showTime: raw.showTime !== false,
+        timeZone
+    };
+}
+
+const USER_PERSONA_CONFIG = readUserPersonaConfig();
 
 /**
  * @returns {string} e.g. "274px" (narrow viewports subtract `userPersonaMobileNudgeLeftPx`; wide viewports add `userPersonaShiftRightDeskExtraPx`).
@@ -17030,16 +17059,23 @@ function renderUserPersona(dfMessenger) {
     }
 
     lastUserPersonaRenderAt = now;
-    renderPersona(ms, "user", "🙂User");
+    const u = USER_PERSONA_CONFIG;
+    const timeLabel = u.showTime ? getPersonaTimeLabel(u.timeZone) : "";
+    renderPersona(ms, "user", u.label, timeLabel);
 }
 
-function renderPersona(dfMessenger, personaType, label) {
+function renderPersona(dfMessenger, personaType, label, timeLabelForUser) {
     if (personaType === "bot") {
         renderBotPersona(dfMessenger);
         return;
     }
     const nonce = `${personaType}-${Date.now()}-${personaSequence += 1}`;
-    dfMessenger.renderCustomText(createPersonaBadgeMarkdown(label, getIstTimeLabel(), nonce, PERSONA_MARKER_USER), true);
+    const timeLabel =
+        typeof timeLabelForUser === "string"
+            ? timeLabelForUser
+            : getIstTimeLabel();
+    dfMessenger.renderCustomText(createPersonaBadgeMarkdown(label, timeLabel, nonce, PERSONA_MARKER_USER), true);
+    schedulePersonaShadowFix(dfMessenger);
 }
 
 function renderBotPersona(dfMessenger) {
@@ -17180,7 +17216,9 @@ img[src*="dfchat-persona-bot-time"] {
 }
 }
 img[src*="dfchat-persona-user|"],
-img[src*="dfchat-persona-bot|"] {
+img[src*="dfchat-persona-user%7C"],
+img[src*="dfchat-persona-bot|"],
+img[src*="dfchat-persona-bot%7C"] {
   max-height: ${BOT_PERSONA_CONFIG.mode === "emojiTime" ? "28" : "36"}px !important;
   max-width: 100% !important;
   width: auto !important;
@@ -17823,7 +17861,9 @@ function decoratePersonaMessages(dfMessenger) {
                 `img[src*='#${PERSONA_URL_MARKER_BOT_IMG}']`,
                 `img[src*='${PERSONA_MARKER_BOT_TIME}']`,
                 `img[src*='${PERSONA_MARKER_USER}|']`,
+                `img[src*='${PERSONA_MARKER_USER}%7C']`,
                 `img[src*='${PERSONA_MARKER_BOT}|']`,
+                `img[src*='${PERSONA_MARKER_BOT}%7C']`,
                 `img[src*='${USER_PERSONA_TOKEN}']`,
                 `img[src*='${BOT_PERSONA_TOKEN}']`
             ].join(", ")

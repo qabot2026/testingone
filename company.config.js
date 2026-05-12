@@ -59,7 +59,8 @@ window.COMPANY_CHAT_UI_CONFIG = {
       // chatCollapseIconUrl: "https://example.com/chat-collapse-x.svg"
     },
 
-    // Bot row: `mode: "image"` uses `image.url` (e.g. cat) + optional time SVG. User row stays the built-in 🙂 + time SVG badge.
+    // Bot row: `mode: "image"` uses `image.url` or `image.imageUrl` (or top-level `imageUrl`) + optional time SVG.
+    // User row: optional `userPersona` below — emoji/label + time in the right-aligned badge (defaults match the old 🙂 + IST clock).
     // Use `mode: "emojiTime"` only if you want a text 🤖+time caption for the bot instead of the image URL.
     botPersona: {
       mode: "image",
@@ -89,6 +90,13 @@ window.COMPANY_CHAT_UI_CONFIG = {
         // ≤768px: shift bot persona img + time left (translateX) without affecting desktop.
         mobileNudgeLeftPx: 14
       }
+    },
+
+    // Shown above each outgoing user bubble (SVG). `emoji` is an alias for `label`.
+    userPersona: {
+      label: "🙂User",
+      showTime: true,
+      timeZone: "Asia/Kolkata"
     },
 
     // Features ON / OFF — each block should include `enabled: true` or `false`
