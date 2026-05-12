@@ -1385,7 +1385,7 @@ const originalTextNodeContent = new Map();
 const originalElementAttributes = new Map();
 const googleTranslationCache = new Map();
 
-const COMPANY_JS_BUILD_TAG = "20260512-03";
+const COMPANY_JS_BUILD_TAG = "20260512-05";
 const COMPANY_DEBUG_QUERY_FLAG = "dfchatDebug";
 let debugMountAttemptSeq = 0;
 let debugBadgeLastRenderAt = 0;
@@ -12831,6 +12831,13 @@ function handleDfResponseReceived(event) {
         ? event.detail.data.messages
         : [];
 
+    if (messages.length > 0) {
+        const ms = activeDfMessenger;
+        if (ms && typeof ms.renderCustomText === "function") {
+            renderBotPersona(ms, Date.now());
+        }
+    }
+
     const cxResponseMessagesMerged = mergeCxResponseEnvelopeForGallery(event);
     pruneStaleInlineGalleryForCxResponse(cxResponseMessagesMerged, event);
     tryOpenGalleryFromBotResponseMessages(cxResponseMessagesMerged, event);
@@ -12892,21 +12899,6 @@ function handleDfResponseReceived(event) {
             }
         } else {
             contactFormOpenPending = true;
-        }
-    }
-
-    if (messages.length > 0) {
-        const ms = activeDfMessenger;
-        if (ms && typeof ms.renderCustomText === "function") {
-            // Defer until after the messenger appends this turn’s bot rows so the persona strip is not lost or reordered.
-            const messageInstantMs = Date.now();
-            window.requestAnimationFrame(() => {
-                window.requestAnimationFrame(() => {
-                    if (activeDfMessenger === ms) {
-                        renderBotPersona(ms, messageInstantMs);
-                    }
-                });
-            });
         }
     }
 
@@ -17392,7 +17384,7 @@ function schedulePersonaShadowFix(dfMessenger) {
     };
     run();
     window.requestAnimationFrame(run);
-    [0, 24, 80, 200, 500, 750, 1200].forEach((ms) => {
+    [0, 24, 80, 200, 500, 750, 1200, 2000].forEach((ms) => {
         window.setTimeout(run, ms);
     });
 }
@@ -17931,6 +17923,164 @@ function applyBotEmojiPersonaCaptionChrome(imageNode) {
 }
 
 /**
+ * Markdown images often live inside component shadow trees; {@link Element.closest} and `parentElement` do not
+ * cross shadow roots, so we walk the composed parent chain to reach `.message.bot-message` and `.entry.bot`.
+ */
+function dfchatComposeParentElement(el) {
+    return getComposedParentElement(el);
+}
+
+/**
+ * Message list shell in prod / hosted variants (`#message-list` or `<df-messenger-message-list>`).
+ * @param {HTMLElement | null} from
+ */
+function dfchatFindMessageListAncestor_(from) {
+    let el = from;
+    for (let i = 0; el && i < 55; i += 1) {
+        const tag = el.tagName ? el.tagName.toUpperCase() : "";
+        if (el.id === "message-list" || tag === "DF-MESSENGER-MESSAGE-LIST") {
+            return el;
+        }
+        const p = el.parentElement;
+        el = p || /** @type {HTMLElement | null} */ (dfchatComposeParentElement(el));
+    }
+    return null;
+}
+
+/**
+ * List child that wraps one “row” / utterance strip (typically above nested `.entry` markup).
+ * @param {HTMLElement} messageEl
+ */
+function dfchatResolveListRowHostingMessage_(messageEl) {
+    const list = dfchatFindMessageListAncestor_(messageEl);
+    if (!list) {
+        return null;
+    }
+    let el = messageEl;
+    for (let i = 0; el && i < 55; i += 1) {
+        let p = el.parentElement;
+        if (p === list) {
+            return el;
+        }
+        if (p) {
+            el = p;
+        } else {
+            const hop = dfchatComposeParentElement(el);
+            if (!hop) {
+                return null;
+            }
+            if (hop.parentElement === list) {
+                return hop;
+            }
+            el = hop;
+        }
+    }
+    return null;
+}
+
+/** @param {HTMLElement} row */
+function dfchatRowHasPersonaAvatar_(row) {
+    if (
+        row.querySelector?.(`img[src*='#${PERSONA_URL_MARKER_BOT_IMG}']`)
+        || row.querySelector?.(`img[src*='%23${PERSONA_URL_MARKER_BOT_IMG}']`)
+    ) {
+        return true;
+    }
+    return !!(row.querySelector?.("img[src*='dfchat-persona-bot|']")
+        || row.querySelector?.("img[src*='dfchat-persona-bot%7C']"));
+}
+
+/**
+ * @param {HTMLElement} row
+ */
+function dfchatRowLooksLikeCxBotAssistantRow_(row) {
+    if (!row.querySelectorAll) {
+        return false;
+    }
+    const hasBot = !!row.querySelector(".message.bot-message");
+    const hasUser = !!(row.querySelector(".message.user-message") || row.classList?.contains("user"));
+    if (!hasBot || hasUser) {
+        return false;
+    }
+    return !dfchatRowHasPersonaAvatar_(row);
+}
+
+/**
+ * When `.entry.bot` wrappers are absent or unhelpful, move the **direct** message-list subtree that contains our persona bubble.
+ */
+function reorderBotPersonaListRowBeforeContiguousBotRows_(imageNode) {
+    const personaType = getPersonaType(imageNode);
+    if (personaType !== "bot") {
+        return false;
+    }
+    if (BOT_PERSONA_CONFIG.mode !== "emojiTime") {
+        const src = imageNode.getAttribute("src") || "";
+        if (!src.includes(`#${PERSONA_URL_MARKER_BOT_IMG}`)) {
+            return false;
+        }
+    }
+    const personaMessage = resolvePersonaBotMessageElement_(imageNode);
+    if (!personaMessage) {
+        return false;
+    }
+    const personaRow = dfchatResolveListRowHostingMessage_(personaMessage);
+    if (!personaRow || personaRow.dataset.dfchatBotPersonaRowMoved === "1") {
+        return false;
+    }
+    const list = personaRow.parentElement;
+    if (!list) {
+        return false;
+    }
+
+    /** @type {HTMLElement | null} */
+    let earliestBotCx = null;
+    let probe = personaRow.previousElementSibling;
+    while (probe && probe.nodeType === Node.ELEMENT_NODE) {
+        const h = /** @type {HTMLElement} */ (probe);
+        if (dfchatRowLooksLikeCxBotAssistantRow_(h)) {
+            earliestBotCx = h;
+            probe = h.previousElementSibling;
+            continue;
+        }
+        if (h.querySelector?.(".message.user-message") || (h.classList && h.classList.contains("user"))) {
+            break;
+        }
+        probe = h.previousElementSibling;
+    }
+    if (!earliestBotCx) {
+        return false;
+    }
+    try {
+        list.insertBefore(personaRow, earliestBotCx);
+        personaRow.dataset.dfchatBotPersonaRowMoved = "1";
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+/** @param {HTMLElement} personaMessage */
+function dfchatResolveMessageStackForPersona_(personaMessage) {
+    if (!personaMessage) {
+        return null;
+    }
+    if (typeof personaMessage.closest === "function") {
+        const stack = personaMessage.closest(".message-stack");
+        if (stack) {
+            return stack;
+        }
+    }
+    let el = personaMessage;
+    for (let i = 0; el && i < 40; i += 1) {
+        if (el.classList?.contains?.("message-stack")) {
+            return el;
+        }
+        el = /** @type {HTMLElement | null} */ (dfchatComposeParentElement(el));
+    }
+    return null;
+}
+
+/**
  * @param {HTMLImageElement} imageNode
  * @returns {HTMLElement | null}
  */
@@ -17938,20 +18088,24 @@ function resolvePersonaBotMessageElement_(imageNode) {
     if (!imageNode) {
         return null;
     }
-    let personaMessage = typeof imageNode.closest === "function"
-        ? /** @type {HTMLElement | null} */ (/** @type {unknown} */ (imageNode.closest(".message.bot-message.markdown")))
-        : null;
-    if (!personaMessage) {
-        let el = imageNode.parentElement;
-        for (let i = 0; el && i < 26; i += 1) {
-            if (el.classList && el.classList.contains("message") && el.classList.contains("bot-message")) {
-                personaMessage = el;
-                break;
-            }
-            el = el.parentElement;
+    if (typeof imageNode.closest === "function") {
+        const byCls = /** @type {HTMLElement | null} */ (/** @type {unknown} */ (imageNode.closest(".message.bot-message")));
+        if (byCls) {
+            return byCls;
         }
     }
-    return personaMessage || null;
+    let el = /** @type {HTMLElement | null} */ (imageNode);
+    for (let i = 0; el && i < 50; i += 1) {
+        if (
+            el.classList
+            && el.classList.contains("message")
+            && el.classList.contains("bot-message")
+        ) {
+            return el;
+        }
+        el = /** @type {HTMLElement | null} */ (dfchatComposeParentElement(el));
+    }
+    return null;
 }
 
 /**
@@ -18022,8 +18176,8 @@ function resolveBotPersonaEntry_(anywhere) {
             return /** @type {HTMLElement} */ (byClosest);
         }
     }
-    let el = anywhere;
-    for (let i = 0; el && i < 32; i += 1) {
+    let el = /** @type {HTMLElement | null} */ (anywhere);
+    for (let i = 0; el && i < 50; i += 1) {
         if (
             el.classList
             && el.classList.contains("entry")
@@ -18031,7 +18185,7 @@ function resolveBotPersonaEntry_(anywhere) {
         ) {
             return el;
         }
-        el = el.parentElement || null;
+        el = /** @type {HTMLElement | null} */ (dfchatComposeParentElement(el));
     }
     return null;
 }
@@ -18058,20 +18212,7 @@ function reorderBotPersonaMarkdownToTopOfStack_(imageNode) {
     if (!personaMessage || personaMessage.dataset.dfchatBotPersonaReordered === "1") {
         return false;
     }
-    let stack = typeof personaMessage.closest === "function"
-        ? personaMessage.closest(".message-stack")
-        : null;
-    // Some builds wrap stacks; walk up briefly if `.message-stack` is not on personaMessage ancestry.
-    if (!stack && typeof personaMessage.closest === "function") {
-        let p = personaMessage.parentElement;
-        for (let j = 0; p && j < 10; j += 1) {
-            if (p.classList && p.classList.contains("message-stack")) {
-                stack = p;
-                break;
-            }
-            p = p.parentElement;
-        }
-    }
+    const stack = dfchatResolveMessageStackForPersona_(personaMessage);
     if (!stack || !stack.children || stack.children.length < 2) {
         return false;
     }
@@ -18134,6 +18275,7 @@ function decoratePersonaMessages(dfMessenger) {
             if (personaType === "bot") {
                 reorderBotPersonaMarkdownToTopOfStack_(image);
                 reorderBotPersonaEntryBeforeContiguousBotChunks_(image);
+                reorderBotPersonaListRowBeforeContiguousBotRows_(image);
             }
             if (personaType === "bot" && BOT_PERSONA_CONFIG.mode === "emojiTime") {
                 applyBotEmojiPersonaCaptionChrome(image);
