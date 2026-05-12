@@ -137,6 +137,18 @@ window.COMPANY_CHAT_UI_CONFIG = {
         label: "Restart"
       },
 
+      /**
+       * Client-side gate: stop sending new user messages to Dialogflow if no mobile is stored and the visitor
+       * has already sent this many user lines (same `user_queries` list as Sheet sync). Uses `preventDefault`
+       * on `df-user-input-entered` / `df-request-sent` when the browser allows it. Set `enabled: false` to turn off.
+       */
+      blockChatWithoutMobile: {
+        enabled: true,
+        maxUserQueries: 20,
+        blockMessage:
+          "You've reached the message limit without a mobile number. Please share your mobile number in chat or use the contact form to continue."
+      },
+
       // POST telemetry to `/chat-client-context` on your API base (see `dfchat-api-base-url`). Static sites
       // (GitHub Pages, host-my-page, etc.) have no backend — turn off to avoid 404 in the Network tab.
       clientContextCapture: {

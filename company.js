@@ -189,6 +189,86 @@ const RESTART_CHAT_CONFIG = FEATURES_CONFIG.restartChat && typeof FEATURES_CONFI
 function isRestartChatEnabled() {
     return isFeatureEnabledFromConfig(RESTART_CHAT_CONFIG, true);
 }
+
+const BLOCK_CHAT_WITHOUT_MOBILE_CONFIG = FEATURES_CONFIG.blockChatWithoutMobile && typeof FEATURES_CONFIG.blockChatWithoutMobile === "object"
+    ? FEATURES_CONFIG.blockChatWithoutMobile
+    : {};
+
+function isBlockChatWithoutMobileEnabled() {
+    return isFeatureEnabledFromConfig(BLOCK_CHAT_WITHOUT_MOBILE_CONFIG, false);
+}
+
+function getBlockChatWithoutMobileLimit_() {
+    const n = BLOCK_CHAT_WITHOUT_MOBILE_CONFIG.maxUserQueries;
+    if (typeof n === "number" && Number.isFinite(n) && n >= 1) {
+        return Math.min(500, Math.round(n));
+    }
+    return 20;
+}
+
+function getBlockChatWithoutMobileMessage_() {
+    const t = typeof BLOCK_CHAT_WITHOUT_MOBILE_CONFIG.blockMessage === "string"
+        ? BLOCK_CHAT_WITHOUT_MOBILE_CONFIG.blockMessage.trim()
+        : "";
+    return t
+        ? t.slice(0, 2000)
+        : "You've reached the message limit without a mobile number. Please share your mobile number to continue.";
+}
+
+function hasStoredMobileForChatBlockGate_() {
+    const raw = readStoredClientContext();
+    const m = dfParameterScalarToString(raw && raw.mobile != null ? raw.mobile : "").replace(/\D/g, "");
+    return m.length >= 9;
+}
+
+function getUserQueryCountForChatBlockGate_() {
+    const prev = readStoredClientContext();
+    const qs = prev && Array.isArray(prev.user_queries) ? prev.user_queries : [];
+    return qs.filter((x) => typeof x === "string" && x.trim()).length;
+}
+
+function shouldBlockOutgoingChatForMissingMobile_() {
+    if (!isBlockChatWithoutMobileEnabled()) {
+        return false;
+    }
+    if (hasStoredMobileForChatBlockGate_()) {
+        return false;
+    }
+    return getUserQueryCountForChatBlockGate_() >= getBlockChatWithoutMobileLimit_();
+}
+
+/**
+ * When the visitor is over the query limit without mobile, block the outbound CX request and show a bot line.
+ * @param {Event | undefined | null} event
+ * @param {string} queryText trimmed outbound text (skip when empty so internal messenger traffic still runs).
+ * @returns {boolean} true when the send was blocked.
+ */
+function tryPreventChatSendForMissingMobileGate_(event, queryText) {
+    if (!shouldBlockOutgoingChatForMissingMobile_()) {
+        return false;
+    }
+    const t = typeof queryText === "string" ? queryText.trim() : "";
+    if (!t) {
+        return false;
+    }
+    try {
+        if (event && typeof event.preventDefault === "function") {
+            event.preventDefault();
+        }
+    } catch {
+        /* ignore */
+    }
+    try {
+        const ms = activeDfMessenger;
+        if (ms && typeof ms.renderCustomText === "function") {
+            ms.renderCustomText(getBlockChatWithoutMobileMessage_(), true);
+        }
+    } catch {
+        /* ignore */
+    }
+    return true;
+}
+
 const POWERED_BY_CONFIG = COMMON_CONFIG.poweredBy && typeof COMMON_CONFIG.poweredBy === "object"
     ? COMMON_CONFIG.poweredBy
     : {};
@@ -4307,6 +4387,10 @@ function sendUserTextViaDfMessenger(dfMessenger, text, shouldRenderCustomTextNow
         return;
     }
     if (consumeLanguageSwitchFromUserFlowPhrase(t, null, dfMessenger)) {
+        return;
+    }
+    mergeLikelyMobileFromChatText(t);
+    if (tryPreventChatSendForMissingMobileGate_(null, t)) {
         return;
     }
     const renderCustom =
@@ -12440,8 +12524,11 @@ function attachPersonaHandlers(dfMessenger) {
             if (consumeLanguageSwitchFromUserFlowPhrase(typed, event)) {
                 return;
             }
-            trackChatUserQueryInSessionContext_(typed);
             mergeLikelyMobileFromChatText(typed);
+            if (tryPreventChatSendForMissingMobileGate_(event, typeof typed === "string" ? typed.trim() : "")) {
+                return;
+            }
+            trackChatUserQueryInSessionContext_(typed);
             const ms = activeDfMessenger;
             if (ms && typeof ms.renderCustomText === "function") {
                 renderUserPersona(ms);
@@ -12467,8 +12554,12 @@ function attachPersonaHandlers(dfMessenger) {
                 return;
             }
 
-            trackChatUserQueryInSessionContext_(queryText);
             mergeLikelyMobileFromChatText(queryText);
+            if (tryPreventChatSendForMissingMobileGate_(event, typeof queryText === "string" ? queryText.trim() : "")) {
+                return;
+            }
+
+            trackChatUserQueryInSessionContext_(queryText);
 
             if (typeof queryText === "string" && queryText.trim()) {
                 const ms = activeDfMessenger;
@@ -12484,6 +12575,10 @@ function attachPersonaHandlers(dfMessenger) {
     const trackRichMessengerPhraseAndPersona = (phrase) => {
         const q = typeof phrase === "string" ? phrase.trim() : "";
         if (!q) {
+            return;
+        }
+        mergeLikelyMobileFromChatText(q);
+        if (tryPreventChatSendForMissingMobileGate_(null, q)) {
             return;
         }
         trackChatUserQueryInSessionContext_(q);
