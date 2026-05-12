@@ -85,7 +85,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
         widthPx: 32,
         heightPx: 32,
         // Optional caption text rendered between the avatar and the clock (e.g. "Chatbot 09:36:29 pm"). "" = clock only.
-        label: "Chatbot",
+        label: "Demo",
         showTime: true,
         timeZone: "Asia/Kolkata",
         // Persona row: nudge avatar/time down (`offsetDownPx`); clock text only (`timeOffsetDownPx`).
