@@ -8183,6 +8183,7 @@ function initializeMessengerReadyState(dfMessenger, bubbleNode) {
         }
 
         isMessengerLoaded = true;
+        syncDfMessengerSessionParametersFromClientContext(dfMessenger);
         reapplyChatWindowOffsetFromConfig(dfMessenger);
         scheduleChatMessageListScrollbarReapply(dfMessenger);
         schedulePersonaShadowFix(dfMessenger);
@@ -8286,6 +8287,7 @@ function startConversationWithWelcomeEvent(dfMessenger) {
     }
 
     hasAutoStartedConversation = true;
+    syncDfMessengerSessionParametersFromClientContext(dfMessenger);
 
     dfMessenger.sendRequest("event", AUTO_START_CHAT_EVENT_NAME).catch(() => {
         hasAutoStartedConversation = false;
@@ -15463,6 +15465,67 @@ function persistClientContext(clientContext) {
         );
     } catch {
         // Session storage can fail in privacy-restricted browsers.
+    }
+}
+
+/**
+ * Copies widget `client_context` fields into Dialogflow CX **session parameters** for this chat session,
+ * so flows can reference **`$session.params.device_type`**, **`$session.params.browser_name`**, etc.
+ * Uses Messenger {@link https://cloud.google.com/dialogflow/cx/docs/concept/integration/dialogflow-messenger/javascript-functions#setqueryparameters setQueryParameters} (`QueryParameters.parameters`).
+ *
+ * In CX, use the same parameter ids (e.g. session parameter **`device_type`**).
+ *
+ * @param {unknown} dfMessenger
+ */
+function syncDfMessengerSessionParametersFromClientContext(dfMessenger) {
+    if (!dfMessenger || typeof /** @type {{ setQueryParameters?: (q: unknown) => void }} */ (dfMessenger).setQueryParameters !== "function") {
+        return;
+    }
+    try {
+        const cx = getClientContext();
+        if (!cx || typeof cx !== "object") {
+            return;
+        }
+        /** @param {string} k */
+        const pick = (k) => {
+            const v = /** @type {Record<string, unknown>} */ (cx)[k];
+            if (v == null) {
+                return "";
+            }
+            const s = typeof v === "string" ? v.trim() : typeof v === "number" && Number.isFinite(v) ? String(v) : "";
+            return s.length > 500 ? s.slice(0, 500) : s;
+        };
+        /** @type {Record<string, string>} */
+        const parameters = {};
+        /** @param {string} key */
+        const add = (key) => {
+            const t = pick(key);
+            if (t) {
+                parameters[key] = t;
+            }
+        };
+        add("device_type");
+        add("browser_name");
+        add("browser_version");
+        add("os_name");
+        add("device_name");
+        add("page_hostname");
+        add("page_path");
+        add("source_url");
+        add("channel");
+        add("timezone");
+        add("client_session_id");
+        add("browser_language");
+        add("screen_resolution");
+        add("viewport_size");
+        if (!Object.keys(parameters).length) {
+            return;
+        }
+        /** @type {{ setQueryParameters: (q: { parameters: Record<string, string> }) => void }} */ (dfMessenger).setQueryParameters({
+            parameters
+        });
+    } catch {
+        /* Messenger version may omit setQueryParameters; ignore. */
     }
 }
 
