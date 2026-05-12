@@ -1410,7 +1410,7 @@ const originalTextNodeContent = new Map();
 const originalElementAttributes = new Map();
 const googleTranslationCache = new Map();
 
-const COMPANY_JS_BUILD_TAG = "20260513-04";
+const COMPANY_JS_BUILD_TAG = "20260513-05";
 const COMPANY_DEBUG_QUERY_FLAG = "dfchatDebug";
 let debugMountAttemptSeq = 0;
 let debugBadgeLastRenderAt = 0;
@@ -14563,19 +14563,8 @@ function renderContactFormSubmissionResponse(payload) {
     lines.push(getTranslation("contactResponseThanks"));
     const responseText = lines.join("  \n");
 
-    /*
-     * Combine persona caption + summary into a single markdown bubble so back-to-back form
-     * submits stay paired in transcript order. Two separate `renderCustomText` calls (markdown
-     * persona then plain-text summary) can land in different df-messenger render lanes — rapid
-     * submits then appear as `persona1, persona2, persona3, summary1, summary2, summary3`
-     * instead of `persona1+summary1, persona2+summary2, persona3+summary3`. One markdown call
-     * is atomic. CSS in {@link getPersonaImageGuardCss} scopes persona styling to the first
-     * `<p>` of the bubble so the body lines render with normal text styling.
-     */
-    const personaMd = buildBotPersonaMarkdown_(Date.now());
-    const combined = personaMd ? `${personaMd}\n\n${responseText}` : responseText;
-    activeDfMessenger.renderCustomText(combined, true);
-    schedulePersonaShadowFix(activeDfMessenger);
+    renderBotPersona(activeDfMessenger, Date.now());
+    activeDfMessenger.renderCustomText(responseText, true);
 }
 
 /**
@@ -17416,15 +17405,17 @@ img[src*="%23dfchat-bot-persona"] {
 .message.bot-message.markdown:has(img[src*="%23dfchat-bot-persona"]) {
   margin-bottom: ${BOT_PERSONA_CONFIG.gapBelowAssistantPx}px !important;
 }
-/*
- * Persona caption styling is scoped to the first p of the bubble (the one that contains the
- * persona img + bold caption). Subsequent p blocks inside the same bubble -- used by
- * renderContactFormSubmissionResponse to glue the persona row to the form summary in one
- * atomic markdown bubble -- render with normal bot-text styling rather than the small /
- * blurred caption look.
- */
-.message.bot-message.markdown:has(img[src*="dfchat-bot-persona"]) > p:first-of-type strong,
-.message.bot-message.markdown:has(img[src*="%23dfchat-bot-persona"]) > p:first-of-type strong {
+.message.bot-message.markdown:has(img[src*="dfchat-bot-persona"]) p + p,
+.message.bot-message.markdown:has(img[src*="%23dfchat-bot-persona"]) p + p {
+  color: ${PERSONA_TEXT_COLOR} !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  line-height: 1.25 !important;
+}
+.message.bot-message.markdown:has(img[src*="dfchat-bot-persona"]) p strong,
+.message.bot-message.markdown:has(img[src*="%23dfchat-bot-persona"]) p strong {
   display: inline-block !important;
   vertical-align: middle !important;
   transform: translateY(${timeDown}) !important;
@@ -18592,11 +18583,22 @@ function reorderBotPersonaListRowBeforeContiguousBotRows_(imageNode) {
         return false;
     }
 
+    /*
+     * Walk backward through preceding CX bot rows to find the earliest. If we encounter a row
+     * already marked `dfchatBotPersonaRowMoved="1"`, the row above belongs to a previous
+     * reordered chunk — stop and skip the move so back-to-back form submits stay paired in
+     * chronological order rather than collapsing personas to the top.
+     */
     /** @type {HTMLElement | null} */
     let earliestBotCx = null;
+    let priorPersonaSeen = false;
     let probe = personaRow.previousElementSibling;
     while (probe && probe.nodeType === Node.ELEMENT_NODE) {
         const h = /** @type {HTMLElement} */ (probe);
+        if (h.dataset && h.dataset.dfchatBotPersonaRowMoved === "1") {
+            priorPersonaSeen = true;
+            break;
+        }
         if (dfchatRowLooksLikeCxBotAssistantRow_(h)) {
             earliestBotCx = h;
             probe = h.previousElementSibling;
@@ -18607,7 +18609,12 @@ function reorderBotPersonaListRowBeforeContiguousBotRows_(imageNode) {
         }
         probe = h.previousElementSibling;
     }
+    if (priorPersonaSeen) {
+        personaRow.dataset.dfchatBotPersonaRowMoved = "1";
+        return false;
+    }
     if (!earliestBotCx) {
+        personaRow.dataset.dfchatBotPersonaRowMoved = "1";
         return false;
     }
     try {
@@ -18698,13 +18705,24 @@ function reorderBotPersonaEntryBeforeContiguousBotChunks_(imageNode) {
         return false;
     }
 
+    /*
+     * Walk backwards through contiguous `.entry.bot` siblings to find the earliest one. If we
+     * encounter a `.entry.bot` that already carries `dfchatBotPersonaEntryMoved="1"`, our
+     * persona belongs to a fresh chunk that begins AFTER that previously-reordered persona —
+     * skip the move so we don't pile back-to-back form submits at the top.
+     */
     /** @type {HTMLElement | null} */
     let earliestContiguousBot = null;
+    let priorPersonaSeen = false;
     let probe = entry.previousElementSibling;
     while (probe && probe.nodeType === Node.ELEMENT_NODE) {
         const h = /** @type {HTMLElement} */ (probe);
         if (h.classList && h.classList.contains("entry")) {
             if (h.classList.contains("bot")) {
+                if (h.dataset && h.dataset.dfchatBotPersonaEntryMoved === "1") {
+                    priorPersonaSeen = true;
+                    break;
+                }
                 earliestContiguousBot = h;
                 probe = h.previousElementSibling;
                 continue;
@@ -18713,7 +18731,12 @@ function reorderBotPersonaEntryBeforeContiguousBotChunks_(imageNode) {
         }
         probe = probe.previousElementSibling;
     }
+    if (priorPersonaSeen) {
+        entry.dataset.dfchatBotPersonaEntryMoved = "1";
+        return false;
+    }
     if (!earliestContiguousBot || earliestContiguousBot === entry) {
+        entry.dataset.dfchatBotPersonaEntryMoved = "1";
         return false;
     }
     try {
@@ -18773,7 +18796,16 @@ function reorderBotPersonaMarkdownToTopOfStack_(imageNode) {
         return false;
     }
     const stack = dfchatResolveMessageStackForPersona_(personaMessage);
+    /*
+     * Even when no move is needed (stack still has < 2 bot messages because this is the very
+     * first render in the stack), stamp `dfchatBotPersonaReordered="1"` so subsequent personas
+     * landing in the same stack can detect a prior chunk boundary. Without this marker,
+     * back-to-back form submits (which render persona + summary each into the same stack) all
+     * get treated as "first persona in stack" and accumulate at the top instead of staying in
+     * chronological per-submit pairs.
+     */
     if (!stack || !stack.children || stack.children.length < 2) {
+        personaMessage.dataset.dfchatBotPersonaReordered = "1";
         return false;
     }
 
@@ -18791,12 +18823,28 @@ function reorderBotPersonaMarkdownToTopOfStack_(imageNode) {
         }
     }
     if (botMsgs.length < 2) {
+        personaMessage.dataset.dfchatBotPersonaReordered = "1";
         return false;
     }
     const first = botMsgs[0];
     if (first === personaMessage) {
         personaMessage.dataset.dfchatBotPersonaReordered = "1";
         return false;
+    }
+    /*
+     * Skip the move when a prior bot message in this stack is itself an already-reordered
+     * persona — that means the stack already contains `[persona1, content1, ...]` from a
+     * previous turn and our new persona belongs to a fresh chunk that should sit AFTER the
+     * existing content (chronological order). Without this guard, three back-to-back form
+     * submits collapse into `[persona3, persona2, persona1, summary1, summary2, summary3]`.
+     */
+    const personaIdx = botMsgs.indexOf(personaMessage);
+    for (let i = 0; i < personaIdx; i += 1) {
+        const prior = botMsgs[i];
+        if (prior && prior.dataset && prior.dataset.dfchatBotPersonaReordered === "1") {
+            personaMessage.dataset.dfchatBotPersonaReordered = "1";
+            return false;
+        }
     }
     try {
         stack.insertBefore(personaMessage, first);
