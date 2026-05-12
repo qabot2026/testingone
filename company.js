@@ -1396,7 +1396,7 @@ const originalTextNodeContent = new Map();
 const originalElementAttributes = new Map();
 const googleTranslationCache = new Map();
 
-const COMPANY_JS_BUILD_TAG = "20260512-12";
+const COMPANY_JS_BUILD_TAG = "20260512-13";
 const COMPANY_DEBUG_QUERY_FLAG = "dfchatDebug";
 let debugMountAttemptSeq = 0;
 let debugBadgeLastRenderAt = 0;
@@ -17083,13 +17083,19 @@ function renderPersona(dfMessenger, personaType, label, timeLabelForUser) {
         renderBotPersona(dfMessenger, Date.now());
         return;
     }
+    const nonce = `${personaType}-${Date.now()}-${personaSequence += 1}`;
     const timeLabel =
         typeof timeLabelForUser === "string"
             ? timeLabelForUser
             : getIstTimeLabel();
-    // Emoji + plain time text via `renderCustomText` (`df-text-message` — CX does **not** run Markdown here).
-    // `false` = end-user lane (right column). `true` would render as agent and breaks layout/CSS.
-    dfMessenger.renderCustomText(buildUserPersonaEmojiMarkdown_(label, timeLabel), false);
+    // Mirror bot emojiTime mode: compact SVG badge inside the **markdown** lane (`isBot=true`) so the
+    // embedded `<img>` actually renders. Calling with `false` would build a `df-text-message`, which is
+    // plain `pre-wrap` text — Markdown / data-URLs are printed literally inside the user gradient bubble.
+    // The decorator detects PERSONA_MARKER_USER on the resulting img and right-aligns the strip.
+    dfMessenger.renderCustomText(
+        createPersonaBadgeMarkdown(label, timeLabel, nonce, PERSONA_MARKER_USER, true),
+        true
+    );
     schedulePersonaShadowFix(dfMessenger);
 }
 
@@ -17369,97 +17375,37 @@ img[src*="dfchat-persona-bot%7C"] {
   vertical-align: middle !important;
   box-sizing: border-box !important;
 }
-/* User persona: plain df-text-message caption — kill user bubble gradient + padding (CX .user-message draws user gradient). */
-.message.user-message.dfchat-user-persona-md,
-.message.user-message.markdown.dfchat-user-persona-md {
-  --df-messenger-message-user-background: transparent !important;
-  --df-messenger-message-user-background-color: transparent !important;
-  --df-messenger-message-user-padding: 0px !important;
+/* User persona row (SVG badge embedded in markdown bot bubble) — strip bubble chrome + right-align. */
+.message.bot-message.markdown:has(img[src*="dfchat-persona-user|"]),
+.message.bot-message.markdown:has(img[src*="dfchat-persona-user%7C"]),
+.message.bot-message:has(img[src*="dfchat-persona-user|"]):not(.markdown),
+.message.bot-message:has(img[src*="dfchat-persona-user%7C"]):not(.markdown) {
   background: transparent !important;
   background-color: transparent !important;
   background-image: none !important;
-  box-shadow: none !important;
-  border: none !important;
-  outline: none !important;
   padding: 0 6px !important;
-  margin: 0 !important;
+  margin: 0 0 0 auto !important;
+  min-height: 0 !important;
+  width: fit-content !important;
+  max-width: 100% !important;
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+df-markdown-message.dfchat-user-persona-md-host,
+.entry.bot.dfchat-user-persona-entry {
+  align-self: flex-end !important;
   margin-left: auto !important;
   margin-right: 0 !important;
-  width: fit-content !important;
-  max-width: min(320px, 100%) !important;
-  min-height: 0 !important;
-  font-size: 11px !important;
-  font-weight: 600 !important;
-  line-height: 1.25 !important;
-  color: ${PERSONA_TEXT_COLOR} !important;
-}
-/* CX renderCustomText user lane: inner div.message.user-message > div pre-wrap block (no markdown p tags). */
-.message.user-message.dfchat-user-persona-md > div,
-.message.user-message.markdown.dfchat-user-persona-md > div {
-  display: inline-block !important;
-  margin: 0 !important;
+  background: transparent !important;
   padding: 0 !important;
-  max-width: 100% !important;
-  white-space: normal !important;
-  word-break: break-word !important;
-  box-sizing: border-box !important;
-  color: ${PERSONA_TEXT_COLOR} !important;
-  font-size: 11px !important;
-  font-weight: 600 !important;
-  line-height: 1.25 !important;
-  opacity: ${PERSONA_OPACITY} !important;
-  vertical-align: middle !important;
 }
-.message.user-message.markdown.dfchat-user-persona-md p,
-.message.user-message.dfchat-user-persona-md p {
-  display: inline-block !important;
-  margin: 0 !important;
-  padding: 0 !important;
-  max-width: 100% !important;
-  box-sizing: border-box !important;
-  color: ${PERSONA_TEXT_COLOR} !important;
-  font-size: 11px !important;
-  font-weight: 600 !important;
-  line-height: 1.25 !important;
-  vertical-align: middle !important;
-}
-.message.user-message.markdown.dfchat-user-persona-md p strong,
-.message.user-message.dfchat-user-persona-md p strong {
-  display: inline-block !important;
-  vertical-align: middle !important;
-  color: ${PERSONA_TEXT_COLOR} !important;
-  font-size: 11px !important;
-  font-weight: 600 !important;
-  filter: blur(${PERSONA_SOFT_BLUR}) !important;
-  opacity: ${PERSONA_OPACITY} !important;
-}
-df-text-message:has(.dfchat-user-persona-md) {
+.message-stack:has(img[src*="dfchat-persona-user|"]),
+.message-stack:has(img[src*="dfchat-persona-user%7C"]) {
   align-self: flex-end !important;
-  max-width: 100% !important;
-}
-df-markdown-message.dfchat-user-persona-caption-md-host {
-  padding: 0 !important;
-  margin: 0 !important;
-  min-height: 0 !important;
-  font-size: 11px !important;
-  line-height: 1.25 !important;
+  margin-left: auto !important;
+  margin-right: 0 !important;
   background: transparent !important;
-  background-color: transparent !important;
-  box-shadow: none !important;
-  border: none !important;
-}
-.entry.user.dfchat-user-persona-caption-entry,
-.entry.dfchat-user-persona-caption-entry {
-  margin-top: 0 !important;
-  margin-bottom: 2px !important;
-  padding: 0 !important;
-  background: transparent !important;
-}
-df-messenger-utterance:has(.dfchat-user-persona-md),
-.message-stack:has(.dfchat-user-persona-md) {
-  --df-messenger-message-user-font-size: 11px;
-  --df-messenger-message-user-background: transparent;
-  --df-messenger-message-user-background-color: transparent;
 }
 ${BOT_PERSONA_CONFIG.mode === "emojiTime" ? `
 /* .entry:has(img) cannot see into df-messenger-utterance shadow — class set in applyBotEmojiPersonaCaptionChrome */
@@ -18002,6 +17948,89 @@ function getComposedParentElement(node) {
         return rn.host || null;
     }
     return null;
+}
+
+/**
+ * Strip the default bot-message bubble around a user persona SVG badge ({@link createPersonaBadgeMarkdown})
+ * and right-align it. The badge is rendered via `renderCustomText(md, true)` (markdown lane) so its `<img>`
+ * actually paints — but that places it inside `.message.bot-message.markdown`, which has bot padding/bg.
+ * We walk the composed parents to make stacks/entries/markdown-host/bubble transparent and align to flex-end.
+ * Bot persona styling stays untouched (`applyBotEmojiPersonaCaptionChrome` is its own function).
+ * @param {HTMLImageElement} imageNode
+ */
+function applyUserPersonaCaptionChrome_(imageNode) {
+    if (!imageNode || getPersonaType(imageNode) !== "user") {
+        return;
+    }
+    let el = getComposedParentElement(imageNode);
+    for (let i = 0; el && i < 28; i += 1) {
+        const tag = el.tagName ? el.tagName.toUpperCase() : "";
+        if (tag === "BODY" || tag === "HTML") {
+            break;
+        }
+        if (tag === "DF-MESSENGER-MESSAGE-LIST" || tag === "DF-MESSENGER-CHAT") {
+            break;
+        }
+        const isBotMessageDiv = el.classList && el.classList.contains("message") && el.classList.contains("bot-message");
+        const isMessageStack = el.classList && el.classList.contains("message-stack");
+        const isBotEntry = el.classList && el.classList.contains("entry") && el.classList.contains("bot");
+        const isMarkdownMessageHost = tag === "DF-MARKDOWN-MESSAGE";
+        try {
+            if (isMarkdownMessageHost) {
+                try {
+                    el.classList.add("dfchat-user-persona-md-host");
+                } catch (eMd) {
+                    /* ignore */
+                }
+                el.style.setProperty("align-self", "flex-end", "important");
+                el.style.setProperty("margin-left", "auto", "important");
+                el.style.setProperty("margin-right", "0", "important");
+                el.style.setProperty("padding", "0", "important");
+                el.style.setProperty("background", "transparent", "important");
+                el.style.setProperty("background-color", "transparent", "important");
+                el.style.setProperty("box-shadow", "none", "important");
+                el.style.setProperty("border", "none", "important");
+                el.style.setProperty("min-height", "0", "important");
+            }
+            if (isBotEntry) {
+                try {
+                    el.classList.add("dfchat-user-persona-entry");
+                } catch (eE) {
+                    /* ignore */
+                }
+                el.style.setProperty("align-self", "flex-end", "important");
+                el.style.setProperty("justify-content", "flex-end", "important");
+                el.style.setProperty("margin-left", "auto", "important");
+                el.style.setProperty("margin-right", "0", "important");
+                el.style.setProperty("padding", "0", "important");
+                el.style.setProperty("background", "transparent", "important");
+            }
+            if (isMessageStack) {
+                el.style.setProperty("align-self", "flex-end", "important");
+                el.style.setProperty("margin-left", "auto", "important");
+                el.style.setProperty("margin-right", "0", "important");
+                el.style.setProperty("margin-bottom", "0", "important");
+                el.style.setProperty("background", "transparent", "important");
+            }
+            if (isBotMessageDiv) {
+                el.style.setProperty("background", "transparent", "important");
+                el.style.setProperty("background-color", "transparent", "important");
+                el.style.setProperty("background-image", "none", "important");
+                el.style.setProperty("padding", "0 6px", "important");
+                el.style.setProperty("margin", "0", "important");
+                el.style.setProperty("margin-left", "auto", "important");
+                el.style.setProperty("min-height", "0", "important");
+                el.style.setProperty("max-width", "100%", "important");
+                el.style.setProperty("width", "fit-content", "important");
+                el.style.setProperty("border", "none", "important");
+                el.style.setProperty("box-shadow", "none", "important");
+                el.style.setProperty("border-radius", "0", "important");
+            }
+        } catch (e) {
+            /* ignore */
+        }
+        el = getComposedParentElement(el);
+    }
 }
 
 function applyBotEmojiPersonaCaptionChrome(imageNode) {
@@ -18721,12 +18750,18 @@ function decoratePersonaMessages(dfMessenger) {
             if (personaType === "bot" && BOT_PERSONA_CONFIG.mode === "emojiTime") {
                 applyBotEmojiPersonaCaptionChrome(image);
             }
+            if (personaType === "user") {
+                applyUserPersonaCaptionChrome_(image);
+            }
             const container = findPersonaContainer(image, root);
             if (!container) {
                 continue;
             }
 
             if (image.dataset.companyPersonaStyled === personaType) {
+                if (personaType === "user") {
+                    applyUserPersonaCaptionChrome_(image);
+                }
                 continue;
             }
 
@@ -18734,9 +18769,11 @@ function decoratePersonaMessages(dfMessenger) {
             if (personaType === "bot" && BOT_PERSONA_CONFIG.mode === "emojiTime") {
                 applyBotEmojiPersonaCaptionChrome(image);
             }
+            if (personaType === "user") {
+                applyUserPersonaCaptionChrome_(image);
+            }
         }
     }
-    decorateUserPersonaMarkdownHosts(dfMessenger);
 }
 
 function getPersonaType(imageNode) {
