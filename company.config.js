@@ -69,7 +69,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
       // Space (px) between the persona row and the assistant message bubble below (0–64).
       gapBelowAssistantPx: 4,
       // User badge: small `translateX` right (px); negative values shift LEFT. On wide viewports adds `userPersonaShiftRightDeskExtraPx`; on ≤768px subtracts half of `userPersonaMobileNudgeLeftPx` (moves strip slightly left on phones).
-      userPersonaShiftRightPx: -9,
+      userPersonaShiftRightPx: -34,
       userPersonaShiftRightDeskExtraPx: 10,
       userPersonaMobileNudgeLeftPx: 38,
       // Extra pull upward (adds to baseline −6px margin-top); desktop and mobile.
