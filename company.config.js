@@ -65,7 +65,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
     botPersona: {
       mode: "image",
       // Bot persona clock: include calendar date + time when the reply arrives (`false` = time only).
-      messageTimeIncludesDate: true,
+      messageTimeIncludesDate: false,
       // Space (px) between the persona row and the assistant message bubble below (0–64).
       gapBelowAssistantPx: 4,
       // User badge: small `translateX` right (px); negative values shift LEFT. On wide viewports adds `userPersonaShiftRightDeskExtraPx`; on ≤768px subtracts half of `userPersonaMobileNudgeLeftPx` (moves strip slightly left on phones).
