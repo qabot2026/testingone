@@ -1396,7 +1396,7 @@ const originalTextNodeContent = new Map();
 const originalElementAttributes = new Map();
 const googleTranslationCache = new Map();
 
-const COMPANY_JS_BUILD_TAG = "20260512-10";
+const COMPANY_JS_BUILD_TAG = "20260512-11";
 const COMPANY_DEBUG_QUERY_FLAG = "dfchatDebug";
 let debugMountAttemptSeq = 0;
 let debugBadgeLastRenderAt = 0;
@@ -17369,31 +17369,69 @@ img[src*="dfchat-persona-bot%7C"] {
   vertical-align: middle !important;
   box-sizing: border-box !important;
 }
-/* User persona: emoji label + blurred time — plain markdown (no SVG data-URL badges). */
+/* User persona: emoji + blurred time — compact caption (not full user bubble scale). */
 .message.user-message.markdown.dfchat-user-persona-md,
 .message.user-message.dfchat-user-persona-md {
   background: transparent !important;
   background-color: transparent !important;
+  background-image: none !important;
   box-shadow: none !important;
   border: none !important;
+  outline: none !important;
+  padding: 0 8px !important;
+  margin: 0 auto 0 auto !important;
+  margin-left: auto !important;
+  margin-right: 0 !important;
+  width: fit-content !important;
+  max-width: 100% !important;
+  min-height: 0 !important;
+  font-size: 11px !important;
+  line-height: 1.25 !important;
 }
 .message.user-message.markdown.dfchat-user-persona-md p,
 .message.user-message.dfchat-user-persona-md p {
   display: inline-block !important;
   margin: 0 !important;
   padding: 0 !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
   color: ${PERSONA_TEXT_COLOR} !important;
   font-size: 11px !important;
   font-weight: 600 !important;
   line-height: 1.25 !important;
+  vertical-align: middle !important;
 }
 .message.user-message.markdown.dfchat-user-persona-md p strong,
 .message.user-message.dfchat-user-persona-md p strong {
+  display: inline-block !important;
+  vertical-align: middle !important;
   color: ${PERSONA_TEXT_COLOR} !important;
   font-size: 11px !important;
   font-weight: 600 !important;
   filter: blur(${PERSONA_SOFT_BLUR}) !important;
   opacity: ${PERSONA_OPACITY} !important;
+}
+df-markdown-message.dfchat-user-persona-caption-md-host {
+  padding: 0 !important;
+  margin: 0 !important;
+  min-height: 0 !important;
+  font-size: 11px !important;
+  line-height: 1.25 !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  box-shadow: none !important;
+  border: none !important;
+}
+.entry.user.dfchat-user-persona-caption-entry,
+.entry.dfchat-user-persona-caption-entry {
+  margin-top: 0 !important;
+  margin-bottom: 2px !important;
+  padding: 0 !important;
+  background: transparent !important;
+}
+df-messenger-utterance:has(.dfchat-user-persona-md),
+.message-stack:has(.dfchat-user-persona-md) {
+  --df-messenger-message-user-font-size: 11px;
 }
 ${BOT_PERSONA_CONFIG.mode === "emojiTime" ? `
 /* .entry:has(img) cannot see into df-messenger-utterance shadow — class set in applyBotEmojiPersonaCaptionChrome */
@@ -18016,6 +18054,110 @@ function applyBotEmojiPersonaCaptionChrome(imageNode) {
 }
 
 /**
+ * Strip default **user bubble** chrome (large type, padding, gradients) from the emoji+time persona row only.
+ * Mirrors density of bot image-mode caption {@link getPersonaImageGuardCss} via composed-tree `!important` resets.
+ * @param {HTMLElement} mdHost `.message.user-message` (or inner) with {@link buildUserPersonaEmojiMarkdown_} content
+ */
+function applyUserPersonaMarkdownChrome_(mdHost) {
+    if (!mdHost) {
+        return;
+    }
+    let el = /** @type {HTMLElement | null} */ (mdHost);
+    for (let i = 0; el && i < 28; i += 1) {
+        const tag = el.tagName ? el.tagName.toUpperCase() : "";
+        if (tag === "BODY" || tag === "HTML") {
+            break;
+        }
+        if (tag === "DF-MESSENGER-MESSAGE-LIST" || tag === "DF-MESSENGER-CHAT") {
+            break;
+        }
+
+        const isUserMessageDiv = el.classList && el.classList.contains("message") && el.classList.contains("user-message");
+        const isMessageStack = el.classList && el.classList.contains("message-stack");
+        const isUserEntry = el.classList && el.classList.contains("entry") && el.classList.contains("user");
+        const isMarkdownMessageHost = tag === "DF-MARKDOWN-MESSAGE";
+
+        try {
+            if (isMarkdownMessageHost) {
+                try {
+                    el.classList.add("dfchat-user-persona-caption-md-host");
+                } catch (eC) {
+                    /* ignore */
+                }
+                el.style.setProperty("margin-top", "0", "important");
+                el.style.setProperty("margin-bottom", "0", "important");
+                el.style.setProperty("padding", "0", "important");
+                el.style.setProperty("font-size", "11px", "important");
+                el.style.setProperty("line-height", "1.25", "important");
+                el.style.setProperty("background", "transparent", "important");
+                el.style.setProperty("background-color", "transparent", "important");
+                el.style.setProperty("box-shadow", "none", "important");
+                el.style.setProperty("border", "none", "important");
+                el.style.setProperty("outline", "none", "important");
+                el.style.setProperty("min-height", "0", "important");
+            }
+            if (isUserEntry) {
+                try {
+                    el.classList.add("dfchat-user-persona-caption-entry");
+                } catch (eE) {
+                    /* ignore */
+                }
+                el.style.setProperty("margin-top", "0", "important");
+                el.style.setProperty("margin-bottom", "2px", "important");
+                el.style.setProperty("padding-top", "0", "important");
+                el.style.setProperty("padding-bottom", "0", "important");
+                el.style.setProperty("padding-left", "0", "important");
+                el.style.setProperty("padding-right", "0", "important");
+            }
+            if (isMessageStack) {
+                el.style.setProperty("margin-top", "0", "important");
+                el.style.setProperty("margin-bottom", "0", "important");
+            }
+            if (isUserMessageDiv) {
+                const mdBubble = el.classList && el.classList.contains("markdown");
+                el.style.setProperty("background", "transparent", "important");
+                el.style.setProperty("background-color", "transparent", "important");
+                el.style.setProperty("background-image", "none", "important");
+                el.style.setProperty("padding", "0 8px", "important");
+                el.style.setProperty("margin-top", "0", "important");
+                el.style.setProperty("margin-bottom", "0", "important");
+                el.style.setProperty("margin-left", "auto", "important");
+                el.style.setProperty("margin-right", "0", "important");
+                el.style.setProperty("min-height", "0", "important");
+                el.style.setProperty("max-height", "none", "important");
+                el.style.setProperty("width", "fit-content", "important");
+                el.style.setProperty("max-width", "100%", "important");
+                el.style.setProperty("font-size", "11px", "important");
+                el.style.setProperty("line-height", "1.25", "important");
+                el.style.setProperty("box-shadow", "none", "important");
+                el.style.setProperty("border", "none", "important");
+                el.style.setProperty("outline", "none", "important");
+                try {
+                    el.style.setProperty("--df-messenger-message-user-font-size", "11px", "important");
+                } catch {
+                    /* ignore */
+                }
+                el.style.setProperty("transform", mdBubble ? cssUserPersonaTranslateX() || "none" : "none", "important");
+                el.style.removeProperty("-webkit-filter");
+            } else if (!isMarkdownMessageHost && !isUserEntry && !isMessageStack && !isUserMessageDiv) {
+                el.style.setProperty("background", "transparent", "important");
+                el.style.setProperty("background-color", "transparent", "important");
+                el.style.setProperty("box-shadow", "none", "important");
+                el.style.setProperty("border", "none", "important");
+                if (i <= 5) {
+                    el.style.setProperty("padding-left", "0", "important");
+                    el.style.setProperty("padding-right", "0", "important");
+                }
+            }
+        } catch {
+            /* ignore */
+        }
+
+        el = getComposedParentElement(el);
+    }
+}
+
+/**
  * Markdown images often live inside component shadow trees; {@link Element.closest} and `parentElement` do not
  * cross shadow roots, so we walk the composed parent chain to reach `.message.bot-message` and `.entry.bot`.
  */
@@ -18358,6 +18500,9 @@ function styleUserPersonaMarkdownHost_(container, mdHost) {
     mdHost.style.maxWidth = "100%";
     mdHost.style.width = "fit-content";
     mdHost.style.height = "auto";
+    mdHost.style.setProperty("font-size", "11px", "important");
+    mdHost.style.setProperty("line-height", "1.25", "important");
+    mdHost.style.setProperty("min-height", "0", "important");
     {
         const t = cssUserPersonaTranslateX();
         mdHost.style.transform = t || "";
@@ -18443,7 +18588,7 @@ function decorateUserPersonaMarkdownHosts(dfMessenger) {
 
         for (let i = 0; i < candidates.length; i += 1) {
             const el = candidates[i];
-            if (!el || el.nodeType !== Node.ELEMENT_NODE || el.dataset.companyPersonaStyled === "user") {
+            if (!el || el.nodeType !== Node.ELEMENT_NODE) {
                 continue;
             }
 
@@ -18451,6 +18596,8 @@ function decorateUserPersonaMarkdownHosts(dfMessenger) {
             if (typeof el.querySelector === "function" && el.querySelector(`img[src*="${PERSONA_MARKER_USER}"]`)) {
                 continue;
             }
+
+            const alreadyPainted = el.dataset.companyPersonaStyled === "user";
 
             const txt = el.textContent || "";
             const hasSentinel = Boolean(sentinel) && txt.indexOf(sentinel) !== -1;
@@ -18478,7 +18625,10 @@ function decorateUserPersonaMarkdownHosts(dfMessenger) {
             if (hasSentinel) {
                 stripUserPersonaSentinelFromDom_(el);
             }
-            styleUserPersonaMarkdownHost_(container, el);
+            if (!alreadyPainted) {
+                styleUserPersonaMarkdownHost_(container, el);
+            }
+            applyUserPersonaMarkdownChrome_(el);
         }
     }
 }
