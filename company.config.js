@@ -84,6 +84,8 @@ window.COMPANY_CHAT_UI_CONFIG = {
         url: "https://storage.googleapis.com/companybucket/Images/cat-icon.png",
         widthPx: 32,
         heightPx: 32,
+        // Optional caption text rendered between the avatar and the clock (e.g. "Chatbot 09:36:29 pm"). "" = clock only.
+        label: "Chatbot",
         showTime: true,
         timeZone: "Asia/Kolkata",
         // Persona row: nudge avatar/time down (`offsetDownPx`); clock text only (`timeOffsetDownPx`).

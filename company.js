@@ -471,6 +471,8 @@ function readBotPersonaConfig() {
             })(),
             widthPx: typeof image.widthPx === "number" && Number.isFinite(image.widthPx) ? image.widthPx : 32,
             heightPx: typeof image.heightPx === "number" && Number.isFinite(image.heightPx) ? image.heightPx : 32,
+            /** Optional caption text rendered between the avatar and the clock (e.g. "Chatbot"). Empty string = clock only. */
+            label: typeof image.label === "string" ? image.label : "",
             showTime: image.showTime !== false,
             timeZone: typeof image.timeZone === "string" && image.timeZone.trim()
                 ? image.timeZone.trim()
@@ -1408,7 +1410,7 @@ const originalTextNodeContent = new Map();
 const originalElementAttributes = new Map();
 const googleTranslationCache = new Map();
 
-const COMPANY_JS_BUILD_TAG = "20260512-22";
+const COMPANY_JS_BUILD_TAG = "20260513-01";
 const COMPANY_DEBUG_QUERY_FLAG = "dfchatDebug";
 let debugMountAttemptSeq = 0;
 let debugBadgeLastRenderAt = 0;
@@ -17162,18 +17164,23 @@ function stripUserPersonaSentinelFromDom_(hostEl) {
 }
 
 /**
- * External avatar + message time as markdown bold (same line as the image so one `<p>`; HTML spans are often stripped).
+ * External avatar + optional caption label + message time as one bold markdown span on the same
+ * line as the image (single `<p>` keeps the existing `p strong` chrome rules in
+ * {@link getPersonaImageGuardCss} matching for blur / colour / vertical nudge).
  * @param {string} baseUrl
+ * @param {string} label optional caption text (e.g. "Chatbot"); empty string => clock only
  * @param {string} timeLabel
  */
-function buildBotPersonaImageMarkdownWithTime_(baseUrl, timeLabel) {
+function buildBotPersonaImageMarkdownWithTime_(baseUrl, label, timeLabel) {
     const imgMd = `![](${baseUrl}#${PERSONA_URL_MARKER_BOT_IMG})`;
-    const t = typeof timeLabel === "string" ? timeLabel.trim() : "";
-    if (!t) {
+    const sanitize = (s) => (typeof s === "string" ? s : "").trim().replace(/\*\*/g, "").replace(/\*/g, "×");
+    const t = sanitize(timeLabel);
+    const l = sanitize(label);
+    if (!t && !l) {
         return imgMd;
     }
-    const safeBold = t.replace(/\*\*/g, "").replace(/\*/g, "×");
-    return `${imgMd} **${safeBold}**`;
+    const inner = l && t ? `${l}  ${t}` : l || t;
+    return `${imgMd} **${inner}**`;
 }
 
 function renderBotPersona(dfMessenger, messageInstantMs) {
@@ -17201,9 +17208,10 @@ function renderBotPersona(dfMessenger, messageInstantMs) {
     }
     const img = cfg.image;
     const baseUrl = img.url.split("#")[0].trim();
-    if (img.showTime) {
-        const timeLabel = getBotPersonaMessageTimeLabel(img.timeZone, when, incDate);
-        const md = buildBotPersonaImageMarkdownWithTime_(baseUrl, timeLabel);
+    const label = typeof img.label === "string" ? img.label : "";
+    if (img.showTime || label) {
+        const timeLabel = img.showTime ? getBotPersonaMessageTimeLabel(img.timeZone, when, incDate) : "";
+        const md = buildBotPersonaImageMarkdownWithTime_(baseUrl, label, timeLabel);
         dfMessenger.renderCustomText(md, true);
     } else {
         dfMessenger.renderCustomText(`![](${baseUrl}#${PERSONA_URL_MARKER_BOT_IMG})`, true);
