@@ -1410,7 +1410,7 @@ const originalTextNodeContent = new Map();
 const originalElementAttributes = new Map();
 const googleTranslationCache = new Map();
 
-const COMPANY_JS_BUILD_TAG = "20260513-03";
+const COMPANY_JS_BUILD_TAG = "20260513-04";
 const COMPANY_DEBUG_QUERY_FLAG = "dfchatDebug";
 let debugMountAttemptSeq = 0;
 let debugBadgeLastRenderAt = 0;
@@ -14563,8 +14563,19 @@ function renderContactFormSubmissionResponse(payload) {
     lines.push(getTranslation("contactResponseThanks"));
     const responseText = lines.join("  \n");
 
-    renderBotPersona(activeDfMessenger, Date.now());
-    activeDfMessenger.renderCustomText(responseText, true);
+    /*
+     * Combine persona caption + summary into a single markdown bubble so back-to-back form
+     * submits stay paired in transcript order. Two separate `renderCustomText` calls (markdown
+     * persona then plain-text summary) can land in different df-messenger render lanes — rapid
+     * submits then appear as `persona1, persona2, persona3, summary1, summary2, summary3`
+     * instead of `persona1+summary1, persona2+summary2, persona3+summary3`. One markdown call
+     * is atomic. CSS in {@link getPersonaImageGuardCss} scopes persona styling to the first
+     * `<p>` of the bubble so the body lines render with normal text styling.
+     */
+    const personaMd = buildBotPersonaMarkdown_(Date.now());
+    const combined = personaMd ? `${personaMd}\n\n${responseText}` : responseText;
+    activeDfMessenger.renderCustomText(combined, true);
+    schedulePersonaShadowFix(activeDfMessenger);
 }
 
 /**
@@ -17237,39 +17248,46 @@ function buildBotPersonaImageMarkdownWithTime_(baseUrl, label, timeLabel) {
     return `${imgMd} **${inner}**`;
 }
 
-function renderBotPersona(dfMessenger, messageInstantMs) {
-    if (!dfMessenger || typeof dfMessenger.renderCustomText !== "function") {
-        return;
-    }
+/**
+ * Build the bot persona caption markdown (image + bold label / time) for the given instant —
+ * returns the markdown string without calling `renderCustomText`. Used by both
+ * {@link renderBotPersona} (standalone caption bubble for CX text turns) and
+ * {@link renderContactFormSubmissionResponse} (prepended to the form summary so the persona row
+ * and the summary stay glued together as a single markdown bubble; the plain-text vs. markdown
+ * lanes that df-messenger maintains can otherwise reorder back-to-back submits into
+ * `persona1, persona2, persona3, summary1, summary2, summary3`).
+ * @param {number | undefined} messageInstantMs
+ */
+function buildBotPersonaMarkdown_(messageInstantMs) {
     const when =
         typeof messageInstantMs === "number" && Number.isFinite(messageInstantMs)
             ? messageInstantMs
             : Date.now();
-    const nonce = `bot-${Date.now()}-${personaSequence += 1}`;
     const cfg = BOT_PERSONA_CONFIG;
     const incDate = cfg.messageTimeIncludesDate !== false;
     if (cfg.mode === "emojiTime") {
+        const nonce = `bot-${Date.now()}-${personaSequence += 1}`;
         const label = cfg.emojiTime.label;
         const timeLabel = cfg.emojiTime.showTime
             ? getBotPersonaMessageTimeLabel(cfg.emojiTime.timeZone, when, incDate)
             : "";
-        dfMessenger.renderCustomText(
-            createPersonaBadgeMarkdown(label, timeLabel, nonce, PERSONA_MARKER_BOT, true),
-            true
-        );
-        schedulePersonaShadowFix(dfMessenger);
-        return;
+        return createPersonaBadgeMarkdown(label, timeLabel, nonce, PERSONA_MARKER_BOT, true);
     }
     const img = cfg.image;
     const baseUrl = img.url.split("#")[0].trim();
     const label = typeof img.label === "string" ? img.label : "";
     if (img.showTime || label) {
         const timeLabel = img.showTime ? getBotPersonaMessageTimeLabel(img.timeZone, when, incDate) : "";
-        const md = buildBotPersonaImageMarkdownWithTime_(baseUrl, label, timeLabel);
-        dfMessenger.renderCustomText(md, true);
-    } else {
-        dfMessenger.renderCustomText(`![](${baseUrl}#${PERSONA_URL_MARKER_BOT_IMG})`, true);
+        return buildBotPersonaImageMarkdownWithTime_(baseUrl, label, timeLabel);
     }
+    return `![](${baseUrl}#${PERSONA_URL_MARKER_BOT_IMG})`;
+}
+
+function renderBotPersona(dfMessenger, messageInstantMs) {
+    if (!dfMessenger || typeof dfMessenger.renderCustomText !== "function") {
+        return;
+    }
+    dfMessenger.renderCustomText(buildBotPersonaMarkdown_(messageInstantMs), true);
     schedulePersonaShadowFix(dfMessenger);
 }
 
@@ -17398,17 +17416,15 @@ img[src*="%23dfchat-bot-persona"] {
 .message.bot-message.markdown:has(img[src*="%23dfchat-bot-persona"]) {
   margin-bottom: ${BOT_PERSONA_CONFIG.gapBelowAssistantPx}px !important;
 }
-.message.bot-message.markdown:has(img[src*="dfchat-bot-persona"]) p + p,
-.message.bot-message.markdown:has(img[src*="%23dfchat-bot-persona"]) p + p {
-  color: ${PERSONA_TEXT_COLOR} !important;
-  font-size: 11px !important;
-  font-weight: 600 !important;
-  margin: 0 !important;
-  padding: 0 !important;
-  line-height: 1.25 !important;
-}
-.message.bot-message.markdown:has(img[src*="dfchat-bot-persona"]) p strong,
-.message.bot-message.markdown:has(img[src*="%23dfchat-bot-persona"]) p strong {
+/*
+ * Persona caption styling is scoped to the first p of the bubble (the one that contains the
+ * persona img + bold caption). Subsequent p blocks inside the same bubble -- used by
+ * renderContactFormSubmissionResponse to glue the persona row to the form summary in one
+ * atomic markdown bubble -- render with normal bot-text styling rather than the small /
+ * blurred caption look.
+ */
+.message.bot-message.markdown:has(img[src*="dfchat-bot-persona"]) > p:first-of-type strong,
+.message.bot-message.markdown:has(img[src*="%23dfchat-bot-persona"]) > p:first-of-type strong {
   display: inline-block !important;
   vertical-align: middle !important;
   transform: translateY(${timeDown}) !important;
