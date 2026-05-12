@@ -496,19 +496,19 @@ function readUserPersonaConfig() {
 
 const USER_PERSONA_CONFIG = readUserPersonaConfig();
 
-/**
- * @returns {string} e.g. "274px" (narrow viewports subtract `userPersonaMobileNudgeLeftPx`; wide viewports add `userPersonaShiftRightDeskExtraPx`).
- */
-function cssUserPersonaMarginLeft() {
-    let base = 250 + Math.max(0, BOT_PERSONA_CONFIG.userPersonaShiftRightPx ?? 24);
-    const trim = BOT_PERSONA_CONFIG.userPersonaMobileNudgeLeftPx ?? 28;
-    const deskExtra = Math.max(0, Math.min(120, BOT_PERSONA_CONFIG.userPersonaShiftRightDeskExtraPx ?? 0));
-    if (typeof isMobileViewport === "function" && isMobileViewport()) {
-        base = Math.max(0, base - trim);
-    } else {
-        base += deskExtra;
-    }
-    return `${base}px`;
+/** Horizontal nudge for user persona badge (px); replaces legacy large margin-left layout. */
+function cssUserPersonaTranslateX() {
+    const base = Math.max(0, Math.min(56, BOT_PERSONA_CONFIG.userPersonaShiftRightPx ?? 0));
+    const deskExtra =
+        typeof isMobileViewport === "function" && !isMobileViewport()
+            ? Math.max(0, Math.min(48, BOT_PERSONA_CONFIG.userPersonaShiftRightDeskExtraPx ?? 0))
+            : 0;
+    const mobilePull =
+        typeof isMobileViewport === "function" && isMobileViewport()
+            ? -Math.max(0, Math.min(40, Math.floor((BOT_PERSONA_CONFIG.userPersonaMobileNudgeLeftPx ?? 0) * 0.5)))
+            : 0;
+    const tx = base + deskExtra + mobilePull;
+    return Number.isFinite(tx) && tx !== 0 ? `translateX(${tx}px)` : "";
 }
 
 /** User persona baseline pull is −6px; config adds extra upward nudge (more negative margin-top). */
@@ -1382,7 +1382,7 @@ const originalTextNodeContent = new Map();
 const originalElementAttributes = new Map();
 const googleTranslationCache = new Map();
 
-const COMPANY_JS_BUILD_TAG = "20260428-08";
+const COMPANY_JS_BUILD_TAG = "20260512-01";
 const COMPANY_DEBUG_QUERY_FLAG = "dfchatDebug";
 let debugMountAttemptSeq = 0;
 let debugBadgeLastRenderAt = 0;
@@ -12895,7 +12895,14 @@ function handleDfResponseReceived(event) {
     if (messages.length > 0) {
         const ms = activeDfMessenger;
         if (ms && typeof ms.renderCustomText === "function") {
-            renderBotPersona(ms);
+            // Defer until after the messenger appends this turn’s bot rows so the persona strip is not lost or reordered.
+            window.requestAnimationFrame(() => {
+                window.requestAnimationFrame(() => {
+                    if (activeDfMessenger === ms) {
+                        renderBotPersona(ms);
+                    }
+                });
+            });
         }
     }
 
@@ -17074,7 +17081,8 @@ function renderPersona(dfMessenger, personaType, label, timeLabelForUser) {
         typeof timeLabelForUser === "string"
             ? timeLabelForUser
             : getIstTimeLabel();
-    dfMessenger.renderCustomText(createPersonaBadgeMarkdown(label, timeLabel, nonce, PERSONA_MARKER_USER), true);
+    // `false` = end-user message (right column). `true` would render as agent and breaks layout/CSS.
+    dfMessenger.renderCustomText(createPersonaBadgeMarkdown(label, timeLabel, nonce, PERSONA_MARKER_USER), false);
     schedulePersonaShadowFix(dfMessenger);
 }
 
@@ -18013,10 +18021,14 @@ function stylePersonaContainer(container, imageNode, personaType) {
     }
 
     if (personaType === "user") {
-        imageNode.style.marginLeft = cssUserPersonaMarginLeft();
-        imageNode.style.marginRight = "-14px";
+        imageNode.style.marginLeft = "auto";
+        imageNode.style.marginRight = "4px";
         imageNode.style.marginTop = cssUserPersonaMarginTop();
         imageNode.style.marginBottom = "0px";
+        {
+            const t = cssUserPersonaTranslateX();
+            imageNode.style.transform = t || "";
+        }
     }
 
     const isBotEmojiCaption = personaType === "bot" && BOT_PERSONA_CONFIG.mode === "emojiTime";
@@ -18035,8 +18047,8 @@ function stylePersonaContainer(container, imageNode, personaType) {
         if (depth === 0) {
             current.style.marginBottom = PERSONA_VERTICAL_PULL;
             if (personaType === "user") {
-                current.style.marginLeft = cssUserPersonaMarginLeft();
-                current.style.marginRight = "-14px";
+                current.style.marginLeft = "0";
+                current.style.marginRight = "0";
                 current.style.marginTop = cssUserPersonaMarginTop();
                 current.style.marginBottom = "0px";
                 current.style.textAlign = "right";
@@ -18049,8 +18061,8 @@ function stylePersonaContainer(container, imageNode, personaType) {
             current.style.width = "100%";
             current.style.maxWidth = "100%";
             current.style.justifyContent = "flex-end";
-            current.style.marginLeft = cssUserPersonaMarginLeft();
-            current.style.marginRight = "-14px";
+            current.style.marginLeft = "0";
+            current.style.marginRight = "0";
             current.style.marginTop = cssUserPersonaMarginTop();
             current.style.marginBottom = "0px";
             current.style.alignSelf = "flex-end";
