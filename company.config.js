@@ -59,7 +59,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
       // chatCollapseIconUrl: "https://example.com/chat-collapse-x.svg"
     },
 
-    // Bot row: `mode: "image"` uses `image.url` or `image.imageUrl` (or top-level `imageUrl`) + optional time SVG.
+    // Bot row: `mode: "image"` uses `image.url` / `image.imageUrl` / `imageUrl`; with `image.showTime`, avatar + message time are one SVG (CX often drops a second markdown image).
     // User row: optional `userPersona` below — emoji/label + time in the right-aligned badge (defaults match the old 🙂 + IST clock).
     // Use `mode: "emojiTime"` only if you want a text 🤖+time caption for the bot instead of the image URL.
     botPersona: {
