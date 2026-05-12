@@ -1385,7 +1385,7 @@ const originalTextNodeContent = new Map();
 const originalElementAttributes = new Map();
 const googleTranslationCache = new Map();
 
-const COMPANY_JS_BUILD_TAG = "20260512-01";
+const COMPANY_JS_BUILD_TAG = "20260512-02";
 const COMPANY_DEBUG_QUERY_FLAG = "dfchatDebug";
 let debugMountAttemptSeq = 0;
 let debugBadgeLastRenderAt = 0;
@@ -17274,6 +17274,8 @@ img[src*="%23dfchat-bot-persona"] {
   color: ${PERSONA_TEXT_COLOR} !important;
   font-size: 11px !important;
   font-weight: 600 !important;
+  filter: blur(${PERSONA_SOFT_BLUR}) !important;
+  opacity: ${PERSONA_OPACITY} !important;
 }
 img[src*="dfchat-persona-bot-time"] {
   height: 28px !important;
@@ -17928,6 +17930,89 @@ function applyBotEmojiPersonaCaptionChrome(imageNode) {
     }
 }
 
+/**
+ * Moves the bot persona markdown bubble to the top of `.message-stack` so it sits above assistant text when
+ * {@link renderCustomText} appended it after CX messages (common).
+ * @param {HTMLImageElement} imageNode
+ * @returns {boolean} true when a node was moved
+ */
+function reorderBotPersonaMarkdownToTopOfStack_(imageNode) {
+    const personaType = getPersonaType(imageNode);
+    if (personaType !== "bot") {
+        return false;
+    }
+    if (BOT_PERSONA_CONFIG.mode !== "emojiTime") {
+        const src = imageNode.getAttribute("src") || "";
+        if (!src.includes(`#${PERSONA_URL_MARKER_BOT_IMG}`)) {
+            return false;
+        }
+    }
+
+    /** @type {HTMLElement | null} */
+    let personaMessage = typeof imageNode.closest === "function"
+        ? /** @type {HTMLElement | null} */ (/** @type {unknown} */ (imageNode.closest(".message.bot-message.markdown")))
+        : null;
+    if (!personaMessage) {
+        let el = imageNode.parentElement;
+        for (let i = 0; el && i < 26; i += 1) {
+            if (el.classList && el.classList.contains("message") && el.classList.contains("bot-message")) {
+                personaMessage = el;
+                break;
+            }
+            el = el.parentElement;
+        }
+    }
+    if (!personaMessage || personaMessage.dataset.dfchatBotPersonaReordered === "1") {
+        return false;
+    }
+    let stack = typeof personaMessage.closest === "function"
+        ? personaMessage.closest(".message-stack")
+        : null;
+    // Some builds wrap stacks; walk up briefly if `.message-stack` is not on personaMessage ancestry.
+    if (!stack && typeof personaMessage.closest === "function") {
+        let p = personaMessage.parentElement;
+        for (let j = 0; p && j < 10; j += 1) {
+            if (p.classList && p.classList.contains("message-stack")) {
+                stack = p;
+                break;
+            }
+            p = p.parentElement;
+        }
+    }
+    if (!stack || !stack.children || stack.children.length < 2) {
+        return false;
+    }
+
+    /** @type {HTMLElement[]} */
+    const botMsgs = [];
+    for (let k = 0; k < stack.children.length; k += 1) {
+        const c = stack.children[k];
+        if (
+            c
+            && c.classList
+            && c.classList.contains("message")
+            && c.classList.contains("bot-message")
+        ) {
+            botMsgs.push(/** @type {HTMLElement} */ (c));
+        }
+    }
+    if (botMsgs.length < 2) {
+        return false;
+    }
+    const first = botMsgs[0];
+    if (first === personaMessage) {
+        personaMessage.dataset.dfchatBotPersonaReordered = "1";
+        return false;
+    }
+    try {
+        stack.insertBefore(personaMessage, first);
+        personaMessage.dataset.dfchatBotPersonaReordered = "1";
+        return true;
+    } catch {
+        return false;
+    }
+}
+
 function decoratePersonaMessages(dfMessenger) {
     const roots = collectSearchRoots(dfMessenger);
 
@@ -17952,6 +18037,9 @@ function decoratePersonaMessages(dfMessenger) {
             const personaType = getPersonaType(image);
             if (!personaType) {
                 continue;
+            }
+            if (personaType === "bot") {
+                reorderBotPersonaMarkdownToTopOfStack_(image);
             }
             if (personaType === "bot" && BOT_PERSONA_CONFIG.mode === "emojiTime") {
                 applyBotEmojiPersonaCaptionChrome(image);
