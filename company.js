@@ -1798,7 +1798,7 @@ const UI_TRANSLATIONS = {
         statusSubmitting: "Submitting...",
         statusSubmitted: "Submitted successfully.",
         statusSubmissionFailed: "Submission failed. Please try again.",
-        contactResponseThanks: "Thank You for sharing the details",
+        contactResponseThanks: "Thank you for sharing.",
         fieldRequired: "Please fill in this field.",
         invalidEmail: "Please enter a valid email address.",
         invalidPhone: "Please enter a valid phone number.",
@@ -4471,7 +4471,13 @@ function sendUserTextViaDfMessenger(dfMessenger, text, shouldRenderCustomTextNow
     if (consumeLanguageSwitchFromUserFlowPhrase(t, null, dfMessenger)) {
         return;
     }
+    const hadM0 = hasStoredMobileForChatBlockGate_();
+    const prev0 = readStoredClientContext();
+    const hadE0 = !!(dfParameterScalarToString(prev0 && prev0.email != null ? prev0.email : "").trim());
     mergeLikelyContactHintsFromChatText_(t);
+    if (tryRenderThanksAfterMergeSuppressDf_(null, t, { hadMobile: hadM0, hadEmail: hadE0 })) {
+        return;
+    }
     if (tryPreventChatSendForMissingMobileGate_(null, t)) {
         return;
     }
@@ -12583,13 +12589,13 @@ function mergeLikelyMobileFromChatText(raw) {
         && digitsOnly.length <= 15
         && /^[\d\s+().\-]+$/i.test(normalized)
     ) {
-        mergeVisitorMobileIntoStoredContext(digitsOnly);
+        mergeVisitorMobileIntoStoredContext(digitsOnly, { syncSheet: false });
         return;
     }
 
     const extracted = extractLikelyMobileDigitsForMerge_(t);
     if (extracted && extracted.replace(/\D/g, "").length >= 9) {
-        mergeVisitorMobileIntoStoredContext(extracted.replace(/\D/g, ""));
+        mergeVisitorMobileIntoStoredContext(extracted.replace(/\D/g, ""), { syncSheet: false });
     }
 }
 
@@ -12624,6 +12630,86 @@ function mergeLikelyEmailFromChatText(raw) {
 function mergeLikelyContactHintsFromChatText_(raw) {
     mergeLikelyMobileFromChatText(raw);
     mergeLikelyEmailFromChatText(raw);
+}
+
+/**
+ * True when the line is mostly a phone share (digits + short filler) so we can thank the user and skip CX.
+ * @param {string} raw
+ * @param {{ gainedMobile: boolean, gainedEmail: boolean }} hints
+ * @returns {boolean}
+ */
+function isLikelyContactCaptureOnlyInputForThankYou_(raw, hints) {
+    const t = typeof raw === "string" ? raw.replace(/\u00a0/g, " ").trim() : "";
+    if (!t || t.length > 200) {
+        return false;
+    }
+    if (!hints || !hints.gainedMobile) {
+        return false;
+    }
+    const ext = extractLikelyMobileDigitsForMerge_(t);
+    if (!ext || ext.length < 10) {
+        return false;
+    }
+    const allD = t.replace(/\D/g, "");
+    if (!allD.includes(ext)) {
+        return false;
+    }
+    if (allD.length > ext.length + 3) {
+        return false;
+    }
+    const residue = t
+        .toLowerCase()
+        .replace(/[0-9+().\-/\s@]/g, " ")
+        .replace(
+            /\b(my|the|is|are|am|was|no|on|at|me|pls|please|kindly|call|calling|mobile|mob|phone|whatsapp|whatsapp\s*no|number|numbers|contact|email|sir|madam|hi|hello|hey|dear|thanks|thank\s*you|thx|ok|okay|here|this|that|give|sharing|shared|share|reach|digit|num|no\.|india|country|code)\b/gi,
+            " "
+        );
+    const cleaned = residue.replace(/[a-z0-9._%+-]+\.[a-z]{2,}\b/gi, " ").replace(/\s+/g, " ").trim();
+    return cleaned.length <= 28;
+}
+
+/**
+ * After {@link mergeLikelyContactHintsFromChatText_}, optionally thank the visitor and block the outbound CX
+ * request when the line was essentially only a mobile share (avoids Default Fallback / “no match”).
+ * Still records the line in `user_queries` so session→Sheets sync can upsert one row (chat mobile no longer POSTs `/contact-form-mobile-sheet-sync` separately).
+ *
+ * @param {Event | null | undefined} event
+ * @param {string} raw trimmed text
+ * @param {{ hadMobile: boolean, hadEmail: boolean }} before merge snapshot (9+ digit rule for mobile)
+ * @returns {boolean} true when the Dialogflow request should be skipped for this line
+ */
+function tryRenderThanksAfterMergeSuppressDf_(event, raw, before) {
+    const t = typeof raw === "string" ? raw.replace(/\u00a0/g, " ").trim() : "";
+    if (!t) {
+        return false;
+    }
+    const hasMobile = hasStoredMobileForChatBlockGate_();
+    const next = readStoredClientContext();
+    const hasEmail = !!(dfParameterScalarToString(next && next.email != null ? next.email : "").trim());
+    const gainedMobile = !before.hadMobile && hasMobile;
+    const gainedEmail = !before.hadEmail && hasEmail;
+    if (!gainedMobile || !isLikelyContactCaptureOnlyInputForThankYou_(t, { gainedMobile, gainedEmail })) {
+        return false;
+    }
+    try {
+        if (event && typeof event.preventDefault === "function") {
+            event.preventDefault();
+        }
+    } catch {
+        /* ignore */
+    }
+    const ms = activeDfMessenger;
+    const thanks = getTranslation("contactResponseThanks");
+    const line = typeof thanks === "string" && thanks.trim() ? thanks.trim() : "Thank you for sharing.";
+    if (ms && typeof ms.renderCustomText === "function") {
+        ms.renderCustomText(line, true);
+    }
+    trackChatUserQueryInSessionContext_(t);
+    if (ms && typeof ms.renderUserPersona === "function") {
+        renderUserPersona(ms);
+    }
+    markContactOnlyThanksSuppressQuery_(t);
+    return true;
 }
 
 function handleDfResponseReceived(event) {
@@ -12723,6 +12809,10 @@ function attachPersonaHandlers(dfMessenger) {
         "df-user-input-entered",
         (event) => {
             const typed = extractDfUserInputEnteredText(event);
+            const typedTrim = typeof typed === "string" ? typed.trim() : "";
+            if (consumeContactOnlyThanksSuppressForQuery_(event, typedTrim)) {
+                return;
+            }
             if (isRestartChatEnabled() && isUserTypingRestartChatCommand(typed)) {
                 try {
                     if (typeof event.preventDefault === "function") {
@@ -12737,7 +12827,13 @@ function attachPersonaHandlers(dfMessenger) {
             if (consumeLanguageSwitchFromUserFlowPhrase(typed, event)) {
                 return;
             }
+            const hadM1 = hasStoredMobileForChatBlockGate_();
+            const prev1 = readStoredClientContext();
+            const hadE1 = !!(dfParameterScalarToString(prev1 && prev1.email != null ? prev1.email : "").trim());
             mergeLikelyContactHintsFromChatText_(typed);
+            if (tryRenderThanksAfterMergeSuppressDf_(event, typeof typed === "string" ? typed.trim() : "", { hadMobile: hadM1, hadEmail: hadE1 })) {
+                return;
+            }
             if (tryPreventChatSendForMissingMobileGate_(event, typeof typed === "string" ? typed.trim() : "")) {
                 return;
             }
@@ -12755,6 +12851,10 @@ function attachPersonaHandlers(dfMessenger) {
         (event) => {
             const queryText =
                 extractQueryTextFromDfRequestSentEvent_(event);
+            const qt = typeof queryText === "string" ? queryText.trim() : "";
+            if (consumeContactOnlyThanksSuppressForQuery_(event, qt)) {
+                return;
+            }
 
             if (typeof queryText === "string"
                 && isRestartChatEnabled()
@@ -12767,7 +12867,13 @@ function attachPersonaHandlers(dfMessenger) {
                 return;
             }
 
+            const hadM2 = hasStoredMobileForChatBlockGate_();
+            const prev2 = readStoredClientContext();
+            const hadE2 = !!(dfParameterScalarToString(prev2 && prev2.email != null ? prev2.email : "").trim());
             mergeLikelyContactHintsFromChatText_(queryText);
+            if (tryRenderThanksAfterMergeSuppressDf_(event, typeof queryText === "string" ? queryText.trim() : "", { hadMobile: hadM2, hadEmail: hadE2 })) {
+                return;
+            }
             if (tryPreventChatSendForMissingMobileGate_(event, typeof queryText === "string" ? queryText.trim() : "")) {
                 return;
             }
@@ -15870,6 +15976,48 @@ let chatMobileSheetSyncDebounceTimer = 0;
 let chatMobileSheetSyncLastOkKey = "";
 /** Prevent duplicate posts before the first one completes. */
 let chatMobileSheetSyncInFlightKey = "";
+/** When contact-only thanks short-circuits CX on `df-user-input-entered`, swallow the paired `df-request-sent` for the same text. */
+let contactOnlyThanksSuppressQueryRef_ = "";
+let contactOnlyThanksSuppressTimer_ = 0;
+
+function markContactOnlyThanksSuppressQuery_(normalizedTrimmed) {
+    const q = typeof normalizedTrimmed === "string" ? normalizedTrimmed.trim() : "";
+    if (!q) {
+        return;
+    }
+    contactOnlyThanksSuppressQueryRef_ = q;
+    if (contactOnlyThanksSuppressTimer_) {
+        window.clearTimeout(contactOnlyThanksSuppressTimer_);
+    }
+    contactOnlyThanksSuppressTimer_ = window.setTimeout(() => {
+        contactOnlyThanksSuppressTimer_ = 0;
+        contactOnlyThanksSuppressQueryRef_ = "";
+    }, 5000);
+}
+
+/**
+ * @param {Event | null | undefined} event
+ * @param {string} queryTrimmed
+ * @returns {boolean} true when this event should not run the rest of the outbound pipeline
+ */
+function consumeContactOnlyThanksSuppressForQuery_(event, queryTrimmed) {
+    const q = typeof queryTrimmed === "string" ? queryTrimmed.trim() : "";
+    if (!q || !contactOnlyThanksSuppressQueryRef_) {
+        return false;
+    }
+    if (contactOnlyThanksSuppressQueryRef_ !== q) {
+        return false;
+    }
+    try {
+        if (event && typeof event.preventDefault === "function") {
+            event.preventDefault();
+        }
+    } catch {
+        /* ignore */
+    }
+    contactOnlyThanksSuppressQueryRef_ = "";
+    return true;
+}
 
 /**
  * When Dialogflow/chat captures mobile, POST a Sheets-only row without waiting for the contact form.
