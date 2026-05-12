@@ -15528,6 +15528,8 @@ function syncDfMessengerSessionParametersFromClientContext(dfMessenger) {
         add("referrer_url");
         add("appointmentdate");
         add("appointmenttime");
+        add("rating");
+        add("message");
         const spRaw = /** @type {Record<string, unknown>} */ (cx).session_params;
         if (spRaw && typeof spRaw === "object" && !Array.isArray(spRaw)) {
             for (const [k, val] of Object.entries(spRaw)) {
