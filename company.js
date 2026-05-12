@@ -400,8 +400,6 @@ const PERSONA_MARKER_BOT = "dfchat-persona-bot";
 const PERSONA_MARKER_BOT_TIME = "dfchat-persona-bot-time";
 const PERSONA_MARKER_USER = "dfchat-persona-user";
 const PERSONA_URL_MARKER_BOT_IMG = "dfchat-bot-persona";
-/** Single-image persona row (avatar in SVG + time). Name avoids substring `dfchat-bot-persona` so guard CSS does not force 32×32 on the row. */
-const PERSONA_URL_MARKER_BOT_ROW = "dfchat-persona-bot-row";
 
 function readBotPersonaConfig() {
     const raw = COMMON_CONFIG.botPersona && typeof COMMON_CONFIG.botPersona === "object"
@@ -17092,6 +17090,21 @@ function renderPersona(dfMessenger, personaType, label, timeLabelForUser) {
     schedulePersonaShadowFix(dfMessenger);
 }
 
+/**
+ * External avatar + message time as markdown bold (same line as the image so one `<p>`; HTML spans are often stripped).
+ * @param {string} baseUrl
+ * @param {string} timeLabel
+ */
+function buildBotPersonaImageMarkdownWithTime_(baseUrl, timeLabel) {
+    const imgMd = `![](${baseUrl}#${PERSONA_URL_MARKER_BOT_IMG})`;
+    const t = typeof timeLabel === "string" ? timeLabel.trim() : "";
+    if (!t) {
+        return imgMd;
+    }
+    const safeBold = t.replace(/\*\*/g, "").replace(/\*/g, "×");
+    return `${imgMd} **${safeBold}**`;
+}
+
 function renderBotPersona(dfMessenger, messageInstantMs) {
     if (!dfMessenger || typeof dfMessenger.renderCustomText !== "function") {
         return;
@@ -17118,8 +17131,9 @@ function renderBotPersona(dfMessenger, messageInstantMs) {
     const img = cfg.image;
     const baseUrl = img.url.split("#")[0].trim();
     if (img.showTime) {
-        const rowDataUrl = createBotPersonaAvatarTimeRowDataUrl(img, baseUrl, nonce, when, incDate);
-        dfMessenger.renderCustomText(`![](${rowDataUrl}#${PERSONA_URL_MARKER_BOT_ROW})`, true);
+        const timeLabel = getBotPersonaMessageTimeLabel(img.timeZone, when, incDate);
+        const md = buildBotPersonaImageMarkdownWithTime_(baseUrl, timeLabel);
+        dfMessenger.renderCustomText(md, true);
     } else {
         dfMessenger.renderCustomText(`![](${baseUrl}#${PERSONA_URL_MARKER_BOT_IMG})`, true);
     }
@@ -17225,30 +17239,6 @@ function createPersonaBadgeDataUrl(label, timeLabel, nonce = "", personaDescMark
     return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
 }
 
-function createBotPersonaAvatarTimeRowDataUrl(imageCfg, avatarHttpUrl, nonce, messageInstantMs, includeDate) {
-    const w = typeof imageCfg.widthPx === "number" && Number.isFinite(imageCfg.widthPx) ? imageCfg.widthPx : 32;
-    const h = typeof imageCfg.heightPx === "number" && Number.isFinite(imageCfg.heightPx) ? imageCfg.heightPx : 32;
-    const timeLabel = getBotPersonaMessageTimeLabel(
-        imageCfg.timeZone,
-        messageInstantMs,
-        includeDate !== false
-    );
-    const gap = 8;
-    const textAreaW = Math.max(80, Math.round(timeLabel.length * 5.5 + 20));
-    const totalW = w + gap + textAreaW;
-    const totalH = Math.max(h, 28);
-    const textY = Math.round(totalH * 0.68);
-    const textX = w + gap;
-    const safeHref = escapeXml(avatarHttpUrl);
-    const desc = `${PERSONA_URL_MARKER_BOT_ROW}|${nonce}`;
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${totalW}" height="${totalH}" viewBox="0 0 ${totalW} ${totalH}">
-<desc>${escapeXml(desc)}</desc>
-<image href="${safeHref}" xlink:href="${safeHref}" x="0" y="0" width="${w}" height="${h}" preserveAspectRatio="xMidYMid meet"/>
-<text x="${textX}" y="${textY}" font-family="${PERSONA_FONT_FAMILY}" font-size="${PERSONA_FONT_SIZE}" font-weight="${PERSONA_FONT_WEIGHT}" fill="${PERSONA_TEXT_COLOR}" opacity="0.84">${escapeXml(timeLabel)}</text>
-</svg>`;
-    return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
-}
-
 function getPersonaImageGuardCss() {
     const cfg = BOT_PERSONA_CONFIG;
     const img = cfg.image;
@@ -17270,17 +17260,20 @@ img[src*="%23dfchat-bot-persona"] {
   box-sizing: border-box !important;
   transform: translateY(${personaDown}) !important;
 }
-img[src*="dfchat-persona-bot-row"],
-img[src*="%23dfchat-persona-bot-row"] {
-  width: auto !important;
-  height: auto !important;
-  max-width: min(440px, 100%) !important;
-  max-height: ${Math.max(Number(img.heightPx) || 32, 32)}px !important;
-  object-fit: contain !important;
-  display: inline-block !important;
-  vertical-align: middle !important;
-  box-sizing: border-box !important;
-  transform: translateY(${personaDown}) !important;
+.message.bot-message.markdown:has(img[src*="dfchat-bot-persona"]) p + p,
+.message.bot-message.markdown:has(img[src*="%23dfchat-bot-persona"]) p + p {
+  color: ${PERSONA_TEXT_COLOR} !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  line-height: 1.25 !important;
+}
+.message.bot-message.markdown:has(img[src*="dfchat-bot-persona"]) p strong,
+.message.bot-message.markdown:has(img[src*="%23dfchat-bot-persona"]) p strong {
+  color: ${PERSONA_TEXT_COLOR} !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
 }
 img[src*="dfchat-persona-bot-time"] {
   height: 28px !important;
@@ -17299,10 +17292,6 @@ img[src*="%23dfchat-bot-persona"] {
   transform: translateY(${mobY}px) translateX(-${mobX}px) !important;
 }
 img[src*="dfchat-persona-bot-time"] {
-  transform: translateY(${mobY}px) translateX(-${mobX}px) !important;
-}
-img[src*="dfchat-persona-bot-row"],
-img[src*="%23dfchat-persona-bot-row"] {
   transform: translateY(${mobY}px) translateX(-${mobX}px) !important;
 }
 }
@@ -17949,8 +17938,6 @@ function decoratePersonaMessages(dfMessenger) {
 
         const personaImages = root.querySelectorAll(
             [
-                `img[src*='#${PERSONA_URL_MARKER_BOT_ROW}']`,
-                `img[src*='%23${PERSONA_URL_MARKER_BOT_ROW}']`,
                 `img[src*='#${PERSONA_URL_MARKER_BOT_IMG}']`,
                 `img[src*='${PERSONA_MARKER_BOT_TIME}']`,
                 `img[src*='${PERSONA_MARKER_USER}|']`,
@@ -17992,10 +17979,6 @@ function getPersonaType(imageNode) {
         return "user";
     }
 
-    if (source.includes(`#${PERSONA_URL_MARKER_BOT_ROW}`) || source.includes(`%23${PERSONA_URL_MARKER_BOT_ROW}`)) {
-        return "bot";
-    }
-
     if (source.includes(`#${PERSONA_URL_MARKER_BOT_IMG}`)) {
         return "bot";
     }
@@ -18012,9 +17995,6 @@ function getPersonaType(imageNode) {
         try {
             const raw = source.replace(/^data:image\/svg\+xml;utf8,/, "").replace(/^data:image\/svg\+xml,/, "");
             const decoded = decodeURIComponent(raw);
-            if (decoded.includes(PERSONA_URL_MARKER_BOT_ROW)) {
-                return "bot";
-            }
             if (decoded.includes(`<desc>${PERSONA_MARKER_USER}`) || decoded.includes(`${PERSONA_MARKER_USER}|`)) {
                 return "user";
             }
@@ -18075,17 +18055,11 @@ function stylePersonaContainer(container, imageNode, personaType) {
     const src = imageNode.getAttribute("src") || "";
     if (personaType === "bot" && BOT_PERSONA_CONFIG.mode === "image") {
         const { widthPx, heightPx, showTime } = BOT_PERSONA_CONFIG.image;
-        const isRow = src.includes(`#${PERSONA_URL_MARKER_BOT_ROW}`) || src.includes(`%23${PERSONA_URL_MARKER_BOT_ROW}`);
         const isCat = src.includes(`#${PERSONA_URL_MARKER_BOT_IMG}`);
         const isTime = src.includes(PERSONA_MARKER_BOT_TIME);
         imageNode.style.display = "inline-block";
         imageNode.style.verticalAlign = "middle";
-        if (isRow) {
-            imageNode.style.height = `${Math.max(heightPx, 28)}px`;
-            imageNode.style.width = "auto";
-            imageNode.style.maxWidth = "min(440px, 100%)";
-            imageNode.style.objectFit = "contain";
-        } else if (isCat) {
+        if (isCat) {
             imageNode.style.height = `${heightPx}px`;
             imageNode.style.width = `${widthPx}px`;
             imageNode.style.objectFit = "contain";
