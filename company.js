@@ -413,8 +413,12 @@ function readBotPersonaConfig() {
         : 28;
     const emojiTime = raw.emojiTime && typeof raw.emojiTime === "object" ? raw.emojiTime : {};
     const image = raw.image && typeof raw.image === "object" ? raw.image : {};
-    /** Extra px added to the baseline 250px margin so the user persona row sits farther right. */
-    const userPersonaShiftRightPx = typeof raw.userPersonaShiftRightPx === "number" && Number.isFinite(raw.userPersonaShiftRightPx) && raw.userPersonaShiftRightPx >= 0
+    /**
+     * Horizontal `translateX` (px) applied to the user persona caption. Positive = right, **negative = left**.
+     * `cssUserPersonaTranslateX` clamps to ±56, so any number in `[-56, 56]` is honoured here verbatim
+     * (legacy `>= 0` filter dropped negative values to the default and made the caption drift right).
+     */
+    const userPersonaShiftRightPx = typeof raw.userPersonaShiftRightPx === "number" && Number.isFinite(raw.userPersonaShiftRightPx)
         ? raw.userPersonaShiftRightPx
         : 24;
     /** On narrow viewports, subtract from computed user persona `margin-left` to move strip left. */
@@ -425,8 +429,11 @@ function readBotPersonaConfig() {
     const userPersonaNudgeUpPx = typeof raw.userPersonaNudgeUpPx === "number" && Number.isFinite(raw.userPersonaNudgeUpPx) && raw.userPersonaNudgeUpPx >= 0 && raw.userPersonaNudgeUpPx <= 32
         ? raw.userPersonaNudgeUpPx
         : 6;
-    /** Wide viewports only: added to computed margin-left (mobile path ignores this; use `userPersonaMobileNudgeLeftPx` for phones). */
-    const userPersonaShiftRightDeskExtraPx = typeof raw.userPersonaShiftRightDeskExtraPx === "number" && Number.isFinite(raw.userPersonaShiftRightDeskExtraPx) && raw.userPersonaShiftRightDeskExtraPx >= 0 && raw.userPersonaShiftRightDeskExtraPx <= 120
+    /**
+     * Wide-viewport-only delta added to `userPersonaShiftRightPx`. Negative = pull further left on desktop
+     * only. `cssUserPersonaTranslateX` clamps to ±48; anything in `[-120, 120]` is accepted here.
+     */
+    const userPersonaShiftRightDeskExtraPx = typeof raw.userPersonaShiftRightDeskExtraPx === "number" && Number.isFinite(raw.userPersonaShiftRightDeskExtraPx) && raw.userPersonaShiftRightDeskExtraPx >= -120 && raw.userPersonaShiftRightDeskExtraPx <= 120
         ? raw.userPersonaShiftRightDeskExtraPx
         : 0;
     /** When true (default), bot persona clock shows calendar date + time for this reply; false = time only. */
@@ -1401,7 +1408,7 @@ const originalTextNodeContent = new Map();
 const originalElementAttributes = new Map();
 const googleTranslationCache = new Map();
 
-const COMPANY_JS_BUILD_TAG = "20260512-18";
+const COMPANY_JS_BUILD_TAG = "20260512-19";
 const COMPANY_DEBUG_QUERY_FLAG = "dfchatDebug";
 let debugMountAttemptSeq = 0;
 let debugBadgeLastRenderAt = 0;
