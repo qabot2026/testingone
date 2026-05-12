@@ -145,7 +145,8 @@ window.COMPANY_CHAT_UI_CONFIG = {
        * When the limit is hit, the bot shows `blockMessage` and opens the contact form (see `openContactFormOnBlock`).
        * Optional `dialogflowEventOnBlock`: CX custom event name sent after the form opens (define the same event in CX).
        */
-      ,
+      blockChatWithoutMobile: {
+        enabled: true,
         maxUserQueries: 2,
         blockMessage:
           "You've reached the message limit without a mobile number. Please enter your mobile number in the form that just opened, or type it in chat.",
