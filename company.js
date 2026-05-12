@@ -432,7 +432,7 @@ function readBotPersonaConfig() {
     /** Visible space (px) under the persona row before the assistant reply bubble (`tightenBelowPx` overrides are softened). */
     const gapBelowAssistantPx = typeof raw.gapBelowAssistantPx === "number" && Number.isFinite(raw.gapBelowAssistantPx) && raw.gapBelowAssistantPx >= 0 && raw.gapBelowAssistantPx <= 64
         ? raw.gapBelowAssistantPx
-        : 14;
+        : 7;
     return {
         mode,
         threadAvatarSizePx,
@@ -1390,7 +1390,7 @@ const originalTextNodeContent = new Map();
 const originalElementAttributes = new Map();
 const googleTranslationCache = new Map();
 
-const COMPANY_JS_BUILD_TAG = "20260512-06";
+const COMPANY_JS_BUILD_TAG = "20260512-07";
 const COMPANY_DEBUG_QUERY_FLAG = "dfchatDebug";
 let debugMountAttemptSeq = 0;
 let debugBadgeLastRenderAt = 0;
@@ -18481,7 +18481,7 @@ function stylePersonaContainer(container, imageNode, personaType) {
             current.style.justifyContent = "flex-start";
             current.style.marginTop = "0px";
             {
-                const gap = Math.max(0, Math.min(64, BOT_PERSONA_CONFIG.gapBelowAssistantPx ?? 14));
+                const gap = Math.max(0, Math.min(64, BOT_PERSONA_CONFIG.gapBelowAssistantPx ?? 7));
                 current.style.marginBottom = `${gap}px`;
             }
             current.style.marginLeft = "0px";
