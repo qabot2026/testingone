@@ -1396,7 +1396,7 @@ const originalTextNodeContent = new Map();
 const originalElementAttributes = new Map();
 const googleTranslationCache = new Map();
 
-const COMPANY_JS_BUILD_TAG = "20260512-14";
+const COMPANY_JS_BUILD_TAG = "20260512-15";
 const COMPANY_DEBUG_QUERY_FLAG = "dfchatDebug";
 let debugMountAttemptSeq = 0;
 let debugBadgeLastRenderAt = 0;
@@ -17687,6 +17687,26 @@ df-messenger-message-list {
   border-top-right-radius: ${r.topRight} !important;
   border-bottom-left-radius: ${r.bottomLeft} !important;
   border-bottom-right-radius: ${r.bottomRight} !important;
+}
+/*
+ * Force the open chat panel surface to flat white. df-messenger only paints
+ * background on .message-list-wrapper (via --df-messenger-chat-background) —
+ * .chat-wrapper itself has no background, so any padding/border-radius gap or
+ * the input row area can show through as the page color (looks transparent).
+ * Set white on every layer so the panel is opaque white regardless of where
+ * the user is looking inside it.
+ */
+.chat-wrapper,
+.min-chat-wrapper,
+df-messenger-chat,
+df-messenger-chat-bubble,
+.message-list-wrapper,
+df-messenger-message-list,
+#message-list,
+#messageList {
+  background: #ffffff !important;
+  background-color: #ffffff !important;
+  background-image: none !important;
 }
 `;
 }
