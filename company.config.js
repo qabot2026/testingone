@@ -147,7 +147,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
        */
       blockChatWithoutMobile: {
         enabled: true,
-        maxUserQueries: 20,
+        maxUserQueries: 2,
         blockMessage:
           "You've reached the message limit without a mobile number. Please enter your mobile number in the form that just opened, or type it in chat.",
         openContactFormOnBlock: true,

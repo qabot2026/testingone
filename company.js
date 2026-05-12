@@ -276,9 +276,8 @@ function resolveMobileBlockContactFormId_() {
     if (explicit) {
         return canonicalContactFormId_(explicit);
     }
-    const fr = readCommonFormConfigRoot();
-    const forms = fr.forms && typeof fr.forms === "object" ? fr.forms : null;
-    if (forms && forms.contact) {
+    const merged = getRuntimeMergedFormDefinitions_();
+    if (merged.contact) {
         return "contact";
     }
     return getDefaultContactFormId();
@@ -318,13 +317,17 @@ function openContactFormAfterMobileBlockGate_() {
             focusMobileFieldInActiveContactForm_();
             return;
         }
-        const formId = resolveMobileBlockContactFormId_();
-        const fr = readCommonFormConfigRoot();
-        const forms = fr.forms && typeof fr.forms === "object" ? fr.forms : null;
-        if (!formId || !forms || !forms[formId]) {
-            return;
+        const merged = getRuntimeMergedFormDefinitions_();
+        const mergedKeys = Object.keys(merged);
+        if (mergedKeys.length > 0) {
+            let formId = resolveMobileBlockContactFormId_();
+            if (!formId || !merged[formId]) {
+                formId = getDefaultContactFormId();
+            }
+            if (formId && merged[formId]) {
+                setActiveContactFormId(formId);
+            }
         }
-        setActiveContactFormId(formId);
         contactFormOpenPending = false;
         window.setTimeout(() => {
             openContactForm();
@@ -4729,6 +4732,19 @@ function readCommonFormConfigRoot() {
 }
 
 /**
+ * `common.form.forms` is often `Object.assign({}, window.__DFCHAT_FORMS__)` at config parse time; `forms/*.js`
+ * may register after that, leaving a frozen empty object. Merge snapshot + live registry for lookups.
+ * @returns {Record<string, Record<string, unknown>>}
+ */
+function getRuntimeMergedFormDefinitions_() {
+    const fr = readCommonFormConfigRoot();
+    const fromConfig = fr.forms && typeof fr.forms === "object" ? fr.forms : {};
+    const g = typeof globalThis !== "undefined" ? globalThis : /** @type {Window} */ (window);
+    const live = g && g.__DFCHAT_FORMS__ && typeof g.__DFCHAT_FORMS__ === "object" ? g.__DFCHAT_FORMS__ : {};
+    return Object.assign({}, fromConfig, live);
+}
+
+/**
  * @param {unknown} v
  * @param {boolean} defaultBool
  * @returns {boolean}
@@ -4864,18 +4880,16 @@ function getBuiltinDefaultContactFormFields() {
  */
 function getDefaultContactFormId() {
     const c = readCommonFormConfigRoot();
-    if (c.forms && typeof c.forms === "object") {
-        const keys = Object.keys(c.forms);
-        if (keys.length === 0) {
-            return "default";
-        }
-        const want = typeof c.defaultFormId === "string" ? c.defaultFormId.trim() : "";
-        if (want && c.forms[want]) {
-            return want;
-        }
-        return keys[0];
+    const merged = getRuntimeMergedFormDefinitions_();
+    const keys = Object.keys(merged);
+    if (keys.length === 0) {
+        return "default";
     }
-    return "default";
+    const want = typeof c.defaultFormId === "string" ? c.defaultFormId.trim() : "";
+    if (want && merged[want]) {
+        return want;
+    }
+    return keys[0];
 }
 
 /**
@@ -4883,16 +4897,17 @@ function getDefaultContactFormId() {
  */
 function getResolvedContactFormBlock() {
     const c = readCommonFormConfigRoot();
+    const merged = getRuntimeMergedFormDefinitions_();
     if (activeContactFormId == null) {
         activeContactFormId = getDefaultContactFormId();
     }
-    if (c.forms && typeof c.forms === "object" && Object.keys(c.forms).length) {
+    if (Object.keys(merged).length > 0) {
         let key = activeContactFormId;
-        if (!c.forms[key]) {
+        if (!merged[key]) {
             key = getDefaultContactFormId();
             activeContactFormId = key;
         }
-        const f = c.forms[key];
+        const f = merged[key];
         return { formKey: key, block: f && typeof f === "object" ? f : {} };
     }
     return {
@@ -5254,13 +5269,12 @@ function setupOtpFormTwoStepIfNeeded() {
  * @returns {string}
  */
 function canonicalContactFormId_(requestedId) {
-    const c = readCommonFormConfigRoot();
-    const forms = c.forms && typeof c.forms === "object" ? c.forms : null;
+    const merged = getRuntimeMergedFormDefinitions_();
     const raw = String(requestedId || "").trim();
-    if (!raw || !forms) {
+    if (!raw || Object.keys(merged).length === 0) {
         return raw;
     }
-    if (forms[raw]) {
+    if (merged[raw]) {
         return raw;
     }
     const compact = raw.toLowerCase().replace(/[\s_-]+/g, "");
@@ -5275,7 +5289,7 @@ function canonicalContactFormId_(requestedId) {
         attachment: "uploadDocument"
     };
     const mapped = aliases[compact];
-    if (mapped && forms[mapped]) {
+    if (mapped && merged[mapped]) {
         return mapped;
     }
     return raw;
@@ -5287,15 +5301,15 @@ function canonicalContactFormId_(requestedId) {
  * @param {Event} [event]
  */
 function applyDefaultContactFormForBareOpenFormAction(event) {
-    const c = readCommonFormConfigRoot();
-    if (!c.forms || typeof c.forms !== "object" || !Object.keys(c.forms).length) {
+    const merged = getRuntimeMergedFormDefinitions_();
+    if (!Object.keys(merged).length) {
         return;
     }
     try {
         const intentName = getIntentDisplayNameFromDfEvent(event);
         if (
             intentName
-            && c.forms.uploadDocument
+            && merged.uploadDocument
             && /\b(upload|uploading|document|documents|file|files|attachment|attachments)\b/i.test(intentName)
         ) {
             setActiveContactFormId("uploadDocument");
@@ -5310,7 +5324,7 @@ function applyDefaultContactFormForBareOpenFormAction(event) {
         const qs = prev && Array.isArray(prev.user_queries) ? prev.user_queries : [];
         const recent = qs.slice(-8).map((q) => String(q || "").trim().toLowerCase());
         const uploadRe = /\b(upload|uploading|document|documents|docs|pdf|file|files|attachment|attachments)\b/i;
-        if (c.forms.uploadDocument && recent.some((line) => line && uploadRe.test(line))) {
+        if (merged.uploadDocument && recent.some((line) => line && uploadRe.test(line))) {
             setActiveContactFormId("uploadDocument");
             return;
         }
@@ -5318,7 +5332,7 @@ function applyDefaultContactFormForBareOpenFormAction(event) {
         /* ignore */
     }
     const defId = getDefaultContactFormId();
-    if (defId && c.forms[defId]) {
+    if (defId && merged[defId]) {
         setActiveContactFormId(defId);
     }
 }
@@ -5339,14 +5353,15 @@ function setActiveContactFormId(formId) {
         id = "appintmentformdoctor";
     }
     const c = readCommonFormConfigRoot();
+    const merged = getRuntimeMergedFormDefinitions_();
     const alias = typeof c.legacyAppointmentFormAlias === "string" ? c.legacyAppointmentFormAlias.trim() : "";
-    if (id === "appointment" && alias && c.forms && typeof c.forms === "object" && c.forms[alias]) {
+    if (id === "appointment" && alias && merged[alias]) {
         id = alias;
     }
     if (activeContactFormId === id) {
         return;
     }
-    if (!c.forms || typeof c.forms !== "object" || !c.forms[id]) {
+    if (!merged[id]) {
         return;
     }
     activeContactFormId = id;
@@ -12512,8 +12527,8 @@ function handleDfResponseReceived(event) {
     const willOpenForm = shouldOpenContactForm(event);
     const rawOpenFormId = extractOpenFormIdFromEvent(event);
     const openFormId = rawOpenFormId ? canonicalContactFormId_(rawOpenFormId) : "";
-    const fr = readCommonFormConfigRoot();
-    const formRegistered = !!(openFormId && fr.forms && typeof fr.forms === "object" && fr.forms[openFormId]);
+    const mergedOpen = getRuntimeMergedFormDefinitions_();
+    const formRegistered = !!(openFormId && mergedOpen[openFormId]);
     if (formRegistered) {
         setActiveContactFormId(openFormId);
         setTimeout(() => applyFormPrefillFromSession(openFormId), 100);
@@ -12539,8 +12554,7 @@ function handleDfResponseReceived(event) {
             pendingOpenFormFollowupSubmit = null;
             pendingOpenFormFollowupCancel = null;
             contactFormOpenPending = false;
-            const frSkip = readCommonFormConfigRoot();
-            const formsSkip = frSkip && frSkip.forms && typeof frSkip.forms === "object" ? frSkip.forms : null;
+            const formsSkip = getRuntimeMergedFormDefinitions_();
             const chainNext = consumeNextRegisteredFormFromPendingChain_(formsSkip);
             if (chainNext) {
                 // Contact already satisfied in session (e.g. filled in another intent) — open first queued form now.
@@ -13283,8 +13297,8 @@ function applyContactFormPrefill(values) {
 
 function applyFormPrefillFromSession(formId) {
     const stored = readStoredClientContext();
-    const fr = typeof window !== "undefined" ? window.__DFCHAT_FORMS__ : globalThis.__DFCHAT_FORMS__;
-    const formDef = fr && fr.forms && typeof fr.forms === "object" ? fr.forms[formId] : null;
+    const merged = getRuntimeMergedFormDefinitions_();
+    const formDef = merged[formId];
     if (!formDef || !formDef.fields || !Array.isArray(formDef.fields)) {
         return;
     }
@@ -14039,16 +14053,15 @@ function submitContactForm(event) {
             dispatchPendingOpenFormFollowup_("submit");
             // Optional chaining: open the next queued form after each successful submit (FIFO).
             try {
-                const fr = readCommonFormConfigRoot();
-                const forms = fr && fr.forms && typeof fr.forms === "object" ? fr.forms : null;
+                const forms = getRuntimeMergedFormDefinitions_();
                 let resolvedNext = consumeNextRegisteredFormFromPendingChain_(forms);
                 if (!resolvedNext && cfg0 && typeof cfg0.nextFormId === "string" && cfg0.nextFormId.trim()) {
                     const cand = canonicalContactFormId_(cfg0.nextFormId.trim());
-                    if (forms && forms[cand]) {
+                    if (forms[cand]) {
                         resolvedNext = cand;
                     }
                 }
-                if (resolvedNext && forms && forms[resolvedNext]) {
+                if (resolvedNext && forms[resolvedNext]) {
                     window.setTimeout(() => {
                         setActiveContactFormId(resolvedNext);
                         openContactForm();
