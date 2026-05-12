@@ -491,7 +491,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
       "--df-messenger-input-font-size": "16px",
       "--df-messenger-input-font-weight": "600",
       "--df-messenger-primary-color": "#0284c7",
-      "--df-messenger-chat-background": "linear-gradient(180deg, #fbfdff 0%, #f0f9ff 100%)",
+      "--df-messenger-chat-background": "#ffffff",
       "--df-messenger-message-bot-background": "linear-gradient(168deg, #e8f6ff 0%, #bae6fd 100%)",
       "--df-messenger-message-bot-font-color": "#0c4a6e",
       "--df-messenger-message-user-background": "linear-gradient(145deg, #0284c7 0%, #0ea5e9 100%)",
