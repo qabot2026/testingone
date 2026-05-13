@@ -5842,6 +5842,9 @@ function resolveContactFormFieldIconKey(field) {
     if (t === "time") {
         return "clock";
     }
+    if (t === "geolocation") {
+        return "location";
+    }
     if (nm === "location" || nm === "address" || nm === "venue") {
         return "location";
     }
@@ -6100,6 +6103,17 @@ function buildContactFormFieldRow(field) {
         row.appendChild(shell);
         window.queueMicrotask(() => {
             mountContactFormAppointmentPicker(shell, field, t === "appointmentdoctor");
+        });
+        return row;
+    } else if (t === "geolocation") {
+        const shell = document.createElement("div");
+        shell.className = "dfchat-contact-form__geolocation-shell";
+        shell.style.cssText = "width:100%;max-width:100%;box-sizing:border-box";
+        row.classList.add("dfchat-contact-form__row--geolocation");
+        row.appendChild(iconWrap);
+        row.appendChild(shell);
+        window.queueMicrotask(() => {
+            mountContactFormGeolocationPicker(shell, field);
         });
         return row;
     } else {
@@ -6530,6 +6544,321 @@ function mountContactFormAppointmentPicker(hostEl, field, isDoctor) {
     });
 
     void renderCal();
+}
+
+/**
+ * One-click geolocation picker for the `nearestBranch` form (or any form using `type: "geolocation"`).
+ * Populates these hidden fields once the visitor taps a result card:
+ *   `hiddenLatId` / `hiddenLngId` — `navigator.geolocation` reading
+ *   `hiddenBranchIdId` — `BranchId` of the selected branch
+ *   `hiddenBranchNameId` / `hiddenBranchCityId` / `hiddenBranchAreaId` / `hiddenBranchDistanceKmId`
+ *
+ * Backend: `GET /api/nearest-branches?lat=&lng=&limit=` sorts branches by Haversine distance.
+ *
+ * @param {HTMLElement} hostEl
+ * @param {Record<string, unknown>} field
+ */
+function mountContactFormGeolocationPicker(hostEl, field) {
+    const hiddenLatId = typeof field.hiddenLatId === "string" && field.hiddenLatId.trim()
+        ? field.hiddenLatId.trim()
+        : `${field.id}__lat`;
+    const hiddenLngId = typeof field.hiddenLngId === "string" && field.hiddenLngId.trim()
+        ? field.hiddenLngId.trim()
+        : `${field.id}__lng`;
+    const hiddenBranchIdId = typeof field.hiddenBranchIdId === "string" && field.hiddenBranchIdId.trim()
+        ? field.hiddenBranchIdId.trim()
+        : `${field.id}__branchId`;
+    const hiddenBranchNameId = typeof field.hiddenBranchNameId === "string" && field.hiddenBranchNameId.trim()
+        ? field.hiddenBranchNameId.trim()
+        : `${field.id}__branchName`;
+    const hiddenBranchCityId = typeof field.hiddenBranchCityId === "string" && field.hiddenBranchCityId.trim()
+        ? field.hiddenBranchCityId.trim()
+        : `${field.id}__branchCity`;
+    const hiddenBranchAreaId = typeof field.hiddenBranchAreaId === "string" && field.hiddenBranchAreaId.trim()
+        ? field.hiddenBranchAreaId.trim()
+        : `${field.id}__branchArea`;
+    const hiddenBranchDistanceKmId = typeof field.hiddenBranchDistanceKmId === "string" && field.hiddenBranchDistanceKmId.trim()
+        ? field.hiddenBranchDistanceKmId.trim()
+        : `${field.id}__branchDistanceKm`;
+    const resultLimit = typeof field.resultLimit === "number" && field.resultLimit > 0
+        ? Math.min(20, Math.floor(field.resultLimit))
+        : 5;
+
+    /** @param {string} id */
+    function makeHidden(id) {
+        const h = document.createElement("input");
+        h.type = "hidden";
+        h.id = id;
+        h.value = "";
+        return h;
+    }
+
+    const hidLat = makeHidden(hiddenLatId);
+    const hidLng = makeHidden(hiddenLngId);
+    const hidBranchId = makeHidden(hiddenBranchIdId);
+    const hidBranchName = makeHidden(hiddenBranchNameId);
+    const hidBranchCity = makeHidden(hiddenBranchCityId);
+    const hidBranchArea = makeHidden(hiddenBranchAreaId);
+    const hidBranchDistanceKm = makeHidden(hiddenBranchDistanceKmId);
+
+    hostEl.appendChild(hidLat);
+    hostEl.appendChild(hidLng);
+    hostEl.appendChild(hidBranchId);
+    hostEl.appendChild(hidBranchName);
+    hostEl.appendChild(hidBranchCity);
+    hostEl.appendChild(hidBranchArea);
+    hostEl.appendChild(hidBranchDistanceKm);
+
+    const intro = document.createElement("div");
+    intro.style.cssText = "font:500 12px/1.4 Manrope,sans-serif;color:rgba(15,23,42,0.75);margin:0 0 8px";
+    intro.textContent = pickContactFormLocalizedLine(
+        /** @type {Record<string, unknown>} */ (field.introByLanguage),
+        activeLanguage
+    ) || "Tap the button below; your browser will ask for permission.";
+
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "dfchat-contact-form__geolocation-btn";
+    btn.style.cssText = [
+        "appearance:none",
+        "display:inline-flex",
+        "align-items:center",
+        "gap:8px",
+        "padding:10px 14px",
+        "border-radius:10px",
+        "border:1px solid rgba(37,99,235,0.45)",
+        "background:linear-gradient(180deg,rgba(59,130,246,0.18) 0%,rgba(37,99,235,0.28) 100%)",
+        "color:#1e3a8a",
+        "font:700 13px/1.2 Manrope,sans-serif",
+        "cursor:pointer",
+        "transition:box-shadow .15s ease,transform .12s ease",
+        "width:100%",
+        "justify-content:center"
+    ].join(";");
+    btn.innerHTML =
+        '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+        + '<path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>'
+        + '<span class="dfchat-contact-form__geolocation-btn-label"></span>';
+    const btnLabelEl = btn.querySelector(".dfchat-contact-form__geolocation-btn-label");
+    function setBtnLabel(text) {
+        if (btnLabelEl) {
+            btnLabelEl.textContent = text;
+        }
+    }
+    setBtnLabel(
+        pickContactFormLocalizedLine(
+            /** @type {Record<string, unknown>} */ (field.buttonLabelByLanguage),
+            activeLanguage
+        ) || "Use my location"
+    );
+
+    const status = document.createElement("div");
+    status.setAttribute("role", "status");
+    status.setAttribute("aria-live", "polite");
+    status.style.cssText = "font:600 11px/1.4 Manrope,sans-serif;color:rgba(15,23,42,0.7);margin:8px 0 0;min-height:1.4em";
+
+    const coords = document.createElement("div");
+    coords.style.cssText = "font:600 11px/1.4 Manrope,sans-serif;color:rgba(15,23,42,0.55);margin:4px 0 0;display:none";
+
+    const pickPrompt = document.createElement("div");
+    pickPrompt.style.cssText = "font:700 12px/1.35 Manrope,sans-serif;color:rgba(15,23,42,0.85);margin:14px 0 6px;display:none";
+    pickPrompt.textContent = pickContactFormLocalizedLine(
+        /** @type {Record<string, unknown>} */ (field.pickPromptByLanguage),
+        activeLanguage
+    ) || "Pick a branch to continue:";
+
+    const list = document.createElement("div");
+    list.style.cssText = "display:flex;flex-direction:column;gap:6px";
+
+    hostEl.appendChild(intro);
+    hostEl.appendChild(btn);
+    hostEl.appendChild(status);
+    hostEl.appendChild(coords);
+    hostEl.appendChild(pickPrompt);
+    hostEl.appendChild(list);
+
+    const cardStyleBase =
+        "display:flex;align-items:center;justify-content:space-between;gap:8px;"
+        + "padding:8px 10px;border:1px solid rgba(148,163,184,0.45);border-radius:10px;background:#fff;"
+        + "transition:border-color .15s ease,box-shadow .15s ease";
+    const cardStyleSelected =
+        "display:flex;align-items:center;justify-content:space-between;gap:8px;"
+        + "padding:8px 10px;border:2px solid rgba(37,99,235,0.9);border-radius:10px;"
+        + "background:rgba(59,130,246,0.10);box-shadow:0 0 0 3px rgba(37,99,235,0.18)";
+
+    /** @type {HTMLElement | null} */
+    let selectedCard = null;
+
+    function clearSelection() {
+        if (selectedCard) {
+            selectedCard.style.cssText = cardStyleBase;
+        }
+        selectedCard = null;
+        hidBranchId.value = "";
+        hidBranchName.value = "";
+        hidBranchCity.value = "";
+        hidBranchArea.value = "";
+        hidBranchDistanceKm.value = "";
+    }
+
+    function renderBranches(branches) {
+        list.innerHTML = "";
+        clearSelection();
+        if (!branches.length) {
+            pickPrompt.style.display = "none";
+            status.textContent = pickContactFormLocalizedLine(
+                /** @type {Record<string, unknown>} */ (field.noResultsByLanguage),
+                activeLanguage
+            ) || "No branches found near you.";
+            status.style.color = "#b45309";
+            return;
+        }
+        pickPrompt.style.display = "";
+        const selectLabel = pickContactFormLocalizedLine(
+            /** @type {Record<string, unknown>} */ (field.bookButtonLabelByLanguage),
+            activeLanguage
+        ) || "Select";
+        for (let i = 0; i < branches.length; i += 1) {
+            const b = branches[i];
+            const card = document.createElement("div");
+            card.style.cssText = cardStyleBase;
+
+            const info = document.createElement("div");
+            info.style.cssText = "display:flex;flex-direction:column;gap:2px;min-width:0;flex:1";
+
+            const title = document.createElement("div");
+            title.style.cssText = "font:700 12px/1.3 Manrope,sans-serif;color:#0f172a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis";
+            title.textContent = b.BranchName || `Branch #${b.BranchId}`;
+
+            const meta = document.createElement("div");
+            meta.style.cssText = "font:500 11px/1.3 Manrope,sans-serif;color:rgba(15,23,42,0.65)";
+            const cityArea = [b.Area, b.City].filter(Boolean).join(", ");
+            meta.textContent = cityArea || b.State || "";
+
+            const dist = document.createElement("div");
+            dist.style.cssText = "font:700 11px/1.3 Manrope,sans-serif;color:#1e3a8a";
+            const km = typeof b.distanceKm === "number" ? b.distanceKm : Number(b.distanceKm);
+            dist.textContent = Number.isFinite(km) ? `${km.toFixed(2)} km away` : "";
+
+            info.appendChild(title);
+            if (meta.textContent) info.appendChild(meta);
+            if (dist.textContent) info.appendChild(dist);
+
+            const pickBtn = document.createElement("button");
+            pickBtn.type = "button";
+            pickBtn.textContent = selectLabel;
+            pickBtn.style.cssText =
+                "appearance:none;border:1px solid rgba(37,99,235,0.6);background:rgba(59,130,246,0.12);"
+                + "color:#1e3a8a;font:700 11px/1.2 Manrope,sans-serif;padding:6px 10px;border-radius:8px;cursor:pointer;flex-shrink:0";
+
+            pickBtn.addEventListener("click", () => {
+                if (selectedCard && selectedCard !== card) {
+                    selectedCard.style.cssText = cardStyleBase;
+                }
+                selectedCard = card;
+                card.style.cssText = cardStyleSelected;
+                hidBranchId.value = String(b.BranchId || "").trim();
+                hidBranchName.value = String(b.BranchName || "").trim();
+                hidBranchCity.value = String(b.City || "").trim();
+                hidBranchArea.value = String(b.Area || "").trim();
+                hidBranchDistanceKm.value = Number.isFinite(km) ? String(km) : "";
+                status.style.color = "#166534";
+                status.textContent = `${b.BranchName} (${Number.isFinite(km) ? km.toFixed(2) + " km" : "selected"})`;
+            });
+
+            card.appendChild(info);
+            card.appendChild(pickBtn);
+            list.appendChild(card);
+        }
+    }
+
+    async function fetchAndShowNearest(lat, lng) {
+        const ep = getApiEndpoint("/api/nearest-branches");
+        if (!ep) {
+            status.style.color = "#b45309";
+            status.textContent = pickContactFormLocalizedLine(
+                /** @type {Record<string, unknown>} */ (field.fetchFailedByLanguage),
+                activeLanguage
+            ) || "Could not load nearby branches. Please try again.";
+            return;
+        }
+        const u = new URL(ep);
+        u.searchParams.set("lat", String(lat));
+        u.searchParams.set("lng", String(lng));
+        u.searchParams.set("limit", String(resultLimit));
+        try {
+            const r = await fetch(u.toString(), { credentials: "omit" });
+            const j = await r.json();
+            if (!j || !j.ok || !Array.isArray(j.branches)) {
+                throw new Error("Bad response");
+            }
+            renderBranches(j.branches);
+        } catch {
+            status.style.color = "#b45309";
+            status.textContent = pickContactFormLocalizedLine(
+                /** @type {Record<string, unknown>} */ (field.fetchFailedByLanguage),
+                activeLanguage
+            ) || "Could not load nearby branches. Please try again.";
+        }
+    }
+
+    function requestLocation() {
+        clearSelection();
+        list.innerHTML = "";
+        pickPrompt.style.display = "none";
+        coords.style.display = "none";
+        if (!navigator.geolocation || typeof navigator.geolocation.getCurrentPosition !== "function") {
+            status.style.color = "#b45309";
+            status.textContent = pickContactFormLocalizedLine(
+                /** @type {Record<string, unknown>} */ (field.unsupportedByLanguage),
+                activeLanguage
+            ) || "Your browser doesn't support geolocation.";
+            return;
+        }
+        status.style.color = "rgba(15,23,42,0.7)";
+        status.textContent = pickContactFormLocalizedLine(
+            /** @type {Record<string, unknown>} */ (field.locatingByLanguage),
+            activeLanguage
+        ) || "Locating you…";
+        btn.disabled = true;
+        navigator.geolocation.getCurrentPosition(
+            (pos) => {
+                btn.disabled = false;
+                setBtnLabel(
+                    pickContactFormLocalizedLine(
+                        /** @type {Record<string, unknown>} */ (field.retryButtonLabelByLanguage),
+                        activeLanguage
+                    ) || "Try again"
+                );
+                const lat = pos.coords.latitude;
+                const lng = pos.coords.longitude;
+                hidLat.value = String(lat);
+                hidLng.value = String(lng);
+                coords.textContent = `lat ${lat.toFixed(5)}, lng ${lng.toFixed(5)}`;
+                coords.style.display = "";
+                status.textContent = "";
+                void fetchAndShowNearest(lat, lng);
+            },
+            (err) => {
+                btn.disabled = false;
+                status.style.color = "#b45309";
+                if (err && err.code === 1) {
+                    status.textContent = pickContactFormLocalizedLine(
+                        /** @type {Record<string, unknown>} */ (field.permissionDeniedByLanguage),
+                        activeLanguage
+                    ) || "Location permission was blocked.";
+                } else {
+                    status.textContent = pickContactFormLocalizedLine(
+                        /** @type {Record<string, unknown>} */ (field.fetchFailedByLanguage),
+                        activeLanguage
+                    ) || "Could not get your location. Please try again.";
+                }
+            },
+            { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }
+        );
+    }
+
+    btn.addEventListener("click", requestLocation);
 }
 
 function syncAppointmentDoctorHiddenFromSession() {
@@ -14166,6 +14495,75 @@ function submitContactForm(event) {
                 continue;
             }
             const apptType = String(def.type || "").toLowerCase();
+            if (apptType === "geolocation") {
+                const latId = typeof def.hiddenLatId === "string" && def.hiddenLatId.trim()
+                    ? def.hiddenLatId.trim()
+                    : `${def.id}__lat`;
+                const lngId = typeof def.hiddenLngId === "string" && def.hiddenLngId.trim()
+                    ? def.hiddenLngId.trim()
+                    : `${def.id}__lng`;
+                const branchIdId = typeof def.hiddenBranchIdId === "string" && def.hiddenBranchIdId.trim()
+                    ? def.hiddenBranchIdId.trim()
+                    : `${def.id}__branchId`;
+                const branchNameId = typeof def.hiddenBranchNameId === "string" && def.hiddenBranchNameId.trim()
+                    ? def.hiddenBranchNameId.trim()
+                    : `${def.id}__branchName`;
+                const branchCityId = typeof def.hiddenBranchCityId === "string" && def.hiddenBranchCityId.trim()
+                    ? def.hiddenBranchCityId.trim()
+                    : `${def.id}__branchCity`;
+                const branchAreaId = typeof def.hiddenBranchAreaId === "string" && def.hiddenBranchAreaId.trim()
+                    ? def.hiddenBranchAreaId.trim()
+                    : `${def.id}__branchArea`;
+                const branchDistanceKmId = typeof def.hiddenBranchDistanceKmId === "string" && def.hiddenBranchDistanceKmId.trim()
+                    ? def.hiddenBranchDistanceKmId.trim()
+                    : `${def.id}__branchDistanceKm`;
+                const latEl = document.getElementById(latId);
+                const lngEl = document.getElementById(lngId);
+                const brIdEl = document.getElementById(branchIdId);
+                const brNmEl = document.getElementById(branchNameId);
+                const brCityEl = document.getElementById(branchCityId);
+                const brAreaEl = document.getElementById(branchAreaId);
+                const brDistEl = document.getElementById(branchDistanceKmId);
+                const latV = latEl && "value" in latEl ? String(latEl.value).trim() : "";
+                const lngV = lngEl && "value" in lngEl ? String(lngEl.value).trim() : "";
+                const brId = brIdEl && "value" in brIdEl ? String(brIdEl.value).trim() : "";
+                const brNm = brNmEl && "value" in brNmEl ? String(brNmEl.value).trim() : "";
+                const brCity = brCityEl && "value" in brCityEl ? String(brCityEl.value).trim() : "";
+                const brArea = brAreaEl && "value" in brAreaEl ? String(brAreaEl.value).trim() : "";
+                const brDist = brDistEl && "value" in brDistEl ? String(brDistEl.value).trim() : "";
+                if (def.required !== false) {
+                    if (!latV || !lngV) {
+                        if (status) {
+                            status.textContent = "Please share your location first.";
+                            status.classList.add("is-error");
+                            status.classList.remove("is-success");
+                        }
+                        return;
+                    }
+                    if (!brId) {
+                        if (status) {
+                            status.textContent = "Please pick a branch from the list.";
+                            status.classList.add("is-error");
+                            status.classList.remove("is-success");
+                        }
+                        return;
+                    }
+                }
+                if (latV) payload.lat = latV;
+                if (lngV) payload.lng = lngV;
+                if (brId) payload.branchId = brId;
+                if (brNm) payload.branchName = brNm;
+                if (brCity) payload.branchCity = brCity;
+                if (brArea) payload.branchArea = brArea;
+                if (brDist) payload.branchDistanceKm = brDist;
+                if (chatSummaryPayload) {
+                    if (brNm) chatSummaryPayload.branchName = brNm;
+                    if (brCity) chatSummaryPayload.branchCity = brCity;
+                    if (brArea) chatSummaryPayload.branchArea = brArea;
+                    if (brDist) chatSummaryPayload.branchDistanceKm = brDist;
+                }
+                continue;
+            }
             if (apptType === "appointmentdoctor" || apptType === "appointmentgeneral") {
                 const hidDateId = typeof def.hiddenDateId === "string" && def.hiddenDateId.trim()
                     ? def.hiddenDateId.trim()
@@ -14390,6 +14788,75 @@ function submitContactForm(event) {
                 continue;
             }
             const apptType = String(def.type || "").toLowerCase();
+            if (apptType === "geolocation") {
+                const latId = typeof def.hiddenLatId === "string" && def.hiddenLatId.trim()
+                    ? def.hiddenLatId.trim()
+                    : `${def.id}__lat`;
+                const lngId = typeof def.hiddenLngId === "string" && def.hiddenLngId.trim()
+                    ? def.hiddenLngId.trim()
+                    : `${def.id}__lng`;
+                const branchIdId = typeof def.hiddenBranchIdId === "string" && def.hiddenBranchIdId.trim()
+                    ? def.hiddenBranchIdId.trim()
+                    : `${def.id}__branchId`;
+                const branchNameId = typeof def.hiddenBranchNameId === "string" && def.hiddenBranchNameId.trim()
+                    ? def.hiddenBranchNameId.trim()
+                    : `${def.id}__branchName`;
+                const branchCityId = typeof def.hiddenBranchCityId === "string" && def.hiddenBranchCityId.trim()
+                    ? def.hiddenBranchCityId.trim()
+                    : `${def.id}__branchCity`;
+                const branchAreaId = typeof def.hiddenBranchAreaId === "string" && def.hiddenBranchAreaId.trim()
+                    ? def.hiddenBranchAreaId.trim()
+                    : `${def.id}__branchArea`;
+                const branchDistanceKmId = typeof def.hiddenBranchDistanceKmId === "string" && def.hiddenBranchDistanceKmId.trim()
+                    ? def.hiddenBranchDistanceKmId.trim()
+                    : `${def.id}__branchDistanceKm`;
+                const latEl = document.getElementById(latId);
+                const lngEl = document.getElementById(lngId);
+                const brIdEl = document.getElementById(branchIdId);
+                const brNmEl = document.getElementById(branchNameId);
+                const brCityEl = document.getElementById(branchCityId);
+                const brAreaEl = document.getElementById(branchAreaId);
+                const brDistEl = document.getElementById(branchDistanceKmId);
+                const latV = latEl && "value" in latEl ? String(latEl.value).trim() : "";
+                const lngV = lngEl && "value" in lngEl ? String(lngEl.value).trim() : "";
+                const brId = brIdEl && "value" in brIdEl ? String(brIdEl.value).trim() : "";
+                const brNm = brNmEl && "value" in brNmEl ? String(brNmEl.value).trim() : "";
+                const brCity = brCityEl && "value" in brCityEl ? String(brCityEl.value).trim() : "";
+                const brArea = brAreaEl && "value" in brAreaEl ? String(brAreaEl.value).trim() : "";
+                const brDist = brDistEl && "value" in brDistEl ? String(brDistEl.value).trim() : "";
+                if (def.required !== false) {
+                    if (!latV || !lngV) {
+                        if (status) {
+                            status.textContent = "Please share your location first.";
+                            status.classList.add("is-error");
+                            status.classList.remove("is-success");
+                        }
+                        if (submitButton) {
+                            submitButton.disabled = false;
+                        }
+                        return;
+                    }
+                    if (!brId) {
+                        if (status) {
+                            status.textContent = "Please pick a branch from the list.";
+                            status.classList.add("is-error");
+                            status.classList.remove("is-success");
+                        }
+                        if (submitButton) {
+                            submitButton.disabled = false;
+                        }
+                        return;
+                    }
+                }
+                if (latV) fd.append("lat", latV);
+                if (lngV) fd.append("lng", lngV);
+                if (brId) fd.append("branchId", brId);
+                if (brNm) fd.append("branchName", brNm);
+                if (brCity) fd.append("branchCity", brCity);
+                if (brArea) fd.append("branchArea", brArea);
+                if (brDist) fd.append("branchDistanceKm", brDist);
+                continue;
+            }
             if (apptType === "appointmentdoctor" || apptType === "appointmentgeneral") {
                 const hidDateId = typeof def.hiddenDateId === "string" && def.hiddenDateId.trim()
                     ? def.hiddenDateId.trim()
@@ -19777,3 +20244,42 @@ window.__dfchatApplyCompanyAdminFlatSettings = function __dfchatApplyCompanyAdmi
         }
     }, 120);
 };
+
+/**
+ * Public helper: open any registered in-chat form by id (e.g. `"nearestBranch"`, `"contact"`).
+ * Lets the host page or `postMessage` bridge trigger the same flow Dialogflow's `open_form` payload uses.
+ * @param {string} formId
+ */
+window.__dfchatOpenForm = function __dfchatOpenForm(formId) {
+    const id = typeof formId === "string" ? formId.trim() : "";
+    if (!id) {
+        return;
+    }
+    try {
+        setActiveContactFormId(id);
+        openContactForm();
+    } catch {
+        /* ignore */
+    }
+};
+
+/**
+ * Allow the parent (host) page to open a form via `postMessage`:
+ *   `{ type: "dfchat_open_form", formId: "nearestBranch" }`
+ * Forwarded into the iframe; ignored for cross-origin senders.
+ */
+window.addEventListener("message", (ev) => {
+    try {
+        if (!ev || !ev.data || ev.data.type !== "dfchat_open_form") {
+            return;
+        }
+        const fid = typeof ev.data.formId === "string" ? ev.data.formId.trim() : "";
+        if (!fid) {
+            return;
+        }
+        window.__dfchatOpenForm(fid);
+    } catch {
+        /* ignore */
+    }
+});
+

@@ -133,6 +133,12 @@
   <h2>Find Your Perfect Home</h2>
 </section>
 
+<section class="section" style="background:#fff7ed">
+  <h2>Visit Our Sales Office</h2>
+  <p>We have offices across India. Tap below and we'll show the closest ones based on your current location.</p>
+  <button id="find-nearest-office-btn" type="button" style="background:#1e3a8a">Find nearest office</button>
+</section>
+
 <section class="section" id="properties">
   <h2>Featured Properties</h2>
 
@@ -182,5 +188,12 @@
 </footer>
   <!-- Chat widget; apiBase = Railway contact API -->
   <script src="company-loader.js?botid=0001&v=95&amp;apiBase=https://handsome-amazement-production-7f65.up.railway.app"></script>
+  <script>
+    document.getElementById("find-nearest-office-btn").addEventListener("click", function () {
+      var iframe = document.getElementById("company-chat-widget-iframe");
+      if (!iframe || !iframe.contentWindow) { return; }
+      iframe.contentWindow.postMessage({ type: "dfchat_open_form", formId: "nearestBranch" }, "*");
+    });
+  </script>
 </body>
 </html>

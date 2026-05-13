@@ -594,8 +594,8 @@ app.options(PATHNAME, (_req, res) => res.sendStatus(204));
 app.options(PATHNAME_MOBILE_SHEET_SYNC, (_req, res) => res.sendStatus(204));
 app.options(PATHNAME_SESSION_SHEET_SYNC, (_req, res) => res.sendStatus(204));
 
-// SMS OTP routes (Fast2SMS): /api/sms-otp/send, /api/sms-otp/verify, /api/sms-otp/health.
-// Configure FAST2SMS_API_KEY (and optional FAST2SMS_ROUTE etc.) in env. See lib/sms-otp.mjs.
+// SMS OTP routes: /api/sms-otp/send, /api/sms-otp/verify, /api/sms-otp/health.
+// Active provider via SMS_OTP_PROVIDER env (default "msg91"). See lib/sms-otp/README.md.
 mountSmsOtpRoutes(app);
 
 // ---------------------------------------------------------------------------
@@ -809,6 +809,100 @@ app.get("/api/branches", (_req, res) => {
             const msg = e && e.message ? e.message : String(e);
             res.status(500).json({ ok: false, error: msg });
         });
+});
+
+/**
+ * Read branches from RTDB if available; fall back to the bundled JSON file so
+ * `/api/nearest-branches` keeps working in dev / when Firebase is not configured.
+ * @returns {Promise<Array<Record<string, string>>>}
+ */
+async function readBranchesWithFallback_() {
+    if (!firebaseInitError) {
+        try {
+            const list = await listBranches();
+            if (Array.isArray(list) && list.length) {
+                return list;
+            }
+        } catch {
+            /* fall through to file */
+        }
+    }
+    try {
+        const raw = fs.readFileSync(CATALOG_BRANCHES_CSV, "utf8");
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) ? parsed : [];
+    } catch {
+        return [];
+    }
+}
+
+/** Haversine distance between two coordinates in **kilometres**. */
+function haversineKm_(lat1, lng1, lat2, lng2) {
+    const R = 6371;
+    const toRad = (d) => (d * Math.PI) / 180;
+    const dLat = toRad(lat2 - lat1);
+    const dLng = toRad(lng2 - lng1);
+    const a =
+        Math.sin(dLat / 2) ** 2
+        + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+    return 2 * R * Math.asin(Math.min(1, Math.sqrt(a)));
+}
+
+/**
+ * GET /api/nearest-branches?lat=<num>&lng=<num>&limit=<1-50>
+ * Returns branches sorted by distance from the supplied coordinates.
+ * Branches without numeric Latitude/Longitude are filtered out.
+ */
+app.get("/api/nearest-branches", async (req, res) => {
+    const latRaw = typeof req.query.lat === "string" ? req.query.lat.trim() : "";
+    const lngRaw = typeof req.query.lng === "string" ? req.query.lng.trim() : "";
+    const lat = Number(latRaw);
+    const lng = Number(lngRaw);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+        return res.status(400).json({ ok: false, error: "Missing or invalid lat/lng query params." });
+    }
+    const limitRaw = typeof req.query.limit === "string" ? Number(req.query.limit.trim()) : 5;
+    const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(50, Math.floor(limitRaw))) : 5;
+
+    let branches;
+    try {
+        branches = await readBranchesWithFallback_();
+    } catch (e) {
+        const msg = e && e.message ? e.message : String(e);
+        return res.status(500).json({ ok: false, error: msg });
+    }
+
+    const withDistance = [];
+    for (const b of branches) {
+        const bLat = Number(String(b.Latitude || "").trim());
+        const bLng = Number(String(b.Longitude || "").trim());
+        if (!Number.isFinite(bLat) || !Number.isFinite(bLng)) {
+            continue;
+        }
+        const distanceKm = haversineKm_(lat, lng, bLat, bLng);
+        withDistance.push({
+            BranchId: String(b.BranchId || "").trim(),
+            BranchName: String(b.BranchName || "").trim(),
+            City: String(b.City || "").trim(),
+            Area: String(b.Area || "").trim(),
+            State: String(b.State || "").trim(),
+            Address: String(b.Address || "").trim(),
+            Latitude: String(b.Latitude || "").trim(),
+            Longitude: String(b.Longitude || "").trim(),
+            GoogleMap: String(b.GoogleMap || "").trim(),
+            BranchTiming: String(b.BranchTiming || "").trim(),
+            ContactNumber: String(b.ContactNumber || "").trim(),
+            ContactEmail: String(b.ContactEmail || "").trim(),
+            distanceKm: Math.round(distanceKm * 100) / 100
+        });
+    }
+    withDistance.sort((a, b) => a.distanceKm - b.distanceKm);
+    return res.status(200).json({
+        ok: true,
+        origin: { lat, lng },
+        count: withDistance.length,
+        branches: withDistance.slice(0, limit)
+    });
 });
 
 app.get("/api/departments", (req, res) => {
