@@ -83,6 +83,7 @@ import {
 import { maybeSendClientLeadAckEmail } from "./lib/mail/client-lead-ack-email.mjs";
 import { maybeSendAppointmentChatbotStaffNotifyEmail } from "./lib/mail/appointment-chatbot-staff-notify-email.mjs";
 import { maybeSendAppointmentClientAckEmail } from "./lib/mail/appointment-client-ack-email.mjs";
+import { mountSmsOtpRoutes } from "./lib/sms-otp.mjs";
 
 const APPS_SCRIPT_WEBAPP_URL = (process.env.GOOGLE_APPS_SCRIPT_WEBAPP_URL || "").trim();
 
@@ -592,6 +593,10 @@ app.use(cors({
 app.options(PATHNAME, (_req, res) => res.sendStatus(204));
 app.options(PATHNAME_MOBILE_SHEET_SYNC, (_req, res) => res.sendStatus(204));
 app.options(PATHNAME_SESSION_SHEET_SYNC, (_req, res) => res.sendStatus(204));
+
+// SMS OTP routes (Fast2SMS): /api/sms-otp/send, /api/sms-otp/verify, /api/sms-otp/health.
+// Configure FAST2SMS_API_KEY (and optional FAST2SMS_ROUTE etc.) in env. See lib/sms-otp.mjs.
+mountSmsOtpRoutes(app);
 
 // ---------------------------------------------------------------------------
 // Catalog + appointments: Firebase Realtime Database (CSV upload → RTDB)
