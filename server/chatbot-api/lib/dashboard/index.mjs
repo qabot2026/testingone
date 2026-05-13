@@ -424,7 +424,11 @@ export function mountDashboardRoutes(app) {
             }
             const email = trim_(req.body && req.body.email).toLowerCase();
             const allowed = isEmailAllowed_(email);
-            let linkPrintedToLog = false;
+            /** User-visible result copy (always ok:true for allowed vs disallowed). */
+            let userMessage = "If your email is allowed, a sign-in link has been sent.";
+            const failureMsg =
+                "Could not deliver email (no mail provider configured, slow, or rejected). If your email is allowed, the sign-in link was written to the server log — open Railway Logs and click it.";
+            const successMsg = "If your email is allowed, a sign-in link has been sent.";
 
             // Always return ok=true to avoid leaking which emails are allowed.
             if (allowed) {
@@ -455,7 +459,14 @@ export function mountDashboardRoutes(app) {
                             ? "DASHBOARD_PRINT_LOGIN_LINK=1 (forced)"
                             : "No mail provider configured (set RESEND_API_KEY or SMTP_*)"
                     );
-                    linkPrintedToLog = true;
+                    if (!mailReady) {
+                        userMessage = failureMsg;
+                    } else if (forceLog) {
+                        // Email still fires in background — do not scare the user with the
+                        // "could not deliver" copy that is meant for real failures.
+                        userMessage =
+                            `${successMsg} A copy of the link was also written to the server log (DASHBOARD_PRINT_LOGIN_LINK=1). Remove that variable on Railway for shorter messaging once email works.`;
+                    }
                     if (mailReady) {
                         sendMagicLinkEmail_({ to: email, link }).catch((err) => {
                             const msg = err && err.message ? err.message : String(err);
@@ -479,6 +490,7 @@ export function mountDashboardRoutes(app) {
                             sendMagicLinkEmail_({ to: email, link }),
                             timeoutPromise
                         ]);
+                        userMessage = successMsg;
                         if (trim_(process.env.DASHBOARD_DEBUG) === "1") {
                             console.log(LOG_TAG, `magic-link sent via ${provider} to ${email}`);
                         }
@@ -486,7 +498,7 @@ export function mountDashboardRoutes(app) {
                         const msg = err && err.message ? err.message : String(err);
                         console.error(LOG_TAG, `magic-link send failed (${provider}):`, msg);
                         printLink_(`${provider} send failed: ${msg}`);
-                        linkPrintedToLog = true;
+                        userMessage = failureMsg;
                     } finally {
                         if (timeoutHandle) clearTimeout(timeoutHandle);
                     }
@@ -497,9 +509,7 @@ export function mountDashboardRoutes(app) {
             }
             res.json({
                 ok: true,
-                message: linkPrintedToLog
-                    ? "Could not deliver email (no mail provider configured, slow, or rejected). If your email is allowed, the sign-in link was written to the server log — open Railway Logs and click it."
-                    : "If your email is allowed, a sign-in link has been sent."
+                message: userMessage
             });
         } catch (err) {
             const msg = err && err.message ? err.message : String(err);
@@ -646,6 +656,9 @@ export function mountDashboardRoutes(app) {
             mail_provider: currentMailProvider_(),
             smtp_configured: isSmtpCredentialEnvPresent_(),
             resend_configured: isResendConfigured_(),
+            /** False when key is set but does not look like a Resend key (should start with `re_`). */
+            resend_api_key_format_ok:
+                !isResendConfigured_() || trim_(process.env.RESEND_API_KEY).startsWith("re_"),
             preview_url_default: trim_(process.env.DASHBOARD_PREVIEW_URL) || null
         });
     });

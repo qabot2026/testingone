@@ -92,6 +92,12 @@ export async function sendViaResend_(opts) {
     if (!apiKey) {
         throw new Error("RESEND_API_KEY not configured");
     }
+    if (!apiKey.startsWith("re_")) {
+        console.warn(
+            LOG_TAG,
+            "RESEND_API_KEY should start with \"re_\" (create one at https://resend.com/api-keys ). This value looks wrong — sends will usually fail with 401."
+        );
+    }
     const baseUrl = (trim_(process.env.RESEND_BASE_URL) || "https://api.resend.com").replace(/\/+$/, "");
     const timeoutMs = envInt_("RESEND_SEND_TIMEOUT_MS", 25000, 5000, 120000);
 
