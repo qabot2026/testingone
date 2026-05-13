@@ -16857,20 +16857,29 @@ function syncDfMessengerSessionParametersFromClientContext(dfMessenger) {
     }
 }
 
-/** Phrases that should trigger the in-chat geolocation prompt before the request goes to CX. */
+/**
+ * Substrings that should trigger the in-chat geolocation prompt before the
+ * request goes to CX. Matched case-insensitive against the outbound text after
+ * stripping non-alphanumerics, so emoji prefixes / punctuation don't matter.
+ */
 const DFCHAT_NEARBY_BRANCH_TRIGGER_PHRASES_ = [
-    "nearby branch",
-    "nearby branches",
-    "near by branch",
-    "near by branches",
-    "near me",
-    "nearest branch",
-    "nearest branches",
-    "closest branch",
-    "closest branches",
-    "branches near me",
-    "branch near me",
-    "show nearby"
+    "nearbybranch",
+    "nearbybranches",
+    "nearbranch",
+    "nearbranches",
+    "nearestbranch",
+    "nearestbranches",
+    "closestbranch",
+    "closestbranches",
+    "branchnearme",
+    "branchesnearme",
+    "nearme",
+    "shownearby",
+    "shownearest",
+    "findnearby",
+    "findnearest",
+    "locatenearby",
+    "locatenearest"
 ];
 
 /** In-flight guard — prevent overlapping prompts when the user mashes the chip. */
@@ -16878,9 +16887,15 @@ let dfchatNearbyGeolocationInFlight_ = false;
 /** Sticky-deny flag for one page load so a denied user isn't re-prompted on every "nearby" message. */
 let dfchatNearbyGeolocationDeniedThisSession_ = false;
 
+/** Strip everything except a-z0-9 so emoji prefixes, spaces, punctuation don't affect matching. */
+function dfchatNormalizeForNearbyMatch_(text) {
+    if (typeof text !== "string") return "";
+    return text.toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
 /** @param {string} text */
 function isNearbyBranchesQueryText_(text) {
-    const t = typeof text === "string" ? text.trim().toLowerCase() : "";
+    const t = dfchatNormalizeForNearbyMatch_(text);
     if (!t) {
         return false;
     }
@@ -16942,7 +16957,22 @@ function resendQueryToDfMessenger_(text) {
  */
 function tryInterceptOutboundForNearbyBranchesGeolocation_(event, queryText) {
     const text = typeof queryText === "string" ? queryText.trim() : "";
-    if (!text || !isNearbyBranchesQueryText_(text)) {
+    const matched = isNearbyBranchesQueryText_(text);
+    try {
+        if (text) {
+            console.log(
+                "[nearby-geo] outbound text:",
+                JSON.stringify(text),
+                "normalized:",
+                JSON.stringify(dfchatNormalizeForNearbyMatch_(text)),
+                "matched:",
+                matched
+            );
+        } else {
+            console.log("[nearby-geo] outbound text empty — chip likely fires an event payload (no text in df-request-sent).");
+        }
+    } catch { /* ignore */ }
+    if (!text || !matched) {
         return false;
     }
     if (dfchatNearbyGeolocationInFlight_) {
