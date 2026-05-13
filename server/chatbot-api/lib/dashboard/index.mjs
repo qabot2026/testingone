@@ -50,7 +50,9 @@ import admin from "firebase-admin";
 import { getFirestore } from "firebase-admin/firestore";
 
 import { firebaseAdminInit } from "../firebase-admin-init.mjs";
-import { getMailTransport_, isSmtpCredentialEnvPresent_ } from "../mail/smtp-transport.mjs";
+import { isSmtpCredentialEnvPresent_ } from "../mail/smtp-transport.mjs";
+import { currentMailProvider_, isMailConfigured_, sendTimedMail_ } from "../mail/smtp-send.mjs";
+import { isResendConfigured_ } from "../mail/resend-send.mjs";
 
 const LOG_TAG = "[dashboard]";
 
@@ -277,14 +279,17 @@ async function consumeLoginToken_(jti) {
 // ---------------------------------------------------------------------------
 
 async function sendMagicLinkEmail_({ to, link }) {
-    if (!isSmtpCredentialEnvPresent_()) {
-        throw new Error("SMTP not configured (SMTP_HOST / SMTP_USER / SMTP_PASS).");
+    if (!isMailConfigured_()) {
+        throw new Error(
+            "No email provider configured (set RESEND_API_KEY, or SMTP_HOST / SMTP_USER / SMTP_PASS)."
+        );
     }
     const from = fromEmail_();
     if (!from) {
-        throw new Error("Sender address not configured (DASHBOARD_FROM_EMAIL / MAIL_FROM / SMTP_USER).");
+        throw new Error(
+            "Sender address not configured (DASHBOARD_FROM_EMAIL / MAIL_FROM / RESEND_FROM / SMTP_USER)."
+        );
     }
-    const transport = getMailTransport_();
     const ttlMin = envInt_("DASHBOARD_LINK_TTL_MINUTES", 15, 1, 120);
     const text = [
         "Sign in to the chatbot customization dashboard.",
@@ -304,7 +309,7 @@ async function sendMagicLinkEmail_({ to, link }) {
   </p>
   <p style="margin:0;color:#64748b;font-size:12px;word-break:break-all;">If the button does not work, copy this URL:<br/><a href="${safeLink}" style="color:#0369a1;">${safeLink}</a></p>
 </div>`;
-    await transport.sendMail({
+    await sendTimedMail_({
         from,
         to,
         subject: "Your sign-in link",
@@ -438,29 +443,34 @@ export function mountDashboardRoutes(app) {
                 };
 
                 const forceLog = (process.env.DASHBOARD_PRINT_LOGIN_LINK || "").trim() === "1";
-                const smtpReady = isSmtpCredentialEnvPresent_() && !!fromEmail_();
+                const mailReady = isMailConfigured_() && !!fromEmail_();
+                const provider = currentMailProvider_();
 
-                if (forceLog || !smtpReady) {
+                if (forceLog || !mailReady) {
                     // Fast path: print the link immediately so the operator can sign in
-                    // from Railway Logs without waiting on SMTP. Still attempt to send
-                    // mail in the background when SMTP is configured — best effort.
-                    printLink_(forceLog ? "DASHBOARD_PRINT_LOGIN_LINK=1 (forced)" : "SMTP not configured");
+                    // from Railway Logs without waiting on the mail provider. Still
+                    // attempt to send in the background when a provider is configured.
+                    printLink_(
+                        forceLog
+                            ? "DASHBOARD_PRINT_LOGIN_LINK=1 (forced)"
+                            : "No mail provider configured (set RESEND_API_KEY or SMTP_*)"
+                    );
                     linkPrintedToLog = true;
-                    if (smtpReady) {
+                    if (mailReady) {
                         sendMagicLinkEmail_({ to: email, link }).catch((err) => {
                             const msg = err && err.message ? err.message : String(err);
-                            console.error(LOG_TAG, "background magic-link send failed:", msg);
+                            console.error(LOG_TAG, `background magic-link send failed (${provider}):`, msg);
                         });
                     }
                 } else {
-                    // SMTP is configured and we are not forcing log output. Race the
-                    // sendMail against a tight wall-clock budget so a stuck Gmail TLS
+                    // Provider is configured and we are not forcing log output. Race
+                    // the send against a tight wall-clock budget so a stuck network
                     // never blocks the response for more than a few seconds.
                     const budgetMs = envInt_("DASHBOARD_LOGIN_EMAIL_TIMEOUT_MS", 25000, 5000, 120000);
                     let timeoutHandle = null;
                     const timeoutPromise = new Promise((_, reject) => {
                         timeoutHandle = setTimeout(
-                            () => reject(new Error(`SMTP send exceeded ${budgetMs}ms budget`)),
+                            () => reject(new Error(`mail send exceeded ${budgetMs}ms budget`)),
                             budgetMs
                         );
                     });
@@ -469,10 +479,13 @@ export function mountDashboardRoutes(app) {
                             sendMagicLinkEmail_({ to: email, link }),
                             timeoutPromise
                         ]);
+                        if (trim_(process.env.DASHBOARD_DEBUG) === "1") {
+                            console.log(LOG_TAG, `magic-link sent via ${provider} to ${email}`);
+                        }
                     } catch (err) {
                         const msg = err && err.message ? err.message : String(err);
-                        console.error(LOG_TAG, "magic-link send failed:", msg);
-                        printLink_(`SMTP send failed: ${msg}`);
+                        console.error(LOG_TAG, `magic-link send failed (${provider}):`, msg);
+                        printLink_(`${provider} send failed: ${msg}`);
                         linkPrintedToLog = true;
                     } finally {
                         if (timeoutHandle) clearTimeout(timeoutHandle);
@@ -485,7 +498,7 @@ export function mountDashboardRoutes(app) {
             res.json({
                 ok: true,
                 message: linkPrintedToLog
-                    ? "Could not send email (SMTP not configured, slow, or rejected). If your email is allowed, the sign-in link was written to the server log — open Railway Logs and click it."
+                    ? "Could not deliver email (no mail provider configured, slow, or rejected). If your email is allowed, the sign-in link was written to the server log — open Railway Logs and click it."
                     : "If your email is allowed, a sign-in link has been sent."
             });
         } catch (err) {
@@ -630,7 +643,9 @@ export function mountDashboardRoutes(app) {
             allowed_emails_configured: allowedEmails_().length > 0,
             session_secret_configured: !!sessionSecret_(),
             public_base_url_configured: !!publicBaseUrl_(),
+            mail_provider: currentMailProvider_(),
             smtp_configured: isSmtpCredentialEnvPresent_(),
+            resend_configured: isResendConfigured_(),
             preview_url_default: trim_(process.env.DASHBOARD_PREVIEW_URL) || null
         });
     });
