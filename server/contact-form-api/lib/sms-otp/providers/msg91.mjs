@@ -1,25 +1,25 @@
 /**
  * SMS provider: MSG91 — https://docs.msg91.com/
  *
- * Implements the `SmsProvider` interface consumed by `lib/sms-otp.mjs`. We use the MSG91 OTP API
+ * Implements the `SmsProvider` interface consumed by ../index.mjs. We use the MSG91 OTP API
  *   POST https://control.msg91.com/api/v5/otp
  * and **supply our own OTP** so the core module keeps control of generation, hashing, storage,
  * verification, attempt limits and rate-limiting. MSG91 acts purely as the DLT-compliant SMS pipe.
  *
- * What MSG91 needs (you set these on Railway, not here):
+ * What MSG91 needs (set as env vars on your server, NOT here):
  *   MSG91_AUTHKEY        — required. Authentication key from https://control.msg91.com/app/#/api
  *   MSG91_TEMPLATE_ID    — required. DLT-approved template id. Your template must contain ##OTP##
  *                          (case-sensitive) where the code should appear, e.g.
  *                            "Your verification code is ##OTP##. Valid for 5 minutes. - XYZCLN"
  *
  * Optional:
- *   MSG91_BASE_URL       — defaults to https://control.msg91.com (override only for staging/proxy)
- *   MSG91_SENDER_ID      — usually already baked into the DLT template; pass only if MSG91 asks
+ *   MSG91_BASE_URL       — defaults to https://control.msg91.com
+ *   MSG91_SENDER_ID      — usually already baked into the DLT template
  *   MSG91_COUNTRY_CODE   — defaults to "91" (India). MSG91 expects <countrycode><mobile> with no '+'.
  *
- * @typedef {import("../sms-otp.mjs").SmsProviderSendInput} SmsProviderSendInput
- * @typedef {import("../sms-otp.mjs").SmsProviderSendResult} SmsProviderSendResult
- * @typedef {import("../sms-otp.mjs").SmsProvider} SmsProvider
+ * @typedef {import("../index.mjs").SmsProviderSendInput} SmsProviderSendInput
+ * @typedef {import("../index.mjs").SmsProviderSendResult} SmsProviderSendResult
+ * @typedef {import("../index.mjs").SmsProvider} SmsProvider
  */
 
 const DEFAULT_BASE_URL = "https://control.msg91.com";

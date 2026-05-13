@@ -83,7 +83,7 @@ import {
 import { maybeSendClientLeadAckEmail } from "./lib/mail/client-lead-ack-email.mjs";
 import { maybeSendAppointmentChatbotStaffNotifyEmail } from "./lib/mail/appointment-chatbot-staff-notify-email.mjs";
 import { maybeSendAppointmentClientAckEmail } from "./lib/mail/appointment-client-ack-email.mjs";
-import { mountSmsOtpRoutes } from "./lib/sms-otp.mjs";
+import { mountSmsOtpRoutes } from "./lib/sms-otp/index.mjs";
 
 const APPS_SCRIPT_WEBAPP_URL = (process.env.GOOGLE_APPS_SCRIPT_WEBAPP_URL || "").trim();
 
