@@ -9339,7 +9339,6 @@ function initializeChatStateSync(dfMessenger) {
             scheduleUserInputVerticalNudge(dfMessenger);
             scheduleFooterInputBoxShadowOverrides(dfMessenger);
             scheduleAutoStartConversation(dfMessenger);
-            requestVisitorGeolocationForChatSession_();
             window.setTimeout(scheduleSyncChatActionBarPosition, 120);
             if (isMobileViewport()) {
                 safeAreaTopInsetCache = null;
@@ -13513,6 +13512,10 @@ function attachPersonaHandlers(dfMessenger) {
                 return;
             }
 
+            if (tryInterceptOutboundForNearbyBranchesGeolocation_(event, effectiveQuery)) {
+                return;
+            }
+
             trackChatUserQueryInSessionContext_(effectiveQuery);
 
             if (effectiveQuery) {
@@ -16854,39 +16857,137 @@ function syncDfMessengerSessionParametersFromClientContext(dfMessenger) {
     }
 }
 
-/** Asked-once flag per page load (geolocation prompt is annoying on repeat). */
-let dfchatVisitorGeolocationRequested_ = false;
+/** Phrases that should trigger the in-chat geolocation prompt before the request goes to CX. */
+const DFCHAT_NEARBY_BRANCH_TRIGGER_PHRASES_ = [
+    "nearby branch",
+    "nearby branches",
+    "near by branch",
+    "near by branches",
+    "near me",
+    "nearest branch",
+    "nearest branches",
+    "closest branch",
+    "closest branches",
+    "branches near me",
+    "branch near me",
+    "show nearby"
+];
 
-/**
- * Ask the browser for the visitor's current position the first time the chat opens,
- * then persist `user_lat` / `user_lng` into client_context and push them to the
- * DFCX session via `setQueryParameters`. CX webhook `get_nearby_branches` reads
- * these to return the top 3 closest branches. Silent on permission denial.
- */
-function requestVisitorGeolocationForChatSession_() {
-    if (dfchatVisitorGeolocationRequested_) {
-        return;
+/** In-flight guard — prevent overlapping prompts when the user mashes the chip. */
+let dfchatNearbyGeolocationInFlight_ = false;
+/** Sticky-deny flag for one page load so a denied user isn't re-prompted on every "nearby" message. */
+let dfchatNearbyGeolocationDeniedThisSession_ = false;
+
+/** @param {string} text */
+function isNearbyBranchesQueryText_(text) {
+    const t = typeof text === "string" ? text.trim().toLowerCase() : "";
+    if (!t) {
+        return false;
     }
-    if (!navigator.geolocation || typeof navigator.geolocation.getCurrentPosition !== "function") {
-        return;
+    for (const phrase of DFCHAT_NEARBY_BRANCH_TRIGGER_PHRASES_) {
+        if (t.includes(phrase)) {
+            return true;
+        }
     }
-    dfchatVisitorGeolocationRequested_ = true;
+    return false;
+}
+
+function dfchatHasStoredUserLatLng_() {
     try {
         const prev = readStoredClientContext();
-        const haveLat = typeof prev.user_lat === "string" && prev.user_lat.trim();
-        const haveLng = typeof prev.user_lng === "string" && prev.user_lng.trim();
-        if (haveLat && haveLng && activeDfMessenger) {
-            syncDfMessengerSessionParametersFromClientContext(activeDfMessenger);
-            return;
+        const lat = typeof prev.user_lat === "string" ? prev.user_lat.trim() : "";
+        const lng = typeof prev.user_lng === "string" ? prev.user_lng.trim() : "";
+        return !!lat && !!lng;
+    } catch {
+        return false;
+    }
+}
+
+/**
+ * Resend `text` to DFCX programmatically (used after the geolocation prompt resolves).
+ * Mirrors the `sendRequest("query", t)` path used by `dispatchUserPhraseToDfMessenger_`.
+ *
+ * @param {string} text
+ */
+function resendQueryToDfMessenger_(text) {
+    const t = typeof text === "string" ? text.trim() : "";
+    if (!t) {
+        return;
+    }
+    const ms = activeDfMessenger;
+    if (!ms || typeof ms.sendRequest !== "function") {
+        return;
+    }
+    try {
+        const r = ms.sendRequest("query", t);
+        if (r && typeof r.catch === "function") {
+            r.catch(() => {});
         }
     } catch {
-        /* fall through to fresh prompt */
+        /* ignore */
     }
+}
+
+/**
+ * Intercept outbound "nearby branches" messages to request geolocation **lazily**
+ * (only when the visitor asks). On success persists `user_lat` / `user_lng` into
+ * client_context, pushes them to the CX session, then re-sends the query so the
+ * webhook tag `get_nearby_branches` runs with valid coords. On denial we let the
+ * webhook show its standard fallback ("I couldn't read your location…").
+ *
+ * Returns true when the outbound send was blocked (we will re-send after prompt resolves).
+ *
+ * @param {Event | null | undefined} event
+ * @param {string} queryText trimmed outgoing user text
+ */
+function tryInterceptOutboundForNearbyBranchesGeolocation_(event, queryText) {
+    const text = typeof queryText === "string" ? queryText.trim() : "";
+    if (!text || !isNearbyBranchesQueryText_(text)) {
+        return false;
+    }
+    if (dfchatNearbyGeolocationInFlight_) {
+        // Already prompting; suppress this duplicate send.
+        try {
+            if (event && typeof event.preventDefault === "function") event.preventDefault();
+        } catch { /* ignore */ }
+        return true;
+    }
+    if (dfchatHasStoredUserLatLng_()) {
+        // Already have coords — push them once and let the original send go through.
+        if (activeDfMessenger) {
+            syncDfMessengerSessionParametersFromClientContext(activeDfMessenger);
+        }
+        return false;
+    }
+    if (dfchatNearbyGeolocationDeniedThisSession_) {
+        // User already denied; don't re-prompt. Let webhook return its fallback message.
+        return false;
+    }
+    if (!navigator.geolocation || typeof navigator.geolocation.getCurrentPosition !== "function") {
+        return false;
+    }
+
+    // Block the current send; we will re-issue it after we have coords (or skip on denial).
+    try {
+        if (event && typeof event.preventDefault === "function") event.preventDefault();
+    } catch { /* ignore */ }
+
+    dfchatNearbyGeolocationInFlight_ = true;
+    try {
+        const ms = activeDfMessenger;
+        if (ms && typeof ms.renderCustomText === "function") {
+            ms.renderCustomText("Finding your location…", true);
+        }
+    } catch { /* ignore */ }
+    scheduleClearDfMessengerComposerInput_();
+
     navigator.geolocation.getCurrentPosition(
         (pos) => {
+            dfchatNearbyGeolocationInFlight_ = false;
             const lat = pos && pos.coords ? pos.coords.latitude : NaN;
             const lng = pos && pos.coords ? pos.coords.longitude : NaN;
             if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+                resendQueryToDfMessenger_(text);
                 return;
             }
             try {
@@ -16896,18 +16997,22 @@ function requestVisitorGeolocationForChatSession_() {
                     user_lat: String(lat),
                     user_lng: String(lng)
                 });
-            } catch {
-                /* sessionStorage may be blocked */
-            }
+            } catch { /* sessionStorage may be blocked */ }
             if (activeDfMessenger) {
                 syncDfMessengerSessionParametersFromClientContext(activeDfMessenger);
             }
+            resendQueryToDfMessenger_(text);
         },
-        () => {
-            /* Permission denied / timeout — webhook fallback message handles it. */
+        (err) => {
+            dfchatNearbyGeolocationInFlight_ = false;
+            if (err && err.code === 1) {
+                dfchatNearbyGeolocationDeniedThisSession_ = true;
+            }
+            resendQueryToDfMessenger_(text);
         },
         { enableHighAccuracy: false, timeout: 10000, maximumAge: 600000 }
     );
+    return true;
 }
 
 let chatMobileSheetSyncDebounceTimer = 0;
