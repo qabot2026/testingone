@@ -420,35 +420,14 @@ export function mountDashboardRoutes(app) {
             const email = trim_(req.body && req.body.email).toLowerCase();
             const allowed = isEmailAllowed_(email);
             let linkPrintedToLog = false;
+
             // Always return ok=true to avoid leaking which emails are allowed.
             if (allowed) {
                 const token = buildLoginToken_({ email });
                 const link = `${publicBaseUrl_()}/api/dashboard/login/verify?token=${encodeURIComponent(token)}`;
+                const ttlMin = envInt_("DASHBOARD_LINK_TTL_MINUTES", 15, 1, 120);
 
-                const forceLog = (process.env.DASHBOARD_PRINT_LOGIN_LINK || "").trim() === "1";
-                const smtpReady = isSmtpCredentialEnvPresent_() && !!fromEmail_();
-                let smtpSendFailed = false;
-                let smtpErrorMsg = "";
-                if (smtpReady) {
-                    try {
-                        await sendMagicLinkEmail_({ to: email, link });
-                    } catch (err) {
-                        smtpSendFailed = true;
-                        smtpErrorMsg = err && err.message ? err.message : String(err);
-                        console.error(LOG_TAG, "magic-link send failed:", smtpErrorMsg);
-                    }
-                }
-
-                // Fallback: when SMTP isn't usable or failed, print the magic link to the
-                // server log so the operator can pick it up from Railway Logs without email.
-                // Same when DASHBOARD_PRINT_LOGIN_LINK=1 forces it (handy for first-run).
-                if (!smtpReady || smtpSendFailed || forceLog) {
-                    const ttlMin = envInt_("DASHBOARD_LINK_TTL_MINUTES", 15, 1, 120);
-                    const reason = forceLog
-                        ? "DASHBOARD_PRINT_LOGIN_LINK=1 (forced)"
-                        : (smtpSendFailed
-                            ? `SMTP send failed: ${smtpErrorMsg}`
-                            : "SMTP not configured");
+                const printLink_ = (reason) => {
                     // High-visibility block in Railway Logs.
                     console.log(LOG_TAG, "==================== MAGIC LINK ====================");
                     console.log(LOG_TAG, `Email:  ${email}`);
@@ -456,7 +435,48 @@ export function mountDashboardRoutes(app) {
                     console.log(LOG_TAG, `Expires in ${ttlMin} minutes. One-time use. Open this URL:`);
                     console.log(LOG_TAG, link);
                     console.log(LOG_TAG, "====================================================");
+                };
+
+                const forceLog = (process.env.DASHBOARD_PRINT_LOGIN_LINK || "").trim() === "1";
+                const smtpReady = isSmtpCredentialEnvPresent_() && !!fromEmail_();
+
+                if (forceLog || !smtpReady) {
+                    // Fast path: print the link immediately so the operator can sign in
+                    // from Railway Logs without waiting on SMTP. Still attempt to send
+                    // mail in the background when SMTP is configured — best effort.
+                    printLink_(forceLog ? "DASHBOARD_PRINT_LOGIN_LINK=1 (forced)" : "SMTP not configured");
                     linkPrintedToLog = true;
+                    if (smtpReady) {
+                        sendMagicLinkEmail_({ to: email, link }).catch((err) => {
+                            const msg = err && err.message ? err.message : String(err);
+                            console.error(LOG_TAG, "background magic-link send failed:", msg);
+                        });
+                    }
+                } else {
+                    // SMTP is configured and we are not forcing log output. Race the
+                    // sendMail against a tight wall-clock budget so a stuck Gmail TLS
+                    // never blocks the response for more than a few seconds.
+                    const budgetMs = envInt_("DASHBOARD_LOGIN_EMAIL_TIMEOUT_MS", 25000, 5000, 120000);
+                    let timeoutHandle = null;
+                    const timeoutPromise = new Promise((_, reject) => {
+                        timeoutHandle = setTimeout(
+                            () => reject(new Error(`SMTP send exceeded ${budgetMs}ms budget`)),
+                            budgetMs
+                        );
+                    });
+                    try {
+                        await Promise.race([
+                            sendMagicLinkEmail_({ to: email, link }),
+                            timeoutPromise
+                        ]);
+                    } catch (err) {
+                        const msg = err && err.message ? err.message : String(err);
+                        console.error(LOG_TAG, "magic-link send failed:", msg);
+                        printLink_(`SMTP send failed: ${msg}`);
+                        linkPrintedToLog = true;
+                    } finally {
+                        if (timeoutHandle) clearTimeout(timeoutHandle);
+                    }
                 }
             } else {
                 // Add a small delay so attackers cannot distinguish allowed vs not via timing.
@@ -465,7 +485,7 @@ export function mountDashboardRoutes(app) {
             res.json({
                 ok: true,
                 message: linkPrintedToLog
-                    ? "Email could not be sent (SMTP not configured or failed). If your email is allowed, the sign-in link was written to the server log — open Railway Logs and click it."
+                    ? "Could not send email (SMTP not configured, slow, or rejected). If your email is allowed, the sign-in link was written to the server log — open Railway Logs and click it."
                     : "If your email is allowed, a sign-in link has been sent."
             });
         } catch (err) {
