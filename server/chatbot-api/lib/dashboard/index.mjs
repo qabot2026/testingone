@@ -112,6 +112,7 @@ function fromEmail_() {
     return (
         trim_(process.env.DASHBOARD_FROM_EMAIL) ||
         trim_(process.env.MAIL_FROM) ||
+        trim_(process.env.RESEND_FROM) ||
         trim_(process.env.SMTP_USER) ||
         ""
     );
