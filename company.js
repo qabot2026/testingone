@@ -9339,6 +9339,7 @@ function initializeChatStateSync(dfMessenger) {
             scheduleUserInputVerticalNudge(dfMessenger);
             scheduleFooterInputBoxShadowOverrides(dfMessenger);
             scheduleAutoStartConversation(dfMessenger);
+            requestVisitorGeolocationForChatSession_();
             window.setTimeout(scheduleSyncChatActionBarPosition, 120);
             if (isMobileViewport()) {
                 safeAreaTopInsetCache = null;
@@ -16817,6 +16818,8 @@ function syncDfMessengerSessionParametersFromClientContext(dfMessenger) {
         add("email");
         add("birthdate");
         add("city");
+        add("user_lat");
+        add("user_lng");
         add("user_agent");
         add("platform");
         add("referrer_url");
@@ -16849,6 +16852,62 @@ function syncDfMessengerSessionParametersFromClientContext(dfMessenger) {
     } catch {
         /* Messenger version may omit setQueryParameters; ignore. */
     }
+}
+
+/** Asked-once flag per page load (geolocation prompt is annoying on repeat). */
+let dfchatVisitorGeolocationRequested_ = false;
+
+/**
+ * Ask the browser for the visitor's current position the first time the chat opens,
+ * then persist `user_lat` / `user_lng` into client_context and push them to the
+ * DFCX session via `setQueryParameters`. CX webhook `get_nearby_branches` reads
+ * these to return the top 3 closest branches. Silent on permission denial.
+ */
+function requestVisitorGeolocationForChatSession_() {
+    if (dfchatVisitorGeolocationRequested_) {
+        return;
+    }
+    if (!navigator.geolocation || typeof navigator.geolocation.getCurrentPosition !== "function") {
+        return;
+    }
+    dfchatVisitorGeolocationRequested_ = true;
+    try {
+        const prev = readStoredClientContext();
+        const haveLat = typeof prev.user_lat === "string" && prev.user_lat.trim();
+        const haveLng = typeof prev.user_lng === "string" && prev.user_lng.trim();
+        if (haveLat && haveLng && activeDfMessenger) {
+            syncDfMessengerSessionParametersFromClientContext(activeDfMessenger);
+            return;
+        }
+    } catch {
+        /* fall through to fresh prompt */
+    }
+    navigator.geolocation.getCurrentPosition(
+        (pos) => {
+            const lat = pos && pos.coords ? pos.coords.latitude : NaN;
+            const lng = pos && pos.coords ? pos.coords.longitude : NaN;
+            if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+                return;
+            }
+            try {
+                const prev = readStoredClientContext();
+                persistClientContext({
+                    ...prev,
+                    user_lat: String(lat),
+                    user_lng: String(lng)
+                });
+            } catch {
+                /* sessionStorage may be blocked */
+            }
+            if (activeDfMessenger) {
+                syncDfMessengerSessionParametersFromClientContext(activeDfMessenger);
+            }
+        },
+        () => {
+            /* Permission denied / timeout — webhook fallback message handles it. */
+        },
+        { enableHighAccuracy: false, timeout: 10000, maximumAge: 600000 }
+    );
 }
 
 let chatMobileSheetSyncDebounceTimer = 0;
