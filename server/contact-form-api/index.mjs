@@ -1644,9 +1644,19 @@ app.post("/webhook", express.json({ limit: "512kb" }), async (req, res) => {
             }
             const branches = await readBranchesWithFallback_();
             const ranked = [];
+            const debugSample = [];
             for (const b of branches) {
-                const bLatRaw = String(b.Latitude || "").trim();
-                const bLngRaw = String(b.Longitude || "").trim();
+                const bLatRaw = String(b.Latitude || b.latitude || b.lat || b.LAT || "").trim();
+                const bLngRaw = String(b.Longitude || b.longitude || b.lng || b.LNG || b.lon || "").trim();
+                if (debugSample.length < 3) {
+                    debugSample.push({
+                        keys: Object.keys(b).join(","),
+                        Latitude: b.Latitude,
+                        Longitude: b.Longitude,
+                        latitude: b.latitude,
+                        longitude: b.longitude
+                    });
+                }
                 if (!bLatRaw || !bLngRaw) continue;
                 const bLat = Number(bLatRaw);
                 const bLng = Number(bLngRaw);
@@ -1661,7 +1671,18 @@ app.post("/webhook", express.json({ limit: "512kb" }), async (req, res) => {
             ranked.sort((x, y) => x.distanceKm - y.distanceKm);
             const top3 = ranked.slice(0, 3);
             if (!top3.length) {
-                return fallback("No branches with location data are available.");
+                console.warn(
+                    "[get_nearby_branches] no usable branches",
+                    "loaded:", branches.length,
+                    "withCoords:", ranked.length,
+                    "sample:", JSON.stringify(debugSample)
+                );
+                if (branches.length === 0) {
+                    return fallback("No branches loaded (catalog is empty). Run /api/sync-catalog-from-repo or check Firebase RTDB.");
+                }
+                return fallback(
+                    `Loaded ${branches.length} branches but none have valid Latitude/Longitude fields. Check catalog field names.`
+                );
             }
             const cards = top3.map(({ b, distanceKm }) =>
                 branchToCarouselCard_(b, { distanceKm })
