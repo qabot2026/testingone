@@ -80,6 +80,8 @@ import {
     sendContactLeadMailboxSelfTestPing,
     verifyContactLeadSmtpOnBoot
 } from "./lib/contact-lead-notify-email.mjs";
+import { currentMailProvider_ } from "./lib/mail/smtp-send.mjs";
+import { isResendConfigured_ } from "./lib/mail/resend-send.mjs";
 import { maybeSendClientLeadAckEmail } from "./lib/mail/client-lead-ack-email.mjs";
 import { maybeSendAppointmentChatbotStaffNotifyEmail } from "./lib/mail/appointment-chatbot-staff-notify-email.mjs";
 import { maybeSendAppointmentClientAckEmail } from "./lib/mail/appointment-client-ack-email.mjs";
@@ -2884,6 +2886,11 @@ app.get("/contact-form-email-health", (req, res) => {
         has_smtp_user: !!(process.env.SMTP_USER || "").trim(),
         has_smtp_pass: !!(process.env.SMTP_PASS || process.env.SMTP_PASSWORD || "").trim(),
         mail_from_set: !!(process.env.MAIL_FROM || "").trim(),
+        mail_provider: currentMailProvider_(),
+        resend_configured: isResendConfigured_(),
+        resend_api_key_format_ok:
+            !isResendConfigured_() || (process.env.RESEND_API_KEY || "").trim().startsWith("re_"),
+        resend_from_set: !!(process.env.RESEND_FROM || "").trim(),
         smtp_port: smtpPort,
         smtp_secure_effective_hint: smtpSecureEffective ? "implicit TLS mode (typically port 465)" : "STARTTLS typical for port 587",
         visitor_client_ack_enabled: (process.env.CONTACT_LEAD_CLIENT_ACK_ENABLED || "").trim() === "1",
@@ -2914,6 +2921,10 @@ app.get("/contact-form-email-health", (req, res) => {
         ["ok", payload.ok],
         ["lead_email_ready", payload.lead_email_ready],
         ["CONTACT_LEAD_NOTIFY_TO set", payload.has_notify_to],
+        ["mail_provider (resend vs smtp)", payload.mail_provider],
+        ["RESEND_API_KEY set (HTTPS mail)", payload.resend_configured],
+        ["resend_api_key_format_ok (starts with re_)", payload.resend_api_key_format_ok],
+        ["RESEND_FROM set", payload.resend_from_set],
         ["SMTP_HOST set", payload.has_smtp_host],
         ["SMTP_USER set", payload.has_smtp_user],
         ["SMTP_PASS (or SMTP_PASSWORD) set", payload.has_smtp_pass],
