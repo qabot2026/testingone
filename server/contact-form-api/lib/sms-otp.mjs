@@ -1,46 +1,59 @@
 /**
  * SMS OTP integration — provider: Fast2SMS (https://www.fast2sms.com/dashboard/dev-api).
  *
- * Adds three HTTP endpoints to your existing Express app:
+ * Endpoints (mounted by `mountSmsOtpRoutes(app)` in index.mjs):
  *   POST /api/sms-otp/send    body: { mobile }              -> sends a numeric OTP via Fast2SMS
  *   POST /api/sms-otp/verify  body: { mobile, code }        -> verifies the OTP (one-shot, then consumed)
- *   GET  /api/sms-otp/health                                -> reports whether FAST2SMS_API_KEY is configured
+ *   GET  /api/sms-otp/health                                -> reports config + storage backend
  *
- * Wire-up — add ONE line near the top of index.mjs and ONE line right after `const app = express();`:
- *   import { mountSmsOtpRoutes } from "./lib/sms-otp.mjs";
- *   mountSmsOtpRoutes(app);
+ * Storage:
+ *   - Firestore-backed (collection `sms_otp_codes`, doc id = 10-digit mobile) when Firebase Admin
+ *     credentials are configured (FIREBASE_SERVICE_ACCOUNT_JSON etc.) and SMS_OTP_DISABLE_FIRESTORE!=1.
+ *     This is the recommended production mode — codes survive Railway restarts and multi-instance scaling.
+ *   - In-memory fallback (Map) used automatically when Firestore is unavailable. Per-process,
+ *     non-durable; fine for local dev / smoke testing.
  *
  * Required env:
- *   FAST2SMS_API_KEY            Dev API key from your Fast2SMS dashboard.
+ *   FAST2SMS_API_KEY            Dev API key from Fast2SMS dashboard.
  *
  * Optional env:
  *   FAST2SMS_ROUTE              "otp" (default) | "q" | "v3" | "dlt"
- *                               - "otp": Fast2SMS sends a generic "Your OTP verification code is XXXXXX" message.
- *                                        No DLT approval required, only Indian numbers, no custom text.
- *                               - "q"  : Quick transactional, custom message (FAST2SMS_MESSAGE_TEMPLATE).
- *                               - "v3" : Sender-ID route (legacy), needs FAST2SMS_SENDER_ID.
- *                               - "dlt": DLT route, needs FAST2SMS_SENDER_ID + FAST2SMS_DLT_MESSAGE_ID.
- *   FAST2SMS_SENDER_ID          DLT sender id (required for "dlt"/"v3").
- *   FAST2SMS_MESSAGE_TEMPLATE   Custom message for "q"/"v3" routes. Use {{otp}} placeholder.
+ *                               - "otp": Fast2SMS sends a generic "Your OTP verification code is XXXXXX".
+ *                                        Requires Fast2SMS website verification on the dashboard.
+ *                               - "q"  : Quick transactional, custom text (FAST2SMS_MESSAGE_TEMPLATE).
+ *                                        No DLT or website verification, but uses wallet balance.
+ *                               - "v3" : Sender-ID route. Needs FAST2SMS_SENDER_ID.
+ *                               - "dlt": DLT route (production-grade). Needs FAST2SMS_SENDER_ID
+ *                                        + FAST2SMS_DLT_MESSAGE_ID + FAST2SMS_MESSAGE_TEMPLATE.
+ *   FAST2SMS_SENDER_ID          6-char DLT sender id.
+ *   FAST2SMS_MESSAGE_TEMPLATE   Custom message for "q"/"v3"/"dlt". Use `{{otp}}` placeholder.
  *                               Default: "Your OTP is {{otp}}".
- *   FAST2SMS_DLT_MESSAGE_ID     DLT-approved template id (numeric) for "dlt" route.
+ *   FAST2SMS_DLT_MESSAGE_ID     DLT-approved Fast2SMS template id (for "dlt").
+ *
  *   SMS_OTP_LENGTH              Digits in the OTP. 4..8, default 6.
  *   SMS_OTP_TTL_SECONDS         OTP validity window. 30..900, default 300 (5 min).
  *   SMS_OTP_MAX_ATTEMPTS        Verify failures before lockout. 1..20, default 5.
  *   SMS_OTP_RESEND_COOLDOWN_S   Min seconds between sends to same mobile. 0..600, default 30.
  *
- * Mobile format: Indian 10-digit. `+91` / `91` / leading `0` are stripped. Fast2SMS OTP route
- *   accepts only valid Indian mobile numbers starting with 6-9.
+ *   SMS_OTP_IP_LIMIT            Max OTP send requests per IP within the window. 1..200, default 10.
+ *   SMS_OTP_IP_WINDOW_S         IP rate-limit window in seconds. 60..3600, default 600 (10 min).
  *
- * Storage: in-memory `Map` (per-process). For multi-instance / horizontally scaled deployments,
- *   replace `otpStore` with Firestore or Redis (the two helpers `storeOtp_` / `consumeOtp_` are
- *   the only places that touch state).
+ *   SMS_OTP_FIRESTORE_COLLECTION  Firestore collection for codes. Default "sms_otp_codes".
+ *   SMS_OTP_DISABLE_FIRESTORE=1   Force in-memory only (skip Firestore even when configured).
+ *   SMS_OTP_AUDIT_TO_FIRESTORE=1  Append audit rows to `sms_otp_audit` (every send + verify outcome).
+ *   SMS_OTP_AUDIT_COLLECTION      Override audit collection name. Default "sms_otp_audit".
+ *
+ * Mobile format: Indian 10-digit. `+91` / `91` / leading `0` are stripped; first digit must be 6-9.
+ *   Numbers from outside India are rejected with HTTP 400.
  */
 
 import crypto from "node:crypto";
 import express from "express";
+import admin from "firebase-admin";
+import { firebaseAdminInit } from "./firebase-admin-init.mjs";
 
 const FAST2SMS_ENDPOINT = "https://www.fast2sms.com/dev/bulkV2";
+const LOG_TAG = "[sms-otp]";
 
 function envInt_(key, fallback, min, max) {
     const raw = (process.env[key] || "").trim();
@@ -77,6 +90,30 @@ function smsOtpResendCooldownSeconds_() {
     return envInt_("SMS_OTP_RESEND_COOLDOWN_S", 30, 0, 600);
 }
 
+function smsOtpIpLimit_() {
+    return envInt_("SMS_OTP_IP_LIMIT", 10, 1, 200);
+}
+
+function smsOtpIpWindowSeconds_() {
+    return envInt_("SMS_OTP_IP_WINDOW_S", 600, 60, 3600);
+}
+
+function smsOtpFirestoreEnabled_() {
+    return process.env.SMS_OTP_DISABLE_FIRESTORE !== "1";
+}
+
+function smsOtpAuditEnabled_() {
+    return process.env.SMS_OTP_AUDIT_TO_FIRESTORE === "1";
+}
+
+function smsOtpFirestoreCollection_() {
+    return (process.env.SMS_OTP_FIRESTORE_COLLECTION || "sms_otp_codes").trim() || "sms_otp_codes";
+}
+
+function smsOtpAuditCollection_() {
+    return (process.env.SMS_OTP_AUDIT_COLLECTION || "sms_otp_audit").trim() || "sms_otp_audit";
+}
+
 /** Cryptographically-strong numeric OTP of `SMS_OTP_LENGTH` digits. */
 function generateOtp_() {
     const len = smsOtpLength_();
@@ -94,7 +131,7 @@ function sha256Hex_(s) {
     return crypto.createHash("sha256").update(String(s)).digest("hex");
 }
 
-/** Strip +91 / 91 / leading 0; return a 10-digit Indian mobile or "" if invalid. */
+/** Strip +91 / 91 / leading 0; return 10-digit Indian mobile or "" if invalid. */
 function normalizeIndianMobile_(raw) {
     const digits = String(raw == null ? "" : raw).replace(/\D+/g, "");
     let d = digits;
@@ -109,69 +146,273 @@ function normalizeIndianMobile_(raw) {
     return d;
 }
 
-/**
- * In-memory OTP store keyed by 10-digit mobile.
- * Per-process only — swap for Firestore/Redis on horizontally scaled deployments.
- * @type {Map<string, { codeHash: string, expiresAt: number, attempts: number, sentAt: number }>}
- */
-const otpStore = new Map();
+/** "9999999999" -> "******9999" (mobile-PII masking for logs). */
+function maskMobile_(m) {
+    const s = String(m == null ? "" : m);
+    if (s.length <= 4) {
+        return "*".repeat(Math.max(0, s.length));
+    }
+    return "*".repeat(s.length - 4) + s.slice(-4);
+}
 
-function purgeExpiredOtps_() {
+/** Structured JSON log line, prefixed with `[sms-otp]` for easy grep in Railway logs. */
+function log_(event, fields) {
+    try {
+        const line = { tag: LOG_TAG.replace(/[\[\]]/g, ""), event, ...fields };
+        console.log(`${LOG_TAG} ${JSON.stringify(line)}`);
+    } catch {
+        /* ignore log failures */
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Storage: Firestore-backed with graceful in-memory fallback
+// ---------------------------------------------------------------------------
+
+/** @type {Map<string, { codeHash: string, expiresAt: number, attempts: number, sentAt: number, requestId?: string }>} */
+const memoryStore = new Map();
+let firestoreEnabled = null; // null = not probed, true/false = probed result.
+
+function purgeExpiredMemoryOtps_() {
     const now = Date.now();
-    for (const [key, rec] of otpStore.entries()) {
+    for (const [key, rec] of memoryStore.entries()) {
         if (!rec || rec.expiresAt <= now) {
-            otpStore.delete(key);
+            memoryStore.delete(key);
         }
     }
 }
 
-function storeOtp_(mobile, code) {
-    purgeExpiredOtps_();
-    const ttlMs = smsOtpTtlSeconds_() * 1000;
-    otpStore.set(mobile, {
-        codeHash: sha256Hex_(code),
-        expiresAt: Date.now() + ttlMs,
-        attempts: 0,
-        sentAt: Date.now()
+function getFirestoreDb_() {
+    if (!smsOtpFirestoreEnabled_()) {
+        return null;
+    }
+    try {
+        firebaseAdminInit();
+        return admin.firestore();
+    } catch (e) {
+        log_("firestore_init_failed", {
+            error: e && e.message ? e.message : String(e)
+        });
+        return null;
+    }
+}
+
+async function probeFirestoreOnce_() {
+    if (firestoreEnabled !== null) {
+        return firestoreEnabled;
+    }
+    const db = getFirestoreDb_();
+    firestoreEnabled = !!db;
+    log_("storage_backend_selected", {
+        backend: firestoreEnabled ? "firestore" : "memory",
+        collection: firestoreEnabled ? smsOtpFirestoreCollection_() : null
     });
+    return firestoreEnabled;
+}
+
+/**
+ * Persist a freshly-issued OTP for `mobile`.
+ * @param {string} mobile  10-digit Indian mobile.
+ * @param {string} code    Plaintext OTP (only the sha256 hash is stored).
+ * @param {string} [requestId]
+ */
+async function storeOtp_(mobile, code, requestId) {
+    const ttlMs = smsOtpTtlSeconds_() * 1000;
+    const expiresAt = Date.now() + ttlMs;
+    const record = {
+        codeHash: sha256Hex_(code),
+        expiresAt,
+        attempts: 0,
+        sentAt: Date.now(),
+        requestId: requestId || ""
+    };
+    const db = await probeFirestoreOnce_() ? getFirestoreDb_() : null;
+    if (db) {
+        await db.collection(smsOtpFirestoreCollection_()).doc(mobile).set({
+            codeHash: record.codeHash,
+            expires_at_ms: record.expiresAt,
+            attempts: 0,
+            sent_at_ms: record.sentAt,
+            request_id: record.requestId,
+            created_at: admin.firestore.FieldValue.serverTimestamp()
+        });
+        return;
+    }
+    purgeExpiredMemoryOtps_();
+    memoryStore.set(mobile, record);
+}
+
+/**
+ * Read the stored record for `mobile`, normalising both backends to the same shape.
+ * Returns null if missing or expired (expired records are deleted lazily).
+ */
+async function readOtp_(mobile) {
+    const db = await probeFirestoreOnce_() ? getFirestoreDb_() : null;
+    if (db) {
+        const snap = await db.collection(smsOtpFirestoreCollection_()).doc(mobile).get();
+        if (!snap.exists) {
+            return null;
+        }
+        const v = snap.data() || {};
+        const rec = {
+            codeHash: typeof v.codeHash === "string" ? v.codeHash : "",
+            expiresAt: Number.isFinite(v.expires_at_ms) ? Number(v.expires_at_ms) : 0,
+            attempts: Number.isFinite(v.attempts) ? Number(v.attempts) : 0,
+            sentAt: Number.isFinite(v.sent_at_ms) ? Number(v.sent_at_ms) : 0,
+            requestId: typeof v.request_id === "string" ? v.request_id : ""
+        };
+        if (!rec.codeHash || rec.expiresAt <= Date.now()) {
+            try {
+                await db.collection(smsOtpFirestoreCollection_()).doc(mobile).delete();
+            } catch {
+                /* best effort */
+            }
+            return null;
+        }
+        return rec;
+    }
+    purgeExpiredMemoryOtps_();
+    const rec = memoryStore.get(mobile);
+    if (!rec || rec.expiresAt <= Date.now()) {
+        if (rec) {
+            memoryStore.delete(mobile);
+        }
+        return null;
+    }
+    return { ...rec };
+}
+
+async function incrementAttempts_(mobile, newAttempts) {
+    const db = await probeFirestoreOnce_() ? getFirestoreDb_() : null;
+    if (db) {
+        await db.collection(smsOtpFirestoreCollection_()).doc(mobile).update({
+            attempts: newAttempts
+        });
+        return;
+    }
+    const rec = memoryStore.get(mobile);
+    if (rec) {
+        rec.attempts = newAttempts;
+    }
+}
+
+async function deleteOtp_(mobile) {
+    const db = await probeFirestoreOnce_() ? getFirestoreDb_() : null;
+    if (db) {
+        try {
+            await db.collection(smsOtpFirestoreCollection_()).doc(mobile).delete();
+        } catch {
+            /* best effort */
+        }
+        return;
+    }
+    memoryStore.delete(mobile);
 }
 
 /**
  * Verify and consume the OTP.
- * @returns {{ ok: true } | { ok: false, reason: string, attempts_remaining?: number }}
+ * @returns {Promise<{ ok: true } | { ok: false, reason: string, attempts_remaining?: number }>}
  */
-function consumeOtp_(mobile, code) {
-    purgeExpiredOtps_();
-    const rec = otpStore.get(mobile);
+async function consumeOtp_(mobile, code) {
+    const rec = await readOtp_(mobile);
     if (!rec) {
-        return { ok: false, reason: "no_otp_or_expired" };
-    }
-    if (rec.expiresAt <= Date.now()) {
-        otpStore.delete(mobile);
         return { ok: false, reason: "no_otp_or_expired" };
     }
     const max = smsOtpMaxAttempts_();
     if (rec.attempts >= max) {
-        otpStore.delete(mobile);
+        await deleteOtp_(mobile);
         return { ok: false, reason: "too_many_attempts" };
     }
-    rec.attempts += 1;
+    const nextAttempts = rec.attempts + 1;
     if (rec.codeHash !== sha256Hex_(code)) {
-        const remaining = Math.max(0, max - rec.attempts);
+        const remaining = Math.max(0, max - nextAttempts);
         if (remaining <= 0) {
-            otpStore.delete(mobile);
+            await deleteOtp_(mobile);
             return { ok: false, reason: "too_many_attempts", attempts_remaining: 0 };
         }
+        await incrementAttempts_(mobile, nextAttempts);
         return { ok: false, reason: "invalid_code", attempts_remaining: remaining };
     }
-    otpStore.delete(mobile);
+    await deleteOtp_(mobile);
     return { ok: true };
 }
 
-function lastSentAtMs_(mobile) {
-    const rec = otpStore.get(mobile);
-    return rec && Number.isFinite(rec.sentAt) ? rec.sentAt : 0;
+// ---------------------------------------------------------------------------
+// Per-IP rate limiting (in-memory, per-instance)
+// ---------------------------------------------------------------------------
+
+/**
+ * In-memory ring per IP. Defense-in-depth against accidental wallet burn / enumeration;
+ * the per-mobile cooldown remains the primary guard.
+ * @type {Map<string, number[]>}
+ */
+const ipSendTimestamps = new Map();
+
+function recordIpSend_(ip) {
+    if (!ip) {
+        return { allowed: true, remaining: smsOtpIpLimit_() };
+    }
+    const now = Date.now();
+    const windowMs = smsOtpIpWindowSeconds_() * 1000;
+    const limit = smsOtpIpLimit_();
+    const arr = ipSendTimestamps.get(ip) || [];
+    const fresh = arr.filter((t) => now - t < windowMs);
+    if (fresh.length >= limit) {
+        ipSendTimestamps.set(ip, fresh);
+        const oldest = fresh[0];
+        const retryAfter = Math.max(1, Math.ceil((windowMs - (now - oldest)) / 1000));
+        return { allowed: false, remaining: 0, retry_after_seconds: retryAfter };
+    }
+    fresh.push(now);
+    ipSendTimestamps.set(ip, fresh);
+    return { allowed: true, remaining: limit - fresh.length };
 }
+
+function pruneIpStoreIfLarge_() {
+    if (ipSendTimestamps.size < 5000) {
+        return;
+    }
+    const now = Date.now();
+    const windowMs = smsOtpIpWindowSeconds_() * 1000;
+    for (const [ip, arr] of ipSendTimestamps.entries()) {
+        const fresh = arr.filter((t) => now - t < windowMs);
+        if (fresh.length === 0) {
+            ipSendTimestamps.delete(ip);
+        } else {
+            ipSendTimestamps.set(ip, fresh);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Audit trail (optional Firestore writes)
+// ---------------------------------------------------------------------------
+
+function auditLog_(event, fields) {
+    if (!smsOtpAuditEnabled_()) {
+        return;
+    }
+    /** Fire-and-forget: do not block the response on audit writes. */
+    (async () => {
+        try {
+            const db = getFirestoreDb_();
+            if (!db) {
+                return;
+            }
+            await db.collection(smsOtpAuditCollection_()).add({
+                event,
+                ...fields,
+                created_at: admin.firestore.FieldValue.serverTimestamp()
+            });
+        } catch (e) {
+            log_("audit_write_failed", { error: e && e.message ? e.message : String(e) });
+        }
+    })();
+}
+
+// ---------------------------------------------------------------------------
+// Fast2SMS send
+// ---------------------------------------------------------------------------
 
 /**
  * Send the OTP SMS through Fast2SMS.
@@ -264,32 +505,73 @@ async function sendOtpViaFast2Sms_(mobile10, otp) {
     return { ok: true, status: resp.status, request_id: requestId };
 }
 
+// ---------------------------------------------------------------------------
+// HTTP handlers
+// ---------------------------------------------------------------------------
+
+function clientIp_(req) {
+    /** Behind Railway's edge proxy, req.ip respects X-Forwarded-For when `trust proxy` is set on the app. */
+    return (req && typeof req.ip === "string" && req.ip) || "";
+}
+
 /** POST /api/sms-otp/send */
 async function handleSendOtp_(req, res) {
+    const ip = clientIp_(req);
     try {
         const body = req.body && typeof req.body === "object" ? req.body : {};
         const mobile = normalizeIndianMobile_(body.mobile);
         if (!mobile) {
+            log_("send_rejected_bad_mobile", { ip, raw_mobile_present: body.mobile != null });
             return res
                 .status(400)
                 .json({ ok: false, error: "Provide a valid 10-digit Indian mobile number." });
         }
 
+        pruneIpStoreIfLarge_();
+        const ipCheck = recordIpSend_(ip);
+        if (!ipCheck.allowed) {
+            log_("send_rejected_ip_rate_limit", {
+                ip,
+                mobile_masked: maskMobile_(mobile),
+                retry_after_seconds: ipCheck.retry_after_seconds
+            });
+            auditLog_("send_blocked_ip", {
+                mobile_masked: maskMobile_(mobile),
+                ip,
+                retry_after_seconds: ipCheck.retry_after_seconds
+            });
+            return res
+                .status(429)
+                .set("Retry-After", String(ipCheck.retry_after_seconds))
+                .json({
+                    ok: false,
+                    error: `Too many OTP requests from this network. Try again in ${ipCheck.retry_after_seconds}s.`,
+                    retry_after_seconds: ipCheck.retry_after_seconds,
+                    reason: "ip_rate_limited"
+                });
+        }
+
         const cooldown = smsOtpResendCooldownSeconds_();
         if (cooldown > 0) {
-            const last = lastSentAtMs_(mobile);
-            if (last) {
-                const elapsedMs = Date.now() - last;
+            const existing = await readOtp_(mobile);
+            if (existing && Number.isFinite(existing.sentAt)) {
+                const elapsedMs = Date.now() - existing.sentAt;
                 const remainingMs = cooldown * 1000 - elapsedMs;
                 if (remainingMs > 0) {
                     const retryAfter = Math.ceil(remainingMs / 1000);
+                    log_("send_rejected_cooldown", {
+                        ip,
+                        mobile_masked: maskMobile_(mobile),
+                        retry_after_seconds: retryAfter
+                    });
                     return res
                         .status(429)
                         .set("Retry-After", String(retryAfter))
                         .json({
                             ok: false,
                             error: `Please wait ${retryAfter}s before requesting a new OTP.`,
-                            retry_after_seconds: retryAfter
+                            retry_after_seconds: retryAfter,
+                            reason: "cooldown"
                         });
                 }
             }
@@ -298,12 +580,35 @@ async function handleSendOtp_(req, res) {
         const otp = generateOtp_();
         const sendResult = await sendOtpViaFast2Sms_(mobile, otp);
         if (!sendResult.ok) {
+            log_("send_failed_provider", {
+                ip,
+                mobile_masked: maskMobile_(mobile),
+                provider_status: sendResult.status,
+                error: sendResult.error
+            });
+            auditLog_("send_failed", {
+                mobile_masked: maskMobile_(mobile),
+                ip,
+                provider_status: sendResult.status,
+                error: sendResult.error
+            });
             return res
                 .status(502)
                 .json({ ok: false, error: sendResult.error || "Failed to send OTP." });
         }
 
-        storeOtp_(mobile, otp);
+        await storeOtp_(mobile, otp, sendResult.request_id);
+        log_("send_ok", {
+            ip,
+            mobile_masked: maskMobile_(mobile),
+            request_id: sendResult.request_id,
+            route: (process.env.FAST2SMS_ROUTE || "otp").trim().toLowerCase()
+        });
+        auditLog_("send_ok", {
+            mobile_masked: maskMobile_(mobile),
+            ip,
+            request_id: sendResult.request_id
+        });
 
         return res.status(200).json({
             ok: true,
@@ -313,12 +618,14 @@ async function handleSendOtp_(req, res) {
         });
     } catch (e) {
         const msg = e && e.message ? e.message : String(e);
+        log_("send_exception", { ip, error: msg });
         return res.status(500).json({ ok: false, error: msg });
     }
 }
 
 /** POST /api/sms-otp/verify */
-function handleVerifyOtp_(req, res) {
+async function handleVerifyOtp_(req, res) {
+    const ip = clientIp_(req);
     try {
         const body = req.body && typeof req.body === "object" ? req.body : {};
         const mobile = normalizeIndianMobile_(body.mobile);
@@ -332,11 +639,12 @@ function handleVerifyOtp_(req, res) {
         if (!code) {
             return res.status(400).json({ ok: false, error: "Provide the OTP code." });
         }
-        const r = consumeOtp_(mobile, code);
+        const r = await consumeOtp_(mobile, code);
         if (r.ok) {
+            log_("verify_ok", { ip, mobile_masked: maskMobile_(mobile) });
+            auditLog_("verify_ok", { mobile_masked: maskMobile_(mobile), ip });
             return res.status(200).json({ ok: true, message: "OTP verified." });
         }
-        /** Map our reason -> HTTP status + human message. */
         let httpStatus = 400;
         let message = "Invalid or expired OTP.";
         if (r.reason === "no_otp_or_expired") {
@@ -349,6 +657,18 @@ function handleVerifyOtp_(req, res) {
             message = "Incorrect OTP.";
             httpStatus = 400;
         }
+        log_("verify_failed", {
+            ip,
+            mobile_masked: maskMobile_(mobile),
+            reason: r.reason,
+            attempts_remaining: r.attempts_remaining
+        });
+        auditLog_("verify_failed", {
+            mobile_masked: maskMobile_(mobile),
+            ip,
+            reason: r.reason,
+            attempts_remaining: r.attempts_remaining
+        });
         return res.status(httpStatus).json({
             ok: false,
             error: message,
@@ -357,13 +677,15 @@ function handleVerifyOtp_(req, res) {
         });
     } catch (e) {
         const msg = e && e.message ? e.message : String(e);
+        log_("verify_exception", { ip, error: msg });
         return res.status(500).json({ ok: false, error: msg });
     }
 }
 
 /** GET /api/sms-otp/health */
-function handleHealth_(_req, res) {
+async function handleHealth_(_req, res) {
     const apiKey = (process.env.FAST2SMS_API_KEY || "").trim();
+    const backendReady = await probeFirestoreOnce_();
     return res.status(200).json({
         ok: !!apiKey,
         provider: "fast2sms",
@@ -373,7 +695,14 @@ function handleHealth_(_req, res) {
         ttl_seconds: smsOtpTtlSeconds_(),
         max_attempts: smsOtpMaxAttempts_(),
         resend_cooldown_seconds: smsOtpResendCooldownSeconds_(),
-        pending_otp_count: otpStore.size
+        ip_limit: smsOtpIpLimit_(),
+        ip_window_seconds: smsOtpIpWindowSeconds_(),
+        storage_backend: backendReady ? "firestore" : "memory",
+        firestore_collection: backendReady ? smsOtpFirestoreCollection_() : null,
+        audit_enabled: smsOtpAuditEnabled_(),
+        audit_collection: smsOtpAuditEnabled_() ? smsOtpAuditCollection_() : null,
+        memory_pending_count: memoryStore.size,
+        ip_tracker_size: ipSendTimestamps.size
     });
 }
 
@@ -383,6 +712,14 @@ function handleHealth_(_req, res) {
  * @param {import("express").Express} app
  */
 export function mountSmsOtpRoutes(app) {
+    /** Required so `req.ip` reflects the visitor's IP behind Railway's edge proxy (X-Forwarded-For). */
+    if (typeof app.set === "function") {
+        const current = typeof app.get === "function" ? app.get("trust proxy") : undefined;
+        if (current === undefined || current === false || current === 0) {
+            app.set("trust proxy", true);
+        }
+    }
+
     const json = express.json({ limit: "16kb" });
     app.post("/api/sms-otp/send", json, handleSendOtp_);
     app.post("/api/sms-otp/verify", json, handleVerifyOtp_);
@@ -392,9 +729,13 @@ export function mountSmsOtpRoutes(app) {
 /** Exposed for unit testing only. */
 export const __smsOtpInternals = {
     normalizeIndianMobile: normalizeIndianMobile_,
+    maskMobile: maskMobile_,
     generateOtp: generateOtp_,
     storeOtp: storeOtp_,
+    readOtp: readOtp_,
     consumeOtp: consumeOtp_,
     sendOtpViaFast2Sms: sendOtpViaFast2Sms_,
-    store: otpStore
+    recordIpSend: recordIpSend_,
+    memoryStore,
+    ipSendTimestamps
 };

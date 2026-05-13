@@ -5269,27 +5269,198 @@ function syncContactFormNoValidateForActiveForm() {
     }
 }
 
-function submitOtpResendRequest(clickedButton) {
-    const endpoint = getApiEndpoint(CONTACT_FORM_ENDPOINT);
-    const status = document.getElementById("dfchat-contact-form-status");
+/**
+ * SMS OTP HTTP endpoints (see `server/contact-form-api/lib/sms-otp.mjs`).
+ * Sending and verification go through these — never the generic `/contact-form-submissions` endpoint.
+ */
+const SMS_OTP_API_SEND_PATH = "/api/sms-otp/send";
+const SMS_OTP_API_VERIFY_PATH = "/api/sms-otp/verify";
+
+/**
+ * Tracks the last `/api/sms-otp/send` triggered by `triggerOtpAutoSendIfNeeded_` for each mobile,
+ * so we never spam the endpoint when the OTP form re-renders within a single visit (server-side
+ * cooldown is the authoritative guard; this just avoids needless 429 round-trips).
+ * @type {Map<string, number>}
+ */
+const autoSentOtpAtMsByMobile_ = new Map();
+const AUTO_OTP_RESEND_GUARD_MS = 60_000;
+
+/**
+ * POST `/api/sms-otp/send`.
+ * @param {string} mobile
+ * @returns {Promise<{ ok: boolean, error?: string, reason?: string, ttl_seconds?: number, request_id?: string, retry_after_seconds?: number }>}
+ */
+async function sendSmsOtpViaApi_(mobile) {
+    const endpoint = getApiEndpoint(SMS_OTP_API_SEND_PATH);
     if (!endpoint) {
+        return { ok: false, error: getTranslation("statusOpenViaFlask") };
+    }
+    try {
+        const response = await fetch(endpoint, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ mobile: String(mobile == null ? "" : mobile) })
+        });
+        const text = await response.text();
+        /** @type {Record<string, unknown>} */
+        let data = {};
+        try {
+            data = text ? JSON.parse(text) : {};
+        } catch {
+            data = {};
+        }
+        if (!response.ok) {
+            return {
+                ok: false,
+                error: typeof data.error === "string" && data.error.trim()
+                    ? data.error.trim()
+                    : `HTTP ${response.status}`,
+                reason: typeof data.reason === "string" ? data.reason : "",
+                retry_after_seconds: Number.isFinite(data.retry_after_seconds)
+                    ? Number(data.retry_after_seconds)
+                    : 0
+            };
+        }
+        return {
+            ok: true,
+            ttl_seconds: Number.isFinite(data.ttl_seconds) ? Number(data.ttl_seconds) : 0,
+            request_id: typeof data.request_id === "string" ? data.request_id : ""
+        };
+    } catch (e) {
+        return { ok: false, error: e && e.message ? e.message : String(e) };
+    }
+}
+
+/**
+ * POST `/api/sms-otp/verify`.
+ * @param {string} mobile
+ * @param {string} code
+ * @returns {Promise<{ ok: boolean, error?: string, reason?: string, attempts_remaining?: number }>}
+ */
+async function verifySmsOtpViaApi_(mobile, code) {
+    const endpoint = getApiEndpoint(SMS_OTP_API_VERIFY_PATH);
+    if (!endpoint) {
+        return { ok: false, error: getTranslation("statusOpenViaFlask") };
+    }
+    try {
+        const response = await fetch(endpoint, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                mobile: String(mobile == null ? "" : mobile),
+                code: String(code == null ? "" : code)
+            })
+        });
+        const text = await response.text();
+        /** @type {Record<string, unknown>} */
+        let data = {};
+        try {
+            data = text ? JSON.parse(text) : {};
+        } catch {
+            data = {};
+        }
+        if (!response.ok) {
+            return {
+                ok: false,
+                error: typeof data.error === "string" && data.error.trim()
+                    ? data.error.trim()
+                    : `HTTP ${response.status}`,
+                reason: typeof data.reason === "string" ? data.reason : "",
+                attempts_remaining: Number.isFinite(data.attempts_remaining)
+                    ? Number(data.attempts_remaining)
+                    : undefined
+            };
+        }
+        return { ok: true };
+    } catch (e) {
+        return { ok: false, error: e && e.message ? e.message : String(e) };
+    }
+}
+
+/**
+ * Resolve the visitor's mobile for OTP send/verify: visible `o-mobile` input first, then stored client context.
+ * @returns {string} trimmed digits (may include +91 / leading 0 — server normalises)
+ */
+function resolveVisitorMobileForOtp_() {
+    const oMobile = document.getElementById("o-mobile");
+    const v1 =
+        oMobile && "value" in oMobile && typeof oMobile.value === "string" ? oMobile.value.trim() : "";
+    if (v1) {
+        return v1;
+    }
+    const stored = readStoredClientContext();
+    const fromCtx = dfParameterScalarToString(stored && stored.mobile != null ? stored.mobile : "");
+    return fromCtx ? fromCtx.trim() : "";
+}
+
+/**
+ * When the OTP form opens in the `otp` step and we have a mobile, trigger a single
+ * `/api/sms-otp/send` automatically so the user sees the code arrive without an extra tap.
+ * Debounced per mobile via `autoSentOtpAtMsByMobile_` to avoid duplicate sends from form re-renders.
+ * @param {{ force?: boolean }} [opts]
+ */
+function triggerOtpAutoSendIfNeeded_(opts) {
+    try {
+        const cfg = readContactFormConfig();
+        if (!cfg || cfg.formKey !== "otp") {
+            return;
+        }
+        if (getOtpFormStep() !== "otp") {
+            return;
+        }
+        const mobile = resolveVisitorMobileForOtp_();
+        if (!mobile) {
+            return;
+        }
+        const force = !!(opts && opts.force);
+        const lastTs = autoSentOtpAtMsByMobile_.get(mobile) || 0;
+        if (!force && lastTs && Date.now() - lastTs < AUTO_OTP_RESEND_GUARD_MS) {
+            return;
+        }
+        autoSentOtpAtMsByMobile_.set(mobile, Date.now());
+        const status = document.getElementById("dfchat-contact-form-status");
         if (status) {
-            status.textContent = getTranslation("statusOpenViaFlask");
+            status.textContent = getTranslation("statusSubmitting");
+            status.classList.remove("is-success", "is-error");
+        }
+        sendSmsOtpViaApi_(mobile).then((r) => {
+            if (!status) {
+                return;
+            }
+            if (r.ok) {
+                status.textContent = getTranslation("statusOtpResent");
+                status.classList.add("is-success");
+                status.classList.remove("is-error");
+            } else if (r.reason === "cooldown") {
+                /** Server says "too soon" — visitor already has a fresh code. Stay quiet. */
+                status.textContent = "";
+                status.classList.remove("is-success", "is-error");
+            } else {
+                status.textContent = r.error || getTranslation("statusSubmissionFailed");
+                status.classList.add("is-error");
+                status.classList.remove("is-success");
+            }
+        });
+    } catch {
+        /* never let auto-send break the form */
+    }
+}
+
+/**
+ * Resend OTP — POST `/api/sms-otp/send`. Wired to the "Resend OTP" link inside the OTP form
+ * (see `setupOtpFormTwoStepIfNeeded`).
+ * @param {HTMLButtonElement | null} clickedButton
+ */
+function submitOtpResendRequest(clickedButton) {
+    const status = document.getElementById("dfchat-contact-form-status");
+    const mobile = resolveVisitorMobileForOtp_();
+    if (!mobile) {
+        if (status) {
+            status.textContent = getTranslation("invalidPhone");
             status.classList.add("is-error");
             status.classList.remove("is-success");
         }
         return;
-    }
-    const mEl = document.getElementById("o-mobile");
-    const mRaw = mEl && "value" in mEl ? mEl.value : "";
-    const mobile = typeof mRaw === "string" ? mRaw.trim() : "";
-    const payload = {
-        client_context: getClientContext(),
-        _contactFormId: "otp",
-        _contactFormAction: "resend_otp"
-    };
-    if (mobile) {
-        payload.mobile = mobile;
     }
     if (status) {
         status.textContent = getTranslation("statusSubmitting");
@@ -5298,36 +5469,17 @@ function submitOtpResendRequest(clickedButton) {
     if (clickedButton && "disabled" in clickedButton) {
         clickedButton.disabled = true;
     }
-    fetch(endpoint, {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json"
-        },
-        body: JSON.stringify(payload)
-    })
-        .then(async (response) => {
-            const responseText = await response.text();
-            let responsePayload = {};
-            try {
-                responsePayload = responseText ? JSON.parse(responseText) : {};
-            } catch {
-                responsePayload = {};
-            }
-            if (!response.ok) {
-                const fallbackMessage = responseText
-                    ? `Unable to send. HTTP ${response.status}: ${responseText.slice(0, 160)}`
-                    : `Unable to send. HTTP ${response.status}`;
-                throw new Error(responsePayload.error || responsePayload.message || fallbackMessage);
-            }
-            if (status) {
-                status.textContent = responsePayload.message || getTranslation("statusOtpResent");
-                status.classList.add("is-success");
-                status.classList.remove("is-error");
-            }
-        })
-        .catch((error) => {
-            if (status) {
-                status.textContent = error.message || getTranslation("statusSubmissionFailed");
+    sendSmsOtpViaApi_(mobile)
+        .then((r) => {
+            if (r.ok) {
+                autoSentOtpAtMsByMobile_.set(mobile, Date.now());
+                if (status) {
+                    status.textContent = getTranslation("statusOtpResent");
+                    status.classList.add("is-success");
+                    status.classList.remove("is-error");
+                }
+            } else if (status) {
+                status.textContent = r.error || getTranslation("statusSubmissionFailed");
                 status.classList.add("is-error");
                 status.classList.remove("is-success");
             }
@@ -13903,6 +14055,7 @@ function openContactForm() {
     window.setTimeout(() => {
         applyStoredContactHintsToOpenContactForm_();
         syncSuppressAppointmentContactRows_();
+        triggerOtpAutoSendIfNeeded_();
     }, 0);
     syncContactFormAppointmentModeClass_();
     syncAppointmentDoctorHiddenFromSession();
@@ -14372,7 +14525,33 @@ function submitContactForm(event) {
         }, CONTACT_FORM_SUBMIT_FETCH_TIMEOUT_MS);
     }
 
-    fetch(endpoint, fetchInit)
+    /**
+     * For the OTP form's `otp` step, require the visitor to prove the code via
+     * `/api/sms-otp/verify` before we relay the submission to `/contact-form-submissions`.
+     * For the OTP form's `mobile` step (update-mobile branch) and every other form, this
+     * resolves to `{ ok: true }` immediately and the original flow runs unchanged.
+     */
+    const otpCodeForVerify = isOtpForm && otpStep === "otp"
+        ? String(payload.otp != null ? payload.otp : "").replace(/\D+/g, "")
+        : "";
+    const mobileForVerify = isOtpForm && otpStep === "otp"
+        ? String(payload.mobile != null ? payload.mobile : "").trim()
+        : "";
+    const verifyOtpFirst = !!(otpCodeForVerify && mobileForVerify);
+    const verifyPromise = verifyOtpFirst
+        ? verifySmsOtpViaApi_(mobileForVerify, otpCodeForVerify)
+        : Promise.resolve({ ok: true });
+
+    verifyPromise
+        .then((verifyRes) => {
+            if (!verifyRes || verifyRes.ok !== true) {
+                const friendly = (verifyRes && verifyRes.error) || getTranslation("invalidOtp");
+                const err = new Error(friendly);
+                /** @type {any} */ (err).__smsOtpVerifyFailed = true;
+                throw err;
+            }
+            return fetch(endpoint, fetchInit);
+        })
         .then(async (response) => {
             const responseText = await response.text();
             let responsePayload = {};
@@ -14404,6 +14583,8 @@ function submitContactForm(event) {
                 if (oOtpEl) {
                     oOtpEl.value = "";
                 }
+                /** Newly-saved mobile → request a fresh OTP for that number immediately. */
+                triggerOtpAutoSendIfNeeded_({ force: true });
                 return;
             }
 
