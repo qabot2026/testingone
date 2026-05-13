@@ -31,6 +31,26 @@ visitor session.
 - **Sessions** are an HMAC-signed HttpOnly + SameSite=Lax cookie carrying
   `{ email, exp }`. No external session store.
 
+### SMTP-less fallback (handy for first-run)
+
+When `SMTP_*` env vars are not configured, or when `sendMail` fails (Gmail
+auth, TLS hang, etc.), the magic link is printed to the server log instead
+of being emailed. Look in Railway → **Logs** for:
+
+```
+[dashboard] ==================== MAGIC LINK ====================
+[dashboard] Email:  you@yourcompany.com
+[dashboard] Reason: SMTP not configured
+[dashboard] Expires in 15 minutes. One-time use. Open this URL:
+[dashboard] https://YOUR-API.up.railway.app/api/dashboard/login/verify?token=...
+[dashboard] ====================================================
+```
+
+Copy that URL into your browser and you're signed in — no email needed.
+
+Set `DASHBOARD_PRINT_LOGIN_LINK=1` to print the link **regardless** of SMTP
+status (useful while onboarding a client who hasn't wired their SMTP yet).
+
 ## Required env
 
 ```
