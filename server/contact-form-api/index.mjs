@@ -1625,19 +1625,37 @@ app.post("/webhook", express.json({ limit: "512kb" }), async (req, res) => {
         }
 
         if (tag === "get_nearby_branches") {
-            const lat = Number(normalizeStr_(params.user_lat ?? params.userLat ?? params.lat));
-            const lng = Number(normalizeStr_(params.user_lng ?? params.userLng ?? params.lng));
-            if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+            const latRaw = normalizeStr_(params.user_lat ?? params.userLat ?? params.lat);
+            const lngRaw = normalizeStr_(params.user_lng ?? params.userLng ?? params.lng);
+            if (!latRaw || !lngRaw) {
                 return fallback(
-                    "I couldn't read your location. Please allow location access, or try 'Search by city' instead."
+                    "I couldn't read your location. Please allow location access in your browser, or try 'Search by city' instead."
+                );
+            }
+            const lat = Number(latRaw);
+            const lng = Number(lngRaw);
+            if (
+                !Number.isFinite(lat) || !Number.isFinite(lng)
+                || lat < -90 || lat > 90 || lng < -180 || lng > 180
+            ) {
+                return fallback(
+                    `Invalid location received (lat=${latRaw}, lng=${lngRaw}). Please retry, or use 'Search by city'.`
                 );
             }
             const branches = await readBranchesWithFallback_();
             const ranked = [];
             for (const b of branches) {
-                const bLat = Number(String(b.Latitude || "").trim());
-                const bLng = Number(String(b.Longitude || "").trim());
-                if (!Number.isFinite(bLat) || !Number.isFinite(bLng)) continue;
+                const bLatRaw = String(b.Latitude || "").trim();
+                const bLngRaw = String(b.Longitude || "").trim();
+                if (!bLatRaw || !bLngRaw) continue;
+                const bLat = Number(bLatRaw);
+                const bLng = Number(bLngRaw);
+                if (
+                    !Number.isFinite(bLat) || !Number.isFinite(bLng)
+                    || bLat < -90 || bLat > 90 || bLng < -180 || bLng > 180
+                ) {
+                    continue;
+                }
                 ranked.push({ b, distanceKm: haversineKm_(lat, lng, bLat, bLng) });
             }
             ranked.sort((x, y) => x.distanceKm - y.distanceKm);
