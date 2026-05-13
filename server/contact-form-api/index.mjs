@@ -811,9 +811,57 @@ app.get("/api/branches", (_req, res) => {
         });
 });
 
+/** In-process cache of the bundled branches JSON used to backfill missing fields from RTDB. */
+let bundledBranchesCache_ = null;
+
+function readBundledBranchesFile_() {
+    if (bundledBranchesCache_) return bundledBranchesCache_;
+    try {
+        const raw = fs.readFileSync(CATALOG_BRANCHES_CSV, "utf8");
+        const parsed = JSON.parse(raw);
+        bundledBranchesCache_ = Array.isArray(parsed) ? parsed : [];
+    } catch {
+        bundledBranchesCache_ = [];
+    }
+    return bundledBranchesCache_;
+}
+
+/**
+ * For each branch returned by RTDB, fill in `Latitude`/`Longitude` (and any other
+ * missing fields) from the bundled JSON file when the RTDB value is empty.
+ * @param {Array<Record<string, unknown>>} branchesFromDb
+ */
+function backfillBranchFieldsFromBundle_(branchesFromDb) {
+    if (!Array.isArray(branchesFromDb) || !branchesFromDb.length) return branchesFromDb;
+    const bundle = readBundledBranchesFile_();
+    if (!bundle.length) return branchesFromDb;
+    /** @type {Map<string, Record<string, unknown>>} */
+    const byId = new Map();
+    for (const b of bundle) {
+        const id = String((b && (b.BranchId || b.branchId)) || "").trim();
+        if (id) byId.set(id, b);
+    }
+    return branchesFromDb.map((row) => {
+        const id = String((row && (row.BranchId || row.branchId)) || "").trim();
+        const ref = id ? byId.get(id) : null;
+        if (!ref) return row;
+        const merged = { ...row };
+        for (const [k, v] of Object.entries(ref)) {
+            const cur = merged[k];
+            const curStr = typeof cur === "string" ? cur.trim() : cur == null ? "" : String(cur);
+            if (!curStr && v != null && v !== "") {
+                merged[k] = v;
+            }
+        }
+        return merged;
+    });
+}
+
 /**
  * Read branches from RTDB if available; fall back to the bundled JSON file so
  * `/api/nearest-branches` keeps working in dev / when Firebase is not configured.
+ * When RTDB rows are missing fields (e.g. empty Latitude/Longitude after a
+ * partial sync), backfill from the bundled file matched by BranchId.
  * @returns {Promise<Array<Record<string, string>>>}
  */
 async function readBranchesWithFallback_() {
@@ -821,19 +869,13 @@ async function readBranchesWithFallback_() {
         try {
             const list = await listBranches();
             if (Array.isArray(list) && list.length) {
-                return list;
+                return backfillBranchFieldsFromBundle_(list);
             }
         } catch {
             /* fall through to file */
         }
     }
-    try {
-        const raw = fs.readFileSync(CATALOG_BRANCHES_CSV, "utf8");
-        const parsed = JSON.parse(raw);
-        return Array.isArray(parsed) ? parsed : [];
-    } catch {
-        return [];
-    }
+    return readBundledBranchesFile_();
 }
 
 /** Haversine distance between two coordinates in **kilometres**. */
