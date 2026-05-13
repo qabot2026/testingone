@@ -1,58 +1,106 @@
 /**
- * SMS OTP integration — provider: Fast2SMS (https://www.fast2sms.com/dashboard/dev-api).
+ * SMS OTP integration — provider-agnostic core.
  *
  * Endpoints (mounted by `mountSmsOtpRoutes(app)` in index.mjs):
- *   POST /api/sms-otp/send    body: { mobile }              -> sends a numeric OTP via Fast2SMS
+ *   POST /api/sms-otp/send    body: { mobile }              -> sends a numeric OTP via the active provider
  *   POST /api/sms-otp/verify  body: { mobile, code }        -> verifies the OTP (one-shot, then consumed)
- *   GET  /api/sms-otp/health                                -> reports config + storage backend
+ *   GET  /api/sms-otp/health                                -> reports active provider + config + storage backend
+ *
+ * Wire-up — one import + one call in index.mjs:
+ *   import { mountSmsOtpRoutes } from "./lib/sms-otp.mjs";
+ *   mountSmsOtpRoutes(app);
  *
  * Storage:
- *   - Firestore-backed (collection `sms_otp_codes`, doc id = 10-digit mobile) when Firebase Admin
- *     credentials are configured (FIREBASE_SERVICE_ACCOUNT_JSON etc.) and SMS_OTP_DISABLE_FIRESTORE!=1.
- *     This is the recommended production mode — codes survive Railway restarts and multi-instance scaling.
- *   - In-memory fallback (Map) used automatically when Firestore is unavailable. Per-process,
+ *   - Firestore (collection `sms_otp_codes`, doc id = 10-digit mobile) when Firebase Admin
+ *     credentials are configured (FIREBASE_SERVICE_ACCOUNT_JSON) and SMS_OTP_DISABLE_FIRESTORE!=1.
+ *     This is the recommended production mode — codes survive Railway restarts and multi-instance.
+ *   - In-memory `Map` fallback used automatically when Firestore is unavailable. Per-process,
  *     non-durable; fine for local dev / smoke testing.
  *
- * Required env:
- *   FAST2SMS_API_KEY            Dev API key from Fast2SMS dashboard.
+ * --- Active SMS provider ----------------------------------------------------
  *
- * Optional env:
- *   FAST2SMS_ROUTE              "otp" (default) | "q" | "v3" | "dlt"
- *                               - "otp": Fast2SMS sends a generic "Your OTP verification code is XXXXXX".
- *                                        Requires Fast2SMS website verification on the dashboard.
- *                               - "q"  : Quick transactional, custom text (FAST2SMS_MESSAGE_TEMPLATE).
- *                                        No DLT or website verification, but uses wallet balance.
- *                               - "v3" : Sender-ID route. Needs FAST2SMS_SENDER_ID.
- *                               - "dlt": DLT route (production-grade). Needs FAST2SMS_SENDER_ID
- *                                        + FAST2SMS_DLT_MESSAGE_ID + FAST2SMS_MESSAGE_TEMPLATE.
- *   FAST2SMS_SENDER_ID          6-char DLT sender id.
- *   FAST2SMS_MESSAGE_TEMPLATE   Custom message for "q"/"v3"/"dlt". Use `{{otp}}` placeholder.
- *                               Default: "Your OTP is {{otp}}".
- *   FAST2SMS_DLT_MESSAGE_ID     DLT-approved Fast2SMS template id (for "dlt").
+ *   SMS_OTP_PROVIDER         "msg91" (default). Add more providers by dropping a file in
+ *                            lib/sms-providers/ and registering it in PROVIDERS below.
  *
- *   SMS_OTP_LENGTH              Digits in the OTP. 4..8, default 6.
- *   SMS_OTP_TTL_SECONDS         OTP validity window. 30..900, default 300 (5 min).
- *   SMS_OTP_MAX_ATTEMPTS        Verify failures before lockout. 1..20, default 5.
- *   SMS_OTP_RESEND_COOLDOWN_S   Min seconds between sends to same mobile. 0..600, default 30.
+ * --- How to add another provider (e.g. Twilio, Plivo, Gupshup, Kaleyra) ----
  *
- *   SMS_OTP_IP_LIMIT            Max OTP send requests per IP within the window. 1..200, default 10.
- *   SMS_OTP_IP_WINDOW_S         IP rate-limit window in seconds. 60..3600, default 600 (10 min).
+ *   1) Create `lib/sms-providers/<name>.mjs` and export:
  *
- *   SMS_OTP_FIRESTORE_COLLECTION  Firestore collection for codes. Default "sms_otp_codes".
- *   SMS_OTP_DISABLE_FIRESTORE=1   Force in-memory only (skip Firestore even when configured).
- *   SMS_OTP_AUDIT_TO_FIRESTORE=1  Append audit rows to `sms_otp_audit` (every send + verify outcome).
- *   SMS_OTP_AUDIT_COLLECTION      Override audit collection name. Default "sms_otp_audit".
+ *        export const provider = {
+ *          name: "<name>",
+ *          missingEnvKeys()  { return ["<NAME>_API_KEY", ...]; },
+ *          debugInfo()       { return { ... no secrets ... }; },
+ *          async sendOtp({ mobile, otp, otpLength }) {
+ *            // POST to your gateway; return { ok, status?, request_id?, error? }.
+ *          }
+ *        };
  *
- * Mobile format: Indian 10-digit. `+91` / `91` / leading `0` are stripped; first digit must be 6-9.
- *   Numbers from outside India are rejected with HTTP 400.
+ *      The shape is documented in the `@typedef SmsProvider` block below.
+ *
+ *   2) Import it at the top of this file and add to the PROVIDERS map:
+ *
+ *        import { provider as twilioProvider } from "./sms-providers/twilio.mjs";
+ *        const PROVIDERS = {
+ *          msg91: msg91Provider,
+ *          twilio: twilioProvider,
+ *        };
+ *
+ *   3) Set on Railway:  SMS_OTP_PROVIDER=twilio  + provider-specific env vars.
+ *
+ * --- OTP behaviour tuning (apply to every provider) -------------------------
+ *
+ *   SMS_OTP_LENGTH              4..8, default 6
+ *   SMS_OTP_TTL_SECONDS         30..900, default 300 (5 min)
+ *   SMS_OTP_MAX_ATTEMPTS        1..20, default 5 verify failures before lockout
+ *   SMS_OTP_RESEND_COOLDOWN_S   0..600, default 30 seconds between sends per mobile
+ *   SMS_OTP_IP_LIMIT            1..200, default 10 sends per IP per window
+ *   SMS_OTP_IP_WINDOW_S         60..3600, default 600 (10 min)
+ *
+ *   SMS_OTP_FIRESTORE_COLLECTION  default "sms_otp_codes"
+ *   SMS_OTP_DISABLE_FIRESTORE=1   force in-memory only (skip Firestore even when configured)
+ *   SMS_OTP_AUDIT_TO_FIRESTORE=1  append audit rows to `sms_otp_audit` (every send + verify outcome)
+ *   SMS_OTP_AUDIT_COLLECTION      default "sms_otp_audit"
+ *
+ * @typedef {object} SmsProviderSendInput
+ * @property {string} mobile     10-digit Indian mobile (already normalised by the core).
+ * @property {string} otp        Plaintext OTP code generated by the core.
+ * @property {number} otpLength  Number of digits in `otp` (provider may need this).
+ *
+ * @typedef {object} SmsProviderSendResult
+ * @property {boolean} ok
+ * @property {number}  [status]      HTTP status from the provider's API.
+ * @property {string}  [request_id]  Provider's tracking id (for support tickets).
+ * @property {string}  [error]       Human-readable error message (only when ok=false).
+ *
+ * @typedef {object} SmsProvider
+ * @property {string} name
+ * @property {(input: SmsProviderSendInput) => Promise<SmsProviderSendResult>} sendOtp
+ * @property {() => string[]} missingEnvKeys
+ * @property {() => Record<string, unknown>} debugInfo
  */
 
 import crypto from "node:crypto";
 import express from "express";
 import admin from "firebase-admin";
 import { firebaseAdminInit } from "./firebase-admin-init.mjs";
+import { provider as msg91Provider } from "./sms-providers/msg91.mjs";
 
-const FAST2SMS_ENDPOINT = "https://www.fast2sms.com/dev/bulkV2";
+/** Provider registry. Add new providers here once their adapter file exists. */
+const PROVIDERS = {
+    msg91: msg91Provider
+};
+
+const DEFAULT_PROVIDER_NAME = "msg91";
+
+function activeProviderName_() {
+    const raw = (process.env.SMS_OTP_PROVIDER || DEFAULT_PROVIDER_NAME).trim().toLowerCase();
+    return PROVIDERS[raw] ? raw : DEFAULT_PROVIDER_NAME;
+}
+
+function activeProvider_() {
+    return PROVIDERS[activeProviderName_()];
+}
+
 const LOG_TAG = "[sms-otp]";
 
 function envInt_(key, fallback, min, max) {
@@ -210,12 +258,6 @@ async function probeFirestoreOnce_() {
     return firestoreEnabled;
 }
 
-/**
- * Persist a freshly-issued OTP for `mobile`.
- * @param {string} mobile  10-digit Indian mobile.
- * @param {string} code    Plaintext OTP (only the sha256 hash is stored).
- * @param {string} [requestId]
- */
 async function storeOtp_(mobile, code, requestId) {
     const ttlMs = smsOtpTtlSeconds_() * 1000;
     const expiresAt = Date.now() + ttlMs;
@@ -242,10 +284,6 @@ async function storeOtp_(mobile, code, requestId) {
     memoryStore.set(mobile, record);
 }
 
-/**
- * Read the stored record for `mobile`, normalising both backends to the same shape.
- * Returns null if missing or expired (expired records are deleted lazily).
- */
 async function readOtp_(mobile) {
     const db = await probeFirestoreOnce_() ? getFirestoreDb_() : null;
     if (db) {
@@ -309,10 +347,6 @@ async function deleteOtp_(mobile) {
     memoryStore.delete(mobile);
 }
 
-/**
- * Verify and consume the OTP.
- * @returns {Promise<{ ok: true } | { ok: false, reason: string, attempts_remaining?: number }>}
- */
 async function consumeOtp_(mobile, code) {
     const rec = await readOtp_(mobile);
     if (!rec) {
@@ -341,11 +375,7 @@ async function consumeOtp_(mobile, code) {
 // Per-IP rate limiting (in-memory, per-instance)
 // ---------------------------------------------------------------------------
 
-/**
- * In-memory ring per IP. Defense-in-depth against accidental wallet burn / enumeration;
- * the per-mobile cooldown remains the primary guard.
- * @type {Map<string, number[]>}
- */
+/** @type {Map<string, number[]>} */
 const ipSendTimestamps = new Map();
 
 function recordIpSend_(ip) {
@@ -401,6 +431,7 @@ function auditLog_(event, fields) {
             }
             await db.collection(smsOtpAuditCollection_()).add({
                 event,
+                provider: activeProviderName_(),
                 ...fields,
                 created_at: admin.firestore.FieldValue.serverTimestamp()
             });
@@ -411,117 +442,22 @@ function auditLog_(event, fields) {
 }
 
 // ---------------------------------------------------------------------------
-// Fast2SMS send
-// ---------------------------------------------------------------------------
-
-/**
- * Send the OTP SMS through Fast2SMS.
- * @param {string} mobile10  10-digit Indian mobile.
- * @param {string} otp       Numeric OTP.
- * @returns {Promise<{ ok: boolean, status?: number, request_id?: string, error?: string }>}
- */
-async function sendOtpViaFast2Sms_(mobile10, otp) {
-    const apiKey = (process.env.FAST2SMS_API_KEY || "").trim();
-    if (!apiKey) {
-        return { ok: false, error: "FAST2SMS_API_KEY is not set on the server." };
-    }
-    const route = (process.env.FAST2SMS_ROUTE || "otp").trim().toLowerCase();
-
-    /** @type {Record<string, string>} */
-    const body = { route, numbers: mobile10 };
-
-    if (route === "otp") {
-        body.variables_values = otp;
-    } else if (route === "dlt") {
-        const tplId = (process.env.FAST2SMS_DLT_MESSAGE_ID || "").trim();
-        const sender = (process.env.FAST2SMS_SENDER_ID || "").trim();
-        if (!tplId || !sender) {
-            return {
-                ok: false,
-                error: "FAST2SMS_DLT_MESSAGE_ID and FAST2SMS_SENDER_ID are required for FAST2SMS_ROUTE=dlt."
-            };
-        }
-        body.message = tplId;
-        body.sender_id = sender;
-        body.variables_values = otp;
-    } else if (route === "v3") {
-        const sender = (process.env.FAST2SMS_SENDER_ID || "FSTSMS").trim();
-        const tpl = (process.env.FAST2SMS_MESSAGE_TEMPLATE || "Your OTP is {{otp}}").trim();
-        body.message = tpl.replace(/\{\{\s*otp\s*\}\}/g, otp);
-        body.sender_id = sender;
-        body.language = "english";
-        body.flash = "0";
-    } else if (route === "q") {
-        const tpl = (process.env.FAST2SMS_MESSAGE_TEMPLATE || "Your OTP is {{otp}}").trim();
-        body.message = tpl.replace(/\{\{\s*otp\s*\}\}/g, otp);
-        body.language = "english";
-        body.flash = "0";
-    } else {
-        return {
-            ok: false,
-            error: `Unsupported FAST2SMS_ROUTE "${route}". Use one of: otp, q, v3, dlt.`
-        };
-    }
-
-    /** @type {Response} */
-    let resp;
-    try {
-        resp = await fetch(FAST2SMS_ENDPOINT, {
-            method: "POST",
-            headers: {
-                authorization: apiKey,
-                "Content-Type": "application/json",
-                Accept: "application/json"
-            },
-            body: JSON.stringify(body)
-        });
-    } catch (e) {
-        return {
-            ok: false,
-            error: `Fast2SMS request failed: ${e && e.message ? e.message : String(e)}`
-        };
-    }
-
-    const text = await resp.text();
-    /** @type {Record<string, unknown>} */
-    let data = {};
-    try {
-        data = text ? JSON.parse(text) : {};
-    } catch {
-        data = {};
-    }
-
-    if (!resp.ok || data.return === false) {
-        const msg =
-            typeof data.message === "string"
-                ? data.message
-                : Array.isArray(data.message)
-                    ? data.message.join(", ")
-                    : `Fast2SMS HTTP ${resp.status}`;
-        return { ok: false, status: resp.status, error: msg };
-    }
-
-    const requestId = typeof data.request_id === "string" ? data.request_id : undefined;
-    return { ok: true, status: resp.status, request_id: requestId };
-}
-
-// ---------------------------------------------------------------------------
 // HTTP handlers
 // ---------------------------------------------------------------------------
 
 function clientIp_(req) {
-    /** Behind Railway's edge proxy, req.ip respects X-Forwarded-For when `trust proxy` is set on the app. */
     return (req && typeof req.ip === "string" && req.ip) || "";
 }
 
 /** POST /api/sms-otp/send */
 async function handleSendOtp_(req, res) {
     const ip = clientIp_(req);
+    const providerName = activeProviderName_();
     try {
         const body = req.body && typeof req.body === "object" ? req.body : {};
         const mobile = normalizeIndianMobile_(body.mobile);
         if (!mobile) {
-            log_("send_rejected_bad_mobile", { ip, raw_mobile_present: body.mobile != null });
+            log_("send_rejected_bad_mobile", { ip, provider: providerName });
             return res
                 .status(400)
                 .json({ ok: false, error: "Provide a valid 10-digit Indian mobile number." });
@@ -532,6 +468,7 @@ async function handleSendOtp_(req, res) {
         if (!ipCheck.allowed) {
             log_("send_rejected_ip_rate_limit", {
                 ip,
+                provider: providerName,
                 mobile_masked: maskMobile_(mobile),
                 retry_after_seconds: ipCheck.retry_after_seconds
             });
@@ -561,6 +498,7 @@ async function handleSendOtp_(req, res) {
                     const retryAfter = Math.ceil(remainingMs / 1000);
                     log_("send_rejected_cooldown", {
                         ip,
+                        provider: providerName,
                         mobile_masked: maskMobile_(mobile),
                         retry_after_seconds: retryAfter
                     });
@@ -577,11 +515,17 @@ async function handleSendOtp_(req, res) {
             }
         }
 
+        const provider = activeProvider_();
         const otp = generateOtp_();
-        const sendResult = await sendOtpViaFast2Sms_(mobile, otp);
+        const sendResult = await provider.sendOtp({
+            mobile,
+            otp,
+            otpLength: smsOtpLength_()
+        });
         if (!sendResult.ok) {
             log_("send_failed_provider", {
                 ip,
+                provider: providerName,
                 mobile_masked: maskMobile_(mobile),
                 provider_status: sendResult.status,
                 error: sendResult.error
@@ -600,9 +544,9 @@ async function handleSendOtp_(req, res) {
         await storeOtp_(mobile, otp, sendResult.request_id);
         log_("send_ok", {
             ip,
+            provider: providerName,
             mobile_masked: maskMobile_(mobile),
-            request_id: sendResult.request_id,
-            route: (process.env.FAST2SMS_ROUTE || "otp").trim().toLowerCase()
+            request_id: sendResult.request_id
         });
         auditLog_("send_ok", {
             mobile_masked: maskMobile_(mobile),
@@ -618,7 +562,7 @@ async function handleSendOtp_(req, res) {
         });
     } catch (e) {
         const msg = e && e.message ? e.message : String(e);
-        log_("send_exception", { ip, error: msg });
+        log_("send_exception", { ip, provider: providerName, error: msg });
         return res.status(500).json({ ok: false, error: msg });
     }
 }
@@ -684,13 +628,18 @@ async function handleVerifyOtp_(req, res) {
 
 /** GET /api/sms-otp/health */
 async function handleHealth_(_req, res) {
-    const apiKey = (process.env.FAST2SMS_API_KEY || "").trim();
+    const providerName = activeProviderName_();
+    const provider = activeProvider_();
+    const missingEnv = typeof provider.missingEnvKeys === "function" ? provider.missingEnvKeys() : [];
+    const providerDebug = typeof provider.debugInfo === "function" ? provider.debugInfo() : {};
     const backendReady = await probeFirestoreOnce_();
     return res.status(200).json({
-        ok: !!apiKey,
-        provider: "fast2sms",
-        api_key_configured: !!apiKey,
-        route: (process.env.FAST2SMS_ROUTE || "otp").trim().toLowerCase(),
+        ok: missingEnv.length === 0,
+        provider: providerName,
+        provider_ready: missingEnv.length === 0,
+        provider_missing_env: missingEnv,
+        provider_info: providerDebug,
+        available_providers: Object.keys(PROVIDERS),
         otp_length: smsOtpLength_(),
         ttl_seconds: smsOtpTtlSeconds_(),
         max_attempts: smsOtpMaxAttempts_(),
@@ -734,8 +683,9 @@ export const __smsOtpInternals = {
     storeOtp: storeOtp_,
     readOtp: readOtp_,
     consumeOtp: consumeOtp_,
-    sendOtpViaFast2Sms: sendOtpViaFast2Sms_,
     recordIpSend: recordIpSend_,
+    activeProvider: activeProvider_,
+    PROVIDERS,
     memoryStore,
     ipSendTimestamps
 };
