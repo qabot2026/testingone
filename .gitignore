@@ -1,3 +1,9 @@
 server/contact-form-api/node_modules/
 server/contact-form-api/package-lock.json
 Artemis_Code/serviceAccountKey.json
+
+# Locust load test artifacts
+loadtest/report_*.csv
+loadtest/report_*.html
+.venv/
+__pycache__/
