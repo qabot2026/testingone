@@ -33,7 +33,12 @@
 import path from "node:path";
 
 import { getMailTransport_ } from "./mail/smtp-transport.mjs";
-import { currentMailProvider_, isMailConfigured_, sendTimedMail_ } from "./mail/smtp-send.mjs";
+import {
+    currentMailProvider_,
+    isMailConfigured_,
+    sendTimedMail_,
+    transactionalFromAddress_
+} from "./mail/smtp-send.mjs";
 import { isResendConfigured_ } from "./mail/resend-send.mjs";
 import { escapeMailHtml_, renderEmailTemplateHtml_ } from "./mail/render-email-template.mjs";
 
@@ -382,12 +387,7 @@ export async function maybeSendContactLeadNotifyEmail(args) {
         return r;
     }
 
-    const fromAddr = (
-        process.env.MAIL_FROM
-        || process.env.RESEND_FROM
-        || process.env.SMTP_USER
-        || ""
-    ).trim();
+    const fromAddr = transactionalFromAddress_();
     if (!fromAddr) {
         const r = { skipped: true, reason: "no_from_set_MAIL_FROM_or_RESEND_FROM_or_SMTP_USER" };
         logOutcome_(r);

@@ -4,7 +4,7 @@
  * Set CONTACT_APPOINTMENT_CHATBOT_STAFF_NOTIFY_TO (comma-separated) to enable.
  */
 
-import { isMailConfigured_, sendTimedMail_ } from "./smtp-send.mjs";
+import { isMailConfigured_, sendTimedMail_, transactionalFromAddress_ } from "./smtp-send.mjs";
 
 /** @param {string | undefined} s */
 function t_(s) {
@@ -34,10 +34,7 @@ export async function maybeSendAppointmentChatbotStaffNotifyEmail(args) {
     if (!isMailConfigured_()) {
         return { skipped: true, reason: "mail_not_configured_for_outbound" };
     }
-    const fromAddr =
-        (process.env.MAIL_FROM || "").trim()
-        || (process.env.RESEND_FROM || "").trim()
-        || (process.env.SMTP_USER || "").trim();
+    const fromAddr = transactionalFromAddress_();
     if (!fromAddr) {
         return { skipped: true, reason: "no_from_MAIL_FROM_or_RESEND_FROM_or_SMTP_USER" };
     }

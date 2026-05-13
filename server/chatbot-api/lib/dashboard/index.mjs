@@ -51,7 +51,12 @@ import { getFirestore } from "firebase-admin/firestore";
 
 import { firebaseAdminInit } from "../firebase-admin-init.mjs";
 import { isSmtpCredentialEnvPresent_ } from "../mail/smtp-transport.mjs";
-import { currentMailProvider_, isMailConfigured_, sendTimedMail_ } from "../mail/smtp-send.mjs";
+import {
+    currentMailProvider_,
+    isMailConfigured_,
+    sendTimedMail_,
+    transactionalFromAddress_
+} from "../mail/smtp-send.mjs";
 import { isResendConfigured_ } from "../mail/resend-send.mjs";
 
 const LOG_TAG = "[dashboard]";
@@ -109,13 +114,7 @@ function publicBaseUrl_() {
 }
 
 function fromEmail_() {
-    return (
-        trim_(process.env.DASHBOARD_FROM_EMAIL) ||
-        trim_(process.env.MAIL_FROM) ||
-        trim_(process.env.RESEND_FROM) ||
-        trim_(process.env.SMTP_USER) ||
-        ""
-    );
+    return trim_(process.env.DASHBOARD_FROM_EMAIL) || transactionalFromAddress_();
 }
 
 function b64urlEncode_(buf) {

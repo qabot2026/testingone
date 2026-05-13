@@ -19,6 +19,26 @@ export function currentMailProvider_() {
     return "none";
 }
 
+function trimMailEnv_(v) {
+    return typeof v === "string" ? v.trim() : "";
+}
+
+/**
+ * Default "From" for transactional mail (contact lead, acks, dashboard login).
+ * When Resend is active, RESEND_FROM is preferred over MAIL_FROM because
+ * MAIL_FROM is often an unverified personal Gmail from legacy SMTP — Resend
+ * rejects it until you verify a domain.
+ */
+export function transactionalFromAddress_() {
+    const mail = trimMailEnv_(process.env.MAIL_FROM);
+    const resend = trimMailEnv_(process.env.RESEND_FROM);
+    const smtp = trimMailEnv_(process.env.SMTP_USER);
+    if (isResendConfigured_()) {
+        return resend || mail || smtp || "onboarding@resend.dev";
+    }
+    return mail || smtp || "";
+}
+
 /**
  * Send one transactional email through the active provider.
  *
