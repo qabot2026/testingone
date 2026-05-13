@@ -1356,6 +1356,40 @@ function doctorToCarouselCard_(d) {
     };
 }
 
+/**
+ * Branch → carousel card. Distance is shown when supplied (nearby flow).
+ * `ctaValue` is the BranchId so DFCX/widget can set `branch_id` on click.
+ */
+function branchToCarouselCard_(b, { distanceKm } = {}) {
+    const branchId = normalizeStr_(b.BranchId);
+    const title = normalizeStr_(b.BranchName || b.Area || b.City || "Branch");
+    const area = normalizeStr_(b.Area);
+    const city = normalizeStr_(b.City);
+    const state = normalizeStr_(b.State);
+    const timing = normalizeStr_(b.BranchTiming);
+    const contact = normalizeStr_(b.ContactNumber);
+    const imageUrl = normalizeStr_(b.ImageUrl);
+    const distLabel = Number.isFinite(distanceKm)
+        ? `${Math.round(distanceKm * 10) / 10} km away`
+        : "";
+    const location = [area, city, state].filter(Boolean).join(", ");
+    const subtitleParts = [
+        distLabel,
+        location,
+        timing ? `Timing: ${timing}` : "",
+        contact ? `Contact: ${contact}` : ""
+    ].filter(Boolean);
+
+    return {
+        ctaLabel: "View",
+        subtitle: subtitleParts.join(" • "),
+        id: branchId ? `branch_${branchId}` : `branch_${Math.random().toString(16).slice(2)}`,
+        title,
+        ctaValue: branchId || title,
+        ...(imageUrl ? { imageUrl } : {})
+    };
+}
+
 app.post("/webhook", express.json({ limit: "512kb" }), async (req, res) => {
     const body = req.body && typeof req.body === "object" ? req.body : {};
     const tag = normalizeLower_(body.fulfillmentInfo && body.fulfillmentInfo.tag);
@@ -1524,6 +1558,104 @@ app.post("/webhook", express.json({ limit: "512kb" }), async (req, res) => {
                             imageUrl: "https://cdn-icons-png.flaticon.com/512/684/684908.png"
                         }),
                         cxText_(text, lang)
+                    ]
+                }
+            });
+        }
+
+        if (tag === "get_areas") {
+            const state = normalizeStr_(params.state);
+            const city = normalizeStr_(params.city);
+            if (!city) {
+                return fallback("Please select a city first.");
+            }
+            const branches = await listBranches();
+            const filtered = branches.filter((b) => {
+                if (state && normalizeLower_(b.State) !== normalizeLower_(state)) return false;
+                return normalizeLower_(b.City) === normalizeLower_(city);
+            });
+            const areas = Array.from(
+                new Set(filtered.map((b) => normalizeStr_(b.Area)).filter(Boolean))
+            ).sort((a, b) => a.localeCompare(b));
+            if (!areas.length) {
+                return fallback(`No areas found for ${city}.`);
+            }
+            return res.json({
+                fulfillment_response: {
+                    messages: [
+                        cxPayload_({
+                            action: "dfchat_inline_select",
+                            message: `Please select an area in ${city}:`,
+                            placeholder: "Choose an area…",
+                            options: areas.map((a) => ({ label: String(a), value: String(a) }))
+                        })
+                    ]
+                }
+            });
+        }
+
+        if (tag === "get_branches_by_area") {
+            const state = normalizeStr_(params.state);
+            const city = normalizeStr_(params.city);
+            const area = normalizeStr_(params.area);
+            if (!city || !area) {
+                return fallback("Please select a city and area first.");
+            }
+            const branches = await listBranches();
+            const matches = branches.filter((b) => {
+                if (state && normalizeLower_(b.State) !== normalizeLower_(state)) return false;
+                if (normalizeLower_(b.City) !== normalizeLower_(city)) return false;
+                return normalizeLower_(b.Area) === normalizeLower_(area);
+            });
+            if (!matches.length) {
+                return fallback(`No branches found in ${area}, ${city}.`);
+            }
+            const cards = matches.slice(0, 12).map((b) => branchToCarouselCard_(b));
+            return res.json({
+                fulfillment_response: {
+                    messages: [
+                        cxPayload_({
+                            cards,
+                            message: `Branches in ${area}, ${city}:`,
+                            action: "open_card_carousel"
+                        })
+                    ]
+                }
+            });
+        }
+
+        if (tag === "get_nearby_branches") {
+            const lat = Number(normalizeStr_(params.user_lat ?? params.userLat ?? params.lat));
+            const lng = Number(normalizeStr_(params.user_lng ?? params.userLng ?? params.lng));
+            if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+                return fallback(
+                    "I couldn't read your location. Please allow location access, or try 'Search by city' instead."
+                );
+            }
+            const branches = await readBranchesWithFallback_();
+            const ranked = [];
+            for (const b of branches) {
+                const bLat = Number(String(b.Latitude || "").trim());
+                const bLng = Number(String(b.Longitude || "").trim());
+                if (!Number.isFinite(bLat) || !Number.isFinite(bLng)) continue;
+                ranked.push({ b, distanceKm: haversineKm_(lat, lng, bLat, bLng) });
+            }
+            ranked.sort((x, y) => x.distanceKm - y.distanceKm);
+            const top3 = ranked.slice(0, 3);
+            if (!top3.length) {
+                return fallback("No branches with location data are available.");
+            }
+            const cards = top3.map(({ b, distanceKm }) =>
+                branchToCarouselCard_(b, { distanceKm })
+            );
+            return res.json({
+                fulfillment_response: {
+                    messages: [
+                        cxPayload_({
+                            cards,
+                            message: "Top 3 branches near you:",
+                            action: "open_card_carousel"
+                        })
                     ]
                 }
             });
