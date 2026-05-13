@@ -4,7 +4,7 @@
  * Set CONTACT_APPOINTMENT_CHATBOT_STAFF_NOTIFY_TO (comma-separated) to enable.
  */
 
-import { isSmtpCredentialEnvPresent_, sendTimedMail_ } from "./smtp-send.mjs";
+import { isMailConfigured_, sendTimedMail_ } from "./smtp-send.mjs";
 
 /** @param {string | undefined} s */
 function t_(s) {
@@ -31,12 +31,15 @@ export async function maybeSendAppointmentChatbotStaffNotifyEmail(args) {
     if (!toList.length) {
         return { skipped: true, reason: "no_CONTACT_APPOINTMENT_CHATBOT_STAFF_NOTIFY_TO" };
     }
-    if (!isSmtpCredentialEnvPresent_()) {
-        return { skipped: true, reason: "smtp_not_configured_for_outbound" };
+    if (!isMailConfigured_()) {
+        return { skipped: true, reason: "mail_not_configured_for_outbound" };
     }
-    const fromAddr = (process.env.MAIL_FROM || "").trim() || (process.env.SMTP_USER || "").trim();
+    const fromAddr =
+        (process.env.MAIL_FROM || "").trim()
+        || (process.env.RESEND_FROM || "").trim()
+        || (process.env.SMTP_USER || "").trim();
     if (!fromAddr) {
-        return { skipped: true, reason: "no_from_MAIL_FROM_or_SMTP_USER" };
+        return { skipped: true, reason: "no_from_MAIL_FROM_or_RESEND_FROM_or_SMTP_USER" };
     }
     const prefix = (
         process.env.CONTACT_APPOINTMENT_CHATBOT_STAFF_SUBJECT || "NEW chatbot booking"

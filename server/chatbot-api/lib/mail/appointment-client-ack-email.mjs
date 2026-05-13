@@ -7,7 +7,7 @@
  * Optional: CONTACT_MAIL_* (company footer), CONTACT_APPOINTMENT_CLIENT_ACK_SUBJECT / _CHATBOT
  */
 
-import { isSmtpCredentialEnvPresent_, sendTimedMail_ } from "./smtp-send.mjs";
+import { isMailConfigured_, sendTimedMail_ } from "./smtp-send.mjs";
 import { escapeMailHtml_, renderEmailTemplateHtml_ } from "./render-email-template.mjs";
 
 /** @param {string | undefined} s */
@@ -37,12 +37,13 @@ export async function maybeSendAppointmentClientAckEmail(args) {
     if (!toAddr) {
         return { skipped: true, reason: "no_recipient_email" };
     }
-    if (!isSmtpCredentialEnvPresent_()) {
-        return { skipped: true, reason: "smtp_not_configured_for_outbound" };
+    if (!isMailConfigured_()) {
+        return { skipped: true, reason: "mail_not_configured_for_outbound" };
     }
     const fromAddr =
         (process.env.CONTACT_APPOINTMENT_CLIENT_ACK_FROM || "").trim()
         || (process.env.MAIL_FROM || "").trim()
+        || (process.env.RESEND_FROM || "").trim()
         || (process.env.SMTP_USER || "").trim();
     if (!fromAddr) {
         return { skipped: true, reason: "no_from_ADDRESS" };

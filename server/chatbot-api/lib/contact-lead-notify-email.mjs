@@ -33,7 +33,8 @@
 import path from "node:path";
 
 import { getMailTransport_ } from "./mail/smtp-transport.mjs";
-import { sendTimedMail_ } from "./mail/smtp-send.mjs";
+import { currentMailProvider_, isMailConfigured_, sendTimedMail_ } from "./mail/smtp-send.mjs";
+import { isResendConfigured_ } from "./mail/resend-send.mjs";
 import { escapeMailHtml_, renderEmailTemplateHtml_ } from "./mail/render-email-template.mjs";
 
 /** @returns {string[]} */
@@ -41,10 +42,14 @@ export function missingContactLeadEmailEnvKeys_() {
     /** @type {string[]} */
     const missing = [];
     if (!(process.env.CONTACT_LEAD_NOTIFY_TO || "").trim()) missing.push("CONTACT_LEAD_NOTIFY_TO");
+    // Resend (HTTPS) replaces SMTP entirely when its key is set.
+    if (isResendConfigured_()) {
+        return missing;
+    }
     if (!(process.env.SMTP_HOST || "").trim()) missing.push("SMTP_HOST");
     if (!(process.env.SMTP_USER || "").trim()) missing.push("SMTP_USER");
     if (!(process.env.SMTP_PASS || process.env.SMTP_PASSWORD || "").trim()) {
-        missing.push("SMTP_PASS (or SMTP_PASSWORD)");
+        missing.push("SMTP_PASS (or SMTP_PASSWORD) [or set RESEND_API_KEY to use Resend instead]");
     }
     return missing;
 }
@@ -100,10 +105,8 @@ function logOutcome_(r) {
  */
 export function isContactLeadEmailConfigured() {
     const to = (process.env.CONTACT_LEAD_NOTIFY_TO || "").trim();
-    const host = (process.env.SMTP_HOST || "").trim();
-    const user = (process.env.SMTP_USER || "").trim();
-    const pass = (process.env.SMTP_PASS || process.env.SMTP_PASSWORD || "").trim();
-    return Boolean(to && host && user && pass);
+    if (!to) return false;
+    return isMailConfigured_();
 }
 
 /**
@@ -119,6 +122,14 @@ function t_(s) {
  */
 export async function verifyContactLeadSmtpOnBoot() {
     if (!isContactLeadEmailConfigured()) {
+        return;
+    }
+    // Resend uses HTTPS — there is nothing to verify upfront, and probing
+    // Gmail SMTP would waste 90s + spam logs on Railway plans that block SMTP.
+    if (currentMailProvider_() !== "smtp") {
+        console.log(
+            `[contact-lead-notify-email] active mail provider = ${currentMailProvider_()} — skipping SMTP verify.`
+        );
         return;
     }
     const port = Number(process.env.SMTP_PORT) || 587;
@@ -371,9 +382,14 @@ export async function maybeSendContactLeadNotifyEmail(args) {
         return r;
     }
 
-    const fromAddr = (process.env.MAIL_FROM || process.env.SMTP_USER || "").trim();
+    const fromAddr = (
+        process.env.MAIL_FROM
+        || process.env.RESEND_FROM
+        || process.env.SMTP_USER
+        || ""
+    ).trim();
     if (!fromAddr) {
-        const r = { skipped: true, reason: "no_from_set_MAIL_FROM_or_SMTP_USER" };
+        const r = { skipped: true, reason: "no_from_set_MAIL_FROM_or_RESEND_FROM_or_SMTP_USER" };
         logOutcome_(r);
         return r;
     }
