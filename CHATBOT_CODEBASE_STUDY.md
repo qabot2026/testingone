@@ -30,7 +30,7 @@
 ┌─────────────────────────────────────────────────────────────────┐
 │         Backend API (Node.js/Express)                          │
 ├─────────────────────────────────────────────────────────────────┤
-│  • contact-form-api/index.mjs   - Main REST API                │
+│  • chatbot-api/index.mjs   - Main REST API                │
 │  • POST /contact-form-submissions - Handle form submissions    │
 │  • POST /contact-form-mobile-sheet-sync - Mobile sheet sync    │
 │  • Integration: Google Sheets, Firestore, Google Drive        │
@@ -295,7 +295,7 @@ Located in `artemis_all/agentTransitionRouteGroups/`
 
 ### 3.1 Server Setup
 
-**File**: `server/contact-form-api/index.mjs`
+**File**: `server/chatbot-api/index.mjs`
 
 **Technology Stack**:
 
@@ -697,7 +697,7 @@ testingone/
 │   └── webhooks/                   # Webhook definitions
 │
 └── server/
-    └── contact-form-api/
+    └── chatbot-api/
         ├── index.mjs               # Express app entry
         ├── package.json            # Dependencies
         ├── env.example.txt         # Environment variables

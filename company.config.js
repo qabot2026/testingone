@@ -39,7 +39,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
 
     // -------------------------------------------------------------------------
     // Google Sheet extra columns (contact-form **API** — not read by the browser)
-    // Single file to edit: `server/contact-form-api/sheet-integration.config.json`
+    // Single file to edit: `server/chatbot-api/sheet-integration.config.json`
     // (`extraColumnMappings` → startColumn, valueFrom dot path e.g. session_params.coursename).
     // Railway env override: SHEETS_INTEGRATION_CONFIG_JSON or SHEETS_EXTRA_COLUMN_MAPPINGS_JSON.
     // -------------------------------------------------------------------------

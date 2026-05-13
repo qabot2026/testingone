@@ -63,7 +63,7 @@ const OPEN_FORM_PAYLOAD_META_KEYS = new Set([
     "fourthFormId",
 ]);
 const CONTACT_FORM_ENDPOINT = "/contact-form-submissions";
-/** POST JSON: append Sheets row when chat captured mobile (no file upload). Matches contact-form-api. */
+/** POST JSON: append Sheets row when chat captured mobile (no file upload). Matches chatbot-api. */
 const CONTACT_FORM_MOBILE_SHEET_SYNC_ENDPOINT = "/contact-form-mobile-sheet-sync";
 /** Live-sync user_queries to Sheets (User Queries column; optional secret matches Railway CONTACT_FORM_MOBILE_SHEET_SYNC_SECRET). */
 const CONTACT_FORM_SESSION_SHEET_SYNC_ENDPOINT = "/contact-form-session-sheet-sync";
@@ -5270,7 +5270,7 @@ function syncContactFormNoValidateForActiveForm() {
 }
 
 /**
- * SMS OTP HTTP endpoints (see `server/contact-form-api/lib/sms-otp.mjs`).
+ * SMS OTP HTTP endpoints (see `server/chatbot-api/lib/sms-otp.mjs`).
  * Sending and verification go through these — never the generic `/contact-form-submissions` endpoint.
  */
 const SMS_OTP_API_SEND_PATH = "/api/sms-otp/send";
