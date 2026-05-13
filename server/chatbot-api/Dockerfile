@@ -7,6 +7,7 @@ COPY lib ./lib
 COPY scripts ./scripts
 COPY data ./data
 COPY public ./public
+COPY dashboard ./dashboard
 ENV NODE_ENV=production
 # Railway injects PORT; 8080 is the default for local Docker.
 ENV PORT=8080

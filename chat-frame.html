@@ -18,6 +18,9 @@
       if (api) window.COMPANY_API_BASE_URL = api;
       var hostPage = (p.get("hostPage") || "").trim();
       if (hostPage) window.COMPANY_EMBED_PARENT_URL = hostPage;
+      // Optional: explicit cross-origin source allowed to push live settings (admin dashboard preview).
+      var adminOrigin = (p.get("adminOrigin") || "").trim();
+      if (adminOrigin) window.COMPANY_ADMIN_PREVIEW_ORIGIN = adminOrigin;
     })();
   </script>
   <!-- In-chat form definitions (must load before company.config.js merges into COMPANY_CHAT_UI_CONFIG). -->
@@ -133,9 +136,15 @@
         }
       }
 
+      function isAllowedAdminOrigin(origin) {
+        if (origin === window.location.origin) return true;
+        var admin = window.COMPANY_ADMIN_PREVIEW_ORIGIN;
+        return typeof admin === "string" && admin && origin === admin;
+      }
+
       window.addEventListener("message", function (ev) {
         try {
-          if (!ev || ev.origin !== window.location.origin) return;
+          if (!ev || !isAllowedAdminOrigin(ev.origin)) return;
           var data = ev.data;
           if (!data || data.type !== "company_admin_settings") return;
           if (typeof window.__dfchatApplyCompanyAdminFlatSettings === "function") {
@@ -146,6 +155,44 @@
           /* ignore */
         }
       });
+
+      // Fetch saved widget settings from the API and apply them on first paint.
+      // Lets the dashboard's "Save live" propagate to real visitor sessions.
+      (function fetchPublishedSettings() {
+        try {
+          var apiBase = (window.COMPANY_API_BASE_URL || "").replace(/\/+$/, "");
+          if (!apiBase) return;
+          var botid = (window.COMPANY_EMBED_BOT_ID || "").trim() || "default";
+          var url = apiBase + "/api/public/widget-settings?botid=" + encodeURIComponent(botid);
+          fetch(url, { credentials: "omit", cache: "no-store" })
+            .then(function (r) { return r.ok ? r.json() : null; })
+            .then(function (data) {
+              if (!data || !data.flat) return;
+              var settings = data.flat;
+              if (typeof data.advancedPatchJson === "string" && data.advancedPatchJson) {
+                settings.advancedPatchJson = data.advancedPatchJson;
+              }
+              function apply() {
+                if (typeof window.__dfchatApplyCompanyAdminFlatSettings === "function") {
+                  window.__dfchatApplyCompanyAdminFlatSettings(settings);
+                  applyThemeVarsLive(settings);
+                  return true;
+                }
+                return false;
+              }
+              if (apply()) return;
+              // company.js may still be booting — retry briefly.
+              var tries = 0;
+              var t = setInterval(function () {
+                tries += 1;
+                if (apply() || tries > 40) clearInterval(t);
+              }, 120);
+            })
+            .catch(function () { /* network blip; keep defaults */ });
+        } catch (e) {
+          /* ignore */
+        }
+      })();
 
       // Notify parent when chat opens/closes so admin can hide/show the left panel.
       window.addEventListener("df-chat-open-changed", function (ev) {
