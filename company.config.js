@@ -48,6 +48,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
     header: {
       title: "Artemis",
       subtitle: "🟢 We are online to assist you",
+      // Public HTTPS URLs; JPG / PNG / WebP / SVG are fine — bitmaps work reliably as launcher + title icons.
       chatIconUrl: "https://storage.googleapis.com/companybucket/Images/cat.png",
       chatTitleIconUrl: "https://storage.googleapis.com/companybucket/Images/cat-icon.png",
       // Base label (no trailing dots): while the agent types, the UI cycles Typing. / Typing.. / Typing...
