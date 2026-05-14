@@ -1457,14 +1457,8 @@
         var be = tot.mobileAndEmail || 0;
         var rat = payload.ratios || {};
         var pct = rat.leadCapturePct;
-        function f(num) {
-          return (
-            '<span class="stat-frac">' +
-            escapeHtml(String(num)) +
-            "/" +
-            escapeHtml(String(n)) +
-            "</span>"
-          );
+        function val(x) {
+          return '<span class="stat-frac">' + escapeHtml(String(x)) + "</span>";
         }
         var leadPctDisp =
           n > 0 && pct != null && Number.isFinite(Number(pct))
@@ -1472,16 +1466,19 @@
             : '<span class="stat-frac">—</span>';
         leadStatsList.hidden = false;
         leadStatsList.innerHTML =
-          "<li>Only Mobile — " +
-          f(om) +
+          "<li>Total conversation = " +
+          val(n) +
           "</li>" +
-          "<li>Only Email — " +
-          f(oe) +
+          "<li>Only Mobile = " +
+          val(om) +
           "</li>" +
-          "<li>Mobile &amp; Email — " +
-          f(be) +
+          "<li>Only Email = " +
+          val(oe) +
           "</li>" +
-          "<li>Lead % — " +
+          "<li>Mobile &amp; Email = " +
+          val(be) +
+          "</li>" +
+          "<li>Lead % = " +
           leadPctDisp +
           "</li>";
       }
