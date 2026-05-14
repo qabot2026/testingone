@@ -297,13 +297,10 @@
       min-width: max(100%, 720px);
       table-layout: auto;
     }
-    table.sheet th,
-    table.sheet td {
+    table.sheet thead th,
+    table.sheet tbody td {
       border: 1px solid rgba(203, 213, 225, 0.72);
-      padding: 4px 11px;
       vertical-align: middle;
-      min-width: 228px;
-      max-width: 370px;
       line-height: 1.28;
       white-space: nowrap;
       overflow: hidden;
@@ -311,6 +308,20 @@
       word-break: normal;
       hyphens: none;
       cursor: default;
+    }
+    table.sheet thead th {
+      min-width: 0;
+      max-width: none;
+      width: auto;
+      padding-left: 8px;
+      padding-right: 8px;
+      padding-top: 8px;
+      padding-bottom: 8px;
+    }
+    table.sheet tbody td {
+      padding: 4px 11px;
+      min-width: 228px;
+      max-width: 370px;
     }
     table.sheet td .cell-line {
       display: block;
@@ -332,8 +343,6 @@
       color: #475569;
       box-shadow: 0 1px 0 rgba(148, 163, 184, 0.6);
       white-space: nowrap;
-      max-width: none;
-      padding: 8px 8px;
     }
     /** Pinned lead columns (date / time / name / mobile / email): left + z-index set in JS */
     table.sheet thead th.col-sticky,
@@ -351,7 +360,6 @@
     table.sheet tbody td.col-sticky {
       cursor: inherit;
     }
-    table.sheet thead th.col-fixed-ch,
     table.sheet tbody td.col-fixed-ch {
       padding-left: 6px;
       padding-right: 6px;
@@ -606,15 +614,32 @@
         return byIdx;
       }
 
-      function decorateStickyCell(el, sm, isHeader) {
+      /** Header: title length + 2 “char” slack (≈ pre/post space), no data-column ch clamp */
+      function headerMinWidthCh(headerTitle) {
+        var lbl = String(headerTitle == null ? "" : headerTitle).trim();
+        return Math.max(1, lbl.length) + 2;
+      }
+
+      function decorateHeaderWidth(thEl, headerTitle) {
+        thEl.style.boxSizing = "border-box";
+        thEl.style.width = "auto";
+        thEl.style.minWidth = headerMinWidthCh(headerTitle) + "ch";
+        thEl.style.maxWidth = "none";
+      }
+
+      function decorateStickyCell(el, sm, isHeader, headerTitle) {
         el.classList.add("col-sticky");
         el.style.left = sm.leftCh + "ch";
-        el.style.width = sm.wch + "ch";
-        el.style.minWidth = sm.wch + "ch";
-        el.style.maxWidth = sm.wch + "ch";
         el.style.boxSizing = "border-box";
         el.style.zIndex = String(isHeader ? 75 + sm.ord : 35 + sm.ord);
-        if (sm.edge && !isHeader) el.classList.add("stk-edge");
+        if (isHeader) {
+          decorateHeaderWidth(el, headerTitle);
+        } else {
+          el.style.width = sm.wch + "ch";
+          el.style.minWidth = sm.wch + "ch";
+          el.style.maxWidth = sm.wch + "ch";
+          if (sm.edge) el.classList.add("stk-edge");
+        }
       }
 
       /** Fixed column width by header (sheet order); skips cells already styled as sticky pins */
@@ -894,11 +919,8 @@
         for (var hi = 0; hi < headers.length; hi++) {
           var th = document.createElement("th");
           th.textContent = headers[hi];
-          if (stickyMeta[hi]) decorateStickyCell(th, stickyMeta[hi], true);
-          else {
-            var fwc = fixedWidthChFromHeader(headers[hi]);
-            if (fwc != null) decorateFixedWidthCh(th, fwc);
-          }
+          if (stickyMeta[hi]) decorateStickyCell(th, stickyMeta[hi], true, headers[hi]);
+          else decorateHeaderWidth(th, headers[hi]);
           trh.appendChild(th);
         }
         thead.appendChild(trh);
