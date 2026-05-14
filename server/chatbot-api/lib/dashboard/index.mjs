@@ -7,13 +7,13 @@
  *     GET  /dashboard              → dashboard SPA shell
  *     GET  /dashboard/*            → dashboard CSS / JS / assets
  *
- *   JSON API (auth required unless noted):
+ *   JSON API:
  *     POST /api/dashboard/login/request     body: { email }                      [public]
  *     GET  /api/dashboard/login/verify?token=...                                  [public]
  *     POST /api/dashboard/logout                                                  [public, idempotent]
- *     GET  /api/dashboard/me                                                      [auth]
- *     GET  /api/dashboard/settings?botid=...                                      [auth]
- *     PUT  /api/dashboard/settings?botid=...   body: { flat, advancedPatchJson }  [auth]
+ *     GET  /api/dashboard/me                                                      [auth if DASHBOARD_REQUIRE_AUTH]
+ *     GET  /api/dashboard/settings?botid=...                                      [auth if DASHBOARD_REQUIRE_AUTH]
+ *     PUT  /api/dashboard/settings?botid=...   body: { flat, advancedPatchJson }  [auth if DASHBOARD_REQUIRE_AUTH]
  *
  *   Public read (called by chat-frame.html on load to apply saved settings):
  *     GET  /api/public/widget-settings?botid=...                                  [public, CORS *]
@@ -373,6 +373,23 @@ function requireSession_() {
     };
 }
 
+/** When unset/false, dashboard settings API works without login (open editor). Set DASHBOARD_REQUIRE_AUTH=1 to restore cookie sessions. */
+function dashboardAuthRequired_() {
+    const v = trim_(process.env.DASHBOARD_REQUIRE_AUTH).toLowerCase();
+    return v === "1" || v === "true" || v === "yes";
+}
+
+function requireSessionUnlessDashboardOpen_() {
+    return (req, res, next) => {
+        if (!dashboardAuthRequired_()) {
+            req.dashboardSession = { email: "" };
+            next();
+            return;
+        }
+        return requireSession_()(req, res, next);
+    };
+}
+
 // ---------------------------------------------------------------------------
 // Routes
 // ---------------------------------------------------------------------------
@@ -575,6 +592,10 @@ export function mountDashboardRoutes(app) {
     // --- Current session ----------------------------------------------------
     router.get("/me", (req, res) => {
         setNoCache_(res);
+        if (!dashboardAuthRequired_()) {
+            res.json({ ok: true, email: "" });
+            return;
+        }
         const sess = readSessionFromReq_(req);
         if (!sess) {
             res.status(401).json({ ok: false, error: "Unauthorized" });
@@ -583,8 +604,8 @@ export function mountDashboardRoutes(app) {
         res.json({ ok: true, email: sess.email });
     });
 
-    // --- Settings: read/write (auth) ----------------------------------------
-    router.get("/settings", requireSession_(), async (req, res) => {
+    // --- Settings: read/write (optional auth — see dashboardAuthRequired_) ---
+    router.get("/settings", requireSessionUnlessDashboardOpen_(), async (req, res) => {
         setNoCache_(res);
         try {
             const botid = botIdOrDefault_(req.query && req.query.botid);
@@ -597,7 +618,7 @@ export function mountDashboardRoutes(app) {
         }
     });
 
-    router.put("/settings", requireSession_(), async (req, res) => {
+    router.put("/settings", requireSessionUnlessDashboardOpen_(), async (req, res) => {
         setNoCache_(res);
         try {
             const botid = botIdOrDefault_(req.query && req.query.botid);
@@ -651,6 +672,7 @@ export function mountDashboardRoutes(app) {
         res.json({
             ok: true,
             allowed_emails_configured: allowedEmails_().length > 0,
+            dashboard_require_auth: dashboardAuthRequired_(),
             session_secret_configured: !!sessionSecret_(),
             public_base_url_configured: !!publicBaseUrl_(),
             mail_provider: currentMailProvider_(),

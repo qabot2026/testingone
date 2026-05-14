@@ -1,8 +1,6 @@
 /* ===========================================================
    Chatbot dashboard front-end
-   ===========================================================
-   - Login (magic link)
-   - Settings form bound to the widget's flat-settings schema
+   - Settings form → widget flat-settings schema
    - Live preview via postMessage to chat-frame.html
    - Save persists to Firestore via the API
    =========================================================== */
@@ -133,59 +131,106 @@
   }
 
   // ---------------------------------------------------------
-  // Login view
-  // ---------------------------------------------------------
-
-  function showLogin() {
-    $("#loginView").hidden = false;
-    $("#mainView").hidden = true;
-  }
-
-  function showMain() {
-    $("#loginView").hidden = true;
-    $("#mainView").hidden = false;
-  }
-
-  function setLoginMessage(text, kind) {
-    var el = $("#loginMessage");
-    if (!el) return;
-    el.textContent = text || "";
-    el.classList.remove("ok", "err");
-    if (kind) el.classList.add(kind);
-  }
-
-  function bindLogin() {
-    var form = $("#loginForm");
-    var btn = $("#loginSubmit");
-    if (!form) return;
-    form.addEventListener("submit", function (ev) {
-      ev.preventDefault();
-      var email = ($("#loginEmail").value || "").trim();
-      if (!email) {
-        setLoginMessage("Please enter your email.", "err");
-        return;
-      }
-      btn.disabled = true;
-      setLoginMessage("Sending sign-in link…");
-      apiFetch("/api/dashboard/login/request", {
-        method: "POST",
-        body: { email: email }
-      }).then(function (data) {
-        setLoginMessage(data && data.message ? data.message : "Check your inbox for the sign-in link.", "ok");
-      }).catch(function (err) {
-        setLoginMessage("Failed: " + (err && err.message ? err.message : err), "err");
-      }).then(function () {
-        btn.disabled = false;
-      });
-    });
-  }
-
-  // ---------------------------------------------------------
   // Main view: settings binding + preview
   // ---------------------------------------------------------
 
   /** Current in-memory settings object (flat schema). */
   var state = Object.assign({}, DEFAULTS);
+
+  /**
+   * Load Firestore `flat` + optional `advancedPatchJson` into dashboard `state`.
+   * Maps widget keys (autoOpenDesk*, launcherStrip*) back into simple form fields.
+   */
+  function hydrateStateFromServer(flat, advancedPatchJsonStr) {
+    var f = flat && typeof flat === "object" ? flat : {};
+    state = Object.assign({}, DEFAULTS);
+
+    Object.keys(f).forEach(function (k) {
+      if (!Object.prototype.hasOwnProperty.call(DEFAULTS, k)) return;
+      var meta = SETTINGS.filter(function (s) { return s.key === k; })[0];
+      var t = meta ? meta.type : "text";
+      var v = f[k];
+      if (t === "bool") {
+        state[k] = !!v;
+      } else if (t === "number") {
+        var n = Number(v);
+        state[k] = Number.isFinite(n) ? n : DEFAULTS[k];
+      } else if (t === "color") {
+        var hex = String(v || "").trim();
+        state[k] = isHexColor(hex) ? hex : DEFAULTS[k];
+      } else {
+        state[k] = v == null ? "" : String(v);
+      }
+    });
+
+    if (f.autoOpenDeskEnabled !== undefined || f.autoOpenMobEnabled !== undefined) {
+      state.autoOpenEnabled = !!(f.autoOpenDeskEnabled || f.autoOpenMobEnabled);
+    }
+    var deskMs = Number(f.autoOpenDeskDelayMs);
+    var mobMs = Number(f.autoOpenMobDelayMs);
+    if (Number.isFinite(deskMs) || Number.isFinite(mobMs)) {
+      var ms = Number.isFinite(deskMs) ? deskMs : mobMs;
+      state.autoOpenSeconds = ms / 1000;
+    }
+
+    if (f.launcherStripDeskEnabled !== undefined || f.launcherStripMobEnabled !== undefined) {
+      state.bubbleStripEnabled = !!(f.launcherStripDeskEnabled || f.launcherStripMobEnabled);
+    }
+    if (f.launcherStripDeskText !== undefined || f.launcherStripMobText !== undefined) {
+      var d = f.launcherStripDeskText;
+      var m = f.launcherStripMobText;
+      state.bubbleStripText = d !== undefined && d !== null ? String(d) : String(m != null ? m : "");
+    }
+
+    var advStr = (advancedPatchJsonStr || "").trim();
+    if (advStr) {
+      try {
+        var adv = JSON.parse(advStr);
+        var ml = adv && adv.common && adv.common.features && adv.common.features.multiLanguage;
+        var byLang = ml && ml.inputPlaceholderByLanguage;
+        if (byLang && typeof byLang === "object") {
+          var ph = byLang.en || byLang.hi || byLang.mr;
+          if (ph == null) {
+            var vals = Object.keys(byLang).map(function (x) { return byLang[x]; }).filter(Boolean);
+            ph = vals[0];
+          }
+          if (ph != null) state.inputPlaceholder = String(ph);
+        }
+      } catch (e) { /* ignore bad JSON */ }
+    }
+  }
+
+  /** Update small thumbnail previews for icon URL fields. */
+  function syncImagePreviews() {
+    var bubbleImg = document.getElementById("chatIconPreview");
+    var headerImg = document.getElementById("headerIconPreview");
+    var u1 = (state.chatIconUrl || "").trim();
+    var u2 = (state.chatTitleIconUrl || "").trim();
+    if (bubbleImg) {
+      bubbleImg.onerror = function () {
+        bubbleImg.classList.remove("visible");
+      };
+      if (u1) {
+        bubbleImg.src = u1;
+        bubbleImg.classList.add("visible");
+      } else {
+        bubbleImg.removeAttribute("src");
+        bubbleImg.classList.remove("visible");
+      }
+    }
+    if (headerImg) {
+      headerImg.onerror = function () {
+        headerImg.classList.remove("visible");
+      };
+      if (u2) {
+        headerImg.src = u2;
+        headerImg.classList.add("visible");
+      } else {
+        headerImg.removeAttribute("src");
+        headerImg.classList.remove("visible");
+      }
+    }
+  }
 
   /** Apply state → DOM inputs. */
   function renderInputs() {
@@ -207,6 +252,7 @@
         input.value = value == null ? "" : String(value);
       }
     });
+    syncImagePreviews();
   }
 
   /** DOM inputs → state object. */
@@ -381,6 +427,9 @@
           state[def.key] = Number.isFinite(n) ? n : 0;
         } else {
           state[def.key] = input.value;
+          if (def.key === "chatIconUrl" || def.key === "chatTitleIconUrl") {
+            syncImagePreviews();
+          }
         }
         pushToPreviewDebounced();
       });
@@ -415,14 +464,7 @@
     var bot = currentBotId();
     return apiFetch("/api/dashboard/settings?botid=" + encodeURIComponent(bot))
       .then(function (data) {
-        var flat = (data && data.flat) || {};
-        // Adapt the server's stored flat shape back to our dashboard state keys.
-        state = Object.assign({}, DEFAULTS);
-        Object.keys(flat).forEach(function (k) {
-          if (Object.prototype.hasOwnProperty.call(DEFAULTS, k)) {
-            state[k] = flat[k];
-          }
-        });
+        hydrateStateFromServer((data && data.flat) || {}, (data && data.advancedPatchJson) || "");
         renderInputs();
         pushToPreview();
       });
@@ -467,7 +509,7 @@
         method: "PUT",
         body: payload
       }).then(function () {
-        showToast("Saved live for '" + bot + "'", "ok");
+        showToast("Saved live for bot \"" + bot + "\"", "ok");
       }).catch(function (err) {
         showToast("Save failed: " + (err && err.message ? err.message : err), "err");
       }).then(function () {
@@ -475,13 +517,16 @@
       });
     });
 
-    $("#logoutBtn").addEventListener("click", function () {
-      apiFetch("/api/dashboard/logout", { method: "POST" })
-        .catch(function () { /* ignore */ })
-        .then(function () {
-          window.location.reload();
-        });
-    });
+    var logoutBtn = $("#logoutBtn");
+    if (logoutBtn) {
+      logoutBtn.addEventListener("click", function () {
+        apiFetch("/api/dashboard/logout", { method: "POST" })
+          .catch(function () { /* ignore */ })
+          .then(function () {
+            window.location.reload();
+          });
+      });
+    }
   }
 
   function bindPreview() {
@@ -493,6 +538,17 @@
       setPreviewUrl(urlInput.value.trim());
       reloadPreview();
     });
+    urlInput.addEventListener("input", debounce(function () {
+      var v = urlInput.value.trim();
+      if (!v) return;
+      try {
+        new URL(v);
+      } catch (e) {
+        return;
+      }
+      setPreviewUrl(v);
+      reloadPreview();
+    }, 450));
     $("#reloadPreviewBtn").addEventListener("click", function () {
       setPreviewUrl(urlInput.value.trim());
       reloadPreview();
@@ -508,6 +564,17 @@
     });
 
     if (savedUrl) reloadPreview();
+    else {
+      apiFetch("/api/dashboard/health").then(function (h) {
+        var def = h && h.preview_url_default;
+        if (typeof def === "string" && def.trim()) {
+          var u = def.trim();
+          urlInput.value = u;
+          setPreviewUrl(u);
+          reloadPreview();
+        }
+      }).catch(function () { /* ignore */ });
+    }
   }
 
   function bindTabs() {
@@ -525,21 +592,19 @@
   // ---------------------------------------------------------
 
   function boot() {
-    bindLogin();
     bindTopbar();
     bindPreview();
     bindTabs();
     bindSettingsInputs();
     renderInputs();
 
-    apiFetch("/api/dashboard/me").then(function (data) {
-      var email = data && data.email ? data.email : "";
-      $("#meEmail").textContent = email ? "Signed in as " + email : "";
-      showMain();
-      return loadSavedSettings();
-    }).catch(function () {
-      showLogin();
-    });
+    loadSavedSettings()
+      .catch(function (err) {
+        showToast("Could not load saved settings: " + (err && err.message ? err.message : err), "err");
+      })
+      .then(function () {
+        reloadPreview();
+      });
   }
 
   if (document.readyState === "loading") {
