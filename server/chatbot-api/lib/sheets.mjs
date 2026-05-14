@@ -645,6 +645,37 @@ function sheetAppointmentCellCountsScheduled_(raw) {
     return false;
 }
 
+/** Infer slot filled when “booked/status” cells are blank but appointment date & time columns are populated plausibly. */
+function sheetRowAppointmentSlotCellsLikelyFilled_(dateCellRaw, timeCellRaw) {
+    const d = sheetCellString_(dateCellRaw).trim();
+    const t = sheetCellString_(timeCellRaw).trim();
+    if (!d || !t || !/\d/.test(d) || !/\d/.test(t)) {
+        return false;
+    }
+    if (/[:.]/.test(t) || /\b(am|pm)\b/i.test(t) || /^\d{3,4}$/.test(t) || /\d{1,2}\s*h/i.test(t)) {
+        return true;
+    }
+    return false;
+}
+
+/** Single-cell appointment timestamp (ISO or date + clock time). */
+function sheetCellLooksLikeAppointmentDateTimeCombined_(raw) {
+    const s = sheetCellString_(raw).trim();
+    if (!s || !/\d/.test(s)) {
+        return false;
+    }
+    if (/\d{4}-\d{2}-\d{2}[T ]\d{1,2}:\d{2}/.test(s)) {
+        return true;
+    }
+    if (/\d{4}-\d{2}-\d{2}[T ]\d{1,2}(?!:)/.test(s)) {
+        return true;
+    }
+    if (/\d{1,4}[/.\-]\d{1,4}[/.\-]\d{2,4}/.test(s) && /\d{1,2}:\d{2}/.test(s)) {
+        return true;
+    }
+    return false;
+}
+
 /**
  * Normalize “Channel” column text → lead-stats bucket (`web`, `whatsapp`, `instagram`, `facebook`, else `other`).
  * @returns {"web"|"whatsapp"|"instagram"|"facebook"|"other"}
@@ -1374,6 +1405,17 @@ function pickHeaderIndex_(map, aliases, fallbackIdx) {
     return fallbackIdx;
 }
 
+/** @param {Record<string, number>} headerMap @param {string[]} aliases @returns {number|undefined} */
+function firstHeaderIdxFromAliases_(headerMap, aliases) {
+    for (let i = 0; i < aliases.length; i += 1) {
+        const k = normalizedHeaderKey_(aliases[i]);
+        if (k && headerMap[k] !== undefined) {
+            return headerMap[k];
+        }
+    }
+    return undefined;
+}
+
 /** Aliases for header row matching when column order differs from legacy A–R (e.g. extra "Course" column). */
 const SHEET_H_NAME = [
     "name",
@@ -1479,7 +1521,40 @@ const SHEET_H_APPOINTMENT_BOOKED = [
     "apptscheduled",
     "consultbooking",
     "bookedappointment",
-    "bookingdone"
+    "bookingdone",
+    "bookingstatus"
+];
+
+/** Stats: separate date / time columns (default schema ~ O / P, 0-based 15 / 16). */
+const SHEET_H_APPOINTMENT_DATE = [
+    "appointmentdate",
+    "apptdate",
+    "appointmentday",
+    "selectedappointmentdate",
+    "appointmentpickeddate",
+    "dateofappointment",
+    "scheduleddate",
+    "apptscheduleddate"
+];
+const SHEET_H_APPOINTMENT_TIME = [
+    "appointmenttime",
+    "appttime",
+    "appointmenttimeslot",
+    "scheduledtime",
+    "apptscheduledtime",
+    "slottime"
+];
+
+/** Combined appointment timestamp in one column (detect when date+time not split). */
+const SHEET_H_APPOINTMENT_DATETIME = [
+    "appointmentdatetime",
+    "appointment_date_time",
+    "apptdatetime",
+    "appointment_at",
+    "scheduledatetime",
+    "scheduledat",
+    "bookedat",
+    "booked_datetime"
 ];
 
 /**
@@ -2308,6 +2383,9 @@ export async function fetchConversationLeadCaptureStats(opts = {}) {
     const emailIdx = pickHeaderIndex_(headerMap, SHEET_H_EMAIL, 4);
     const channelIdx = pickHeaderIndex_(headerMap, SHEET_H_CHANNEL, 5);
     const appointmentBookedIdx = pickAppointmentStatsColumnIdx_(headerMap, headersRaw, 14);
+    const appointmentDateIdx = pickHeaderIndex_(headerMap, SHEET_H_APPOINTMENT_DATE, 15);
+    const appointmentTimeIdx = pickHeaderIndex_(headerMap, SHEET_H_APPOINTMENT_TIME, 16);
+    const appointmentDatetimeIdx = firstHeaderIdxFromAliases_(headerMap, SHEET_H_APPOINTMENT_DATETIME);
 
     const hardCap = Math.min(
         15_000,
@@ -2427,10 +2505,19 @@ export async function fetchConversationLeadCaptureStats(opts = {}) {
         return baseEmpty();
     }
 
-    const lastColIdx = Math.min(
-        175,
-        Math.max(headersRaw.length - 1, dateIdx, mobileIdx, emailIdx, channelIdx, appointmentBookedIdx, 17)
+    const lastColBound = Math.max(
+        headersRaw.length - 1,
+        dateIdx,
+        mobileIdx,
+        emailIdx,
+        channelIdx,
+        appointmentBookedIdx,
+        appointmentDateIdx,
+        appointmentTimeIdx,
+        appointmentDatetimeIdx === undefined ? appointmentDateIdx : appointmentDatetimeIdx,
+        17
     );
+    const lastColIdx = Math.min(175, lastColBound);
     const colLetter = columnLetterFromIndex_(lastColIdx);
     const dataGot = await sheets.spreadsheets.values.get({
         spreadsheetId: SPREADSHEET_ID,
@@ -2486,7 +2573,14 @@ export async function fetchConversationLeadCaptureStats(opts = {}) {
         } else {
             neither += 1;
         }
-        if (sheetAppointmentCellCountsScheduled_(cells[appointmentBookedIdx])) {
+        let apptCounted = sheetAppointmentCellCountsScheduled_(cells[appointmentBookedIdx]);
+        if (!apptCounted) {
+            apptCounted = sheetRowAppointmentSlotCellsLikelyFilled_(cells[appointmentDateIdx], cells[appointmentTimeIdx]);
+        }
+        if (!apptCounted && appointmentDatetimeIdx !== undefined) {
+            apptCounted = sheetCellLooksLikeAppointmentDateTimeCombined_(cells[appointmentDatetimeIdx]);
+        }
+        if (apptCounted) {
             appointmentScheduled += 1;
         }
         switch (conversationChannelBucket_(cells[channelIdx])) {

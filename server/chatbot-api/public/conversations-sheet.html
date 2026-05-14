@@ -534,40 +534,29 @@
       line-height: 1.65;
       font-variant-numeric: tabular-nums;
     }
-    .lead-stats-inner {
+    .lead-stats-stack {
       display: flex;
-      flex-wrap: wrap;
-      gap: 18px 32px;
-      align-items: flex-start;
-      justify-content: flex-start;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 0;
     }
-    .lead-stats-block {
-      flex: 1 1 220px;
-      min-width: min(260px, 100%);
-      margin: 0;
-      padding: 0;
+    .lead-stats-divider {
+      height: 0;
+      margin: 14px 0 10px;
+      border: 0;
+      border-top: 1px solid var(--border);
     }
-    .lead-stats-block-title {
+    .lead-stats-section-title {
       font-size: 11px;
       font-weight: 800;
       text-transform: uppercase;
       letter-spacing: 0.06em;
       color: var(--muted);
-      margin: 0 0 8px;
+      margin: 14px 0 6px;
       padding: 0;
     }
-    .lead-stats-block-title.lead-stats-channel-title {
-      margin-top: 14px;
-    }
-    .lead-stats-secondary {
-      box-sizing: border-box;
-    }
-    @media (min-width: 720px) {
-      .lead-stats-secondary {
-        border-left: 1px solid var(--border);
-        padding-left: 20px;
-        margin-left: 4px;
-      }
+    .lead-stats-divider + .lead-stats-section-title {
+      margin-top: 10px;
     }
     .lead-stats-line {
       margin: 0;
@@ -1745,18 +1734,25 @@
         if (!leadStatsList) return;
         showLeadStatsErr("");
         var tot = payload.totals || {};
-        var n = tot.conversations || 0;
-        var om = tot.onlyMobile || 0;
-        var oe = tot.onlyEmail || 0;
-        var be = tot.mobileAndEmail || 0;
-        var apt = typeof tot.appointmentScheduled === "number" ? tot.appointmentScheduled : 0;
-        var cw = typeof tot.channelWeb === "number" ? tot.channelWeb : 0;
-        var cwa = typeof tot.channelWhatsapp === "number" ? tot.channelWhatsapp : 0;
-        var cinst = typeof tot.channelInstagram === "number" ? tot.channelInstagram : 0;
-        var cfb = typeof tot.channelFacebook === "number" ? tot.channelFacebook : 0;
-        var coth = typeof tot.channelOther === "number" ? tot.channelOther : 0;
+        function statNum(o, key, fb) {
+          var v = o[key];
+          if (typeof v === "number" && Number.isFinite(v)) return Math.trunc(v);
+          var n = Number(v);
+          if (Number.isFinite(n)) return Math.trunc(n);
+          return fb;
+        }
+        var n = statNum(tot, "conversations", 0);
+        var om = statNum(tot, "onlyMobile", 0);
+        var oe = statNum(tot, "onlyEmail", 0);
+        var be = statNum(tot, "mobileAndEmail", 0);
+        var apt = statNum(tot, "appointmentScheduled", 0);
+        var cw = statNum(tot, "channelWeb", 0);
+        var cwa = statNum(tot, "channelWhatsapp", 0);
+        var cinst = statNum(tot, "channelInstagram", 0);
+        var cfb = statNum(tot, "channelFacebook", 0);
         var rat = payload.ratios || {};
-        var pct = rat.leadCapturePct;
+        var pctRaw = rat.leadCapturePct;
+        var pct = typeof pctRaw === "number" && Number.isFinite(pctRaw) ? pctRaw : Number(pctRaw);
         function val(x) {
           return '<span class="stat-frac">' + escapeHtml(String(x)) + "</span>";
         }
@@ -1770,33 +1766,25 @@
           );
         }
         var leadPctDisp =
-          n > 0 && pct != null && Number.isFinite(Number(pct))
+          n > 0 && pct != null && Number.isFinite(pct)
             ? '<span class="stat-frac">' + escapeHtml(String(pct)) + "%</span>"
             : '<span class="stat-frac">—</span>';
         leadStatsList.hidden = false;
-        var leadBlk =
+        leadStatsList.innerHTML =
+          '<div class="lead-stats-stack">' +
           row("Total conversation", val(n)) +
           row("Only Mobile", val(om)) +
           row("Only Email", val(oe)) +
           row("Mobile & Email", val(be)) +
-          row("Lead %", leadPctDisp);
-        var aptChBlk =
-          '<div class="lead-stats-block-title">Appointments &amp; channels</div>' +
+          row("Lead %", leadPctDisp) +
+          '<hr class="lead-stats-divider" />' +
+          '<div class="lead-stats-section-title">Appointments</div>' +
           row("Appointment Scheduled", val(apt)) +
-          '<div class="lead-stats-block-title lead-stats-channel-title">Channel wise (conversations)</div>' +
+          '<div class="lead-stats-section-title">Channel (conversations)</div>' +
           row("Web", val(cw)) +
           row("WhatsApp", val(cwa)) +
           row("Instagram", val(cinst)) +
           row("Facebook", val(cfb)) +
-          row("Other", val(coth));
-        leadStatsList.innerHTML =
-          '<div class="lead-stats-inner">' +
-          '<div class="lead-stats-block">' +
-          leadBlk +
-          "</div>" +
-          '<div class="lead-stats-block lead-stats-secondary">' +
-          aptChBlk +
-          "</div>" +
           "</div>";
       }
 
