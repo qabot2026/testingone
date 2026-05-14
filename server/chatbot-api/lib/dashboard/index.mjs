@@ -36,8 +36,8 @@
  *   DASHBOARD_SETTINGS_COLLECTION default "dashboard_settings"
  *   DASHBOARD_TOKENS_COLLECTION   default "dashboard_login_tokens"
  *   DASHBOARD_PREVIEW_URL         default preview chat-frame.html URL (informational)
- *   DASHBOARD_WIDGET_SETTINGS_BACKEND  "firestore" (default) | "file" — no Firestore for theme when file
- *   DASHBOARD_WIDGET_SETTINGS_FILE     path for file backend (default: server/chatbot-api/data/widget-settings-store.json)
+ *   DASHBOARD_WIDGET_SETTINGS_BACKEND  "firestore" | omit for "file" (default) — file = disk JSON for theme without Firestore
+ *   DASHBOARD_WIDGET_SETTINGS_FILE     path when backend=file (default: server/chatbot-api/data/widget-settings-store.json)
  *
  * Peer deps (already in package.json): express, firebase-admin, nodemailer.
  */
@@ -235,10 +235,13 @@ function botIdOrDefault_(v) {
 /** @returns {"firestore" | "file"} */
 function widgetSettingsBackend_() {
     const v = trim_(process.env.DASHBOARD_WIDGET_SETTINGS_BACKEND).toLowerCase();
+    if (v === "firestore") {
+        return "firestore";
+    }
     if (v === "file" || v === "filesystem" || v === "disk") {
         return "file";
     }
-    return "firestore";
+    return "file";
 }
 
 function widgetSettingsFilePath_() {
@@ -706,7 +709,15 @@ export function mountDashboardRoutes(app) {
             const flat = (body.flat && typeof body.flat === "object") ? body.flat : {};
             const advancedPatchJson = typeof body.advancedPatchJson === "string" ? body.advancedPatchJson : "";
             await writeSettings_(botid, flat, advancedPatchJson, req.dashboardSession.email);
-            res.json({ ok: true, botid });
+            const data = await readSettings_(botid);
+            const flatKeysCount = Object.keys(data.flat && typeof data.flat === "object" ? data.flat : {}).length;
+            res.json({
+                ok: true,
+                botid,
+                settings_backend: widgetSettingsBackend_(),
+                updatedAt: data.updatedAt || null,
+                flatKeysCount
+            });
         } catch (err) {
             const msg = err && err.message ? err.message : String(err);
             console.error(LOG_TAG, "settings PUT failed:", msg);

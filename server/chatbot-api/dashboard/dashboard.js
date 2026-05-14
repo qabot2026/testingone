@@ -653,14 +653,47 @@
       apiFetch("/api/dashboard/settings?botid=" + encodeURIComponent(bot), {
         method: "PUT",
         body: payload
-      }).then(function () {
-        var pub = "/api/public/widget-settings?botid=" + encodeURIComponent(bot);
-        showToast(
-          "Published for bot \"" + bot + "\". Check GET " + pub + " — flat should not be {}.",
-          "ok"
-        );
-        setPublishedBaselineFromCurrentState();
-        reloadPreview();
+      }).then(function (putResp) {
+        var n = putResp && typeof putResp.flatKeysCount === "number" ? putResp.flatKeysCount : -1;
+        var backend = putResp && putResp.settings_backend ? putResp.settings_backend : "";
+        if (!putResp || putResp.ok !== true || n <= 0) {
+          showToast(
+            "Server saved but saved settings look empty (" + backend + "). Check Railway logs / Firestore file env.",
+            "err"
+          );
+          return;
+        }
+        return fetch(
+          "/api/public/widget-settings?botid=" + encodeURIComponent(bot),
+          { credentials: "same-origin", cache: "no-store" }
+        )
+          .then(function (r) { return r.ok ? r.json() : null; })
+          .then(function (pub) {
+            var fk =
+              pub && pub.flat && typeof pub.flat === "object" ? Object.keys(pub.flat).length : 0;
+            if (n > 0 && fk === 0) {
+              showToast(
+                "Saved on one server instance but public read returned empty (" + backend +
+                  "). Railway: reduce replicas to 1 for file-backed settings OR use Firestore (DASHBOARD_WIDGET_SETTINGS_BACKEND=firestore).",
+                "err"
+              );
+              return;
+            }
+            showToast(
+              "Published live for bot \"" +
+                bot +
+                "\" (" +
+                backend +
+                ", " +
+                fk +
+                " keys). Embed must use ?botid=" +
+                bot +
+                " and reload the iframe.",
+              "ok"
+            );
+            setPublishedBaselineFromCurrentState();
+            reloadPreview();
+          });
       }).catch(function (err) {
         showToast("Save failed: " + (err && err.message ? err.message : err), "err");
       }).then(function () {
