@@ -16,6 +16,23 @@
   var LS_PREVIEW_URL = "dashboard.previewUrl";
   var LS_BOTID = "dashboard.botid";
 
+  /** Shared secret between dashboard and iframe URL — preview auth even if origins differ slightly. */
+  var previewBridgeToken = "";
+
+  function makePreviewBridgeToken() {
+    try {
+      if (typeof crypto !== "undefined" && crypto.getRandomValues) {
+        var a = new Uint8Array(12);
+        crypto.getRandomValues(a);
+        var hex = Array.from(a, function (b) {
+          return ("0" + b.toString(16)).slice(-2);
+        }).join("");
+        return "pb_" + hex;
+      }
+    } catch (e) { /* ignore */ }
+    return "pb_" + Math.random().toString(36).slice(2) + "_" + String(Date.now());
+  }
+
   /** Defaults applied when a setting has no saved value. */
   var DEFAULTS = Object.freeze({
     chatbotPrimaryColor: "#0369a1",
@@ -398,11 +415,14 @@
     var empty = $("#previewEmpty");
     if (!url) {
       iframe.removeAttribute("src");
+      previewBridgeToken = "";
       empty.classList.remove("hidden");
       return;
     }
+    previewBridgeToken = makePreviewBridgeToken();
     var sep = url.indexOf("?") >= 0 ? "&" : "?";
     var withParams = url + sep + "adminOrigin=" + encodeURIComponent(window.location.origin)
+      + "&previewBridge=" + encodeURIComponent(previewBridgeToken)
       + "&botid=" + encodeURIComponent(currentBotId())
       + "&v=" + Date.now();
     iframe.src = withParams;
@@ -420,7 +440,11 @@
     var flat = buildFlatPatch();
     var adv = buildAdvancedPatchJson();
     if (adv) flat.advancedPatchJson = adv;
-    var msg = { type: "company_admin_settings", settings: flat };
+    var msg = {
+      type: "company_admin_settings",
+      previewBridge: previewBridgeToken,
+      settings: flat
+    };
     try {
       var origin = safeOriginOf(iframe.src);
       if (origin) {

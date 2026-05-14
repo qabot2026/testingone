@@ -21,6 +21,9 @@
       // Optional: explicit cross-origin source allowed to push live settings (admin dashboard preview).
       var adminOrigin = (p.get("adminOrigin") || "").trim();
       if (adminOrigin) window.COMPANY_ADMIN_PREVIEW_ORIGIN = adminOrigin;
+      // One-time token: dashboard adds same value to postMessage so preview works even if origins differ slightly.
+      var previewBridge = (p.get("previewBridge") || "").trim();
+      if (previewBridge) window.COMPANY_PREVIEW_BRIDGE = previewBridge;
     })();
   </script>
   <!-- In-chat form definitions (must load before company.config.js merges into COMPANY_CHAT_UI_CONFIG). -->
@@ -136,23 +139,59 @@
         }
       }
 
+      function normalizeOrigin_(s) {
+        if (!s || typeof s !== "string") return "";
+        try {
+          return new URL(s).origin;
+        } catch (e) {
+          return s.trim().replace(/\/+$/, "");
+        }
+      }
+
       function isAllowedAdminOrigin(origin) {
-        if (origin === window.location.origin) return true;
+        var o = normalizeOrigin_(origin);
+        if (o === normalizeOrigin_(window.location.origin)) return true;
         var admin = window.COMPANY_ADMIN_PREVIEW_ORIGIN;
         if (typeof admin !== "string") return false;
-        admin = admin.trim();
-        return !!admin && origin === admin;
+        admin = normalizeOrigin_(admin.trim());
+        return !!admin && o === admin;
+      }
+
+      /** Dashboard loads iframe with ?previewBridge=… and echoes token on each postMessage. */
+      function isAllowedPreviewSender(ev, data) {
+        var bridge = typeof window.COMPANY_PREVIEW_BRIDGE === "string" ? window.COMPANY_PREVIEW_BRIDGE : "";
+        if (bridge && data && typeof data.previewBridge === "string" && data.previewBridge === bridge) {
+          return true;
+        }
+        return isAllowedAdminOrigin(ev.origin);
+      }
+
+      var __previewThemeInterval = null;
+      function applyPreviewSettingsLive(settings) {
+        var flat = settings || {};
+        if (typeof window.__dfchatApplyCompanyAdminFlatSettings === "function") {
+          window.__dfchatApplyCompanyAdminFlatSettings(flat);
+        }
+        applyThemeVarsLive(flat);
+        if (__previewThemeInterval) window.clearInterval(__previewThemeInterval);
+        var n = 0;
+        __previewThemeInterval = window.setInterval(function () {
+          n += 1;
+          applyThemeVarsLive(flat);
+          if (document.querySelector("df-messenger") || n > 70) {
+            window.clearInterval(__previewThemeInterval);
+            __previewThemeInterval = null;
+          }
+        }, 80);
       }
 
       window.addEventListener("message", function (ev) {
         try {
-          if (!ev || !isAllowedAdminOrigin(ev.origin)) return;
+          if (!ev) return;
           var data = ev.data;
           if (!data || data.type !== "company_admin_settings") return;
-          if (typeof window.__dfchatApplyCompanyAdminFlatSettings === "function") {
-            window.__dfchatApplyCompanyAdminFlatSettings(data.settings || {});
-          }
-          applyThemeVarsLive(data.settings || {});
+          if (!isAllowedPreviewSender(ev, data)) return;
+          applyPreviewSettingsLive(data.settings || {});
         } catch (e) {
           /* ignore */
         }
@@ -165,7 +204,10 @@
       // response overwriting those instant preview edits.
       (function fetchPublishedSettings() {
         try {
-          if (typeof window.COMPANY_ADMIN_PREVIEW_ORIGIN === "string" && window.COMPANY_ADMIN_PREVIEW_ORIGIN) {
+          if (
+            (typeof window.COMPANY_ADMIN_PREVIEW_ORIGIN === "string" && window.COMPANY_ADMIN_PREVIEW_ORIGIN) ||
+            (typeof window.COMPANY_PREVIEW_BRIDGE === "string" && window.COMPANY_PREVIEW_BRIDGE)
+          ) {
             return;
           }
           var apiBase = (window.COMPANY_API_BASE_URL || "").replace(/\/+$/, "");
