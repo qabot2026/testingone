@@ -60,6 +60,7 @@ import {
     transactionalFromAddress_
 } from "../mail/smtp-send.mjs";
 import { isResendConfigured_ } from "../mail/resend-send.mjs";
+import { githubWidgetPublishConfigured_, publishWidgetBotToGithub_ } from "./github-widget-publish.mjs";
 
 const LOG_TAG = "[dashboard]";
 
@@ -711,12 +712,36 @@ export function mountDashboardRoutes(app) {
             await writeSettings_(botid, flat, advancedPatchJson, req.dashboardSession.email);
             const data = await readSettings_(botid);
             const flatKeysCount = Object.keys(data.flat && typeof data.flat === "object" ? data.flat : {}).length;
+
+            /** @type {{ skipped?: boolean, reason?: string, error?: string, path?: string, branch?: string, repo?: string } | null} */
+            let githubPublish = null;
+            if (githubWidgetPublishConfigured_()) {
+                try {
+                    githubPublish = await publishWidgetBotToGithub_({
+                        botid,
+                        flat,
+                        advancedPatchJson,
+                        updatedBy: req.dashboardSession && req.dashboardSession.email ? req.dashboardSession.email : ""
+                    });
+                    if (!githubPublish.skipped) {
+                        console.log(LOG_TAG, "GitHub widget mirror ok:", githubPublish.repo, githubPublish.path);
+                    }
+                } catch (ghErr) {
+                    const ge = ghErr && ghErr.message ? ghErr.message : String(ghErr);
+                    console.warn(LOG_TAG, "GitHub widget mirror failed:", ge);
+                    githubPublish = { skipped: false, error: ge };
+                }
+            } else {
+                githubPublish = { skipped: true, reason: "not_configured" };
+            }
+
             res.json({
                 ok: true,
                 botid,
                 settings_backend: widgetSettingsBackend_(),
                 updatedAt: data.updatedAt || null,
-                flatKeysCount
+                flatKeysCount,
+                githubPublish
             });
         } catch (err) {
             const msg = err && err.message ? err.message : String(err);

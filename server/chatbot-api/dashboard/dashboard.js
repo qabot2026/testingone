@@ -679,20 +679,27 @@
               );
               return;
             }
-            showToast(
+            var msg =
               "Published live for bot \"" +
-                bot +
-                "\" (" +
-                backend +
-                ", " +
-                fk +
-                " keys). Embed must use ?botid=" +
-                bot +
-                " and reload the iframe.",
-              "ok"
-            );
-            setPublishedBaselineFromCurrentState();
-            reloadPreview();
+              bot +
+              "\" (" +
+              backend +
+              ", " +
+              fk +
+              " keys). Embed must use ?botid=" +
+              bot +
+              " and reload the iframe.";
+            var gh = putResp && putResp.githubPublish;
+            if (gh && !gh.skipped && !gh.error && gh.repo) {
+              msg += " GitHub file updated (" + gh.repo + " / " + gh.path + ") — deploy your site to go live there.";
+            } else if (gh && gh.error) {
+              msg += " GitHub mirror failed: " + gh.error;
+            }
+            showToast(msg, gh && gh.error ? "err" : "ok");
+            if (!(gh && gh.error)) {
+              setPublishedBaselineFromCurrentState();
+              reloadPreview();
+            }
           });
       }).catch(function (err) {
         showToast("Save failed: " + (err && err.message ? err.message : err), "err");

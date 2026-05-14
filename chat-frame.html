@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <!-- Default API for contact form POST /contact-form-submissions; `apiBase` on company-loader overrides. -->
   <meta name="dfchat-api-base-url" content="https://handsome-amazement-production-7f65.up.railway.app" />
+  <!-- After GitHub “Make live” mirror: optional static JSON on your site origin (falls back to `/api/public/widget-settings`). -->
+  <!-- <meta name="dfchat-published-widget-path" content="published-widget-settings.json" /> -->
   <title>Chat</title>
   <link rel="stylesheet" href="https://www.gstatic.com/dialogflow-console/fast/df-messenger/prod/v1/themes/df-messenger-default.css" />
   <link rel="stylesheet" href="company.css?v=80" />
@@ -33,6 +35,8 @@
       // One-time token: dashboard adds same value to postMessage so preview works even if origins differ slightly.
       var previewBridge = (p.get("previewBridge") || "").trim();
       if (previewBridge) window.COMPANY_PREVIEW_BRIDGE = previewBridge;
+      var pwp = (p.get("publishedWidget") || "").trim();
+      if (pwp) window.COMPANY_PUBLISHED_WIDGET_PATH = pwp;
     })();
   </script>
   <!-- In-chat form definitions (must load before company.config.js merges into COMPANY_CHAT_UI_CONFIG). -->
@@ -236,7 +240,7 @@
           ) {
             return;
           }
-          /** Last snapshot from `/api/public/widget-settings` — reapplied after df-messenger paints (Dialogflow can clobber vars). */
+          /** Snapshot from API or mirrored `published-widget-settings.json` — reapplied after df-messenger paints. */
           var publishedFlatCache = null;
           function cachePayloadFromApi(data) {
             var flat = (data && data.flat && typeof data.flat === "object") ? data.flat : {};
@@ -269,49 +273,98 @@
               window.setTimeout(function () { applyCachedPublished(); }, ms);
             });
           });
+          function applyPublishedWhenReady() {
+            if (!publishedFlatCache || Object.keys(publishedFlatCache).length === 0) return;
+            function apply() {
+              if (typeof window.__dfchatApplyCompanyAdminFlatSettings === "function") {
+                window.__dfchatApplyCompanyAdminFlatSettings(publishedFlatCache);
+                applyThemeVarsLive(publishedFlatCache);
+                return true;
+              }
+              return false;
+            }
+            if (apply()) return;
+            var tries = 0;
+            var t = window.setInterval(function () {
+              tries += 1;
+              if (apply() || tries > 40) window.clearInterval(t);
+            }, 120);
+          }
+          function resolvePublishedWidgetPath() {
+            var fromWin = "";
+            try {
+              if (typeof window.COMPANY_PUBLISHED_WIDGET_PATH === "string") {
+                fromWin = window.COMPANY_PUBLISHED_WIDGET_PATH.trim();
+              }
+            } catch (eW) { /* ignore */ }
+            if (fromWin) return fromWin;
+            try {
+              var mm = document.querySelector('meta[name="dfchat-published-widget-path"]');
+              var cc = mm && mm.content ? String(mm.content).trim() : "";
+              return cc || "";
+            } catch (eM) {
+              return "";
+            }
+          }
           var apiBase = "";
           try {
             if (typeof window.COMPANY_API_BASE_URL === "string" && window.COMPANY_API_BASE_URL.trim()) {
               apiBase = window.COMPANY_API_BASE_URL.replace(/\/+$/, "");
             } else {
-              var m = document.querySelector('meta[name="dfchat-api-base-url"]')
+              var mb = document.querySelector('meta[name="dfchat-api-base-url"]')
                 || document.querySelector('meta[name="company-api-base-url"]');
-              var c = m && m.content ? String(m.content).trim().replace(/\/+$/, "") : "";
-              apiBase = c;
+              var cb = mb && mb.content ? String(mb.content).trim().replace(/\/+$/, "") : "";
+              apiBase = cb;
             }
           } catch (e2) { /* ignore */ }
-          if (!apiBase) return;
-          var botid = (window.COMPANY_EMBED_BOT_ID || "").trim() || "default";
-          var url = apiBase + "/api/public/widget-settings?botid=" + encodeURIComponent(botid);
-          fetch(url, { credentials: "omit", cache: "no-store" })
-            .then(function (r) { return r.ok ? r.json() : null; })
-            .then(function (data) {
-              if (!data || typeof data.flat !== "object") return;
-              if (typeof data.error === "string" && data.error.trim()) {
-                try {
-                  console.warn("[chat-frame] widget-settings:", data.error);
-                } catch (eWarn) { /* ignore */ }
-                return;
-              }
-              cachePayloadFromApi(data);
-              if (!publishedFlatCache || Object.keys(publishedFlatCache).length === 0) return;
 
-              function apply() {
-                if (typeof window.__dfchatApplyCompanyAdminFlatSettings === "function") {
-                  window.__dfchatApplyCompanyAdminFlatSettings(publishedFlatCache);
-                  applyThemeVarsLive(publishedFlatCache);
-                  return true;
+          var botid = (window.COMPANY_EMBED_BOT_ID || "").trim() || "default";
+          var staticPath = resolvePublishedWidgetPath();
+
+          function tryApplyMirroredBotsJson(json) {
+            if (!json || !json.bots || typeof json.bots !== "object") return false;
+            var row = json.bots[botid];
+            if (!row || typeof row.flat !== "object") return false;
+            cachePayloadFromApi({
+              flat: row.flat,
+              advancedPatchJson: typeof row.advancedPatchJson === "string" ? row.advancedPatchJson : ""
+            });
+            if (!publishedFlatCache || Object.keys(publishedFlatCache).length === 0) return false;
+            applyPublishedWhenReady();
+            return true;
+          }
+
+          function loadFromPublicApi() {
+            if (!apiBase) return;
+            var url = apiBase + "/api/public/widget-settings?botid=" + encodeURIComponent(botid);
+            fetch(url, { credentials: "omit", cache: "no-store" })
+              .then(function (r) { return r.ok ? r.json() : null; })
+              .then(function (data) {
+                if (!data || typeof data.flat !== "object") return;
+                if (typeof data.error === "string" && data.error.trim()) {
+                  try {
+                    console.warn("[chat-frame] widget-settings:", data.error);
+                  } catch (eWarn) { /* ignore */ }
+                  return;
                 }
-                return false;
-              }
-              if (apply()) return;
-              var tries = 0;
-              var t = window.setInterval(function () {
-                tries += 1;
-                if (apply() || tries > 40) window.clearInterval(t);
-              }, 120);
-            })
-            .catch(function () { /* network blip; keep defaults */ });
+                cachePayloadFromApi(data);
+                applyPublishedWhenReady();
+              })
+              .catch(function () { /* network blip; keep defaults */ });
+          }
+
+          if (staticPath) {
+            fetch(new URL(staticPath, window.location.href).href, { credentials: "same-origin", cache: "no-store" })
+              .then(function (r) { return r.ok ? r.json() : null; })
+              .then(function (json) {
+                if (!tryApplyMirroredBotsJson(json)) loadFromPublicApi();
+              })
+              .catch(function () {
+                loadFromPublicApi();
+              });
+          } else {
+            loadFromPublicApi();
+          }
         } catch (e) {
           /* ignore */
         }
