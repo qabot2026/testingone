@@ -611,7 +611,7 @@
       }
 
       function flattenCellText(text) {
-        return String(text == null ? "")
+        return String(text == null ? "" : text)
           .replace(/\r?\n+/g, "")
           .replace(/[\t\f\v]+/g, " ")
           .replace(/\s+/g, " ")
