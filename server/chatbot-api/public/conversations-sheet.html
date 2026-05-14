@@ -351,6 +351,11 @@
     table.sheet tbody td.col-sticky {
       cursor: inherit;
     }
+    table.sheet thead th.col-fixed-ch,
+    table.sheet tbody td.col-fixed-ch {
+      padding-left: 6px;
+      padding-right: 6px;
+    }
     tbody tr:nth-child(odd) td {
       background: var(--row-odd);
     }
@@ -612,6 +617,38 @@
         if (sm.edge && !isHeader) el.classList.add("stk-edge");
       }
 
+      /** Fixed column width by header (sheet order); skips cells already styled as sticky pins */
+      function fixedWidthChFromHeader(headerTitle) {
+        var nk = normKey(headerTitle);
+        if (!nk) return null;
+        var byNorm = {
+          repeateduser: 4,
+          device: 8,
+          browser: 8,
+          channel: 10,
+          city: 12,
+          ipaddress: 16,
+          appbooked: 3,
+          appointmentbooked: 3,
+          appdate: 12,
+          apptime: 12,
+          appointmentdate: 12,
+          appointmenttime: 12,
+        };
+        if (byNorm[nk] != null) return byNorm[nk];
+        if (nk.indexOf("repeated") >= 0 && nk.indexOf("user") >= 0) return 4;
+        if (nk.indexOf("ipaddress") >= 0 || nk === "ipadress" || nk === "clientip") return 16;
+        return null;
+      }
+
+      function decorateFixedWidthCh(el, wch) {
+        el.classList.add("col-fixed-ch");
+        el.style.width = wch + "ch";
+        el.style.minWidth = wch + "ch";
+        el.style.maxWidth = wch + "ch";
+        el.style.boxSizing = "border-box";
+      }
+
       function pad2(n) {
         return n < 10 ? "0" + n : String(n);
       }
@@ -858,6 +895,10 @@
           var th = document.createElement("th");
           th.textContent = headers[hi];
           if (stickyMeta[hi]) decorateStickyCell(th, stickyMeta[hi], true);
+          else {
+            var fwc = fixedWidthChFromHeader(headers[hi]);
+            if (fwc != null) decorateFixedWidthCh(th, fwc);
+          }
           trh.appendChild(th);
         }
         thead.appendChild(trh);
@@ -880,6 +921,10 @@
             td.appendChild(linkifyCellForTable(raw == null ? "" : raw));
             td.title = String(raw || "").slice(0, 2000);
             if (stickyMeta[ci]) decorateStickyCell(td, stickyMeta[ci], false);
+            else {
+              var fwcTd = fixedWidthChFromHeader(headers[ci]);
+              if (fwcTd != null) decorateFixedWidthCh(td, fwcTd);
+            }
             tr.appendChild(td);
           }
           tbody.appendChild(tr);
