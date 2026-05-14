@@ -168,6 +168,8 @@ const COMPOSER_SPEECH_WRAP_CLASS = "dfchat-composer-speech-wrap";
 const COMPOSER_SPEECH_BTN_SELECTOR = "[data-dfchat-composer-speech-mic=\"true\"]";
 /** Keeps the closed launcher `.bubble` circular when Dialogflow rebuilds shadow DOM. */
 const CHAT_BUBBLE_LAUNCHER_STYLE_ID = "dfchat-chat-bubble-launcher-circle";
+/** FAB launcher `<img>` bounds — applied even when `keepRoundShape` is false (ring CSS would otherwise be omitted). */
+const CHAT_BUBBLE_LAUNCHER_ICON_CLAMP_STYLE_ID = "dfchat-chat-bubble-launcher-icon-clamp";
 const CHAT_BUBBLE_UNREAD_BADGE_ID = "dfchat-bubble-unread-badge";
 const FOOTER_INPUT_BOX_ALIGN_ALLOWED = new Set(["flex-end", "flex-start", "center", "stretch", "baseline", "start", "end"]);
 const FOOTER_INPUT_BOX_OVERFLOW_Y_ALLOWED = new Set(["auto", "hidden", "visible", "scroll", "clip"]);
@@ -1073,6 +1075,18 @@ function buildChatBubbleLauncherInjectedCss(cfg) {
         + `background-clip:padding-box,border-box!important;`
         + animDecl
         + `}`;
+}
+
+/** CSS string: constrain launcher FAB images to `--df-messenger-chat-bubble-icon-size` (set on bubble host). */
+function buildChatBubbleLauncherFabImgClampCss() {
+    return ".bubble img,.bubble button img,.bubble [role=\"button\"] img{"
+        + "width:var(--df-messenger-chat-bubble-icon-size,56px)!important;"
+        + "height:var(--df-messenger-chat-bubble-icon-size,56px)!important;"
+        + "max-width:min(96px,100%)!important;"
+        + "max-height:min(96px,100%)!important;"
+        + "object-fit:cover!important;"
+        + "box-sizing:border-box!important;"
+        + "}";
 }
 
 /** @type {number|null} */
@@ -2431,18 +2445,53 @@ function scheduleDfMessengerChatIconImageSrcSync(dfMessenger, chatIconUrl, chatT
         ? dfMessenger.querySelector("df-messenger-chat-bubble")
         : null;
 
+    const applyLauncherImgConstraints = (launcherImg) => {
+        if (!launcherImg || typeof launcherImg.style === "undefined") {
+            return;
+        }
+        let iconPx = CHAT_BUBBLE_LAUNCHER_CONFIG.iconSizePx;
+        if (iconPx == null || !Number.isFinite(iconPx)) {
+            const raw = dfMessenger.style.getPropertyValue("--df-messenger-chat-bubble-icon-size").trim();
+            const parsed = parseFloat(raw);
+            iconPx = Number.isFinite(parsed) ? Math.round(parsed) : 52;
+        }
+        iconPx = Math.min(96, Math.max(22, iconPx));
+        const px = `${iconPx}px`;
+        launcherImg.style.setProperty("width", px, "important");
+        launcherImg.style.setProperty("height", px, "important");
+        launcherImg.style.setProperty("max-width", px, "important");
+        launcherImg.style.setProperty("max-height", px, "important");
+        launcherImg.style.setProperty("object-fit", "cover", "important");
+        launcherImg.style.setProperty("box-sizing", "border-box", "important");
+    };
+
+    const applyTitlebarImgConstraints = (im) => {
+        if (!im || typeof im.style === "undefined") {
+            return;
+        }
+        let w = dfMessenger.style.getPropertyValue("--df-messenger-titlebar-icon-width").trim() || "50px";
+        let h = dfMessenger.style.getPropertyValue("--df-messenger-titlebar-icon-height").trim() || "50px";
+        im.style.setProperty("width", w, "important");
+        im.style.setProperty("height", h, "important");
+        im.style.setProperty("max-width", w, "important");
+        im.style.setProperty("max-height", h, "important");
+        im.style.setProperty("object-fit", "cover", "important");
+        im.style.setProperty("box-sizing", "border-box", "important");
+    };
+
     const patch = () => {
         const sr = bubbleHost && bubbleHost.shadowRoot;
         if (sr && typeof chatIconUrl === "string" && chatIconUrl.trim()) {
+            // Only the launcher FAB — broad `img` queries can hit full-panel artwork.
             const launcherImg = sr.querySelector(".bubble img")
-                || sr.querySelector("button img")
-                || sr.querySelector("[role=\"button\"] img")
-                || sr.querySelector("img");
+                || sr.querySelector(".bubble button img")
+                || sr.querySelector(".bubble [role=\"button\"] img");
             if (launcherImg) {
                 try {
                     launcherImg.removeAttribute("src");
                     launcherImg.setAttribute("src", chatIconUrl);
                     launcherImg.src = chatIconUrl;
+                    applyLauncherImgConstraints(launcherImg);
                 } catch {
                     /* no-op */
                 }
@@ -2473,6 +2522,7 @@ function scheduleDfMessengerChatIconImageSrcSync(dfMessenger, chatIconUrl, chatT
                     im.removeAttribute("src");
                     im.setAttribute("src", chatTitleIconUrl);
                     im.src = chatTitleIconUrl;
+                    applyTitlebarImgConstraints(im);
                 } catch {
                     /* no-op */
                 }
@@ -8500,6 +8550,18 @@ function applyChatBubbleLauncherCircleStyle(dfMessenger) {
     if (!root || typeof root.getElementById !== "function") {
         return;
     }
+
+    const clampCss = buildChatBubbleLauncherFabImgClampCss();
+    let clampTag = root.getElementById(CHAT_BUBBLE_LAUNCHER_ICON_CLAMP_STYLE_ID);
+    if (!clampTag) {
+        clampTag = document.createElement("style");
+        clampTag.id = CHAT_BUBBLE_LAUNCHER_ICON_CLAMP_STYLE_ID;
+        root.appendChild(clampTag);
+    }
+    if (clampTag.textContent !== clampCss) {
+        clampTag.textContent = clampCss;
+    }
+
     const existing = root.getElementById(CHAT_BUBBLE_LAUNCHER_STYLE_ID);
     if (!cfg.keepRoundShape) {
         if (existing && existing.parentNode) {
