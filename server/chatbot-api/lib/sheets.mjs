@@ -574,6 +574,41 @@ async function getMobileColumnInfo_(sheets, tab) {
 
 let repeatedHeaderCache_ = { tab: "", at: 0, repeatedColIdx: 7, repeatedColLetter: "H" };
 
+/** Sheet-facing label when we only know repeat from session scan (`false` ⇒ first-time). */
+function repeatedUserLabelFromRepeatedFlag_(repeatedAcrossSessions) {
+    return repeatedAcrossSessions ? "Repeated" : "First Time";
+}
+
+/**
+ * Canonical meaning of "Repeated User" cells (legacy Yes/No and new wording).
+ * @returns {""|"Repeated"|"First Time"}
+ */
+function repeatedUserSheetSemantics_(raw) {
+    const t = typeof raw === "string" ? raw.trim() : "";
+    if (!t) {
+        return "";
+    }
+    if (/^yes$/i.test(t) || /^repeated$/i.test(t)) {
+        return "Repeated";
+    }
+    if (/^no$/i.test(t) || /^first\s*time$/i.test(t)) {
+        return "First Time";
+    }
+    return "";
+}
+
+/** Outbound Appointment booked: `Scheduled` or blank (`No` clears). Handles legacy Yes/No. */
+function appointmentBookedSheetValue_(raw) {
+    const s = typeof raw === "string" ? raw.trim() : "";
+    if (!s || /^no$/i.test(s)) {
+        return "";
+    }
+    if (/^yes$/i.test(s) || /^scheduled$/i.test(s)) {
+        return "Scheduled";
+    }
+    return s;
+}
+
 /**
  * Detect "Repeated" column position by header row.
  * Falls back to the default schema (column H) if not found.
@@ -1131,21 +1166,12 @@ async function updateExistingSessionRow_(sheets, tab, rowNumber, incoming, optio
     const ip = patchScalarInto(typeof incoming.ip === "string" ? incoming.ip : "", 13);
 
     const repeatedIncoming = typeof incoming.repeated === "string" ? incoming.repeated.trim() : "";
-    const existingRepeatedRaw = sheetCellString_(row[repeatedCol.repeatedColIdx]);
+    const existingRepeatedSem = repeatedUserSheetSemantics_(sheetCellString_(row[repeatedCol.repeatedColIdx]));
+    const repeatedNorm = repeatedUserSheetSemantics_(repeatedIncoming);
     let repeated = "";
-    let repeatedNorm = "";
-    if (/^yes$/i.test(repeatedIncoming)) {
-        repeatedNorm = "Yes";
-    } else if (/^no$/i.test(repeatedIncoming)) {
-        repeatedNorm = "No";
-    }
     if (repeatedNorm) {
-        const ex = existingRepeatedRaw.trim();
-        const exIsYes = /^yes$/i.test(ex);
-        const exIsNo = /^no$/i.test(ex);
         const needPatch =
-            preferIncomingContact
-            || (repeatedNorm === "Yes" ? !exIsYes : repeatedNorm === "No" ? !exIsNo : false);
+            preferIncomingContact || existingRepeatedSem !== repeatedNorm;
         if (needPatch) {
             repeated = repeatedNorm;
         }
@@ -1155,10 +1181,18 @@ async function updateExistingSessionRow_(sheets, tab, rowNumber, incoming, optio
         typeof incoming.sourceUrl === "string" ? incoming.sourceUrl : "",
         8
     );
-    const appointmentBooked = patchScalarInto(
-        typeof incoming.appointmentBooked === "string" ? incoming.appointmentBooked : "",
-        14
-    );
+    const incomingAbRaw = typeof incoming.appointmentBooked === "string" ? incoming.appointmentBooked : "";
+    const desiredAb = appointmentBookedSheetValue_(incomingAbRaw);
+    const existingAbSem = appointmentBookedSheetValue_(sheetCellString_(row[14]));
+    /** @type {string | null} */
+    let appointmentBookedPatch = null;
+    if (preferIncomingContact) {
+        if (desiredAb !== existingAbSem) {
+            appointmentBookedPatch = desiredAb;
+        }
+    } else if (desiredAb === "Scheduled" && existingAbSem === "") {
+        appointmentBookedPatch = "Scheduled";
+    }
     const appointmentDate = patchScalarInto(
         typeof incoming.appointmentDate === "string" ? incoming.appointmentDate : "",
         15
@@ -1188,7 +1222,9 @@ async function updateExistingSessionRow_(sheets, tab, rowNumber, incoming, optio
     if (browserName) data.push({ range: `${tab}!${colL(11)}${rowNumber}`, values: [[browserName]] });
     if (city) data.push({ range: `${tab}!${colL(12)}${rowNumber}`, values: [[city]] });
     if (ip) data.push({ range: `${tab}!${colL(13)}${rowNumber}`, values: [[ip]] });
-    if (appointmentBooked) data.push({ range: `${tab}!${colL(14)}${rowNumber}`, values: [[appointmentBooked]] });
+    if (appointmentBookedPatch !== null) {
+        data.push({ range: `${tab}!${colL(14)}${rowNumber}`, values: [[appointmentBookedPatch]] });
+    }
     if (appointmentDate) data.push({ range: `${tab}!${colL(15)}${rowNumber}`, values: [[appointmentDate]] });
     if (appointmentTime) data.push({ range: `${tab}!${colL(16)}${rowNumber}`, values: [[appointmentTime]] });
     if (fileLinks) data.push({ range: `${tab}!${colL(17)}${rowNumber}`, values: [[fileLinks]] });
@@ -1491,14 +1527,15 @@ async function applySheetExtrasAfterDuplicateSessionRow_(sheets, tab, rowNumber,
     const city = typeof row.city === "string" ? row.city.trim() : "";
     const ip = typeof row.ip === "string" ? row.ip.trim() : "";
     const sourceUrl = typeof row.sourceUrl === "string" ? row.sourceUrl.trim() : "";
-    const appointmentBooked = typeof row.appointmentBooked === "string" ? row.appointmentBooked.trim() : "";
+    const appointmentBookedRaw = typeof row.appointmentBooked === "string" ? row.appointmentBooked.trim() : "";
+    const appointmentBooked = appointmentBookedSheetValue_(appointmentBookedRaw);
     const appointmentDate = typeof row.appointmentDate === "string" ? row.appointmentDate.trim() : "";
     const appointmentTime = typeof row.appointmentTime === "string" ? row.appointmentTime.trim() : "";
     const fileLinks =
         typeof row.fileLinks === "string" && row.fileLinks.trim()
             ? row.fileLinks.trim()
             : "";
-    const repeated = scanFull && scanFull.repeatedAcrossSessions ? "Yes" : "No";
+    const repeated = repeatedUserLabelFromRepeatedFlag_(!!(scanFull && scanFull.repeatedAcrossSessions));
 
     const parts = conversationPartsFromIncomingRow_(row);
 
@@ -1584,7 +1621,7 @@ export async function appendContactRowToSheet(row, opts) {
     const tab = tabNameFromRange(RANGE);
     const appendRangeUsed = appendRangeSchemaWidth_(RANGE);
     if (scan.duplicate) {
-        const repeated = scanFull.repeatedAcrossSessions ? "Yes" : "No";
+        const repeated = repeatedUserLabelFromRepeatedFlag_(scanFull.repeatedAcrossSessions);
         const up = await updateExistingSessionRow_(
             sheets,
             tab,
@@ -1638,13 +1675,14 @@ export async function appendContactRowToSheet(row, opts) {
     const city = typeof row.city === "string" ? row.city.trim() : "";
     const ip = typeof row.ip === "string" ? row.ip.trim() : "";
     const sourceUrl = typeof row.sourceUrl === "string" ? row.sourceUrl.trim() : "";
-    const appointmentBooked = typeof row.appointmentBooked === "string" ? row.appointmentBooked.trim() : "";
+    const appointmentBookedRaw = typeof row.appointmentBooked === "string" ? row.appointmentBooked.trim() : "";
+    const appointmentBooked = appointmentBookedSheetValue_(appointmentBookedRaw);
     const appointmentDate = typeof row.appointmentDate === "string" ? row.appointmentDate.trim() : "";
     const appointmentTime = typeof row.appointmentTime === "string" ? row.appointmentTime.trim() : "";
     const userQueriesCsv = sanitizeUserQueriesCsvForSheet(
         typeof row.userQueriesCsv === "string" ? row.userQueriesCsv : ""
     );
-    const repeated = scanFull.repeatedAcrossSessions ? "Yes" : "No";
+    const repeated = repeatedUserLabelFromRepeatedFlag_(scanFull.repeatedAcrossSessions);
     const convParts = conversationPartsFromIncomingRow_(row);
     // Append A–R directly (Date, Time, then lead fields …).
     const values = [[
