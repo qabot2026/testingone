@@ -3152,7 +3152,14 @@ app.get(PATHNAME_CONVERSATIONS_SHEET_JSON, async (req, res) => {
                 offset = o;
             }
         }
-        const payload = await fetchConversationSheetPreview({ maxRows, offset });
+        const rawFrom =
+            req.query && typeof req.query.from === "string" ? req.query.from.trim() : "";
+        const rawTo = req.query && typeof req.query.to === "string" ? req.query.to.trim() : "";
+        const previewOpts =
+            rawFrom || rawTo
+                ? { maxRows, offset, ...(rawFrom ? { from: rawFrom } : {}), ...(rawTo ? { to: rawTo } : {}) }
+                : { maxRows, offset };
+        const payload = await fetchConversationSheetPreview(previewOpts);
         return res.status(200).json({ ok: true, ...payload });
     } catch (e) {
         const msg = e && /** @type {{ message?: string }} */ (e).message ? String(e.message) : String(e);
@@ -3218,7 +3225,7 @@ app.get("/", (_req, res) => {
             `Contact leads API running.`,
             `GET /reception-schedule → staff calendar (booked vs free slots).`,
             `GET /conversations-sheet → staff inbox (Sheet leads; requires CONVERSATIONS_SHEET_VIEW_SECRET).`,
-            `GET /api/conversations-sheet → JSON rows for inbox (same secret header).`,
+            `GET /api/conversations-sheet?limit=&offset=&from=YYYY-MM-DD&to=YYYY-MM-DD → JSON rows (same secret; optional sheet-wide date filter).`,
             `GET /api/conversations-sheet-stats?from=YYYY-MM-DD&to=YYYY-MM-DD → mobile/email lead ratios (same secret).`,
             `POST JSON or multipart/form-data → ${PATHNAME}`,
             `POST JSON (chat mobile) → ${PATHNAME_MOBILE_SHEET_SYNC}`,

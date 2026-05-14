@@ -2350,8 +2350,8 @@ export async function fetchConversationLeadCaptureStats(opts = {}) {
  * Staff viewer: header row + up to `maxRows` most recent data rows (sheet append adds at bottom).
  * Bounded column-A scan (never `A:A`) so large tabs do not stall the API.
  *
- * @param {{ maxRows?: number, offset?: number }} [opts]
- * @returns {Promise<{ tab: string, title: string, rowCount: number, headers: string[], conversations: Record<string, string>[], offset: number, limit: number, hasOlder: boolean, hasNewer: boolean, totalDataRows: number }>}
+ * @param {{ maxRows?: number, offset?: number, from?: string, to?: string }} [opts]
+ * @returns {Promise<{ tab: string, title: string, rowCount: number, headers: string[], conversations: Record<string, string>[], offset: number, limit: number, hasOlder: boolean, hasNewer: boolean, totalDataRows: number, dateFilter: { applied: boolean, serverApplied?: boolean, from: string|null, to: string|null } }>}
  */
 export async function fetchConversationSheetPreview(opts = {}) {
     if (!SPREADSHEET_ID) {
@@ -2371,6 +2371,41 @@ export async function fetchConversationSheetPreview(opts = {}) {
             ) || 200
         )
     );
+    const fromIn = opts && typeof opts.from === "string" ? opts.from.trim() : "";
+    const toIn = opts && typeof opts.to === "string" ? opts.to.trim() : "";
+    /** @type {string|null} */
+    let previewFromIso = fromIn && isoYyyyMmDdOk_(fromIn) ? fromIn : null;
+    /** @type {string|null} */
+    let previewToIso = toIn && isoYyyyMmDdOk_(toIn) ? toIn : null;
+    if ((fromIn && !previewFromIso) || (toIn && !previewToIso)) {
+        throw new Error("Invalid date parameter — use YYYY-MM-DD for from/to.");
+    }
+    if (previewFromIso && previewToIso && previewFromIso > previewToIso) {
+        const swap = previewFromIso;
+        previewFromIso = previewToIso;
+        previewToIso = swap;
+    }
+    const previewDateFilterActive = !!(previewFromIso || previewToIso);
+    let previewFromEff = "1900-01-01";
+    let previewToEff = "9999-12-31";
+    if (previewDateFilterActive) {
+        if (previewFromIso) {
+            previewFromEff = previewFromIso;
+        }
+        if (previewToIso) {
+            previewToEff = previewToIso;
+        }
+    }
+    /** @type {{ applied: boolean, serverApplied?: boolean, from: string|null, to: string|null }} */
+    const dateFilterEcho = previewDateFilterActive
+        ? {
+            applied: true,
+            serverApplied: true,
+            from: previewFromIso,
+            to: previewToIso
+        }
+        : { applied: false, serverApplied: false, from: null, to: null };
+
     const client = await getSheetsAuthClient();
     const sheets = google.sheets({ version: "v4", auth: client });
     const tab = tabNameFromRange(RANGE);
@@ -2471,15 +2506,85 @@ export async function fetchConversationSheetPreview(opts = {}) {
             limit: maxRows,
             hasOlder: false,
             hasNewer: false,
-            totalDataRows: 0
+            totalDataRows: 0,
+            dateFilter: dateFilterEcho
         };
     }
-    const totalDataRows = Math.max(0, n - 1);
+    const sheetDataRowCount = Math.max(0, n - 1);
     let offset = Number.parseInt(String(opts.offset !== undefined ? opts.offset : 0), 10);
     if (!Number.isFinite(offset) || offset < 0) {
         offset = 0;
     }
-    /** Skip this many rows from the bottom (newest); page = offset ÷ limit. */
+    /** Same right edge as statistics scan so the date column is always fetched. */
+    const previewLastCol0 = Math.min(175, Math.max(headersRaw.length - 1, 17));
+    const previewRightLetter = columnLetterFromIndex_(previewLastCol0);
+
+    if (previewDateFilterActive) {
+        const headerMap = await getHeaderIndexMap_(sheets, tab);
+        const dateIdx = pickHeaderIndex_(headerMap, SHEET_H_CONV_DATE_CELL, 0);
+        const fullGot = await sheets.spreadsheets.values.get({
+            spreadsheetId: SPREADSHEET_ID,
+            range: `${tab}!A2:${previewRightLetter}${n}`
+        });
+        const dataRowsAll = Array.isArray(fullGot.data.values) ? fullGot.data.values : [];
+        /** @type {Record<string, string>[]} */
+        const matchedChrono = [];
+        for (let ri = 0; ri < dataRowsAll.length; ri += 1) {
+            const cells = dataRowsAll[ri] || [];
+            let rowHasAny = false;
+            for (let ci = 0; ci < cells.length; ci += 1) {
+                if (!isBlankSheetCell_(cells[ci])) {
+                    rowHasAny = true;
+                    break;
+                }
+            }
+            if (!rowHasAny) {
+                continue;
+            }
+            const dateMs = parseConversationDateCellWide_(cells[dateIdx]);
+            if (!Number.isFinite(dateMs)) {
+                continue;
+            }
+            const ymd = conversationRowYmdInSheetTz_(dateMs);
+            if (!ymd || ymd < previewFromEff || ymd > previewToEff) {
+                continue;
+            }
+            /** @type {Record<string, string>} */
+            const o = {};
+            for (let c = 0; c < headers.length; c += 1) {
+                const h = headers[c];
+                o[h] = sheetCellString_(cells[c]);
+            }
+            if (Object.values(o).some((v) => v && v.trim())) {
+                matchedChrono.push(o);
+            }
+        }
+        const totalFiltered = matchedChrono.length;
+        /** Newest spreadsheet rows last → reverse for paging like the non-filter viewer. */
+        const newestFirst = matchedChrono.slice().reverse();
+        const maxFilteredOffset = Math.max(0, totalFiltered - maxRows);
+        if (offset > maxFilteredOffset) {
+            offset = maxFilteredOffset;
+        }
+        const sliceRows = newestFirst.slice(offset, offset + maxRows);
+        const hasNewerFiltered = offset > 0;
+        const hasOlderFiltered = offset + sliceRows.length < totalFiltered;
+        return {
+            tab,
+            title,
+            rowCount: n,
+            headers,
+            conversations: sliceRows,
+            offset,
+            limit: maxRows,
+            hasOlder: hasOlderFiltered,
+            hasNewer: hasNewerFiltered,
+            totalDataRows: totalFiltered,
+            dateFilter: dateFilterEcho
+        };
+    }
+
+    /** Skip this many rows from the bottom (newest); page = offset ÷ limit — full tab, no date filter. */
     const maxOffset = Math.max(0, n - 2);
     if (offset > maxOffset) {
         offset = maxOffset;
@@ -2496,13 +2601,11 @@ export async function fetchConversationSheetPreview(opts = {}) {
             limit: maxRows,
             hasOlder: false,
             hasNewer: offset > 0,
-            totalDataRows
+            totalDataRows: sheetDataRowCount,
+            dateFilter: dateFilterEcho
         };
     }
     const dataStart = Math.max(2, dataEnd - maxRows + 1);
-    /** Match header width (was capped at column R → missing date/contact columns farther right). */
-    const previewLastCol0 = Math.min(175, Math.max(headersRaw.length - 1, 17));
-    const previewRightLetter = columnLetterFromIndex_(previewLastCol0);
     const blockGot = await sheets.spreadsheets.values.get({
         spreadsheetId: SPREADSHEET_ID,
         range: `${tab}!A${dataStart}:${previewRightLetter}${dataEnd}`
@@ -2535,7 +2638,8 @@ export async function fetchConversationSheetPreview(opts = {}) {
         limit: maxRows,
         hasOlder,
         hasNewer,
-        totalDataRows
+        totalDataRows: sheetDataRowCount,
+        dateFilter: dateFilterEcho
     };
 }
 

@@ -1149,7 +1149,9 @@
         return guessed || null;
       }
 
-      function inDateRange(ymd) {
+      function inDateRange(ymd, payload) {
+        var pl = payload != null ? payload : lastPayload;
+        if (pl && pl.dateFilter && pl.dateFilter.serverApplied) return true;
         var from = dateFromEl.value;
         var to = dateToEl.value;
         if (!from && !to) return true;
@@ -1275,7 +1277,8 @@
           dateFromEl.value = ymdOff(29);
           dateToEl.value = today;
         }
-        if (lastPayload) render(lastPayload);
+        sheetOffset = 0;
+        if (secretEl.value.trim()) load();
       }
 
       document.querySelectorAll("[data-preset]").forEach(function (btn) {
@@ -1289,6 +1292,16 @@
       var sheetOffset = 0;
       var hadLoadedSheet = false;
       var ignorePageJumpChange = false;
+      var convDateReloadTimer = 0;
+
+      function scheduleReloadForDateFilter() {
+        if (convDateReloadTimer) window.clearTimeout(convDateReloadTimer);
+        convDateReloadTimer = window.setTimeout(function () {
+          convDateReloadTimer = 0;
+          sheetOffset = 0;
+          if (hadLoadedSheet && secretEl.value.trim()) load();
+        }, 140);
+      }
 
       function rowSignature(row, hdrs) {
         var parts = [];
@@ -1343,7 +1356,7 @@
           var row = rows[r];
           if (!rowMatchesFilter(row, q)) continue;
           var ymd = rowDayYmd(row);
-          if (!inDateRange(ymd)) {
+          if (!inDateRange(ymd, data)) {
             continue;
           }
           filtered.push(row);
@@ -1449,24 +1462,12 @@
         filterEl.addEventListener("input", function () {
           if (lastPayload) render(lastPayload);
         });
-        dateFromEl.addEventListener("change", function () {
-          if (lastPayload) render(lastPayload);
-        });
-        dateFromEl.addEventListener("input", function () {
-          if (lastPayload) render(lastPayload);
-        });
-        dateFromEl.addEventListener("blur", function () {
-          if (lastPayload) render(lastPayload);
-        });
-        dateToEl.addEventListener("change", function () {
-          if (lastPayload) render(lastPayload);
-        });
-        dateToEl.addEventListener("input", function () {
-          if (lastPayload) render(lastPayload);
-        });
-        dateToEl.addEventListener("blur", function () {
-          if (lastPayload) render(lastPayload);
-        });
+        dateFromEl.addEventListener("change", scheduleReloadForDateFilter);
+        dateFromEl.addEventListener("input", scheduleReloadForDateFilter);
+        dateFromEl.addEventListener("blur", scheduleReloadForDateFilter);
+        dateToEl.addEventListener("change", scheduleReloadForDateFilter);
+        dateToEl.addEventListener("input", scheduleReloadForDateFilter);
+        dateToEl.addEventListener("blur", scheduleReloadForDateFilter);
         sortOrderEl.addEventListener("change", function () {
           if (lastPayload) render(lastPayload);
         });
@@ -1533,8 +1534,20 @@
         } finally {
           ignorePageJumpChange = false;
         }
+        var rowWord =
+          json.dateFilter && json.dateFilter.serverApplied ? "rows in date range" : "rows in tab";
         pagerHint.textContent =
-          "Page " + curPage + " of " + totalPages + " · ~" + total + " rows in tab · " + lim + " per page";
+          "Page " +
+          curPage +
+          " of " +
+          totalPages +
+          " · ~" +
+          total +
+          " " +
+          rowWord +
+          " · " +
+          lim +
+          " per page";
       }
 
       pagerNewer.addEventListener("click", function () {
@@ -1609,12 +1622,18 @@
         var timedId = 0;
         try {
           var lim = parseInt(String(limitEl.value), 10) || 100;
+          var fromV = dateFromEl && dateFromEl.value ? dateFromEl.value.trim() : "";
+          var toV = dateToEl && dateToEl.value ? dateToEl.value.trim() : "";
+          var dq = [];
+          if (fromV) dq.push("from=" + encodeURIComponent(fromV));
+          if (toV) dq.push("to=" + encodeURIComponent(toV));
           var url =
             apiBase() +
             "/api/conversations-sheet?limit=" +
             encodeURIComponent(lim) +
             "&offset=" +
-            encodeURIComponent(sheetOffset);
+            encodeURIComponent(sheetOffset) +
+            (dq.length ? "&" + dq.join("&") : "");
           var ctrl = new AbortController();
           timedId = window.setTimeout(function () {
             ctrl.abort();
