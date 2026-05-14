@@ -2500,9 +2500,12 @@ export async function fetchConversationSheetPreview(opts = {}) {
         };
     }
     const dataStart = Math.max(2, dataEnd - maxRows + 1);
+    /** Match header width (was capped at column R → missing date/contact columns farther right). */
+    const previewLastCol0 = Math.min(175, Math.max(headersRaw.length - 1, 17));
+    const previewRightLetter = columnLetterFromIndex_(previewLastCol0);
     const blockGot = await sheets.spreadsheets.values.get({
         spreadsheetId: SPREADSHEET_ID,
-        range: `${tab}!A${dataStart}:R${dataEnd}`
+        range: `${tab}!A${dataStart}:${previewRightLetter}${dataEnd}`
     });
     const rawRows = Array.isArray(blockGot.data.values) ? blockGot.data.values : [];
     /** @type {Record<string, string>[]} */

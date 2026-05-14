@@ -1078,10 +1078,23 @@
           if (!nk) continue;
           var compact = nk.replace(/[\s._-]+/g, "");
           if (
-            /^(phone|mobile|whatsapp|email|mail|url|link|name|status|source|amount|price|qty|count)$/i.test(compact) ||
-            /phone|mobile|whatsapp|telegram|@|http|mailto|userid|session|thread|message|snippet|preview|remark|notes?/i.test(
-              compact
-            )
+            /^(phone|mobile|whatsapp|email|mail|url|link|name|status|source|amount|price|qty|count)$/i.test(compact)
+          ) {
+            continue;
+          }
+          /** “Message date” / “Last message date” must not be dropped just because of the word “message”. */
+          var headerHintsDate =
+            /date|datetime|timestamp|stamp|logged|received|scheduled|calendar|day|time/i.test(nk) ||
+            /conversationdate|convdate|conversiondate|convdateonly/i.test(compact);
+          if (
+            /phone|mobile|whatsapp|telegram|@|http|mailto|userid|session/i.test(compact) &&
+            !headerHintsDate
+          ) {
+            continue;
+          }
+          if (
+            /message|snippet|preview|remark|notes?|(^|[^a-z])thread([^a-z]|$)/i.test(compact) &&
+            !headerHintsDate
           ) {
             continue;
           }
@@ -1090,6 +1103,10 @@
           var s =
             typeof v === "number" && !Number.isNaN(v) ? String(v) : normalizeSpacesForParsing(v);
           if (!s || s.length > 240) continue;
+          /** Skip long free-text “conversation” blobs that are not date-labeled columns. */
+          if (!headerHintsDate && s.length > 56) continue;
+          var digitsOnly = s.replace(/[\s.+-]/g, "");
+          if (!headerHintsDate && /^\d{12,}$/.test(digitsOnly)) continue;
           var ymd = parseDateColumnToYmd(s);
           if (!ymd) continue;
           var score = 2;
@@ -1340,8 +1357,13 @@
           selectedRowSig = null;
           var emp = document.createElement("div");
           emp.className = "empty";
+          var hasText = !!q;
+          var hasDr = !!(dateFromEl.value || dateToEl.value);
+          var why = [];
+          if (hasText) why.push("Contains filter");
+          if (hasDr) why.push("date range (rows need a parseable date column)");
           emp.textContent = rawRows.length
-            ? "No rows match text / date filters."
+            ? "No rows match " + (why.length ? why.join(" and ") : "filters") + "."
             : "No rows returned from API.";
           convList.appendChild(emp);
           return;
