@@ -1423,7 +1423,8 @@ function parseConversationDateCellWide_(raw) {
     if (!s) {
         return NaN;
     }
-    const isoDay = /^(\d{4})-(\d{2})-(\d{2})\b/.exec(s);
+
+    const isoDay = /^(\d{4})-(\d{2})-(\d{2})/.exec(s);
     if (isoDay) {
         const y = Number(isoDay[1]);
         const mo = Number(isoDay[2]);

@@ -911,9 +911,31 @@
        * YYYY-MM-DD from conversation date column only (no UTC drift from Date.parse on "14 May 2026").
        * Matches common Sheet/API strings: ISO, D/M/Y, D Mon YYYY, Mon D, YYYY.
        */
+      function googleSheetsSerialToYmd_(serial) {
+        var n = Number(serial);
+        if (!isFinite(n) || n < 20000 || n > 600000) {
+          return null;
+        }
+        var whole = Math.floor(n);
+        var ms = Math.round((whole - 25569) * 86400000) + 43200000;
+        var d = new Date(ms);
+        if (isNaN(d.getTime())) {
+          return null;
+        }
+        return d.getUTCFullYear() + "-" + pad2(d.getUTCMonth() + 1) + "-" + pad2(d.getUTCDate());
+      }
+
       function parseDateColumnToYmd(raw) {
         var s = String(raw == null ? "" : raw).trim();
         if (!s) return null;
+
+        var serialOnly = /^\d{5,6}(?:\.\d+)?$/.exec(s);
+        if (serialOnly) {
+          var yFromSerial = googleSheetsSerialToYmd_(parseFloat(serialOnly[0]));
+          if (yFromSerial) {
+            return yFromSerial;
+          }
+        }
 
         var iso = /^(\d{4})-(\d{2})-(\d{2})/.exec(s);
         if (iso) {
@@ -1025,21 +1047,71 @@
         return "";
       }
 
+      /**
+       * When header text does not match known aliases, still find a parseable date (incl. Sheet serial strings).
+       * Skips obvious phone/message/id columns; prefers labels containing conv/date/time.
+       */
+      function inferDateYmdFromRow(row) {
+        var keys = Object.keys(row || {});
+        var bestYmd = null;
+        var bestScore = -1;
+        for (var i = 0; i < keys.length; i++) {
+          var header = keys[i];
+          var nk = normKey(header);
+          if (!nk) continue;
+          var compact = nk.replace(/[\s._-]+/g, "");
+          if (
+            /^(phone|mobile|whatsapp|email|mail|url|link|name|status|source|amount|price|qty|count)$/i.test(compact) ||
+            /phone|mobile|whatsapp|telegram|@|http|mailto|userid|session|thread|message|snippet|preview|remark|notes?/i.test(
+              compact
+            )
+          ) {
+            continue;
+          }
+          var v = row[header];
+          if (v === undefined || v === null) continue;
+          var s = typeof v === "number" && !Number.isNaN(v) ? String(v) : String(v).trim();
+          if (!s || s.length > 240) continue;
+          var ymd = parseDateColumnToYmd(s);
+          if (!ymd) continue;
+          var score = 2;
+          if (/conversationdate|convdate|conversiondate|convdateonly/i.test(compact)) score += 95;
+          else if (/conv/i.test(compact)) score += /time/i.test(compact) ? 12 : 55;
+          if (/datetime|timestamp|created|logged|posted|received|started/i.test(compact)) score += 45;
+          if (/date|day/i.test(compact)) score += 28;
+          if (/^time$/i.test(compact) || /^conversations?time$/i.test(compact)) score -= 50;
+          if (score > bestScore) {
+            bestScore = score;
+            bestYmd = ymd;
+          }
+        }
+        return bestYmd;
+      }
+
       /** YYYY-MM-DD for date filter — uses date column directly when possible (avoids UTC slips). */
       function rowDayYmd(row) {
         var dStr = findCell(row, [
           "Conv. Date",
           "Conversation date",
           "Conv date",
-          "Date",
+          "Conversion date",
+          "Conv Date",
+          "Conv. date",
+          "Date only",
+          "Chat date",
           "Datetime",
-          "Timestamp"
+          "Timestamp",
+          "Created date",
+          "Logged date",
+          "Date"
         ]);
         var ymdPick = parseDateColumnToYmd(dStr);
         if (ymdPick) return ymdPick;
-        var tStr = findCell(row, ["Conv. Time", "Time", "Conv time", "Conversation time"]);
+        var tStr = findCell(row, ["Conv. Time", "Time", "Conv time", "Conversation time", "Logged time"]);
         var inst = parseConversationInstant(dStr, tStr);
-        return inst ? toYmdLocal(inst) : null;
+        if (inst) return toYmdLocal(inst);
+        var guessed = inferDateYmdFromRow(row);
+        return guessed || null;
       }
 
       function inDateRange(ymd) {
@@ -1343,10 +1415,16 @@
         dateFromEl.addEventListener("input", function () {
           if (lastPayload) render(lastPayload);
         });
+        dateFromEl.addEventListener("blur", function () {
+          if (lastPayload) render(lastPayload);
+        });
         dateToEl.addEventListener("change", function () {
           if (lastPayload) render(lastPayload);
         });
         dateToEl.addEventListener("input", function () {
+          if (lastPayload) render(lastPayload);
+        });
+        dateToEl.addEventListener("blur", function () {
           if (lastPayload) render(lastPayload);
         });
         sortOrderEl.addEventListener("change", function () {
