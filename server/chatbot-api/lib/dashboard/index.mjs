@@ -36,6 +36,8 @@
  *   DASHBOARD_SETTINGS_COLLECTION default "dashboard_settings"
  *   DASHBOARD_TOKENS_COLLECTION   default "dashboard_login_tokens"
  *   DASHBOARD_PREVIEW_URL         default preview chat-frame.html URL (informational)
+ *   DASHBOARD_WIDGET_SETTINGS_BACKEND  "firestore" (default) | "file" — no Firestore for theme when file
+ *   DASHBOARD_WIDGET_SETTINGS_FILE     path for file backend (default: server/chatbot-api/data/widget-settings-store.json)
  *
  * Peer deps (already in package.json): express, firebase-admin, nodemailer.
  */
@@ -230,7 +232,82 @@ function botIdOrDefault_(v) {
     return s;
 }
 
+/** @returns {"firestore" | "file"} */
+function widgetSettingsBackend_() {
+    const v = trim_(process.env.DASHBOARD_WIDGET_SETTINGS_BACKEND).toLowerCase();
+    if (v === "file" || v === "filesystem" || v === "disk") {
+        return "file";
+    }
+    return "firestore";
+}
+
+function widgetSettingsFilePath_() {
+    const custom = trim_(process.env.DASHBOARD_WIDGET_SETTINGS_FILE);
+    if (custom) {
+        return path.isAbsolute(custom) ? custom : path.resolve(process.cwd(), custom);
+    }
+    return path.resolve(__dirname_lib, "..", "..", "data", "widget-settings-store.json");
+}
+
+const WIDGET_SETTINGS_FILE_SCHEMA_VERSION = 1;
+
+async function readWidgetSettingsFileRoot_(filePath) {
+    try {
+        const raw = await fs.readFile(filePath, "utf8");
+        const parsed = JSON.parse(raw);
+        if (!parsed || typeof parsed !== "object") {
+            return { version: WIDGET_SETTINGS_FILE_SCHEMA_VERSION, bots: {} };
+        }
+        const bots = parsed.bots && typeof parsed.bots === "object" ? parsed.bots : {};
+        return { version: WIDGET_SETTINGS_FILE_SCHEMA_VERSION, bots };
+    } catch (err) {
+        const code = err && err.code;
+        if (code === "ENOENT") {
+            return { version: WIDGET_SETTINGS_FILE_SCHEMA_VERSION, bots: {} };
+        }
+        throw err;
+    }
+}
+
+async function readSettingsFromFile_(botid) {
+    const id = botIdOrDefault_(botid);
+    const filePath = widgetSettingsFilePath_();
+    const root = await readWidgetSettingsFileRoot_(filePath);
+    const row = root.bots[id];
+    if (!row || typeof row !== "object") {
+        return { flat: {}, advancedPatchJson: "", updatedAt: null, updatedBy: "" };
+    }
+    return {
+        flat: row.flat && typeof row.flat === "object" ? row.flat : {},
+        advancedPatchJson: typeof row.advancedPatchJson === "string" ? row.advancedPatchJson : "",
+        updatedAt: typeof row.updatedAt === "string" ? row.updatedAt : null,
+        updatedBy: typeof row.updatedBy === "string" ? row.updatedBy : ""
+    };
+}
+
+async function writeSettingsToFile_(botid, flat, advancedPatchJson, email) {
+    const id = botIdOrDefault_(botid);
+    const filePath = widgetSettingsFilePath_();
+    const dir = path.dirname(filePath);
+    await fs.mkdir(dir, { recursive: true });
+    const root = await readWidgetSettingsFileRoot_(filePath);
+    const now = new Date().toISOString();
+    root.version = WIDGET_SETTINGS_FILE_SCHEMA_VERSION;
+    root.bots[id] = {
+        flat: flat && typeof flat === "object" ? flat : {},
+        advancedPatchJson: typeof advancedPatchJson === "string" ? advancedPatchJson : "",
+        updatedAt: now,
+        updatedBy: trim_(email)
+    };
+    const tmp = `${filePath}.${process.pid}.${Date.now()}.tmp`;
+    await fs.writeFile(tmp, JSON.stringify(root, null, 2), "utf8");
+    await fs.rename(tmp, filePath);
+}
+
 async function readSettings_(botid) {
+    if (widgetSettingsBackend_() === "file") {
+        return readSettingsFromFile_(botid);
+    }
     const db = firestoreDb_();
     const snap = await db.collection(settingsCollection_()).doc(botIdOrDefault_(botid)).get();
     if (!snap.exists) {
@@ -246,9 +323,10 @@ async function readSettings_(botid) {
 }
 
 async function writeSettings_(botid, flat, advancedPatchJson, email) {
+    if (widgetSettingsBackend_() === "file") {
+        return writeSettingsToFile_(botid, flat, advancedPatchJson, email);
+    }
     const db = firestoreDb_();
-    // Whole-document replace — Firestore `{ merge: true }` deep-merges nested maps, so stale
-    // keys inside `flat` would survive and confuse "Make live" + widget hydration.
     await db.collection(settingsCollection_()).doc(botIdOrDefault_(botid)).set({
         flat: flat && typeof flat === "object" ? flat : {},
         advancedPatchJson: typeof advancedPatchJson === "string" ? advancedPatchJson : "",
@@ -671,6 +749,7 @@ export function mountDashboardRoutes(app) {
 
     // --- Health --------------------------------------------------------------
     app.get("/api/dashboard/health", (_req, res) => {
+        const wsBackend = widgetSettingsBackend_();
         res.json({
             ok: true,
             allowed_emails_configured: allowedEmails_().length > 0,
@@ -683,9 +762,16 @@ export function mountDashboardRoutes(app) {
             /** False when key is set but does not look like a Resend key (should start with `re_`). */
             resend_api_key_format_ok:
                 !isResendConfigured_() || trim_(process.env.RESEND_API_KEY).startsWith("re_"),
-            preview_url_default: trim_(process.env.DASHBOARD_PREVIEW_URL) || null
+            preview_url_default: trim_(process.env.DASHBOARD_PREVIEW_URL) || null,
+            widget_settings_backend: wsBackend,
+            widget_settings_file: wsBackend === "file" ? widgetSettingsFilePath_() : null
         });
     });
 
     console.log(LOG_TAG, "mounted /dashboard + /api/dashboard/* + /api/public/widget-settings");
+    const _wsb = widgetSettingsBackend_();
+    console.log(
+        LOG_TAG,
+        `widget settings: ${_wsb}` + (_wsb === "file" ? ` → ${widgetSettingsFilePath_()}` : " (firestore)")
+    );
 }

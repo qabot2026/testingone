@@ -1,2 +1,5 @@
 server/chatbot-api/node_modules/
 server/chatbot-api/package-lock.json
+
+# Published widget UI (generated when using DASHBOARD_WIDGET_SETTINGS_BACKEND=file)
+server/chatbot-api/data/widget-settings-store.json
