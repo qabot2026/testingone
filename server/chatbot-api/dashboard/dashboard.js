@@ -340,9 +340,9 @@
     flat.botMessageBg = state.botMessageBg;
     flat.botMessageText = state.botMessageText;
 
-    // Images
-    if (state.chatIconUrl) flat.chatIconUrl = state.chatIconUrl;
-    if (state.chatTitleIconUrl) flat.chatTitleIconUrl = state.chatTitleIconUrl;
+    // Images (always send so merges clear back to widget defaults when emptied)
+    flat.chatIconUrl = state.chatIconUrl == null ? "" : String(state.chatIconUrl).trim();
+    flat.chatTitleIconUrl = state.chatTitleIconUrl == null ? "" : String(state.chatTitleIconUrl).trim();
 
     // Header text
     flat.headerTitle = state.headerTitle;
