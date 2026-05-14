@@ -35,6 +35,7 @@
             <a href="#sec-input">Placeholder</a>
             <a href="#sec-autoopen">Auto-open</a>
             <a href="#sec-header">Header</a>
+            <a href="#sec-custom-css">Custom CSS</a>
             <a href="#sec-strip">Bubble strip</a>
           </nav>
 
@@ -174,6 +175,29 @@
                 <label for="headerSubtitle">Header subtitle</label>
                 <input id="headerSubtitle" data-setting="headerSubtitle" type="text" placeholder="We are online to assist you" />
               </div>
+              <div class="field-card field-card-wide">
+                <label for="headerTitleColor">Header title text color</label>
+                <div class="color-row">
+                  <input id="headerTitleColor" data-setting="headerTitleColor" type="color" aria-label="Header title text color" />
+                  <input class="color-hex" data-setting-pair="headerTitleColor" type="text" maxlength="7" placeholder="#f0f9ff" />
+                </div>
+              </div>
+              <div class="field-card field-card-wide">
+                <label for="headerSubtitleColor">Header subtitle text color</label>
+                <div class="color-row">
+                  <input id="headerSubtitleColor" data-setting="headerSubtitleColor" type="color" aria-label="Header subtitle text color" />
+                  <input class="color-hex" data-setting-pair="headerSubtitleColor" type="text" maxlength="7" placeholder="#bae6fd" />
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="settings-section" id="sec-custom-css">
+            <h2 class="settings-section-title">Custom CSS</h2>
+            <p class="settings-section-hint muted">Injected into the chat page after theme variables. Use selectors such as <code>df-messenger</code> or Dialogflow’s shadow parts if supported.</p>
+            <div class="field-card field-card-wide">
+              <label for="widgetCustomCss">CSS</label>
+              <textarea id="widgetCustomCss" data-setting="widgetCustomCss" class="widget-custom-css" rows="8" spellcheck="false" placeholder="/* e.g. df-messenger { ... } */"></textarea>
             </div>
           </section>
 

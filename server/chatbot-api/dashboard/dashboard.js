@@ -44,6 +44,9 @@
     chatTitleIconUrl: "",
     headerTitle: "",
     headerSubtitle: "",
+    headerTitleColor: "#f0f9ff",
+    headerSubtitleColor: "#bae6fd",
+    widgetCustomCss: "",
     enableMic: true,
     enableRestart: true,
     enableMultiLanguage: true,
@@ -66,6 +69,9 @@
     { key: "chatTitleIconUrl", type: "text" },
     { key: "headerTitle", type: "text" },
     { key: "headerSubtitle", type: "text" },
+    { key: "headerTitleColor", type: "color" },
+    { key: "headerSubtitleColor", type: "color" },
+    { key: "widgetCustomCss", type: "text" },
     { key: "enableMic", type: "bool" },
     { key: "enableRestart", type: "bool" },
     { key: "enableMultiLanguage", type: "bool" },
@@ -341,6 +347,9 @@
     // Header text
     flat.headerTitle = state.headerTitle;
     flat.headerSubtitle = state.headerSubtitle;
+    flat.headerTitleColor = state.headerTitleColor;
+    flat.headerSubtitleColor = state.headerSubtitleColor;
+    flat.widgetCustomCss = state.widgetCustomCss == null ? "" : String(state.widgetCustomCss);
 
     // Features (bool)
     flat.enableMic = !!state.enableMic;
@@ -467,6 +476,7 @@
   }
 
   var pushDraftDebounced = debounce(pushDraftToPreview, 28);
+  var pushDraftCssDebounced = debounce(pushDraftToPreview, 220);
 
   // ---------------------------------------------------------
   // Bind inputs
@@ -496,6 +506,7 @@
           }
         }
         if (immediatePreview) pushDraftToPreviewTwice();
+        else if (def.key === "widgetCustomCss") pushDraftCssDebounced();
         else pushDraftDebounced();
         updateDraftBadgeDebounced();
       }

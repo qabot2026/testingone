@@ -8237,6 +8237,30 @@ function applyFooterInputBoxConfig(dfMessenger) {
     scheduleFooterInputBoxShadowOverrides(dfMessenger);
 }
 
+/** Injects `common.widgetCustomCss` from `COMPANY_CHAT_UI_CONFIG` into document head (dashboard + runtime). */
+function applyWidgetCustomCssFromConfig() {
+    try {
+        const common = readCompanyUiConfig().common;
+        const css = common && typeof common.widgetCustomCss === "string" ? common.widgetCustomCss : "";
+        let el = document.getElementById("dfchat-widget-custom-css");
+        if (!css.trim()) {
+            if (el && el.parentNode) {
+                el.parentNode.removeChild(el);
+            }
+            return;
+        }
+        if (!el) {
+            el = document.createElement("style");
+            el.id = "dfchat-widget-custom-css";
+            el.setAttribute("data-dfchat", "widget-custom-css");
+            document.head.appendChild(el);
+        }
+        el.textContent = css;
+    } catch {
+        /* ignore */
+    }
+}
+
 function applyDfMessengerThemeConfig(dfMessenger, config) {
     if (!dfMessenger || !config || typeof config !== "object") {
         return;
@@ -8257,7 +8281,12 @@ function applyDfMessengerThemeConfig(dfMessenger, config) {
     if (theme) {
         for (const [key, value] of Object.entries(theme)) {
             if (typeof key === "string" && key.startsWith("--") && typeof value === "string") {
-                dfMessenger.style.setProperty(key, value);
+                const trimmed = value.trim();
+                if (trimmed) {
+                    dfMessenger.style.setProperty(key, trimmed);
+                } else {
+                    dfMessenger.style.removeProperty(key);
+                }
             }
         }
     }
@@ -8282,6 +8311,7 @@ function applyDfMessengerThemeConfig(dfMessenger, config) {
     }
     applyChatBubbleLauncherCircleStyle(dfMessenger);
     applyBotPersonaToMessenger(dfMessenger, bubble);
+    applyWidgetCustomCssFromConfig();
 }
 
 function applyBotPersonaToMessenger(dfMessenger, bubble) {
@@ -20297,8 +20327,20 @@ function buildCompanyAdminFlatSettingsPatch(flat) {
         return `linear-gradient(168deg, ${shade} 0%, ${tint} 100%)`;
     })();
 
+    const normalizeFlatHex6 = (hex) => {
+        const m = String(hex).trim().match(/^#?([0-9a-fA-F]{6})$/);
+        return m ? `#${m[1].toLowerCase()}` : "";
+    };
+    const titleBarFont = normalizeFlatHex6(typeof s.headerTitleColor === "string" ? s.headerTitleColor : "");
+    const titleBarSubFont = normalizeFlatHex6(typeof s.headerSubtitleColor === "string" ? s.headerSubtitleColor : "");
+    const widgetCustomCss =
+        Object.prototype.hasOwnProperty.call(s, "widgetCustomCss") && typeof s.widgetCustomCss === "string"
+            ? s.widgetCustomCss
+            : undefined;
+
     return {
         common: {
+            ...(widgetCustomCss !== undefined ? { widgetCustomCss } : {}),
             header: {
                 ...(typeof s.headerTitle === "string" ? { title: asStr(s.headerTitle) } : null),
                 ...(typeof s.headerSubtitle === "string" ? { subtitle: asStr(s.headerSubtitle) } : null),
@@ -20317,6 +20359,8 @@ function buildCompanyAdminFlatSettingsPatch(flat) {
                 ...(chatBubbleGradient ? { "--df-messenger-chat-bubble-background": chatBubbleGradient } : null),
                 ...(chipsBgRgba ? { "--df-messenger-chips-background": chipsBgRgba } : null),
                 ...(buttonBorder ? { "--df-messenger-button-border": buttonBorder } : null),
+                ...(titleBarFont ? { "--df-messenger-titlebar-font-color": titleBarFont } : null),
+                ...(titleBarSubFont ? { "--df-messenger-titlebar-subtitle-font-color": titleBarSubFont } : null),
             },
             features: {
                 ...(enableMultiLanguage == null ? null : {

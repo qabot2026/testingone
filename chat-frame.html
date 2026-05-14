@@ -37,7 +37,7 @@
   <script src="forms/birthform.js?v=79"></script>
   <script src="forms/nearest-branch.js?v=79"></script>
   <script src="company.config.js?v=103"></script>
-  <script src="company.js?v=103"></script>
+  <script src="company.js?v=104"></script>
   <script>
     (function () {
       function parseHexRgb(hex) {
@@ -70,6 +70,12 @@
         var rgb = parseHexRgb(hex);
         if (!rgb) return null;
         return toRgbCss(mixRgb(rgb, { r: 0, g: 0, b: 0 }, w));
+      }
+
+      function normalizeHex6ForMessengerVar(val) {
+        if (!val || typeof val !== "string") return "";
+        var m = String(val).trim().match(/^#?([0-9a-fA-F]{6})$/);
+        return m ? "#" + m[1].toLowerCase() : "";
       }
 
       function applyThemeVarsLive(settings) {
@@ -125,6 +131,17 @@
 
           if (userText) df.style.setProperty("--df-messenger-message-user-font-color", userText);
           if (botText) df.style.setProperty("--df-messenger-message-bot-font-color", botText);
+
+          var titleFont = normalizeHex6ForMessengerVar(
+            settings && typeof settings.headerTitleColor === "string" ? settings.headerTitleColor : ""
+          );
+          var subFont = normalizeHex6ForMessengerVar(
+            settings && typeof settings.headerSubtitleColor === "string" ? settings.headerSubtitleColor : ""
+          );
+          if (titleFont) df.style.setProperty("--df-messenger-titlebar-font-color", titleFont);
+          else df.style.removeProperty("--df-messenger-titlebar-font-color");
+          if (subFont) df.style.setProperty("--df-messenger-titlebar-subtitle-font-color", subFont);
+          else df.style.removeProperty("--df-messenger-titlebar-subtitle-font-color");
 
           // Chips + button border.
           var rgb = parseHexRgb(primary);
