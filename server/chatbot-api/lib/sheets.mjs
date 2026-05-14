@@ -1385,6 +1385,144 @@ const SHEET_H_SESSION = [
     "session_id_client"
 ];
 
+/** Header aliases for conversation date column (stats + period filter); default column A index 0. */
+const SHEET_H_CONV_DATE_CELL = [
+    "conversationdate",
+    "convdate",
+    "convdateonly",
+    "conversiondate",
+    "date"
+];
+
+/** @returns {boolean} */
+function isoYyyyMmDdOk_(raw) {
+    const d = typeof raw === "string" ? raw.trim() : "";
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) {
+        return false;
+    }
+    const y = Number(d.slice(0, 4));
+    const m = Number(d.slice(5, 7));
+    const dd = Number(d.slice(8, 10));
+    if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(dd)) {
+        return false;
+    }
+    if (m < 1 || m > 12 || dd < 1 || dd > 31) {
+        return false;
+    }
+    const dt = Date.UTC(y, m - 1, dd);
+    const round = new Date(dt);
+    return round.getUTCFullYear() === y && round.getUTCMonth() === m - 1 && round.getUTCDate() === dd;
+}
+
+/**
+ * Normalize row conversation date strings (Sheet “medium” stamps, ISO, DD/MM/YYYY) to milliseconds.
+ * @param {unknown} raw
+ */
+function parseConversationDateCellWide_(raw) {
+    const s = typeof raw === "string" ? raw.trim() : sheetCellString_(raw).trim();
+    if (!s) {
+        return NaN;
+    }
+    const isoDay = /^(\d{4})-(\d{2})-(\d{2})\b/.exec(s);
+    if (isoDay) {
+        const y = Number(isoDay[1]);
+        const mo = Number(isoDay[2]);
+        const d = Number(isoDay[3]);
+        return Date.UTC(y, mo - 1, d, 12, 0, 0);
+    }
+    const dmy = /^(\d{1,2})[/\-.](\d{1,2})[/\-.]((?:\d{2})|(?:\d{4}))\b/.exec(s);
+    if (dmy) {
+        const dd = Number(dmy[1]);
+        const mo = Number(dmy[2]);
+        let y = Number(dmy[3]);
+        if (Number.isFinite(y) && y >= 0 && y < 100) {
+            y += y >= 70 ? 1900 : 2000;
+        }
+        if (
+            Number.isFinite(dd)
+            && Number.isFinite(mo)
+            && Number.isFinite(y)
+            && mo >= 1
+            && mo <= 12
+            && dd >= 1
+            && dd <= 31
+        ) {
+            return Date.UTC(y, mo - 1, dd, 12, 0, 0);
+        }
+    }
+    const longFmt = /^(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})\b/.exec(s);
+    if (longFmt) {
+        const dd = Number(longFmt[1]);
+        const y = Number(longFmt[3]);
+        const monKey = String(longFmt[2] || "").toLowerCase().slice(0, 3);
+        /** Month token → 0-based. */
+        const monMap =
+            /** @type {Record<string, number>} */ ({
+                jan: 0,
+                feb: 1,
+                mar: 2,
+                apr: 3,
+                may: 4,
+                jun: 5,
+                jul: 6,
+                aug: 7,
+                sep: 8,
+                oct: 9,
+                nov: 10,
+                dec: 11
+            });
+        const mo0 = monMap[monKey];
+        if (
+            mo0 !== undefined
+            && Number.isFinite(dd)
+            && dd >= 1
+            && dd <= 31
+            && Number.isFinite(y)
+            && y >= 1970
+            && y <= 2100
+        ) {
+            return Date.UTC(y, mo0, dd, 12, 0, 0);
+        }
+    }
+    const t = Date.parse(s.replace(/,/g, ""));
+    return Number.isNaN(t) ? NaN : t;
+}
+
+/** @param {number} epochMs */
+function conversationRowYmdInSheetTz_(epochMs) {
+    if (!Number.isFinite(epochMs)) {
+        return "";
+    }
+    const tz = conversationDateTimeZoneForIntl_();
+    const opts = /** @type {Intl.DateTimeFormatOptions} */ ({
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit"
+    });
+    if (tz) {
+        opts.timeZone = tz;
+    }
+    try {
+        return new Intl.DateTimeFormat("en-CA", opts).format(new Date(epochMs));
+    } catch {
+        return new Intl.DateTimeFormat("en-CA", opts).format(new Date(epochMs));
+    }
+}
+
+/** Lead stats: plausible mobile if enough digits (captures WhatsApp variants). */
+function sheetCellHasLeadMobile_(raw) {
+    const digits = sheetCellString_(raw).replace(/\D/g, "");
+    return digits.length >= 7;
+}
+
+function sheetCellHasLeadEmail_(raw) {
+    const t = sheetCellString_(raw).trim();
+    if (!t || !t.includes("@")) {
+        return false;
+    }
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+/.test(t);
+}
+
 function rowNumberFromUpdatedRange_(updatedRange) {
     const s = typeof updatedRange === "string" ? updatedRange : "";
     const m = s.match(/!([A-Z]+)(\d+)(?::[A-Z]+(\d+))?$/);
@@ -1941,6 +2079,269 @@ export async function probeSheetsSpreadsheetAccess() {
             : String(e);
         return { ok: false, code: "spreadsheets_get_failed", message: msg.slice(0, 500) };
     }
+}
+
+/**
+ * Lead capture breakdown for the Sheet tab — same bounded scan tail as `/api/conversations-sheet`.
+ * Rows are grouped by plausible Mobile vs Email (`@` mailbox shape, mobile = ≥7 digits).
+ * Period filter compares each row's conversation-date cell to `[from, to]` (inclusive calendar days in `SHEETS_CONV_DATETIME_TZ`, default Asia/Kolkata).
+ *
+ * @param {{ from?: string, to?: string }} [opts]
+ * @returns {Promise<{
+ *   tab: string,
+ *   title: string,
+ *   timezoneNote: string,
+ *   dateFilter: { applied: boolean, from: string|null, to: string|null },
+ *   scan: { sheetLastRow1Based: number, dataRowsConsidered: number, scanHardCapEnv: number },
+ *   columns: { dateIdx0: number, mobileIdx0: number, emailIdx0: number, dateHeader: string, mobileHeader: string, emailHeader: string },
+ *   totals: { conversations: number, onlyMobile: number, onlyEmail: number, mobileAndEmail: number, neither: number, rowsSkippedNoParsableDate: number, leadsCaptured: number },
+ *   ratios: {
+ *     onlyMobile: string,
+ *     onlyEmail: string,
+ *     mobileAndEmail: string,
+ *     leads: string,
+ *     leadCapturePct: number|null
+ *   }
+ * }>}
+ */
+export async function fetchConversationLeadCaptureStats(opts = {}) {
+    if (!SPREADSHEET_ID) {
+        throw new Error("SHEETS_SPREADSHEET_ID is not set.");
+    }
+    const fromIn = opts && typeof opts.from === "string" ? opts.from.trim() : "";
+    const toIn = opts && typeof opts.to === "string" ? opts.to.trim() : "";
+    /** @type {string|null} */
+    let fromStr = fromIn && isoYyyyMmDdOk_(fromIn) ? fromIn : null;
+    /** @type {string|null} */
+    let toStr = toIn && isoYyyyMmDdOk_(toIn) ? toIn : null;
+    if ((fromIn && !fromStr) || (toIn && !toStr)) {
+        throw new Error("Invalid date parameter — use YYYY-MM-DD for from/to.");
+    }
+    if (fromStr && toStr && fromStr > toStr) {
+        const swap = fromStr;
+        fromStr = toStr;
+        toStr = swap;
+    }
+    const filterActive = !!(fromStr || toStr);
+    let fromEff = "1900-01-01";
+    let toEff = "9999-12-31";
+    if (filterActive) {
+        if (fromStr) {
+            fromEff = fromStr;
+        }
+        if (toStr) {
+            toEff = toStr;
+        }
+    }
+
+    const client = await getSheetsAuthClient();
+    const sheets = google.sheets({ version: "v4", auth: client });
+    const tab = tabNameFromRange(RANGE);
+
+    let title = "";
+    try {
+        const titleGot = await sheets.spreadsheets.get({
+            spreadsheetId: SPREADSHEET_ID,
+            fields: "properties.title"
+        });
+        title =
+            titleGot.data.properties && typeof titleGot.data.properties.title === "string"
+                ? titleGot.data.properties.title.trim()
+                : "";
+    } catch {
+        title = "";
+    }
+
+    const headerGot = await sheets.spreadsheets.values.get({
+        spreadsheetId: SPREADSHEET_ID,
+        range: `${tab}!1:1`
+    });
+    const headersRaw = Array.isArray(headerGot.data.values) && headerGot.data.values[0]
+        ? /** @type {unknown[]} */ (headerGot.data.values[0])
+        : [];
+    const headerMap = await getHeaderIndexMap_(sheets, tab);
+    const dateIdx = pickHeaderIndex_(headerMap, SHEET_H_CONV_DATE_CELL, 0);
+    const mobileIdx = pickHeaderIndex_(headerMap, SHEET_H_MOBILE, 3);
+    const emailIdx = pickHeaderIndex_(headerMap, SHEET_H_EMAIL, 4);
+
+    const hardCap = Math.min(
+        15_000,
+        Math.max(
+            250,
+            Number.parseInt(
+                String((process.env.CONVERSATIONS_SHEET_SCAN_MAX_ROWS || "").trim() || "8000"),
+                10
+            ) || 8000
+        )
+    );
+
+    /** @type {number} */
+    let capRow = hardCap;
+    try {
+        const meta = await sheets.spreadsheets.get({
+            spreadsheetId: SPREADSHEET_ID,
+            fields: "sheets.properties(title,gridProperties(rowCount))"
+        });
+        const sh = Array.isArray(meta.data.sheets) ? meta.data.sheets : [];
+        const tabKey = normalizedSheetTabKey_(tab);
+        for (let si = 0; si < sh.length; si += 1) {
+            const p = sh[si] && sh[si].properties;
+            const st = p && typeof p.title === "string" ? p.title.trim() : "";
+            if (st && normalizedSheetTabKey_(st) === tabKey) {
+                const gr = p && p.gridProperties && typeof p.gridProperties.rowCount === "number"
+                    ? p.gridProperties.rowCount
+                    : 0;
+                if (Number.isFinite(gr) && gr > 0) {
+                    capRow = Math.min(hardCap, gr);
+                }
+                break;
+            }
+        }
+    } catch {
+        /* fallback hardCap */
+    }
+
+    const colAGot = await sheets.spreadsheets.values.get({
+        spreadsheetId: SPREADSHEET_ID,
+        range: `${tab}!A1:A${capRow}`
+    });
+    const colVals = Array.isArray(colAGot.data.values) ? colAGot.data.values : [];
+    /** 1-based last row with column A populated. */
+    let nLast = 0;
+    for (let ri = colVals.length - 1; ri >= 0; ri -= 1) {
+        if (!isBlankSheetCell_(colVals[ri] && colVals[ri][0])) {
+            nLast = ri + 1;
+            break;
+        }
+    }
+    const tz = conversationDateTimeZoneForIntl_();
+    const timezoneNote =
+        tz === undefined ? "server default (SHEETS_CONV_DATETIME_TZ empty)" : `IANA TZ: ${tz}`;
+
+    const baseEmpty = () => ({
+        tab,
+        title,
+        timezoneNote,
+        dateFilter: {
+            applied: filterActive,
+            from: fromStr,
+            to: toStr
+        },
+        scan: {
+            sheetLastRow1Based: nLast || colVals.length,
+            dataRowsConsidered: 0,
+            scanHardCapEnv: hardCap
+        },
+        columns: {
+            dateIdx0: dateIdx,
+            mobileIdx0: mobileIdx,
+            emailIdx0: emailIdx,
+            dateHeader: sheetCellString_(headersRaw[dateIdx])
+                ? sheetCellString_(headersRaw[dateIdx])
+                : `Column_${dateIdx + 1}`,
+            mobileHeader: sheetCellString_(headersRaw[mobileIdx])
+                ? sheetCellString_(headersRaw[mobileIdx])
+                : `Column_${mobileIdx + 1}`,
+            emailHeader: sheetCellString_(headersRaw[emailIdx])
+                ? sheetCellString_(headersRaw[emailIdx])
+                : `Column_${emailIdx + 1}`
+        },
+        totals: {
+            conversations: 0,
+            onlyMobile: 0,
+            onlyEmail: 0,
+            mobileAndEmail: 0,
+            neither: 0,
+            rowsSkippedNoParsableDate: 0,
+            leadsCaptured: 0
+        },
+        ratios: {
+            onlyMobile: "0 / 0",
+            onlyEmail: "0 / 0",
+            mobileAndEmail: "0 / 0",
+            leads: "0 / 0",
+            leadCapturePct: null
+        }
+    });
+
+    if (nLast <= 1) {
+        return baseEmpty();
+    }
+
+    const lastColIdx = Math.min(
+        175,
+        Math.max(headersRaw.length - 1, dateIdx, mobileIdx, emailIdx, 17)
+    );
+    const colLetter = columnLetterFromIndex_(lastColIdx);
+    const dataGot = await sheets.spreadsheets.values.get({
+        spreadsheetId: SPREADSHEET_ID,
+        range: `${tab}!A2:${colLetter}${nLast}`
+    });
+    const dataRows = Array.isArray(dataGot.data.values) ? dataGot.data.values : [];
+
+    let conversations = 0;
+    let onlyMobile = 0;
+    let onlyEmail = 0;
+    let both = 0;
+    let neither = 0;
+    let skippedNoDate = 0;
+
+    for (let ri = 0; ri < dataRows.length; ri += 1) {
+        const cells = dataRows[ri] || [];
+        let rowHasAny = false;
+        for (let ci = 0; ci < cells.length; ci += 1) {
+            if (!isBlankSheetCell_(cells[ci])) {
+                rowHasAny = true;
+                break;
+            }
+        }
+        if (!rowHasAny) {
+            continue;
+        }
+        if (filterActive) {
+            const dateMs = parseConversationDateCellWide_(cells[dateIdx]);
+            if (!Number.isFinite(dateMs)) {
+                skippedNoDate += 1;
+                continue;
+            }
+            const ymd = conversationRowYmdInSheetTz_(dateMs);
+            if (!ymd || ymd < fromEff || ymd > toEff) {
+                continue;
+            }
+        }
+        const hasMob = sheetCellHasLeadMobile_(cells[mobileIdx]);
+        const hasEm = sheetCellHasLeadEmail_(cells[emailIdx]);
+        conversations += 1;
+        if (hasMob && hasEm) {
+            both += 1;
+        } else if (hasMob) {
+            onlyMobile += 1;
+        } else if (hasEm) {
+            onlyEmail += 1;
+        } else {
+            neither += 1;
+        }
+    }
+
+    const leadsCaptured = onlyMobile + onlyEmail + both;
+    const pct = conversations ? Math.round((leadsCaptured * 10_000) / conversations) / 100 : null;
+    const rpt = /** @type {(a: number) => string} */ (num) =>
+        `${num} / ${conversations}`;
+    const out = baseEmpty();
+    out.scan.dataRowsConsidered = dataRows.length;
+    out.totals.conversations = conversations;
+    out.totals.onlyMobile = onlyMobile;
+    out.totals.onlyEmail = onlyEmail;
+    out.totals.mobileAndEmail = both;
+    out.totals.neither = neither;
+    out.totals.rowsSkippedNoParsableDate = filterActive ? skippedNoDate : 0;
+    out.totals.leadsCaptured = leadsCaptured;
+    out.ratios.onlyMobile = rpt(onlyMobile);
+    out.ratios.onlyEmail = rpt(onlyEmail);
+    out.ratios.mobileAndEmail = rpt(both);
+    out.ratios.leads = rpt(leadsCaptured);
+    out.ratios.leadCapturePct = pct;
+    return out;
 }
 
 /**

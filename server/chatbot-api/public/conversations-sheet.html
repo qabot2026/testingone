@@ -516,6 +516,78 @@
       font-weight: 500;
       line-height: 1.35;
     }
+
+    .lead-stats {
+      margin-bottom: 10px;
+      padding: 14px 18px;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      background: var(--surface-solid);
+      box-shadow: var(--shadow-md);
+    }
+    .lead-stats-head {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 6px;
+    }
+    .lead-stats-head strong {
+      font-size: 0.9375rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+    .lead-stats-meta {
+      margin: 0 0 12px;
+      font-size: 11px;
+      color: var(--muted);
+      font-weight: 500;
+      line-height: 1.45;
+      max-width: 56rem;
+    }
+    .lead-stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 10px;
+    }
+    .lead-stats-card {
+      padding: 11px 13px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+      background: linear-gradient(180deg, #fffdfb 0%, #f8fafc 100%);
+    }
+    .lead-stats-card dl {
+      margin: 0;
+    }
+    .lead-stats-card dt {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: var(--muted);
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+    .lead-stats-card dd {
+      margin: 0;
+      font-size: 1.0625rem;
+      font-weight: 700;
+      color: var(--text);
+      letter-spacing: -0.02em;
+    }
+    .lead-stats-card .subn {
+      margin-top: 4px;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--brand-strong);
+    }
+    .lead-stats-foot {
+      margin-top: 10px;
+      font-size: 10.5px;
+      color: var(--muted);
+      font-weight: 500;
+      line-height: 1.4;
+    }
   </style>
 </head>
 <body>
@@ -602,6 +674,21 @@
       </div>
     </div>
 
+    <section class="lead-stats" id="leadStatsWrap">
+      <div class="lead-stats-head">
+        <strong>Lead capture insights</strong>
+        <button type="button" class="preset" id="leadStatsBtn">Calculate from sheet</button>
+      </div>
+      <p class="lead-stats-meta" id="leadStatsIntro">
+        Rows with any non-empty cell count as conversations. <strong>Lead</strong> = mobile or email (or both). Mobile is detected with at least 7 digits; email requires a simple
+        <kbd class="kbd" style="font-size:10px;">user@domain.tld</kbd> shape. Date range uses the conversation date column resolved from your header row and the same timezone as Sheets
+        (<span class="kbd" style="font-size:10px;">SHEETS_CONV_DATETIME_TZ</span>). When you set From / To above, statistics use that range; leave both empty to scan all loaded tail rows (up to server cap).
+      </p>
+      <div id="leadStatsGrid" class="lead-stats-grid" hidden></div>
+      <p class="lead-stats-foot" id="leadStatsFoot" hidden></p>
+      <div id="leadStatsErr" class="err" style="display: none; margin-top: 10px;"></div>
+    </section>
+
     <div id="statusLine"></div>
     <div id="errBox" class="err" style="display: none;"></div>
 
@@ -637,6 +724,10 @@
       var sortOrderEl = document.getElementById("sortOrder");
       var rowPill = document.getElementById("rowPill");
       var authBox = document.getElementById("authBox");
+      var leadStatsBtn = document.getElementById("leadStatsBtn");
+      var leadStatsGrid = document.getElementById("leadStatsGrid");
+      var leadStatsFoot = document.getElementById("leadStatsFoot");
+      var leadStatsErr = document.getElementById("leadStatsErr");
 
       function apiBase() {
         return "";
@@ -1388,6 +1479,152 @@
           refreshBtn.disabled = false;
           refreshBtn.textContent = reloadLbl;
         }
+      }
+
+      function showLeadStatsErr(text) {
+        if (!leadStatsErr) return;
+        if (text) {
+          leadStatsErr.textContent = text;
+          leadStatsErr.style.display = "block";
+        } else {
+          leadStatsErr.style.display = "none";
+          leadStatsErr.textContent = "";
+        }
+      }
+
+      function escapeHtml(s) {
+        return String(s || "")
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;");
+      }
+
+      function pctOfConv(numer, denom) {
+        var d = denom || 0;
+        var n = numer || 0;
+        if (!d) return "—";
+        var p = (n * 100) / d;
+        var txt = (Math.round(p * 100) / 100).toFixed(2);
+        txt = txt.replace(/\.00$/, "").replace(/(\.\d)0$/, "$1");
+        return txt + "% of conversations";
+      }
+
+      function renderLeadStats(payload) {
+        if (!leadStatsGrid) return;
+        showLeadStatsErr("");
+        var tot = payload.totals || {};
+        var rat = payload.ratios || {};
+        var col = payload.columns || {};
+        var df = payload.dateFilter || {};
+        var sn = payload.scan || {};
+        var n = tot.conversations || 0;
+        var skipped = tot.rowsSkippedNoParsableDate || 0;
+        var dateLine =
+          df.applied
+            ? ("Period: " +
+                (df.from || "…") +
+                " → " +
+                (df.to || "…") +
+                (skipped ? " · " + skipped + " non-empty row(s) skipped (unreadable date)" : ""))
+            : "No date filter — all non-empty rows in the scanned tail (" + (sn.dataRowsConsidered || "?") + " raw row block).";
+        leadStatsGrid.hidden = false;
+        leadStatsGrid.innerHTML =
+          '<div class="lead-stats-card">' +
+          "<dl><dt>Only mobile</dt><dd>" +
+          escapeHtml(rat.onlyMobile || "0 / 0") +
+          '</dd><div class="subn">' +
+          escapeHtml(pctOfConv(tot.onlyMobile, n)) +
+          "</div></dl></div>" +
+          '<div class="lead-stats-card">' +
+          "<dl><dt>Only email</dt><dd>" +
+          escapeHtml(rat.onlyEmail || "0 / 0") +
+          '</dd><div class="subn">' +
+          escapeHtml(pctOfConv(tot.onlyEmail, n)) +
+          "</div></dl></div>" +
+          '<div class="lead-stats-card">' +
+          "<dl><dt>Mobile & email</dt><dd>" +
+          escapeHtml(rat.mobileAndEmail || "0 / 0") +
+          '</dd><div class="subn">' +
+          escapeHtml(pctOfConv(tot.mobileAndEmail, n)) +
+          "</div></dl></div>" +
+          '<div class="lead-stats-card">' +
+          "<dl><dt>Lead capture rate</dt><dd>" +
+          (rat.leadCapturePct != null ? escapeHtml(String(rat.leadCapturePct)) + "%" : "—") +
+          '</dd><div class="subn">' +
+          escapeHtml(rat.leads || "0 / 0") +
+          " captured</div></dl></div>";
+        if (leadStatsFoot) {
+          leadStatsFoot.hidden = false;
+          leadStatsFoot.textContent =
+            (n +
+              " conversation" +
+              (n === 1 ? "" : "s") +
+              " counted. ") +
+            dateLine +
+            " · Columns mapped: «" +
+            (col.dateHeader || "?") +
+            "» / «" +
+            (col.mobileHeader || "?") +
+            "» / «" +
+            (col.emailHeader || "?") +
+            "». " +
+            (payload.timezoneNote || "") +
+            (typeof tot.neither === "number" && tot.neither > 0
+              ? " · " + tot.neither + " with no captured contact info"
+              : "");
+        }
+      }
+
+      async function loadLeadStats() {
+        if (!leadStatsBtn) return;
+        var secret = secretEl.value.trim();
+        showLeadStatsErr("");
+        if (!secret) {
+          showLeadStatsErr("Enter viewer secret first.");
+          return;
+        }
+        var fromV = dateFromEl && dateFromEl.value ? dateFromEl.value.trim() : "";
+        var toV = dateToEl && dateToEl.value ? dateToEl.value.trim() : "";
+        var qp = [];
+        if (fromV) qp.push("from=" + encodeURIComponent(fromV));
+        if (toV) qp.push("to=" + encodeURIComponent(toV));
+        leadStatsBtn.disabled = true;
+        var prev = leadStatsBtn.textContent;
+        leadStatsBtn.textContent = "Scanning…";
+        try {
+          var url =
+            apiBase() + "/api/conversations-sheet-stats" + (qp.length ? "?" + qp.join("&") : "");
+          var ctrl = new AbortController();
+          var tid = window.setTimeout(function () {
+            ctrl.abort();
+          }, 120000);
+          var res = await fetch(url, {
+            method: "GET",
+            headers: { "X-Conversations-Sheet-Secret": secret },
+            cache: "no-store",
+            credentials: "same-origin",
+            signal: ctrl.signal
+          });
+          var json = await res.json().catch(function () {
+            return null;
+          });
+          window.clearTimeout(tid);
+          if (!res.ok || !json || !json.ok) {
+            showLeadStatsErr((json && json.error) || "HTTP " + res.status);
+            return;
+          }
+          renderLeadStats(json);
+        } catch (e) {
+          if (e && e.name === "AbortError") showLeadStatsErr("Stats request timed out.");
+          else showLeadStatsErr(String(e && e.message ? e.message : e));
+        } finally {
+          leadStatsBtn.disabled = false;
+          leadStatsBtn.textContent = prev;
+        }
+      }
+
+      if (leadStatsBtn) {
+        leadStatsBtn.addEventListener("click", loadLeadStats);
       }
 
       refreshBtn.addEventListener("click", load);
