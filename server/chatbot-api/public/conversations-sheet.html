@@ -291,15 +291,18 @@
     }
 
     table.sheet {
-      border-collapse: collapse;
+      border-collapse: separate;
+      border-spacing: 0;
       background: var(--surface-solid);
       font-size: 11.5px;
       min-width: max(100%, 720px);
       table-layout: auto;
+      --sheet-cell-border: rgba(203, 213, 225, 0.78);
     }
     table.sheet thead th,
     table.sheet tbody td {
-      border: 1px solid rgba(203, 213, 225, 0.72);
+      border-right: 1px solid var(--sheet-cell-border);
+      border-bottom: 1px solid var(--sheet-cell-border);
       vertical-align: middle;
       text-align: center;
       line-height: 1.28;
@@ -309,6 +312,13 @@
       word-break: normal;
       hyphens: none;
       cursor: default;
+    }
+    table.sheet thead th:first-child,
+    table.sheet tbody td:first-child {
+      border-left: 1px solid var(--sheet-cell-border);
+    }
+    table.sheet thead tr:first-child th {
+      border-top: 1px solid var(--sheet-cell-border);
     }
     table.sheet thead th {
       min-width: 0;
@@ -345,14 +355,13 @@
       box-shadow: 0 1px 0 rgba(148, 163, 184, 0.6);
       white-space: nowrap;
     }
-    /** Pinned lead columns (date / time / name / mobile / email): left + z-index set in JS */
+    /** Pinned lead columns: same width on th/td (JS); left offsets match body grid */
     table.sheet thead th.col-sticky,
     table.sheet tbody td.col-sticky {
       position: sticky;
       box-sizing: border-box;
       padding-left: 6px;
       padding-right: 6px;
-      box-shadow: 1px 0 0 rgba(203, 213, 225, 0.9);
     }
     table.sheet thead th.col-sticky {
       background: var(--header-table);
@@ -384,7 +393,7 @@
       background: color-mix(in srgb, var(--row-selected) 92%, var(--row-selected-ring)) !important;
     }
     tbody tr.row-selected td.stk-edge {
-      box-shadow: inset 4px 0 0 var(--row-selected-ring), 1px 0 0 rgba(203, 213, 225, 0.9);
+      box-shadow: inset 4px 0 0 var(--row-selected-ring);
     }
     table.sheet tbody tr {
       cursor: pointer;
@@ -677,13 +686,14 @@
         el.style.left = sm.leftCh + "ch";
         el.style.boxSizing = "border-box";
         el.style.zIndex = String(isHeader ? 75 + sm.ord : 35 + sm.ord);
+        el.style.width = sm.wch + "ch";
+        el.style.minWidth = sm.wch + "ch";
+        el.style.maxWidth = sm.wch + "ch";
+        el.style.overflow = "hidden";
         if (isHeader) {
-          decorateHeaderWidth(el, headerTitle);
-        } else {
-          el.style.width = sm.wch + "ch";
-          el.style.minWidth = sm.wch + "ch";
-          el.style.maxWidth = sm.wch + "ch";
-          if (sm.edge) el.classList.add("stk-edge");
+          el.title = String(headerTitle == null ? "" : headerTitle);
+        } else if (sm.edge) {
+          el.classList.add("stk-edge");
         }
       }
 
