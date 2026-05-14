@@ -254,6 +254,45 @@
       font-weight: 500;
     }
 
+    /** Viewport-fixed copy confirmation (outside scrolling page chrome) */
+    .copy-toast {
+      position: fixed;
+      left: 50%;
+      bottom: max(28px, env(safe-area-inset-bottom, 0px));
+      z-index: 10000;
+      max-width: min(92vw, 400px);
+      padding: 12px 20px;
+      border-radius: 12px;
+      font-size: 13px;
+      font-weight: 600;
+      text-align: center;
+      letter-spacing: 0.02em;
+      color: var(--text);
+      background: rgba(255, 255, 255, 0.96);
+      border: 1px solid rgba(148, 163, 184, 0.5);
+      box-shadow:
+        0 4px 6px rgba(15, 23, 42, 0.06),
+        0 18px 40px rgba(15, 23, 42, 0.14);
+      pointer-events: none;
+      transform: translate(-50%, 14px);
+      opacity: 0;
+      visibility: hidden;
+      transition:
+        opacity 0.22s ease,
+        transform 0.24s cubic-bezier(0.22, 1, 0.36, 1),
+        visibility 0.24s;
+    }
+    .copy-toast.copy-toast--visible {
+      opacity: 1;
+      visibility: visible;
+      transform: translate(-50%, 0);
+    }
+    .copy-toast.copy-toast--err {
+      color: var(--danger);
+      border-color: #fecaca;
+      background: #fffbfb;
+    }
+
     .err {
       margin: 0 0 12px;
       padding: 11px 14px;
@@ -542,6 +581,8 @@
     </div>
   </div>
 
+  <div id="copyToast" class="copy-toast" role="status" aria-live="polite" aria-atomic="true" hidden></div>
+
   <script>
     (function () {
       var LS_KEY = "conversations_sheet_secret_v1";
@@ -550,6 +591,9 @@
       var limitEl = document.getElementById("limit");
       var refreshBtn = document.getElementById("refreshBtn");
       var statusLine = document.getElementById("statusLine");
+      var copyToastEl = document.getElementById("copyToast");
+      var copyToastHideTimer = 0;
+      var copyToastRemoveTimer = 0;
       var errBox = document.getElementById("errBox");
       var convList = document.getElementById("convList");
       var dateFromEl = document.getElementById("dateFrom");
@@ -828,6 +872,25 @@
         statusLine.textContent = t || "";
       }
 
+      function showCopyToast(message, isErr) {
+        if (!copyToastEl) return;
+        copyToastEl.textContent = message;
+        copyToastEl.classList.toggle("copy-toast--err", !!isErr);
+        copyToastEl.hidden = false;
+        if (copyToastHideTimer) window.clearTimeout(copyToastHideTimer);
+        if (copyToastRemoveTimer) window.clearTimeout(copyToastRemoveTimer);
+        requestAnimationFrame(function () {
+          copyToastEl.classList.add("copy-toast--visible");
+        });
+        copyToastHideTimer = window.setTimeout(function () {
+          copyToastEl.classList.remove("copy-toast--visible");
+          copyToastRemoveTimer = window.setTimeout(function () {
+            copyToastEl.hidden = true;
+            copyToastEl.classList.remove("copy-toast--err");
+          }, 280);
+        }, isErr ? 3200 : 2400);
+      }
+
       try {
         var saved = sessionStorage.getItem(LS_KEY);
         if (saved) {
@@ -1068,14 +1131,10 @@
         ev.stopPropagation();
         copyPlainText(txt).then(
           function () {
-            setStatus("Copied full cell value.");
-            window.clearTimeout(convList._copiedTimer);
-            convList._copiedTimer = window.setTimeout(function () {
-              setStatus("");
-            }, 2000);
+            showCopyToast("Copied full cell value.", false);
           },
           function () {
-            setStatus("Copy failed — select text and press Ctrl+C.");
+            showCopyToast("Copy failed — select text and press Ctrl+C.", true);
           }
         );
       });
