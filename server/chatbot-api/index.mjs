@@ -49,7 +49,8 @@ import { firebaseAdminInit } from "./lib/firebase-admin-init.mjs";
 import { persistToFirestore } from "./lib/firestore.mjs";
 import {
     appendContactRowToSheet,
-    formatConversationDateTimeForSheet,
+    formatConversationDateForSheet,
+    formatConversationTimeForSheet,
     upsertSessionQueriesInSheet,
     probeSheetsSpreadsheetAccess,
     sanitizeUserQueriesCsvForSheet
@@ -2329,8 +2330,10 @@ app.post(
             }
         }
 
-        const submittedAtIso = new Date().toISOString();
-        const convSheetDateTime = formatConversationDateTimeForSheet(new Date());
+        const convAt = new Date();
+        const submittedAtIso = convAt.toISOString();
+        const convSheetDate = formatConversationDateForSheet(convAt);
+        const convSheetTime = formatConversationTimeForSheet(convAt);
         const ip = extractRequestIp(req);
         const cityFromFields = typeof fields.city === "string" ? fields.city.trim() : "";
         const cityFromContext = pickCityFromClientContextMerged_(mergedClientContext);
@@ -2403,7 +2406,8 @@ app.post(
                 try {
                     sheetOutcome = await appendContactRowToSheet(
                         {
-                            iso: convSheetDateTime,
+                            convDate: convSheetDate,
+                            convTime: convSheetTime,
                             formId,
                             name,
                             mobile,
@@ -2616,7 +2620,9 @@ app.post(
             return res.status(400).json({ ok: false, error: "Missing mobile (send mobile or client_context.mobile)." });
         }
 
-        const convSheetDateTime = formatConversationDateTimeForSheet(new Date());
+        const convAt = new Date();
+        const convSheetDate = formatConversationDateForSheet(convAt);
+        const convSheetTime = formatConversationTimeForSheet(convAt);
         const ip = extractRequestIp(req);
         const city = pickCityFromClientContextMerged_(mergedClientContext)
             || (await resolveCityForRequest(req));
@@ -2626,7 +2632,8 @@ app.post(
         try {
             const sheetOutcome = await appendContactRowToSheet(
                 {
-                    iso: convSheetDateTime,
+                    convDate: convSheetDate,
+                    convTime: convSheetTime,
                     formId,
                     name,
                     mobile,
@@ -2713,7 +2720,7 @@ app.post(
     }
 );
 
-/** Live-sync accumulated user_queries (sheet “User Queries” column, typically F in A–Q layout). */
+/** Live-sync accumulated user_queries (sheet “User Queries” column — default column G in A–R layout). */
 app.post(
     PATHNAME_SESSION_SHEET_SYNC,
     express.json({ limit: "512kb" }),
@@ -2794,7 +2801,9 @@ app.post(
         const name = resolveContactName(fields, body, mergedClientContext);
         const email = resolveContactEmail(fields, body, mergedClientContext);
 
-        const convSheetDateTime = formatConversationDateTimeForSheet(new Date());
+        const convAt = new Date();
+        const convSheetDate = formatConversationDateForSheet(convAt);
+        const convSheetTime = formatConversationTimeForSheet(convAt);
         const ip = extractRequestIp(req);
         const city = pickCityFromClientContextMerged_(mergedClientContext)
             || (await resolveCityForRequest(req));
@@ -2802,7 +2811,8 @@ app.post(
 
         try {
             const syncDetail = await upsertSessionQueriesInSheet({
-                iso: convSheetDateTime,
+                convDate: convSheetDate,
+                convTime: convSheetTime,
                 formId,
                 name,
                 mobile,
@@ -3008,7 +3018,7 @@ app.get("/contact-form-sheets-health", async (_req, res) => {
             disable_sheets_flag: process.env.DISABLE_SHEETS === "1",
             spreadsheet_id_configured: !!id,
             spreadsheet_id_suffix: id ? id.slice(-8) : "",
-            sheets_default_range_env: (process.env.SHEETS_RANGE || "Sheet1!A:Q").trim(),
+            sheets_default_range_env: (process.env.SHEETS_RANGE || "Sheet1!A:R").trim(),
             strict_session_dedup: process.env.SHEETS_STRICT_SESSION_DEDUP === "1",
             service_account_credentials_present: !!getServiceAccountCredentials()
         };

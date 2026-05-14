@@ -69,8 +69,12 @@ function loadSheetExtraMappingsFromDisk_() {
 }
 
 const SPREADSHEET_ID = (process.env.SHEETS_SPREADSHEET_ID || "").trim();
-// Default schema: no Form ID (A–Q). Conv. date (12h UI string, see formatConversationDateTimeForSheet), name, …
-const RANGE = (process.env.SHEETS_RANGE || "Sheet1!A:Q").trim();
+// Default schema: no Form ID (A–R). Col A Date, B Time (12h TZ from SHEETS_CONV_DATETIME_TZ), then name…
+const RANGE = (process.env.SHEETS_RANGE || "Sheet1!A:R").trim();
+
+/** Session id column (0-based) when using default Date + Time lead layout (column J); legacy single Conv column layout used I (index 8). */
+const STANDARD_SESSION_COLUMN_INDEX0_NEW = 9;
+const STANDARD_SESSION_COLUMN_INDEX0_LEGACY = 8;
 const DEDUP_LOOKBACK_ROWS = Math.max(
     10,
     Number.parseInt(process.env.SHEETS_DEDUP_LOOKBACK_ROWS || "500", 10) || 500
@@ -102,6 +106,63 @@ function conversationDateTimeZoneForIntl_() {
     return t === "" ? undefined : t;
 }
 
+/** @param {Date} d */
+function conversationSheetBaseDate_(d) {
+    return d instanceof Date && !Number.isNaN(d.getTime()) ? d : new Date();
+}
+
+/**
+ * Conversation **date only** for Sheets column A (same TZ as combined stamp).
+ * @param {Date} [d]
+ * @returns {string}
+ */
+export function formatConversationDateForSheet(d = new Date()) {
+    const dt = conversationSheetBaseDate_(d);
+    const tz = conversationDateTimeZoneForIntl_();
+    try {
+        const opts = /** @type {Intl.DateTimeFormatOptions} */ ({
+            dateStyle: "medium",
+            hour12: true
+        });
+        if (tz) {
+            opts.timeZone = tz;
+        }
+        return new Intl.DateTimeFormat("en-IN", opts).format(dt);
+    } catch {
+        try {
+            return dt.toLocaleDateString("en-US", { hour12: true });
+        } catch {
+            return dt.toISOString().slice(0, 10);
+        }
+    }
+}
+
+/**
+ * Conversation **time only** for Sheets column B (12-hour clock).
+ * @param {Date} [d]
+ * @returns {string}
+ */
+export function formatConversationTimeForSheet(d = new Date()) {
+    const dt = conversationSheetBaseDate_(d);
+    const tz = conversationDateTimeZoneForIntl_();
+    try {
+        const opts = /** @type {Intl.DateTimeFormatOptions} */ ({
+            timeStyle: "medium",
+            hour12: true
+        });
+        if (tz) {
+            opts.timeZone = tz;
+        }
+        return new Intl.DateTimeFormat("en-IN", opts).format(dt);
+    } catch {
+        try {
+            return dt.toLocaleTimeString("en-US", { hour12: true });
+        } catch {
+            return dt.toISOString().slice(11, 19);
+        }
+    }
+}
+
 /**
  * Human-readable conversation timestamp for the Sheets **Conv.** column (12-hour clock).
  * @param {Date} [d]
@@ -130,7 +191,7 @@ export function formatConversationDateTimeForSheet(d = new Date()) {
 }
 
 /**
- * Force append into our schema columns (A–Q, no Form ID).
+ * Force append into our schema columns (A–R: Date, Time, then lead fields…).
  *
  * We previously used `A:Z` to avoid truncation when env was set to `A:H`, but `values.append`
  * may choose a "table" anchored later in the sheet and append at an unexpected start column
@@ -140,7 +201,33 @@ export function formatConversationDateTimeForSheet(d = new Date()) {
  */
 function appendRangeSchemaWidth_(raw) {
     const tab = tabNameFromRange(raw);
-    return `${tab}!A:Q`;
+    return `${tab}!A:R`;
+}
+
+/**
+ * Resolve Date + Time strings for Sheets (preferred) or derive from legacy `iso` combined cell.
+ *
+ * @param {{ iso?: string, convDate?: string, convTime?: string }} row
+ */
+function conversationPartsFromIncomingRow_(row) {
+    const dd = typeof row.convDate === "string" ? row.convDate.trim() : "";
+    const tt = typeof row.convTime === "string" ? row.convTime.trim() : "";
+    if (dd && tt) {
+        return { convDate: dd, convTime: tt };
+    }
+    const iso = typeof row.iso === "string" ? row.iso.trim() : "";
+    if (iso) {
+        const parts = iso.split(",").map((s) => s.trim());
+        if (parts.length >= 2) {
+            return { convDate: parts[0], convTime: parts.slice(1).join(", ") };
+        }
+        return { convDate: iso, convTime: tt };
+    }
+    const now = new Date();
+    return {
+        convDate: formatConversationDateForSheet(now),
+        convTime: formatConversationTimeForSheet(now)
+    };
 }
 
 function tabNameFromRange(raw) {
@@ -435,12 +522,12 @@ function buildConfiguredExtraCellUpdates_(tab, rowNumber, sources, standardUpdat
     return out;
 }
 
-let headerCache_ = { tab: "", at: 0, mobileColIdx: 2, mobileColLetter: "C" };
+let headerCache_ = { tab: "", at: 0, mobileColIdx: 3, mobileColLetter: "D" };
 const HEADER_CACHE_TTL_MS = 5 * 60 * 1000;
 
 /**
  * Detect mobile column position by header row.
- * Falls back to the default schema (column C) if not found.
+ * Falls back to the default schema (column D) if not found.
  *
  * @param {import("googleapis").sheets_v4.Sheets} sheets
  * @param {string} tab
@@ -450,8 +537,8 @@ async function getMobileColumnInfo_(sheets, tab) {
     if (headerCache_.tab === tab && now - headerCache_.at < HEADER_CACHE_TTL_MS) {
         return headerCache_;
     }
-    let mobileColIdx = 2;
-    let mobileColLetter = "C";
+    let mobileColIdx = 3;
+    let mobileColLetter = "D";
     try {
         const got = await sheets.spreadsheets.values.get({
             spreadsheetId: SPREADSHEET_ID,
@@ -485,11 +572,11 @@ async function getMobileColumnInfo_(sheets, tab) {
     return headerCache_;
 }
 
-let repeatedHeaderCache_ = { tab: "", at: 0, repeatedColIdx: 6, repeatedColLetter: "G" };
+let repeatedHeaderCache_ = { tab: "", at: 0, repeatedColIdx: 7, repeatedColLetter: "H" };
 
 /**
  * Detect "Repeated" column position by header row.
- * Falls back to the default schema (column G) if not found.
+ * Falls back to the default schema (column H) if not found.
  *
  * @param {import("googleapis").sheets_v4.Sheets} sheets
  * @param {string} tab
@@ -499,9 +586,9 @@ async function getRepeatedColumnInfo_(sheets, tab) {
     if (repeatedHeaderCache_.tab === tab && now - repeatedHeaderCache_.at < HEADER_CACHE_TTL_MS) {
         return repeatedHeaderCache_;
     }
-    /** Default A–Q schema: Repeated User is column G (index 6). */
-    let repeatedColIdx = 6;
-    let repeatedColLetter = "G";
+    /** Default A–R schema: Repeated User is column H (index 7). */
+    let repeatedColIdx = 7;
+    let repeatedColLetter = "H";
     try {
         const got = await sheets.spreadsheets.values.get({
             spreadsheetId: SPREADSHEET_ID,
@@ -526,7 +613,7 @@ async function getRepeatedColumnInfo_(sheets, tab) {
                 break;
             }
         }
-        if (repeatedColIdx === 6) {
+        if (repeatedColIdx === 7) {
             for (let i = 0; i < header.length; i += 1) {
                 const k = normalizedHeaderKey_(sheetCellString_(header[i]));
                 if (k.includes("repeat") && k.includes("user")) {
@@ -543,10 +630,10 @@ async function getRepeatedColumnInfo_(sheets, tab) {
     return repeatedHeaderCache_;
 }
 
-let userQueriesHeaderCache_ = { tab: "", at: 0, colIdx: 5, colLetter: "F" };
+let userQueriesHeaderCache_ = { tab: "", at: 0, colIdx: 6, colLetter: "G" };
 
 /**
- * Column for merged live-chat `user_queries` CSV — default column F (A–Q lead layout).
+ * Column for merged live-chat `user_queries` CSV — default column G (A–R lead layout).
  *
  * @param {import("googleapis").sheets_v4.Sheets} sheets
  * @param {string} tab
@@ -556,8 +643,8 @@ async function getUserQueriesColumnInfo_(sheets, tab) {
     if (userQueriesHeaderCache_.tab === tab && now - userQueriesHeaderCache_.at < HEADER_CACHE_TTL_MS) {
         return userQueriesHeaderCache_;
     }
-    let colIdx = 5;
-    let colLetter = "F";
+    let colIdx = 6;
+    let colLetter = "G";
     try {
         const got = await sheets.spreadsheets.values.get({
             spreadsheetId: SPREADSHEET_ID,
@@ -751,6 +838,9 @@ function countOtherRowsWithSameMobile_(rows, incomingDigits, mobileColIdx, exclu
         /** @type {unknown[]} */
         const ra = Array.isArray(r) ? r : [];
         let k = mobileKeyFromRow_(ra, mobileColIdx);
+        if (!k && ra.length > 3) {
+            k = mobileKeyFromCell_(ra[3]);
+        }
         if (!k && ra.length > 2) {
             k = mobileKeyFromCell_(ra[2]);
         }
@@ -822,7 +912,9 @@ async function scanSheetTailForDedupeAndRepeat_(sheets, row) {
 
     for (let i = tail.length - 1; i >= 0; i--) {
         const r = tail[i] || [];
-        const existingSid = sheetCellString_(r[8]);
+        const existingSid =
+            sheetCellString_(r[STANDARD_SESSION_COLUMN_INDEX0_NEW])
+            || sheetCellString_(r[STANDARD_SESSION_COLUMN_INDEX0_LEGACY]);
         const rowNumber = tailOffset + i + 1; // 1-based row number in the sheet
 
         // If we have a session id, enforce "only once per session".
@@ -998,11 +1090,12 @@ async function updateExistingSessionRow_(sheets, tab, rowNumber, incoming, optio
     const queriesCol = await getUserQueriesColumnInfo_(sheets, tab);
     const got = await sheets.spreadsheets.values.get({
         spreadsheetId: SPREADSHEET_ID,
-        range: `${tab}!A${rowNumber}:Q${rowNumber}`
+        range: `${tab}!A${rowNumber}:R${rowNumber}`
     });
     const row = Array.isArray(got.data.values) && got.data.values[0] ? got.data.values[0] : [];
+    const colL = columnLetterFromIndex_;
 
-    /** B–D: contact-form submits should overwrite an older chat-sync row when values are present. */
+    /** C–E: contact-form submits should overwrite an older chat-sync row when values are present. */
     const contactPatchFor = (v, colIdx) => {
         const s = typeof v === "string" ? v.trim() : "";
         if (!s) {
@@ -1026,16 +1119,16 @@ async function updateExistingSessionRow_(sheets, tab, rowNumber, incoming, optio
         return isBlankSheetCell_(row[idx]) ? s : "";
     };
 
-    const name = contactPatchFor(typeof incoming.name === "string" ? incoming.name : "", 1);
-    const mobile = contactPatchFor(typeof incoming.mobile === "string" ? incoming.mobile : "", 2);
-    const email = contactPatchFor(typeof incoming.email === "string" ? incoming.email : "", 3);
-    const channel = patchScalarInto(typeof incoming.channel === "string" ? incoming.channel : "", 4);
+    const name = contactPatchFor(typeof incoming.name === "string" ? incoming.name : "", 2);
+    const mobile = contactPatchFor(typeof incoming.mobile === "string" ? incoming.mobile : "", 3);
+    const email = contactPatchFor(typeof incoming.email === "string" ? incoming.email : "", 4);
+    const channel = patchScalarInto(typeof incoming.channel === "string" ? incoming.channel : "", 5);
     const deviceType =
-        patchScalarInto(typeof incoming.deviceType === "string" ? incoming.deviceType : "", 9);
+        patchScalarInto(typeof incoming.deviceType === "string" ? incoming.deviceType : "", 10);
     const browserName =
-        patchScalarInto(typeof incoming.browserName === "string" ? incoming.browserName : "", 10);
-    const city = patchScalarInto(typeof incoming.city === "string" ? incoming.city : "", 11);
-    const ip = patchScalarInto(typeof incoming.ip === "string" ? incoming.ip : "", 12);
+        patchScalarInto(typeof incoming.browserName === "string" ? incoming.browserName : "", 11);
+    const city = patchScalarInto(typeof incoming.city === "string" ? incoming.city : "", 12);
+    const ip = patchScalarInto(typeof incoming.ip === "string" ? incoming.ip : "", 13);
 
     const repeatedIncoming = typeof incoming.repeated === "string" ? incoming.repeated.trim() : "";
     const existingRepeatedRaw = sheetCellString_(row[repeatedCol.repeatedColIdx]);
@@ -1060,23 +1153,23 @@ async function updateExistingSessionRow_(sheets, tab, rowNumber, incoming, optio
 
     const sourceUrl = patchScalarInto(
         typeof incoming.sourceUrl === "string" ? incoming.sourceUrl : "",
-        7
+        8
     );
     const appointmentBooked = patchScalarInto(
         typeof incoming.appointmentBooked === "string" ? incoming.appointmentBooked : "",
-        13
+        14
     );
     const appointmentDate = patchScalarInto(
         typeof incoming.appointmentDate === "string" ? incoming.appointmentDate : "",
-        14
+        15
     );
     const appointmentTime = patchScalarInto(
         typeof incoming.appointmentTime === "string" ? incoming.appointmentTime : "",
-        15
+        16
     );
     const fileLinks = patchScalarInto(
         typeof incoming.fileLinks === "string" ? incoming.fileLinks : "",
-        16
+        17
     );
 
     const existingQueries = sheetCellString_(row[queriesCol.colIdx]);
@@ -1085,20 +1178,20 @@ async function updateExistingSessionRow_(sheets, tab, rowNumber, incoming, optio
 
     /** @type {Array<{ range: string, values: string[][] }>} */
     const data = [];
-    if (name) data.push({ range: `${tab}!B${rowNumber}`, values: [[name]] });
-    if (mobile) data.push({ range: `${tab}!C${rowNumber}`, values: [[mobile]] });
-    if (email) data.push({ range: `${tab}!D${rowNumber}`, values: [[email]] });
-    if (channel) data.push({ range: `${tab}!E${rowNumber}`, values: [[channel]] });
+    if (name) data.push({ range: `${tab}!${colL(2)}${rowNumber}`, values: [[name]] });
+    if (mobile) data.push({ range: `${tab}!${colL(3)}${rowNumber}`, values: [[mobile]] });
+    if (email) data.push({ range: `${tab}!${colL(4)}${rowNumber}`, values: [[email]] });
+    if (channel) data.push({ range: `${tab}!${colL(5)}${rowNumber}`, values: [[channel]] });
     if (repeated) data.push({ range: `${tab}!${repeatedCol.repeatedColLetter}${rowNumber}`, values: [[repeated]] });
-    if (sourceUrl) data.push({ range: `${tab}!H${rowNumber}`, values: [[sourceUrl]] });
-    if (deviceType) data.push({ range: `${tab}!J${rowNumber}`, values: [[deviceType]] });
-    if (browserName) data.push({ range: `${tab}!K${rowNumber}`, values: [[browserName]] });
-    if (city) data.push({ range: `${tab}!L${rowNumber}`, values: [[city]] });
-    if (ip) data.push({ range: `${tab}!M${rowNumber}`, values: [[ip]] });
-    if (appointmentBooked) data.push({ range: `${tab}!N${rowNumber}`, values: [[appointmentBooked]] });
-    if (appointmentDate) data.push({ range: `${tab}!O${rowNumber}`, values: [[appointmentDate]] });
-    if (appointmentTime) data.push({ range: `${tab}!P${rowNumber}`, values: [[appointmentTime]] });
-    if (fileLinks) data.push({ range: `${tab}!Q${rowNumber}`, values: [[fileLinks]] });
+    if (sourceUrl) data.push({ range: `${tab}!${colL(8)}${rowNumber}`, values: [[sourceUrl]] });
+    if (deviceType) data.push({ range: `${tab}!${colL(10)}${rowNumber}`, values: [[deviceType]] });
+    if (browserName) data.push({ range: `${tab}!${colL(11)}${rowNumber}`, values: [[browserName]] });
+    if (city) data.push({ range: `${tab}!${colL(12)}${rowNumber}`, values: [[city]] });
+    if (ip) data.push({ range: `${tab}!${colL(13)}${rowNumber}`, values: [[ip]] });
+    if (appointmentBooked) data.push({ range: `${tab}!${colL(14)}${rowNumber}`, values: [[appointmentBooked]] });
+    if (appointmentDate) data.push({ range: `${tab}!${colL(15)}${rowNumber}`, values: [[appointmentDate]] });
+    if (appointmentTime) data.push({ range: `${tab}!${colL(16)}${rowNumber}`, values: [[appointmentTime]] });
+    if (fileLinks) data.push({ range: `${tab}!${colL(17)}${rowNumber}`, values: [[fileLinks]] });
     if (userQueriesCsv) {
         data.push({ range: `${tab}!${queriesCol.colLetter}${rowNumber}`, values: [[userQueriesCsv]] });
     }
@@ -1181,7 +1274,7 @@ function pickHeaderIndex_(map, aliases, fallbackIdx) {
     return fallbackIdx;
 }
 
-/** Aliases for header row matching when column order differs from legacy A–Q (e.g. extra "Course" column). */
+/** Aliases for header row matching when column order differs from legacy A–R (e.g. extra "Course" column). */
 const SHEET_H_NAME = [
     "name",
     "fullname",
@@ -1290,13 +1383,33 @@ async function buildStandardLeadRowUpdates_(sheets, tab, rowNumber, lead) {
         updates.push({ range: `${tab}!${col(idx0)}${rowNumber}`, values: [[v]] });
     };
 
-    // Prefer your declared A–Q schema (no Form ID); header aliases correct column when order differs
-    // (e.g. "Course" inserted at B — legacy fallbacks 1=name,2=mobile would otherwise land on Course/Name).
-    put(["convdateandtime", "conversiondatetime", "date", "datetime", "timestamp", "submittedat", "conv"], 0, lead.iso);
-    put(SHEET_H_NAME, 1, lead.name);
-    put(SHEET_H_MOBILE, 2, lead.mobile);
-    put(SHEET_H_EMAIL, 3, lead.email);
-    put(["channel"], 4, lead.channel);
+    // Prefer declared A–R schema (Date, Time, then lead fields…); aliases correct column when order differs.
+    put(
+        [
+            "conversationdate",
+            "convdate",
+            "convdateonly",
+            "conversiondate",
+            "date"
+        ],
+        0,
+        lead.convDate
+    );
+    put(
+        [
+            "conversationtime",
+            "convtime",
+            "convtimeonly",
+            "conversiontime",
+            "time"
+        ],
+        1,
+        lead.convTime
+    );
+    put(SHEET_H_NAME, 2, lead.name);
+    put(SHEET_H_MOBILE, 3, lead.mobile);
+    put(SHEET_H_EMAIL, 4, lead.email);
+    put(["channel"], 5, lead.channel);
     put(
         [
             "userqueries",
@@ -1307,25 +1420,25 @@ async function buildStandardLeadRowUpdates_(sheets, tab, rowNumber, lead) {
             "visitorqueries",
             "conversationqueries"
         ],
-        5,
+        6,
         lead.userQueriesCsv
     );
-    put(["repeateduser", "repeated_user", "isrepeated", "repuser"], 6, lead.repeated);
-    put(["sourceurl", "source_url", "pageurl", "embedurl"], 7, lead.sourceUrl);
-    put(SHEET_H_SESSION, 8, lead.clientSessionId);
-    put(["device", "devicetype"], 9, lead.deviceType);
-    put(["browser", "browsername"], 10, lead.browserName);
+    put(["repeateduser", "repeated_user", "isrepeated", "repuser"], 7, lead.repeated);
+    put(["sourceurl", "source_url", "pageurl", "embedurl"], 8, lead.sourceUrl);
+    put(SHEET_H_SESSION, 9, lead.clientSessionId);
+    put(["device", "devicetype"], 10, lead.deviceType);
+    put(["browser", "browsername"], 11, lead.browserName);
     put(
         ["city", "visitorcity", "usercity", "cityname", "location", "preferredcity"],
-        11,
+        12,
         lead.city
     );
-    put(["ip", "ipaddress", "ip_address"], 12, lead.ip);
+    put(["ip", "ipaddress", "ip_address"], 13, lead.ip);
     // Prefer exact "Appointment Booked" match only — aliases like `appointment` would hit Date/Time headers.
-    put(["appointmentbooked", "appointment_booked", "isappointmentbooked"], 13, lead.appointmentBooked);
-    put(["appointmentdate"], 14, lead.appointmentDate);
-    put(["appointmenttime"], 15, lead.appointmentTime);
-    put(["drivefilelink", "drive file link", "drivefile", "filelink", "filelinks", "drivelink"], 16, lead.driveFileLink);
+    put(["appointmentbooked", "appointment_booked", "isappointmentbooked"], 14, lead.appointmentBooked);
+    put(["appointmentdate"], 15, lead.appointmentDate);
+    put(["appointmenttime"], 16, lead.appointmentTime);
+    put(["drivefilelink", "drive file link", "drivefile", "filelink", "filelinks", "drivelink"], 17, lead.driveFileLink);
 
     return updates;
 }
@@ -1387,8 +1500,11 @@ async function applySheetExtrasAfterDuplicateSessionRow_(sheets, tab, rowNumber,
             : "";
     const repeated = scanFull && scanFull.repeatedAcrossSessions ? "Yes" : "No";
 
+    const parts = conversationPartsFromIncomingRow_(row);
+
     const lead = {
-        iso: row.iso,
+        convDate: parts.convDate,
+        convTime: parts.convTime,
         name: row.name,
         mobile: row.mobile,
         email: row.email,
@@ -1431,11 +1547,11 @@ async function applySheetExtrasAfterDuplicateSessionRow_(sheets, tab, rowNumber,
 }
 
 /**
- * Default columns A–Q (no Form ID):
- * Conv. Date, Name, Mobile, Email, Channel, User Queries, Repeated User, Source URL, Session id,
+ * Default columns A–R (no Form ID):
+ * Date, Time, Name, Mobile, Email, Channel, User Queries, Repeated User, Source URL, Session id,
  * Device, Browser, City, IP, Appointment booked/date/time, Drive link.
  *
- * @param {{ iso: string, formId?: string, name: string, mobile: string, email: string, clientSessionId: string, browserName: string, deviceType: string, channel: string, fileLinks?: string, city?: string, ip?: string, sourceUrl?: string, appointmentBooked?: string, appointmentDate?: string, appointmentTime?: string, userQueriesCsv?: string }} row `iso` = conv. datetime label for column A (12h formatted). `formId` ignored for Sheets.
+ * @param {{ convDate?: string, convTime?: string, iso?: string, formId?: string, name: string, mobile: string, email: string, clientSessionId: string, browserName: string, deviceType: string, channel: string, fileLinks?: string, city?: string, ip?: string, sourceUrl?: string, appointmentBooked?: string, appointmentDate?: string, appointmentTime?: string, userQueriesCsv?: string }} row Preferred: `convDate` + `convTime`; legacy combined `iso` is split when needed. `formId` ignored for Sheets.
  * @param {{ preferIncomingContact?: boolean, skipSessionDedup?: boolean, sheetExtrasSources?: { clientContext?: Record<string, unknown> | null, fields?: Record<string, unknown> | null } }} [opts] `skipSessionDedup` (with `preferIncomingContact`) skips “one row per session” and always appends — default for main contact-form POST. `sheetExtrasSources` uses dot paths from `sheet-integration.config.json`.
  * @returns {Promise<{ action: "appended"|"duplicate_updated"|"duplicate_noop", patched: boolean, tab: string, appendRangeUsed?: string, sheetRowNumber?: number, googleAppend?: { updatedRange?: string, updatedRows?: number, spreadsheetId?: string }, googleBatch?: { totalUpdatedCells?: number, totalUpdatedRows?: number, updatedRanges: string[] } }>}
  */
@@ -1529,9 +1645,11 @@ export async function appendContactRowToSheet(row, opts) {
         typeof row.userQueriesCsv === "string" ? row.userQueriesCsv : ""
     );
     const repeated = scanFull.repeatedAcrossSessions ? "Yes" : "No";
-    // Append A–Q directly (matches declared sheet schema).
+    const convParts = conversationPartsFromIncomingRow_(row);
+    // Append A–R directly (Date, Time, then lead fields …).
     const values = [[
-        sheetOutboundCell_(row.iso),
+        sheetOutboundCell_(convParts.convDate),
+        sheetOutboundCell_(convParts.convTime),
         sheetOutboundCell_(row.name),
         sheetOutboundCell_(row.mobile),
         sheetOutboundCell_(row.email),
@@ -1580,7 +1698,8 @@ export async function appendContactRowToSheet(row, opts) {
         const rowNumber = rowNumberFromUpdatedRange_(googleAppend.updatedRange);
         if (rowNumber) {
             await writeLeadRowByHeader_(sheets, tabResolved, rowNumber, {
-                iso: row.iso,
+                convDate: convParts.convDate,
+                convTime: convParts.convTime,
                 name: row.name,
                 mobile: row.mobile,
                 email: row.email,
@@ -1614,7 +1733,7 @@ export async function appendContactRowToSheet(row, opts) {
 }
 
 /**
- * Find 1-based row number whose column I (or any cell) matches session id.
+ * Find 1-based row number whose Session id column matches (default column J in A–R layout, legacy column I), or any cell.
  * @param {import("googleapis").sheets_v4.Sheets} sheets
  * @param {string} tab
  * @param {string} sessionId
@@ -1636,7 +1755,9 @@ async function findSessionRowNumberBySessionId_(sheets, tab, sessionId) {
     const tailOffset = rows.length - tail.length;
     for (let i = tail.length - 1; i >= 0; i--) {
         const r = tail[i] || [];
-        const existingSid = sheetCellString_(r[8]);
+        const existingSid =
+            sheetCellString_(r[STANDARD_SESSION_COLUMN_INDEX0_NEW])
+            || sheetCellString_(r[STANDARD_SESSION_COLUMN_INDEX0_LEGACY]);
         if (existingSid === sid) {
             return tailOffset + i + 1;
         }
@@ -1656,7 +1777,7 @@ async function findSessionRowNumberBySessionId_(sheets, tab, sessionId) {
  * Merge latest user_queries into the User Queries column for this session, or append a minimal row if none exists.
  * Used for live chat query sync without requiring another form POST.
  *
- * @param {{ iso: string, formId?: string, name: string, mobile: string, email: string, clientSessionId: string, browserName: string, deviceType: string, channel: string, fileLinks?: string, city?: string, ip?: string, userQueriesCsv?: string }} row
+ * @param {{ iso?: string, convDate?: string, convTime?: string, formId?: string, name: string, mobile: string, email: string, clientSessionId: string, browserName: string, deviceType: string, channel: string, fileLinks?: string, city?: string, ip?: string, userQueriesCsv?: string }} row
  */
 export async function upsertSessionQueriesInSheet(row) {
     if (!SPREADSHEET_ID) {
@@ -1680,7 +1801,7 @@ export async function upsertSessionQueriesInSheet(row) {
         const queriesCol = await getUserQueriesColumnInfo_(sheets, tab);
         const got = await sheets.spreadsheets.values.get({
             spreadsheetId: SPREADSHEET_ID,
-            range: `${tab}!A${rowNumber}:Q${rowNumber}`
+            range: `${tab}!A${rowNumber}:R${rowNumber}`
         });
         const r0 = Array.isArray(got.data.values) && got.data.values[0] ? got.data.values[0] : [];
         const existingCsv = sanitizeUserQueriesCsvForSheet(sheetCellString_(r0[queriesCol.colIdx]));
