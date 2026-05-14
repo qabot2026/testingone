@@ -3,267 +3,288 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Conversations — Sheet inbox</title>
+  <title>Leads — sheet view</title>
   <style>
     :root {
-      --bg: #f4f7fb;
-      --surface: #ffffff;
-      --text: #0f172a;
-      --muted: #64748b;
+      --text: #111827;
+      --muted: #6b7280;
+      --border: #e5e7eb;
+      --header-bg: #f3f4f6;
+      --stripe: #fafafa;
       --brand: #0d9488;
-      --brand2: #0f766e;
-      --border: #e2e8f0;
-      --accent-bg: #ecfdf5;
+      --accent: #ecfeff;
       --danger: #b91c1c;
-      --radius: 14px;
-      --shadow: 0 10px 40px rgba(15, 23, 42, 0.08);
-      font-family: system-ui, Segoe UI, Roboto, Ubuntu, sans-serif;
+      font-family: system-ui, Segoe UI, Roboto, sans-serif;
     }
     * { box-sizing: border-box; }
     body {
       margin: 0;
-      min-height: 100dvh;
-      background: linear-gradient(165deg, #eef8f6 0%, var(--bg) 45%, #fff 100%);
       color: var(--text);
-      padding: 18px 14px 48px;
-    }
-    .wrap { max-width: 920px; margin: 0 auto; }
-    header.hero {
-      margin-bottom: 22px;
-      padding: 22px 22px 18px;
-      border-radius: var(--radius);
-      background: linear-gradient(135deg, var(--brand), var(--brand2));
-      color: #f0fdfa;
-      box-shadow: var(--shadow);
-    }
-    header.hero h1 {
-      margin: 0 0 6px;
-      font-size: clamp(1.35rem, 4vw, 1.75rem);
-      font-weight: 800;
-      letter-spacing: -0.02em;
-    }
-    header.hero p {
-      margin: 0;
-      opacity: 0.92;
-      font-size: 0.9rem;
-      line-height: 1.45;
-    }
-    .panel {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 16px 18px;
-      margin-bottom: 18px;
-      box-shadow: var(--shadow);
-    }
-    label {
-      display: block;
-      font-size: 0.78rem;
-      font-weight: 700;
-      letter-spacing: 0.04em;
-      text-transform: uppercase;
-      color: var(--muted);
-      margin-bottom: 6px;
-    }
-    input[type="password"],
-    input[type="text"],
-    select {
-      width: 100%;
-      max-width: 100%;
-      padding: 11px 12px;
-      border-radius: 11px;
-      border: 1px solid var(--border);
-      font: inherit;
-      font-size: 0.95rem;
-      background: #fafbfc;
-    }
-    input:focus, select:focus {
-      outline: 2px solid rgba(13, 148, 136, 0.35);
-      outline-offset: 1px;
-      border-color: var(--brand);
       background: #fff;
+      font-size: 13px;
+      line-height: 1.35;
     }
-    .row {
+    .bar {
       display: flex;
       flex-wrap: wrap;
-      gap: 12px 16px;
-      align-items: flex-end;
+      align-items: center;
+      gap: 8px 12px;
+      padding: 6px 10px;
+      border-bottom: 1px solid var(--border);
+      background: linear-gradient(#fff, #f9fafb);
     }
-    .row > * { flex: 1 1 180px; min-width: 0; }
-    .actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
-    button.primary {
-      background: linear-gradient(135deg, var(--brand), #14b8a6);
-      color: #fff;
+    .bar h1 {
+      margin: 0;
+      font-size: 1rem;
+      font-weight: 800;
+      color: var(--brand);
+      letter-spacing: -0.02em;
+      margin-right: 8px;
+    }
+    details.auth {
       border: none;
-      border-radius: 11px;
-      padding: 11px 20px;
-      font: inherit;
-      font-weight: 700;
+      width: 100%;
+    }
+    details.auth > summary {
       cursor: pointer;
-      box-shadow: 0 6px 18px rgba(13, 148, 136, 0.35);
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--muted);
+      list-style-position: outside;
+      padding: 4px 0;
     }
-    button.primary:hover { filter: brightness(1.06); }
-    button.primary:disabled {
-      opacity: 0.55;
-      cursor: not-allowed;
-      box-shadow: none;
+    .auth-inner {
+      display: grid;
+      grid-template-columns: 1fr auto auto auto;
+      gap: 8px;
+      align-items: end;
+      margin-top: 6px;
     }
-    button.ghost {
-      background: transparent;
+    @media (max-width: 680px) {
+      .auth-inner { grid-template-columns: 1fr 1fr; }
+    }
+    label.mini {
+      display: block;
+      font-size: 0.65rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+      font-weight: 700;
+      margin-bottom: 3px;
+    }
+    input, select {
+      padding: 4px 8px;
       border: 1px solid var(--border);
-      border-radius: 11px;
-      padding: 10px 14px;
+      border-radius: 6px;
+      font: inherit;
+      font-size: 12px;
+      width: 100%;
+      max-width: 100%;
+      background: #fff;
+    }
+    input:focus, select:focus {
+      outline: 2px solid rgba(13, 148, 136, 0.25);
+      border-color: var(--brand);
+    }
+    button {
+      padding: 5px 10px;
+      border-radius: 6px;
       font: inherit;
       font-weight: 600;
+      font-size: 12px;
       cursor: pointer;
-      color: var(--text);
+      border: 1px solid var(--border);
+      background: #fff;
+      white-space: nowrap;
     }
-    button.ghost:hover { background: var(--bg); }
-    .meta {
-      font-size: 0.85rem;
+    button.primary {
+      background: linear-gradient(#14b8a6, var(--brand));
+      color: #fff;
+      border-color: transparent;
+    }
+    button.primary:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    button.preset {
+      font-size: 11px;
+      padding: 3px 8px;
+    }
+    .tools {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 12px;
+      align-items: end;
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--border);
+      background: #fafafa;
+    }
+    .tool {
+      flex: 0 1 auto;
+      min-width: 100px;
+    }
+    .tool.grow {
+      flex: 1 1 160px;
+      min-width: 140px;
+    }
+    .presets {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      align-items: flex-end;
+    }
+    #statusLine {
+      font-size: 11px;
       color: var(--muted);
+      width: 100%;
+      margin-top: 4px;
     }
     .err {
+      margin: 6px 10px;
+      padding: 6px 10px;
       background: #fef2f2;
       border: 1px solid #fecaca;
       color: var(--danger);
-      border-radius: var(--radius);
-      padding: 12px 14px;
-      margin-bottom: 16px;
-      font-size: 0.9rem;
+      border-radius: 6px;
+      font-size: 12px;
     }
-    .hint {
-      font-size: 0.8rem;
-      color: var(--muted);
-      margin-top: 8px;
-      line-height: 1.4;
+    #sheetWrap {
+      overflow: auto;
+      max-height: calc(100dvh - 148px);
+      border-bottom: 1px solid var(--border);
+      background: var(--accent);
     }
-    .conv-list { display: flex; flex-direction: column; gap: 14px; }
-    article.conv {
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      background: var(--surface);
-      overflow: hidden;
-      box-shadow: 0 4px 22px rgba(15, 23, 42, 0.06);
+    table.sheet {
+      border-collapse: collapse;
+      background: #fff;
+      font-size: 11px;
+      min-width: 100%;
+      table-layout: auto;
     }
-    .conv-head {
-      padding: 14px 16px;
-      background: var(--accent-bg);
-      border-bottom: 1px solid #d1fae5;
-      display: flex;
-      flex-wrap: wrap;
-      justify-content: space-between;
-      gap: 8px 14px;
-      align-items: baseline;
-    }
-    .conv-datetime {
-      font-weight: 800;
-      font-size: 1.02rem;
-      color: #065f46;
-    }
-    .conv-sub { font-size: 0.88rem; color: #115e59; font-weight: 600; }
-    .conv-body { padding: 14px 16px 16px; }
-    dl.grid {
-      margin: 0;
-      display: grid;
-      gap: 10px 14px;
-      grid-template-columns: minmax(110px, 32%) 1fr;
-      font-size: 0.89rem;
-    }
-    @media (max-width: 520px) {
-      dl.grid { grid-template-columns: 1fr; }
-    }
-    dt {
-      margin: 0;
-      color: var(--muted);
-      font-weight: 650;
-    }
-    dd {
-      margin: 0;
+    table.sheet th,
+    table.sheet td {
+      border: 1px solid #cbd5e1;
+      padding: 2px 6px;
+      vertical-align: top;
+      max-width: 320px;
       word-break: break-word;
-      color: var(--text);
-    }
-    dd a { color: var(--brand2); }
-    .queries {
-      margin-top: 12px;
-      padding: 11px 13px;
-      background: #f8fafc;
-      border-radius: 10px;
-      border: 1px dashed var(--border);
-      font-size: 0.88rem;
-      line-height: 1.5;
       white-space: pre-wrap;
+      line-height: 1.35;
+      hyphens: auto;
+    }
+    table.sheet thead th {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      background: var(--header-bg);
+      font-weight: 700;
+      text-align: left;
+      color: #334155;
+      box-shadow: 0 1px 0 var(--border);
+      white-space: nowrap;
+      max-width: none;
+      padding: 4px 6px;
+    }
+    tbody tr:nth-child(even) {
+      background: var(--stripe);
+    }
+    tbody tr:hover td {
+      background: #eefcfb;
+    }
+    table.sheet td a {
+      color: #0f766e;
+      word-break: break-all;
     }
     .empty {
+      padding: 28px;
       text-align: center;
-      padding: 36px 18px;
       color: var(--muted);
-      font-size: 0.95rem;
+      font-size: 13px;
     }
     .kbd {
-      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-      font-size: 0.78em;
+      font-family: ui-monospace, monospace;
+      font-size: 0.9em;
       background: #f1f5f9;
-      padding: 2px 7px;
-      border-radius: 6px;
-      border: 1px solid var(--border);
+      padding: 0 5px;
+      border-radius: 4px;
+    }
+    .pill {
+      font-size: 10px;
+      padding: 1px 6px;
+      border-radius: 99px;
+      background: var(--accent);
+      color: var(--brand);
+      font-weight: 700;
     }
   </style>
 </head>
 <body>
-  <div class="wrap">
-    <header class="hero">
-      <h1>Conversation inbox</h1>
-      <p>Leads from your Google Sheet — newest first. Same data the chatbot writes (Date &amp; Time in the first columns).</p>
-    </header>
+  <div class="bar">
+    <h1>Lead sheet view</h1>
+    <span class="pill" id="rowPill">&nbsp;</span>
+  </div>
 
-    <section class="panel" id="gate">
-      <label for="secret">Viewer secret</label>
-      <div class="row">
-        <div style="flex: 2 1 280px">
-          <input
-            id="secret"
-            type="password"
-            autocomplete="current-password"
-            placeholder="CONVERSATIONS_SHEET_VIEW_SECRET from Railway"
-          />
-        </div>
-        <div class="actions" style="flex: 1 1 160px;">
-          <button type="button" class="ghost" id="toggleSecret">Show</button>
-          <button type="button" class="primary" id="saveSecret">Remember (this browser)</button>
-        </div>
+  <details class="auth" open id="authBox">
+    <summary>Viewer secret &mdash; hide when set</summary>
+    <div class="auth-inner" style="max-width: 720px;">
+      <div style="grid-column: 1 / -1;">
+        <label class="mini" for="secret">CONVERSATIONS_SHEET_VIEW_SECRET</label>
+        <input id="secret" type="password" autocomplete="current-password" placeholder="Paste Railway secret / Enter to load" />
       </div>
-      <p class="hint">
-        Railway variable must be spelled exactly <span class="kbd">CONVERSATIONS_SHEET_VIEW_SECRET</span> (starts with
-        “C”). After changing variables, redeploy the service — env is read at startup.
-        Paste that same value below, click <strong>Reload from Sheet</strong> (it is not saved until you reload).
-      </p>
-    </section>
+      <button type="button" id="toggleSecret">Show</button>
+      <button type="button" id="saveSecret">Save in tab</button>
+      <button type="button" class="primary" id="refreshBtn">Reload</button>
+    </div>
+    <p style="margin: 8px 0 0; font-size: 11px; color: var(--muted); max-width: 720px;">
+      Name must match <span class="kbd">CONVERSATIONS_SHEET_VIEW_SECRET</span> on Railway &mdash; redeploy after edits.
+      Table mirrors your sheet columns left-to-right. Use date range below to slice rows.
+    </p>
+  </details>
 
-    <section class="panel">
-      <div class="row">
-        <div>
-          <label for="filter">Search</label>
-          <input id="filter" type="text" placeholder="Filter by name, mobile, queries…" autocomplete="off" />
-        </div>
-        <div>
-          <label for="limit">Rows to load</label>
-          <select id="limit">
-            <option value="50">50</option>
-            <option value="100" selected>100</option>
-            <option value="200">200</option>
-            <option value="300">300</option>
-          </select>
-        </div>
-      </div>
-      <div class="actions" style="margin-top: 14px;">
-        <button type="button" class="primary" id="refreshBtn">Reload from Sheet</button>
-      </div>
-      <div class="hint meta" id="statusLine">&nbsp;</div>
-    </section>
+  <div class="tools">
+    <div class="tool grow">
+      <label class="mini" for="filter">Contains (any column)</label>
+      <input id="filter" type="text" placeholder="Optional text filter…" autocomplete="off" />
+    </div>
+    <div class="tool">
+      <label class="mini" for="dateFrom">From date</label>
+      <input id="dateFrom" type="date" />
+    </div>
+    <div class="tool">
+      <label class="mini" for="dateTo">To date</label>
+      <input id="dateTo" type="date" />
+    </div>
+    <div class="tool">
+      <label class="mini" for="sortOrder">Order</label>
+      <select id="sortOrder">
+        <option value="sheet">Like sheet &mdash; oldest &rarr; newest</option>
+        <option value="newest">Newest first</option>
+      </select>
+    </div>
+    <div class="tool">
+      <label class="mini" for="limit">Load rows</label>
+      <select id="limit">
+        <option value="50">50</option>
+        <option value="100" selected>100</option>
+        <option value="200">200</option>
+        <option value="300">300</option>
+      </select>
+    </div>
+    <div class="presets tool" style="min-width: 200px;">
+      <span class="mini" style="width:100%; margin-bottom:2px;">Quick range</span>
+      <button type="button" class="preset" data-preset="all">Any</button>
+      <button type="button" class="preset" data-preset="today">Today</button>
+      <button type="button" class="preset" data-preset="7">7 days</button>
+      <button type="button" class="preset" data-preset="30">30 days</button>
+      <button type="button" class="preset" data-preset="clear">Clear dates</button>
+    </div>
+  </div>
+  <div id="statusLine" style="padding: 4px 10px;"></div>
 
-    <div id="errBox" class="err" style="display: none"></div>
-    <div id="convList" class="conv-list"></div>
+  <div id="errBox" class="err" style="display: none;"></div>
+
+  <div id="sheetWrap">
+    <div id="convList"><div class="empty">Paste secret and Reload, or Saved secret will load automatically.</div></div>
   </div>
 
   <script>
@@ -276,6 +297,11 @@
       var statusLine = document.getElementById("statusLine");
       var errBox = document.getElementById("errBox");
       var convList = document.getElementById("convList");
+      var dateFromEl = document.getElementById("dateFrom");
+      var dateToEl = document.getElementById("dateTo");
+      var sortOrderEl = document.getElementById("sortOrder");
+      var rowPill = document.getElementById("rowPill");
+      var authBox = document.getElementById("authBox");
 
       function apiBase() {
         return "";
@@ -288,9 +314,32 @@
           .replace(/[^a-z0-9]/g, "");
       }
 
+      function pad2(n) {
+        return n < 10 ? "0" + n : String(n);
+      }
+
+      /** Local calendar YYYY-MM-DD */
+      function toYmdLocal(d) {
+        if (!(d instanceof Date) || isNaN(d.getTime())) return null;
+        return d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate());
+      }
+
+      /** Try Date + optional Time strings from Sheet (Intl / manual). */
+      function parseConversationInstant(dateStr, timeStr) {
+        var ds = String(dateStr || "").trim();
+        var ts = String(timeStr || "").trim();
+        if (!ds) return null;
+        var cand = ds + (ts ? " " + ts : "");
+        var t = Date.parse(cand);
+        if (!isNaN(t)) return new Date(t);
+        t = Date.parse(ds);
+        if (!isNaN(t)) return new Date(t);
+        return null;
+      }
+
       function findCell(row, candidates) {
-        var keys = Object.keys(row);
         var map = {};
+        var keys = Object.keys(row);
         for (var i = 0; i < keys.length; i++) {
           map[normKey(keys[i])] = row[keys[i]];
         }
@@ -301,17 +350,45 @@
         return "";
       }
 
-      function linkify(text) {
+      /** YYYY-MM-DD for range compare, local day of conversation */
+      function rowDayYmd(row) {
+        var dStr = findCell(row, ["Date", "Conv date", "Conversation date", "Datetime", "Timestamp"]);
+        var tStr = findCell(row, ["Time", "Conv time", "Conversation time"]);
+        var inst = parseConversationInstant(dStr, tStr);
+        return toYmdLocal(inst);
+      }
+
+      function inDateRange(ymd) {
+        var from = dateFromEl.value;
+        var to = dateToEl.value;
+        if (!from && !to) return true;
+        if (!ymd) return false;
+        if (from && ymd < from) return false;
+        if (to && ymd > to) return false;
+        return true;
+      }
+
+      function linkifyToNode(text) {
         var s = String(text || "");
-        if (/^https?:\/\//i.test(s)) {
-          var a = document.createElement("a");
-          a.href = s;
-          a.target = "_blank";
-          a.rel = "noopener noreferrer";
-          a.textContent = s.length > 64 ? s.slice(0, 62) + "…" : s;
-          return a;
+        var lines = s.split(/\r?\n/);
+        var frag = document.createDocumentFragment();
+        for (var i = 0; i < lines.length; i++) {
+          if (i) frag.appendChild(document.createElement("br"));
+          var line = lines[i];
+          var m = /^(https?:\/\/[^\s]+)$/i.exec(line.trim());
+          if (m) {
+            var a = document.createElement("a");
+            a.href = m[1];
+            a.target = "_blank";
+            a.rel = "noopener noreferrer";
+            a.textContent =
+              line.length > 96 ? line.slice(0, 93).trim() + "…" : line;
+            frag.appendChild(a);
+          } else {
+            frag.appendChild(document.createTextNode(line || " "));
+          }
         }
-        return document.createTextNode(s);
+        return frag;
       }
 
       function showErr(msg) {
@@ -325,7 +402,10 @@
 
       try {
         var saved = sessionStorage.getItem(LS_KEY);
-        if (saved) secretEl.value = saved;
+        if (saved) {
+          secretEl.value = saved;
+          authBox.open = false;
+        }
       } catch (e) {}
 
       document.getElementById("toggleSecret").addEventListener("click", function () {
@@ -335,9 +415,10 @@
       document.getElementById("saveSecret").addEventListener("click", function () {
         try {
           sessionStorage.setItem(LS_KEY, secretEl.value.trim());
-          setStatus("Secret saved for this tab session.");
+          authBox.open = false;
+          setStatus("Secret saved.");
         } catch (e) {
-          setStatus("Could not save (private mode?). Paste each time.");
+          setStatus("Could not save secret.");
         }
       });
 
@@ -346,109 +427,169 @@
         var low = q.toLowerCase();
         var keys = Object.keys(row);
         for (var i = 0; i < keys.length; i++) {
-          var v = String(row[keys[i]] || "").toLowerCase();
-          if (v.indexOf(low) >= 0) return true;
+          if (String(row[keys[i]] || "").toLowerCase().indexOf(low) >= 0) return true;
         }
         return false;
       }
 
+      function applyPresets(which) {
+        var now = new Date();
+        function ymdOff(days) {
+          var d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - days);
+          return toYmdLocal(d);
+        }
+        var today = toYmdLocal(now);
+        if (which === "all" || which === "clear") {
+          dateFromEl.value = "";
+          dateToEl.value = "";
+        } else if (which === "today") {
+          dateFromEl.value = today;
+          dateToEl.value = today;
+        } else if (which === "7") {
+          dateFromEl.value = ymdOff(6);
+          dateToEl.value = today;
+        } else if (which === "30") {
+          dateFromEl.value = ymdOff(29);
+          dateToEl.value = today;
+        }
+        if (lastPayload) render(lastPayload);
+      }
+
+      document.querySelectorAll("[data-preset]").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          applyPresets(btn.getAttribute("data-preset"));
+        });
+      });
+
       var lastPayload = null;
+
+      function compareRowsSheetLike(a, b) {
+        var da = parseConversationInstant(
+          findCell(a, ["Date", "Conv date", "Conversation date", "Datetime"]),
+          findCell(a, ["Time", "Conv time"])
+        );
+        var db = parseConversationInstant(
+          findCell(b, ["Date", "Conv date", "Conversation date", "Datetime"]),
+          findCell(b, ["Time", "Conv time"])
+        );
+        var ta = da ? da.getTime() : 0;
+        var tb = db ? db.getTime() : 0;
+        return ta - tb;
+      }
 
       function render(data) {
         lastPayload = data;
         var q = filterEl.value.trim();
-        var rows = data.conversations || [];
+        var headers = data.headers && data.headers.length ? data.headers : [];
+        var rawRows = data.conversations || [];
         convList.innerHTML = "";
-        var n = 0;
-        for (var i = 0; i < rows.length; i++) {
-          var row = rows[i];
+
+        if (!headers.length && rawRows.length) {
+          headers = Object.keys(rawRows[0]);
+        }
+
+        /** @type {Record<string,string>[]} */
+        var rows = [];
+        for (var i = 0; i < rawRows.length; i++) {
+          rows.push(rawRows[i]);
+        }
+
+        var order = sortOrderEl.value === "sheet" ? "sheet" : "newest";
+        if (order === "sheet") {
+          rows.sort(compareRowsSheetLike);
+        } else {
+          rows.sort(function (a, b) {
+            return compareRowsSheetLike(b, a);
+          });
+        }
+
+        var filtered = [];
+        for (var r = 0; r < rows.length; r++) {
+          var row = rows[r];
           if (!rowMatchesFilter(row, q)) continue;
-          n++;
-
-          var dateStr = findCell(row, ["Date", "Conv date", "Conversation date"]);
-          var timeStr = findCell(row, ["Time", "Conv time", "Conversation time"]);
-          var name = findCell(row, ["Name", "Full name", "Customer name"]);
-          var mobile = findCell(row, ["Mobile", "Phone"]);
-          var email = findCell(row, ["Email", "E-mail"]);
-          var queries = findCell(row, [
-            "User Queries",
-            "User queries",
-            "Queries",
-            "Chat queries",
-            "Conversation queries"
-          ]);
-
-          var art = document.createElement("article");
-          art.className = "conv";
-
-          var head = document.createElement("div");
-          head.className = "conv-head";
-          var dt = document.createElement("div");
-          dt.className = "conv-datetime";
-          dt.textContent = [dateStr, timeStr].filter(Boolean).join(" · ") || "—";
-          var sub = document.createElement("div");
-          sub.className = "conv-sub";
-          var subParts = [];
-          if (name) subParts.push(name);
-          if (mobile) subParts.push(mobile);
-          sub.textContent = subParts.join(" · ") || "Lead";
-          head.appendChild(dt);
-          head.appendChild(sub);
-          art.appendChild(head);
-
-          var body = document.createElement("div");
-          body.className = "conv-body";
-
-          var dl = document.createElement("dl");
-          dl.className = "grid";
-          var keys = Object.keys(row);
-          for (var k = 0; k < keys.length; k++) {
-            var key = keys[k];
-            var val = row[key];
-            if (!String(val || "").trim()) continue;
-            if (normKey(key) === normKey("User Queries") && queries) continue;
-
-            var dtk = document.createElement("dt");
-            dtk.textContent = key;
-            var ddk = document.createElement("dd");
-            ddk.appendChild(linkify(val));
-            dl.appendChild(dtk);
-            dl.appendChild(ddk);
+          var ymd = rowDayYmd(row);
+          if (!inDateRange(ymd)) {
+            continue;
           }
-          body.appendChild(dl);
-
-          if (queries) {
-            var pq = document.createElement("div");
-            pq.className = "queries";
-            pq.textContent = queries;
-            body.appendChild(pq);
-          }
-
-          art.appendChild(body);
-          convList.appendChild(art);
+          filtered.push(row);
         }
 
-        if (!n) {
-          var empty = document.createElement("div");
-          empty.className = "empty panel";
-          empty.textContent = rows.length
-            ? "No rows match your search."
-            : "No data rows in this tab yet (or sheet is empty).";
-          convList.appendChild(empty);
+        rowPill.textContent =
+          filtered.length + " row" + (filtered.length === 1 ? "" : "s") +
+          (dateFromEl.value || dateToEl.value ? " · date-filtered" : "");
+
+        if (!filtered.length) {
+          var emp = document.createElement("div");
+          emp.className = "empty";
+          emp.textContent = rawRows.length
+            ? "No rows match text / date filters."
+            : "No rows returned from API.";
+          convList.appendChild(emp);
+          return;
         }
+
+        var tbl = document.createElement("table");
+        tbl.className = "sheet";
+        var thead = document.createElement("thead");
+        var trh = document.createElement("tr");
+        for (var hi = 0; hi < headers.length; hi++) {
+          var th = document.createElement("th");
+          th.textContent = headers[hi];
+          trh.appendChild(th);
+        }
+        thead.appendChild(trh);
+        tbl.appendChild(thead);
+
+        var tbody = document.createElement("tbody");
+        for (var ri = 0; ri < filtered.length; ri++) {
+          var row = filtered[ri];
+          var tr = document.createElement("tr");
+          for (var ci = 0; ci < headers.length; ci++) {
+            var td = document.createElement("td");
+            var raw = row[headers[ci]];
+            td.appendChild(linkifyToNode(raw == null ? "" : String(raw)));
+            td.title = String(raw || "").slice(0, 2000);
+            tr.appendChild(td);
+          }
+          tbody.appendChild(tr);
+        }
+        tbl.appendChild(tbody);
+        convList.appendChild(tbl);
       }
+
+      function wireFilter() {
+        filterEl.addEventListener("input", function () {
+          if (lastPayload) render(lastPayload);
+        });
+        dateFromEl.addEventListener("change", function () {
+          if (lastPayload) render(lastPayload);
+        });
+        dateFromEl.addEventListener("input", function () {
+          if (lastPayload) render(lastPayload);
+        });
+        dateToEl.addEventListener("change", function () {
+          if (lastPayload) render(lastPayload);
+        });
+        dateToEl.addEventListener("input", function () {
+          if (lastPayload) render(lastPayload);
+        });
+        sortOrderEl.addEventListener("change", function () {
+          if (lastPayload) render(lastPayload);
+        });
+      }
+      wireFilter();
 
       async function load() {
         var secret = secretEl.value.trim();
         showErr("");
         if (!secret) {
-          showErr("Enter the viewer secret first.");
+          showErr("Enter viewer secret.");
           return;
         }
         refreshBtn.disabled = true;
-        setStatus("Calling API… (~5–30 s for large spreadsheets).");
-        var reloadLabel = refreshBtn.textContent;
+        var reloadLbl = refreshBtn.textContent;
         refreshBtn.textContent = "Loading…";
+        setStatus("Loading…");
         var timedId = 0;
         try {
           var lim = parseInt(String(limitEl.value), 10) || 100;
@@ -468,50 +609,36 @@
             return null;
           });
           if (!res.ok || !json || !json.ok) {
-            var msg =
-              (json && json.error) ||
-              "Request failed (" + res.status + "). Check secret and server logs.";
-            showErr(msg);
+            showErr((json && json.error) || "HTTP " + res.status);
             setStatus("");
             return;
           }
           setStatus(
-            "Loaded " +
-              (json.conversations || []).length +
-              " recent row(s) from tab “" +
+            "Spreadsheet “" +
+              (json.title || "?") +
+              "” · tab " +
               (json.tab || "?") +
-              "” · spreadsheet: " +
-              (json.title || "—") +
-              " · sheet row count ≈ " +
-              (json.rowCount || "—")
+              " · ~" +
+              (json.rowCount || "?") +
+              " rows tall · loaded " +
+              (json.conversations || []).length +
+              " recent lead row(s)."
           );
           render(json);
         } catch (e) {
-          if (e && e.name === "AbortError") {
-            showErr(
-              "Timed out (~78s). Ask ops to redeploy the API — sheet scans are capped so huge tabs no longer stall."
-            );
-          } else {
-            showErr("Network error: " + String(e && e.message ? e.message : e));
-          }
+          if (e && e.name === "AbortError") showErr("Timed out.");
+          else showErr(String(e && e.message ? e.message : e));
           setStatus("");
         } finally {
           if (timedId) window.clearTimeout(timedId);
           refreshBtn.disabled = false;
-          refreshBtn.textContent = reloadLabel;
+          refreshBtn.textContent = reloadLbl;
         }
       }
 
-      filterEl.addEventListener("input", function () {
-        if (lastPayload) render(lastPayload);
-      });
-
       refreshBtn.addEventListener("click", load);
-
       secretEl.addEventListener("keydown", function (ev) {
-        if (ev.key === "Enter") {
-          load();
-        }
+        if (ev.key === "Enter") load();
       });
 
       if (secretEl.value.trim()) load();
