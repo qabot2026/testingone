@@ -566,6 +566,41 @@
       });
   }
 
+  function hasUnpublishedEdits() {
+    return lastPublishedEnvelope !== null && currentEnvelope() !== lastPublishedEnvelope;
+  }
+
+  function reloadPublishedDiscardingDraft(okToast) {
+    if (!hasUnpublishedEdits()) return Promise.resolve();
+    return loadSavedSettings()
+      .then(function () {
+        if (okToast) showToast(okToast, "ok");
+      })
+      .catch(function (err) {
+        showToast("Could not reload published settings: " + (err && err.message ? err.message : err), "err");
+      })
+      .then(function () {
+        reloadPreview();
+      });
+  }
+
+  function bindDiscardDraftAfterTabHidden() {
+    var hiddenDirtyAt = 0;
+    var minHiddenMs = 3000;
+    document.addEventListener("visibilitychange", function () {
+      if (document.visibilityState === "hidden") {
+        if (hasUnpublishedEdits()) hiddenDirtyAt = Date.now();
+        else hiddenDirtyAt = 0;
+        return;
+      }
+      if (!hiddenDirtyAt) return;
+      var elapsed = Date.now() - hiddenDirtyAt;
+      hiddenDirtyAt = 0;
+      if (elapsed < minHiddenMs) return;
+      reloadPublishedDiscardingDraft("Restored published settings (unsaved edits were discarded).");
+    });
+  }
+
   function bindTopbar() {
     var botInput = $("#botIdInput");
     var initialBot = "default";
@@ -607,6 +642,7 @@
       }).then(function () {
         showToast("Published live — visitors will see this for bot \"" + bot + "\"", "ok");
         setPublishedBaselineFromCurrentState();
+        reloadPreview();
       }).catch(function (err) {
         showToast("Save failed: " + (err && err.message ? err.message : err), "err");
       }).then(function () {
@@ -710,18 +746,7 @@
         }
         if (occluded && e.isIntersecting && e.intersectionRatio > 0.35) {
           occluded = false;
-          if (lastPublishedEnvelope !== null && currentEnvelope() !== lastPublishedEnvelope) {
-            loadSavedSettings()
-              .then(function () {
-                showToast("Showing published settings (draft was not saved).", "ok");
-              })
-              .catch(function (err) {
-                showToast("Could not reload published settings: " + (err && err.message ? err.message : err), "err");
-              })
-              .then(function () {
-                reloadPreview();
-              });
-          }
+          reloadPublishedDiscardingDraft("Showing published settings (draft was not saved).");
         }
       },
       { threshold: [0, 0.12, 0.35, 1] }
@@ -735,6 +760,7 @@
     bindTabs();
     bindSettingsInputs();
     bindDiscardDraftWhenReturningToSettingsPane();
+    bindDiscardDraftAfterTabHidden();
     renderInputs();
 
     loadSavedSettings()

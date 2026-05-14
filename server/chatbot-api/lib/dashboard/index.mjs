@@ -247,12 +247,14 @@ async function readSettings_(botid) {
 
 async function writeSettings_(botid, flat, advancedPatchJson, email) {
     const db = firestoreDb_();
+    // Whole-document replace — Firestore `{ merge: true }` deep-merges nested maps, so stale
+    // keys inside `flat` would survive and confuse "Make live" + widget hydration.
     await db.collection(settingsCollection_()).doc(botIdOrDefault_(botid)).set({
         flat: flat && typeof flat === "object" ? flat : {},
         advancedPatchJson: typeof advancedPatchJson === "string" ? advancedPatchJson : "",
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         updatedBy: trim_(email)
-    }, { merge: true });
+    });
 }
 
 /** Consume a magic-link token id once. Returns true if this call consumed it; false if already consumed. */
