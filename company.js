@@ -2377,6 +2377,115 @@ function initializeHardActionBar() {
     setInterval(ensureCloseButtonIsX, 500);
 }
 
+/** Bubble + header chrome icons (dashboard preview must update attrs after merge). */
+function resolveMessengerChatIconUrls(headerConfig) {
+    const h = headerConfig && typeof headerConfig === "object" ? headerConfig : {};
+    const fallback = "https://storage.googleapis.com/companybucket/Images/cat.png";
+    const bubbleSrc = typeof h.chatIconUrl === "string" && h.chatIconUrl.trim() ? h.chatIconUrl.trim() : fallback;
+    const titleSrc = typeof h.chatTitleIconUrl === "string" && h.chatTitleIconUrl.trim()
+        ? h.chatTitleIconUrl.trim()
+        : bubbleSrc;
+    return { chatIconUrl: bubbleSrc, chatTitleIconUrl: titleSrc };
+}
+
+function applyMessengerChatIconAttributes(dfMessenger, bubbleNode, headerConfig) {
+    if (!dfMessenger || typeof dfMessenger.setAttribute !== "function") {
+        return;
+    }
+    const { chatIconUrl, chatTitleIconUrl } = resolveMessengerChatIconUrls(headerConfig);
+
+    const applyAttrs = () => {
+        dfMessenger.setAttribute("chat-icon", chatIconUrl);
+        dfMessenger.setAttribute("chat-title-icon", chatTitleIconUrl);
+        if (bubbleNode && typeof bubbleNode.setAttribute === "function") {
+            bubbleNode.setAttribute("chat-icon", chatIconUrl);
+            bubbleNode.setAttribute("chat-title-icon", chatTitleIconUrl);
+        }
+        scheduleDfMessengerChatIconImageSrcSync(dfMessenger, chatIconUrl, chatTitleIconUrl);
+    };
+
+    try {
+        dfMessenger.removeAttribute("chat-icon");
+        dfMessenger.removeAttribute("chat-title-icon");
+        if (bubbleNode && typeof bubbleNode.removeAttribute === "function") {
+            bubbleNode.removeAttribute("chat-icon");
+            bubbleNode.removeAttribute("chat-title-icon");
+        }
+    } catch {
+        /* no-op */
+    }
+
+    window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(applyAttrs);
+    });
+}
+
+/**
+ * df-messenger often binds launcher/header images once; after dashboard merges, sync shadow `<img src>`.
+ */
+function scheduleDfMessengerChatIconImageSrcSync(dfMessenger, chatIconUrl, chatTitleIconUrl) {
+    if (!dfMessenger) {
+        return;
+    }
+    const bubbleHost = typeof dfMessenger.querySelector === "function"
+        ? dfMessenger.querySelector("df-messenger-chat-bubble")
+        : null;
+
+    const patch = () => {
+        const sr = bubbleHost && bubbleHost.shadowRoot;
+        if (sr && typeof chatIconUrl === "string" && chatIconUrl.trim()) {
+            const launcherImg = sr.querySelector(".bubble img")
+                || sr.querySelector("button img")
+                || sr.querySelector("[role=\"button\"] img")
+                || sr.querySelector("img");
+            if (launcherImg) {
+                try {
+                    launcherImg.removeAttribute("src");
+                    launcherImg.setAttribute("src", chatIconUrl);
+                    launcherImg.src = chatIconUrl;
+                } catch {
+                    /* no-op */
+                }
+            }
+        }
+
+        if (!chatTitleIconUrl || typeof chatTitleIconUrl !== "string" || !chatTitleIconUrl.trim()) {
+            return;
+        }
+
+        const roots = collectSearchRoots(dfMessenger);
+        for (let r = 0; r < roots.length; r += 1) {
+            const root = roots[r];
+            if (!root || typeof root.querySelectorAll !== "function") {
+                continue;
+            }
+            const bars = root.querySelectorAll("df-messenger-titlebar, df-messenger-header");
+            for (let i = 0; i < bars.length; i += 1) {
+                const bar = bars[i];
+                const im = bar && typeof bar.querySelector === "function" ? bar.querySelector("img") : null;
+                if (!im) {
+                    continue;
+                }
+                if (bubbleHost && bubbleHost.shadowRoot && bubbleHost.shadowRoot.contains(im)) {
+                    continue;
+                }
+                try {
+                    im.removeAttribute("src");
+                    im.setAttribute("src", chatTitleIconUrl);
+                    im.src = chatTitleIconUrl;
+                } catch {
+                    /* no-op */
+                }
+            }
+        }
+    };
+
+    patch();
+    [50, 160, 420, 900, 2000].forEach((ms) => {
+        window.setTimeout(patch, ms);
+    });
+}
+
 function createAndMountMessenger() {
     if (botWritingDotsTimerId !== null) {
         window.clearInterval(botWritingDotsTimerId);
@@ -2406,14 +2515,7 @@ function createAndMountMessenger() {
     const bubble = document.createElement("df-messenger-chat-bubble");
     activeBubbleNode = bubble;
     const headerConfig = COMMON_CONFIG.header || {};
-    const chatIconUrl = headerConfig.chatIconUrl || "https://storage.googleapis.com/companybucket/Images/cat.png";
-    const chatTitleIconUrl = headerConfig.chatTitleIconUrl || chatIconUrl;
-
-    // Ensure bubble icon uses configured URL.
-    df.setAttribute("chat-icon", chatIconUrl);
-    df.setAttribute("chat-title-icon", chatTitleIconUrl);
-    bubble.setAttribute("chat-icon", chatIconUrl);
-    bubble.setAttribute("chat-title-icon", chatTitleIconUrl);
+    applyMessengerChatIconAttributes(df, bubble, headerConfig);
     bubble.setAttribute("chat-title", headerConfig.title || "Chat Support");
     bubble.setAttribute("chat-subtitle", headerConfig.subtitle || "🟢 Online");
     {
@@ -20456,9 +20558,12 @@ function dfchatApplyCompanyAdminFlatSettingsNow() {
     if (!df) {
         return false;
     }
-    applyDfMessengerThemeConfig(df, readCompanyUiConfig());
+    const ui = readCompanyUiConfig();
+    applyDfMessengerThemeConfig(df, ui);
     const bubble = df.querySelector("df-messenger-chat-bubble");
-    const h = COMMON_CONFIG.header || {};
+    const common = ui.common && typeof ui.common === "object" ? ui.common : {};
+    const h = common.header && typeof common.header === "object" ? common.header : {};
+    applyMessengerChatIconAttributes(df, bubble, h);
     if (bubble) {
         if (typeof h.title === "string") {
             bubble.setAttribute("chat-title", h.title || "Chat Support");
@@ -20467,11 +20572,13 @@ function dfchatApplyCompanyAdminFlatSettingsNow() {
             bubble.setAttribute("chat-subtitle", h.subtitle);
         }
     }
+    ensureCircularBubbleIcon(df);
     ensureChatActionBar();
     scheduleSyncChatActionBarPosition();
     ensurePoweredByStrip();
     syncPoweredByStripPosition();
     scheduleComposerSpeechMicAttach(df);
+    scheduleChatBubbleLauncherCircleStyle(df);
     applyLauncherStripFromCompanyAdmin(df, bubble);
     scheduleChatInputPlaceholderRefresh(df);
     return true;
