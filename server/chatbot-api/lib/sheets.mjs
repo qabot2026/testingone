@@ -1904,3 +1904,101 @@ export async function probeSheetsSpreadsheetAccess() {
         return { ok: false, code: "spreadsheets_get_failed", message: msg.slice(0, 500) };
     }
 }
+
+/**
+ * Staff viewer: header row + up to `maxRows` most recent data rows (sheet append adds at bottom).
+ * Uses two reads: column A length, then A:R block for the tail.
+ *
+ * @param {{ maxRows?: number }} [opts]
+ * @returns {Promise<{ tab: string, title: string, rowCount: number, headers: string[], conversations: Record<string, string>[] }>}
+ */
+export async function fetchConversationSheetPreview(opts = {}) {
+    if (!SPREADSHEET_ID) {
+        throw new Error("SHEETS_SPREADSHEET_ID is not set.");
+    }
+    const maxRows = Math.min(
+        500,
+        Math.max(
+            5,
+            Number.parseInt(
+                String(
+                    opts.maxRows !== undefined
+                        ? opts.maxRows
+                        : process.env.CONVERSATIONS_SHEET_VIEW_MAX_ROWS || "200"
+                ),
+                10
+            ) || 200
+        )
+    );
+    const client = await getSheetsAuthClient();
+    const sheets = google.sheets({ version: "v4", auth: client });
+    const tab = tabNameFromRange(RANGE);
+
+    const titleGot = await sheets.spreadsheets.get({
+        spreadsheetId: SPREADSHEET_ID,
+        fields: "properties.title"
+    });
+    const title =
+        titleGot.data.properties && typeof titleGot.data.properties.title === "string"
+            ? titleGot.data.properties.title.trim()
+            : "";
+
+    const headerGot = await sheets.spreadsheets.values.get({
+        spreadsheetId: SPREADSHEET_ID,
+        range: `${tab}!1:1`
+    });
+    const headersRaw = Array.isArray(headerGot.data.values) && headerGot.data.values[0]
+        ? /** @type {unknown[]} */ (headerGot.data.values[0])
+        : [];
+    const headers = [];
+    const used = new Set();
+    for (let i = 0; i < headersRaw.length; i += 1) {
+        let label = sheetCellString_(headersRaw[i]);
+        if (!label) {
+            label = `Column_${i + 1}`;
+        }
+        let key = label;
+        let n = 2;
+        while (used.has(key)) {
+            key = `${label} (${n})`;
+            n += 1;
+        }
+        used.add(key);
+        headers.push(key);
+    }
+
+    const colAGot = await sheets.spreadsheets.values.get({
+        spreadsheetId: SPREADSHEET_ID,
+        range: `${tab}!A:A`
+    });
+    const n = Math.min(
+        10_000,
+        Array.isArray(colAGot.data.values) ? colAGot.data.values.length : 0
+    );
+    if (n <= 1) {
+        return { tab, title, rowCount: n, headers, conversations: [] };
+    }
+    const dataStart = Math.max(2, n - maxRows + 1);
+    const blockGot = await sheets.spreadsheets.values.get({
+        spreadsheetId: SPREADSHEET_ID,
+        range: `${tab}!A${dataStart}:R${n}`
+    });
+    const rawRows = Array.isArray(blockGot.data.values) ? blockGot.data.values : [];
+    /** @type {Record<string, string>[]} */
+    const conversations = [];
+    for (let r = rawRows.length - 1; r >= 0; r -= 1) {
+        const cells = rawRows[r] || [];
+        /** @type {Record<string, string>} */
+        const o = {};
+        for (let c = 0; c < headers.length; c += 1) {
+            const h = headers[c];
+            o[h] = sheetCellString_(cells[c]);
+        }
+        const hasAny = Object.values(o).some((v) => v && v.trim());
+        if (hasAny) {
+            conversations.push(o);
+        }
+    }
+    return { tab, title, rowCount: n, headers, conversations };
+}
+

@@ -49,11 +49,12 @@ import { firebaseAdminInit } from "./lib/firebase-admin-init.mjs";
 import { persistToFirestore } from "./lib/firestore.mjs";
 import {
     appendContactRowToSheet,
+    fetchConversationSheetPreview,
     formatConversationDateForSheet,
     formatConversationTimeForSheet,
-    upsertSessionQueriesInSheet,
     probeSheetsSpreadsheetAccess,
-    sanitizeUserQueriesCsvForSheet
+    sanitizeUserQueriesCsvForSheet,
+    upsertSessionQueriesInSheet
 } from "./lib/sheets.mjs";
 import { getServiceAccountCredentials } from "./lib/google-service-account.mjs";
 import { uploadSubmissionFilesToDrive } from "./lib/drive-upload.mjs";
@@ -3034,6 +3035,7 @@ app.get("/contact-form-sheets-health", async (_req, res) => {
 
 /** Reception/staff: same-slot view as the chat widget (reads RTDB via /api/slots). */
 const RECEPTION_SCHEDULE_HTML = path.join(__dirname_api, "public", "reception-schedule.html");
+const CONVERSATIONS_SHEET_HTML = path.join(__dirname_api, "public", "conversations-sheet.html");
 app.get("/reception-schedule", (_req, res) => {
     res.sendFile(RECEPTION_SCHEDULE_HTML, (err) => {
         if (err) {
@@ -3043,12 +3045,114 @@ app.get("/reception-schedule", (_req, res) => {
     });
 });
 
+/** Staff: visual inbox of chat leads from Google Sheet (protect with CONVERSATIONS_SHEET_VIEW_SECRET). */
+app.get("/conversations-sheet", (_req, res) => {
+    res.sendFile(CONVERSATIONS_SHEET_HTML, (err) => {
+        if (err) {
+            console.error("[chatbot-api] conversations-sheet:", err.message);
+            res.status(404).type("text/plain; charset=utf-8").send("Staff UI missing: add public/conversations-sheet.html and redeploy.");
+        }
+    });
+});
+
+const PATHNAME_CONVERSATIONS_SHEET_JSON = "/api/conversations-sheet";
+
+function conversationsSheetSecretFromReq_(req) {
+    const want = (process.env.CONVERSATIONS_SHEET_VIEW_SECRET || "").trim();
+    if (!want) {
+        return { want: "", got: "", ok: false, reason: "unset" };
+    }
+    const auth = typeof req.headers.authorization === "string" ? req.headers.authorization.trim() : "";
+    let bearer = "";
+    if (/^Bearer\s+/i.test(auth)) {
+        bearer = auth.replace(/^Bearer\s+/i, "").trim();
+    }
+    const hdr =
+        (typeof req.headers["x-conversations-sheet-secret"] === "string"
+            ? req.headers["x-conversations-sheet-secret"].trim()
+            : "")
+        || bearer;
+    const q = req.query && typeof req.query.secret === "string" ? req.query.secret.trim() : "";
+    const got = hdr || q;
+    return { want, got, ok: got === want, reason: got ? "bad" : "missing" };
+}
+
+function setConversationsSheetCors_(req, res) {
+    const origin = typeof req.headers.origin === "string" ? req.headers.origin.trim() : "";
+    if (origin) {
+        res.setHeader("Access-Control-Allow-Origin", origin);
+        res.setHeader("Access-Control-Allow-Credentials", "true");
+    } else {
+        res.setHeader("Access-Control-Allow-Origin", "*");
+    }
+    res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+    res.setHeader(
+        "Access-Control-Allow-Headers",
+        "Authorization, Content-Type, X-Conversations-Sheet-Secret"
+    );
+}
+
+app.options(PATHNAME_CONVERSATIONS_SHEET_JSON, (req, res) => {
+    setConversationsSheetCors_(req, res);
+    res.status(204).end();
+});
+
+app.get(PATHNAME_CONVERSATIONS_SHEET_JSON, async (req, res) => {
+    setConversationsSheetCors_(req, res);
+    res.setHeader("Cache-Control", "no-store");
+    try {
+        const cfg = conversationsSheetSecretFromReq_(req);
+        if (cfg.reason === "unset") {
+            return res.status(503).json({
+                ok: false,
+                error:
+                    "Server has no CONVERSATIONS_SHEET_VIEW_SECRET. Set a random secret in Railway Variables, redeploy, then open /conversations-sheet and paste it once."
+            });
+        }
+        if (!cfg.ok) {
+            return res.status(401).json({
+                ok: false,
+                error:
+                    "Unauthorized — send header X-Conversations-Sheet-Secret or Authorization: Bearer <secret> matching CONVERSATIONS_SHEET_VIEW_SECRET."
+            });
+        }
+        if (SHEETS_DISABLED) {
+            return res.status(503).json({
+                ok: false,
+                error:
+                    "Sheets reads disabled (DISABLE_SHEETS=1 or missing SHEETS_SPREADSHEET_ID). Viewer needs the same Sheet as lead capture."
+            });
+        }
+        if (!getServiceAccountCredentials()) {
+            return res.status(503).json({
+                ok: false,
+                error: "Missing service account JSON — same as Sheets writes (FIREBASE_SERVICE_ACCOUNT_JSON)."
+            });
+        }
+        let maxRows = 200;
+        if (req.query && req.query.limit != null) {
+            const n = Number.parseInt(String(req.query.limit), 10);
+            if (Number.isFinite(n) && n >= 5 && n <= 500) {
+                maxRows = n;
+            }
+        }
+        const payload = await fetchConversationSheetPreview({ maxRows });
+        return res.status(200).json({ ok: true, ...payload });
+    } catch (e) {
+        const msg = e && /** @type {{ message?: string }} */ (e).message ? String(e.message) : String(e);
+        console.error("[chatbot-api] conversations-sheet JSON:", msg);
+        return res.status(500).json({ ok: false, error: msg.slice(0, 500) });
+    }
+});
+
 /** Opening the Railway URL in a browser hits GET / — avoid Express default "Cannot GET /". */
 app.get("/", (_req, res) => {
     res.status(200).type("text/plain; charset=utf-8").send(
         [
             `Contact leads API running.`,
             `GET /reception-schedule → staff calendar (booked vs free slots).`,
+            `GET /conversations-sheet → staff inbox (Sheet leads; requires CONVERSATIONS_SHEET_VIEW_SECRET).`,
+            `GET /api/conversations-sheet → JSON rows for inbox (same secret header).`,
             `POST JSON or multipart/form-data → ${PATHNAME}`,
             `POST JSON (chat mobile) → ${PATHNAME_MOBILE_SHEET_SYNC}`,
             `POST JSON (session queries) → ${PATHNAME_SESSION_SHEET_SYNC}`,

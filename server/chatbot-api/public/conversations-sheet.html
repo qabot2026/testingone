@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Conversations — Sheet inbox</title>
+  <style>
+    :root {
+      --bg: #f4f7fb;
+      --surface: #ffffff;
+      --text: #0f172a;
+      --muted: #64748b;
+      --brand: #0d9488;
+      --brand2: #0f766e;
+      --border: #e2e8f0;
+      --accent-bg: #ecfdf5;
+      --danger: #b91c1c;
+      --radius: 14px;
+      --shadow: 0 10px 40px rgba(15, 23, 42, 0.08);
+      font-family: system-ui, Segoe UI, Roboto, Ubuntu, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100dvh;
+      background: linear-gradient(165deg, #eef8f6 0%, var(--bg) 45%, #fff 100%);
+      color: var(--text);
+      padding: 18px 14px 48px;
+    }
+    .wrap { max-width: 920px; margin: 0 auto; }
+    header.hero {
+      margin-bottom: 22px;
+      padding: 22px 22px 18px;
+      border-radius: var(--radius);
+      background: linear-gradient(135deg, var(--brand), var(--brand2));
+      color: #f0fdfa;
+      box-shadow: var(--shadow);
+    }
+    header.hero h1 {
+      margin: 0 0 6px;
+      font-size: clamp(1.35rem, 4vw, 1.75rem);
+      font-weight: 800;
+      letter-spacing: -0.02em;
+    }
+    header.hero p {
+      margin: 0;
+      opacity: 0.92;
+      font-size: 0.9rem;
+      line-height: 1.45;
+    }
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px 18px;
+      margin-bottom: 18px;
+      box-shadow: var(--shadow);
+    }
+    label {
+      display: block;
+      font-size: 0.78rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+    input[type="password"],
+    input[type="text"],
+    select {
+      width: 100%;
+      max-width: 100%;
+      padding: 11px 12px;
+      border-radius: 11px;
+      border: 1px solid var(--border);
+      font: inherit;
+      font-size: 0.95rem;
+      background: #fafbfc;
+    }
+    input:focus, select:focus {
+      outline: 2px solid rgba(13, 148, 136, 0.35);
+      outline-offset: 1px;
+      border-color: var(--brand);
+      background: #fff;
+    }
+    .row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px 16px;
+      align-items: flex-end;
+    }
+    .row > * { flex: 1 1 180px; min-width: 0; }
+    .actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+    button.primary {
+      background: linear-gradient(135deg, var(--brand), #14b8a6);
+      color: #fff;
+      border: none;
+      border-radius: 11px;
+      padding: 11px 20px;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+      box-shadow: 0 6px 18px rgba(13, 148, 136, 0.35);
+    }
+    button.primary:hover { filter: brightness(1.06); }
+    button.primary:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+      box-shadow: none;
+    }
+    button.ghost {
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: 11px;
+      padding: 10px 14px;
+      font: inherit;
+      font-weight: 600;
+      cursor: pointer;
+      color: var(--text);
+    }
+    button.ghost:hover { background: var(--bg); }
+    .meta {
+      font-size: 0.85rem;
+      color: var(--muted);
+    }
+    .err {
+      background: #fef2f2;
+      border: 1px solid #fecaca;
+      color: var(--danger);
+      border-radius: var(--radius);
+      padding: 12px 14px;
+      margin-bottom: 16px;
+      font-size: 0.9rem;
+    }
+    .hint {
+      font-size: 0.8rem;
+      color: var(--muted);
+      margin-top: 8px;
+      line-height: 1.4;
+    }
+    .conv-list { display: flex; flex-direction: column; gap: 14px; }
+    article.conv {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface);
+      overflow: hidden;
+      box-shadow: 0 4px 22px rgba(15, 23, 42, 0.06);
+    }
+    .conv-head {
+      padding: 14px 16px;
+      background: var(--accent-bg);
+      border-bottom: 1px solid #d1fae5;
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      gap: 8px 14px;
+      align-items: baseline;
+    }
+    .conv-datetime {
+      font-weight: 800;
+      font-size: 1.02rem;
+      color: #065f46;
+    }
+    .conv-sub { font-size: 0.88rem; color: #115e59; font-weight: 600; }
+    .conv-body { padding: 14px 16px 16px; }
+    dl.grid {
+      margin: 0;
+      display: grid;
+      gap: 10px 14px;
+      grid-template-columns: minmax(110px, 32%) 1fr;
+      font-size: 0.89rem;
+    }
+    @media (max-width: 520px) {
+      dl.grid { grid-template-columns: 1fr; }
+    }
+    dt {
+      margin: 0;
+      color: var(--muted);
+      font-weight: 650;
+    }
+    dd {
+      margin: 0;
+      word-break: break-word;
+      color: var(--text);
+    }
+    dd a { color: var(--brand2); }
+    .queries {
+      margin-top: 12px;
+      padding: 11px 13px;
+      background: #f8fafc;
+      border-radius: 10px;
+      border: 1px dashed var(--border);
+      font-size: 0.88rem;
+      line-height: 1.5;
+      white-space: pre-wrap;
+    }
+    .empty {
+      text-align: center;
+      padding: 36px 18px;
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+    .kbd {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.78em;
+      background: #f1f5f9;
+      padding: 2px 7px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="hero">
+      <h1>Conversation inbox</h1>
+      <p>Leads from your Google Sheet — newest first. Same data the chatbot writes (Date &amp; Time in the first columns).</p>
+    </header>
+
+    <section class="panel" id="gate">
+      <label for="secret">Viewer secret</label>
+      <div class="row">
+        <div style="flex: 2 1 280px">
+          <input
+            id="secret"
+            type="password"
+            autocomplete="current-password"
+            placeholder="CONVERSATIONS_SHEET_VIEW_SECRET from Railway"
+          />
+        </div>
+        <div class="actions" style="flex: 1 1 160px;">
+          <button type="button" class="ghost" id="toggleSecret">Show</button>
+          <button type="button" class="primary" id="saveSecret">Remember (this browser)</button>
+        </div>
+      </div>
+      <p class="hint">
+        Set <span class="kbd">CONVERSATIONS_SHEET_VIEW_SECRET</span> on the API server, redeploy, then paste it here.
+        Stored only in this browser (<span class="kbd">sessionStorage</span>). Anyone with this link + secret sees lead PII — treat like a password.
+      </p>
+    </section>
+
+    <section class="panel">
+      <div class="row">
+        <div>
+          <label for="filter">Search</label>
+          <input id="filter" type="text" placeholder="Filter by name, mobile, queries…" autocomplete="off" />
+        </div>
+        <div>
+          <label for="limit">Rows to load</label>
+          <select id="limit">
+            <option value="50">50</option>
+            <option value="100" selected>100</option>
+            <option value="200">200</option>
+            <option value="300">300</option>
+          </select>
+        </div>
+      </div>
+      <div class="actions" style="margin-top: 14px;">
+        <button type="button" class="primary" id="refreshBtn">Reload from Sheet</button>
+      </div>
+      <div class="hint meta" id="statusLine">&nbsp;</div>
+    </section>
+
+    <div id="errBox" class="err" style="display: none"></div>
+    <div id="convList" class="conv-list"></div>
+  </div>
+
+  <script>
+    (function () {
+      var LS_KEY = "conversations_sheet_secret_v1";
+      var secretEl = document.getElementById("secret");
+      var filterEl = document.getElementById("filter");
+      var limitEl = document.getElementById("limit");
+      var refreshBtn = document.getElementById("refreshBtn");
+      var statusLine = document.getElementById("statusLine");
+      var errBox = document.getElementById("errBox");
+      var convList = document.getElementById("convList");
+
+      function apiBase() {
+        return "";
+      }
+
+      function normKey(s) {
+        return String(s || "")
+          .trim()
+          .toLowerCase()
+          .replace(/[^a-z0-9]/g, "");
+      }
+
+      function findCell(row, candidates) {
+        var keys = Object.keys(row);
+        var map = {};
+        for (var i = 0; i < keys.length; i++) {
+          map[normKey(keys[i])] = row[keys[i]];
+        }
+        for (var c = 0; c < candidates.length; c++) {
+          var nk = normKey(candidates[c]);
+          if (map[nk]) return String(map[nk]);
+        }
+        return "";
+      }
+
+      function linkify(text) {
+        var s = String(text || "");
+        if (/^https?:\/\//i.test(s)) {
+          var a = document.createElement("a");
+          a.href = s;
+          a.target = "_blank";
+          a.rel = "noopener noreferrer";
+          a.textContent = s.length > 64 ? s.slice(0, 62) + "…" : s;
+          return a;
+        }
+        return document.createTextNode(s);
+      }
+
+      function showErr(msg) {
+        errBox.style.display = msg ? "block" : "none";
+        errBox.textContent = msg || "";
+      }
+
+      function setStatus(t) {
+        statusLine.textContent = t || "";
+      }
+
+      try {
+        var saved = sessionStorage.getItem(LS_KEY);
+        if (saved) secretEl.value = saved;
+      } catch (e) {}
+
+      document.getElementById("toggleSecret").addEventListener("click", function () {
+        secretEl.type = secretEl.type === "password" ? "text" : "password";
+      });
+
+      document.getElementById("saveSecret").addEventListener("click", function () {
+        try {
+          sessionStorage.setItem(LS_KEY, secretEl.value.trim());
+          setStatus("Secret saved for this tab session.");
+        } catch (e) {
+          setStatus("Could not save (private mode?). Paste each time.");
+        }
+      });
+
+      function rowMatchesFilter(row, q) {
+        if (!q) return true;
+        var low = q.toLowerCase();
+        var keys = Object.keys(row);
+        for (var i = 0; i < keys.length; i++) {
+          var v = String(row[keys[i]] || "").toLowerCase();
+          if (v.indexOf(low) >= 0) return true;
+        }
+        return false;
+      }
+
+      var lastPayload = null;
+
+      function render(data) {
+        lastPayload = data;
+        var q = filterEl.value.trim();
+        var rows = data.conversations || [];
+        convList.innerHTML = "";
+        var n = 0;
+        for (var i = 0; i < rows.length; i++) {
+          var row = rows[i];
+          if (!rowMatchesFilter(row, q)) continue;
+          n++;
+
+          var dateStr = findCell(row, ["Date", "Conv date", "Conversation date"]);
+          var timeStr = findCell(row, ["Time", "Conv time", "Conversation time"]);
+          var name = findCell(row, ["Name", "Full name", "Customer name"]);
+          var mobile = findCell(row, ["Mobile", "Phone"]);
+          var email = findCell(row, ["Email", "E-mail"]);
+          var queries = findCell(row, [
+            "User Queries",
+            "User queries",
+            "Queries",
+            "Chat queries",
+            "Conversation queries"
+          ]);
+
+          var art = document.createElement("article");
+          art.className = "conv";
+
+          var head = document.createElement("div");
+          head.className = "conv-head";
+          var dt = document.createElement("div");
+          dt.className = "conv-datetime";
+          dt.textContent = [dateStr, timeStr].filter(Boolean).join(" · ") || "—";
+          var sub = document.createElement("div");
+          sub.className = "conv-sub";
+          var subParts = [];
+          if (name) subParts.push(name);
+          if (mobile) subParts.push(mobile);
+          sub.textContent = subParts.join(" · ") || "Lead";
+          head.appendChild(dt);
+          head.appendChild(sub);
+          art.appendChild(head);
+
+          var body = document.createElement("div");
+          body.className = "conv-body";
+
+          var dl = document.createElement("dl");
+          dl.className = "grid";
+          var keys = Object.keys(row);
+          for (var k = 0; k < keys.length; k++) {
+            var key = keys[k];
+            var val = row[key];
+            if (!String(val || "").trim()) continue;
+            if (normKey(key) === normKey("User Queries") && queries) continue;
+
+            var dtk = document.createElement("dt");
+            dtk.textContent = key;
+            var ddk = document.createElement("dd");
+            ddk.appendChild(linkify(val));
+            dl.appendChild(dtk);
+            dl.appendChild(ddk);
+          }
+          body.appendChild(dl);
+
+          if (queries) {
+            var pq = document.createElement("div");
+            pq.className = "queries";
+            pq.textContent = queries;
+            body.appendChild(pq);
+          }
+
+          art.appendChild(body);
+          convList.appendChild(art);
+        }
+
+        if (!n) {
+          var empty = document.createElement("div");
+          empty.className = "empty panel";
+          empty.textContent = rows.length
+            ? "No rows match your search."
+            : "No data rows in this tab yet (or sheet is empty).";
+          convList.appendChild(empty);
+        }
+      }
+
+      async function load() {
+        var secret = secretEl.value.trim();
+        showErr("");
+        if (!secret) {
+          showErr("Enter the viewer secret first.");
+          return;
+        }
+        refreshBtn.disabled = true;
+        setStatus("Loading…");
+        try {
+          var lim = parseInt(String(limitEl.value), 10) || 100;
+          var url = apiBase() + "/api/conversations-sheet?limit=" + encodeURIComponent(lim);
+          var res = await fetch(url, {
+            method: "GET",
+            headers: { "X-Conversations-Sheet-Secret": secret },
+            cache: "no-store"
+          });
+          var json = await res.json().catch(function () {
+            return null;
+          });
+          if (!res.ok || !json || !json.ok) {
+            var msg =
+              (json && json.error) ||
+              "Request failed (" + res.status + "). Check secret and server logs.";
+            showErr(msg);
+            setStatus("");
+            return;
+          }
+          setStatus(
+            "Loaded " +
+              (json.conversations || []).length +
+              " recent row(s) from tab “" +
+              (json.tab || "?") +
+              "” · spreadsheet: " +
+              (json.title || "—") +
+              " · sheet row count ≈ " +
+              (json.rowCount || "—")
+          );
+          render(json);
+        } catch (e) {
+          showErr(String(e && e.message ? e.message : e));
+          setStatus("");
+        } finally {
+          refreshBtn.disabled = false;
+        }
+      }
+
+      filterEl.addEventListener("input", function () {
+        if (lastPayload) render(lastPayload);
+      });
+
+      refreshBtn.addEventListener("click", load);
+
+      if (secretEl.value.trim()) load();
+    })();
+  </script>
+</body>
+</html>

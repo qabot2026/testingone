@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<!--
+  Optional shortcut: open this from GitHub Pages with your API origin.
+  Example: conversations.html?apiBase=https://YOUR-API.up.railway.app
+  You are redirected to the full inbox UI served by the API (/conversations-sheet).
+
+  Or edit the default below and open this file locally / on Pages.
+-->
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Conversations — Sheet inbox</title>
+  <meta name="dfchat-api-base-url" content="" />
+  <script>
+    (function () {
+      var p = new URLSearchParams(window.location.search);
+      var q = (p.get("apiBase") || "").trim().replace(/\/+$/, "");
+      var meta = document.querySelector('meta[name="dfchat-api-base-url"]');
+      var m = meta && meta.content ? String(meta.content).trim().replace(/\/+$/, "") : "";
+      var base = q || m;
+      if (!base) {
+        document.documentElement.innerHTML =
+          "<body style=\"font-family:system-ui;padding:2rem;max-width:40rem;line-height:1.5\">" +
+          "<h1 style=\"margin-top:0\">Conversations inbox</h1>" +
+          "<p>Set your chatbot API URL, for example:</p>" +
+          "<pre style=\"background:#f1f5f9;padding:14px;border-radius:10px;overflow:auto;font-size:13px\">" +
+          window.location.pathname.split("/").pop() +
+          "?apiBase=https://YOUR-API.up.railway.app" +
+          "</pre>" +
+          "<p>The full inbox lives on the API at <code>/conversations-sheet</code> (recommended bookmark).</p>" +
+          "</body>";
+        return;
+      }
+      window.location.replace(base + "/conversations-sheet");
+    })();
+  </script>
+</head>
+<body></body>
+</html>
