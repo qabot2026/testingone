@@ -157,9 +157,15 @@
       });
 
       // Fetch saved widget settings from the API and apply them on first paint.
-      // Lets the dashboard's "Save live" propagate to real visitor sessions.
+      // Lets the dashboard's "Make live" propagate to real visitor sessions.
+      // When opened inside the customization dashboard (?adminOrigin=...), the parent
+      // pushes draft updates via postMessage — skipping this fetch avoids the API
+      // response overwriting those instant preview edits.
       (function fetchPublishedSettings() {
         try {
+          if (typeof window.COMPANY_ADMIN_PREVIEW_ORIGIN === "string" && window.COMPANY_ADMIN_PREVIEW_ORIGIN) {
+            return;
+          }
           var apiBase = (window.COMPANY_API_BASE_URL || "").replace(/\/+$/, "");
           if (!apiBase) return;
           var botid = (window.COMPANY_EMBED_BOT_ID || "").trim() || "default";

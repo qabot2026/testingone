@@ -12,16 +12,20 @@
   <section id="mainView" class="main-view">
     <header class="topbar">
       <div class="topbar-left">
-        <strong>Chatbot dashboard</strong>
-        <span class="topbar-sep">/</span>
+        <div class="brand-block">
+          <strong class="brand-title">Customize chatbot</strong>
+          <span class="brand-sub muted">Preview updates instantly · Publish when ready</span>
+        </div>
+        <span class="topbar-sep" aria-hidden="true"></span>
         <label class="botid-label">
           Bot id
           <input id="botIdInput" type="text" spellcheck="false" autocomplete="off" title="Each bot has its own saved look" />
         </label>
-        <button type="button" class="btn ghost small" id="reloadSettingsBtn" title="Load saved settings from server">Reload saved</button>
+        <button type="button" class="btn ghost small" id="reloadSettingsBtn" title="Discard drafts and load published settings">Reload published</button>
       </div>
       <div class="topbar-right">
-        <button type="button" class="btn primary" id="saveBtn">Save live</button>
+        <span id="draftBadge" class="badge badge-warn hidden" title="Visitors still see the last published version">Unpublished changes</span>
+        <button type="button" class="btn primary btn-publish" id="saveBtn">Make live</button>
       </div>
     </header>
 
@@ -29,7 +33,7 @@
       <!-- LEFT: settings -->
       <aside class="settings-pane" aria-label="UI and UX settings">
         <h1 class="page-heading">UI / UX</h1>
-        <p class="settings-intro-text muted page-intro">Edit on the left — the chat preview on the <strong>right</strong> updates as you go. Click <strong>Save live</strong> so your website visitors get the same look.</p>
+        <p class="settings-intro-text muted page-intro">The preview on the right shows your edits <strong>right away</strong> (draft only). Click <strong>Make live</strong> when you want real visitors to see it.</p>
 
         <nav class="settings-nav" aria-label="Jump to section">
           <a href="#sec-colors">Colors</a>
@@ -198,13 +202,16 @@
           </div>
         </section>
 
-        <p class="settings-footer-note muted"><strong>Save live</strong> stores these values for this Bot id. Use <strong>Reload saved</strong> to pull the latest from the server into the form.</p>
+        <p class="settings-footer-note muted"><strong>Make live</strong> saves to the server for this Bot id. <strong>Reload published</strong> resets the form to what is live on the server.</p>
       </aside>
 
       <!-- RIGHT: preview -->
       <section class="preview-pane" aria-label="Live chat preview">
         <header class="preview-bar">
-          <strong class="preview-title">Preview (updates instantly)</strong>
+          <div class="preview-title-wrap">
+            <strong class="preview-title">Draft preview</strong>
+            <span class="preview-tag">Instant</span>
+          </div>
           <div class="preview-url-wrap">
             <label for="previewUrl" class="sr-only">Preview chat-frame URL</label>
             <input id="previewUrl" type="url" placeholder="https://your-site.com/chat-frame.html" spellcheck="false" />
@@ -219,7 +226,7 @@
           </div>
         </div>
         <footer class="preview-foot muted">
-          Saving publishes to the server for real embeds. This iframe preview uses your unsaved edits until you reload it after saving.
+          This panel always mirrors your edits. Only <strong>Make live</strong> updates what visitors get from the API.
         </footer>
       </section>
     </div>

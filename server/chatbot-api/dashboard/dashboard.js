@@ -137,6 +137,34 @@
   /** Current in-memory settings object (flat schema). */
   var state = Object.assign({}, DEFAULTS);
 
+  /** Snapshot of last published payload (for “Unpublished changes”). */
+  var lastPublishedEnvelope = null;
+
+  function currentEnvelope() {
+    return JSON.stringify({
+      flat: buildFlatPatch(),
+      advancedPatchJson: buildAdvancedPatchJson()
+    });
+  }
+
+  function updateDraftBadge() {
+    var badge = $("#draftBadge");
+    if (!badge) return;
+    if (lastPublishedEnvelope === null) {
+      badge.classList.add("hidden");
+      return;
+    }
+    var dirty = currentEnvelope() !== lastPublishedEnvelope;
+    badge.classList.toggle("hidden", !dirty);
+  }
+
+  var updateDraftBadgeDebounced = debounce(updateDraftBadge, 48);
+
+  function setPublishedBaselineFromCurrentState() {
+    lastPublishedEnvelope = currentEnvelope();
+    updateDraftBadge();
+  }
+
   /**
    * Load Firestore `flat` + optional `advancedPatchJson` into dashboard `state`.
    * Maps widget keys (autoOpenDesk*, launcherStrip*) back into simple form fields.
@@ -385,7 +413,7 @@
    * Send the current state to the preview iframe (uses postMessage).
    * Includes the advanced patch JSON to cover non-flat fields.
    */
-  function pushToPreview() {
+  function pushDraftToPreview() {
     var iframe = $("#previewFrame");
     if (!iframe || !iframe.src || !iframe.contentWindow) return;
     var targetOrigin = safeOriginOf(iframe.src) || "*";
@@ -398,11 +426,11 @@
         settings: flat
       }, targetOrigin);
     } catch (e) {
-      // postMessage cannot meaningfully fail except for serialisation; ignore.
+      /* ignore */
     }
   }
 
-  var pushToPreviewDebounced = debounce(pushToPreview, 80);
+  var pushDraftDebounced = debounce(pushDraftToPreview, 48);
 
   // ---------------------------------------------------------
   // Bind inputs
@@ -412,8 +440,8 @@
     SETTINGS.forEach(function (def) {
       var input = document.querySelector("[data-setting='" + def.key + "']");
       if (!input) return;
-      var ev = (def.type === "bool") ? "change" : "input";
-      input.addEventListener(ev, function () {
+
+      function syncFromDom(immediatePreview) {
         if (def.type === "color") {
           var hex = (input.value || "").trim().toLowerCase();
           if (!isHexColor(hex)) return;
@@ -431,11 +459,23 @@
             syncImagePreviews();
           }
         }
-        pushToPreviewDebounced();
-      });
+        if (immediatePreview) pushDraftToPreview();
+        else pushDraftDebounced();
+        updateDraftBadgeDebounced();
+      }
+
+      if (def.type === "bool") {
+        input.addEventListener("change", function () { syncFromDom(true); });
+      } else if (def.type === "color") {
+        input.addEventListener("input", function () { syncFromDom(true); });
+        input.addEventListener("change", function () { syncFromDom(true); });
+      } else if (def.type === "number") {
+        input.addEventListener("input", function () { syncFromDom(true); });
+      } else {
+        input.addEventListener("input", function () { syncFromDom(false); });
+      }
     });
 
-    // Paired hex text inputs let the user type/paste a color value.
     $$(".color-hex").forEach(function (hexInput) {
       hexInput.addEventListener("input", function () {
         var key = hexInput.getAttribute("data-setting-pair");
@@ -445,7 +485,8 @@
         state[key] = v;
         var colorInput = document.querySelector("[data-setting='" + key + "']");
         if (colorInput && colorInput.value !== v) colorInput.value = v;
-        pushToPreviewDebounced();
+        pushDraftToPreview();
+        updateDraftBadgeDebounced();
       });
     });
   }
@@ -466,7 +507,8 @@
       .then(function (data) {
         hydrateStateFromServer((data && data.flat) || {}, (data && data.advancedPatchJson) || "");
         renderInputs();
-        pushToPreview();
+        pushDraftToPreview();
+        setPublishedBaselineFromCurrentState();
       });
   }
 
@@ -490,7 +532,7 @@
 
     $("#reloadSettingsBtn").addEventListener("click", function () {
       loadSavedSettings()
-        .then(function () { showToast("Reloaded saved settings.", "ok"); })
+        .then(function () { showToast("Reloaded published settings.", "ok"); })
         .catch(function (err) {
           showToast("Reload failed: " + (err && err.message ? err.message : err), "err");
         });
@@ -509,7 +551,8 @@
         method: "PUT",
         body: payload
       }).then(function () {
-        showToast("Saved live for bot \"" + bot + "\"", "ok");
+        showToast("Published live — visitors will see this for bot \"" + bot + "\"", "ok");
+        setPublishedBaselineFromCurrentState();
       }).catch(function (err) {
         showToast("Save failed: " + (err && err.message ? err.message : err), "err");
       }).then(function () {
@@ -554,13 +597,11 @@
       reloadPreview();
     });
 
-    // When the preview iframe finishes loading, re-push current settings so they
-    // re-apply (the iframe will also fetch saved settings from its own apiBase
-    // but that may not match the dashboard's unsaved edits).
+    // When the preview iframe finishes loading, push drafts repeatedly (df-messenger may boot late).
     $("#previewFrame").addEventListener("load", function () {
-      // Small delay so company.js has time to register its message handler.
-      setTimeout(pushToPreview, 350);
-      setTimeout(pushToPreview, 1200);
+      [0, 50, 200, 450, 1100].forEach(function (ms) {
+        setTimeout(pushDraftToPreview, ms);
+      });
     });
 
     if (savedUrl) reloadPreview();
