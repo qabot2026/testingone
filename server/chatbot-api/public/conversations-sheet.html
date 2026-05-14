@@ -588,11 +588,19 @@
       </div>
       <div class="tool">
         <label class="mini" for="dateFrom">From date</label>
-        <input id="dateFrom" type="date" />
+        <input
+          id="dateFrom"
+          type="date"
+          title="Filter uses the same calendar day as your sheet (ISO yyyy-mm-dd internally). Pickers may display dd/mm or mm/dd depending on browser locale."
+        />
       </div>
       <div class="tool">
         <label class="mini" for="dateTo">To date</label>
-        <input id="dateTo" type="date" />
+        <input
+          id="dateTo"
+          type="date"
+          title="Inclusive end date; compares full calendar dates, not raw cell text formatting."
+        />
       </div>
       <div class="tool">
         <label class="mini" for="sortOrder">Order</label>
@@ -721,6 +729,15 @@
           .trim()
           .toLowerCase()
           .replace(/[^a-z0-9]/g, "");
+      }
+
+      /** Collapse BOM / NBSP / narrow spaces Sheets sometimes embed inside “14 May 2026”. */
+      function normalizeSpacesForParsing(s) {
+        return String(s == null ? "" : s)
+          .replace(/\uFEFF/g, "")
+          .replace(/[\u00A0\u202F\u2007\u2009\u200A\u205F\u3000]/g, " ")
+          .replace(/\s+/g, " ")
+          .trim();
       }
 
       /** Pinned: conv date/time, name, mobile, email (match header); widths in character units */
@@ -926,7 +943,7 @@
       }
 
       function parseDateColumnToYmd(raw) {
-        var s = String(raw == null ? "" : raw).trim();
+        var s = normalizeSpacesForParsing(raw);
         if (!s) return null;
 
         var serialOnly = /^\d{5,6}(?:\.\d+)?$/.exec(s);
@@ -960,7 +977,9 @@
           return yy + "-" + pad2(mm) + "-" + pad2(dd);
         }
 
-        var longFmt = /^(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})\b/.exec(s);
+        var longFmt =
+          /^(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]+),?\s+(\d{4})\b/i.exec(s)
+          || /^(\d{1,2})\s*[\/.\-]+\s*([A-Za-z]+)\s*[\/.\-,]+\s*(\d{4})\b/i.exec(s);
         if (longFmt) {
           var d0 = parseInt(longFmt[1], 10);
           var y0 = parseInt(longFmt[3], 10);
@@ -1002,8 +1021,8 @@
 
       /** Try Date + optional Time strings from Sheet (Intl / manual), local calendar. */
       function parseConversationInstant(dateStr, timeStr) {
-        var ds = String(dateStr || "").trim();
-        var ts = String(timeStr || "").trim();
+        var ds = normalizeSpacesForParsing(dateStr || "");
+        var ts = normalizeSpacesForParsing(timeStr || "");
         if (!ds) return null;
 
         var ymd = parseDateColumnToYmd(ds);
@@ -1029,20 +1048,18 @@
       }
 
       function findCell(row, candidates) {
-        var map = {};
         var keys = Object.keys(row);
-        for (var i = 0; i < keys.length; i++) {
-          map[normKey(keys[i])] = row[keys[i]];
-        }
         for (var c = 0; c < candidates.length; c++) {
-          var nk = normKey(candidates[c]);
-          if (!(nk in map)) continue;
-          var rawv = map[nk];
-          if (rawv === undefined || rawv === null) continue;
-          if (typeof rawv === "number" && !Number.isNaN(rawv)) return String(rawv);
-          var st = String(rawv).trim();
-          if (!st) continue;
-          return String(rawv);
+          var want = normKey(candidates[c]);
+          for (var i = 0; i < keys.length; i++) {
+            if (normKey(keys[i]) !== want) continue;
+            var rawv = row[keys[i]];
+            if (rawv === undefined || rawv === null) continue;
+            if (typeof rawv === "number" && !Number.isNaN(rawv)) return String(rawv);
+            var st = String(rawv).trim();
+            if (!st) continue;
+            return normalizeSpacesForParsing(st);
+          }
         }
         return "";
       }
@@ -1070,7 +1087,8 @@
           }
           var v = row[header];
           if (v === undefined || v === null) continue;
-          var s = typeof v === "number" && !Number.isNaN(v) ? String(v) : String(v).trim();
+          var s =
+            typeof v === "number" && !Number.isNaN(v) ? String(v) : normalizeSpacesForParsing(v);
           if (!s || s.length > 240) continue;
           var ymd = parseDateColumnToYmd(s);
           if (!ymd) continue;
