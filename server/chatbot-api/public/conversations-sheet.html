@@ -3,288 +3,461 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Leads — sheet view</title>
+  <meta name="color-scheme" content="light" />
+  <title>Conversation leads · Sheet sync</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap"
+    rel="stylesheet"
+  />
   <style>
     :root {
-      --text: #111827;
-      --muted: #6b7280;
-      --border: #e5e7eb;
-      --header-bg: #f3f4f6;
-      --stripe: #fafafa;
+      --text: #0f172a;
+      --muted: #64748b;
+      --border: rgba(148, 163, 184, 0.45);
       --brand: #0d9488;
-      --accent: #ecfeff;
-      --danger: #b91c1c;
-      font-family: system-ui, Segoe UI, Roboto, sans-serif;
+      --brand-soft: rgba(13, 148, 136, 0.12);
+      --brand-strong: #0f766e;
+      --danger: #dc2626;
+      --danger-bg: #fef2f2;
+      --surface: rgba(255, 255, 255, 0.88);
+      --surface-solid: #ffffff;
+      --header-table: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
+      --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.05);
+      --shadow-md: 0 12px 40px -12px rgba(15, 23, 42, 0.12), 0 4px 16px rgba(15, 23, 42, 0.06);
+      --radius: 14px;
+      --radius-sm: 10px;
+      --font: "Plus Jakarta Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      font-family: var(--font);
     }
     * { box-sizing: border-box; }
     body {
       margin: 0;
+      min-height: 100dvh;
       color: var(--text);
-      background: #fff;
+      background-color: #eef2ff;
+      background-image:
+        radial-gradient(ellipse 120% 80% at 0% -20%, rgba(45, 212, 191, 0.18), transparent 50%),
+        radial-gradient(ellipse 90% 60% at 100% 0%, rgba(99, 102, 241, 0.12), transparent 45%),
+        linear-gradient(180deg, #f8fafc 0%, #e2e8f0 100%);
       font-size: 13px;
-      line-height: 1.35;
+      line-height: 1.45;
+      -webkit-font-smoothing: antialiased;
     }
-    .bar {
+
+    .app {
+      max-width: 1540px;
+      margin: 0 auto;
+      padding: clamp(14px, 2.5vw, 22px);
+      padding-bottom: 28px;
+    }
+
+    .topbar {
       display: flex;
       flex-wrap: wrap;
-      align-items: center;
-      gap: 8px 12px;
-      padding: 6px 10px;
-      border-bottom: 1px solid var(--border);
-      background: linear-gradient(#fff, #f9fafb);
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px 16px;
+      padding: 16px 20px;
+      margin-bottom: 14px;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      background: var(--surface);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      box-shadow: var(--shadow-md);
     }
-    .bar h1 {
+    .brand-block {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .brand-block h1 {
       margin: 0;
-      font-size: 1rem;
-      font-weight: 800;
-      color: var(--brand);
-      letter-spacing: -0.02em;
-      margin-right: 8px;
+      font-size: clamp(1.25rem, 2.8vw, 1.55rem);
+      font-weight: 700;
+      letter-spacing: -0.035em;
+      background: linear-gradient(120deg, #0f766e, #0891b2);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+      color: var(--brand-strong);
     }
+    .brand-block .sub {
+      font-size: 0.8125rem;
+      color: var(--muted);
+      font-weight: 500;
+      max-width: 34rem;
+      line-height: 1.45;
+    }
+
     details.auth {
       border: none;
       width: 100%;
+      margin-bottom: 14px;
+      padding: 0 2px;
     }
     details.auth > summary {
       cursor: pointer;
+      user-select: none;
       font-size: 0.75rem;
       font-weight: 600;
       color: var(--muted);
+      letter-spacing: 0.02em;
+      padding: 6px 0;
       list-style-position: outside;
-      padding: 4px 0;
+      transition: color 0.15s ease;
+    }
+    details.auth > summary:hover {
+      color: var(--brand-strong);
+    }
+    details.auth[open] > summary {
+      margin-bottom: 10px;
+    }
+    .auth-panel {
+      max-width: 760px;
+      padding: 16px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+      background: var(--surface-solid);
+      box-shadow: var(--shadow-sm);
     }
     .auth-inner {
       display: grid;
       grid-template-columns: 1fr auto auto auto;
-      gap: 8px;
+      gap: 10px;
       align-items: end;
-      margin-top: 6px;
     }
     @media (max-width: 680px) {
-      .auth-inner { grid-template-columns: 1fr 1fr; }
+      .auth-inner {
+        grid-template-columns: 1fr 1fr;
+      }
     }
+
     label.mini {
       display: block;
-      font-size: 0.65rem;
+      font-size: 0.68rem;
       text-transform: uppercase;
-      letter-spacing: 0.06em;
+      letter-spacing: 0.08em;
       color: var(--muted);
       font-weight: 700;
-      margin-bottom: 3px;
+      margin-bottom: 5px;
     }
     input, select {
-      padding: 4px 8px;
+      padding: 8px 12px;
       border: 1px solid var(--border);
-      border-radius: 6px;
+      border-radius: var(--radius-sm);
       font: inherit;
-      font-size: 12px;
+      font-size: 12.5px;
       width: 100%;
       max-width: 100%;
+      background: #fcfcfd;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+    }
+    input:hover, select:hover {
       background: #fff;
+      border-color: rgba(148, 163, 184, 0.65);
     }
     input:focus, select:focus {
-      outline: 2px solid rgba(13, 148, 136, 0.25);
+      outline: none;
       border-color: var(--brand);
+      box-shadow: 0 0 0 3px var(--brand-soft);
+      background: #fff;
     }
+
     button {
-      padding: 5px 10px;
-      border-radius: 6px;
+      padding: 8px 14px;
+      border-radius: var(--radius-sm);
       font: inherit;
       font-weight: 600;
-      font-size: 12px;
+      font-size: 12.5px;
       cursor: pointer;
       border: 1px solid var(--border);
-      background: #fff;
+      background: var(--surface-solid);
       white-space: nowrap;
+      transition: transform 0.12s ease, box-shadow 0.12s ease, border-color 0.15s ease;
+      box-shadow: var(--shadow-sm);
+    }
+    button:hover:not(:disabled) {
+      border-color: rgba(148, 163, 184, 0.8);
+      transform: translateY(-1px);
+    }
+    button:active:not(:disabled) {
+      transform: translateY(0);
     }
     button.primary {
-      background: linear-gradient(#14b8a6, var(--brand));
-      color: #fff;
+      background: linear-gradient(135deg, #14b8a6 0%, var(--brand) 45%, #0891b2 100%);
+      color: #f0fdfa;
+      border-color: transparent;
+      box-shadow: 0 4px 14px rgba(13, 148, 136, 0.35);
+    }
+    button.primary:hover:not(:disabled) {
+      box-shadow: 0 6px 20px rgba(13, 148, 136, 0.4);
       border-color: transparent;
     }
     button.primary:disabled {
-      opacity: 0.5;
+      opacity: 0.52;
       cursor: not-allowed;
+      transform: none;
+      box-shadow: none;
     }
     button.preset {
       font-size: 11px;
-      padding: 3px 8px;
+      padding: 6px 11px;
+      border-radius: 999px;
+      font-weight: 600;
+      background: rgba(255, 255, 255, 0.95);
     }
+    button.preset:hover:not(:disabled) {
+      border-color: var(--brand);
+      color: var(--brand-strong);
+    }
+
     .tools {
       display: flex;
       flex-wrap: wrap;
-      gap: 8px 12px;
+      gap: 12px 16px;
       align-items: end;
-      padding: 8px 10px;
-      border-bottom: 1px solid var(--border);
-      background: #fafafa;
+      padding: 16px 18px;
+      margin-bottom: 10px;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      background: var(--surface-solid);
+      box-shadow: var(--shadow-md);
     }
     .tool {
       flex: 0 1 auto;
-      min-width: 100px;
+      min-width: 104px;
     }
     .tool.grow {
-      flex: 1 1 160px;
-      min-width: 140px;
+      flex: 1 1 200px;
+      min-width: 160px;
     }
     .presets {
       display: flex;
       flex-wrap: wrap;
-      gap: 4px;
+      gap: 6px;
       align-items: flex-end;
     }
+
     #statusLine {
-      font-size: 11px;
+      font-size: 11.5px;
       color: var(--muted);
-      width: 100%;
-      margin-top: 4px;
+      margin: 0 0 12px;
+      padding: 0 6px;
+      font-weight: 500;
     }
+
     .err {
-      margin: 6px 10px;
-      padding: 6px 10px;
-      background: #fef2f2;
+      margin: 0 0 12px;
+      padding: 11px 14px;
+      background: var(--danger-bg);
       border: 1px solid #fecaca;
       color: var(--danger);
-      border-radius: 6px;
-      font-size: 12px;
+      border-radius: var(--radius-sm);
+      font-size: 12.5px;
+      font-weight: 500;
+      box-shadow: var(--shadow-sm);
     }
+
     #sheetWrap {
       overflow: auto;
-      max-height: calc(100dvh - 148px);
-      border-bottom: 1px solid var(--border);
-      background: var(--accent);
+      max-height: calc(100dvh - 200px);
+      min-height: 200px;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      background: var(--surface-solid);
+      box-shadow: var(--shadow-md);
+      scrollbar-width: thin;
+      scrollbar-color: rgba(13, 148, 136, 0.45) #f1f5f9;
     }
+    #sheetWrap::-webkit-scrollbar {
+      width: 9px;
+      height: 9px;
+    }
+    #sheetWrap::-webkit-scrollbar-thumb {
+      background: linear-gradient(180deg, rgba(13, 148, 136, 0.5), rgba(8, 145, 178, 0.5));
+      border-radius: 99px;
+    }
+    #sheetWrap::-webkit-scrollbar-track {
+      background: #f8fafc;
+      border-radius: 0 var(--radius) var(--radius) 0;
+    }
+
     table.sheet {
       border-collapse: collapse;
-      background: #fff;
+      background: var(--surface-solid);
       font-size: 11px;
-      min-width: 100%;
+      min-width: max(100%, 640px);
       table-layout: auto;
     }
     table.sheet th,
     table.sheet td {
-      border: 1px solid #cbd5e1;
-      padding: 2px 6px;
+      border: 1px solid rgba(203, 213, 225, 0.72);
+      padding: 5px 8px;
       vertical-align: top;
-      max-width: 320px;
+      max-width: 340px;
       word-break: break-word;
       white-space: pre-wrap;
-      line-height: 1.35;
+      line-height: 1.4;
       hyphens: auto;
     }
     table.sheet thead th {
       position: sticky;
       top: 0;
       z-index: 2;
-      background: var(--header-bg);
+      background: var(--header-table);
       font-weight: 700;
       text-align: left;
-      color: #334155;
-      box-shadow: 0 1px 0 var(--border);
+      font-size: 10.5px;
+      letter-spacing: 0.035em;
+      text-transform: uppercase;
+      color: #475569;
+      box-shadow: 0 1px 0 rgba(148, 163, 184, 0.6);
       white-space: nowrap;
       max-width: none;
-      padding: 4px 6px;
+      padding: 8px 8px;
     }
-    tbody tr:nth-child(even) {
-      background: var(--stripe);
+    tbody tr:nth-child(even) td {
+      background: rgba(248, 250, 252, 0.94);
     }
     tbody tr:hover td {
-      background: #eefcfb;
+      background: rgba(204, 251, 241, 0.45) !important;
     }
     table.sheet td a {
-      color: #0f766e;
+      color: var(--brand-strong);
+      font-weight: 500;
+      text-decoration: none;
+      border-bottom: 1px solid rgba(15, 118, 110, 0.25);
       word-break: break-all;
     }
+    table.sheet td a:hover {
+      border-bottom-color: var(--brand-strong);
+    }
+
     .empty {
-      padding: 28px;
+      padding: 48px 24px;
       text-align: center;
       color: var(--muted);
-      font-size: 13px;
+      font-size: 14px;
+      font-weight: 500;
     }
+
     .kbd {
-      font-family: ui-monospace, monospace;
-      font-size: 0.9em;
-      background: #f1f5f9;
-      padding: 0 5px;
-      border-radius: 4px;
+      font-family: ui-monospace, "Cascadia Code", Menlo, monospace;
+      font-size: 0.88em;
+      background: linear-gradient(180deg, #f8fafc, #f1f5f9);
+      padding: 2px 7px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      font-weight: 500;
     }
+
     .pill {
-      font-size: 10px;
-      padding: 1px 6px;
-      border-radius: 99px;
-      background: var(--accent);
-      color: var(--brand);
+      font-size: 11px;
+      padding: 5px 12px;
+      border-radius: 999px;
       font-weight: 700;
+      letter-spacing: 0.02em;
+      background: var(--brand-soft);
+      color: var(--brand-strong);
+      border: 1px solid rgba(13, 148, 136, 0.22);
+      align-self: center;
+    }
+
+    .hint-foot {
+      margin: 10px 0 0;
+      font-size: 11.5px;
+      color: var(--muted);
+      line-height: 1.5;
+      font-weight: 500;
     }
   </style>
 </head>
 <body>
-  <div class="bar">
-    <h1>Lead sheet view</h1>
-    <span class="pill" id="rowPill">&nbsp;</span>
-  </div>
-
-  <details class="auth" open id="authBox">
-    <summary>Viewer secret &mdash; hide when set</summary>
-    <div class="auth-inner" style="max-width: 720px;">
-      <div style="grid-column: 1 / -1;">
-        <label class="mini" for="secret">CONVERSATIONS_SHEET_VIEW_SECRET</label>
-        <input id="secret" type="password" autocomplete="current-password" placeholder="Paste Railway secret / Enter to load" />
+  <div class="app">
+    <header class="topbar">
+      <div class="brand-block">
+        <h1>Conversation leads</h1>
+        <span class="sub"
+          >Google Sheet mirrored here &mdash; search any column, pick a date range, or use quick presets. Table columns stay
+          in your sheet&apos;s order.</span
+        >
       </div>
-      <button type="button" id="toggleSecret">Show</button>
-      <button type="button" id="saveSecret">Save in tab</button>
-      <button type="button" class="primary" id="refreshBtn">Reload</button>
-    </div>
-    <p style="margin: 8px 0 0; font-size: 11px; color: var(--muted); max-width: 720px;">
-      Name must match <span class="kbd">CONVERSATIONS_SHEET_VIEW_SECRET</span> on Railway &mdash; redeploy after edits.
-      Table mirrors your sheet columns left-to-right. Use date range below to slice rows.
-    </p>
-  </details>
+      <span class="pill" id="rowPill">&nbsp;</span>
+    </header>
 
-  <div class="tools">
-    <div class="tool grow">
-      <label class="mini" for="filter">Contains (any column)</label>
-      <input id="filter" type="text" placeholder="Optional text filter…" autocomplete="off" />
-    </div>
-    <div class="tool">
-      <label class="mini" for="dateFrom">From date</label>
-      <input id="dateFrom" type="date" />
-    </div>
-    <div class="tool">
-      <label class="mini" for="dateTo">To date</label>
-      <input id="dateTo" type="date" />
-    </div>
-    <div class="tool">
-      <label class="mini" for="sortOrder">Order</label>
-      <select id="sortOrder">
-        <option value="sheet">Like sheet &mdash; oldest &rarr; newest</option>
-        <option value="newest">Newest first</option>
-      </select>
-    </div>
-    <div class="tool">
-      <label class="mini" for="limit">Load rows</label>
-      <select id="limit">
-        <option value="50">50</option>
-        <option value="100" selected>100</option>
-        <option value="200">200</option>
-        <option value="300">300</option>
-      </select>
-    </div>
-    <div class="presets tool" style="min-width: 200px;">
-      <span class="mini" style="width:100%; margin-bottom:2px;">Quick range</span>
-      <button type="button" class="preset" data-preset="all">Any</button>
-      <button type="button" class="preset" data-preset="today">Today</button>
-      <button type="button" class="preset" data-preset="7">7 days</button>
-      <button type="button" class="preset" data-preset="30">30 days</button>
-      <button type="button" class="preset" data-preset="clear">Clear dates</button>
-    </div>
-  </div>
-  <div id="statusLine" style="padding: 4px 10px;"></div>
+    <details class="auth" open id="authBox">
+      <summary>Authentication &amp; reload</summary>
+      <div class="auth-panel">
+        <div class="auth-inner">
+          <div style="grid-column: 1 / -1;">
+            <label class="mini" for="secret">Viewer secret</label>
+            <input
+              id="secret"
+              type="password"
+              autocomplete="current-password"
+              placeholder="CONVERSATIONS_SHEET_VIEW_SECRET from Railway &mdash; Enter to load"
+            />
+          </div>
+          <button type="button" id="toggleSecret">Show</button>
+          <button type="button" id="saveSecret">Save in tab</button>
+          <button type="button" class="primary" id="refreshBtn">Reload</button>
+        </div>
+        <p class="hint-foot">
+          Variable on Railway: <span class="kbd">CONVERSATIONS_SHEET_VIEW_SECRET</span> &mdash; redeploy after edits.
+        </p>
+      </div>
+    </details>
 
-  <div id="errBox" class="err" style="display: none;"></div>
+    <div class="tools">
+      <div class="tool grow">
+        <label class="mini" for="filter">Contains (any column)</label>
+        <input id="filter" type="text" placeholder="Filter rows…" autocomplete="off" />
+      </div>
+      <div class="tool">
+        <label class="mini" for="dateFrom">From date</label>
+        <input id="dateFrom" type="date" />
+      </div>
+      <div class="tool">
+        <label class="mini" for="dateTo">To date</label>
+        <input id="dateTo" type="date" />
+      </div>
+      <div class="tool">
+        <label class="mini" for="sortOrder">Order</label>
+        <select id="sortOrder">
+          <option value="sheet">Like sheet &mdash; oldest &rarr; newest</option>
+          <option value="newest">Newest first</option>
+        </select>
+      </div>
+      <div class="tool">
+        <label class="mini" for="limit">Load rows</label>
+        <select id="limit">
+          <option value="50">50</option>
+          <option value="100" selected>100</option>
+          <option value="200">200</option>
+          <option value="300">300</option>
+        </select>
+      </div>
+      <div class="presets tool" style="min-width: 220px;">
+        <span class="mini" style="width:100%; margin-bottom:2px;">Quick range</span>
+        <button type="button" class="preset" data-preset="all">Any</button>
+        <button type="button" class="preset" data-preset="today">Today</button>
+        <button type="button" class="preset" data-preset="7">7 days</button>
+        <button type="button" class="preset" data-preset="30">30 days</button>
+        <button type="button" class="preset" data-preset="clear">Clear dates</button>
+      </div>
+    </div>
 
-  <div id="sheetWrap">
-    <div id="convList"><div class="empty">Paste secret and Reload, or Saved secret will load automatically.</div></div>
+    <div id="statusLine"></div>
+    <div id="errBox" class="err" style="display: none;"></div>
+
+    <div id="sheetWrap">
+      <div id="convList">
+        <div class="empty">Paste your secret and tap Reload (saved secrets load automatically).</div>
+      </div>
+    </div>
   </div>
 
   <script>
