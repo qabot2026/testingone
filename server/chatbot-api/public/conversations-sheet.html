@@ -519,7 +519,7 @@
 
     .lead-stats {
       margin-bottom: 10px;
-      padding: 14px 18px;
+      padding: 12px 18px 14px;
       border-radius: var(--radius);
       border: 1px solid var(--border);
       background: var(--surface-solid);
@@ -546,39 +546,22 @@
       line-height: 1.45;
       max-width: 56rem;
     }
-    .lead-stats-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-      gap: 10px;
-    }
-    .lead-stats-card {
-      padding: 11px 13px;
-      border-radius: var(--radius-sm);
-      border: 1px solid var(--border);
-      background: linear-gradient(180deg, #fffdfb 0%, #f8fafc 100%);
-    }
-    .lead-stats-card dl {
+    .lead-stats-list {
       margin: 0;
-    }
-    .lead-stats-card dt {
-      font-size: 10px;
-      text-transform: uppercase;
-      letter-spacing: 0.07em;
-      color: var(--muted);
-      font-weight: 700;
-      margin-bottom: 4px;
-    }
-    .lead-stats-card dd {
-      margin: 0;
-      font-size: 1.0625rem;
-      font-weight: 700;
-      color: var(--text);
-      letter-spacing: -0.02em;
-    }
-    .lead-stats-card .subn {
-      margin-top: 4px;
-      font-size: 11px;
+      padding: 0 0 0 18px;
+      list-style: disc;
+      font-size: 13px;
       font-weight: 600;
+      color: var(--text);
+      line-height: 1.65;
+    }
+    .lead-stats-list li {
+      margin: 0;
+      padding: 2px 0;
+    }
+    .lead-stats-list .stat-frac {
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
       color: var(--brand-strong);
     }
     .lead-stats-foot {
@@ -674,23 +657,21 @@
       </div>
     </div>
 
+    <div id="statusLine"></div>
+    <div id="errBox" class="err" style="display: none;"></div>
+
     <section class="lead-stats" id="leadStatsWrap">
       <div class="lead-stats-head">
-        <strong>Lead capture insights</strong>
-        <button type="button" class="preset" id="leadStatsBtn">Calculate from sheet</button>
+        <strong>Lead capture (sheet scan)</strong>
+        <button type="button" class="preset" id="leadStatsBtn">Calculate</button>
       </div>
       <p class="lead-stats-meta" id="leadStatsIntro">
-        Rows with any non-empty cell count as conversations. <strong>Lead</strong> = mobile or email (or both). Mobile is detected with at least 7 digits; email requires a simple
-        <kbd class="kbd" style="font-size:10px;">user@domain.tld</kbd> shape. Date range uses the conversation date column resolved from your header row and the same timezone as Sheets
-        (<span class="kbd" style="font-size:10px;">SHEETS_CONV_DATETIME_TZ</span>). When you set From / To above, statistics use that range; leave both empty to scan all loaded tail rows (up to server cap).
+        Uses From / To dates when set (same as the table filter). <strong>Lead</strong> = mobile or email (or both): only-mobile and only-email rows both count toward lead %.
       </p>
-      <div id="leadStatsGrid" class="lead-stats-grid" hidden></div>
+      <ul id="leadStatsList" class="lead-stats-list" hidden></ul>
       <p class="lead-stats-foot" id="leadStatsFoot" hidden></p>
       <div id="leadStatsErr" class="err" style="display: none; margin-top: 10px;"></div>
     </section>
-
-    <div id="statusLine"></div>
-    <div id="errBox" class="err" style="display: none;"></div>
 
     <div id="sheetWrap">
       <div id="convList">
@@ -725,7 +706,7 @@
       var rowPill = document.getElementById("rowPill");
       var authBox = document.getElementById("authBox");
       var leadStatsBtn = document.getElementById("leadStatsBtn");
-      var leadStatsGrid = document.getElementById("leadStatsGrid");
+      var leadStatsList = document.getElementById("leadStatsList");
       var leadStatsFoot = document.getElementById("leadStatsFoot");
       var leadStatsErr = document.getElementById("leadStatsErr");
 
@@ -1499,18 +1480,8 @@
           .replace(/>/g, "&gt;");
       }
 
-      function pctOfConv(numer, denom) {
-        var d = denom || 0;
-        var n = numer || 0;
-        if (!d) return "—";
-        var p = (n * 100) / d;
-        var txt = (Math.round(p * 100) / 100).toFixed(2);
-        txt = txt.replace(/\.00$/, "").replace(/(\.\d)0$/, "$1");
-        return txt + "% of conversations";
-      }
-
       function renderLeadStats(payload) {
-        if (!leadStatsGrid) return;
+        if (!leadStatsList) return;
         showLeadStatsErr("");
         var tot = payload.totals || {};
         var rat = payload.ratios || {};
@@ -1519,49 +1490,52 @@
         var sn = payload.scan || {};
         var n = tot.conversations || 0;
         var skipped = tot.rowsSkippedNoParsableDate || 0;
+        var om = tot.onlyMobile || 0;
+        var oe = tot.onlyEmail || 0;
+        var be = tot.mobileAndEmail || 0;
+        var lc = tot.leadsCaptured || 0;
+        var frac = function (num) {
+          return escapeHtml(String(num)) + " / " + escapeHtml(String(n));
+        };
         var dateLine =
           df.applied
-            ? ("Period: " +
+            ? ("Period filtered: " +
                 (df.from || "…") +
-                " → " +
+                " — " +
                 (df.to || "…") +
-                (skipped ? " · " + skipped + " non-empty row(s) skipped (unreadable date)" : ""))
-            : "No date filter — all non-empty rows in the scanned tail (" + (sn.dataRowsConsidered || "?") + " raw row block).";
-        leadStatsGrid.hidden = false;
-        leadStatsGrid.innerHTML =
-          '<div class="lead-stats-card">' +
-          "<dl><dt>Only mobile</dt><dd>" +
-          escapeHtml(rat.onlyMobile || "0 / 0") +
-          '</dd><div class="subn">' +
-          escapeHtml(pctOfConv(tot.onlyMobile, n)) +
-          "</div></dl></div>" +
-          '<div class="lead-stats-card">' +
-          "<dl><dt>Only email</dt><dd>" +
-          escapeHtml(rat.onlyEmail || "0 / 0") +
-          '</dd><div class="subn">' +
-          escapeHtml(pctOfConv(tot.onlyEmail, n)) +
-          "</div></dl></div>" +
-          '<div class="lead-stats-card">' +
-          "<dl><dt>Mobile & email</dt><dd>" +
-          escapeHtml(rat.mobileAndEmail || "0 / 0") +
-          '</dd><div class="subn">' +
-          escapeHtml(pctOfConv(tot.mobileAndEmail, n)) +
-          "</div></dl></div>" +
-          '<div class="lead-stats-card">' +
-          "<dl><dt>Lead capture rate</dt><dd>" +
-          (rat.leadCapturePct != null ? escapeHtml(String(rat.leadCapturePct)) + "%" : "—") +
-          '</dd><div class="subn">' +
-          escapeHtml(rat.leads || "0 / 0") +
-          " captured</div></dl></div>";
+                (skipped ? " · skipped " + skipped + " row(s) with unreadable dates" : ""))
+            : "All scanned tail rows (" + (sn.dataRowsConsidered || "?") + " raw rows in block; no From/To filter).";
+        leadStatsList.hidden = false;
+        leadStatsList.innerHTML =
+          "<li><strong>Only Mobile</strong> — <span class=\"stat-frac\">" +
+          frac(om) +
+          "</span> — only mobile captured / total conversations in that period</li>" +
+          "<li><strong>Only Email</strong> — <span class=\"stat-frac\">" +
+          frac(oe) +
+          "</span> — only email captured / total conversations in that period</li>" +
+          "<li><strong>Mobile &amp; Email</strong> — <span class=\"stat-frac\">" +
+          frac(be) +
+          "</span> — mobile and email both available / total conversations in that period</li>" +
+          "<li><strong>Lead %</strong> — " +
+          (rat.leadCapturePct != null
+            ? "<span class=\"stat-frac\">" +
+              escapeHtml(String(rat.leadCapturePct)) +
+              "%</span> (<span class=\"stat-frac\">" +
+              escapeHtml(String(lc)) +
+              " / " +
+              escapeHtml(String(n)) +
+              "</span>)"
+            : "<span class=\"stat-frac\">—</span>") +
+          " — only mobile or only email also count as a lead</li>";
         if (leadStatsFoot) {
           leadStatsFoot.hidden = false;
           leadStatsFoot.textContent =
             (n +
               " conversation" +
               (n === 1 ? "" : "s") +
-              " counted. ") +
+              " in scope. ") +
             dateLine +
-            " · Columns mapped: «" +
+            " Columns: «" +
             (col.dateHeader || "?") +
             "» / «" +
             (col.mobileHeader || "?") +
