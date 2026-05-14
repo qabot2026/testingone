@@ -695,7 +695,6 @@
           plan.push({ index: i, role: role });
         }
         var byIdx = {};
-        var cumCh = 0;
         for (var p = 0; p < plan.length; p++) {
           var idx = plan[p].index;
           var role = plan[p].role;
@@ -703,15 +702,49 @@
           byIdx[idx] = {
             role: role,
             ord: p,
-            leftCh: cumCh,
             wch: wch,
             edge: p === 0,
           };
-          cumCh += wch;
         }
         return byIdx;
       }
 
+      /**
+       * Sticky horizontal offset must match real column widths (ch+borders cause ch-based left drift).
+       * Measures first body row then sets matching left in px on th/td for pinned columns.
+       */
+      function syncStickyLeftPx(tbl, stickyIndices) {
+        if (!tbl || !stickyIndices || stickyIndices.length === 0) return;
+        var bodyRow = tbl.querySelector("tbody tr");
+        var headRow = tbl.querySelector("thead tr");
+        if (!bodyRow || !headRow) return;
+        var bod = bodyRow.children;
+        var cum = 0;
+        for (var u = 0; u < stickyIndices.length; u++) {
+          var col = stickyIndices[u];
+          var leftPx = cum;
+          var cel = bod[col];
+          if (!cel) return;
+          var w = cel.getBoundingClientRect().width;
+          var th = headRow.children[col];
+          if (th) th.style.left = leftPx + "px";
+          var rows = tbl.querySelectorAll("tbody tr");
+          for (var r = 0; r < rows.length; r++) {
+            var c = rows[r].children[col];
+            if (c) c.style.left = leftPx + "px";
+          }
+          cum += w;
+        }
+      }
+
+      var stickyResizeDebounceId = 0;
+      function scheduleStickyResync(tbl) {
+        if (!tbl || !tbl._stickyColIndices || !tbl._stickyColIndices.length) return;
+        window.clearTimeout(stickyResizeDebounceId);
+        stickyResizeDebounceId = window.setTimeout(function () {
+          syncStickyLeftPx(tbl, tbl._stickyColIndices);
+        }, 50);
+      }
       /** Header: title length + 2 “char” slack (≈ pre/post space), no data-column ch clamp */
       function headerMinWidthCh(headerTitle) {
         var lbl = String(headerTitle == null ? "" : headerTitle).trim();
@@ -727,7 +760,6 @@
 
       function decorateStickyCell(el, sm, isHeader, headerTitle) {
         el.classList.add("col-sticky");
-        el.style.left = sm.leftCh + "ch";
         el.style.boxSizing = "border-box";
         el.style.zIndex = String(isHeader ? 75 + sm.ord : 35 + sm.ord);
         el.style.width = sm.wch + "ch";
@@ -1078,9 +1110,33 @@
           selectedRowSig = null;
         }
         tbl.appendChild(tbody);
+        var stickyCols = [];
+        for (var sc = 0; sc < headers.length; sc++) {
+          if (stickyMeta[sc]) stickyCols.push(sc);
+        }
+        tbl._stickyColIndices = stickyCols;
         convList.appendChild(tbl);
+        void tbl.offsetHeight;
+        syncStickyLeftPx(tbl, tbl._stickyColIndices);
+        requestAnimationFrame(function () {
+          syncStickyLeftPx(tbl, tbl._stickyColIndices);
+        });
+        if (document.fonts && document.fonts.ready) {
+          document.fonts.ready.then(function () {
+            syncStickyLeftPx(tbl, tbl._stickyColIndices);
+          });
+        }
       }
 
+      (function attachStickyResizeWatch() {
+        var sheetWrap = document.getElementById("sheetWrap");
+        if (!sheetWrap || window.ResizeObserver == null || convList._sheetStickyRo) return;
+        convList._sheetStickyRo = new ResizeObserver(function () {
+          var t = convList.querySelector("table.sheet");
+          scheduleStickyResync(t);
+        });
+        convList._sheetStickyRo.observe(sheetWrap);
+      })();
       function wireFilter() {
         filterEl.addEventListener("input", function () {
           if (lastPayload) render(lastPayload);
