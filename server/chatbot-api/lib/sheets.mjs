@@ -1907,7 +1907,7 @@ export async function probeSheetsSpreadsheetAccess() {
 
 /**
  * Staff viewer: header row + up to `maxRows` most recent data rows (sheet append adds at bottom).
- * Uses two reads: column A length, then A:R block for the tail.
+ * Bounded column-A scan (never `A:A`) so large tabs do not stall the API.
  *
  * @param {{ maxRows?: number }} [opts]
  * @returns {Promise<{ tab: string, title: string, rowCount: number, headers: string[], conversations: Record<string, string>[] }>}
@@ -1967,16 +1967,60 @@ export async function fetchConversationSheetPreview(opts = {}) {
         headers.push(key);
     }
 
+    /** Avoid `A:A` (entire column) — huge sheets stall until timeout. */
+    const hardCap = Math.min(
+        15_000,
+        Math.max(
+            250,
+            Number.parseInt(
+                String((process.env.CONVERSATIONS_SHEET_SCAN_MAX_ROWS || "").trim() || "8000"),
+                10
+            ) || 8000
+        )
+    );
+
+    /** @type {number} */
+    let capRow = hardCap;
+    try {
+        const meta = await sheets.spreadsheets.get({
+            spreadsheetId: SPREADSHEET_ID,
+            fields: "sheets.properties(title,gridProperties(rowCount))"
+        });
+        const sh = Array.isArray(meta.data.sheets) ? meta.data.sheets : [];
+        const tabKey = normalizedSheetTabKey_(tab);
+        for (let si = 0; si < sh.length; si += 1) {
+            const p = sh[si] && sh[si].properties;
+            const st = p && typeof p.title === "string" ? p.title.trim() : "";
+            if (st && normalizedSheetTabKey_(st) === tabKey) {
+                const gr = p && p.gridProperties && typeof p.gridProperties.rowCount === "number"
+                    ? p.gridProperties.rowCount
+                    : 0;
+                if (Number.isFinite(gr) && gr > 0) {
+                    capRow = Math.min(hardCap, gr);
+                }
+                break;
+            }
+        }
+    } catch {
+        /* fall back hardCap */
+    }
+
     const colAGot = await sheets.spreadsheets.values.get({
         spreadsheetId: SPREADSHEET_ID,
-        range: `${tab}!A:A`
+        range: `${tab}!A1:A${capRow}`
     });
-    const n = Math.min(
-        10_000,
-        Array.isArray(colAGot.data.values) ? colAGot.data.values.length : 0
-    );
+    /** @type {unknown[][]} */
+    const colVals = Array.isArray(colAGot.data.values) ? colAGot.data.values : [];
+    /** 1-based last row with column A populated (fallback: length if full block used). */
+    let n = 0;
+    for (let ri = colVals.length - 1; ri >= 0; ri -= 1) {
+        if (!isBlankSheetCell_(colVals[ri] && colVals[ri][0])) {
+            n = ri + 1;
+            break;
+        }
+    }
     if (n <= 1) {
-        return { tab, title, rowCount: n, headers, conversations: [] };
+        return { tab, title, rowCount: n || colVals.length, headers, conversations: [] };
     }
     const dataStart = Math.max(2, n - maxRows + 1);
     const blockGot = await sheets.spreadsheets.values.get({

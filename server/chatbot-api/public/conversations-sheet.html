@@ -234,8 +234,9 @@
         </div>
       </div>
       <p class="hint">
-        Set <span class="kbd">CONVERSATIONS_SHEET_VIEW_SECRET</span> on the API server, redeploy, then paste it here.
-        Stored only in this browser (<span class="kbd">sessionStorage</span>). Anyone with this link + secret sees lead PII — treat like a password.
+        Railway variable must be spelled exactly <span class="kbd">CONVERSATIONS_SHEET_VIEW_SECRET</span> (starts with
+        “C”). After changing variables, redeploy the service — env is read at startup.
+        Paste that same value below, click <strong>Reload from Sheet</strong> (it is not saved until you reload).
       </p>
     </section>
 
@@ -445,14 +446,23 @@
           return;
         }
         refreshBtn.disabled = true;
-        setStatus("Loading…");
+        setStatus("Calling API… (~5–30 s for large spreadsheets).");
+        var reloadLabel = refreshBtn.textContent;
+        refreshBtn.textContent = "Loading…";
+        var timedId = 0;
         try {
           var lim = parseInt(String(limitEl.value), 10) || 100;
           var url = apiBase() + "/api/conversations-sheet?limit=" + encodeURIComponent(lim);
+          var ctrl = new AbortController();
+          timedId = window.setTimeout(function () {
+            ctrl.abort();
+          }, 78000);
           var res = await fetch(url, {
             method: "GET",
             headers: { "X-Conversations-Sheet-Secret": secret },
-            cache: "no-store"
+            cache: "no-store",
+            credentials: "same-origin",
+            signal: ctrl.signal
           });
           var json = await res.json().catch(function () {
             return null;
@@ -477,10 +487,18 @@
           );
           render(json);
         } catch (e) {
-          showErr(String(e && e.message ? e.message : e));
+          if (e && e.name === "AbortError") {
+            showErr(
+              "Timed out (~78s). Ask ops to redeploy the API — sheet scans are capped so huge tabs no longer stall."
+            );
+          } else {
+            showErr("Network error: " + String(e && e.message ? e.message : e));
+          }
           setStatus("");
         } finally {
+          if (timedId) window.clearTimeout(timedId);
           refreshBtn.disabled = false;
+          refreshBtn.textContent = reloadLabel;
         }
       }
 
@@ -489,6 +507,12 @@
       });
 
       refreshBtn.addEventListener("click", load);
+
+      secretEl.addEventListener("keydown", function (ev) {
+        if (ev.key === "Enter") {
+          load();
+        }
+      });
 
       if (secretEl.value.trim()) load();
     })();
