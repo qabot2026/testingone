@@ -3952,6 +3952,28 @@ function readLauncherStripConfig(config) {
         : null;
 }
 
+/** After dashboard `postMessage` merges, DOM strip must update (toggle/text); `initializeLauncherStrip` alone skips removal when disabled. */
+function applyLauncherStripFromCompanyAdmin(dfMessenger, bubbleNode) {
+    if (!dfMessenger) {
+        return;
+    }
+    const bubble = bubbleNode || (typeof dfMessenger.querySelector === "function"
+        ? dfMessenger.querySelector("df-messenger-chat-bubble")
+        : null);
+    const ui = readCompanyUiConfig();
+    const stripConfig = readLauncherStripConfig(ui);
+    const existing = document.getElementById("dfchat-chat-launcher-strip");
+
+    if (!stripConfig || !isFeatureEnabledFromConfig(stripConfig, true)) {
+        if (existing && existing.parentNode) {
+            existing.parentNode.removeChild(existing);
+        }
+        scheduleLauncherStripsStackSync(dfMessenger);
+        return;
+    }
+    initializeLauncherStrip(dfMessenger, bubble, ui);
+}
+
 function applyLauncherStripPosition(stripElement, stripConfig) {
     if (!stripElement || !stripConfig) {
         return;
@@ -20450,6 +20472,8 @@ function dfchatApplyCompanyAdminFlatSettingsNow() {
     ensurePoweredByStrip();
     syncPoweredByStripPosition();
     scheduleComposerSpeechMicAttach(df);
+    applyLauncherStripFromCompanyAdmin(df, bubble);
+    scheduleChatInputPlaceholderRefresh(df);
     return true;
 }
 

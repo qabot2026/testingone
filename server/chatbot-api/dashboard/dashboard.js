@@ -377,22 +377,25 @@
 
   /**
    * Build a deep "advanced patch" for keys not natively handled by the widget's
-   * flat schema (currently: input placeholder).
+   * flat schema (currently: input placeholder). Always send placeholder keys so
+   * clearing the field overwrites Firestore/merged config via deep merge.
    */
   function buildAdvancedPatchJson() {
-    var patch = {};
-    if (state.inputPlaceholder) {
-      patch.common = patch.common || {};
-      patch.common.features = patch.common.features || {};
-      patch.common.features.multiLanguage = patch.common.features.multiLanguage || {};
-      // Apply to all common languages so it shows regardless of currently selected.
-      patch.common.features.multiLanguage.inputPlaceholderByLanguage = {
-        en: state.inputPlaceholder,
-        hi: state.inputPlaceholder,
-        mr: state.inputPlaceholder
-      };
-    }
-    return Object.keys(patch).length ? JSON.stringify(patch) : "";
+    var ph = state.inputPlaceholder == null ? "" : String(state.inputPlaceholder);
+    var patch = {
+      common: {
+        features: {
+          multiLanguage: {
+            inputPlaceholderByLanguage: {
+              en: ph,
+              hi: ph,
+              mr: ph
+            }
+          }
+        }
+      }
+    };
+    return JSON.stringify(patch);
   }
 
   // ---------------------------------------------------------
@@ -447,8 +450,7 @@
     var iframe = $("#previewFrame");
     if (!iframe || !iframe.src || !iframe.contentWindow) return;
     var flat = buildFlatPatch();
-    var adv = buildAdvancedPatchJson();
-    if (adv) flat.advancedPatchJson = adv;
+    flat.advancedPatchJson = buildAdvancedPatchJson();
     var msg = {
       type: "company_admin_settings",
       previewBridge: previewBridgeToken,
