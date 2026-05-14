@@ -534,6 +534,28 @@
       line-height: 1.65;
       font-variant-numeric: tabular-nums;
     }
+    .lead-stats-inner {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 18px 32px;
+      align-items: flex-start;
+      justify-content: flex-start;
+    }
+    .lead-stats-block {
+      flex: 1 1 220px;
+      min-width: min(260px, 100%);
+      margin: 0;
+      padding: 0;
+    }
+    .lead-stats-block-title {
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+      margin: 0 0 8px;
+      padding: 0;
+    }
     .lead-stats-line {
       margin: 0;
       padding: 3px 0;
@@ -1714,6 +1736,12 @@
         var om = tot.onlyMobile || 0;
         var oe = tot.onlyEmail || 0;
         var be = tot.mobileAndEmail || 0;
+        var apt = typeof tot.appointmentScheduled === "number" ? tot.appointmentScheduled : 0;
+        var cw = typeof tot.channelWeb === "number" ? tot.channelWeb : 0;
+        var cwa = typeof tot.channelWhatsapp === "number" ? tot.channelWhatsapp : 0;
+        var cinst = typeof tot.channelInstagram === "number" ? tot.channelInstagram : 0;
+        var cfb = typeof tot.channelFacebook === "number" ? tot.channelFacebook : 0;
+        var coth = typeof tot.channelOther === "number" ? tot.channelOther : 0;
         var rat = payload.ratios || {};
         var pct = rat.leadCapturePct;
         function val(x) {
@@ -1733,12 +1761,29 @@
             ? '<span class="stat-frac">' + escapeHtml(String(pct)) + "%</span>"
             : '<span class="stat-frac">—</span>';
         leadStatsList.hidden = false;
-        leadStatsList.innerHTML =
+        var leadBlk =
           row("Total conversation", val(n)) +
           row("Only Mobile", val(om)) +
           row("Only Email", val(oe)) +
           row("Mobile & Email", val(be)) +
-          row("Lead %", leadPctDisp);
+          row("Lead %", leadPctDisp) +
+          row("Appointment Scheduled", val(apt));
+        var chBlk =
+          '<div class="lead-stats-block-title">Channel wise</div>' +
+          row("Web", val(cw)) +
+          row("WhatsApp", val(cwa)) +
+          row("Instagram", val(cinst)) +
+          row("Facebook", val(cfb)) +
+          (coth > 0 ? row("Other", val(coth)) : "");
+        leadStatsList.innerHTML =
+          '<div class="lead-stats-inner">' +
+          '<div class="lead-stats-block">' +
+          leadBlk +
+          "</div>" +
+          '<div class="lead-stats-block">' +
+          chBlk +
+          "</div>" +
+          "</div>";
       }
 
       async function loadLeadStats() {

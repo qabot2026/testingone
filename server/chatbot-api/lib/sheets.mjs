@@ -610,6 +610,34 @@ function appointmentBookedSheetValue_(raw) {
 }
 
 /**
+ * Normalize “Channel” column text → lead-stats bucket (`web`, `whatsapp`, `instagram`, `facebook`, else `other`).
+ * @returns {"web"|"whatsapp"|"instagram"|"facebook"|"other"}
+ */
+function conversationChannelBucket_(raw) {
+    const s = sheetCellString_(raw).trim().toLowerCase();
+    if (!s) {
+        return "other";
+    }
+    if (/\bwhatsapp\b|(^|[\s,])wa([\s,/]|$)|whats[\s_-]*app/.test(s)) {
+        return "whatsapp";
+    }
+    if (/\binstagram\b|(^|[\s,])ig([\s,/]|$)/.test(s)) {
+        return "instagram";
+    }
+    if (/\bfacebook\b|(^|[\s,])fb([\s,/]|$)|\bmessenger\b|meta[\s_-]*business/.test(s)) {
+        return "facebook";
+    }
+    if (
+        /\bwebsite\b|^web([\s_-]|$)|^web$|\bwebchat\b|(^|[\s,])www\.|\bbrowser\b|(^|[\s,])desktop\b|\bportal\b|^online([\s_-]|$)|^online$|\binternet\b|^internet$|^site$|^www$|^cx\b/.test(
+            s
+        )
+    ) {
+        return "web";
+    }
+    return "other";
+}
+
+/**
  * Detect "Repeated" column position by header row.
  * Falls back to the default schema (column H) if not found.
  *
@@ -1369,6 +1397,18 @@ const SHEET_H_EMAIL = [
     "e_mail_address",
     "mail_id"
 ];
+const SHEET_H_CHANNEL = [
+    "channel",
+    "channels",
+    "sourcechannel",
+    "communicationchannel",
+    "chatchannel",
+    "userchannel",
+    "entrychannel",
+    "originchannel",
+    "platformchannel"
+];
+
 const SHEET_H_SESSION = [
     "sessionid",
     "session",
@@ -1383,6 +1423,18 @@ const SHEET_H_SESSION = [
     "chatsessionid",
     "sessioni_id",
     "session_id_client"
+];
+
+/** Header aliases for “Appointment booked” / scheduled (stats); default sheet column index 14 (same as ingest). */
+const SHEET_H_APPOINTMENT_BOOKED = [
+    "appointmentbooked",
+    "appointment_booked",
+    "isappointmentbooked",
+    "appointmentscheduled",
+    "appointmentstatus",
+    "bookingstatus",
+    "apptbooked",
+    "appt_booked"
 ];
 
 /** Header aliases for conversation date column (stats + period filter); default column A index 0. */
@@ -2095,8 +2147,8 @@ export async function probeSheetsSpreadsheetAccess() {
  *   timezoneNote: string,
  *   dateFilter: { applied: boolean, from: string|null, to: string|null },
  *   scan: { sheetLastRow1Based: number, dataRowsConsidered: number, scanHardCapEnv: number },
- *   columns: { dateIdx0: number, mobileIdx0: number, emailIdx0: number, dateHeader: string, mobileHeader: string, emailHeader: string },
- *   totals: { conversations: number, onlyMobile: number, onlyEmail: number, mobileAndEmail: number, neither: number, rowsSkippedNoParsableDate: number, leadsCaptured: number },
+ *   columns: { dateIdx0: number, mobileIdx0: number, emailIdx0: number, channelIdx0: number, appointmentBookedIdx0: number, dateHeader: string, mobileHeader: string, emailHeader: string, channelHeader: string, appointmentBookedHeader: string },
+ *   totals: { conversations: number, onlyMobile: number, onlyEmail: number, mobileAndEmail: number, neither: number, rowsSkippedNoParsableDate: number, leadsCaptured: number, appointmentScheduled: number, channelWeb: number, channelWhatsapp: number, channelInstagram: number, channelFacebook: number, channelOther: number },
  *   ratios: {
  *     onlyMobile: string,
  *     onlyEmail: string,
@@ -2165,6 +2217,8 @@ export async function fetchConversationLeadCaptureStats(opts = {}) {
     const dateIdx = pickHeaderIndex_(headerMap, SHEET_H_CONV_DATE_CELL, 0);
     const mobileIdx = pickHeaderIndex_(headerMap, SHEET_H_MOBILE, 3);
     const emailIdx = pickHeaderIndex_(headerMap, SHEET_H_EMAIL, 4);
+    const channelIdx = pickHeaderIndex_(headerMap, SHEET_H_CHANNEL, 5);
+    const appointmentBookedIdx = pickHeaderIndex_(headerMap, SHEET_H_APPOINTMENT_BOOKED, 14);
 
     const hardCap = Math.min(
         15_000,
@@ -2238,6 +2292,8 @@ export async function fetchConversationLeadCaptureStats(opts = {}) {
             dateIdx0: dateIdx,
             mobileIdx0: mobileIdx,
             emailIdx0: emailIdx,
+            channelIdx0: channelIdx,
+            appointmentBookedIdx0: appointmentBookedIdx,
             dateHeader: sheetCellString_(headersRaw[dateIdx])
                 ? sheetCellString_(headersRaw[dateIdx])
                 : `Column_${dateIdx + 1}`,
@@ -2246,7 +2302,13 @@ export async function fetchConversationLeadCaptureStats(opts = {}) {
                 : `Column_${mobileIdx + 1}`,
             emailHeader: sheetCellString_(headersRaw[emailIdx])
                 ? sheetCellString_(headersRaw[emailIdx])
-                : `Column_${emailIdx + 1}`
+                : `Column_${emailIdx + 1}`,
+            channelHeader: sheetCellString_(headersRaw[channelIdx])
+                ? sheetCellString_(headersRaw[channelIdx])
+                : `Column_${channelIdx + 1}`,
+            appointmentBookedHeader: sheetCellString_(headersRaw[appointmentBookedIdx])
+                ? sheetCellString_(headersRaw[appointmentBookedIdx])
+                : `Column_${appointmentBookedIdx + 1}`
         },
         totals: {
             conversations: 0,
@@ -2255,7 +2317,13 @@ export async function fetchConversationLeadCaptureStats(opts = {}) {
             mobileAndEmail: 0,
             neither: 0,
             rowsSkippedNoParsableDate: 0,
-            leadsCaptured: 0
+            leadsCaptured: 0,
+            appointmentScheduled: 0,
+            channelWeb: 0,
+            channelWhatsapp: 0,
+            channelInstagram: 0,
+            channelFacebook: 0,
+            channelOther: 0
         },
         ratios: {
             onlyMobile: "0 / 0",
@@ -2272,7 +2340,7 @@ export async function fetchConversationLeadCaptureStats(opts = {}) {
 
     const lastColIdx = Math.min(
         175,
-        Math.max(headersRaw.length - 1, dateIdx, mobileIdx, emailIdx, 17)
+        Math.max(headersRaw.length - 1, dateIdx, mobileIdx, emailIdx, channelIdx, appointmentBookedIdx, 17)
     );
     const colLetter = columnLetterFromIndex_(lastColIdx);
     const dataGot = await sheets.spreadsheets.values.get({
@@ -2287,6 +2355,12 @@ export async function fetchConversationLeadCaptureStats(opts = {}) {
     let both = 0;
     let neither = 0;
     let skippedNoDate = 0;
+    let appointmentScheduled = 0;
+    let channelWeb = 0;
+    let channelWhatsapp = 0;
+    let channelInstagram = 0;
+    let channelFacebook = 0;
+    let channelOther = 0;
 
     for (let ri = 0; ri < dataRows.length; ri += 1) {
         const cells = dataRows[ri] || [];
@@ -2323,6 +2397,26 @@ export async function fetchConversationLeadCaptureStats(opts = {}) {
         } else {
             neither += 1;
         }
+        const bookedNorm = appointmentBookedSheetValue_(sheetCellString_(cells[appointmentBookedIdx]));
+        if (bookedNorm === "Scheduled") {
+            appointmentScheduled += 1;
+        }
+        switch (conversationChannelBucket_(cells[channelIdx])) {
+            case "web":
+                channelWeb += 1;
+                break;
+            case "whatsapp":
+                channelWhatsapp += 1;
+                break;
+            case "instagram":
+                channelInstagram += 1;
+                break;
+            case "facebook":
+                channelFacebook += 1;
+                break;
+            default:
+                channelOther += 1;
+        }
     }
 
     const leadsCaptured = onlyMobile + onlyEmail + both;
@@ -2338,6 +2432,12 @@ export async function fetchConversationLeadCaptureStats(opts = {}) {
     out.totals.neither = neither;
     out.totals.rowsSkippedNoParsableDate = filterActive ? skippedNoDate : 0;
     out.totals.leadsCaptured = leadsCaptured;
+    out.totals.appointmentScheduled = appointmentScheduled;
+    out.totals.channelWeb = channelWeb;
+    out.totals.channelWhatsapp = channelWhatsapp;
+    out.totals.channelInstagram = channelInstagram;
+    out.totals.channelFacebook = channelFacebook;
+    out.totals.channelOther = channelOther;
     out.ratios.onlyMobile = rpt(onlyMobile);
     out.ratios.onlyEmail = rpt(onlyEmail);
     out.ratios.mobileAndEmail = rpt(both);
