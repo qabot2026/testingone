@@ -885,11 +885,119 @@
         return d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate());
       }
 
-      /** Try Date + optional Time strings from Sheet (Intl / manual). */
+      /** Parse sheet time fragment (12h or 24h); returns hour/minute/second fields or null. */
+      function parseTimeParts(ts) {
+        var s = String(ts || "").trim();
+        if (!s) return null;
+        var m = /^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM|am|pm)?$/.exec(s);
+        if (!m) return null;
+        var h = parseInt(m[1], 10);
+        var mi = parseInt(m[2], 10);
+        var ss = m[3] != null ? parseInt(m[3], 10) : 0;
+        var ap = m[4] ? m[4].toUpperCase() : null;
+        if (ap === "PM" && h < 12) {
+          h += 12;
+        }
+        if (ap === "AM" && h === 12) {
+          h = 0;
+        }
+        if (!ap && (h > 23 || mi > 59 || ss > 59)) {
+          return null;
+        }
+        return { h: h, mi: mi, ss: ss };
+      }
+
+      /**
+       * YYYY-MM-DD from conversation date column only (no UTC drift from Date.parse on "14 May 2026").
+       * Matches common Sheet/API strings: ISO, D/M/Y, D Mon YYYY, Mon D, YYYY.
+       */
+      function parseDateColumnToYmd(raw) {
+        var s = String(raw == null ? "" : raw).trim();
+        if (!s) return null;
+
+        var iso = /^(\d{4})-(\d{2})-(\d{2})/.exec(s);
+        if (iso) {
+          return iso[1] + "-" + iso[2] + "-" + iso[3];
+        }
+
+        var dmy = /^(\d{1,2})[/\-.](\d{1,2})[/\-.]((?:\d{2})|(?:\d{4}))\b/.exec(s);
+        if (dmy) {
+          var dd = parseInt(dmy[1], 10);
+          var mm = parseInt(dmy[2], 10);
+          var yy = parseInt(dmy[3], 10);
+          if (!isFinite(yy) || !isFinite(mm) || !isFinite(dd)) {
+            return null;
+          }
+          if (yy < 100) {
+            yy += yy >= 70 ? 1900 : 2000;
+          }
+          var cal = new Date(yy, mm - 1, dd);
+          if (cal.getFullYear() !== yy || cal.getMonth() !== mm - 1 || cal.getDate() !== dd) {
+            return null;
+          }
+          return yy + "-" + pad2(mm) + "-" + pad2(dd);
+        }
+
+        var longFmt = /^(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})\b/.exec(s);
+        if (longFmt) {
+          var d0 = parseInt(longFmt[1], 10);
+          var y0 = parseInt(longFmt[3], 10);
+          var monKey = String(longFmt[2] || "").toLowerCase().slice(0, 3);
+          var monNum =
+            { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 }[
+              monKey
+            ];
+          if (monNum && d0 >= 1 && d0 <= 31 && y0 >= 1970 && y0 <= 2100) {
+            var cal2 = new Date(y0, monNum - 1, d0);
+            if (cal2.getFullYear() !== y0 || cal2.getMonth() !== monNum - 1 || cal2.getDate() !== d0) {
+              return null;
+            }
+            return y0 + "-" + pad2(monNum) + "-" + pad2(d0);
+          }
+        }
+
+        var us = /^([A-Za-z]+)\s+(\d{1,2}),\s*(\d{4})\s*$/.exec(s);
+        if (us) {
+          var mk = String(us[1]).toLowerCase().slice(0, 3);
+          var monN = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 }[mk];
+          var dUs = parseInt(us[2], 10);
+          var yUs = parseInt(us[3], 10);
+          if (monN && dUs >= 1 && dUs <= 31 && yUs >= 1970) {
+            var cal3 = new Date(yUs, monN - 1, dUs);
+            if (cal3.getFullYear() !== yUs || cal3.getMonth() !== monN - 1 || cal3.getDate() !== dUs) {
+              return null;
+            }
+            return yUs + "-" + pad2(monN) + "-" + pad2(dUs);
+          }
+        }
+
+        var t = Date.parse(s.replace(/,/g, " "));
+        if (!isNaN(t)) {
+          return toYmdLocal(new Date(t));
+        }
+        return null;
+      }
+
+      /** Try Date + optional Time strings from Sheet (Intl / manual), local calendar. */
       function parseConversationInstant(dateStr, timeStr) {
         var ds = String(dateStr || "").trim();
         var ts = String(timeStr || "").trim();
         if (!ds) return null;
+
+        var ymd = parseDateColumnToYmd(ds);
+        if (ymd) {
+          var p = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd);
+          if (!p) return null;
+          var yy = parseInt(p[1], 10);
+          var mo = parseInt(p[2], 10) - 1;
+          var dd = parseInt(p[3], 10);
+          var tp = parseTimeParts(ts);
+          if (tp) {
+            return new Date(yy, mo, dd, tp.h, tp.mi, tp.ss);
+          }
+          return new Date(yy, mo, dd, 12, 0, 0);
+        }
+
         var cand = ds + (ts ? " " + ts : "");
         var t = Date.parse(cand);
         if (!isNaN(t)) return new Date(t);
@@ -906,17 +1014,32 @@
         }
         for (var c = 0; c < candidates.length; c++) {
           var nk = normKey(candidates[c]);
-          if (map[nk]) return String(map[nk]);
+          if (!(nk in map)) continue;
+          var rawv = map[nk];
+          if (rawv === undefined || rawv === null) continue;
+          if (typeof rawv === "number" && !Number.isNaN(rawv)) return String(rawv);
+          var st = String(rawv).trim();
+          if (!st) continue;
+          return String(rawv);
         }
         return "";
       }
 
-      /** YYYY-MM-DD for range compare, local day of conversation */
+      /** YYYY-MM-DD for date filter — uses date column directly when possible (avoids UTC slips). */
       function rowDayYmd(row) {
-        var dStr = findCell(row, ["Date", "Conv date", "Conversation date", "Datetime", "Timestamp"]);
-        var tStr = findCell(row, ["Time", "Conv time", "Conversation time"]);
+        var dStr = findCell(row, [
+          "Conv. Date",
+          "Conversation date",
+          "Conv date",
+          "Date",
+          "Datetime",
+          "Timestamp"
+        ]);
+        var ymdPick = parseDateColumnToYmd(dStr);
+        if (ymdPick) return ymdPick;
+        var tStr = findCell(row, ["Conv. Time", "Time", "Conv time", "Conversation time"]);
         var inst = parseConversationInstant(dStr, tStr);
-        return toYmdLocal(inst);
+        return inst ? toYmdLocal(inst) : null;
       }
 
       function inDateRange(ymd) {
@@ -1070,12 +1193,12 @@
 
       function compareRowsSheetLike(a, b) {
         var da = parseConversationInstant(
-          findCell(a, ["Date", "Conv date", "Conversation date", "Datetime"]),
-          findCell(a, ["Time", "Conv time"])
+          findCell(a, ["Conv. Date", "Date", "Conv date", "Conversation date", "Datetime"]),
+          findCell(a, ["Conv. Time", "Time", "Conv time", "Conversation time"])
         );
         var db = parseConversationInstant(
-          findCell(b, ["Date", "Conv date", "Conversation date", "Datetime"]),
-          findCell(b, ["Time", "Conv time"])
+          findCell(b, ["Conv. Date", "Date", "Conv date", "Conversation date", "Datetime"]),
+          findCell(b, ["Conv. Time", "Time", "Conv time", "Conversation time"])
         );
         var ta = da ? da.getTime() : 0;
         var tb = db ? db.getTime() : 0;
