@@ -2083,6 +2083,7 @@ export async function probeSheetsSpreadsheetAccess() {
 
 /**
  * Lead capture breakdown for the Sheet tab — same bounded scan tail as `/api/conversations-sheet`.
+ * **Lead (for %):** each conversation row counts as **at most one** lead: only-mobile, only-email, or mobile+email each adds 1 toward `leadsCaptured` (never 2 for the same row).
  * Rows are grouped by plausible Mobile vs Email (`@` mailbox shape, mobile = ≥7 digits).
  * Period filter compares each row's conversation-date cell to `[from, to]` (inclusive calendar days in `SHEETS_CONV_DATETIME_TZ`, default Asia/Kolkata).
  *
