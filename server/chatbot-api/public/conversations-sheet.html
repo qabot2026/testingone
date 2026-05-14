@@ -519,41 +519,21 @@
 
     .lead-stats {
       margin-bottom: 10px;
-      padding: 12px 18px 14px;
+      padding: 10px 16px;
       border-radius: var(--radius);
       border: 1px solid var(--border);
       background: var(--surface-solid);
       box-shadow: var(--shadow-md);
     }
-    .lead-stats-head {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      justify-content: space-between;
-      gap: 10px;
-      margin-bottom: 6px;
-    }
-    .lead-stats-head strong {
-      font-size: 0.9375rem;
-      font-weight: 700;
-      letter-spacing: -0.02em;
-    }
-    .lead-stats-meta {
-      margin: 0 0 12px;
-      font-size: 11px;
-      color: var(--muted);
-      font-weight: 500;
-      line-height: 1.45;
-      max-width: 56rem;
-    }
     .lead-stats-list {
       margin: 0;
-      padding: 0 0 0 18px;
-      list-style: disc;
+      padding: 0;
+      list-style: none;
       font-size: 13px;
       font-weight: 600;
       color: var(--text);
-      line-height: 1.65;
+      line-height: 1.55;
+      font-variant-numeric: tabular-nums;
     }
     .lead-stats-list li {
       margin: 0;
@@ -561,15 +541,8 @@
     }
     .lead-stats-list .stat-frac {
       font-weight: 700;
-      font-variant-numeric: tabular-nums;
       color: var(--brand-strong);
-    }
-    .lead-stats-foot {
-      margin-top: 10px;
-      font-size: 10.5px;
-      color: var(--muted);
-      font-weight: 500;
-      line-height: 1.4;
+      letter-spacing: 0.02em;
     }
   </style>
 </head>
@@ -661,16 +634,8 @@
     <div id="errBox" class="err" style="display: none;"></div>
 
     <section class="lead-stats" id="leadStatsWrap">
-      <div class="lead-stats-head">
-        <strong>Lead capture (sheet scan)</strong>
-        <button type="button" class="preset" id="leadStatsBtn">Calculate</button>
-      </div>
-      <p class="lead-stats-meta" id="leadStatsIntro">
-        Uses From / To dates when set (same as the table filter). <strong>Lead</strong> = mobile or email (or both): only-mobile and only-email rows both count toward lead %.
-      </p>
       <ul id="leadStatsList" class="lead-stats-list" hidden></ul>
-      <p class="lead-stats-foot" id="leadStatsFoot" hidden></p>
-      <div id="leadStatsErr" class="err" style="display: none; margin-top: 10px;"></div>
+      <div id="leadStatsErr" class="err" style="display: none; margin-top: 8px;"></div>
     </section>
 
     <div id="sheetWrap">
@@ -705,9 +670,7 @@
       var sortOrderEl = document.getElementById("sortOrder");
       var rowPill = document.getElementById("rowPill");
       var authBox = document.getElementById("authBox");
-      var leadStatsBtn = document.getElementById("leadStatsBtn");
       var leadStatsList = document.getElementById("leadStatsList");
-      var leadStatsFoot = document.getElementById("leadStatsFoot");
       var leadStatsErr = document.getElementById("leadStatsErr");
 
       function apiBase() {
@@ -1396,6 +1359,7 @@
         showErr("");
         if (!secret) {
           showErr("Enter viewer secret.");
+          if (leadStatsList) leadStatsList.hidden = true;
           return;
         }
         refreshBtn.disabled = true;
@@ -1429,6 +1393,7 @@
             showErr((json && json.error) || "HTTP " + res.status);
             setStatus("");
             if (pagerWrap) pagerWrap.hidden = true;
+            if (leadStatsList) leadStatsList.hidden = true;
             return;
           }
           setStatus(
@@ -1450,11 +1415,13 @@
           hadLoadedSheet = true;
           syncPagerUi(json);
           render(json);
+          void loadLeadStats();
         } catch (e) {
           if (e && e.name === "AbortError") showErr("Timed out.");
           else showErr(String(e && e.message ? e.message : e));
           setStatus("");
           if (pagerWrap) pagerWrap.hidden = true;
+          if (leadStatsList) leadStatsList.hidden = true;
         } finally {
           if (timedId) window.clearTimeout(timedId);
           refreshBtn.disabled = false;
@@ -1484,87 +1451,45 @@
         if (!leadStatsList) return;
         showLeadStatsErr("");
         var tot = payload.totals || {};
-        var rat = payload.ratios || {};
-        var col = payload.columns || {};
-        var df = payload.dateFilter || {};
-        var sn = payload.scan || {};
         var n = tot.conversations || 0;
-        var skipped = tot.rowsSkippedNoParsableDate || 0;
         var om = tot.onlyMobile || 0;
         var oe = tot.onlyEmail || 0;
         var be = tot.mobileAndEmail || 0;
         var lc = tot.leadsCaptured || 0;
-        var frac = function (num) {
-          return escapeHtml(String(num)) + " / " + escapeHtml(String(n));
-        };
-        var dateLine =
-          df.applied
-            ? ("Period filtered: " +
-                (df.from || "…") +
-                " — " +
-                (df.to || "…") +
-                (skipped ? " · skipped " + skipped + " row(s) with unreadable dates" : ""))
-            : "All scanned tail rows (" + (sn.dataRowsConsidered || "?") + " raw rows in block; no From/To filter).";
+        function f(num) {
+          return (
+            '<span class="stat-frac">' +
+            escapeHtml(String(num)) +
+            "/" +
+            escapeHtml(String(n)) +
+            "</span>"
+          );
+        }
         leadStatsList.hidden = false;
         leadStatsList.innerHTML =
-          "<li><strong>Only Mobile</strong> — <span class=\"stat-frac\">" +
-          frac(om) +
-          "</span> — only mobile captured / total conversations in that period</li>" +
-          "<li><strong>Only Email</strong> — <span class=\"stat-frac\">" +
-          frac(oe) +
-          "</span> — only email captured / total conversations in that period</li>" +
-          "<li><strong>Mobile &amp; Email</strong> — <span class=\"stat-frac\">" +
-          frac(be) +
-          "</span> — mobile and email both available / total conversations in that period</li>" +
-          "<li><strong>Lead %</strong> — " +
-          (rat.leadCapturePct != null
-            ? "<span class=\"stat-frac\">" +
-              escapeHtml(String(rat.leadCapturePct)) +
-              "%</span> (<span class=\"stat-frac\">" +
-              escapeHtml(String(lc)) +
-              " / " +
-              escapeHtml(String(n)) +
-              "</span>)"
-            : "<span class=\"stat-frac\">—</span>") +
-          " — only mobile or only email also count as a lead</li>";
-        if (leadStatsFoot) {
-          leadStatsFoot.hidden = false;
-          leadStatsFoot.textContent =
-            (n +
-              " conversation" +
-              (n === 1 ? "" : "s") +
-              " in scope. ") +
-            dateLine +
-            " Columns: «" +
-            (col.dateHeader || "?") +
-            "» / «" +
-            (col.mobileHeader || "?") +
-            "» / «" +
-            (col.emailHeader || "?") +
-            "». " +
-            (payload.timezoneNote || "") +
-            (typeof tot.neither === "number" && tot.neither > 0
-              ? " · " + tot.neither + " with no captured contact info"
-              : "");
-        }
+          "<li>Only Mobile — " +
+          f(om) +
+          "</li>" +
+          "<li>Only Email — " +
+          f(oe) +
+          "</li>" +
+          "<li>Mobile &amp; Email — " +
+          f(be) +
+          "</li>" +
+          "<li>Lead % — " +
+          f(lc) +
+          "</li>";
       }
 
       async function loadLeadStats() {
-        if (!leadStatsBtn) return;
         var secret = secretEl.value.trim();
         showLeadStatsErr("");
-        if (!secret) {
-          showLeadStatsErr("Enter viewer secret first.");
-          return;
-        }
+        if (!secret || !leadStatsList) return;
         var fromV = dateFromEl && dateFromEl.value ? dateFromEl.value.trim() : "";
         var toV = dateToEl && dateToEl.value ? dateToEl.value.trim() : "";
         var qp = [];
         if (fromV) qp.push("from=" + encodeURIComponent(fromV));
         if (toV) qp.push("to=" + encodeURIComponent(toV));
-        leadStatsBtn.disabled = true;
-        var prev = leadStatsBtn.textContent;
-        leadStatsBtn.textContent = "Scanning…";
         try {
           var url =
             apiBase() + "/api/conversations-sheet-stats" + (qp.length ? "?" + qp.join("&") : "");
@@ -1584,21 +1509,15 @@
           });
           window.clearTimeout(tid);
           if (!res.ok || !json || !json.ok) {
-            showLeadStatsErr((json && json.error) || "HTTP " + res.status);
+            if (leadStatsList) leadStatsList.hidden = true;
+            showLeadStatsErr("");
             return;
           }
           renderLeadStats(json);
         } catch (e) {
-          if (e && e.name === "AbortError") showLeadStatsErr("Stats request timed out.");
-          else showLeadStatsErr(String(e && e.message ? e.message : e));
-        } finally {
-          leadStatsBtn.disabled = false;
-          leadStatsBtn.textContent = prev;
+          if (leadStatsList) leadStatsList.hidden = true;
+          showLeadStatsErr("");
         }
-      }
-
-      if (leadStatsBtn) {
-        leadStatsBtn.addEventListener("click", loadLeadStats);
       }
 
       refreshBtn.addEventListener("click", load);
