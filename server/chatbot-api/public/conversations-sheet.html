@@ -301,6 +301,7 @@
     table.sheet tbody td {
       border: 1px solid rgba(203, 213, 225, 0.72);
       vertical-align: middle;
+      text-align: center;
       line-height: 1.28;
       white-space: nowrap;
       overflow: hidden;
@@ -336,7 +337,7 @@
       z-index: 2;
       background: var(--header-table);
       font-weight: 700;
-      text-align: left;
+      text-align: center;
       font-size: 10.5px;
       letter-spacing: 0.035em;
       text-transform: uppercase;
@@ -358,7 +359,7 @@
       background-clip: padding-box;
     }
     table.sheet tbody td.col-sticky {
-      cursor: inherit;
+      cursor: cell;
     }
     table.sheet tbody td.col-fixed-ch {
       padding-left: 6px;
@@ -388,6 +389,10 @@
     table.sheet tbody tr {
       cursor: pointer;
     }
+    table.sheet thead th.sheet-copy-tip,
+    table.sheet tbody td.sheet-copy-tip {
+      cursor: cell;
+    }
     table.sheet td a {
       color: var(--brand-strong);
       font-weight: 500;
@@ -398,7 +403,7 @@
       white-space: nowrap;
       display: inline-block;
       max-width: 100%;
-      vertical-align: bottom;
+      vertical-align: middle;
     }
     table.sheet td a:hover {
       border-bottom-color: var(--brand-strong);
@@ -546,6 +551,46 @@
 
       function apiBase() {
         return "";
+      }
+
+      /** Full sheet value for copy (preserves lines; objects → JSON string). */
+      function cellClipboardString(value) {
+        if (value === undefined || value === null) return "";
+        if (typeof value === "object") {
+          try {
+            return JSON.stringify(value);
+          } catch (e) {
+            return String(value);
+          }
+        }
+        return String(value);
+      }
+
+      function copyPlainText(txt) {
+        var t = String(txt == null ? "" : txt);
+        if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+          return navigator.clipboard.writeText(t);
+        }
+        return new Promise(function (resolve, reject) {
+          try {
+            var ta = document.createElement("textarea");
+            ta.value = t;
+            ta.setAttribute("readonly", "");
+            ta.style.position = "fixed";
+            ta.style.left = "-9999px";
+            ta.style.opacity = "0";
+            document.body.appendChild(ta);
+            ta.focus();
+            ta.select();
+            ta.setSelectionRange(0, t.length);
+            var ok = document.execCommand("copy");
+            document.body.removeChild(ta);
+            if (ok) resolve();
+            else reject(new Error("copy"));
+          } catch (e) {
+            reject(e);
+          }
+        });
       }
 
       function normKey(s) {
@@ -919,6 +964,8 @@
         for (var hi = 0; hi < headers.length; hi++) {
           var th = document.createElement("th");
           th.textContent = headers[hi];
+          th.classList.add("sheet-copy-tip");
+          th._clipboardValue = cellClipboardString(headers[hi]);
           if (stickyMeta[hi]) decorateStickyCell(th, stickyMeta[hi], true, headers[hi]);
           else decorateHeaderWidth(th, headers[hi]);
           trh.appendChild(th);
@@ -939,9 +986,12 @@
           }
           for (var ci = 0; ci < headers.length; ci++) {
             var td = document.createElement("td");
+            td.classList.add("sheet-copy-tip");
             var raw = row[headers[ci]];
+            var clip = cellClipboardString(raw);
+            td._clipboardValue = clip;
+            td.title = clip.length > 32000 ? clip.slice(0, 32000) + "… (truncated in tooltip)" : clip;
             td.appendChild(linkifyCellForTable(raw == null ? "" : raw));
-            td.title = String(raw || "").slice(0, 2000);
             if (stickyMeta[ci]) decorateStickyCell(td, stickyMeta[ci], false);
             else {
               var fwcTd = fixedWidthChFromHeader(headers[ci]);
@@ -995,6 +1045,29 @@
         if (prev) prev.classList.remove("row-selected");
         tr.classList.add("row-selected");
         selectedRowSig = sig;
+      });
+
+      convList.addEventListener("dblclick", function (ev) {
+        var cel = ev.target.closest && ev.target.closest("td.sheet-copy-tip, th.sheet-copy-tip");
+        if (!cel || !convList.contains(cel)) return;
+        var txt =
+          cel._clipboardValue !== undefined && cel._clipboardValue !== null
+            ? String(cel._clipboardValue)
+            : cel.textContent || "";
+        ev.preventDefault();
+        ev.stopPropagation();
+        copyPlainText(txt).then(
+          function () {
+            setStatus("Copied full cell value.");
+            window.clearTimeout(convList._copiedTimer);
+            convList._copiedTimer = window.setTimeout(function () {
+              setStatus("");
+            }, 2000);
+          },
+          function () {
+            setStatus("Copy failed — select text and press Ctrl+C.");
+          }
+        );
       });
 
       async function load() {
