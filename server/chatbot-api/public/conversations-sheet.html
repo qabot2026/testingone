@@ -556,6 +556,19 @@
       margin: 0 0 8px;
       padding: 0;
     }
+    .lead-stats-block-title.lead-stats-channel-title {
+      margin-top: 14px;
+    }
+    .lead-stats-secondary {
+      box-sizing: border-box;
+    }
+    @media (min-width: 720px) {
+      .lead-stats-secondary {
+        border-left: 1px solid var(--border);
+        padding-left: 20px;
+        margin-left: 4px;
+      }
+    }
     .lead-stats-line {
       margin: 0;
       padding: 3px 0;
@@ -1766,22 +1779,23 @@
           row("Only Mobile", val(om)) +
           row("Only Email", val(oe)) +
           row("Mobile & Email", val(be)) +
-          row("Lead %", leadPctDisp) +
-          row("Appointment Scheduled", val(apt));
-        var chBlk =
-          '<div class="lead-stats-block-title">Channel wise</div>' +
+          row("Lead %", leadPctDisp);
+        var aptChBlk =
+          '<div class="lead-stats-block-title">Appointments &amp; channels</div>' +
+          row("Appointment Scheduled", val(apt)) +
+          '<div class="lead-stats-block-title lead-stats-channel-title">Channel wise (conversations)</div>' +
           row("Web", val(cw)) +
           row("WhatsApp", val(cwa)) +
           row("Instagram", val(cinst)) +
           row("Facebook", val(cfb)) +
-          (coth > 0 ? row("Other", val(coth)) : "");
+          row("Other", val(coth));
         leadStatsList.innerHTML =
           '<div class="lead-stats-inner">' +
           '<div class="lead-stats-block">' +
           leadBlk +
           "</div>" +
-          '<div class="lead-stats-block">' +
-          chBlk +
+          '<div class="lead-stats-block lead-stats-secondary">' +
+          aptChBlk +
           "</div>" +
           "</div>";
       }

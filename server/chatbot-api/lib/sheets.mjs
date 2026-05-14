@@ -609,6 +609,42 @@ function appointmentBookedSheetValue_(raw) {
     return s;
 }
 
+/** Treat Sheet cell as “appointment scheduled/booked” for staff stats — wider than ingest-only normaliser. */
+function sheetAppointmentCellCountsScheduled_(raw) {
+    const cell = sheetCellString_(raw).trim();
+    if (!cell) {
+        return false;
+    }
+    if (
+        /^no$/i.test(cell)
+        || /^none$/i.test(cell)
+        || /^false$/i.test(cell)
+        || /^not\s*(scheduled|booked|yet)$/i.test(cell)
+        || /^n\/?a$/i.test(cell)
+        || /^cancel(cancel(led)?)?/i.test(cell)
+        || /^reject(ed)?$/i.test(cell)
+        || /^pending$/i.test(cell)
+        || /^0$/i.test(cell)
+    ) {
+        return false;
+    }
+    if (appointmentBookedSheetValue_(cell) === "Scheduled") {
+        return true;
+    }
+    const low = cell.toLowerCase();
+    if (/^yes$|^true$|^done$|^y$|^1$|^✓|^✔|^☑/i.test(cell)) {
+        return true;
+    }
+    if (
+        /\b(scheduled|booked)\b|appointment\s*(booked|scheduled|confirmed|fixed|set)|booking\s*(done|confirmed|complete)|\bconfirmation\b|\bconfirmed\b|consult(ation)?\s*(booked|scheduled)|slot\s*(reserved|booked)|^completed$/i.test(
+            low
+        )
+    ) {
+        return true;
+    }
+    return false;
+}
+
 /**
  * Normalize “Channel” column text → lead-stats bucket (`web`, `whatsapp`, `instagram`, `facebook`, else `other`).
  * @returns {"web"|"whatsapp"|"instagram"|"facebook"|"other"}
@@ -628,7 +664,7 @@ function conversationChannelBucket_(raw) {
         return "facebook";
     }
     if (
-        /\bwebsite\b|^web([\s_-]|$)|^web$|\bwebchat\b|(^|[\s,])www\.|\bbrowser\b|(^|[\s,])desktop\b|\bportal\b|^online([\s_-]|$)|^online$|\binternet\b|^internet$|^site$|^www$|^cx\b/.test(
+        /\bwebsite\b|^web([\s_-]|$)|^web$|\bwebchat\b|\bwebview\b|^inappwebview|(^|[\s,])www\.|\bbrowser\b|(^|[\s,])desktop\b|\bportal\b|^online([\s_-]|$)|^online$|\binternet\b|^internet$|^site$|^www$|^cx\b|^sse\b|^widget\b|^embed(ded)?\b|^hosted\b|^organic\b|^direct\b/.test(
             s
         )
     ) {
@@ -1400,6 +1436,7 @@ const SHEET_H_EMAIL = [
 const SHEET_H_CHANNEL = [
     "channel",
     "channels",
+    "chatsource",
     "sourcechannel",
     "communicationchannel",
     "chatchannel",
@@ -1432,10 +1469,62 @@ const SHEET_H_APPOINTMENT_BOOKED = [
     "isappointmentbooked",
     "appointmentscheduled",
     "appointmentstatus",
-    "bookingstatus",
-    "apptbooked",
-    "appt_booked"
+    "appointmentbookingstatus",
+    "appointmentconfirmation",
+    "consultbooked",
+    "consultscheduled",
+    "appointmentdone",
+    "apptstatus",
+    "apptbooking",
+    "apptscheduled",
+    "consultbooking",
+    "bookedappointment",
+    "bookingdone"
 ];
+
+/**
+ * Infer “appointment booked / scheduled?” column — ignore pure date/time headers.
+ *
+ * @param {Record<string, number>} headerMap
+ * @param {unknown[]} headersRaw
+ * @param {number} fallbackIdx
+ * @returns {number}
+ */
+function pickAppointmentStatsColumnIdx_(headerMap, headersRaw, fallbackIdx) {
+    for (let a = 0; a < SHEET_H_APPOINTMENT_BOOKED.length; a += 1) {
+        const nk = normalizedHeaderKey_(SHEET_H_APPOINTMENT_BOOKED[a]);
+        if (nk && headerMap[nk] !== undefined) {
+            return headerMap[nk];
+        }
+    }
+    const denyKeys = [
+        "appointmentdate",
+        "appointmenttime",
+        "appointmentdatetime",
+        "appttime",
+        "apptdate",
+        "appointmentday",
+        "dayofappointment",
+        "selectedappointmentdate",
+        "appointmentpickeddate",
+        "dateofappointment"
+    ];
+    const deny = new Set(denyKeys.map((x) => normalizedHeaderKey_(x)));
+    for (let i = 0; i < headersRaw.length; i += 1) {
+        const k = normalizedHeaderKey_(sheetCellString_(headersRaw[i]));
+        if (!k || deny.has(k)) {
+            continue;
+        }
+        if (
+            /appointment/.test(k)
+            && /(book|schedul|confirm|consult|booking|ticket|completed|reserved|reservedflag|chk|tick)/.test(k)
+            && !/^(only)?date|^daytime$|^timestamp$/.test(k)
+        ) {
+            return i;
+        }
+    }
+    return fallbackIdx;
+}
 
 /** Header aliases for conversation date column (stats + period filter); default column A index 0. */
 const SHEET_H_CONV_DATE_CELL = [
@@ -2218,7 +2307,7 @@ export async function fetchConversationLeadCaptureStats(opts = {}) {
     const mobileIdx = pickHeaderIndex_(headerMap, SHEET_H_MOBILE, 3);
     const emailIdx = pickHeaderIndex_(headerMap, SHEET_H_EMAIL, 4);
     const channelIdx = pickHeaderIndex_(headerMap, SHEET_H_CHANNEL, 5);
-    const appointmentBookedIdx = pickHeaderIndex_(headerMap, SHEET_H_APPOINTMENT_BOOKED, 14);
+    const appointmentBookedIdx = pickAppointmentStatsColumnIdx_(headerMap, headersRaw, 14);
 
     const hardCap = Math.min(
         15_000,
@@ -2397,8 +2486,7 @@ export async function fetchConversationLeadCaptureStats(opts = {}) {
         } else {
             neither += 1;
         }
-        const bookedNorm = appointmentBookedSheetValue_(sheetCellString_(cells[appointmentBookedIdx]));
-        if (bookedNorm === "Scheduled") {
+        if (sheetAppointmentCellCountsScheduled_(cells[appointmentBookedIdx])) {
             appointmentScheduled += 1;
         }
         switch (conversationChannelBucket_(cells[channelIdx])) {
