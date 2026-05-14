@@ -3137,7 +3137,14 @@ app.get(PATHNAME_CONVERSATIONS_SHEET_JSON, async (req, res) => {
                 maxRows = n;
             }
         }
-        const payload = await fetchConversationSheetPreview({ maxRows });
+        let offset = 0;
+        if (req.query && req.query.offset != null) {
+            const o = Number.parseInt(String(req.query.offset), 10);
+            if (Number.isFinite(o) && o >= 0 && o <= 500_000) {
+                offset = o;
+            }
+        }
+        const payload = await fetchConversationSheetPreview({ maxRows, offset });
         return res.status(200).json({ ok: true, ...payload });
     } catch (e) {
         const msg = e && /** @type {{ message?: string }} */ (e).message ? String(e.message) : String(e);

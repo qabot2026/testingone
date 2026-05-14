@@ -494,6 +494,28 @@
       line-height: 1.5;
       font-weight: 500;
     }
+
+    .pager-tool {
+      min-width: 200px;
+    }
+    .pager-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 6px;
+    }
+    #pageJump {
+      min-width: 88px;
+      max-width: min(260px, 42vw);
+    }
+    .pager-hint {
+      display: block;
+      margin-top: 5px;
+      font-size: 10.5px;
+      color: var(--muted);
+      font-weight: 500;
+      line-height: 1.35;
+    }
   </style>
 </head>
 <body>
@@ -561,6 +583,15 @@
           <option value="300">300</option>
         </select>
       </div>
+      <div class="tool pager-tool" id="pagerWrap" hidden>
+        <label class="mini">Pages (older sheets)</label>
+        <div class="pager-row">
+          <button type="button" class="preset" id="pagerNewer">⟨ Newer</button>
+          <select id="pageJump" title="Jump to page"></select>
+          <button type="button" class="preset" id="pagerOlder">Older ⟩</button>
+        </div>
+        <span class="pager-hint" id="pagerHint"></span>
+      </div>
       <div class="presets tool" style="min-width: 220px;">
         <span class="mini" style="width:100%; margin-bottom:2px;">Quick range</span>
         <button type="button" class="preset" data-preset="all">Any</button>
@@ -590,6 +621,11 @@
       var filterEl = document.getElementById("filter");
       var limitEl = document.getElementById("limit");
       var refreshBtn = document.getElementById("refreshBtn");
+      var pagerWrap = document.getElementById("pagerWrap");
+      var pagerNewer = document.getElementById("pagerNewer");
+      var pagerOlder = document.getElementById("pagerOlder");
+      var pageJump = document.getElementById("pageJump");
+      var pagerHint = document.getElementById("pagerHint");
       var statusLine = document.getElementById("statusLine");
       var copyToastEl = document.getElementById("copyToast");
       var copyToastHideTimer = 0;
@@ -986,6 +1022,9 @@
 
       var lastPayload = null;
       var selectedRowSig = null;
+      var sheetOffset = 0;
+      var hadLoadedSheet = false;
+      var ignorePageJumpChange = false;
 
       function rowSignature(row, hdrs) {
         var parts = [];
@@ -1156,8 +1195,93 @@
         sortOrderEl.addEventListener("change", function () {
           if (lastPayload) render(lastPayload);
         });
+        limitEl.addEventListener("change", function () {
+          sheetOffset = 0;
+          if (hadLoadedSheet && secretEl.value.trim()) load();
+        });
       }
       wireFilter();
+
+      function syncPagerUi(json) {
+        if (!pagerWrap || !pageJump || !pagerHint || !pagerNewer || !pagerOlder) return;
+        if (!json || json.totalDataRows == null || json.limit == null) {
+          pagerWrap.hidden = true;
+          return;
+        }
+        var total = Number(json.totalDataRows) || 0;
+        var lim = Number(json.limit) || parseInt(String(limitEl.value), 10) || 100;
+        var off = Number(json.offset) || 0;
+        if (total < 1) {
+          pagerWrap.hidden = true;
+          return;
+        }
+        var totalPages = Math.max(1, Math.ceil(total / lim));
+        var curPage = Math.min(totalPages, Math.max(1, Math.floor(off / lim) + 1));
+        if (totalPages <= 1 && !json.hasOlder && !json.hasNewer) {
+          pagerWrap.hidden = true;
+          return;
+        }
+        pagerWrap.hidden = false;
+        pagerNewer.disabled = !json.hasNewer;
+        pagerOlder.disabled = !json.hasOlder;
+        ignorePageJumpChange = true;
+        try {
+          pageJump.innerHTML = "";
+          var maxList = Math.min(totalPages, 500);
+          for (var p = 1; p <= maxList; p++) {
+            var opt = document.createElement("option");
+            opt.value = String(p);
+            opt.textContent = p === 1 ? "1 (newest)" : String(p);
+            pageJump.appendChild(opt);
+          }
+          if (totalPages > maxList) {
+            var skip = document.createElement("option");
+            skip.disabled = true;
+            skip.value = "";
+            skip.textContent = "… +" + (totalPages - maxList) + " pages";
+            pageJump.appendChild(skip);
+          }
+          if (curPage > maxList) {
+            var here = document.createElement("option");
+            here.value = String(curPage);
+            here.textContent = String(curPage) + " (current)";
+            pageJump.appendChild(here);
+          }
+          pageJump.value = String(curPage);
+          if (pageJump.value !== String(curPage)) {
+            var one = document.createElement("option");
+            one.value = String(curPage);
+            one.textContent = String(curPage);
+            pageJump.appendChild(one);
+            pageJump.value = String(curPage);
+          }
+        } finally {
+          ignorePageJumpChange = false;
+        }
+        pagerHint.textContent =
+          "Page " + curPage + " of " + totalPages + " · ~" + total + " rows in tab · " + lim + " per page";
+      }
+
+      pagerNewer.addEventListener("click", function () {
+        if (pagerNewer.disabled) return;
+        var lim = parseInt(String(limitEl.value), 10) || 100;
+        sheetOffset = Math.max(0, sheetOffset - lim);
+        load();
+      });
+      pagerOlder.addEventListener("click", function () {
+        if (pagerOlder.disabled) return;
+        var lim = parseInt(String(limitEl.value), 10) || 100;
+        sheetOffset = sheetOffset + lim;
+        load();
+      });
+      pageJump.addEventListener("change", function () {
+        if (ignorePageJumpChange) return;
+        var lim = parseInt(String(limitEl.value), 10) || 100;
+        var pg = parseInt(String(pageJump.value), 10);
+        if (!Number.isFinite(pg) || pg < 1) return;
+        sheetOffset = (pg - 1) * lim;
+        load();
+      });
 
       convList.addEventListener("click", function (ev) {
         if (ev.target.closest && ev.target.closest("a")) return;
@@ -1209,7 +1333,12 @@
         var timedId = 0;
         try {
           var lim = parseInt(String(limitEl.value), 10) || 100;
-          var url = apiBase() + "/api/conversations-sheet?limit=" + encodeURIComponent(lim);
+          var url =
+            apiBase() +
+            "/api/conversations-sheet?limit=" +
+            encodeURIComponent(lim) +
+            "&offset=" +
+            encodeURIComponent(sheetOffset);
           var ctrl = new AbortController();
           timedId = window.setTimeout(function () {
             ctrl.abort();
@@ -1227,6 +1356,7 @@
           if (!res.ok || !json || !json.ok) {
             showErr((json && json.error) || "HTTP " + res.status);
             setStatus("");
+            if (pagerWrap) pagerWrap.hidden = true;
             return;
           }
           setStatus(
@@ -1238,13 +1368,21 @@
               (json.rowCount || "?") +
               " rows tall · loaded " +
               (json.conversations || []).length +
-              " recent lead row(s)."
+              " row(s) on this page" +
+              (typeof json.offset === "number" && json.offset > 0
+                ? " (offset " + json.offset + ")"
+                : "") +
+              "."
           );
+          sheetOffset = Number(json.offset) || 0;
+          hadLoadedSheet = true;
+          syncPagerUi(json);
           render(json);
         } catch (e) {
           if (e && e.name === "AbortError") showErr("Timed out.");
           else showErr(String(e && e.message ? e.message : e));
           setStatus("");
+          if (pagerWrap) pagerWrap.hidden = true;
         } finally {
           if (timedId) window.clearTimeout(timedId);
           refreshBtn.disabled = false;

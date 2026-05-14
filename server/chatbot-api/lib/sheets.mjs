@@ -1909,8 +1909,8 @@ export async function probeSheetsSpreadsheetAccess() {
  * Staff viewer: header row + up to `maxRows` most recent data rows (sheet append adds at bottom).
  * Bounded column-A scan (never `A:A`) so large tabs do not stall the API.
  *
- * @param {{ maxRows?: number }} [opts]
- * @returns {Promise<{ tab: string, title: string, rowCount: number, headers: string[], conversations: Record<string, string>[] }>}
+ * @param {{ maxRows?: number, offset?: number }} [opts]
+ * @returns {Promise<{ tab: string, title: string, rowCount: number, headers: string[], conversations: Record<string, string>[], offset: number, limit: number, hasOlder: boolean, hasNewer: boolean, totalDataRows: number }>}
  */
 export async function fetchConversationSheetPreview(opts = {}) {
     if (!SPREADSHEET_ID) {
@@ -2020,12 +2020,48 @@ export async function fetchConversationSheetPreview(opts = {}) {
         }
     }
     if (n <= 1) {
-        return { tab, title, rowCount: n || colVals.length, headers, conversations: [] };
+        return {
+            tab,
+            title,
+            rowCount: n || colVals.length,
+            headers,
+            conversations: [],
+            offset: 0,
+            limit: maxRows,
+            hasOlder: false,
+            hasNewer: false,
+            totalDataRows: 0
+        };
     }
-    const dataStart = Math.max(2, n - maxRows + 1);
+    const totalDataRows = Math.max(0, n - 1);
+    let offset = Number.parseInt(String(opts.offset !== undefined ? opts.offset : 0), 10);
+    if (!Number.isFinite(offset) || offset < 0) {
+        offset = 0;
+    }
+    /** Skip this many rows from the bottom (newest); page = offset ÷ limit. */
+    const maxOffset = Math.max(0, n - 2);
+    if (offset > maxOffset) {
+        offset = maxOffset;
+    }
+    const dataEnd = n - offset;
+    if (dataEnd < 2) {
+        return {
+            tab,
+            title,
+            rowCount: n,
+            headers,
+            conversations: [],
+            offset,
+            limit: maxRows,
+            hasOlder: false,
+            hasNewer: offset > 0,
+            totalDataRows
+        };
+    }
+    const dataStart = Math.max(2, dataEnd - maxRows + 1);
     const blockGot = await sheets.spreadsheets.values.get({
         spreadsheetId: SPREADSHEET_ID,
-        range: `${tab}!A${dataStart}:R${n}`
+        range: `${tab}!A${dataStart}:R${dataEnd}`
     });
     const rawRows = Array.isArray(blockGot.data.values) ? blockGot.data.values : [];
     /** @type {Record<string, string>[]} */
@@ -2043,6 +2079,19 @@ export async function fetchConversationSheetPreview(opts = {}) {
             conversations.push(o);
         }
     }
-    return { tab, title, rowCount: n, headers, conversations };
+    const hasOlder = dataStart > 2;
+    const hasNewer = offset > 0;
+    return {
+        tab,
+        title,
+        rowCount: n,
+        headers,
+        conversations,
+        offset,
+        limit: maxRows,
+        hasOlder,
+        hasNewer,
+        totalDataRows
+    };
 }
 
