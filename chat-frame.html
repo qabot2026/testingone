@@ -139,7 +139,9 @@
       function isAllowedAdminOrigin(origin) {
         if (origin === window.location.origin) return true;
         var admin = window.COMPANY_ADMIN_PREVIEW_ORIGIN;
-        return typeof admin === "string" && admin && origin === admin;
+        if (typeof admin !== "string") return false;
+        admin = admin.trim();
+        return !!admin && origin === admin;
       }
 
       window.addEventListener("message", function (ev) {

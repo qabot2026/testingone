@@ -414,23 +414,35 @@
    * Includes the advanced patch JSON to cover non-flat fields.
    */
   function pushDraftToPreview() {
+    readInputs();
     var iframe = $("#previewFrame");
     if (!iframe || !iframe.src || !iframe.contentWindow) return;
-    var targetOrigin = safeOriginOf(iframe.src) || "*";
     var flat = buildFlatPatch();
     var adv = buildAdvancedPatchJson();
     if (adv) flat.advancedPatchJson = adv;
+    var msg = { type: "company_admin_settings", settings: flat };
     try {
-      iframe.contentWindow.postMessage({
-        type: "company_admin_settings",
-        settings: flat
-      }, targetOrigin);
+      var origin = safeOriginOf(iframe.src);
+      if (origin) {
+        iframe.contentWindow.postMessage(msg, origin);
+      }
+      /* Always send with * as well: some browsers/embeds resolve iframe.src differently;
+         chat-frame still checks ev.origin === admin dashboard origin. */
+      iframe.contentWindow.postMessage(msg, "*");
     } catch (e) {
       /* ignore */
     }
   }
 
-  var pushDraftDebounced = debounce(pushDraftToPreview, 48);
+  /** Extra paint tick so color sliders feel instant in WebKit. */
+  function pushDraftToPreviewTwice() {
+    pushDraftToPreview();
+    requestAnimationFrame(function () {
+      requestAnimationFrame(pushDraftToPreview);
+    });
+  }
+
+  var pushDraftDebounced = debounce(pushDraftToPreview, 28);
 
   // ---------------------------------------------------------
   // Bind inputs
@@ -459,7 +471,7 @@
             syncImagePreviews();
           }
         }
-        if (immediatePreview) pushDraftToPreview();
+        if (immediatePreview) pushDraftToPreviewTwice();
         else pushDraftDebounced();
         updateDraftBadgeDebounced();
       }
@@ -485,7 +497,7 @@
         state[key] = v;
         var colorInput = document.querySelector("[data-setting='" + key + "']");
         if (colorInput && colorInput.value !== v) colorInput.value = v;
-        pushDraftToPreview();
+        pushDraftToPreviewTwice();
         updateDraftBadgeDebounced();
       });
     });
@@ -507,7 +519,7 @@
       .then(function (data) {
         hydrateStateFromServer((data && data.flat) || {}, (data && data.advancedPatchJson) || "");
         renderInputs();
-        pushDraftToPreview();
+        pushDraftToPreviewTwice();
         setPublishedBaselineFromCurrentState();
       });
   }
@@ -599,8 +611,8 @@
 
     // When the preview iframe finishes loading, push drafts repeatedly (df-messenger may boot late).
     $("#previewFrame").addEventListener("load", function () {
-      [0, 50, 200, 450, 1100].forEach(function (ms) {
-        setTimeout(pushDraftToPreview, ms);
+      [0, 30, 90, 180, 400, 900, 1600].forEach(function (ms) {
+        setTimeout(pushDraftToPreviewTwice, ms);
       });
     });
 

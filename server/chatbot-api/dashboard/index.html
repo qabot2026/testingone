@@ -10,203 +10,202 @@
 <body>
 
   <section id="mainView" class="main-view">
-    <header class="topbar">
-      <div class="topbar-left">
-        <div class="brand-block">
-          <strong class="brand-title">Customize chatbot</strong>
-          <span class="brand-sub muted">Preview updates instantly · Publish when ready</span>
-        </div>
-        <span class="topbar-sep" aria-hidden="true"></span>
-        <label class="botid-label">
-          Bot id
-          <input id="botIdInput" type="text" spellcheck="false" autocomplete="off" title="Each bot has its own saved look" />
-        </label>
-        <button type="button" class="btn ghost small" id="reloadSettingsBtn" title="Discard drafts and load published settings">Reload published</button>
-      </div>
-      <div class="topbar-right">
-        <span id="draftBadge" class="badge badge-warn hidden" title="Visitors still see the last published version">Unpublished changes</span>
-        <button type="button" class="btn primary btn-publish" id="saveBtn">Make live</button>
-      </div>
-    </header>
-
     <div class="layout">
-      <!-- LEFT: settings -->
-      <aside class="settings-pane" aria-label="UI and UX settings">
-        <h1 class="page-heading">UI / UX</h1>
-        <p class="settings-intro-text muted page-intro">The preview on the right shows your edits <strong>right away</strong> (draft only). Click <strong>Make live</strong> when you want real visitors to see it.</p>
-
-        <nav class="settings-nav" aria-label="Jump to section">
-          <a href="#sec-colors">Colors</a>
-          <a href="#sec-icons">Icons</a>
-          <a href="#sec-switches">Switches</a>
-          <a href="#sec-input">Placeholder</a>
-          <a href="#sec-autoopen">Auto-open</a>
-          <a href="#sec-header">Header</a>
-          <a href="#sec-strip">Bubble strip</a>
-        </nav>
-
-        <section class="settings-section" id="sec-colors">
-          <h2 class="settings-section-title">Colors</h2>
-          <div class="card-grid">
-            <div class="field-card">
-              <label for="chatbotPrimaryColor">Chatbot window color</label>
-              <div class="color-row">
-                <input id="chatbotPrimaryColor" data-setting="chatbotPrimaryColor" type="color" aria-label="Chatbot window color" />
-                <input class="color-hex" data-setting-pair="chatbotPrimaryColor" type="text" maxlength="7" placeholder="#0369a1" />
-              </div>
-            </div>
-            <div class="field-card">
-              <label for="userMessageText">User message text color</label>
-              <div class="color-row">
-                <input id="userMessageText" data-setting="userMessageText" type="color" />
-                <input class="color-hex" data-setting-pair="userMessageText" type="text" maxlength="7" />
-              </div>
-            </div>
-            <div class="field-card">
-              <label for="userMessageBg">User message background color</label>
-              <div class="color-row">
-                <input id="userMessageBg" data-setting="userMessageBg" type="color" />
-                <input class="color-hex" data-setting-pair="userMessageBg" type="text" maxlength="7" />
-              </div>
-            </div>
-            <div class="field-card">
-              <label for="botMessageText">Bot message text color</label>
-              <div class="color-row">
-                <input id="botMessageText" data-setting="botMessageText" type="color" />
-                <input class="color-hex" data-setting-pair="botMessageText" type="text" maxlength="7" />
-              </div>
-            </div>
-            <div class="field-card">
-              <label for="botMessageBg">Bot message background color</label>
-              <div class="color-row">
-                <input id="botMessageBg" data-setting="botMessageBg" type="color" />
-                <input class="color-hex" data-setting-pair="botMessageBg" type="text" maxlength="7" />
-              </div>
-            </div>
+      <!-- LEFT: chatbot settings only (header + scroll + fixed publish bar) -->
+      <aside class="settings-pane" aria-label="Chatbot look and feel">
+        <header class="settings-pane-head">
+          <div class="settings-pane-head-row">
+            <h1 class="page-heading">UI / UX</h1>
+            <p class="settings-pane-tagline muted">Draft preview on the right updates as you edit.</p>
           </div>
-        </section>
+          <div class="settings-pane-controls">
+            <label class="botid-label botid-label-grow">
+              Bot id
+              <input id="botIdInput" type="text" spellcheck="false" autocomplete="off" title="Saved look per bot" />
+            </label>
+            <button type="button" class="btn ghost small" id="reloadSettingsBtn" title="Load published settings from server">Reload published</button>
+          </div>
+        </header>
 
-        <section class="settings-section" id="sec-icons">
-          <h2 class="settings-section-title">Icons</h2>
-          <p class="settings-section-hint muted">Paste a public HTTPS link to your image (PNG or SVG ~64–128px).</p>
-          <div class="card-stack">
-            <div class="field-card field-card-wide">
-              <label for="chatIconUrl">Change bubble icon image</label>
-              <div class="url-preview-row">
-                <input id="chatIconUrl" data-setting="chatIconUrl" type="url" placeholder="https://…/bubble.png" />
-                <div class="img-thumb-wrap" aria-hidden="true">
-                  <img id="chatIconPreview" class="img-thumb" alt="" />
+        <div class="settings-pane-scroll">
+          <nav class="settings-nav" aria-label="Jump to section">
+            <a href="#sec-colors">Colors</a>
+            <a href="#sec-icons">Icons</a>
+            <a href="#sec-switches">Switches</a>
+            <a href="#sec-input">Placeholder</a>
+            <a href="#sec-autoopen">Auto-open</a>
+            <a href="#sec-header">Header</a>
+            <a href="#sec-strip">Bubble strip</a>
+          </nav>
+
+          <section class="settings-section" id="sec-colors">
+            <h2 class="settings-section-title">Colors</h2>
+            <div class="card-grid">
+              <div class="field-card">
+                <label for="chatbotPrimaryColor">Chatbot window color</label>
+                <div class="color-row">
+                  <input id="chatbotPrimaryColor" data-setting="chatbotPrimaryColor" type="color" aria-label="Chatbot window color" />
+                  <input class="color-hex" data-setting-pair="chatbotPrimaryColor" type="text" maxlength="7" placeholder="#0369a1" />
+                </div>
+              </div>
+              <div class="field-card">
+                <label for="userMessageText">User message text color</label>
+                <div class="color-row">
+                  <input id="userMessageText" data-setting="userMessageText" type="color" />
+                  <input class="color-hex" data-setting-pair="userMessageText" type="text" maxlength="7" />
+                </div>
+              </div>
+              <div class="field-card">
+                <label for="userMessageBg">User message background color</label>
+                <div class="color-row">
+                  <input id="userMessageBg" data-setting="userMessageBg" type="color" />
+                  <input class="color-hex" data-setting-pair="userMessageBg" type="text" maxlength="7" />
+                </div>
+              </div>
+              <div class="field-card">
+                <label for="botMessageText">Bot message text color</label>
+                <div class="color-row">
+                  <input id="botMessageText" data-setting="botMessageText" type="color" />
+                  <input class="color-hex" data-setting-pair="botMessageText" type="text" maxlength="7" />
+                </div>
+              </div>
+              <div class="field-card">
+                <label for="botMessageBg">Bot message background color</label>
+                <div class="color-row">
+                  <input id="botMessageBg" data-setting="botMessageBg" type="color" />
+                  <input class="color-hex" data-setting-pair="botMessageBg" type="text" maxlength="7" />
                 </div>
               </div>
             </div>
-            <div class="field-card field-card-wide">
-              <label for="chatTitleIconUrl">Change header icon image</label>
-              <div class="url-preview-row">
-                <input id="chatTitleIconUrl" data-setting="chatTitleIconUrl" type="url" placeholder="https://…/header.png" />
-                <div class="img-thumb-wrap" aria-hidden="true">
-                  <img id="headerIconPreview" class="img-thumb" alt="" />
+          </section>
+
+          <section class="settings-section" id="sec-icons">
+            <h2 class="settings-section-title">Icons</h2>
+            <p class="settings-section-hint muted">Public HTTPS image URL (PNG or SVG ~64–128px).</p>
+            <div class="card-stack">
+              <div class="field-card field-card-wide">
+                <label for="chatIconUrl">Change bubble icon image</label>
+                <div class="url-preview-row">
+                  <input id="chatIconUrl" data-setting="chatIconUrl" type="url" placeholder="https://…/bubble.png" />
+                  <div class="img-thumb-wrap" aria-hidden="true">
+                    <img id="chatIconPreview" class="img-thumb" alt="" />
+                  </div>
+                </div>
+              </div>
+              <div class="field-card field-card-wide">
+                <label for="chatTitleIconUrl">Change header icon image</label>
+                <div class="url-preview-row">
+                  <input id="chatTitleIconUrl" data-setting="chatTitleIconUrl" type="url" placeholder="https://…/header.png" />
+                  <div class="img-thumb-wrap" aria-hidden="true">
+                    <img id="headerIconPreview" class="img-thumb" alt="" />
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-        </section>
+          </section>
 
-        <section class="settings-section" id="sec-switches">
-          <h2 class="settings-section-title">Features</h2>
-          <div class="toggle-list">
-            <div class="toggle-row">
-              <div class="toggle-row-text">
-                <span class="toggle-label">Voice (speech-to-text) mic</span>
-                <span class="toggle-desc muted">Enable / disable</span>
+          <section class="settings-section" id="sec-switches">
+            <h2 class="settings-section-title">Features</h2>
+            <div class="toggle-list">
+              <div class="toggle-row">
+                <div class="toggle-row-text">
+                  <span class="toggle-label">Voice (speech-to-text) mic</span>
+                  <span class="toggle-desc muted">On / off</span>
+                </div>
+                <label class="switch"><input type="checkbox" data-setting="enableMic" /><span class="slider"></span></label>
               </div>
-              <label class="switch"><input type="checkbox" data-setting="enableMic" /><span class="slider"></span></label>
-            </div>
-            <div class="toggle-row">
-              <div class="toggle-row-text">
-                <span class="toggle-label">Restart chat button</span>
-                <span class="toggle-desc muted">Enable / disable</span>
+              <div class="toggle-row">
+                <div class="toggle-row-text">
+                  <span class="toggle-label">Restart chat button</span>
+                  <span class="toggle-desc muted">On / off</span>
+                </div>
+                <label class="switch"><input type="checkbox" data-setting="enableRestart" /><span class="slider"></span></label>
               </div>
-              <label class="switch"><input type="checkbox" data-setting="enableRestart" /><span class="slider"></span></label>
-            </div>
-            <div class="toggle-row">
-              <div class="toggle-row-text">
-                <span class="toggle-label">Multi-language</span>
-                <span class="toggle-desc muted">Enable / disable</span>
+              <div class="toggle-row">
+                <div class="toggle-row-text">
+                  <span class="toggle-label">Multi-language</span>
+                  <span class="toggle-desc muted">On / off</span>
+                </div>
+                <label class="switch"><input type="checkbox" data-setting="enableMultiLanguage" /><span class="slider"></span></label>
               </div>
-              <label class="switch"><input type="checkbox" data-setting="enableMultiLanguage" /><span class="slider"></span></label>
-            </div>
-            <div class="toggle-row">
-              <div class="toggle-row-text">
-                <span class="toggle-label">“Powered by” logo</span>
-                <span class="toggle-desc muted">Enable / disable</span>
+              <div class="toggle-row">
+                <div class="toggle-row-text">
+                  <span class="toggle-label">“Powered by” logo</span>
+                  <span class="toggle-desc muted">On / off</span>
+                </div>
+                <label class="switch"><input type="checkbox" data-setting="enablePoweredBy" /><span class="slider"></span></label>
               </div>
-              <label class="switch"><input type="checkbox" data-setting="enablePoweredBy" /><span class="slider"></span></label>
             </div>
-          </div>
-        </section>
+          </section>
 
-        <section class="settings-section" id="sec-input">
-          <h2 class="settings-section-title">Input box</h2>
-          <div class="field-card field-card-wide">
-            <label for="inputPlaceholder">Input box placeholder</label>
-            <input id="inputPlaceholder" data-setting="inputPlaceholder" type="text" placeholder="Type your message…" />
-          </div>
-        </section>
-
-        <section class="settings-section" id="sec-autoopen">
-          <h2 class="settings-section-title">Auto-open chat</h2>
-          <div class="toggle-list">
-            <div class="toggle-row">
-              <div class="toggle-row-text">
-                <span class="toggle-label">Auto-open chatbot</span>
-                <span class="toggle-desc muted">Enable / disable</span>
-              </div>
-              <label class="switch"><input type="checkbox" data-setting="autoOpenEnabled" /><span class="slider"></span></label>
-            </div>
-          </div>
-          <div class="field-card field-card-wide field-card-tight">
-            <label for="autoOpenSeconds">Open the chat window after (seconds)</label>
-            <input id="autoOpenSeconds" data-setting="autoOpenSeconds" type="number" min="0" step="1" placeholder="5" />
-          </div>
-        </section>
-
-        <section class="settings-section" id="sec-header">
-          <h2 class="settings-section-title">Header text</h2>
-          <div class="card-stack">
+          <section class="settings-section" id="sec-input">
+            <h2 class="settings-section-title">Input box</h2>
             <div class="field-card field-card-wide">
-              <label for="headerTitle">Header title</label>
-              <input id="headerTitle" data-setting="headerTitle" type="text" placeholder="Your bot name" />
+              <label for="inputPlaceholder">Input box placeholder</label>
+              <input id="inputPlaceholder" data-setting="inputPlaceholder" type="text" placeholder="Type your message…" />
             </div>
-            <div class="field-card field-card-wide">
-              <label for="headerSubtitle">Header subtitle</label>
-              <input id="headerSubtitle" data-setting="headerSubtitle" type="text" placeholder="We are online to assist you" />
-            </div>
-          </div>
-        </section>
+          </section>
 
-        <section class="settings-section" id="sec-strip">
-          <h2 class="settings-section-title">Bubble strip</h2>
-          <p class="settings-section-hint muted">Small teaser next to the bubble before the chat opens.</p>
-          <div class="toggle-list">
-            <div class="toggle-row">
-              <div class="toggle-row-text">
-                <span class="toggle-label">Bubble strip</span>
-                <span class="toggle-desc muted">Enable / disable</span>
+          <section class="settings-section" id="sec-autoopen">
+            <h2 class="settings-section-title">Auto-open chat</h2>
+            <div class="toggle-list">
+              <div class="toggle-row">
+                <div class="toggle-row-text">
+                  <span class="toggle-label">Auto-open chatbot</span>
+                  <span class="toggle-desc muted">On / off</span>
+                </div>
+                <label class="switch"><input type="checkbox" data-setting="autoOpenEnabled" /><span class="slider"></span></label>
               </div>
-              <label class="switch"><input type="checkbox" data-setting="bubbleStripEnabled" /><span class="slider"></span></label>
             </div>
-          </div>
-          <div class="field-card field-card-wide field-card-tight">
-            <label for="bubbleStripText">Bubble strip message</label>
-            <input id="bubbleStripText" data-setting="bubbleStripText" type="text" placeholder="Hi! Need help?" />
-          </div>
-        </section>
+            <div class="field-card field-card-wide field-card-tight">
+              <label for="autoOpenSeconds">Open the chat window after (seconds)</label>
+              <input id="autoOpenSeconds" data-setting="autoOpenSeconds" type="number" min="0" step="1" placeholder="5" />
+            </div>
+          </section>
 
-        <p class="settings-footer-note muted"><strong>Make live</strong> saves to the server for this Bot id. <strong>Reload published</strong> resets the form to what is live on the server.</p>
+          <section class="settings-section" id="sec-header">
+            <h2 class="settings-section-title">Header text</h2>
+            <div class="card-stack">
+              <div class="field-card field-card-wide">
+                <label for="headerTitle">Header title</label>
+                <input id="headerTitle" data-setting="headerTitle" type="text" placeholder="Your bot name" />
+              </div>
+              <div class="field-card field-card-wide">
+                <label for="headerSubtitle">Header subtitle</label>
+                <input id="headerSubtitle" data-setting="headerSubtitle" type="text" placeholder="We are online to assist you" />
+              </div>
+            </div>
+          </section>
+
+          <section class="settings-section" id="sec-strip">
+            <h2 class="settings-section-title">Bubble strip</h2>
+            <p class="settings-section-hint muted">Teaser beside the bubble before open.</p>
+            <div class="toggle-list">
+              <div class="toggle-row">
+                <div class="toggle-row-text">
+                  <span class="toggle-label">Bubble strip</span>
+                  <span class="toggle-desc muted">On / off</span>
+                </div>
+                <label class="switch"><input type="checkbox" data-setting="bubbleStripEnabled" /><span class="slider"></span></label>
+              </div>
+            </div>
+            <div class="field-card field-card-wide field-card-tight">
+              <label for="bubbleStripText">Bubble strip message</label>
+              <input id="bubbleStripText" data-setting="bubbleStripText" type="text" placeholder="Hi! Need help?" />
+            </div>
+          </section>
+
+          <p class="settings-footer-note muted">Visitors only see updates after you use <strong>Make live</strong> below.</p>
+        </div>
+
+        <footer class="settings-pane-actions" aria-label="Publish">
+          <span id="draftBadge" class="badge badge-warn badge-block hidden" title="Not saved for visitors yet">Unpublished changes</span>
+          <button type="button" class="btn primary btn-publish btn-publish-wide" id="saveBtn">Make live</button>
+        </footer>
       </aside>
 
-      <!-- RIGHT: preview -->
-      <section class="preview-pane" aria-label="Live chat preview">
+      <!-- RIGHT: preview only -->
+      <section class="preview-pane" aria-label="Draft chat preview">
         <header class="preview-bar">
           <div class="preview-title-wrap">
             <strong class="preview-title">Draft preview</strong>
@@ -222,11 +221,11 @@
           <iframe id="previewFrame" title="Chat preview" sandbox="allow-scripts allow-forms allow-popups allow-same-origin"></iframe>
           <div class="preview-empty" id="previewEmpty">
             <h3>Paste preview URL</h3>
-            <p class="muted">Use your hosted <code>chat-frame.html</code> address, then <strong>Reload</strong>. Edits on the left show here right away.</p>
+            <p class="muted">Host must use the latest <code>chat-frame.html</code> (with <code>adminOrigin</code>). Then edits here apply instantly.</p>
           </div>
         </div>
         <footer class="preview-foot muted">
-          This panel always mirrors your edits. Only <strong>Make live</strong> updates what visitors get from the API.
+          Embeds on your site load published settings until you <strong>Make live</strong>.
         </footer>
       </section>
     </div>
