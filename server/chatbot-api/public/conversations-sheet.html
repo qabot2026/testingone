@@ -335,6 +335,22 @@
       max-width: none;
       padding: 8px 8px;
     }
+    /** Pinned lead columns (date / time / name / mobile / email): left + z-index set in JS */
+    table.sheet thead th.col-sticky,
+    table.sheet tbody td.col-sticky {
+      position: sticky;
+      box-sizing: border-box;
+      padding-left: 6px;
+      padding-right: 6px;
+      box-shadow: 1px 0 0 rgba(203, 213, 225, 0.9);
+    }
+    table.sheet thead th.col-sticky {
+      background: var(--header-table);
+      background-clip: padding-box;
+    }
+    table.sheet tbody td.col-sticky {
+      cursor: inherit;
+    }
     tbody tr:nth-child(odd) td {
       background: var(--row-odd);
     }
@@ -353,38 +369,8 @@
     tbody tr.row-selected:hover td {
       background: color-mix(in srgb, var(--row-selected) 92%, var(--row-selected-ring)) !important;
     }
-    /** Sticky row label column so horizontal scroll keeps context with selection */
-    table.sheet thead th:first-child,
-    table.sheet tbody td:first-child {
-      position: sticky;
-      left: 0;
-      z-index: 1;
-      min-width: 232px;
-      max-width: 380px;
-      width: auto;
-      box-shadow: 1px 0 0 rgba(203, 213, 225, 0.85);
-    }
-    table.sheet thead th:first-child {
-      z-index: 3;
-    }
-    tbody tr:nth-child(odd) td:first-child {
-      background: var(--row-odd);
-    }
-    tbody tr:nth-child(even) td:first-child {
-      background: var(--row-even);
-    }
-    tbody tr:nth-child(odd):hover:not(.row-selected) td:first-child {
-      background: color-mix(in srgb, var(--row-hover) 55%, var(--row-odd)) !important;
-    }
-    tbody tr:nth-child(even):hover:not(.row-selected) td:first-child {
-      background: color-mix(in srgb, var(--row-hover) 52%, var(--row-even)) !important;
-    }
-    tbody tr.row-selected td:first-child {
-      background: var(--row-selected) !important;
-      box-shadow: inset 4px 0 0 var(--row-selected-ring), 1px 0 0 rgba(203, 213, 225, 0.85);
-    }
-    tbody tr.row-selected:hover td:first-child {
-      background: color-mix(in srgb, var(--row-selected) 92%, var(--row-selected-ring)) !important;
+    tbody tr.row-selected td.stk-edge {
+      box-shadow: inset 4px 0 0 var(--row-selected-ring), 1px 0 0 rgba(203, 213, 225, 0.9);
     }
     table.sheet tbody tr {
       cursor: pointer;
@@ -554,6 +540,76 @@
           .trim()
           .toLowerCase()
           .replace(/[^a-z0-9]/g, "");
+      }
+
+      /** Pinned: conv date/time, name, mobile, email (match header); widths in character units */
+      var STICKY_WIDTH_CH = { date: 12, time: 12, name: 16, mobile: 15, email: 25 };
+
+      function stickyLeadColumnRole(headerTitle) {
+        var nk = normKey(headerTitle);
+        if (!nk) return null;
+        if (nk === "email" || nk === "emailaddress" || nk === "mail") return "email";
+        if (
+          nk === "mobile" ||
+          nk === "mobileno" ||
+          nk === "phonenumber" ||
+          nk === "phone" ||
+          nk === "cell" ||
+          nk === "contactnumber"
+        )
+          return "mobile";
+        if (nk === "name" || nk === "customername" || nk === "fullname" || nk === "leadname" || nk === "username")
+          return "name";
+        if (nk === "time" || nk === "convtime" || nk === "conversationtime") return "time";
+        if (
+          nk === "date" ||
+          nk === "convdate" ||
+          nk === "conversationdate" ||
+          nk === "conversationsdate" ||
+          nk === "datetime" ||
+          nk === "timestamp"
+        )
+          return "date";
+        return null;
+      }
+
+      /** First matching column each role, left→right → cumulative sticky left offsets */
+      function buildStickyMeta(headers) {
+        var picked = {};
+        var plan = [];
+        for (var i = 0; i < headers.length; i++) {
+          var role = stickyLeadColumnRole(headers[i]);
+          if (!role || picked[role]) continue;
+          picked[role] = true;
+          plan.push({ index: i, role: role });
+        }
+        var byIdx = {};
+        var cumCh = 0;
+        for (var p = 0; p < plan.length; p++) {
+          var idx = plan[p].index;
+          var role = plan[p].role;
+          var wch = STICKY_WIDTH_CH[role];
+          byIdx[idx] = {
+            role: role,
+            ord: p,
+            leftCh: cumCh,
+            wch: wch,
+            edge: p === 0,
+          };
+          cumCh += wch;
+        }
+        return byIdx;
+      }
+
+      function decorateStickyCell(el, sm, isHeader) {
+        el.classList.add("col-sticky");
+        el.style.left = sm.leftCh + "ch";
+        el.style.width = sm.wch + "ch";
+        el.style.minWidth = sm.wch + "ch";
+        el.style.maxWidth = sm.wch + "ch";
+        el.style.boxSizing = "border-box";
+        el.style.zIndex = String(isHeader ? 75 + sm.ord : 35 + sm.ord);
+        if (sm.edge && !isHeader) el.classList.add("stk-edge");
       }
 
       function pad2(n) {
@@ -795,11 +851,13 @@
 
         var tbl = document.createElement("table");
         tbl.className = "sheet";
+        var stickyMeta = buildStickyMeta(headers);
         var thead = document.createElement("thead");
         var trh = document.createElement("tr");
         for (var hi = 0; hi < headers.length; hi++) {
           var th = document.createElement("th");
           th.textContent = headers[hi];
+          if (stickyMeta[hi]) decorateStickyCell(th, stickyMeta[hi], true);
           trh.appendChild(th);
         }
         thead.appendChild(trh);
@@ -821,6 +879,7 @@
             var raw = row[headers[ci]];
             td.appendChild(linkifyCellForTable(raw == null ? "" : raw));
             td.title = String(raw || "").slice(0, 2000);
+            if (stickyMeta[ci]) decorateStickyCell(td, stickyMeta[ci], false);
             tr.appendChild(td);
           }
           tbody.appendChild(tr);
