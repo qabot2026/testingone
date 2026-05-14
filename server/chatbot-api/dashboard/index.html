@@ -21,8 +21,10 @@
           <div class="settings-pane-controls">
             <label class="botid-label botid-label-grow">
               Bot id
-              <input id="botIdInput" type="text" spellcheck="false" autocomplete="off" title="Saved look per bot" />
+              <input id="botIdInput" type="text" spellcheck="false" autocomplete="off" placeholder="0001"
+                title="Must match embed ?botid= (e.g. company-loader.js?botid=0001). Each id has its own Firestore doc." />
             </label>
+            <p class="botid-hint muted" id="botidHint">Publishing with <strong>default</strong> does not affect a site that embeds <code>?botid=0001</code>. Open this page as <code>/dashboard/?botid=0001</code> or type the same id here before <strong>Make live</strong>.</p>
             <button type="button" class="btn ghost small" id="reloadSettingsBtn" title="Load published settings from server">Reload published</button>
           </div>
         </header>

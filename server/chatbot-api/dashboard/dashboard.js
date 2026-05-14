@@ -603,8 +603,22 @@
 
   function bindTopbar() {
     var botInput = $("#botIdInput");
+    var urlBot = "";
+    try {
+      var qp = new URLSearchParams(window.location.search || "");
+      urlBot = (qp.get("botid") || "").trim().toLowerCase().replace(/[^a-z0-9._-]/g, "").slice(0, 64);
+    } catch (eUrl) { /* ignore */ }
     var initialBot = "default";
-    try { initialBot = localStorage.getItem(LS_BOTID) || "default"; } catch (e) { /* ignore */ }
+    try {
+      if (urlBot) {
+        initialBot = urlBot;
+        try {
+          localStorage.setItem(LS_BOTID, initialBot);
+        } catch (eLs) { /* ignore */ }
+      } else {
+        initialBot = localStorage.getItem(LS_BOTID) || "default";
+      }
+    } catch (e) { /* ignore */ }
     botInput.value = initialBot;
 
     botInput.addEventListener("change", function () {
@@ -640,7 +654,11 @@
         method: "PUT",
         body: payload
       }).then(function () {
-        showToast("Published live — visitors will see this for bot \"" + bot + "\"", "ok");
+        var pub = "/api/public/widget-settings?botid=" + encodeURIComponent(bot);
+        showToast(
+          "Published for bot \"" + bot + "\". Check GET " + pub + " — flat should not be {}.",
+          "ok"
+        );
         setPublishedBaselineFromCurrentState();
         reloadPreview();
       }).catch(function (err) {
