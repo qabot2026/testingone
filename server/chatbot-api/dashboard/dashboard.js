@@ -433,9 +433,14 @@
     }
     previewBridgeToken = makePreviewBridgeToken();
     var sep = url.indexOf("?") >= 0 ? "&" : "?";
+    var apiOrigin = "";
+    try {
+      apiOrigin = window.location.origin || "";
+    } catch (e0) { /* ignore */ }
     var withParams = url + sep + "adminOrigin=" + encodeURIComponent(window.location.origin)
       + "&previewBridge=" + encodeURIComponent(previewBridgeToken)
       + "&botid=" + encodeURIComponent(currentBotId())
+      + (apiOrigin ? "&apiBase=" + encodeURIComponent(apiOrigin) : "")
       + "&v=" + Date.now();
     iframe.src = withParams;
     empty.classList.add("hidden");
@@ -681,11 +686,55 @@
   // Boot
   // ---------------------------------------------------------
 
+  /** On narrow layouts, scrolling away from the settings column then back should show published values, not stale drafts. */
+  function bindDiscardDraftWhenReturningToSettingsPane() {
+    if (typeof window.IntersectionObserver === "undefined") return;
+    var aside = document.querySelector(".settings-pane");
+    if (!aside) return;
+    var occluded = false;
+    var mq = window.matchMedia ? window.matchMedia("(max-width: 900px)") : null;
+    function narrow() {
+      return !mq || mq.matches;
+    }
+    var obs = new IntersectionObserver(
+      function (entries) {
+        if (!narrow()) {
+          occluded = false;
+          return;
+        }
+        var e = entries[0];
+        if (!e) return;
+        if (e.intersectionRatio < 0.12) {
+          occluded = true;
+          return;
+        }
+        if (occluded && e.isIntersecting && e.intersectionRatio > 0.35) {
+          occluded = false;
+          if (lastPublishedEnvelope !== null && currentEnvelope() !== lastPublishedEnvelope) {
+            loadSavedSettings()
+              .then(function () {
+                showToast("Showing published settings (draft was not saved).", "ok");
+              })
+              .catch(function (err) {
+                showToast("Could not reload published settings: " + (err && err.message ? err.message : err), "err");
+              })
+              .then(function () {
+                reloadPreview();
+              });
+          }
+        }
+      },
+      { threshold: [0, 0.12, 0.35, 1] }
+    );
+    obs.observe(aside);
+  }
+
   function boot() {
     bindTopbar();
     bindPreview();
     bindTabs();
     bindSettingsInputs();
+    bindDiscardDraftWhenReturningToSettingsPane();
     renderInputs();
 
     loadSavedSettings()
@@ -695,6 +744,18 @@
       .then(function () {
         reloadPreview();
       });
+
+    window.addEventListener("pageshow", function (ev) {
+      if (ev && ev.persisted) {
+        loadSavedSettings()
+          .catch(function (err) {
+            showToast("Could not reload settings: " + (err && err.message ? err.message : err), "err");
+          })
+          .then(function () {
+            reloadPreview();
+          });
+      }
+    });
   }
 
   if (document.readyState === "loading") {

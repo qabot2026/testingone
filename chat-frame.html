@@ -15,7 +15,16 @@
       var b = p.get("botid");
       if (b) window.COMPANY_EMBED_BOT_ID = b.trim();
       var api = (p.get("apiBase") || "").trim();
-      if (api) window.COMPANY_API_BASE_URL = api;
+      if (api) {
+        window.COMPANY_API_BASE_URL = api;
+      } else {
+        try {
+          var mt = document.querySelector('meta[name="dfchat-api-base-url"]')
+            || document.querySelector('meta[name="company-api-base-url"]');
+          var mc = mt && mt.content ? String(mt.content).trim() : "";
+          if (mc) window.COMPANY_API_BASE_URL = mc;
+        } catch (e1) { /* ignore */ }
+      }
       var hostPage = (p.get("hostPage") || "").trim();
       if (hostPage) window.COMPANY_EMBED_PARENT_URL = hostPage;
       // Optional: explicit cross-origin source allowed to push live settings (admin dashboard preview).
@@ -227,7 +236,17 @@
           ) {
             return;
           }
-          var apiBase = (window.COMPANY_API_BASE_URL || "").replace(/\/+$/, "");
+          var apiBase = "";
+          try {
+            if (typeof window.COMPANY_API_BASE_URL === "string" && window.COMPANY_API_BASE_URL.trim()) {
+              apiBase = window.COMPANY_API_BASE_URL.replace(/\/+$/, "");
+            } else {
+              var m = document.querySelector('meta[name="dfchat-api-base-url"]')
+                || document.querySelector('meta[name="company-api-base-url"]');
+              var c = m && m.content ? String(m.content).trim().replace(/\/+$/, "") : "";
+              apiBase = c;
+            }
+          } catch (e2) { /* ignore */ }
           if (!apiBase) return;
           var botid = (window.COMPANY_EMBED_BOT_ID || "").trim() || "default";
           var url = apiBase + "/api/public/widget-settings?botid=" + encodeURIComponent(botid);
