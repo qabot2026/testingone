@@ -691,9 +691,17 @@
               " and reload the iframe.";
             var gh = putResp && putResp.githubPublish;
             if (gh && !gh.skipped && !gh.error && gh.repo) {
-              msg += " GitHub file updated (" + gh.repo + " / " + gh.path + ") — deploy your site to go live there.";
+              msg +=
+                " GitHub file updated (" +
+                gh.repo +
+                " / " +
+                gh.path +
+                ") — redeploy Pages (or merge) so the repo file is served next to chat-frame.";
             } else if (gh && gh.error) {
               msg += " GitHub mirror failed: " + gh.error;
+            } else if (gh && gh.skipped && gh.reason === "not_configured") {
+              msg +=
+                " GitHub mirror off: add GITHUB_WIDGET_PUBLISH_TOKEN, OWNER, REPO on the API server to commit published-widget-settings.json.";
             }
             showToast(msg, gh && gh.error ? "err" : "ok");
             if (!(gh && gh.error)) {

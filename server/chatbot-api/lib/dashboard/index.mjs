@@ -800,7 +800,8 @@ export function mountDashboardRoutes(app) {
                 !isResendConfigured_() || trim_(process.env.RESEND_API_KEY).startsWith("re_"),
             preview_url_default: trim_(process.env.DASHBOARD_PREVIEW_URL) || null,
             widget_settings_backend: wsBackend,
-            widget_settings_file: wsBackend === "file" ? widgetSettingsFilePath_() : null
+            widget_settings_file: wsBackend === "file" ? widgetSettingsFilePath_() : null,
+            github_widget_publish_configured: githubWidgetPublishConfigured_()
         });
     });
 
