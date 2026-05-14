@@ -3048,7 +3048,8 @@ app.get("/reception-schedule", (_req, res) => {
 
 /** Staff: visual inbox of chat leads from Google Sheet (protect with CONVERSATIONS_SHEET_VIEW_SECRET). */
 app.get("/conversations-sheet", (_req, res) => {
-    res.setHeader("Cache-Control", "no-store");
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+    res.setHeader("Pragma", "no-cache");
     res.sendFile(CONVERSATIONS_SHEET_HTML, (err) => {
         if (err) {
             console.error("[chatbot-api] conversations-sheet:", err.message);

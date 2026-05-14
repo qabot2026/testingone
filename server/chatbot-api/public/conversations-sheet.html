@@ -528,16 +528,15 @@
     .lead-stats-list {
       margin: 0;
       padding: 0;
-      list-style: none;
       font-size: 13px;
       font-weight: 600;
       color: var(--text);
-      line-height: 1.55;
+      line-height: 1.65;
       font-variant-numeric: tabular-nums;
     }
-    .lead-stats-list li {
+    .lead-stats-line {
       margin: 0;
-      padding: 2px 0;
+      padding: 3px 0;
     }
     .lead-stats-list .stat-frac {
       font-weight: 700;
@@ -634,7 +633,7 @@
     <div id="errBox" class="err" style="display: none;"></div>
 
     <section class="lead-stats" id="leadStatsWrap">
-      <ul id="leadStatsList" class="lead-stats-list" hidden></ul>
+      <div id="leadStatsList" class="lead-stats-list" hidden aria-live="polite"></div>
       <div id="leadStatsErr" class="err" style="display: none; margin-top: 8px;"></div>
     </section>
 
@@ -1460,27 +1459,26 @@
         function val(x) {
           return '<span class="stat-frac">' + escapeHtml(String(x)) + "</span>";
         }
+        function row(label, valHtml) {
+          return (
+            '<div class="lead-stats-line">' +
+            escapeHtml(label) +
+            " = " +
+            valHtml +
+            "</div>"
+          );
+        }
         var leadPctDisp =
           n > 0 && pct != null && Number.isFinite(Number(pct))
             ? '<span class="stat-frac">' + escapeHtml(String(pct)) + "%</span>"
             : '<span class="stat-frac">—</span>';
         leadStatsList.hidden = false;
         leadStatsList.innerHTML =
-          "<li>Total conversation = " +
-          val(n) +
-          "</li>" +
-          "<li>Only Mobile = " +
-          val(om) +
-          "</li>" +
-          "<li>Only Email = " +
-          val(oe) +
-          "</li>" +
-          "<li>Mobile &amp; Email = " +
-          val(be) +
-          "</li>" +
-          "<li>Lead % = " +
-          leadPctDisp +
-          "</li>";
+          row("Total conversation", val(n)) +
+          row("Only Mobile", val(om)) +
+          row("Only Email", val(oe)) +
+          row("Mobile & Email", val(be)) +
+          row("Lead %", leadPctDisp);
       }
 
       async function loadLeadStats() {
