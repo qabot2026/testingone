@@ -24,6 +24,11 @@
       --surface: rgba(255, 255, 255, 0.88);
       --surface-solid: #ffffff;
       --header-table: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
+      --row-odd: #ffffff;
+      --row-even: #e9eff7;
+      --row-hover: #d5f5f0;
+      --row-selected: #fdecc8;
+      --row-selected-ring: #d97706;
       --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.05);
       --shadow-md: 0 12px 40px -12px rgba(15, 23, 42, 0.12), 0 4px 16px rgba(15, 23, 42, 0.06);
       --radius: 14px;
@@ -288,20 +293,31 @@
     table.sheet {
       border-collapse: collapse;
       background: var(--surface-solid);
-      font-size: 11px;
-      min-width: max(100%, 640px);
+      font-size: 11.5px;
+      min-width: max(100%, 720px);
       table-layout: auto;
     }
     table.sheet th,
     table.sheet td {
       border: 1px solid rgba(203, 213, 225, 0.72);
-      padding: 5px 8px;
-      vertical-align: top;
-      max-width: 340px;
-      word-break: break-word;
-      white-space: pre-wrap;
-      line-height: 1.4;
-      hyphens: auto;
+      padding: 4px 11px;
+      vertical-align: middle;
+      min-width: 228px;
+      max-width: 370px;
+      line-height: 1.28;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      word-break: normal;
+      hyphens: none;
+      cursor: default;
+    }
+    table.sheet td .cell-line {
+      display: block;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      max-width: 100%;
     }
     table.sheet thead th {
       position: sticky;
@@ -319,18 +335,71 @@
       max-width: none;
       padding: 8px 8px;
     }
-    tbody tr:nth-child(even) td {
-      background: rgba(248, 250, 252, 0.94);
+    tbody tr:nth-child(odd) td {
+      background: var(--row-odd);
     }
-    tbody tr:hover td {
-      background: rgba(204, 251, 241, 0.45) !important;
+    tbody tr:nth-child(even) td {
+      background: var(--row-even);
+    }
+    tbody tr:nth-child(odd):hover:not(.row-selected) td {
+      background: color-mix(in srgb, var(--row-hover) 55%, var(--row-odd)) !important;
+    }
+    tbody tr:nth-child(even):hover:not(.row-selected) td {
+      background: color-mix(in srgb, var(--row-hover) 52%, var(--row-even)) !important;
+    }
+    tbody tr.row-selected td {
+      background: var(--row-selected) !important;
+    }
+    tbody tr.row-selected:hover td {
+      background: color-mix(in srgb, var(--row-selected) 92%, var(--row-selected-ring)) !important;
+    }
+    /** Sticky row label column so horizontal scroll keeps context with selection */
+    table.sheet thead th:first-child,
+    table.sheet tbody td:first-child {
+      position: sticky;
+      left: 0;
+      z-index: 1;
+      min-width: 232px;
+      max-width: 380px;
+      width: auto;
+      box-shadow: 1px 0 0 rgba(203, 213, 225, 0.85);
+    }
+    table.sheet thead th:first-child {
+      z-index: 3;
+    }
+    tbody tr:nth-child(odd) td:first-child {
+      background: var(--row-odd);
+    }
+    tbody tr:nth-child(even) td:first-child {
+      background: var(--row-even);
+    }
+    tbody tr:nth-child(odd):hover:not(.row-selected) td:first-child {
+      background: color-mix(in srgb, var(--row-hover) 55%, var(--row-odd)) !important;
+    }
+    tbody tr:nth-child(even):hover:not(.row-selected) td:first-child {
+      background: color-mix(in srgb, var(--row-hover) 52%, var(--row-even)) !important;
+    }
+    tbody tr.row-selected td:first-child {
+      background: var(--row-selected) !important;
+      box-shadow: inset 4px 0 0 var(--row-selected-ring), 1px 0 0 rgba(203, 213, 225, 0.85);
+    }
+    tbody tr.row-selected:hover td:first-child {
+      background: color-mix(in srgb, var(--row-selected) 92%, var(--row-selected-ring)) !important;
+    }
+    table.sheet tbody tr {
+      cursor: pointer;
     }
     table.sheet td a {
       color: var(--brand-strong);
       font-weight: 500;
       text-decoration: none;
       border-bottom: 1px solid rgba(15, 118, 110, 0.25);
-      word-break: break-all;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      display: inline-block;
+      max-width: 100%;
+      vertical-align: bottom;
     }
     table.sheet td a:hover {
       border-bottom-color: var(--brand-strong);
@@ -541,26 +610,39 @@
         return true;
       }
 
-      function linkifyToNode(text) {
-        var s = String(text || "");
-        var lines = s.split(/\r?\n/);
-        var frag = document.createDocumentFragment();
-        for (var i = 0; i < lines.length; i++) {
-          if (i) frag.appendChild(document.createElement("br"));
-          var line = lines[i];
-          var m = /^(https?:\/\/[^\s]+)$/i.exec(line.trim());
-          if (m) {
-            var a = document.createElement("a");
-            a.href = m[1];
-            a.target = "_blank";
-            a.rel = "noopener noreferrer";
-            a.textContent =
-              line.length > 96 ? line.slice(0, 93).trim() + "…" : line;
-            frag.appendChild(a);
-          } else {
-            frag.appendChild(document.createTextNode(line || " "));
-          }
+      function flattenCellText(text) {
+        return String(text == null ? "")
+          .replace(/\r?\n+/g, "")
+          .replace(/[\t\f\v]+/g, " ")
+          .replace(/\s+/g, " ")
+          .trim();
+      }
+
+      /**
+       * Single-line cell: merges wrapped sheet lines (fewer short “mobile” wraps),
+       * ellipsis + full original (incl. newlines) in title.
+       */
+      function linkifyCellForTable(text) {
+        var flat = flattenCellText(text);
+        var wrap = document.createElement("span");
+        wrap.className = "cell-line";
+        var trim = flat.trim();
+        var m = /^(https?:\/\/[^\s]+)$/i.exec(trim);
+        if (m && m[0].length === trim.length) {
+          var a = document.createElement("a");
+          a.href = m[0];
+          a.target = "_blank";
+          a.rel = "noopener noreferrer";
+          a.textContent = trim.length > 400 ? trim.slice(0, 397) + "…" : trim;
+          a.addEventListener("click", function (e) {
+            e.stopPropagation();
+          });
+          wrap.appendChild(a);
+        } else {
+          wrap.appendChild(document.createTextNode(flat === "" ? " " : flat));
         }
+        var frag = document.createDocumentFragment();
+        frag.appendChild(wrap);
         return frag;
       }
 
@@ -635,6 +717,15 @@
       });
 
       var lastPayload = null;
+      var selectedRowSig = null;
+
+      function rowSignature(row, hdrs) {
+        var parts = [];
+        for (var ij = 0; ij < hdrs.length; ij++) {
+          parts.push(String(row[hdrs[ij]] == null ? "" : row[hdrs[ij]]));
+        }
+        return parts.join("\x1e");
+      }
 
       function compareRowsSheetLike(a, b) {
         var da = parseConversationInstant(
@@ -692,6 +783,7 @@
           (dateFromEl.value || dateToEl.value ? " · date-filtered" : "");
 
         if (!filtered.length) {
+          selectedRowSig = null;
           var emp = document.createElement("div");
           emp.className = "empty";
           emp.textContent = rawRows.length
@@ -714,17 +806,27 @@
         tbl.appendChild(thead);
 
         var tbody = document.createElement("tbody");
+        var foundSel = false;
         for (var ri = 0; ri < filtered.length; ri++) {
           var row = filtered[ri];
           var tr = document.createElement("tr");
+          var sig = rowSignature(row, headers);
+          tr._rowSig = sig;
+          if (selectedRowSig && sig === selectedRowSig) {
+            tr.classList.add("row-selected");
+            foundSel = true;
+          }
           for (var ci = 0; ci < headers.length; ci++) {
             var td = document.createElement("td");
             var raw = row[headers[ci]];
-            td.appendChild(linkifyToNode(raw == null ? "" : String(raw)));
+            td.appendChild(linkifyCellForTable(raw == null ? "" : raw));
             td.title = String(raw || "").slice(0, 2000);
             tr.appendChild(td);
           }
           tbody.appendChild(tr);
+        }
+        if (selectedRowSig && !foundSel) {
+          selectedRowSig = null;
         }
         tbl.appendChild(tbody);
         convList.appendChild(tbl);
@@ -751,6 +853,23 @@
         });
       }
       wireFilter();
+
+      convList.addEventListener("click", function (ev) {
+        if (ev.target.closest && ev.target.closest("a")) return;
+        var tr = ev.target.closest && ev.target.closest("tbody tr");
+        if (!tr || !convList.contains(tr)) return;
+        var sig = tr._rowSig;
+        if (sig === undefined || sig === null) return;
+        if (tr.classList.contains("row-selected")) {
+          tr.classList.remove("row-selected");
+          selectedRowSig = null;
+          return;
+        }
+        var prev = convList.querySelector("tbody tr.row-selected");
+        if (prev) prev.classList.remove("row-selected");
+        tr.classList.add("row-selected");
+        selectedRowSig = sig;
+      });
 
       async function load() {
         var secret = secretEl.value.trim();
