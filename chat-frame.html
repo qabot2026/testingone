@@ -236,6 +236,39 @@
           ) {
             return;
           }
+          /** Last snapshot from `/api/public/widget-settings` — reapplied after df-messenger paints (Dialogflow can clobber vars). */
+          var publishedFlatCache = null;
+          function cachePayloadFromApi(data) {
+            var flat = (data && data.flat && typeof data.flat === "object") ? data.flat : {};
+            var out = {};
+            var k;
+            for (k in flat) {
+              if (Object.prototype.hasOwnProperty.call(flat, k)) out[k] = flat[k];
+            }
+            if (typeof data.advancedPatchJson === "string" && data.advancedPatchJson) {
+              out.advancedPatchJson = data.advancedPatchJson;
+            }
+            publishedFlatCache = out;
+          }
+          function applyCachedPublished() {
+            if (!publishedFlatCache) return;
+            if (
+              (typeof window.COMPANY_ADMIN_PREVIEW_ORIGIN === "string" && window.COMPANY_ADMIN_PREVIEW_ORIGIN) ||
+              (typeof window.COMPANY_PREVIEW_BRIDGE === "string" && window.COMPANY_PREVIEW_BRIDGE)
+            ) {
+              return;
+            }
+            if (typeof window.__dfchatApplyCompanyAdminFlatSettings === "function") {
+              window.__dfchatApplyCompanyAdminFlatSettings(publishedFlatCache);
+            }
+            applyThemeVarsLive(publishedFlatCache);
+          }
+          window.addEventListener("df-messenger-loaded", function () {
+            applyCachedPublished();
+            [120, 400, 1000, 2400].forEach(function (ms) {
+              window.setTimeout(function () { applyCachedPublished(); }, ms);
+            });
+          });
           var apiBase = "";
           try {
             if (typeof window.COMPANY_API_BASE_URL === "string" && window.COMPANY_API_BASE_URL.trim()) {
@@ -253,25 +286,29 @@
           fetch(url, { credentials: "omit", cache: "no-store" })
             .then(function (r) { return r.ok ? r.json() : null; })
             .then(function (data) {
-              if (!data || !data.flat) return;
-              var settings = data.flat;
-              if (typeof data.advancedPatchJson === "string" && data.advancedPatchJson) {
-                settings.advancedPatchJson = data.advancedPatchJson;
+              if (!data || typeof data.flat !== "object") return;
+              if (typeof data.error === "string" && data.error.trim()) {
+                try {
+                  console.warn("[chat-frame] widget-settings:", data.error);
+                } catch (eWarn) { /* ignore */ }
+                return;
               }
+              cachePayloadFromApi(data);
+              if (!publishedFlatCache || Object.keys(publishedFlatCache).length === 0) return;
+
               function apply() {
                 if (typeof window.__dfchatApplyCompanyAdminFlatSettings === "function") {
-                  window.__dfchatApplyCompanyAdminFlatSettings(settings);
-                  applyThemeVarsLive(settings);
+                  window.__dfchatApplyCompanyAdminFlatSettings(publishedFlatCache);
+                  applyThemeVarsLive(publishedFlatCache);
                   return true;
                 }
                 return false;
               }
               if (apply()) return;
-              // company.js may still be booting — retry briefly.
               var tries = 0;
-              var t = setInterval(function () {
+              var t = window.setInterval(function () {
                 tries += 1;
-                if (apply() || tries > 40) clearInterval(t);
+                if (apply() || tries > 40) window.clearInterval(t);
               }, 120);
             })
             .catch(function () { /* network blip; keep defaults */ });
