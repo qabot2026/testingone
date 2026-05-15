@@ -521,7 +521,7 @@
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      gap: 10px 14px;
+      gap: 6px 10px;
       flex-wrap: wrap;
       font-variant-numeric: tabular-nums;
     }
@@ -556,19 +556,9 @@
       transform: none;
       box-shadow: none;
     }
-    .pager-btn--edge {
-      font-size: 13px;
-      letter-spacing: 0.06em;
-    }
-    .pager-gap {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      padding: 4px 10px;
-      border-radius: 12px;
-      background: rgba(255, 255, 255, 0.65);
-      border: 1px solid rgba(148, 163, 184, 0.35);
-      font-variant-numeric: tabular-nums;
+    .pager-btn--jump {
+      min-width: 40px;
+      padding: 0 8px;
     }
     .pager-num {
       font-weight: 800;
@@ -577,10 +567,12 @@
       min-width: 1.25rem;
       text-align: center;
     }
-    .pager-num.is-dim {
-      font-weight: 700;
-      font-size: 14px;
-      color: var(--muted);
+    .pager-num.is-current {
+      font-weight: 800;
+      font-size: 16px;
+      color: var(--brand-strong);
+      min-width: 1.75rem;
+      padding: 0 4px;
     }
     .pager-hint {
       display: block;
@@ -1195,18 +1187,15 @@
       <footer class="sheet-pager-bar" id="pagerWrap" hidden aria-label="Sheet paging">
         <div class="pager-compact">
           <div class="pager-compact-controls">
-            <button type="button" class="pager-btn pager-btn--edge" id="pagerFirst" title="First page">1st</button>
-            <div class="pager-gap" aria-label="Current page and navigation">
-              <span class="pager-num" id="pagerCurPage" aria-live="polite">1</span>
-              <button type="button" class="pager-btn" id="pagerPrev" title="Previous page" aria-label="Previous page">
-                &lt;
-              </button>
-              <button type="button" class="pager-btn" id="pagerNext" title="Next page" aria-label="Next page">
-                &gt;
-              </button>
-              <span class="pager-num is-dim" id="pagerTotalPages">1</span>
-            </div>
-            <button type="button" class="pager-btn pager-btn--edge" id="pagerLast" title="Last page">Last</button>
+            <button type="button" class="pager-btn pager-btn--jump" id="pagerFirst" title="First page" aria-label="Go to page 1">
+              1
+            </button>
+            <button type="button" class="pager-btn" id="pagerPrev" title="Previous page" aria-label="Previous page">&lt;</button>
+            <span class="pager-num is-current" id="pagerCurPage" aria-live="polite">1</span>
+            <button type="button" class="pager-btn" id="pagerNext" title="Next page" aria-label="Next page">&gt;</button>
+            <button type="button" class="pager-btn pager-btn--jump" id="pagerLast" title="Last page" aria-label="Go to last page">
+              1
+            </button>
           </div>
         </div>
         <span class="pager-hint" id="pagerHint"></span>
@@ -1231,7 +1220,6 @@
       var pagerNext = document.getElementById("pagerNext");
       var pagerLast = document.getElementById("pagerLast");
       var pagerCurPage = document.getElementById("pagerCurPage");
-      var pagerTotalPages = document.getElementById("pagerTotalPages");
       var pagerHint = document.getElementById("pagerHint");
       var statusLine = document.getElementById("statusLine");
       var copyToastEl = document.getElementById("copyToast");
@@ -2356,8 +2344,7 @@
           !pagerPrev ||
           !pagerNext ||
           !pagerLast ||
-          !pagerCurPage ||
-          !pagerTotalPages
+          !pagerCurPage
         )
           return;
         if (!json || json.totalDataRows == null || json.limit == null) {
@@ -2379,7 +2366,7 @@
         }
         pagerWrap.hidden = false;
         pagerCurPage.textContent = String(curPage);
-        pagerTotalPages.textContent = String(totalPages);
+        pagerLast.textContent = String(totalPages);
         pagerFirst.disabled = off <= 0;
         pagerPrev.disabled = !json.hasNewer;
         pagerNext.disabled = !json.hasOlder;
