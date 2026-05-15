@@ -4381,9 +4381,9 @@ function syncLauncherInputStripI18n() {
 let restartFromUserPhraseTimerId = null;
 
 /** Keep in sync with server `collectUserQueriesLinesFromContext_` per-line ceiling (truncation, not omission). */
-const MAX_STORED_CHAT_USER_QUERY_CHARS = 500;
+const MAX_STORED_CHAT_USER_QUERY_CHARS = 8000;
 /** Interleaved transcript lines sent with `client_context` (contact form + session sync). */
-const MAX_CHAT_TRANSCRIPT_TEXT_CHARS = 2000;
+const MAX_CHAT_TRANSCRIPT_TEXT_CHARS = 50000;
 const MAX_CHAT_TRANSCRIPT_TURNS = 120;
 /** Last typed line from `df-user-input-entered` when `df-request-sent` omits text in `detail` (gate + thanks need it). */
 let dfchatPendingTypedUtteranceForGate_ = "";
@@ -14050,10 +14050,7 @@ function responseHasVisibleBotText_(event) {
  * @returns {string[]}
  */
 function extractAssistantVisibleTextsFromDfResponse_(event) {
-    const responseMessages = event && event.detail && event.detail.raw && event.detail.raw.queryResult
-        && Array.isArray(event.detail.raw.queryResult.responseMessages)
-        ? event.detail.raw.queryResult.responseMessages
-        : [];
+    const responseMessages = mergeCxResponseEnvelopeForGallery(event);
 
     const messengerMessages = event && event.detail && event.detail.data && Array.isArray(event.detail.data.messages)
         ? event.detail.data.messages

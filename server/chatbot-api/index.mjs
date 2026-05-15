@@ -490,7 +490,8 @@ function collectUserQueriesLinesFromContext_(ctx) {
         }
         for (let j = 0; j < a.length; j += 1) {
             const cell = typeof a[j] === "string" ? a[j].trim() : "";
-            if (cell && cell.length <= 500) {
+            // Match per-line cap in widget (company.js MAX_STORED_CHAT_USER_QUERY_CHARS).
+            if (cell && cell.length <= 8000) {
                 out.push(cell);
             }
         }
@@ -3118,6 +3119,24 @@ function setConversationsSheetCors_(req, res) {
 }
 
 /**
+ * @param {Record<string, unknown>} o
+ * @returns {string}
+ */
+function transcriptTurnTextFromItem_(o) {
+    if (!o || typeof o !== "object") {
+        return "";
+    }
+    const rec = /** @type {Record<string, unknown>} */ (o);
+    for (const k of ["text", "message", "content", "body"]) {
+        const v = rec[k];
+        if (typeof v === "string" && v.trim()) {
+            return v.trim();
+        }
+    }
+    return "";
+}
+
+/**
  * @param {Record<string, unknown>} cx
  * @returns {{ role: string, text: string }[]}
  */
@@ -3135,7 +3154,7 @@ function transcriptTurnsFromClientContext_(cx) {
             }
             const o = /** @type {Record<string, unknown>} */ (item);
             const role = o.role === "assistant" ? "assistant" : "user";
-            const text = typeof o.text === "string" ? o.text.trim() : "";
+            const text = transcriptTurnTextFromItem_(o);
             if (!text) {
                 continue;
             }
