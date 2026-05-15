@@ -744,6 +744,67 @@
       color: var(--brand-strong);
       margin-top: 4px;
     }
+    .lead-stat-mini-chans {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px 12px;
+      margin-top: 10px;
+      padding-top: 10px;
+      border-top: 1px solid rgba(148, 163, 184, 0.35);
+    }
+    .lead-mini-chan {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 0.7rem;
+      font-weight: 800;
+      font-variant-numeric: tabular-nums;
+      color: var(--text);
+    }
+    .lead-mini-chan--zero {
+      opacity: 0.42;
+    }
+    .lead-mini-chan--other {
+      font-weight: 700;
+      color: var(--muted);
+      font-size: 0.65rem;
+    }
+    .lead-mini-chan-ic {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 22px;
+      height: 22px;
+      border-radius: 6px;
+      flex-shrink: 0;
+    }
+    .lead-mini-chan-ic svg {
+      width: 12px;
+      height: 12px;
+      display: block;
+    }
+    .lead-mini-chan-ic--web {
+      background: rgba(37, 99, 235, 0.12);
+      color: #1d4ed8;
+    }
+    .lead-mini-chan-ic--wa {
+      background: rgba(37, 211, 102, 0.15);
+      color: #128c7e;
+    }
+    .lead-mini-chan-ic--ig {
+      background: linear-gradient(
+        145deg,
+        rgba(253, 29, 29, 0.1),
+        rgba(225, 48, 108, 0.1),
+        rgba(131, 58, 180, 0.1)
+      );
+      color: #c026d3;
+    }
+    .lead-mini-chan-ic--fb {
+      background: rgba(24, 119, 242, 0.12);
+      color: #1877f2;
+    }
     .lead-stats-list .stat-frac {
       font-weight: 800;
       color: var(--brand-strong);
@@ -1975,6 +2036,61 @@
             "</div></div>"
           );
         }
+        function readContactSeg(obj) {
+          if (!obj || typeof obj !== "object") {
+            return { web: 0, whatsapp: 0, instagram: 0, facebook: 0, other: 0 };
+          }
+          return {
+            web: statNum(obj, "web", 0),
+            whatsapp: statNum(obj, "whatsapp", 0),
+            instagram: statNum(obj, "instagram", 0),
+            facebook: statNum(obj, "facebook", 0),
+            other: statNum(obj, "other", 0)
+          };
+        }
+        function contactBandChips(seg) {
+          var s = readContactSeg(seg);
+          var parts = [];
+          function chip(tintClass, ttl, n, svg) {
+            var muted = n === 0 ? " lead-mini-chan--zero" : "";
+            parts.push(
+              '<span class="lead-mini-chan' +
+                muted +
+                '" title="' +
+                escapeHtml(ttl + ": " + n) +
+                '"><span class="lead-mini-chan-ic ' +
+                tintClass +
+                '">' +
+                svg +
+                "</span>" +
+                escapeHtml(String(n)) +
+                "</span>"
+            );
+          }
+          chip("lead-mini-chan-ic--web", "Web", s.web, iconWeb);
+          chip("lead-mini-chan-ic--wa", "WhatsApp", s.whatsapp, iconWa);
+          chip("lead-mini-chan-ic--ig", "Instagram", s.instagram, iconIg);
+          chip("lead-mini-chan-ic--fb", "Facebook", s.facebook, iconFb);
+          if (s.other > 0) {
+            parts.push(
+              '<span class="lead-mini-chan lead-mini-chan--other" title="Other / uncategorized channel">' +
+                escapeHtml("Other " + s.other) +
+                "</span>"
+            );
+          }
+          return '<div class="lead-stat-mini-chans">' + parts.join("") + "</div>";
+        }
+        function contactMini(labelHtml, total, segSub) {
+          return (
+            '<div class="lead-stat-mini"><div class="lead-stat-mini-label">' +
+            labelHtml +
+            '</div><div class="lead-stat-mini-value">' +
+            escapeHtml(String(total)) +
+            "</div>" +
+            contactBandChips(segSub) +
+            "</div>"
+          );
+        }
         leadStatsList.hidden = false;
         leadStatsList.innerHTML =
           '<div class="lead-stats-dash-head">' +
@@ -2007,15 +2123,10 @@
           "</div>" +
           '<h3 class="lead-stats-section-h">Contact detail captured</h3>' +
           '<div class="lead-stats-contact-grid">' +
-          '<div class="lead-stat-mini"><div class="lead-stat-mini-label">Mobile only</div><div class="lead-stat-mini-value">' +
-          escapeHtml(String(om)) +
-          "</div></div>" +
-          '<div class="lead-stat-mini"><div class="lead-stat-mini-label">Email only</div><div class="lead-stat-mini-value">' +
-          escapeHtml(String(oe)) +
-          "</div></div>" +
-          '<div class="lead-stat-mini"><div class="lead-stat-mini-label">Mobile &amp; email</div><div class="lead-stat-mini-value">' +
-          escapeHtml(String(be)) +
-          "</div></div></div>";
+          contactMini("Mobile only", om, tot.onlyMobileByChannel) +
+          contactMini("Email only", oe, tot.onlyEmailByChannel) +
+          contactMini("Mobile &amp; email", be, tot.mobileAndEmailByChannel) +
+          "</div>";
       }
 
       async function loadLeadStats() {

@@ -704,6 +704,34 @@ function conversationChannelBucket_(raw) {
     return "other";
 }
 
+/** Empty per-channel tallies for a lead segment (mobile-only / email-only / both). */
+function leadSegmentChannelTotalsEmpty_() {
+    return { web: 0, whatsapp: 0, instagram: 0, facebook: 0, other: 0 };
+}
+
+/**
+ * @param {{ web: number, whatsapp: number, instagram: number, facebook: number, other: number }} acc
+ * @param {"web"|"whatsapp"|"instagram"|"facebook"|"other"} ch
+ */
+function leadSegmentChannelAdd_(acc, ch) {
+    switch (ch) {
+        case "web":
+            acc.web += 1;
+            break;
+        case "whatsapp":
+            acc.whatsapp += 1;
+            break;
+        case "instagram":
+            acc.instagram += 1;
+            break;
+        case "facebook":
+            acc.facebook += 1;
+            break;
+        default:
+            acc.other += 1;
+    }
+}
+
 /**
  * Detect "Repeated" column position by header row.
  * Falls back to the default schema (column H) if not found.
@@ -2312,7 +2340,7 @@ export async function probeSheetsSpreadsheetAccess() {
  *   dateFilter: { applied: boolean, from: string|null, to: string|null },
  *   scan: { sheetLastRow1Based: number, dataRowsConsidered: number, scanHardCapEnv: number },
  *   columns: { dateIdx0: number, mobileIdx0: number, emailIdx0: number, channelIdx0: number, appointmentBookedIdx0: number, dateHeader: string, mobileHeader: string, emailHeader: string, channelHeader: string, appointmentBookedHeader: string },
- *   totals: { conversations: number, onlyMobile: number, onlyEmail: number, mobileAndEmail: number, neither: number, rowsSkippedNoParsableDate: number, leadsCaptured: number, appointmentScheduled: number, appointmentBooked: number, channelWeb: number, channelWhatsapp: number, channelInstagram: number, channelFacebook: number, channelOther: number },
+ *   totals: { conversations: number, onlyMobile: number, onlyEmail: number, mobileAndEmail: number, neither: number, rowsSkippedNoParsableDate: number, leadsCaptured: number, appointmentScheduled: number, appointmentBooked: number, channelWeb: number, channelWhatsapp: number, channelInstagram: number, channelFacebook: number, channelOther: number, onlyMobileByChannel: { web: number, whatsapp: number, instagram: number, facebook: number, other: number }, onlyEmailByChannel: { web: number, whatsapp: number, instagram: number, facebook: number, other: number }, mobileAndEmailByChannel: { web: number, whatsapp: number, instagram: number, facebook: number, other: number } },
  *   ratios: {
  *     onlyMobile: string,
  *     onlyEmail: string,
@@ -2491,7 +2519,10 @@ export async function fetchConversationLeadCaptureStats(opts = {}) {
             channelWhatsapp: 0,
             channelInstagram: 0,
             channelFacebook: 0,
-            channelOther: 0
+            channelOther: 0,
+            onlyMobileByChannel: leadSegmentChannelTotalsEmpty_(),
+            onlyEmailByChannel: leadSegmentChannelTotalsEmpty_(),
+            mobileAndEmailByChannel: leadSegmentChannelTotalsEmpty_()
         },
         ratios: {
             onlyMobile: "0 / 0",
@@ -2538,6 +2569,9 @@ export async function fetchConversationLeadCaptureStats(opts = {}) {
     let channelInstagram = 0;
     let channelFacebook = 0;
     let channelOther = 0;
+    let onlyMobileByCh = leadSegmentChannelTotalsEmpty_();
+    let onlyEmailByCh = leadSegmentChannelTotalsEmpty_();
+    let bothByCh = leadSegmentChannelTotalsEmpty_();
 
     for (let ri = 0; ri < dataRows.length; ri += 1) {
         const cells = dataRows[ri] || [];
@@ -2564,13 +2598,17 @@ export async function fetchConversationLeadCaptureStats(opts = {}) {
         }
         const hasMob = sheetCellHasLeadMobile_(cells[mobileIdx]);
         const hasEm = sheetCellHasLeadEmail_(cells[emailIdx]);
+        const channelKey = conversationChannelBucket_(cells[channelIdx]);
         conversations += 1;
         if (hasMob && hasEm) {
             both += 1;
+            leadSegmentChannelAdd_(bothByCh, channelKey);
         } else if (hasMob) {
             onlyMobile += 1;
+            leadSegmentChannelAdd_(onlyMobileByCh, channelKey);
         } else if (hasEm) {
             onlyEmail += 1;
+            leadSegmentChannelAdd_(onlyEmailByCh, channelKey);
         } else {
             neither += 1;
         }
@@ -2584,7 +2622,7 @@ export async function fetchConversationLeadCaptureStats(opts = {}) {
         if (apptCounted) {
             appointmentScheduled += 1;
         }
-        switch (conversationChannelBucket_(cells[channelIdx])) {
+        switch (channelKey) {
             case "web":
                 channelWeb += 1;
                 break;
@@ -2622,6 +2660,9 @@ export async function fetchConversationLeadCaptureStats(opts = {}) {
     out.totals.channelInstagram = channelInstagram;
     out.totals.channelFacebook = channelFacebook;
     out.totals.channelOther = channelOther;
+    out.totals.onlyMobileByChannel = onlyMobileByCh;
+    out.totals.onlyEmailByChannel = onlyEmailByCh;
+    out.totals.mobileAndEmailByChannel = bothByCh;
     out.ratios.onlyMobile = rpt(onlyMobile);
     out.ratios.onlyEmail = rpt(onlyEmail);
     out.ratios.mobileAndEmail = rpt(both);
