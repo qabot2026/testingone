@@ -914,12 +914,100 @@
       line-height: 1.25;
       letter-spacing: -0.01em;
     }
+    .lead-ch-stack {
+      display: flex;
+      width: 100%;
+      height: 9px;
+      border-radius: 999px;
+      overflow: hidden;
+      margin-bottom: 10px;
+      border: 1px solid rgba(148, 163, 184, 0.4);
+      background: rgba(241, 245, 249, 0.8);
+    }
+    .lead-ch-stack-seg {
+      display: block;
+      height: 100%;
+      min-width: 3px;
+    }
+    .lead-ch-rows {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-bottom: 10px;
+    }
+    .lead-ch-row {
+      display: grid;
+      grid-template-columns: 30px minmax(5rem, 7rem) 1fr 2.75rem;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.75rem;
+      font-weight: 700;
+    }
+    @media (max-width: 520px) {
+      .lead-ch-row {
+        grid-template-columns: 28px minmax(0, 1fr) 1fr 2.5rem;
+      }
+      .lead-ch-row-label {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+    }
+    .lead-ch-row-ic {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 30px;
+      height: 30px;
+      border-radius: 9px;
+      background: rgba(15, 23, 42, 0.06);
+      color: var(--text);
+    }
+    .lead-ch-row-ic svg {
+      width: 17px;
+      height: 17px;
+      display: block;
+    }
+    .lead-ch-row-label {
+      color: var(--muted);
+      font-size: 0.6875rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.045em;
+    }
+    .lead-ch-row-track {
+      height: 11px;
+      border-radius: 999px;
+      background: rgba(148, 163, 184, 0.22);
+      overflow: hidden;
+    }
+    .lead-ch-row-fill {
+      display: block;
+      height: 100%;
+      border-radius: 999px;
+      max-width: 100%;
+    }
+    .lead-ch-row-fill.lead-ch-row-fill--on {
+      min-width: 4px;
+    }
+    .lead-ch-row-n {
+      font-variant-numeric: tabular-nums;
+      text-align: right;
+      font-size: 0.8125rem;
+      font-weight: 800;
+      color: var(--brand-strong);
+    }
     .lead-chart-card .chart-canvas-wrap {
       flex: none;
       position: relative;
       height: 210px;
       min-height: 210px;
       max-height: 210px;
+    }
+    .lead-chart-card.lead-chart-card--channel-viz .chart-canvas-wrap {
+      height: 168px;
+      min-height: 168px;
+      max-height: 168px;
     }
   </style>
   <script
@@ -2367,6 +2455,7 @@
         var cwa = statNum(tot, "channelWhatsapp", 0);
         var cinst = statNum(tot, "channelInstagram", 0);
         var cfb = statNum(tot, "channelFacebook", 0);
+        var coth = statNum(tot, "channelOther", 0);
         var rat = payload.ratios || {};
         var pctRaw = rat.leadCapturePct;
         var pct = typeof pctRaw === "number" && Number.isFinite(pctRaw) ? pctRaw : Number(pctRaw);
@@ -2382,6 +2471,8 @@
           '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/></svg>';
         var iconFb =
           '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>';
+        var iconOther =
+          '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/></svg>';
         function channelTile(mod, label, count, svg) {
           return (
             '<div class="channel-tile channel-tile--' +
@@ -2455,6 +2546,68 @@
             "</div>"
           );
         }
+        var chMax = Math.max(cw, cwa, cinst, cfb, coth, 1);
+        function leadChannelStackHtml() {
+          var totSeg = cw + cwa + cinst + cfb + coth;
+          if (totSeg <= 0) return "";
+          var segs = [
+            { v: cw, color: "#0d9488", t: "Web" },
+            { v: cwa, color: "#38bdf8", t: "WhatsApp" },
+            { v: cinst, color: "#6366f1", t: "Instagram" },
+            { v: cfb, color: "#1877f2", t: "Facebook" },
+            { v: coth, color: "#94a3b8", t: "Other" }
+          ];
+          var parts = [];
+          for (var si = 0; si < segs.length; si++) {
+            var s = segs[si];
+            if (s.v <= 0) continue;
+            var pct = (100 * s.v) / totSeg;
+            parts.push(
+              '<span class="lead-ch-stack-seg" style="width:' +
+              pct +
+              "%;background:" +
+              s.color +
+              '" title="' +
+              escapeHtml(s.t + ": " + s.v) +
+              '"></span>'
+            );
+          }
+          return (
+            '<div class="lead-ch-stack" role="img" aria-label="Channel mix by volume">' +
+            parts.join("") +
+            "</div>"
+          );
+        }
+        function leadChannelVisualRow(iconSvg, label, count, maxC, colorHex) {
+          var w = maxC > 0 ? (100 * count) / maxC : 0;
+          return (
+            '<div class="lead-ch-row" title="' +
+            escapeHtml(label + ": " + count) +
+            '">' +
+            '<span class="lead-ch-row-ic">' +
+            iconSvg +
+            '</span><span class="lead-ch-row-label">' +
+            escapeHtml(label) +
+            '</span><span class="lead-ch-row-track"><span class="lead-ch-row-fill' +
+            (count > 0 ? " lead-ch-row-fill--on" : "") +
+            '" style="width:' +
+            (count > 0 ? String(w) : "0") +
+            "%;background:" +
+            colorHex +
+            '"></span></span><span class="lead-ch-row-n">' +
+            escapeHtml(String(count)) +
+            "</span></div>"
+          );
+        }
+        var channelVizHtml =
+          leadChannelStackHtml() +
+          '<div class="lead-ch-rows">' +
+          leadChannelVisualRow(iconWeb, "Web", cw, chMax, "#0d9488") +
+          leadChannelVisualRow(iconWa, "WhatsApp", cwa, chMax, "#38bdf8") +
+          leadChannelVisualRow(iconIg, "Instagram", cinst, chMax, "#6366f1") +
+          leadChannelVisualRow(iconFb, "Facebook", cfb, chMax, "#1877f2") +
+          leadChannelVisualRow(iconOther, "Other", coth, chMax, "#94a3b8") +
+          "</div>";
         leadStatsList.hidden = false;
         leadStatsList.innerHTML =
           '<div class="lead-stats-dash-head">' +
@@ -2499,9 +2652,11 @@
           '<div id="leadStatsVisualBlock" class="lead-stats-visual-block" hidden>' +
           '<h3 class="lead-stats-section-h">Visual analytics</h3>' +
           '<div class="lead-stats-chart-grid">' +
-          '<div class="lead-chart-card"><h4>Volume by channel</h4><p class="lead-chart-card-total">Total · ' +
+          '<div class="lead-chart-card lead-chart-card--channel-viz"><h4>Volume by channel</h4><p class="lead-chart-card-total">Total · ' +
           escapeHtml(String(n)) +
-          '</p><div class="chart-canvas-wrap"><canvas id="lcBarChannel"></canvas></div></div>' +
+          "</p>" +
+          channelVizHtml +
+          '<div class="chart-canvas-wrap"><canvas id="lcBarChannel"></canvas></div></div>' +
           '<div class="lead-chart-card"><h4>Lead capture split</h4><p class="lead-chart-card-total">With contact · ' +
           escapeHtml(String(leads)) +
           '</p><div class="chart-canvas-wrap"><canvas id="lcPieLead"></canvas></div></div>' +
