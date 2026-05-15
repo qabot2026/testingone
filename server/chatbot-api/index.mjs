@@ -22,6 +22,7 @@
  *   PORT, FIREBASE_SERVICE_ACCOUNT_JSON / GOOGLE_SERVICE_ACCOUNT_JSON / GOOGLE_APPLICATION_CREDENTIALS
  *   DISABLE_FIRESTORE=1, FIRESTORE_DATABASE_ID, CORS_ORIGIN, SHEETS_*, DISABLE_SHEETS=1
  *   SHEETS_CONV_DATETIME_TZ — optional IANA zone for Sheets “Conv.” column (12h display); unset defaults Asia/Kolkata; empty = server-local.
+ *   CONVERSATIONS_TRANSCRIPT_TIME_INCLUDES_DATE — optional 1/true: staff transcript page shows short calendar date + time on each bubble (matches `company.js` persona clock options); omit/false = time only.
  *   Common (“general-purpose”) appointment hours: `company.config.js` → `common.generalAppointment` (any industry). Env overrides GENERAL_APPOINTMENT_*.
  *
  * Lead email (optional): staff + visitor mail — see `env.example.txt`, `lib/contact-lead-notify-email.mjs`, `lib/mail/client-lead-ack-email.mjs`, `lib/mail/appointment-client-ack-email.mjs`, `lib/mail/appointment-chatbot-staff-notify-email.mjs`; HTML layouts under `lib/mail/templates/` (`lead_mail_to_client.html`, `appointment_mail_to_user.html`, `appointment_mail_to_client.html`). SMTP_* MAIL_FROM CONTACT_LEAD_* CONTACT_APPOINTMENT_*.
@@ -59,6 +60,7 @@ import {
     fetchLeadSheetUserQueriesForSession,
     fetchLeadSheetRowKeyValuesForSession,
     fetchLeadSheetChatTranscriptJsonForSession,
+    getConversationDateTimeZoneForTranscript,
     formatConversationDateForSheet,
     formatConversationTimeForSheet,
     probeSheetsSpreadsheetAccess,
@@ -3312,14 +3314,15 @@ function stringifyChatTranscriptForSheetPayload_(clientContext) {
 
 /**
  * @param {unknown[]} arr
- * @returns {{ role: string, text: string }[]}
+ * @returns {{ role: string, text: string, at?: number }[]}
  */
 function transcriptTurnsFromStoredChatArray_(arr) {
     if (!Array.isArray(arr) || !arr.length) {
         return [];
     }
-    /** @type {{ role: string, text: string, at: number, seq?: number }[]} */
+    /** @type {{ role: string, text: string, seq?: number, ord: number, atMs?: number, atSort: number }[]} */
     const tmp = [];
+    let ord = 0;
     for (const item of arr) {
         if (!item || typeof item !== "object") {
             continue;
@@ -3331,32 +3334,40 @@ function transcriptTurnsFromStoredChatArray_(arr) {
             continue;
         }
         const rawAt = o.at;
-        const at =
-            typeof rawAt === "number" && Number.isFinite(rawAt)
-                ? rawAt
-                : tmp.length * 1e-6;
+        const atMs =
+            typeof rawAt === "number" && Number.isFinite(rawAt) ? rawAt : undefined;
         const rawSeq = o.seq;
         const seq =
             typeof rawSeq === "number" && Number.isFinite(rawSeq) ? rawSeq : undefined;
-        tmp.push({ role, text, at, seq });
+        const atSort = atMs !== undefined ? atMs : Number.POSITIVE_INFINITY;
+        tmp.push({ role, text, seq, ord: ord++, atMs, atSort });
     }
     const seqCount = tmp.filter((x) => typeof x.seq === "number" && Number.isFinite(x.seq)).length;
     if (seqCount === tmp.length && tmp.length > 0) {
-        tmp.sort((a, b) => /** @type {number} */ (a.seq) - /** @type {number} */ (b.seq));
+        tmp.sort(
+            (a, b) =>
+                /** @type {number} */ (a.seq) - /** @type {number} */ (b.seq) || a.ord - b.ord
+        );
     } else {
         tmp.sort((a, b) => {
-            if (a.at !== b.at) {
-                return a.at - b.at;
+            if (a.atSort !== b.atSort) {
+                return a.atSort - b.atSort;
             }
             const ha = typeof a.seq === "number" && Number.isFinite(a.seq);
             const hb = typeof b.seq === "number" && Number.isFinite(b.seq);
             if (ha && hb && /** @type {number} */ (a.seq) !== /** @type {number} */ (b.seq)) {
                 return /** @type {number} */ (a.seq) - /** @type {number} */ (b.seq);
             }
-            return (a.role === "user" ? 0 : 1) - (b.role === "user" ? 0 : 1);
+            return a.ord - b.ord;
         });
     }
-    return tmp.map(({ role, text }) => ({ role, text }));
+    return tmp.map(({ role, text, atMs }) => {
+        const out = /** @type {{ role: string, text: string, at?: number }} */ ({ role, text });
+        if (atMs !== undefined) {
+            out.at = atMs;
+        }
+        return out;
+    });
 }
 
 function parseChatTranscriptJsonCell_(raw) {
@@ -3377,7 +3388,7 @@ function transcriptTurnsFromSheetColumnsChatScan_(columns) {
     if (!columns || typeof columns !== "object") {
         return [];
     }
-    /** @type {{ role: string, text: string }[]} */
+    /** @type {{ role: string, text: string, at?: number }[]} */
     let best = [];
     for (const v of Object.values(columns)) {
         const arr = parseChatTranscriptJsonCell_(typeof v === "string" ? v : String(v || ""));
@@ -3397,7 +3408,7 @@ function hasAssistantTurns_(turns) {
     return Array.isArray(turns) && turns.some((t) => t && t.role === "assistant");
 }
 
-/** @param {{ role: string, text: string }[]} turns */
+/** @param {{ role: string, text: string, at?: unknown }[]} turns */
 function userTurnCount_(turns) {
     if (!Array.isArray(turns)) {
         return 0;
@@ -3469,19 +3480,23 @@ function assistantLeadSnapshotTurns_(meta, sheet, rec) {
         return [];
     }
     const block = lines.join("\n");
-    return [
-        {
-            role: "assistant",
-            text:
-                "Captured lead / form snapshot (exact bot wording was not stored). Expand row details above for full Sheet columns.\n\n"
-                + block
-        }
-    ];
+    const atMs = meta && typeof meta === "object" ? submittedAtEpochMs_(meta.submitted_at) : undefined;
+    /** @type {{ role: string, text: string, at?: number }} */
+    const row = {
+        role: "assistant",
+        text:
+            "Captured lead / form snapshot (exact bot wording was not stored). Expand row details above for full Sheet columns.\n\n"
+            + block
+    };
+    if (atMs !== undefined) {
+        row.at = atMs;
+    }
+    return [row];
 }
 
 /**
  * @param {Record<string, unknown>} cx
- * @returns {{ role: string, text: string }[]}
+ * @returns {{ role: string, text: string, at?: number }[]}
  */
 function transcriptTurnsFromClientContext_(cx) {
     if (!cx || typeof cx !== "object") {
@@ -3603,6 +3618,20 @@ function mergeLeadFormAssistantIntoClientContextIfMissing_(cx, summaryText) {
     cx.chat_transcript_seq = nextSeq;
 }
 
+/** @param {unknown} v */
+function submittedAtEpochMs_(v) {
+    if (typeof v === "number" && Number.isFinite(v)) {
+        return v;
+    }
+    if (typeof v === "string" && v.trim()) {
+        const t = Date.parse(v.trim());
+        if (Number.isFinite(t)) {
+            return t;
+        }
+    }
+    return undefined;
+}
+
 /** @param {Record<string, unknown> | null} rec */
 function syntheticFormSubmissionAssistantTurnsFromLead_(rec) {
     if (!rec || typeof rec !== "object") {
@@ -3623,7 +3652,23 @@ function syntheticFormSubmissionAssistantTurnsFromLead_(rec) {
     if (!body.trim()) {
         return [];
     }
-    return [{ role: "assistant", text: body }];
+    const atMs = submittedAtEpochMs_(rec.submitted_at);
+    /** @type {{ role: string, text: string, at?: number }} */
+    const row = { role: "assistant", text: body };
+    if (atMs !== undefined) {
+        row.at = atMs;
+    }
+    return [row];
+}
+
+/** `company.js`-style persona clock on the transcript page (`messageTimeIncludesDate`). */
+function transcriptTimeIncludesDateFromEnv_() {
+    const raw = process.env.CONVERSATIONS_TRANSCRIPT_TIME_INCLUDES_DATE;
+    if (raw === undefined || raw === null || String(raw).trim() === "") {
+        return false;
+    }
+    const s = String(raw).trim().toLowerCase();
+    return s === "1" || s === "true" || s === "yes";
 }
 
 /** @param {string} csv */
@@ -3691,7 +3736,7 @@ app.get(PATHNAME_CONVERSATION_TRANSCRIPT_JSON, async (req, res) => {
             return res.status(400).json({ ok: false, error: "Missing session query parameter." });
         }
 
-        /** @type {{ role: string, text: string }[]} */
+        /** @type {{ role: string, text: string, at?: number }[]} */
         let turns = [];
         let source = "none";
         /** @type {string} */
@@ -3739,7 +3784,7 @@ app.get(PATHNAME_CONVERSATION_TRANSCRIPT_JSON, async (req, res) => {
             }
         }
 
-        /** @type {{ role: string, text: string }[]} */
+        /** @type {{ role: string, text: string, at?: number }[]} */
         let sheetChatTurns = [];
         if (!SHEETS_DISABLED) {
             try {
@@ -3821,7 +3866,17 @@ app.get(PATHNAME_CONVERSATION_TRANSCRIPT_JSON, async (req, res) => {
             }
         }
 
-        return res.json({ ok: true, session, source, meta, sheet, turns, transcript_fallback });
+        return res.json({
+            ok: true,
+            session,
+            source,
+            meta,
+            sheet,
+            turns,
+            transcript_fallback,
+            transcript_time_zone: getConversationDateTimeZoneForTranscript(),
+            transcript_time_includes_date: transcriptTimeIncludesDateFromEnv_()
+        });
     } catch (e) {
         const msg = e && /** @type {{ message?: string }} */ (e).message ? String(e.message) : String(e);
         return res.status(500).json({ ok: false, error: msg });
@@ -4133,7 +4188,7 @@ app.get("/", (_req, res) => {
             `GET /reception-schedule → staff calendar (booked vs free slots).`,
             `GET /conversations-sheet → staff inbox (Sheet leads; requires CONVERSATIONS_SHEET_VIEW_SECRET).`,
             `GET /conversation-transcript?session=… → staff chat transcript page (same secret via header or localStorage).`,
-            `GET /api/conversation-transcript?session=… → JSON { turns: [{role,text}] } (same secret as inbox).`,
+            `GET /api/conversation-transcript?session=… → JSON { turns: [{role,text,at?}], transcript_time_zone, transcript_time_includes_date } (same secret as inbox).`,
             `GET /api/conversations-sheet?limit=&offset=&from=YYYY-MM-DD&to=YYYY-MM-DD → JSON rows (same secret; optional sheet-wide date filter).`,
             `GET /api/conversations-sheet-stats?from=YYYY-MM-DD&to=YYYY-MM-DD → mobile/email lead ratios (same secret).`,
             `GET /api/conversations-sheet-export?from=&to= → CSV download for all scanned rows or date-filtered rows (same secret).`,

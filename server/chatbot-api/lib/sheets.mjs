@@ -142,6 +142,19 @@ function conversationDateTimeZoneForIntl_() {
     return t === "" ? undefined : t;
 }
 
+/**
+ * IANA zone for `/conversation-transcript` timestamps (`en-IN` clock, same as Sheets “Conv.” when `SHEETS_CONV_DATETIME_TZ` is set).
+ * When that env is empty (server-local Sheets stamping), defaults to **Asia/Kolkata** so staff see the usual widget persona clock.
+ * @returns {string}
+ */
+export function getConversationDateTimeZoneForTranscript() {
+    const tz = conversationDateTimeZoneForIntl_();
+    if (tz && String(tz).trim()) {
+        return String(tz).trim();
+    }
+    return "Asia/Kolkata";
+}
+
 /** @param {Date} d */
 function conversationSheetBaseDate_(d) {
     return d instanceof Date && !Number.isNaN(d.getTime()) ? d : new Date();
