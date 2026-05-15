@@ -3743,36 +3743,49 @@ function isContactFormSubmissionSummaryAssistantText_(text) {
     if (/^Form submission\b/im.test(tx)) {
         return true;
     }
-    /** Client `company.js`: `lines.join("  \\n")` markdown hard breaks plus `Label - value` rows */
-    return tx.includes("  \n") && /\s-\s/.test(tx);
+    /** Client `company.js`: `lines.join("  \\n")` — multiple `Label - value` rows; require ≥2 rows so normal bot markdown is not mistaken for a form summary */
+    const parts = tx.split("  \n").map((p) => p.trim()).filter(Boolean);
+    return parts.length >= 2 && parts.every((p) => /\s-\s/.test(p));
 }
 
 /**
- * Staff inbox: once a session has submitted a contact form, show **only** the last form-summary bubble and
- * everything after it (post-submit visitor + bot). Avoids repeating all pre-form user_queries / Sheet CSV dumps.
+ * Final ordering for staff JSON: sort by wall time, then `seq`, then merge order. Undated rows (no `at`)
+ * follow dated rows while preserving relative order — fixes user/bot blocks from two sources clustering wrong.
  *
  * @param {{ role: string, text: string, at?: number, seq?: number }[]} turns
  * @returns {{ role: string, text: string, at?: number, seq?: number }[]}
  */
-function sliceTranscriptTurnsFromLastContactFormSubmission_(turns) {
-    if (!Array.isArray(turns) || !turns.length) {
-        return [];
+function orderTranscriptTurnsForDisplay_(turns) {
+    if (!Array.isArray(turns) || turns.length < 2) {
+        return Array.isArray(turns) ? turns.slice() : [];
     }
-    let idx = -1;
-    for (let i = 0; i < turns.length; i += 1) {
-        const t = turns[i];
-        if (
-            t
-            && t.role === "assistant"
-            && isContactFormSubmissionSummaryAssistantText_(t.text)
-        ) {
-            idx = i;
+    const tagged = turns.map((t, i) => ({ t, i }));
+    tagged.sort((a, b) => {
+        const atA = typeof a.t.at === "number" && Number.isFinite(a.t.at) ? a.t.at : Number.POSITIVE_INFINITY;
+        const atB = typeof b.t.at === "number" && Number.isFinite(b.t.at) ? b.t.at : Number.POSITIVE_INFINITY;
+        if (atA !== atB) {
+            return atA - atB;
         }
-    }
-    if (idx < 0) {
-        return turns.slice();
-    }
-    return turns.slice(idx);
+        const seqA = typeof a.t.seq === "number" && Number.isFinite(a.t.seq) ? a.t.seq : 0;
+        const seqB = typeof b.t.seq === "number" && Number.isFinite(b.t.seq) ? b.t.seq : 0;
+        if (seqA !== seqB) {
+            return seqA - seqB;
+        }
+        return a.i - b.i;
+    });
+    return tagged.map(({ t }) => {
+        const out = /** @type {{ role: string, text: string, at?: number, seq?: number }} */ ({
+            role: t.role,
+            text: t.text
+        });
+        if (t.at !== undefined) {
+            out.at = t.at;
+        }
+        if (typeof t.seq === "number" && Number.isFinite(t.seq)) {
+            out.seq = t.seq;
+        }
+        return out;
+    });
 }
 
 /**
@@ -4152,10 +4165,22 @@ app.get(PATHNAME_CONVERSATION_TRANSCRIPT_JSON, async (req, res) => {
             try {
                 const { csv } = await fetchLeadSheetUserQueriesForSession(session);
                 const fromSheetQueries = userTurnsFromSheetQueriesCsv_(csv);
-                /** When Sheet already has Chat transcript JSON, the User Queries CSV is the full-history dump and re-merging replays every pre-submit line below the chronological thread */
-                if (fromSheetQueries.length && sheetChatTurns.length === 0) {
-                    sourceParts.push("sheet_user_queries_csv");
-                    turns = mergeConversationTranscriptTurnSources_(turns, fromSheetQueries);
+                if (fromSheetQueries.length) {
+                    const existingUserN = new Set(
+                        turns.filter((t) => t.role === "user").map((t) => transcriptUserCompareNorm_(t.text))
+                    );
+                    const extraCsv = fromSheetQueries.filter(
+                        (t) =>
+                            t
+                            && t.role === "user"
+                            && !existingUserN.has(transcriptUserCompareNorm_(t.text))
+                    );
+                    if (extraCsv.length) {
+                        sourceParts.push(
+                            sheetChatTurns.length ? "sheet_user_queries_csv_deduped" : "sheet_user_queries_csv"
+                        );
+                        turns = mergeConversationTranscriptTurnSources_(turns, extraCsv);
+                    }
                 }
             } catch (se) {
                 const msg = se && /** @type {{ message?: string }} */ (se).message ? String(se.message) : String(se);
@@ -4172,7 +4197,7 @@ app.get(PATHNAME_CONVERSATION_TRANSCRIPT_JSON, async (req, res) => {
             }
         }
 
-        turns = sliceTranscriptTurnsFromLastContactFormSubmission_(turns);
+        turns = orderTranscriptTurnsForDisplay_(turns);
 
         transcript_fallback = "";
         const source = sourceParts.length ? sourceParts.join("+") : "none";
