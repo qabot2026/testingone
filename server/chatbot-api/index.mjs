@@ -55,7 +55,8 @@ import {
     formatConversationTimeForSheet,
     probeSheetsSpreadsheetAccess,
     sanitizeUserQueriesCsvForSheet,
-    upsertSessionQueriesInSheet
+    upsertSessionQueriesInSheet,
+    writeLeadCaptureDashboardToSheet2
 } from "./lib/sheets.mjs";
 import { getServiceAccountCredentials } from "./lib/google-service-account.mjs";
 import { uploadSubmissionFilesToDrive } from "./lib/drive-upload.mjs";
@@ -3060,6 +3061,7 @@ app.get("/conversations-sheet", (_req, res) => {
 
 const PATHNAME_CONVERSATIONS_SHEET_JSON = "/api/conversations-sheet";
 const PATHNAME_CONVERSATIONS_SHEET_STATS = "/api/conversations-sheet-stats";
+const PATHNAME_CONVERSATIONS_SHEET_SYNC_DASHBOARD = "/api/conversations-sheet-sync-dashboard";
 
 function conversationsSheetSecretFromReq_(req) {
     const want = (process.env.CONVERSATIONS_SHEET_VIEW_SECRET || "").trim();
@@ -3089,7 +3091,7 @@ function setConversationsSheetCors_(req, res) {
     } else {
         res.setHeader("Access-Control-Allow-Origin", "*");
     }
-    res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
     res.setHeader(
         "Access-Control-Allow-Headers",
         "Authorization, Content-Type, X-Conversations-Sheet-Secret"
@@ -3102,6 +3104,11 @@ app.options(PATHNAME_CONVERSATIONS_SHEET_JSON, (req, res) => {
 });
 
 app.options(PATHNAME_CONVERSATIONS_SHEET_STATS, (req, res) => {
+    setConversationsSheetCors_(req, res);
+    res.status(204).end();
+});
+
+app.options(PATHNAME_CONVERSATIONS_SHEET_SYNC_DASHBOARD, (req, res) => {
     setConversationsSheetCors_(req, res);
     res.status(204).end();
 });
@@ -3218,6 +3225,59 @@ app.get(PATHNAME_CONVERSATIONS_SHEET_STATS, async (req, res) => {
     }
 });
 
+async function handleConversationsSheetSyncDashboard_(req, res) {
+    setConversationsSheetCors_(req, res);
+    res.setHeader("Cache-Control", "no-store");
+    try {
+        const cfg = conversationsSheetSecretFromReq_(req);
+        if (cfg.reason === "unset") {
+            return res.status(503).json({
+                ok: false,
+                error:
+                    "Server has no CONVERSATIONS_SHEET_VIEW_SECRET. Use the same secret as /conversations-sheet."
+            });
+        }
+        if (!cfg.ok) {
+            return res.status(401).json({
+                ok: false,
+                error:
+                    "Unauthorized — send header X-Conversations-Sheet-Secret or Authorization: Bearer <secret> matching CONVERSATIONS_SHEET_VIEW_SECRET."
+            });
+        }
+        if (SHEETS_DISABLED) {
+            return res.status(503).json({
+                ok: false,
+                error:
+                    "Sheets disabled (DISABLE_SHEETS=1 or missing SHEETS_SPREADSHEET_ID)."
+            });
+        }
+        if (!getServiceAccountCredentials()) {
+            return res.status(503).json({
+                ok: false,
+                error: "Missing service account JSON (FIREBASE_SERVICE_ACCOUNT_JSON)."
+            });
+        }
+        const q = req.query || {};
+        const from = typeof q.from === "string" ? q.from.trim() : "";
+        const to = typeof q.to === "string" ? q.to.trim() : "";
+        const sync = await writeLeadCaptureDashboardToSheet2(
+            from || to ? { from: from || undefined, to: to || undefined } : {}
+        );
+        return res.status(200).json({ ok: true, ...sync });
+    } catch (e) {
+        const msg = e && /** @type {{ message?: string }} */ (e).message ? String(e.message) : String(e);
+        const low = msg.toLowerCase();
+        if (low.includes("invalid date parameter")) {
+            return res.status(400).json({ ok: false, error: msg.slice(0, 400) });
+        }
+        console.error("[chatbot-api] conversations-sheet sync dashboard:", msg);
+        return res.status(500).json({ ok: false, error: msg.slice(0, 500) });
+    }
+}
+
+app.get(PATHNAME_CONVERSATIONS_SHEET_SYNC_DASHBOARD, handleConversationsSheetSyncDashboard_);
+app.post(PATHNAME_CONVERSATIONS_SHEET_SYNC_DASHBOARD, handleConversationsSheetSyncDashboard_);
+
 /** Opening the Railway URL in a browser hits GET / — avoid Express default "Cannot GET /". */
 app.get("/", (_req, res) => {
     res.status(200).type("text/plain; charset=utf-8").send(
@@ -3227,6 +3287,7 @@ app.get("/", (_req, res) => {
             `GET /conversations-sheet → staff inbox (Sheet leads; requires CONVERSATIONS_SHEET_VIEW_SECRET).`,
             `GET /api/conversations-sheet?limit=&offset=&from=YYYY-MM-DD&to=YYYY-MM-DD → JSON rows (same secret; optional sheet-wide date filter).`,
             `GET /api/conversations-sheet-stats?from=YYYY-MM-DD&to=YYYY-MM-DD → mobile/email lead ratios (same secret).`,
+            `GET|POST /api/conversations-sheet-sync-dashboard?from=&to= → write KPI dashboard to SHEETS_DASHBOARD_TAB (default Sheet2; same secret).`,
             `POST JSON or multipart/form-data → ${PATHNAME}`,
             `POST JSON (chat mobile) → ${PATHNAME_MOBILE_SHEET_SYNC}`,
             `POST JSON (session queries) → ${PATHNAME_SESSION_SHEET_SYNC}`,

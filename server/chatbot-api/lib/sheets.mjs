@@ -71,6 +71,12 @@ function loadSheetExtraMappingsFromDisk_() {
 const SPREADSHEET_ID = (process.env.SHEETS_SPREADSHEET_ID || "").trim();
 // Default schema: no Form ID (A–R). Col A Date, B Time (12h TZ from SHEETS_CONV_DATETIME_TZ), then name…
 const RANGE = (process.env.SHEETS_RANGE || "Sheet1!A:R").trim();
+/** Secondary tab for lead KPIs (created if missing). Must differ from `SHEETS_RANGE` data tab. */
+const DASHBOARD_SHEET_TAB = (process.env.SHEETS_DASHBOARD_TAB || "Sheet2").trim() || "Sheet2";
+/** After each new lead row append, refresh the dashboard tab (best-effort; does not fail the request). */
+const SYNC_DASHBOARD_ON_APPEND = /^(1|true|yes)$/i.test(
+    String(process.env.SHEETS_SYNC_DASHBOARD_ON_APPEND || "").trim()
+);
 
 /** Session id column (0-based) when using default Date + Time lead layout (column J); legacy single Conv column layout used I (index 8). */
 const STANDARD_SESSION_COLUMN_INDEX0_NEW = 9;
@@ -2038,6 +2044,14 @@ export async function appendContactRowToSheet(row, opts) {
                 'Confirm SHEETS_RANGE tab matches your open sheet; ensure POST includes name/mobile/email in body or client_context.'
             );
         }
+        if (SYNC_DASHBOARD_ON_APPEND && patched) {
+            void writeLeadCaptureDashboardToSheet2({}).catch((e) => {
+                const msg = e && /** @type {{ message?: string }} */ (e).message
+                    ? String(/** @type {{ message?: string }} */ (e).message)
+                    : String(e);
+                console.warn("[chatbot-api] Dashboard tab sync failed:", msg);
+            });
+        }
         return {
             action: patched ? "duplicate_updated" : "duplicate_noop",
             patched,
@@ -2143,6 +2157,14 @@ export async function appendContactRowToSheet(row, opts) {
     } catch (e) {
         const msg = e && e.message ? e.message : String(e);
         console.error("[chatbot-api] Sheets header-mapped patch failed; row still appended.", msg);
+    }
+    if (SYNC_DASHBOARD_ON_APPEND) {
+        void writeLeadCaptureDashboardToSheet2({}).catch((err) => {
+            const msg = err && /** @type {{ message?: string }} */ (err).message
+                ? String(/** @type {{ message?: string }} */ (err).message)
+                : String(err);
+            console.warn("[chatbot-api] Dashboard tab sync failed:", msg);
+        });
     }
     return {
         action: "appended",
@@ -2669,6 +2691,159 @@ export async function fetchConversationLeadCaptureStats(opts = {}) {
     out.ratios.leads = rpt(leadsCaptured);
     out.ratios.leadCapturePct = pct;
     return out;
+}
+
+/**
+ * Ensure a worksheet exists (creates it if missing).
+ *
+ * @param {import("googleapis").sheets_v4.Sheets} sheets
+ * @param {string} title
+ * @returns {Promise<{ created: boolean, title: string }>}
+ */
+async function ensureSpreadsheetWorksheet_(sheets, title) {
+    const safeTitle = String(title || "").trim().slice(0, 100) || "Sheet2";
+    const meta = await sheets.spreadsheets.get({
+        spreadsheetId: SPREADSHEET_ID,
+        fields: "sheets.properties(title,sheetId)"
+    });
+    const sh = Array.isArray(meta.data.sheets) ? meta.data.sheets : [];
+    const want = normalizedSheetTabKey_(safeTitle);
+    for (let i = 0; i < sh.length; i += 1) {
+        const p = sh[i] && sh[i].properties;
+        const t = p && typeof p.title === "string" ? p.title.trim() : "";
+        if (t && normalizedSheetTabKey_(t) === want) {
+            return { created: false, title: safeTitle };
+        }
+    }
+    await sheets.spreadsheets.batchUpdate({
+        spreadsheetId: SPREADSHEET_ID,
+        requestBody: {
+            requests: [{ addSheet: { properties: { title: safeTitle } } }]
+        }
+    });
+    return { created: true, title: safeTitle };
+}
+
+/** A1 notation tab prefix (quoted for names with spaces/special chars). */
+function sheetA1TabPrefix_(title) {
+    const t = String(title || "").trim().replace(/'/g, "''") || "Sheet2";
+    return `'${t}'`;
+}
+
+/**
+ * @param {Awaited<ReturnType<typeof fetchConversationLeadCaptureStats>>} payload
+ * @returns {(string|number)[][]}
+ */
+function buildLeadDashboardSheetValues_(payload) {
+    const tot = payload.totals;
+    const conv = tot.conversations || 0;
+    const leads = (tot.onlyMobile || 0) + (tot.onlyEmail || 0) + (tot.mobileAndEmail || 0);
+    const pct =
+        payload.ratios && payload.ratios.leadCapturePct != null
+            ? payload.ratios.leadCapturePct
+            : conv
+              ? Math.round((leads * 10_000) / conv) / 100
+              : "";
+    /** @type {(string|number)[][]} */
+    const lines = [];
+    lines.push(["Lead dashboard (live sync — same logic as /conversations-sheet)", new Date().toISOString()]);
+    lines.push([]);
+    lines.push(["Total conversations", conv]);
+    lines.push(["Lead capture %", pct === "" ? "" : pct]);
+    lines.push(["Appointments booked", tot.appointmentBooked ?? tot.appointmentScheduled ?? 0]);
+    lines.push([]);
+    lines.push(["Conversations by channel", ""]);
+    lines.push(["Web", tot.channelWeb || 0]);
+    lines.push(["WhatsApp", tot.channelWhatsapp || 0]);
+    lines.push(["Instagram", tot.channelInstagram || 0]);
+    lines.push(["Facebook", tot.channelFacebook || 0]);
+    lines.push(["Other / uncategorized", tot.channelOther || 0]);
+    lines.push([]);
+    lines.push(["Contact detail captured"]);
+    lines.push(["Segment", "Total", "Web", "WhatsApp", "Instagram", "Facebook", "Other"]);
+    const omCh = tot.onlyMobileByChannel || {};
+    const oeCh = tot.onlyEmailByChannel || {};
+    const bothCh = tot.mobileAndEmailByChannel || {};
+    lines.push([
+        "Mobile only",
+        tot.onlyMobile || 0,
+        omCh.web || 0,
+        omCh.whatsapp || 0,
+        omCh.instagram || 0,
+        omCh.facebook || 0,
+        omCh.other || 0
+    ]);
+    lines.push([
+        "Email only",
+        tot.onlyEmail || 0,
+        oeCh.web || 0,
+        oeCh.whatsapp || 0,
+        oeCh.instagram || 0,
+        oeCh.facebook || 0,
+        oeCh.other || 0
+    ]);
+    lines.push([
+        "Mobile & email",
+        tot.mobileAndEmail || 0,
+        bothCh.web || 0,
+        bothCh.whatsapp || 0,
+        bothCh.instagram || 0,
+        bothCh.facebook || 0,
+        bothCh.other || 0
+    ]);
+    lines.push([]);
+    lines.push(["Neither mobile nor email (conversation still counted)", tot.neither || 0]);
+    if (payload.dateFilter && payload.dateFilter.applied) {
+        lines.push([]);
+        lines.push([
+            "Date filter (inclusive)",
+            `${payload.dateFilter.from || "—"} … ${payload.dateFilter.to || "—"}`
+        ]);
+    }
+    return lines;
+}
+
+/**
+ * Writes KPI tables to a second tab on the live spreadsheet (default `Sheet2`).
+ * Same numbers as `fetchConversationLeadCaptureStats` / the staff web dashboard.
+ *
+ * @param {{ from?: string, to?: string }} [opts] Optional date bounds (YYYY-MM-DD), same as stats API.
+ * @returns {Promise<{ tab: string, createdTab: boolean, rowsWritten: number, colsWritten: number }>}
+ */
+export async function writeLeadCaptureDashboardToSheet2(opts = {}) {
+    if (!SPREADSHEET_ID) {
+        throw new Error("SHEETS_SPREADSHEET_ID is not set.");
+    }
+    const dataTab = tabNameFromRange(RANGE);
+    const dashTab = DASHBOARD_SHEET_TAB;
+    if (normalizedSheetTabKey_(dashTab) === normalizedSheetTabKey_(dataTab)) {
+        throw new Error(
+            "SHEETS_DASHBOARD_TAB must not be the same worksheet as the data tab in SHEETS_RANGE."
+        );
+    }
+    const payload = await fetchConversationLeadCaptureStats(opts);
+    const values = buildLeadDashboardSheetValues_(payload);
+    const client = await getSheetsAuthClient();
+    const sheets = google.sheets({ version: "v4", auth: client });
+    const { created, title } = await ensureSpreadsheetWorksheet_(sheets, dashTab);
+    const prefix = sheetA1TabPrefix_(title);
+    await sheets.spreadsheets.values.clear({
+        spreadsheetId: SPREADSHEET_ID,
+        range: `${prefix}!A:Z`
+    });
+    await sheets.spreadsheets.values.update({
+        spreadsheetId: SPREADSHEET_ID,
+        range: `${prefix}!A1`,
+        valueInputOption: "USER_ENTERED",
+        requestBody: { values }
+    });
+    const colW = values.reduce((m, r) => Math.max(m, r.length), 0);
+    return {
+        tab: title,
+        createdTab: created,
+        rowsWritten: values.length,
+        colsWritten: colW
+    };
 }
 
 /**

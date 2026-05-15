@@ -849,6 +849,9 @@
           <button type="button" id="toggleSecret">Show</button>
           <button type="button" id="saveSecret">Save in tab</button>
           <button type="button" class="primary" id="refreshBtn">Reload</button>
+          <button type="button" id="syncSheet2Btn" title="Writes KPIs to the live Google Sheet (Sheet2 by default). Uses current date filters.">
+            Sync Sheet2
+          </button>
         </div>
         <p class="hint-foot">
           Variable on Railway: <span class="kbd">CONVERSATIONS_SHEET_VIEW_SECRET</span> &mdash; redeploy after edits.
@@ -936,6 +939,7 @@
       var filterEl = document.getElementById("filter");
       var limitEl = document.getElementById("limit");
       var refreshBtn = document.getElementById("refreshBtn");
+      var syncSheet2Btn = document.getElementById("syncSheet2Btn");
       var pagerWrap = document.getElementById("pagerWrap");
       var pagerNewer = document.getElementById("pagerNewer");
       var pagerOlder = document.getElementById("pagerOlder");
@@ -2175,6 +2179,60 @@
           if (leadStatsList) leadStatsList.hidden = true;
           showLeadStatsErr("");
         }
+      }
+
+      if (syncSheet2Btn) {
+        syncSheet2Btn.addEventListener("click", function () {
+          var secret = secretEl.value.trim();
+          showErr("");
+          if (!secret) {
+            showErr("Enter viewer secret.");
+            return;
+          }
+          var fromV = dateFromEl && dateFromEl.value ? dateFromEl.value.trim() : "";
+          var toV = dateToEl && dateToEl.value ? dateToEl.value.trim() : "";
+          var qp = [];
+          if (fromV) qp.push("from=" + encodeURIComponent(fromV));
+          if (toV) qp.push("to=" + encodeURIComponent(toV));
+          var url =
+            apiBase() +
+            "/api/conversations-sheet-sync-dashboard" +
+            (qp.length ? "?" + qp.join("&") : "");
+          syncSheet2Btn.disabled = true;
+          var prev = syncSheet2Btn.textContent;
+          syncSheet2Btn.textContent = "Syncing…";
+          fetch(url, {
+            method: "POST",
+            headers: { "X-Conversations-Sheet-Secret": secret },
+            cache: "no-store",
+            credentials: "same-origin"
+          })
+            .then(function (res) {
+              return res.json().then(function (j) {
+                return { res: res, j: j };
+              });
+            })
+            .then(function (o) {
+              if (!o.res.ok || !o.j || !o.j.ok) {
+                showErr((o.j && o.j.error) || "Sync failed.");
+                return;
+              }
+              setStatus(
+                "Live spreadsheet tab “" +
+                  (o.j.tab || "Sheet2") +
+                  "” updated (" +
+                  (o.j.rowsWritten || "?") +
+                  " rows written)."
+              );
+            })
+            .catch(function (e) {
+              showErr(String(e && e.message ? e.message : e));
+            })
+            .finally(function () {
+              syncSheet2Btn.disabled = false;
+              syncSheet2Btn.textContent = prev;
+            });
+        });
       }
 
       refreshBtn.addEventListener("click", load);
