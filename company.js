@@ -1424,7 +1424,7 @@ const originalTextNodeContent = new Map();
 const originalElementAttributes = new Map();
 const googleTranslationCache = new Map();
 
-const COMPANY_JS_BUILD_TAG = "20260513-06";
+const COMPANY_JS_BUILD_TAG = "20260515-01";
 const COMPANY_DEBUG_QUERY_FLAG = "dfchatDebug";
 let debugMountAttemptSeq = 0;
 let debugBadgeLastRenderAt = 0;
@@ -14323,7 +14323,9 @@ function installRenderedBotTranscriptHook_(host) {
     el.renderCustomText = (text, isBot) => {
         const ret = orig(text, isBot);
         try {
-            if (isBot === true && typeof text === "string") {
+            // df-messenger often renders agent markdown with a single-arg call (`isBot` omitted).
+            // User lane uses `renderCustomText(t, false)`; user persona uses `(md, true)` but carries USER_PERSONA_TEXT_SENTINEL (filtered below).
+            if (isBot !== false && typeof text === "string") {
                 maybeRecordRenderedBotMarkdownForTranscript_(text);
             }
         } catch {
@@ -15298,9 +15300,7 @@ function submitContactForm(event) {
     /** @type {Record<string, string> | undefined} */
     let fetchHeaders;
     if (!isOtpUpdateMobile && useMultipart) {
-        const clientSnapshot = getClientContext();
         const fd = new FormData();
-        fd.append("client_context", JSON.stringify(clientSnapshot));
         fd.append("_contactFormId", cfg0.formKey);
         /** Form `mobile` field value if any (may be empty when chatbot collected the number). */
         let formMobileValue = "";
@@ -15470,6 +15470,7 @@ function submitContactForm(event) {
                 formMobileValue = m;
             }
         }
+        const clientSnapshot = getClientContext();
         const sessionMobile =
             dfParameterScalarToString(
                 clientSnapshot && clientSnapshot.mobile != null ? clientSnapshot.mobile : ""
@@ -15491,10 +15492,21 @@ function submitContactForm(event) {
         ) {
             fd.append("email", snapEmailTrim);
         }
+        const summaryPayloadMu = chatSummaryPayload != null ? chatSummaryPayload : payload;
+        const summaryLinesMu = buildContactFormSubmissionSummaryLines_(summaryPayloadMu);
+        const assistantMarkdownMu = summaryLinesMu.join("  \n");
+        const ctxMu = cloneClientContextWithTranscriptAssistantTurn_(clientSnapshot, assistantMarkdownMu);
+        fd.append("client_context", JSON.stringify(ctxMu));
         fetchBody = fd;
         fetchHeaders = undefined;
     } else {
-        payload.client_context = getClientContext();
+        const summaryPayloadJson = chatSummaryPayload != null ? chatSummaryPayload : payload;
+        const summaryLinesJson = buildContactFormSubmissionSummaryLines_(summaryPayloadJson);
+        const assistantMarkdownJson = summaryLinesJson.join("  \n");
+        payload.client_context = cloneClientContextWithTranscriptAssistantTurn_(
+            getClientContext(),
+            assistantMarkdownJson
+        );
         fetchBody = JSON.stringify(payload);
         fetchHeaders = { "Content-Type": "application/json" };
     }
@@ -15731,12 +15743,15 @@ function titleCaseSummaryLabel_(key) {
     return words.map((w) => (w ? w.charAt(0).toUpperCase() + w.slice(1) : w)).join(" ");
 }
 
-function renderContactFormSubmissionResponse(payload) {
-    if (!activeDfMessenger || typeof activeDfMessenger.renderCustomText !== "function") {
-        return;
-    }
-
+/**
+ * Shared labeled rows for the contact-form confirmation bubble / transcript assistant turn.
+ *
+ * @param {Record<string, unknown> | null | undefined} payload
+ * @returns {string[]}
+ */
+function buildContactFormSubmissionSummaryLines_(payload) {
     const cfg = readContactFormConfig();
+    /** @type {string[]} */
     const lines = [];
     for (const key of cfg.chatSummaryFieldNames) {
         const v = payload && key in payload ? String(payload[key] || "").trim() : "";
@@ -15757,6 +15772,49 @@ function renderContactFormSubmissionResponse(payload) {
         lines.push(`${label} - ${v || "-"}`);
     }
     lines.push(getTranslation("contactResponseThanks"));
+    return lines;
+}
+
+/**
+ * Clone widget client_context and append one assistant transcript turn so Firestore / Sheets receive it on the
+ * **same POST** as the lead — {@link renderContactFormSubmissionResponse} runs after the HTTP round-trip (too late).
+ *
+ * @param {Record<string, unknown>} ctx
+ * @param {string} assistantPlain
+ */
+function cloneClientContextWithTranscriptAssistantTurn_(ctx, assistantPlain) {
+    const raw = typeof assistantPlain === "string" ? assistantPlain.trim() : "";
+    const base = ctx && typeof ctx === "object" ? ctx : {};
+    if (!raw) {
+        return { ...base };
+    }
+    const transcript =
+        Array.isArray(base.chat_transcript)
+            ? /** @type {{ role?: string, text?: string, at?: number, seq?: number }[]} */ (base.chat_transcript).slice()
+            : [];
+    let seq =
+        typeof base.chat_transcript_seq === "number" && Number.isFinite(base.chat_transcript_seq)
+            ? base.chat_transcript_seq
+            : 0;
+    seq += 1;
+    const text =
+        raw.length > MAX_CHAT_TRANSCRIPT_TEXT_CHARS
+            ? `${raw.slice(0, MAX_CHAT_TRANSCRIPT_TEXT_CHARS)}…`
+            : raw;
+    transcript.push({ role: "assistant", text, at: Date.now(), seq });
+    return {
+        ...base,
+        chat_transcript: transcript.slice(-MAX_CHAT_TRANSCRIPT_TURNS),
+        chat_transcript_seq: seq
+    };
+}
+
+function renderContactFormSubmissionResponse(payload) {
+    if (!activeDfMessenger || typeof activeDfMessenger.renderCustomText !== "function") {
+        return;
+    }
+
+    const lines = buildContactFormSubmissionSummaryLines_(payload);
     const responseText = lines.join("  \n");
 
     renderBotPersona(activeDfMessenger, Date.now());
