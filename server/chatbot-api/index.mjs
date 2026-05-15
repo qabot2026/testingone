@@ -2380,6 +2380,18 @@ app.post(
             .filter(Boolean)
             .join(", ");
 
+        mergeLeadFormAssistantIntoClientContextIfMissing_(
+            mergedClientContext,
+            buildContactLeadSummaryTextForTranscript_({
+                name,
+                email,
+                mobile,
+                form_id: formId,
+                submitted_at: submittedAtIso,
+                fields
+            })
+        );
+
         const record = {
             submitted_at: submittedAtIso,
             form_id: formId,
@@ -3215,6 +3227,11 @@ function transcriptTurnsFromStoredChatArray_(arr) {
             if (a.at !== b.at) {
                 return a.at - b.at;
             }
+            const ha = typeof a.seq === "number" && Number.isFinite(a.seq);
+            const hb = typeof b.seq === "number" && Number.isFinite(b.seq);
+            if (ha && hb && /** @type {number} */ (a.seq) !== /** @type {number} */ (b.seq)) {
+                return /** @type {number} */ (a.seq) - /** @type {number} */ (b.seq);
+            }
             return (a.role === "user" ? 0 : 1) - (b.role === "user" ? 0 : 1);
         });
     }
@@ -3345,6 +3362,132 @@ function transcriptTurnsFromClientContext_(cx) {
             .map((x) => ({ role: "user", text: String(x).trim() }));
     }
     return [];
+}
+
+/** Max transcript items kept in sync with widget (`company.js` MAX_CHAT_TRANSCRIPT_TURNS). */
+const CHAT_TRANSCRIPT_WIDGET_CAP = 120;
+
+/** @param {string} key */
+function prettyTranscriptFieldLabel_(key) {
+    const s = typeof key === "string" ? key.trim() : "";
+    if (!s) {
+        return "";
+    }
+    const words = s
+        .replace(/[_-]+/g, " ")
+        .replace(/([a-z])([A-Z])/g, "$1 $2")
+        .trim()
+        .split(/\s+/);
+    return words.map((w) => (w ? w.charAt(0).toUpperCase() + w.slice(1) : w)).join(" ");
+}
+
+/**
+ * One assistant bubble built from saved lead fields (not Dialogflow wording).
+ *
+ * @param {{ name?: unknown, email?: unknown, mobile?: unknown, form_id?: unknown, submitted_at?: unknown, fields?: Record<string, unknown> }} opt
+ */
+function buildContactLeadSummaryTextForTranscript_(opt) {
+    const o = opt && typeof opt === "object" ? opt : {};
+    const fields =
+        o.fields && typeof o.fields === "object"
+            ? /** @type {Record<string, unknown>} */ (o.fields)
+            : {};
+    /** @type {string[]} */
+    const lines = [];
+    const pushLine = (label, val) => {
+        const s =
+            typeof val === "string"
+                ? val.trim()
+                : val != null && typeof val !== "object"
+                  ? String(val).trim()
+                  : "";
+        if (s) {
+            lines.push(`${label}: ${s}`);
+        }
+    };
+    pushLine("Name", o.name);
+    pushLine("Email", o.email);
+    pushLine("Mobile", o.mobile);
+    pushLine("Form id", o.form_id);
+    pushLine("Submitted at", o.submitted_at);
+    const used = new Set(["name", "email", "mobile"]);
+    for (const [k, val] of Object.entries(fields)) {
+        const keyLower = typeof k === "string" ? k.trim().toLowerCase() : "";
+        if (!keyLower || used.has(keyLower)) {
+            continue;
+        }
+        const sv = scalarFormValue(val);
+        if (!sv) {
+            continue;
+        }
+        used.add(keyLower);
+        lines.push(`${prettyTranscriptFieldLabel_(k)}: ${sv}`);
+    }
+    if (!lines.length) {
+        return "";
+    }
+    return `Form submission\n\n${lines.join("\n")}`;
+}
+
+/**
+ * Guarantees at least one assistant turn from submitted fields when the widget omitted `chat_transcript` assistant rows.
+ *
+ * @param {Record<string, unknown>} cx merged client_context (mutated)
+ * @param {string} summaryText
+ */
+function mergeLeadFormAssistantIntoClientContextIfMissing_(cx, summaryText) {
+    const text = typeof summaryText === "string" ? summaryText.trim() : "";
+    if (!text || !cx || typeof cx !== "object") {
+        return;
+    }
+    const prev = Array.isArray(cx.chat_transcript) ? cx.chat_transcript : [];
+    /** @type {unknown[]} */
+    const arr = prev.slice();
+    if (
+        arr.some(
+            (it) =>
+                it && typeof it === "object" && /** @type {{ role?: string }} */ (it).role === "assistant"
+        )
+    ) {
+        return;
+    }
+    let maxSeq = 0;
+    for (const it of arr) {
+        if (!it || typeof it !== "object") {
+            continue;
+        }
+        const q = /** @type {{ seq?: unknown }} */ (it).seq;
+        if (typeof q === "number" && Number.isFinite(q)) {
+            maxSeq = Math.max(maxSeq, q);
+        }
+    }
+    const nextSeq = maxSeq + 1;
+    arr.push({ role: "assistant", text, at: Date.now(), seq: nextSeq });
+    cx.chat_transcript = arr.slice(-CHAT_TRANSCRIPT_WIDGET_CAP);
+    cx.chat_transcript_seq = nextSeq;
+}
+
+/** @param {Record<string, unknown> | null} rec */
+function syntheticFormSubmissionAssistantTurnsFromLead_(rec) {
+    if (!rec || typeof rec !== "object") {
+        return [];
+    }
+    const fields =
+        rec.fields && typeof rec.fields === "object"
+            ? /** @type {Record<string, unknown>} */ (rec.fields)
+            : {};
+    const body = buildContactLeadSummaryTextForTranscript_({
+        name: rec.name,
+        email: rec.email,
+        mobile: rec.mobile,
+        form_id: rec.form_id,
+        submitted_at: rec.submitted_at,
+        fields
+    });
+    if (!body.trim()) {
+        return [];
+    }
+    return [{ role: "assistant", text: body }];
 }
 
 /** @param {string} csv */
@@ -3508,6 +3651,13 @@ app.get(PATHNAME_CONVERSATION_TRANSCRIPT_JSON, async (req, res) => {
             } catch (se) {
                 const msg = se && /** @type {{ message?: string }} */ (se).message ? String(se.message) : String(se);
                 console.warn("[chatbot-api] conversation-transcript Sheet:", msg.slice(0, 240));
+            }
+        }
+
+        if (!hasAssistantTurns_(turns) && firestoreRec) {
+            const synthLead = syntheticFormSubmissionAssistantTurnsFromLead_(firestoreRec);
+            if (synthLead.length) {
+                turns = [...turns, ...synthLead];
             }
         }
 
