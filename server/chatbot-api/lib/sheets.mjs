@@ -2835,7 +2835,10 @@ async function resetDashboardSheetDecor_(sheets, sheetId) {
  *     funnelDataEnd: number,
  *     coverageTitleRow: number,
  *     coverageDataStart: number,
- *     coverageDataEnd: number
+ *     coverageDataEnd: number,
+ *     rowChartBandLabel: number,
+ *     chartSlotStart: number,
+ *     chartSlotEnd: number
  *   }
  * }}
  */
@@ -3051,6 +3054,24 @@ function buildLeadDashboardSheetPayload_(payload) {
             ""
         ]);
     }
+    L.rowChartBandLabel = push([
+        "Visual analytics — charts below (one per row; scroll to view)",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+    ]);
+    L.chartSlotStart = lines.length;
+    for (let i = 0; i < 10; i += 1) {
+        push(pad([]));
+    }
+    L.chartSlotEnd = lines.length - 1;
     L.rowFunnelSection = push([
         "— Chart source: pipeline (rows hidden after sync) —",
         "",
@@ -3171,7 +3192,10 @@ function buildLeadDashboardSheetPayload_(payload) {
             funnelDataEnd: L.funnelDataEnd,
             coverageTitleRow: L.coverageTitleRow,
             coverageDataStart: L.coverageDataStart,
-            coverageDataEnd: L.coverageDataEnd
+            coverageDataEnd: L.coverageDataEnd,
+            rowChartBandLabel: L.rowChartBandLabel,
+            chartSlotStart: L.chartSlotStart,
+            chartSlotEnd: L.chartSlotEnd
         }
     };
 }
@@ -3201,6 +3225,8 @@ async function applyLeadDashboardChartsAndFormatting_(sheets, sheetId, layout, r
     const cHead = layout.contactHeaderRow;
     const funnelHideStart = layout.rowFunnelSection;
     const funnelHideEnd = layout.coverageDataEnd + 1;
+
+    const slot = (/** @type {number} */ i) => layout.chartSlotStart + i;
 
     const stackColors = [
         sheetRgb_("#2563eb"),
@@ -3265,11 +3291,11 @@ async function applyLeadDashboardChartsAndFormatting_(sheets, sheetId, layout, r
                     },
                     position: {
                         overlayPosition: {
-                            anchorCell: { sheetId, rowIndex: ch + 1, columnIndex: 3 },
-                            offsetXPixels: 6,
-                            offsetYPixels: 2,
-                            widthPixels: 420,
-                            heightPixels: 290
+                            anchorCell: { sheetId, rowIndex: slot(0), columnIndex: 2 },
+                            offsetXPixels: 8,
+                            offsetYPixels: 6,
+                            widthPixels: 540,
+                            heightPixels: 240
                         }
                     }
                 }
@@ -3313,11 +3339,11 @@ async function applyLeadDashboardChartsAndFormatting_(sheets, sheetId, layout, r
                     },
                     position: {
                         overlayPosition: {
-                            anchorCell: { sheetId, rowIndex: ch + 1, columnIndex: 3 },
-                            offsetXPixels: 430,
-                            offsetYPixels: 2,
-                            widthPixels: 380,
-                            heightPixels: 290
+                            anchorCell: { sheetId, rowIndex: slot(1), columnIndex: 2 },
+                            offsetXPixels: 8,
+                            offsetYPixels: 6,
+                            widthPixels: 520,
+                            heightPixels: 240
                         }
                     }
                 }
@@ -3375,11 +3401,11 @@ async function applyLeadDashboardChartsAndFormatting_(sheets, sheetId, layout, r
                     },
                     position: {
                         overlayPosition: {
-                            anchorCell: { sheetId, rowIndex: layout.rowBetweenChannelContact, columnIndex: 0 },
-                            offsetXPixels: 0,
-                            offsetYPixels: 0,
-                            widthPixels: 700,
-                            heightPixels: 255
+                            anchorCell: { sheetId, rowIndex: slot(2), columnIndex: 2 },
+                            offsetXPixels: 8,
+                            offsetYPixels: 6,
+                            widthPixels: 820,
+                            heightPixels: 230
                         }
                     }
                 }
@@ -3423,11 +3449,11 @@ async function applyLeadDashboardChartsAndFormatting_(sheets, sheetId, layout, r
                     },
                     position: {
                         overlayPosition: {
-                            anchorCell: { sheetId, rowIndex: pieS, columnIndex: 3 },
-                            offsetXPixels: 6,
-                            offsetYPixels: 0,
-                            widthPixels: 410,
-                            heightPixels: 300
+                            anchorCell: { sheetId, rowIndex: slot(3), columnIndex: 2 },
+                            offsetXPixels: 8,
+                            offsetYPixels: 6,
+                            widthPixels: 520,
+                            heightPixels: 250
                         }
                     }
                 }
@@ -3486,11 +3512,11 @@ async function applyLeadDashboardChartsAndFormatting_(sheets, sheetId, layout, r
                     },
                     position: {
                         overlayPosition: {
-                            anchorCell: { sheetId, rowIndex: pieS, columnIndex: 3 },
-                            offsetXPixels: 430,
-                            offsetYPixels: 4,
-                            widthPixels: 400,
-                            heightPixels: 300
+                            anchorCell: { sheetId, rowIndex: slot(4), columnIndex: 2 },
+                            offsetXPixels: 8,
+                            offsetYPixels: 6,
+                            widthPixels: 540,
+                            heightPixels: 250
                         }
                     }
                 }
@@ -3549,10 +3575,10 @@ async function applyLeadDashboardChartsAndFormatting_(sheets, sheetId, layout, r
                     },
                     position: {
                         overlayPosition: {
-                            anchorCell: { sheetId, rowIndex: layout.rowBannerSub + 1, columnIndex: 8 },
-                            offsetXPixels: 4,
-                            offsetYPixels: 0,
-                            widthPixels: 380,
+                            anchorCell: { sheetId, rowIndex: slot(5), columnIndex: 2 },
+                            offsetXPixels: 8,
+                            offsetYPixels: 6,
+                            widthPixels: 480,
                             heightPixels: 220
                         }
                     }
@@ -3602,11 +3628,11 @@ async function applyLeadDashboardChartsAndFormatting_(sheets, sheetId, layout, r
                     },
                     position: {
                         overlayPosition: {
-                            anchorCell: { sheetId, rowIndex: layout.rowBetweenChannelContact, columnIndex: 0 },
-                            offsetXPixels: 710,
-                            offsetYPixels: 8,
-                            widthPixels: 340,
-                            heightPixels: 255
+                            anchorCell: { sheetId, rowIndex: slot(6), columnIndex: 2 },
+                            offsetXPixels: 8,
+                            offsetYPixels: 6,
+                            widthPixels: 480,
+                            heightPixels: 230
                         }
                     }
                 }
@@ -3650,11 +3676,11 @@ async function applyLeadDashboardChartsAndFormatting_(sheets, sheetId, layout, r
                     },
                     position: {
                         overlayPosition: {
-                            anchorCell: { sheetId, rowIndex: layout.rowBetweenChannelContact, columnIndex: 0 },
-                            offsetXPixels: 4,
-                            offsetYPixels: 268,
-                            widthPixels: 500,
-                            heightPixels: 285
+                            anchorCell: { sheetId, rowIndex: slot(7), columnIndex: 2 },
+                            offsetXPixels: 8,
+                            offsetYPixels: 6,
+                            widthPixels: 560,
+                            heightPixels: 250
                         }
                     }
                 }
@@ -3825,8 +3851,30 @@ async function applyLeadDashboardChartsAndFormatting_(sheets, sheetId, layout, r
         textFormat: { foregroundColor: slate, fontSize: 10, italic: true }
     });
 
-    if (rowCount > layout.rowContactNeither + 1) {
-        repeatRows(layout.rowContactNeither + 1, rowCount, {
+    if (layout.rowChartBandLabel > layout.rowContactNeither + 1) {
+        repeatRows(layout.rowContactNeither + 1, layout.rowChartBandLabel, {
+            backgroundColor: sheetRgb_("#f8fafc"),
+            horizontalAlignment: "LEFT",
+            verticalAlignment: "MIDDLE",
+            textFormat: { foregroundColor: muted, fontSize: 10 }
+        });
+    }
+    repeatRows(layout.rowChartBandLabel, layout.rowChartBandLabel + 1, {
+        backgroundColor: sheetRgb_("#e2e8f0"),
+        horizontalAlignment: "LEFT",
+        verticalAlignment: "MIDDLE",
+        textFormat: { foregroundColor: slate, fontSize: 10, bold: true }
+    });
+    for (let r = layout.chartSlotStart; r <= layout.chartSlotEnd; r += 1) {
+        repeatRows(r, r + 1, {
+            backgroundColor: sheetRgb_("#fafafa"),
+            horizontalAlignment: "LEFT",
+            verticalAlignment: "MIDDLE",
+            textFormat: { foregroundColor: muted, fontSize: 9 }
+        });
+    }
+    if (rowCount > layout.chartSlotEnd + 1) {
+        repeatRows(layout.chartSlotEnd + 1, rowCount, {
             backgroundColor: sheetRgb_("#f8fafc"),
             horizontalAlignment: "LEFT",
             verticalAlignment: "MIDDLE",

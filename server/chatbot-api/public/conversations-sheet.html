@@ -818,7 +818,46 @@
       color: var(--muted);
       line-height: 1.45;
     }
+    .lead-stats-chart-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 6px;
+    }
+    @media (max-width: 900px) {
+      .lead-stats-chart-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+    .lead-chart-card {
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+      background: rgba(255, 255, 255, 0.92);
+      padding: 12px 14px 10px;
+      box-shadow: var(--shadow-sm);
+      min-height: 268px;
+      display: flex;
+      flex-direction: column;
+    }
+    .lead-chart-card h4 {
+      margin: 0 0 10px;
+      font-size: 0.7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: var(--muted);
+    }
+    .lead-chart-card .chart-canvas-wrap {
+      flex: 1;
+      position: relative;
+      min-height: 220px;
+      max-height: 300px;
+    }
   </style>
+  <script
+    src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"
+    crossorigin="anonymous"
+  ></script>
 </head>
 <body>
   <div class="app">
@@ -958,6 +997,190 @@
       var authBox = document.getElementById("authBox");
       var leadStatsList = document.getElementById("leadStatsList");
       var leadStatsErr = document.getElementById("leadStatsErr");
+      var leadChartInstances = [];
+
+      function destroyLeadCharts() {
+        leadChartInstances.forEach(function (ch) {
+          try {
+            ch.destroy();
+          } catch (ignore) {}
+        });
+        leadChartInstances = [];
+      }
+
+      /**
+       * @param {Record<string, unknown>} payload
+       */
+      function mountLeadStatsCharts(payload) {
+        destroyLeadCharts();
+        if (typeof Chart === "undefined") return;
+        var tot = payload.totals || {};
+        function statNum(o, key, fb) {
+          var v = o[key];
+          if (typeof v === "number" && Number.isFinite(v)) return Math.trunc(v);
+          var n = Number(v);
+          if (Number.isFinite(n)) return Math.trunc(n);
+          return fb;
+        }
+        var n = statNum(tot, "conversations", 0);
+        var om = statNum(tot, "onlyMobile", 0);
+        var oe = statNum(tot, "onlyEmail", 0);
+        var be = statNum(tot, "mobileAndEmail", 0);
+        var ni = statNum(tot, "neither", 0);
+        var leads = om + oe + be;
+        var apt = statNum(tot, "appointmentBooked", NaN);
+        if (!Number.isFinite(apt)) apt = statNum(tot, "appointmentScheduled", 0);
+        var cw = statNum(tot, "channelWeb", 0);
+        var cwa = statNum(tot, "channelWhatsapp", 0);
+        var cinst = statNum(tot, "channelInstagram", 0);
+        var cfb = statNum(tot, "channelFacebook", 0);
+        var coth = statNum(tot, "channelOther", 0);
+        var pal = {
+          teal: "#0d9488",
+          sky: "#38bdf8",
+          indigo: "#6366f1",
+          fb: "#1877f2",
+          slate: "#94a3b8"
+        };
+        var chBarEl = document.getElementById("lcBarChannel");
+        var chPieEl = document.getElementById("lcPieChannel");
+        var leadPieEl = document.getElementById("lcPieLead");
+        var funnelEl = document.getElementById("lcBarFunnel");
+        var covEl = document.getElementById("lcPieCoverage");
+        var segEl = document.getElementById("lcBarSegments");
+        if (!chBarEl || !chPieEl || !leadPieEl || !funnelEl || !covEl || !segEl) return;
+
+        var chLabels = ["Web", "WhatsApp", "Instagram", "Facebook", "Other"];
+        var chData = [cw, cwa, cinst, cfb, coth];
+        var chColors = [pal.teal, pal.sky, pal.indigo, pal.fb, pal.slate];
+
+        leadChartInstances.push(
+          new Chart(chBarEl, {
+            type: "bar",
+            data: {
+              labels: chLabels,
+              datasets: [
+                {
+                  label: "Conversations",
+                  data: chData,
+                  backgroundColor: chColors
+                }
+              ]
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              plugins: { legend: { display: false } },
+              scales: {
+                y: { beginAtZero: true, ticks: { precision: 0 } }
+              }
+            }
+          })
+        );
+
+        leadChartInstances.push(
+          new Chart(chPieEl, {
+            type: "doughnut",
+            data: {
+              labels: chLabels,
+              datasets: [{ data: chData, backgroundColor: chColors }]
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              plugins: { legend: { position: "bottom", labels: { boxWidth: 10, font: { size: 10 } } } }
+            }
+          })
+        );
+
+        leadChartInstances.push(
+          new Chart(leadPieEl, {
+            type: "doughnut",
+            data: {
+              labels: ["Mobile only", "Email only", "Mobile & email"],
+              datasets: [
+                {
+                  data: [om, oe, be],
+                  backgroundColor: [pal.teal, pal.sky, pal.indigo]
+                }
+              ]
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              plugins: { legend: { position: "bottom", labels: { boxWidth: 10, font: { size: 10 } } } }
+            }
+          })
+        );
+
+        leadChartInstances.push(
+          new Chart(funnelEl, {
+            type: "bar",
+            data: {
+              labels: ["Conversations", "With contact detail", "Appointments booked"],
+              datasets: [
+                {
+                  label: "Count",
+                  data: [n, leads, apt],
+                  backgroundColor: [pal.slate, pal.teal, pal.sky]
+                }
+              ]
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              plugins: { legend: { display: false } },
+              scales: {
+                y: { beginAtZero: true, ticks: { precision: 0 } }
+              }
+            }
+          })
+        );
+
+        leadChartInstances.push(
+          new Chart(covEl, {
+            type: "doughnut",
+            data: {
+              labels: ["With contact detail", "No phone/email"],
+              datasets: [
+                {
+                  data: [leads, ni],
+                  backgroundColor: [pal.teal, "#fdba74"]
+                }
+              ]
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              plugins: { legend: { position: "bottom", labels: { boxWidth: 10, font: { size: 10 } } } }
+            }
+          })
+        );
+
+        leadChartInstances.push(
+          new Chart(segEl, {
+            type: "bar",
+            data: {
+              labels: ["Mobile only", "Email only", "Both", "Neither"],
+              datasets: [
+                {
+                  label: "Conversations",
+                  data: [om, oe, be, ni],
+                  backgroundColor: [pal.teal, pal.sky, pal.indigo, "#fdba74"]
+                }
+              ]
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              plugins: { legend: { display: false } },
+              scales: {
+                y: { beginAtZero: true, ticks: { precision: 0 } }
+              }
+            }
+          })
+        );
+      }
 
       function apiBase() {
         return "";
@@ -2130,7 +2353,21 @@
           contactMini("Mobile only", om, tot.onlyMobileByChannel) +
           contactMini("Email only", oe, tot.onlyEmailByChannel) +
           contactMini("Mobile &amp; email", be, tot.mobileAndEmailByChannel) +
+          "</div>" +
+          '<h3 class="lead-stats-section-h">Visual analytics</h3>' +
+          '<div class="lead-stats-chart-grid">' +
+          '<div class="lead-chart-card"><h4>Volume by channel</h4><div class="chart-canvas-wrap"><canvas id="lcBarChannel"></canvas></div></div>' +
+          '<div class="lead-chart-card"><h4>Channel mix</h4><div class="chart-canvas-wrap"><canvas id="lcPieChannel"></canvas></div></div>' +
+          '<div class="lead-chart-card"><h4>Lead capture split</h4><div class="chart-canvas-wrap"><canvas id="lcPieLead"></canvas></div></div>' +
+          '<div class="lead-chart-card"><h4>Pipeline</h4><div class="chart-canvas-wrap"><canvas id="lcBarFunnel"></canvas></div></div>' +
+          '<div class="lead-chart-card"><h4>Contact vs gaps</h4><div class="chart-canvas-wrap"><canvas id="lcPieCoverage"></canvas></div></div>' +
+          '<div class="lead-chart-card"><h4>All segments</h4><div class="chart-canvas-wrap"><canvas id="lcBarSegments"></canvas></div></div>' +
           "</div>";
+        try {
+          mountLeadStatsCharts(payload);
+        } catch (chartErr) {
+          console.error("[conversations-sheet] lead charts", chartErr);
+        }
       }
 
       async function loadLeadStats() {
