@@ -410,6 +410,55 @@
         return s;
       }
 
+      function normalizeDetailValue(v) {
+        var s =
+          typeof v === "number" || typeof v === "boolean"
+            ? String(v)
+            : v != null
+              ? String(v)
+              : "";
+        return s.trim();
+      }
+
+      /** Sheet / submission field key → stable label (case- and space-insensitive). */
+      function canonicalLeadFieldKey(rawKey) {
+        var k = String(rawKey || "")
+          .trim()
+          .toLowerCase()
+          .replace(/\s+/g, " ");
+        if (k === "name") return "name";
+        if (k === "email") return "email";
+        if (k === "mobile") return "mobile";
+        if (k === "user queries" || k === "userqueries") return "user_queries";
+        return null;
+      }
+
+      function shouldDropSummaryFieldKey(rawKey) {
+        var k = String(rawKey || "")
+          .trim()
+          .toLowerCase()
+          .replace(/\s+/g, " ");
+        var kn = k.replace(/\s/g, "");
+        if (k === "form id" || k === "form_id" || kn === "formid") return true;
+        if (k === "app. booked" || k === "app booked" || kn === "app.booked") return true;
+        if (k === "scheduled") return true;
+        return false;
+      }
+
+      function findColumnEntryBySemantic(cols, semantic) {
+        var keys = Object.keys(cols);
+        for (var i = 0; i < keys.length; i++) {
+          var key = keys[i];
+          if (canonicalLeadFieldKey(key) === semantic) {
+            return {
+              key: key,
+              val: normalizeDetailValue(cols[key])
+            };
+          }
+        }
+        return null;
+      }
+
       function buildDetails(json) {
         /** @type {Array<[string, string]>} */
         var pairs = [];
@@ -417,25 +466,59 @@
         var sheet = json.sheet && typeof json.sheet === "object" ? json.sheet : null;
         var cols = sheet && sheet.columns && typeof sheet.columns === "object" ? sheet.columns : null;
 
-        if (meta.name != null && String(meta.name).trim())
-          pairs.push(["Name (submission)", String(meta.name)]);
-        if (meta.email != null && String(meta.email).trim())
-          pairs.push(["Email (submission)", String(meta.email)]);
-        if (meta.mobile != null && String(meta.mobile).trim())
-          pairs.push(["Mobile (submission)", String(meta.mobile)]);
-        if (meta.form_id != null && String(meta.form_id).trim())
-          pairs.push(["Form id", String(meta.form_id)]);
-        if (meta.submitted_at != null && String(meta.submitted_at).trim())
-          pairs.push(["Submitted at", String(meta.submitted_at)]);
-        if (sheet && sheet.rowNumber)
-          pairs.push(["Sheet row", String(sheet.rowNumber)]);
+        /** @type {Record<string, true>} */
+        var consumedCol = {};
+
+        function pickSemantic(semantic, metaRaw) {
+          var fromMeta = normalizeDetailValue(metaRaw);
+          if (!cols) {
+            return fromMeta;
+          }
+          var hit = findColumnEntryBySemantic(cols, semantic);
+          if (hit) {
+            consumedCol[hit.key] = true;
+            return fromMeta || hit.val;
+          }
+          return fromMeta;
+        }
+
+        var nameVal = pickSemantic("name", meta.name);
+        var emailVal = pickSemantic("email", meta.email);
+        var mobileVal = pickSemantic("mobile", meta.mobile);
+
+        var userQueriesVal = "";
+        if (cols) {
+          var uqHit = findColumnEntryBySemantic(cols, "user_queries");
+          if (uqHit) {
+            consumedCol[uqHit.key] = true;
+            userQueriesVal = uqHit.val;
+          }
+        }
+
+        if (nameVal) pairs.push(["Name", String(nameVal)]);
+        if (emailVal) pairs.push(["Email", String(emailVal)]);
+        if (userQueriesVal) pairs.push(["User queries", String(userQueriesVal)]);
+        if (mobileVal) pairs.push(["Mobile", String(mobileVal)]);
+
+        var submittedVal = normalizeDetailValue(meta.submitted_at);
+        if (submittedVal) pairs.push(["Submitted at", submittedVal]);
+        if (sheet && sheet.rowNumber) pairs.push(["Sheet row", String(sheet.rowNumber)]);
 
         if (cols) {
-          var keys = Object.keys(cols).sort(function (a, b) {
+          var restKeys = Object.keys(cols).sort(function (a, b) {
             return a.localeCompare(b);
           });
-          for (var i = 0; i < keys.length; i++) {
-            pairs.push([keys[i], cols[keys[i]]]);
+          for (var r = 0; r < restKeys.length; r++) {
+            var colKey = restKeys[r];
+            if (consumedCol[colKey]) continue;
+            if (shouldDropSummaryFieldKey(colKey)) continue;
+            var sem = canonicalLeadFieldKey(colKey);
+            if (sem === "name" || sem === "email" || sem === "mobile" || sem === "user_queries") {
+              continue;
+            }
+            var cellVal = normalizeDetailValue(cols[colKey]);
+            if (!cellVal) continue;
+            pairs.push([colKey, cellVal]);
           }
         }
 
