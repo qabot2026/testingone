@@ -2636,6 +2636,7 @@ function createAndMountMessenger() {
     scheduleLauncherStripsStackSync(df);
     initializeMobileChatLayout(df, COMPANY_UI_CONFIG);
     initializeChatStateSync(df);
+    installRenderedBotTranscriptHook_(df);
     attachPersonaHandlers(df);
     // Lightbox is handled via a global click handler (shadow-DOM safe composedPath checks).
     ensureChatActionBar();
@@ -13633,7 +13634,10 @@ function handleDfResponseReceived(event) {
 
     maybeIncrementBubbleUnreadFromResponse(event);
 
-    const assistantLines = extractAssistantVisibleTextsFromDfResponse_(event);
+    let assistantLines = extractAssistantVisibleTextsFromDfResponse_(event);
+    if (!assistantLines.length) {
+        assistantLines = extractAssistantVisibleTextsDeepFallback_(event);
+    }
     if (assistantLines.length) {
         appendChatTranscriptAssistantLines_(assistantLines);
         scheduleSessionQueriesSheetSync_();
@@ -14136,6 +14140,97 @@ function extractAssistantVisibleTextsFromDfResponse_(event) {
 }
 
 /**
+ * Harvest phrases from CX/Messenger message JSON when structured text paths miss (embed/version quirks).
+ * @param {unknown} node
+ * @param {Set<string>} seen
+ * @param {number} depth
+ */
+function collectAssistantStringsDeepFromNode_(node, seen, depth) {
+    if (depth > 14 || seen.size > 56) {
+        return;
+    }
+    if (node == null) {
+        return;
+    }
+    if (typeof node === "string") {
+        const t = node.trim().replace(/\s+/g, " ");
+        if (
+            t.length < 4
+            || t.length > MAX_CHAT_TRANSCRIPT_TEXT_CHARS
+            || t.startsWith("projects/")
+            || /^[a-f0-9-]{36}$/i.test(t)
+        ) {
+            return;
+        }
+        if (t.length < 12 && !/\s/.test(t) && !/[.!?…,:;]/.test(t) && !/[aeiou]/i.test(t)) {
+            return;
+        }
+        if (!seen.has(t)) {
+            seen.add(t);
+        }
+        return;
+    }
+    if (typeof node !== "object") {
+        return;
+    }
+    if (Array.isArray(node)) {
+        for (let i = 0; i < node.length; i += 1) {
+            collectAssistantStringsDeepFromNode_(node[i], seen, depth + 1);
+        }
+        return;
+    }
+    const o = /** @type {Record<string, unknown>} */ (node);
+    for (const [k, v] of Object.entries(o)) {
+        const lk = k.toLowerCase();
+        if (
+            lk === "parameters"
+            || lk === "sessionparameters"
+            || lk === "intent"
+            || lk === "intentdetectionconfidence"
+            || lk === "languagecode"
+            || lk === "name"
+            || lk === "displayname"
+            || lk === "action"
+            || lk === "uri"
+            || lk === "resource"
+            || lk === "synonyms"
+            || lk === "emoji"
+            || lk === "cid"
+            || lk === "audioencoding"
+            || lk === "allowplaybackinterruption"
+        ) {
+            continue;
+        }
+        if (lk === "payload" && depth > 10) {
+            continue;
+        }
+        collectAssistantStringsDeepFromNode_(v, seen, depth + 1);
+    }
+}
+
+/**
+ * @param {Event} event
+ * @returns {string[]}
+ */
+function extractAssistantVisibleTextsDeepFallback_(event) {
+    const d = event && event.detail;
+    if (!d || typeof d !== "object") {
+        return [];
+    }
+    const responseMessages = mergeCxResponseEnvelopeForGallery(event);
+    const messengerMessages = d.data && Array.isArray(d.data.messages) ? d.data.messages : [];
+    const topMessages = Array.isArray(d.messages) ? d.messages : [];
+    /** @type {Set<string>} */
+    const seen = new Set();
+    for (const m of [...responseMessages, ...messengerMessages, ...topMessages]) {
+        collectAssistantStringsDeepFromNode_(m, seen, 0);
+    }
+    const out = Array.from(seen);
+    out.sort((a, b) => a.length - b.length);
+    return out.length <= 8 ? out : [out.join("\n\n")];
+}
+
+/**
  * @param {string[]} lines
  */
 function appendChatTranscriptAssistantLines_(lines) {
@@ -14178,6 +14273,65 @@ function appendChatTranscriptAssistantLines_(lines) {
     } catch {
         /* ignore */
     }
+}
+
+/**
+ * Capture bot markdown we pass into df-messenger when structured `df-response-received` extraction is empty.
+ * @param {string} markdown
+ */
+function maybeRecordRenderedBotMarkdownForTranscript_(markdown) {
+    const raw = typeof markdown === "string" ? markdown.trim() : "";
+    if (!raw || raw.includes(USER_PERSONA_TEXT_SENTINEL)) {
+        return;
+    }
+    if (raw.includes(`#${PERSONA_URL_MARKER_BOT_IMG}`) && raw.length < 420 && !raw.includes("\n\n")) {
+        const stripped = raw
+            .replace(/!\[[^\]]*\]\([^)]*\)/g, "")
+            .replace(/\*\*[^*]*\*\*/g, "")
+            .trim();
+        if (stripped.length < 6) {
+            return;
+        }
+    }
+    let plain = raw
+        .replace(/!\[[^\]]*\]\([^)]*\)/g, "")
+        .replace(/\*\*([^*]+)\*\*/g, "$1")
+        .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+        .replace(/`{1,3}[^`]*`{1,3}/g, "")
+        .replace(/\*/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
+    if (plain.length < 3) {
+        return;
+    }
+    appendChatTranscriptAssistantLines_([plain]);
+    scheduleSessionQueriesSheetSync_();
+}
+
+/**
+ * @param {unknown} host df-messenger element
+ */
+function installRenderedBotTranscriptHook_(host) {
+    const el = /** @type {{ renderCustomText?: Function, dataset?: DOMStringMap }} */ (host);
+    if (!el || typeof el.renderCustomText !== "function" || !el.dataset) {
+        return;
+    }
+    if (el.dataset.dfchatTranscriptRenderHook === "1") {
+        return;
+    }
+    const orig = /** @type {(text: unknown, isBot?: boolean) => unknown} */ (el.renderCustomText.bind(el));
+    el.renderCustomText = (text, isBot) => {
+        const ret = orig(text, isBot);
+        try {
+            if (isBot === true && typeof text === "string") {
+                maybeRecordRenderedBotMarkdownForTranscript_(text);
+            }
+        } catch {
+            /* ignore */
+        }
+        return ret;
+    };
+    el.dataset.dfchatTranscriptRenderHook = "1";
 }
 
 /**
