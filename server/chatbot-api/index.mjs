@@ -2807,7 +2807,8 @@ app.post(
         }
 
         const userQueriesCsv = normalizeUserQueriesCsvFromClientContext(mergedClientContext);
-        if (!userQueriesCsv) {
+        const chatTranscriptJsonForSync = stringifyChatTranscriptForSheetPayload_(mergedClientContext);
+        if (!userQueriesCsv && !chatTranscriptJsonForSync) {
             return res.status(200).json({ ok: true, message: "Nothing to sync." });
         }
 
@@ -2865,7 +2866,7 @@ app.post(
                 appointmentDate: "",
                 appointmentTime: "",
                 userQueriesCsv,
-                chatTranscriptJson: stringifyChatTranscriptForSheetPayload_(mergedClientContext)
+                chatTranscriptJson: chatTranscriptJsonForSync
             });
             return res.status(200).json({
                 ok: true,
@@ -3396,6 +3397,21 @@ function hasAssistantTurns_(turns) {
     return Array.isArray(turns) && turns.some((t) => t && t.role === "assistant");
 }
 
+/** @param {{ role: string, text: string }[]} turns */
+function userTurnCount_(turns) {
+    if (!Array.isArray(turns)) {
+        return 0;
+    }
+    let n = 0;
+    for (let i = 0; i < turns.length; i += 1) {
+        const t = turns[i];
+        if (t && t.role === "user") {
+            n += 1;
+        }
+    }
+    return n;
+}
+
 /**
  * Last-resort assistant bubble from saved lead / sheet row when bot replay was never stored.
  *
@@ -3741,8 +3757,12 @@ app.get(PATHNAME_CONVERSATION_TRANSCRIPT_JSON, async (req, res) => {
             }
         }
 
+        /** Merge Sheet JSON widget transcript: assistants we lack, or more user turns when Firebase has no assistant (stale snapshot). */
+        const sheetUserN = userTurnCount_(sheetChatTurns);
+        const fbUserN = userTurnCount_(turns);
+
         if (!hasAssistantTurns_(turns) && hasAssistantTurns_(sheetChatTurns)) {
-            turns = sheetChatTurns;
+            turns = sheetChatTurns.slice();
             source =
                 source === "firebase"
                     ? "sheet_chat_transcript_json"
@@ -3750,11 +3770,23 @@ app.get(PATHNAME_CONVERSATION_TRANSCRIPT_JSON, async (req, res) => {
                       ? "sheet_chat_transcript_json"
                       : `${source}+sheet_chat_transcript_json`;
         } else if (
+            sheetChatTurns.length > 0
+            && sheetUserN > fbUserN
+            && (hasAssistantTurns_(sheetChatTurns) || !hasAssistantTurns_(turns))
+        ) {
+            turns = sheetChatTurns.slice();
+            source =
+                source === "firebase"
+                    ? "sheet_chat_transcript_json_more_users"
+                    : source === "none"
+                      ? "sheet_chat_transcript_json"
+                      : `${source};prefer_sheet_user_turns`;
+        } else if (
             hasAssistantTurns_(turns)
             && hasAssistantTurns_(sheetChatTurns)
             && sheetChatTurns.length > turns.length
         ) {
-            turns = sheetChatTurns;
+            turns = sheetChatTurns.slice();
             source = `${source};prefer_longer_sheet_transcript`;
         }
 

@@ -2595,7 +2595,7 @@ export async function upsertSessionQueriesInSheet(row) {
         };
     }
 
-    if (!incomingQ) {
+    if (!incomingQ && !chatTranscriptJson) {
         return { mode: "skipped_no_session_row_for_transcript" };
     }
 
