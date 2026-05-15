@@ -420,6 +420,47 @@
         return s.trim();
       }
 
+      /** Match `formatDeviceTypeForSheetDisplay` in sheets.mjs (e.g. Desktop/Mobile). */
+      function formatDeviceTypeForSummary(raw) {
+        var s = normalizeDetailValue(raw);
+        if (!s) return "";
+        return s
+          .split(/\s*[/,|]\s*/)
+          .map(function (part) {
+            var p = part.trim();
+            if (!p) return "";
+            var low = p.toLowerCase();
+            if (low === "desktop") return "Desktop";
+            if (low === "mobile") return "Mobile";
+            if (low === "tablet") return "Tablet";
+            return p.charAt(0).toUpperCase() + p.slice(1).toLowerCase();
+          })
+          .filter(Boolean)
+          .join("/");
+      }
+
+      /** Match `formatChannelForSheetDisplay` in sheets.mjs (e.g. Web/WhatsApp/…). */
+      function formatChannelForSummary(raw) {
+        var s = normalizeDetailValue(raw);
+        if (!s) return "";
+        return s
+          .split(/\s*[/,|]\s*/)
+          .map(function (part) {
+            var p = part.trim();
+            if (!p) return "";
+            var low = p.toLowerCase();
+            if (low === "web") return "Web";
+            if (low === "whatsapp") return "WhatsApp";
+            if (low === "instagram") return "Instagram";
+            if (low === "facebook") return "Facebook";
+            if (low === "twitter") return "Twitter";
+            if (low === "x") return "X";
+            return p.charAt(0).toUpperCase() + p.slice(1).toLowerCase();
+          })
+          .filter(Boolean)
+          .join("/");
+      }
+
       /** Sheet / submission field key → stable semantic id (case- and space-insensitive). */
       function canonicalLeadFieldKey(rawKey) {
         var k = String(rawKey || "")
@@ -549,8 +590,8 @@
         var convDateVal = takeSemanticCol("conv_date");
         var convTimeVal = takeSemanticCol("conv_time");
 
-        if (deviceVal) pairs.push(["Device", String(deviceVal)]);
-        if (channelVal) pairs.push(["Channel", String(channelVal)]);
+        if (deviceVal) pairs.push(["Device", formatDeviceTypeForSummary(deviceVal)]);
+        if (channelVal) pairs.push(["Channel", formatChannelForSummary(channelVal)]);
         if (browserVal) pairs.push(["Browser", String(browserVal)]);
         if (convDateVal) pairs.push(["Conv. Date", String(convDateVal)]);
         if (convTimeVal) pairs.push(["Conv. time", String(convTimeVal)]);

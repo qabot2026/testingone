@@ -753,6 +753,81 @@ function conversationChannelBucket_(raw) {
     return "other";
 }
 
+/**
+ * Human-readable **Device** cell for Sheets and staff transcript summary (e.g. `Desktop/Mobile`).
+ * @param {unknown} raw
+ * @returns {string}
+ */
+export function formatDeviceTypeForSheetDisplay(raw) {
+    const s = typeof raw === "string" ? raw.trim() : String(raw ?? "").trim();
+    if (!s) {
+        return "";
+    }
+    return s
+        .split(/\s*[/,|]\s*/)
+        .map((part) => {
+            const p = part.trim();
+            if (!p) {
+                return "";
+            }
+            const low = p.toLowerCase();
+            if (low === "desktop") {
+                return "Desktop";
+            }
+            if (low === "mobile") {
+                return "Mobile";
+            }
+            if (low === "tablet") {
+                return "Tablet";
+            }
+            return p.charAt(0).toUpperCase() + p.slice(1).toLowerCase();
+        })
+        .filter(Boolean)
+        .join("/");
+}
+
+/**
+ * Human-readable **Channel** cell (e.g. `Web/WhatsApp/Instagram/Facebook`).
+ * @param {unknown} raw
+ * @returns {string}
+ */
+export function formatChannelForSheetDisplay(raw) {
+    const s = typeof raw === "string" ? raw.trim() : String(raw ?? "").trim();
+    if (!s) {
+        return "";
+    }
+    return s
+        .split(/\s*[/,|]\s*/)
+        .map((part) => {
+            const p = part.trim();
+            if (!p) {
+                return "";
+            }
+            const low = p.toLowerCase();
+            if (low === "web") {
+                return "Web";
+            }
+            if (low === "whatsapp") {
+                return "WhatsApp";
+            }
+            if (low === "instagram") {
+                return "Instagram";
+            }
+            if (low === "facebook") {
+                return "Facebook";
+            }
+            if (low === "twitter") {
+                return "Twitter";
+            }
+            if (low === "x") {
+                return "X";
+            }
+            return p.charAt(0).toUpperCase() + p.slice(1).toLowerCase();
+        })
+        .filter(Boolean)
+        .join("/");
+}
+
 /** Empty per-channel tallies for a lead segment (mobile-only / email-only / both). */
 function leadSegmentChannelTotalsEmpty_() {
     return { web: 0, whatsapp: 0, instagram: 0, facebook: 0, other: 0 };
@@ -1329,9 +1404,10 @@ async function updateExistingSessionRow_(sheets, tab, rowNumber, incoming, optio
     const name = contactPatchFor(typeof incoming.name === "string" ? incoming.name : "", 2);
     const mobile = contactPatchFor(typeof incoming.mobile === "string" ? incoming.mobile : "", 3);
     const email = contactPatchFor(typeof incoming.email === "string" ? incoming.email : "", 4);
-    const channel = patchScalarInto(typeof incoming.channel === "string" ? incoming.channel : "", 5);
-    const deviceType =
-        patchScalarInto(typeof incoming.deviceType === "string" ? incoming.deviceType : "", 10);
+    const channelRaw = patchScalarInto(typeof incoming.channel === "string" ? incoming.channel : "", 5);
+    const channel = channelRaw ? formatChannelForSheetDisplay(channelRaw) : "";
+    const deviceTypeRaw = patchScalarInto(typeof incoming.deviceType === "string" ? incoming.deviceType : "", 10);
+    const deviceType = deviceTypeRaw ? formatDeviceTypeForSheetDisplay(deviceTypeRaw) : "";
     const browserName =
         patchScalarInto(typeof incoming.browserName === "string" ? incoming.browserName : "", 11);
     const city = patchScalarInto(typeof incoming.city === "string" ? incoming.city : "", 12);
@@ -2103,7 +2179,7 @@ async function buildStandardLeadRowUpdates_(sheets, tab, rowNumber, lead) {
     put(SHEET_H_NAME, 2, lead.name);
     put(SHEET_H_MOBILE, 3, lead.mobile);
     put(SHEET_H_EMAIL, 4, lead.email);
-    put(["channel"], 5, lead.channel);
+    put(["channel"], 5, formatChannelForSheetDisplay(lead.channel));
     put(
         [
             "userqueries",
@@ -2120,7 +2196,7 @@ async function buildStandardLeadRowUpdates_(sheets, tab, rowNumber, lead) {
     put(["repeateduser", "repeated_user", "isrepeated", "repuser"], 7, lead.repeated);
     put(["sourceurl", "source_url", "pageurl", "embedurl"], 8, lead.sourceUrl);
     put(SHEET_H_SESSION, 9, lead.clientSessionId);
-    put(["device", "devicetype"], 10, lead.deviceType);
+    put(["device", "devicetype"], 10, formatDeviceTypeForSheetDisplay(lead.deviceType));
     put(["browser", "browsername"], 11, lead.browserName);
     put(
         ["city", "visitorcity", "usercity", "cityname", "location", "preferredcity"],
@@ -2204,9 +2280,9 @@ async function applySheetExtrasAfterDuplicateSessionRow_(sheets, tab, rowNumber,
         mobile: row.mobile,
         email: row.email,
         clientSessionId: row.clientSessionId,
-        deviceType: typeof row.deviceType === "string" ? row.deviceType.trim() : "",
+        deviceType: formatDeviceTypeForSheetDisplay(typeof row.deviceType === "string" ? row.deviceType.trim() : ""),
         browserName: row.browserName,
-        channel: ch,
+        channel: formatChannelForSheetDisplay(ch),
         userQueriesCsv,
         city,
         ip,
@@ -2340,9 +2416,13 @@ export async function appendContactRowToSheet(row, opts) {
         };
     }
 
-    const ch = typeof row.channel === "string" && row.channel.trim()
+    const chRaw = typeof row.channel === "string" && row.channel.trim()
         ? row.channel.trim()
         : "web";
+    const ch = formatChannelForSheetDisplay(chRaw);
+    const deviceForAppend = formatDeviceTypeForSheetDisplay(
+        typeof row.deviceType === "string" ? row.deviceType.trim() : ""
+    );
     const fileLinks =
         typeof row.fileLinks === "string" && row.fileLinks.trim()
             ? row.fileLinks.trim()
@@ -2371,7 +2451,7 @@ export async function appendContactRowToSheet(row, opts) {
         sheetOutboundCell_(repeated),
         sheetOutboundCell_(sourceUrl),
         sheetOutboundCell_(row.clientSessionId),
-        sheetOutboundCell_(row.deviceType),
+        sheetOutboundCell_(deviceForAppend),
         sheetOutboundCell_(row.browserName),
         sheetOutboundCell_(city),
         sheetOutboundCell_(ip),
@@ -2417,7 +2497,7 @@ export async function appendContactRowToSheet(row, opts) {
                 mobile: row.mobile,
                 email: row.email,
                 clientSessionId: row.clientSessionId,
-                deviceType: typeof row.deviceType === "string" ? row.deviceType.trim() : "",
+                deviceType: deviceForAppend,
                 browserName: row.browserName,
                 channel: ch,
                 userQueriesCsv,
