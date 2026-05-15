@@ -3202,6 +3202,488 @@ async function applyLeadDashboardChartsAndFormatting_(sheets, sheetId, layout, r
     const funnelHideStart = layout.rowFunnelSection;
     const funnelHideEnd = layout.coverageDataEnd + 1;
 
+    const stackColors = [
+        sheetRgb_("#2563eb"),
+        teal,
+        sheetRgb_("#7c3aed"),
+        sheetRgb_("#d97706"),
+        sheetRgb_("#e11d48")
+    ];
+
+    /** @type {unknown[]} */
+    const chartReqs = [
+        {
+            addChart: {
+                chart: {
+                    spec: {
+                        title: "Volume by channel",
+                        basicChart: {
+                            chartType: "COLUMN",
+                            legendPosition: "NO_LEGEND",
+                            axis: [
+                                { position: "BOTTOM_AXIS", title: "Source" },
+                                { position: "LEFT_AXIS", title: "Conversations" }
+                            ],
+                            domains: [
+                                {
+                                    domain: {
+                                        sourceRange: {
+                                            sources: [
+                                                {
+                                                    sheetId,
+                                                    startRowIndex: ch,
+                                                    endRowIndex: chEnd + 1,
+                                                    startColumnIndex: 0,
+                                                    endColumnIndex: 1
+                                                }
+                                            ]
+                                        }
+                                    }
+                                }
+                            ],
+                            series: [
+                                {
+                                    series: {
+                                        sourceRange: {
+                                            sources: [
+                                                {
+                                                    sheetId,
+                                                    startRowIndex: ch,
+                                                    endRowIndex: chEnd + 1,
+                                                    startColumnIndex: 1,
+                                                    endColumnIndex: 2
+                                                }
+                                            ]
+                                        }
+                                    },
+                                    targetAxis: "LEFT_AXIS",
+                                    color: teal
+                                }
+                            ],
+                            headerCount: 1
+                        }
+                    },
+                    position: {
+                        overlayPosition: {
+                            anchorCell: { sheetId, rowIndex: ch + 1, columnIndex: 3 },
+                            offsetXPixels: 6,
+                            offsetYPixels: 2,
+                            widthPixels: 420,
+                            heightPixels: 290
+                        }
+                    }
+                }
+            }
+        },
+        {
+            addChart: {
+                chart: {
+                    spec: {
+                        title: "Channel mix (share of traffic)",
+                        pieChart: {
+                            domain: {
+                                sourceRange: {
+                                    sources: [
+                                        {
+                                            sheetId,
+                                            startRowIndex: ch + 1,
+                                            endRowIndex: chEnd + 1,
+                                            startColumnIndex: 0,
+                                            endColumnIndex: 1
+                                        }
+                                    ]
+                                }
+                            },
+                            series: {
+                                sourceRange: {
+                                    sources: [
+                                        {
+                                            sheetId,
+                                            startRowIndex: ch + 1,
+                                            endRowIndex: chEnd + 1,
+                                            startColumnIndex: 1,
+                                            endColumnIndex: 2
+                                        }
+                                    ]
+                                }
+                            },
+                            legendPosition: "RIGHT_LEGEND",
+                            pieHole: 0.4
+                        }
+                    },
+                    position: {
+                        overlayPosition: {
+                            anchorCell: { sheetId, rowIndex: ch + 1, columnIndex: 3 },
+                            offsetXPixels: 430,
+                            offsetYPixels: 2,
+                            widthPixels: 380,
+                            heightPixels: 290
+                        }
+                    }
+                }
+            }
+        },
+        {
+            addChart: {
+                chart: {
+                    spec: {
+                        title: "Segment mix · channel contribution",
+                        basicChart: {
+                            chartType: "BAR",
+                            legendPosition: "RIGHT_LEGEND",
+                            stackedType: "STACKED",
+                            axis: [
+                                { position: "LEFT_AXIS", title: "Segment" },
+                                { position: "BOTTOM_AXIS", title: "Conversations" }
+                            ],
+                            domains: [
+                                {
+                                    domain: {
+                                        sourceRange: {
+                                            sources: [
+                                                {
+                                                    sheetId,
+                                                    startRowIndex: cHead,
+                                                    endRowIndex: pieE + 1,
+                                                    startColumnIndex: 0,
+                                                    endColumnIndex: 1
+                                                }
+                                            ]
+                                        }
+                                    }
+                                }
+                            ],
+                            series: [2, 3, 4, 5, 6].map((colIdx) => ({
+                                series: {
+                                    sourceRange: {
+                                        sources: [
+                                            {
+                                                sheetId,
+                                                startRowIndex: cHead,
+                                                endRowIndex: pieE + 1,
+                                                startColumnIndex: colIdx,
+                                                endColumnIndex: colIdx + 1
+                                            }
+                                        ]
+                                    }
+                                },
+                                targetAxis: "BOTTOM_AXIS",
+                                color: stackColors[colIdx - 2] ?? teal
+                            })),
+                            headerCount: 1
+                        }
+                    },
+                    position: {
+                        overlayPosition: {
+                            anchorCell: { sheetId, rowIndex: layout.rowBetweenChannelContact, columnIndex: 0 },
+                            offsetXPixels: 0,
+                            offsetYPixels: 0,
+                            widthPixels: 700,
+                            heightPixels: 255
+                        }
+                    }
+                }
+            }
+        },
+        {
+            addChart: {
+                chart: {
+                    spec: {
+                        title: "Lead capture composition",
+                        pieChart: {
+                            domain: {
+                                sourceRange: {
+                                    sources: [
+                                        {
+                                            sheetId,
+                                            startRowIndex: pieS,
+                                            endRowIndex: pieE + 1,
+                                            startColumnIndex: 0,
+                                            endColumnIndex: 1
+                                        }
+                                    ]
+                                }
+                            },
+                            series: {
+                                sourceRange: {
+                                    sources: [
+                                        {
+                                            sheetId,
+                                            startRowIndex: pieS,
+                                            endRowIndex: pieE + 1,
+                                            startColumnIndex: 1,
+                                            endColumnIndex: 2
+                                        }
+                                    ]
+                                }
+                            },
+                            legendPosition: "RIGHT_LEGEND",
+                            pieHole: 0.45
+                        }
+                    },
+                    position: {
+                        overlayPosition: {
+                            anchorCell: { sheetId, rowIndex: pieS, columnIndex: 3 },
+                            offsetXPixels: 6,
+                            offsetYPixels: 0,
+                            widthPixels: 410,
+                            heightPixels: 300
+                        }
+                    }
+                }
+            }
+        },
+        {
+            addChart: {
+                chart: {
+                    spec: {
+                        title: "All segments · volume",
+                        basicChart: {
+                            chartType: "COLUMN",
+                            legendPosition: "NO_LEGEND",
+                            axis: [
+                                { position: "BOTTOM_AXIS", title: "Segment" },
+                                { position: "LEFT_AXIS", title: "Conversations" }
+                            ],
+                            domains: [
+                                {
+                                    domain: {
+                                        sourceRange: {
+                                            sources: [
+                                                {
+                                                    sheetId,
+                                                    startRowIndex: cHead,
+                                                    endRowIndex: layout.rowContactNeither + 1,
+                                                    startColumnIndex: 0,
+                                                    endColumnIndex: 1
+                                                }
+                                            ]
+                                        }
+                                    }
+                                }
+                            ],
+                            series: [
+                                {
+                                    series: {
+                                        sourceRange: {
+                                            sources: [
+                                                {
+                                                    sheetId,
+                                                    startRowIndex: cHead,
+                                                    endRowIndex: layout.rowContactNeither + 1,
+                                                    startColumnIndex: 1,
+                                                    endColumnIndex: 2
+                                                }
+                                            ]
+                                        }
+                                    },
+                                    targetAxis: "LEFT_AXIS",
+                                    color: sheetRgb_("#6366f1")
+                                }
+                            ],
+                            headerCount: 1
+                        }
+                    },
+                    position: {
+                        overlayPosition: {
+                            anchorCell: { sheetId, rowIndex: pieS, columnIndex: 3 },
+                            offsetXPixels: 430,
+                            offsetYPixels: 4,
+                            widthPixels: 400,
+                            heightPixels: 300
+                        }
+                    }
+                }
+            }
+        },
+        {
+            addChart: {
+                chart: {
+                    spec: {
+                        title: "Pipeline funnel",
+                        basicChart: {
+                            chartType: "COLUMN",
+                            legendPosition: "NO_LEGEND",
+                            axis: [
+                                { position: "BOTTOM_AXIS", title: "Stage" },
+                                { position: "LEFT_AXIS", title: "Count" }
+                            ],
+                            domains: [
+                                {
+                                    domain: {
+                                        sourceRange: {
+                                            sources: [
+                                                {
+                                                    sheetId,
+                                                    startRowIndex: layout.funnelHeaderRow,
+                                                    endRowIndex: layout.funnelDataEnd + 1,
+                                                    startColumnIndex: 0,
+                                                    endColumnIndex: 1
+                                                }
+                                            ]
+                                        }
+                                    }
+                                }
+                            ],
+                            series: [
+                                {
+                                    series: {
+                                        sourceRange: {
+                                            sources: [
+                                                {
+                                                    sheetId,
+                                                    startRowIndex: layout.funnelHeaderRow,
+                                                    endRowIndex: layout.funnelDataEnd + 1,
+                                                    startColumnIndex: 1,
+                                                    endColumnIndex: 2
+                                                }
+                                            ]
+                                        }
+                                    },
+                                    targetAxis: "LEFT_AXIS",
+                                    color: accent
+                                }
+                            ],
+                            headerCount: 1
+                        }
+                    },
+                    position: {
+                        overlayPosition: {
+                            anchorCell: { sheetId, rowIndex: layout.rowBannerSub + 1, columnIndex: 8 },
+                            offsetXPixels: 4,
+                            offsetYPixels: 0,
+                            widthPixels: 380,
+                            heightPixels: 220
+                        }
+                    }
+                }
+            }
+        }
+    ];
+
+    /** @type {{ addChart: Record<string, unknown> }[]} */
+    const dashboardChartRequests = [
+        ...chartReqs,
+        {
+            addChart: {
+                chart: {
+                    spec: {
+                        title: "Contact capture vs gaps",
+                        pieChart: {
+                            domain: {
+                                sourceRange: {
+                                    sources: [
+                                        {
+                                            sheetId,
+                                            startRowIndex: layout.coverageDataStart,
+                                            endRowIndex: layout.coverageDataEnd + 1,
+                                            startColumnIndex: 0,
+                                            endColumnIndex: 1
+                                        }
+                                    ]
+                                }
+                            },
+                            series: {
+                                sourceRange: {
+                                    sources: [
+                                        {
+                                            sheetId,
+                                            startRowIndex: layout.coverageDataStart,
+                                            endRowIndex: layout.coverageDataEnd + 1,
+                                            startColumnIndex: 1,
+                                            endColumnIndex: 2
+                                        }
+                                    ]
+                                }
+                            },
+                            legendPosition: "RIGHT_LEGEND",
+                            pieHole: 0.35
+                        }
+                    },
+                    position: {
+                        overlayPosition: {
+                            anchorCell: { sheetId, rowIndex: layout.rowBetweenChannelContact, columnIndex: 0 },
+                            offsetXPixels: 710,
+                            offsetYPixels: 8,
+                            widthPixels: 340,
+                            heightPixels: 255
+                        }
+                    }
+                }
+            }
+        },
+        {
+            addChart: {
+                chart: {
+                    spec: {
+                        title: "Outcome mix · every segment (pie)",
+                        pieChart: {
+                            domain: {
+                                sourceRange: {
+                                    sources: [
+                                        {
+                                            sheetId,
+                                            startRowIndex: pieS,
+                                            endRowIndex: layout.rowContactNeither + 1,
+                                            startColumnIndex: 0,
+                                            endColumnIndex: 1
+                                        }
+                                    ]
+                                }
+                            },
+                            series: {
+                                sourceRange: {
+                                    sources: [
+                                        {
+                                            sheetId,
+                                            startRowIndex: pieS,
+                                            endRowIndex: layout.rowContactNeither + 1,
+                                            startColumnIndex: 1,
+                                            endColumnIndex: 2
+                                        }
+                                    ]
+                                }
+                            },
+                            legendPosition: "RIGHT_LEGEND",
+                            pieHole: 0.22
+                        }
+                    },
+                    position: {
+                        overlayPosition: {
+                            anchorCell: { sheetId, rowIndex: layout.rowBetweenChannelContact, columnIndex: 0 },
+                            offsetXPixels: 4,
+                            offsetYPixels: 268,
+                            widthPixels: 500,
+                            heightPixels: 285
+                        }
+                    }
+                }
+            }
+        }
+    ];
+
+    for (let i = 0; i < dashboardChartRequests.length; i += 1) {
+        try {
+            await sheets.spreadsheets.batchUpdate({
+                spreadsheetId: SPREADSHEET_ID,
+                requestBody: { requests: [dashboardChartRequests[i]] }
+            });
+        } catch (chartErr) {
+            const errObj = /** @type {{ message?: string, response?: { data?: unknown } }} */ (chartErr);
+            const apiDetail =
+                errObj.response && errObj.response.data !== undefined
+                    ? JSON.stringify(errObj.response.data).slice(0, 1200)
+                    : "";
+            console.error(
+                "[chatbot-api] Dashboard embedded chart failed:",
+                i + 1,
+                "/",
+                dashboardChartRequests.length,
+                errObj.message || chartErr,
+                apiDetail
+            );
+        }
+    }
     /** @type {unknown[]} */
     const requests = [];
 
@@ -3393,421 +3875,6 @@ async function applyLeadDashboardChartsAndFormatting_(sheets, sheetId, layout, r
         }
     });
 
-    const stackColors = [
-        sheetRgb_("#2563eb"),
-        teal,
-        sheetRgb_("#7c3aed"),
-        sheetRgb_("#d97706"),
-        sheetRgb_("#e11d48")
-    ];
-
-    /** @type {unknown[]} */
-    const chartReqs = [
-        {
-            addChart: {
-                chart: {
-                    spec: {
-                        title: "Volume by channel",
-                        basicChart: {
-                            chartType: "COLUMN",
-                            legendPosition: "NO_LEGEND",
-                            axis: [
-                                { position: "BOTTOM_AXIS", title: "Source" },
-                                { position: "LEFT_AXIS", title: "Conversations" }
-                            ],
-                            domains: [
-                                {
-                                    domain: {
-                                        sourceRange: {
-                                            sources: [
-                                                {
-                                                    sheetId,
-                                                    startRowIndex: ch,
-                                                    endRowIndex: chEnd + 1,
-                                                    startColumnIndex: 0,
-                                                    endColumnIndex: 1
-                                                }
-                                            ]
-                                        }
-                                    }
-                                }
-                            ],
-                            series: [
-                                {
-                                    series: {
-                                        sourceRange: {
-                                            sources: [
-                                                {
-                                                    sheetId,
-                                                    startRowIndex: ch,
-                                                    endRowIndex: chEnd + 1,
-                                                    startColumnIndex: 1,
-                                                    endColumnIndex: 2
-                                                }
-                                            ]
-                                        }
-                                    },
-                                    targetAxis: "LEFT_AXIS",
-                                    color: teal
-                                }
-                            ],
-                            headerCount: 1
-                        }
-                    },
-                    position: {
-                        overlayPosition: {
-                            anchorCell: { sheetId, rowIndex: layout.rowChannelSection, columnIndex: 3 },
-                            offsetXPixels: 6,
-                            offsetYPixels: 2,
-                            widthPixels: 420,
-                            heightPixels: 290
-                        }
-                    }
-                }
-            }
-        },
-        {
-            addChart: {
-                chart: {
-                    spec: {
-                        title: "Channel mix (share of traffic)",
-                        pieChart: {
-                            domain: {
-                                sourceRange: {
-                                    sources: [
-                                        {
-                                            sheetId,
-                                            startRowIndex: ch + 1,
-                                            endRowIndex: chEnd + 1,
-                                            startColumnIndex: 0,
-                                            endColumnIndex: 1
-                                        }
-                                    ]
-                                }
-                            },
-                            series: {
-                                sourceRange: {
-                                    sources: [
-                                        {
-                                            sheetId,
-                                            startRowIndex: ch + 1,
-                                            endRowIndex: chEnd + 1,
-                                            startColumnIndex: 1,
-                                            endColumnIndex: 2
-                                        }
-                                    ]
-                                }
-                            },
-                            legendPosition: "RIGHT_LEGEND",
-                            pieHoleSize: 0.4
-                        }
-                    },
-                    position: {
-                        overlayPosition: {
-                            anchorCell: { sheetId, rowIndex: layout.rowChannelSection, columnIndex: 3 },
-                            offsetXPixels: 430,
-                            offsetYPixels: 2,
-                            widthPixels: 380,
-                            heightPixels: 290
-                        }
-                    }
-                }
-            }
-        },
-        {
-            addChart: {
-                chart: {
-                    spec: {
-                        title: "Segment mix · channel contribution",
-                        basicChart: {
-                            chartType: "BAR",
-                            legendPosition: "RIGHT_LEGEND",
-                            stackedType: "STACKED",
-                            axis: [
-                                { position: "LEFT_AXIS", title: "Segment" },
-                                { position: "BOTTOM_AXIS", title: "Conversations" }
-                            ],
-                            domains: [
-                                {
-                                    domain: {
-                                        sourceRange: {
-                                            sources: [
-                                                {
-                                                    sheetId,
-                                                    startRowIndex: cHead,
-                                                    endRowIndex: pieE + 1,
-                                                    startColumnIndex: 0,
-                                                    endColumnIndex: 1
-                                                }
-                                            ]
-                                        }
-                                    }
-                                }
-                            ],
-                            series: [2, 3, 4, 5, 6].map((colIdx) => ({
-                                series: {
-                                    sourceRange: {
-                                        sources: [
-                                            {
-                                                sheetId,
-                                                startRowIndex: cHead,
-                                                endRowIndex: pieE + 1,
-                                                startColumnIndex: colIdx,
-                                                endColumnIndex: colIdx + 1
-                                            }
-                                        ]
-                                    }
-                                },
-                                targetAxis: "BOTTOM_AXIS",
-                                color: stackColors[colIdx - 2] ?? teal
-                            })),
-                            headerCount: 1
-                        }
-                    },
-                    position: {
-                        overlayPosition: {
-                            anchorCell: { sheetId, rowIndex: layout.rowBetweenChannelContact, columnIndex: 0 },
-                            offsetXPixels: 0,
-                            offsetYPixels: 0,
-                            widthPixels: 700,
-                            heightPixels: 255
-                        }
-                    }
-                }
-            }
-        },
-        {
-            addChart: {
-                chart: {
-                    spec: {
-                        title: "Lead capture composition",
-                        pieChart: {
-                            domain: {
-                                sourceRange: {
-                                    sources: [
-                                        {
-                                            sheetId,
-                                            startRowIndex: pieS,
-                                            endRowIndex: pieE + 1,
-                                            startColumnIndex: 0,
-                                            endColumnIndex: 1
-                                        }
-                                    ]
-                                }
-                            },
-                            series: {
-                                sourceRange: {
-                                    sources: [
-                                        {
-                                            sheetId,
-                                            startRowIndex: pieS,
-                                            endRowIndex: pieE + 1,
-                                            startColumnIndex: 1,
-                                            endColumnIndex: 2
-                                        }
-                                    ]
-                                }
-                            },
-                            legendPosition: "RIGHT_LEGEND",
-                            pieHoleSize: 0.45
-                        }
-                    },
-                    position: {
-                        overlayPosition: {
-                            anchorCell: { sheetId, rowIndex: layout.rowContactSection, columnIndex: 3 },
-                            offsetXPixels: 6,
-                            offsetYPixels: 0,
-                            widthPixels: 410,
-                            heightPixels: 300
-                        }
-                    }
-                }
-            }
-        },
-        {
-            addChart: {
-                chart: {
-                    spec: {
-                        title: "All segments · volume",
-                        basicChart: {
-                            chartType: "COLUMN",
-                            legendPosition: "NO_LEGEND",
-                            axis: [
-                                { position: "BOTTOM_AXIS", title: "Segment" },
-                                { position: "LEFT_AXIS", title: "Conversations" }
-                            ],
-                            domains: [
-                                {
-                                    domain: {
-                                        sourceRange: {
-                                            sources: [
-                                                {
-                                                    sheetId,
-                                                    startRowIndex: cHead,
-                                                    endRowIndex: layout.rowContactNeither + 1,
-                                                    startColumnIndex: 0,
-                                                    endColumnIndex: 1
-                                                }
-                                            ]
-                                        }
-                                    }
-                                }
-                            ],
-                            series: [
-                                {
-                                    series: {
-                                        sourceRange: {
-                                            sources: [
-                                                {
-                                                    sheetId,
-                                                    startRowIndex: cHead,
-                                                    endRowIndex: layout.rowContactNeither + 1,
-                                                    startColumnIndex: 1,
-                                                    endColumnIndex: 2
-                                                }
-                                            ]
-                                        }
-                                    },
-                                    targetAxis: "LEFT_AXIS",
-                                    color: sheetRgb_("#6366f1")
-                                }
-                            ],
-                            headerCount: 1
-                        }
-                    },
-                    position: {
-                        overlayPosition: {
-                            anchorCell: { sheetId, rowIndex: layout.rowContactSection, columnIndex: 3 },
-                            offsetXPixels: 430,
-                            offsetYPixels: 4,
-                            widthPixels: 400,
-                            heightPixels: 300
-                        }
-                    }
-                }
-            }
-        },
-        {
-            addChart: {
-                chart: {
-                    spec: {
-                        title: "Pipeline funnel",
-                        basicChart: {
-                            chartType: "COLUMN",
-                            legendPosition: "NO_LEGEND",
-                            axis: [
-                                { position: "BOTTOM_AXIS", title: "Stage" },
-                                { position: "LEFT_AXIS", title: "Count" }
-                            ],
-                            domains: [
-                                {
-                                    domain: {
-                                        sourceRange: {
-                                            sources: [
-                                                {
-                                                    sheetId,
-                                                    startRowIndex: layout.funnelHeaderRow,
-                                                    endRowIndex: layout.funnelDataEnd + 1,
-                                                    startColumnIndex: 0,
-                                                    endColumnIndex: 1
-                                                }
-                                            ]
-                                        }
-                                    }
-                                }
-                            ],
-                            series: [
-                                {
-                                    series: {
-                                        sourceRange: {
-                                            sources: [
-                                                {
-                                                    sheetId,
-                                                    startRowIndex: layout.funnelHeaderRow,
-                                                    endRowIndex: layout.funnelDataEnd + 1,
-                                                    startColumnIndex: 1,
-                                                    endColumnIndex: 2
-                                                }
-                                            ]
-                                        }
-                                    },
-                                    targetAxis: "LEFT_AXIS",
-                                    color: accent
-                                }
-                            ],
-                            headerCount: 1
-                        }
-                    },
-                    position: {
-                        overlayPosition: {
-                            anchorCell: { sheetId, rowIndex: layout.rowKpiLabels, columnIndex: 7 },
-                            offsetXPixels: 4,
-                            offsetYPixels: 0,
-                            widthPixels: 380,
-                            heightPixels: 220
-                        }
-                    }
-                }
-            }
-        }
-    ];
-
-    await sheets.spreadsheets.batchUpdate({
-        spreadsheetId: SPREADSHEET_ID,
-        requestBody: {
-            requests: [
-                ...chartReqs,
-                {
-                    addChart: {
-                        chart: {
-                            spec: {
-                                title: "Contact capture vs gaps",
-                                pieChart: {
-                                    domain: {
-                                        sourceRange: {
-                                            sources: [
-                                                {
-                                                    sheetId,
-                                                    startRowIndex: layout.coverageDataStart,
-                                                    endRowIndex: layout.coverageDataEnd + 1,
-                                                    startColumnIndex: 0,
-                                                    endColumnIndex: 1
-                                                }
-                                            ]
-                                        }
-                                    },
-                                    series: {
-                                        sourceRange: {
-                                            sources: [
-                                                {
-                                                    sheetId,
-                                                    startRowIndex: layout.coverageDataStart,
-                                                    endRowIndex: layout.coverageDataEnd + 1,
-                                                    startColumnIndex: 1,
-                                                    endColumnIndex: 2
-                                                }
-                                            ]
-                                        }
-                                    },
-                                    legendPosition: "RIGHT_LEGEND",
-                                    pieHoleSize: 0.35
-                                }
-                            },
-                            position: {
-                                overlayPosition: {
-                                    anchorCell: { sheetId, rowIndex: layout.rowBetweenChannelContact, columnIndex: 0 },
-                                    offsetXPixels: 710,
-                                    offsetYPixels: 8,
-                                    widthPixels: 340,
-                                    heightPixels: 255
-                                }
-                            }
-                        }
-                    }
-                }
-            ]
-        }
-    });
 }
 
 /**
@@ -3848,10 +3915,17 @@ export async function writeLeadCaptureDashboardToSheet2(opts = {}) {
     try {
         await applyLeadDashboardChartsAndFormatting_(sheets, sheetId, layout, values.length);
     } catch (fmtErr) {
-        const m = fmtErr && /** @type {{ message?: string }} */ (fmtErr).message
-            ? String(/** @type {{ message?: string }} */ (fmtErr).message)
-            : String(fmtErr);
-        console.error("[chatbot-api] Dashboard sheet presentation/charts (data was written):", m.slice(0, 800));
+        const errObj = /** @type {{ message?: string, response?: { data?: unknown } }} */ (fmtErr);
+        const apiDetail =
+            errObj.response && errObj.response.data !== undefined
+                ? JSON.stringify(errObj.response.data).slice(0, 1200)
+                : "";
+        const m = errObj.message ? String(errObj.message) : String(fmtErr);
+        console.error(
+            "[chatbot-api] Dashboard sheet formatting (data was written):",
+            m.slice(0, 600),
+            apiDetail
+        );
     }
     const colW = values.reduce((m, r) => Math.max(m, r.length), 0);
     return {
