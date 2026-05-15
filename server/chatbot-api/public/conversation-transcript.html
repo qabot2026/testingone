@@ -420,16 +420,37 @@
         return s.trim();
       }
 
-      /** Sheet / submission field key → stable label (case- and space-insensitive). */
+      /** Sheet / submission field key → stable semantic id (case- and space-insensitive). */
       function canonicalLeadFieldKey(rawKey) {
         var k = String(rawKey || "")
           .trim()
           .toLowerCase()
           .replace(/\s+/g, " ");
+        var kn = k.replace(/\s/g, "");
         if (k === "name") return "name";
         if (k === "email") return "email";
-        if (k === "mobile") return "mobile";
+        if (k === "mobile" || k === "phone") return "mobile";
         if (k === "user queries" || k === "userqueries") return "user_queries";
+        if (k === "device" || k === "device type" || kn === "devicetype") return "device";
+        if (k === "channel") return "channel";
+        if (
+          k === "browser"
+          || k === "browser name"
+          || kn === "browsername"
+        )
+          return "browser";
+        if (k === "conv. date" || k === "conv date") return "conv_date";
+        if (k === "conv. time" || k === "conv time") return "conv_time";
+        if (
+          k === "conversation date"
+          || kn === "conversationdate"
+        )
+          return "conv_date";
+        if (
+          k === "conversation time"
+          || kn === "conversationtime"
+        )
+          return "conv_time";
         return null;
       }
 
@@ -442,13 +463,27 @@
         if (k === "form id" || k === "form_id" || kn === "formid") return true;
         if (k === "app. booked" || k === "app booked" || kn === "app.booked") return true;
         if (k === "scheduled") return true;
+        if (k === "conv. link" || k === "conv link" || kn === "conv.link") return true;
+        if (
+          k === "submitted at"
+          || kn === "submittedat"
+          || kn === "sheetrow"
+          || k === "sheet row"
+        )
+          return true;
         return false;
       }
 
-      function findColumnEntryBySemantic(cols, semantic) {
-        var keys = Object.keys(cols);
+      /** @typedef {{ key: string, val: string } | null} ColHit */
+
+      /** @returns {ColHit} */
+      function findColumnEntryBySemantic(cols, semantic, consumedCol) {
+        var keys = Object.keys(cols).sort(function (a, b) {
+          return a.localeCompare(b);
+        });
         for (var i = 0; i < keys.length; i++) {
           var key = keys[i];
+          if (consumedCol && consumedCol[key]) continue;
           if (canonicalLeadFieldKey(key) === semantic) {
             return {
               key: key,
@@ -474,12 +509,21 @@
           if (!cols) {
             return fromMeta;
           }
-          var hit = findColumnEntryBySemantic(cols, semantic);
+          var hit = findColumnEntryBySemantic(cols, semantic, consumedCol);
           if (hit) {
             consumedCol[hit.key] = true;
             return fromMeta || hit.val;
           }
           return fromMeta;
+        }
+
+        /** Sheet-only semantic (consume column). */
+        function takeSemanticCol(semantic) {
+          if (!cols) return "";
+          var hit = findColumnEntryBySemantic(cols, semantic, consumedCol);
+          if (!hit) return "";
+          consumedCol[hit.key] = true;
+          return hit.val;
         }
 
         var nameVal = pickSemantic("name", meta.name);
@@ -488,7 +532,7 @@
 
         var userQueriesVal = "";
         if (cols) {
-          var uqHit = findColumnEntryBySemantic(cols, "user_queries");
+          var uqHit = findColumnEntryBySemantic(cols, "user_queries", consumedCol);
           if (uqHit) {
             consumedCol[uqHit.key] = true;
             userQueriesVal = uqHit.val;
@@ -497,12 +541,19 @@
 
         if (nameVal) pairs.push(["Name", String(nameVal)]);
         if (emailVal) pairs.push(["Email", String(emailVal)]);
-        if (userQueriesVal) pairs.push(["User queries", String(userQueriesVal)]);
-        if (mobileVal) pairs.push(["Mobile", String(mobileVal)]);
+        if (mobileVal) pairs.push(["Phone", String(mobileVal)]);
 
-        var submittedVal = normalizeDetailValue(meta.submitted_at);
-        if (submittedVal) pairs.push(["Submitted at", submittedVal]);
-        if (sheet && sheet.rowNumber) pairs.push(["Sheet row", String(sheet.rowNumber)]);
+        var deviceVal = takeSemanticCol("device");
+        var channelVal = takeSemanticCol("channel");
+        var browserVal = takeSemanticCol("browser");
+        var convDateVal = takeSemanticCol("conv_date");
+        var convTimeVal = takeSemanticCol("conv_time");
+
+        if (deviceVal) pairs.push(["Device", String(deviceVal)]);
+        if (channelVal) pairs.push(["Channel", String(channelVal)]);
+        if (browserVal) pairs.push(["Browser", String(browserVal)]);
+        if (convDateVal) pairs.push(["Conv. Date", String(convDateVal)]);
+        if (convTimeVal) pairs.push(["Conv. time", String(convTimeVal)]);
 
         if (cols) {
           var restKeys = Object.keys(cols).sort(function (a, b) {
@@ -513,7 +564,17 @@
             if (consumedCol[colKey]) continue;
             if (shouldDropSummaryFieldKey(colKey)) continue;
             var sem = canonicalLeadFieldKey(colKey);
-            if (sem === "name" || sem === "email" || sem === "mobile" || sem === "user_queries") {
+            if (
+              sem === "name"
+              || sem === "email"
+              || sem === "mobile"
+              || sem === "user_queries"
+              || sem === "device"
+              || sem === "channel"
+              || sem === "browser"
+              || sem === "conv_date"
+              || sem === "conv_time"
+            ) {
               continue;
             }
             var cellVal = normalizeDetailValue(cols[colKey]);
@@ -521,6 +582,8 @@
             pairs.push([colKey, cellVal]);
           }
         }
+
+        if (userQueriesVal) pairs.push(["User queries", String(userQueriesVal)]);
 
         if (!pairs.length) {
           detailsWrap.hidden = true;
