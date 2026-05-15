@@ -15791,6 +15791,18 @@ function submitContactForm(event) {
                 mergeVisitorMobileIntoStoredContext(mobileToRemember, { syncSheet: false, force: true });
             }
             const updatedContext = { ...readStoredClientContext() };
+            if (payload && payload.client_context && typeof payload.client_context === "object") {
+                const pc = /** @type {Record<string, unknown>} */ (payload.client_context);
+                if (Array.isArray(pc.chat_transcript)) {
+                    updatedContext.chat_transcript = pc.chat_transcript.slice();
+                }
+                if (typeof pc.chat_transcript_seq === "number" && Number.isFinite(pc.chat_transcript_seq)) {
+                    updatedContext.chat_transcript_seq = pc.chat_transcript_seq;
+                }
+                if (Array.isArray(pc.user_queries)) {
+                    updatedContext.user_queries = pc.user_queries.slice();
+                }
+            }
             for (const key in payload) {
                 if (typeof payload[key] === 'string' && payload[key].trim()) {
                     updatedContext[key] = payload[key];

@@ -3268,10 +3268,44 @@ function transcriptTurnTextFromItem_(o) {
         return "";
     }
     const rec = /** @type {Record<string, unknown>} */ (o);
-    for (const k of ["text", "message", "content", "body"]) {
-        const v = rec[k];
+    /** @param {unknown} v */
+    const stringLeaf = (v) => {
         if (typeof v === "string" && v.trim()) {
             return v.trim();
+        }
+        if (
+            v
+            && typeof v === "object"
+            && typeof /** @type {{ text?: unknown }} */ (v).text === "string"
+            && String(/** @type {{ text?: string }} */ (v).text).trim()
+        ) {
+            return String(/** @type {{ text?: string }} */ (v).text).trim();
+        }
+        return "";
+    };
+    for (const k of ["text", "message", "content", "body"]) {
+        const v = rec[k];
+        const leaf = stringLeaf(v);
+        if (leaf) {
+            return leaf;
+        }
+        if (
+            typeof v === "object"
+            && v
+            && Array.isArray(/** @type {{ parts?: unknown }} */ (v).parts)
+        ) {
+            const parts = /** @type {{ parts: unknown[] }} */ (v).parts;
+            /** @type {string[]} */
+            const bits = [];
+            for (const p of parts) {
+                const s = stringLeaf(p);
+                if (s) {
+                    bits.push(s);
+                }
+            }
+            if (bits.length) {
+                return bits.join("\n");
+            }
         }
     }
     return "";
@@ -3819,10 +3853,14 @@ app.get(PATHNAME_CONVERSATION_TRANSCRIPT_JSON, async (req, res) => {
                     : source === "none"
                       ? "sheet_chat_transcript_json"
                       : `${source}+sheet_chat_transcript_json`;
+        /**
+         * Sheet “more user turns” heuristic is only meant for stale Firestore snippets that omit bot lines.
+         * If Firebase already has assistant replies, switching to Sheet on user-count alone drops the full threaded script after form submits.
+         */
         } else if (
             sheetChatTurns.length > 0
             && sheetUserN > fbUserN
-            && (hasAssistantTurns_(sheetChatTurns) || !hasAssistantTurns_(turns))
+            && !hasAssistantTurns_(turns)
         ) {
             turns = sheetChatTurns.slice();
             source =
