@@ -2359,6 +2359,8 @@
         var om = statNum(tot, "onlyMobile", 0);
         var oe = statNum(tot, "onlyEmail", 0);
         var be = statNum(tot, "mobileAndEmail", 0);
+        var ni = statNum(tot, "neither", 0);
+        var leads = om + oe + be;
         var apt =
           statNum(tot, "appointmentBooked", NaN);
         if (!Number.isFinite(apt)) apt = statNum(tot, "appointmentScheduled", 0);
