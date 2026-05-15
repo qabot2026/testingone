@@ -2762,6 +2762,13 @@ async function getSheetIdForTitle_(sheets, tabTitle) {
     throw new Error(`Sheet tab not found: ${tabTitle}`);
 }
 
+/** Embedded charts use overlay heights ~220–260px; default row ~21px — anchors must be spaced apart. */
+const LEAD_DASHBOARD_CHART_ROW_STRIDE = 16;
+/** Must match the number of `addChart` entries in `applyLeadDashboardChartsAndFormatting_`. */
+const LEAD_DASHBOARD_CHART_SLOTS = 8;
+const LEAD_DASHBOARD_CHART_BAND_ROWS =
+    (LEAD_DASHBOARD_CHART_SLOTS - 1) * LEAD_DASHBOARD_CHART_ROW_STRIDE + 18;
+
 /**
  * Remove charts + merges in the dashboard area so re-sync stays idempotent.
  *
@@ -2769,45 +2776,58 @@ async function getSheetIdForTitle_(sheets, tabTitle) {
  * @param {number} sheetId
  */
 async function resetDashboardSheetDecor_(sheets, sheetId) {
-    const meta = await sheets.spreadsheets.get({
-        spreadsheetId: SPREADSHEET_ID,
-        fields: "sheets(properties,charts)"
-    });
-    /** @type {unknown[]} */
-    const requests = [];
-    for (const sh of meta.data.sheets || []) {
-        const p = sh.properties;
-        const sid = p && typeof p.sheetId === "number" ? p.sheetId : -1;
-        if (sid !== sheetId) {
-            continue;
-        }
-        const charts = Array.isArray(sh.charts) ? sh.charts : [];
-        for (let i = 0; i < charts.length; i += 1) {
-            const cid =
-                charts[i]
-                && /** @type {{ chartId?: number }} */ (charts[i]).chartId !== undefined
-                    ? /** @type {{ chartId?: number }} */ (charts[i]).chartId
-                    : undefined;
-            if (typeof cid === "number") {
-                requests.push({ deleteEmbeddedObject: { objectId: cid } });
+    const MAX_CHART_PURGE_PASSES = 12;
+    for (let pass = 0; pass < MAX_CHART_PURGE_PASSES; pass += 1) {
+        const meta = await sheets.spreadsheets.get({
+            spreadsheetId: SPREADSHEET_ID,
+            fields: "sheets(properties,charts)"
+        });
+        /** @type {unknown[]} */
+        const deletes = [];
+        for (const sh of meta.data.sheets || []) {
+            const p = sh.properties;
+            const sid = p && typeof p.sheetId === "number" ? p.sheetId : -1;
+            if (sid !== sheetId) {
+                continue;
             }
+            const charts = Array.isArray(sh.charts) ? sh.charts : [];
+            for (let i = 0; i < charts.length; i += 1) {
+                const cid =
+                    charts[i]
+                    && /** @type {{ chartId?: number }} */ (charts[i]).chartId !== undefined
+                        ? /** @type {{ chartId?: number }} */ (charts[i]).chartId
+                        : undefined;
+                if (typeof cid === "number") {
+                    deletes.push({ deleteEmbeddedObject: { objectId: cid } });
+                }
+            }
+            break;
         }
-        break;
+        if (deletes.length === 0) {
+            break;
+        }
+        await sheets.spreadsheets.batchUpdate({
+            spreadsheetId: SPREADSHEET_ID,
+            requestBody: { requests: deletes }
+        });
     }
-    requests.push({
-        unmergeCells: {
-            range: {
-                sheetId,
-                startRowIndex: 0,
-                endRowIndex: 200,
-                startColumnIndex: 0,
-                endColumnIndex: 24
-            }
-        }
-    });
     await sheets.spreadsheets.batchUpdate({
         spreadsheetId: SPREADSHEET_ID,
-        requestBody: { requests }
+        requestBody: {
+            requests: [
+                {
+                    unmergeCells: {
+                        range: {
+                            sheetId,
+                            startRowIndex: 0,
+                            endRowIndex: 520,
+                            startColumnIndex: 0,
+                            endColumnIndex: 24
+                        }
+                    }
+                }
+            ]
+        }
     });
 }
 
@@ -3068,7 +3088,7 @@ function buildLeadDashboardSheetPayload_(payload) {
         ""
     ]);
     L.chartSlotStart = lines.length;
-    for (let i = 0; i < 10; i += 1) {
+    for (let i = 0; i < LEAD_DASHBOARD_CHART_BAND_ROWS; i += 1) {
         push(pad([]));
     }
     L.chartSlotEnd = lines.length - 1;
@@ -3226,7 +3246,8 @@ async function applyLeadDashboardChartsAndFormatting_(sheets, sheetId, layout, r
     const funnelHideStart = layout.rowFunnelSection;
     const funnelHideEnd = layout.coverageDataEnd + 1;
 
-    const slot = (/** @type {number} */ i) => layout.chartSlotStart + i;
+    const slot = (/** @type {number} */ i) =>
+        layout.chartSlotStart + i * LEAD_DASHBOARD_CHART_ROW_STRIDE;
 
     const stackColors = [
         sheetRgb_("#2563eb"),

@@ -1101,7 +1101,7 @@
           <button type="button" id="toggleSecret">Show</button>
           <button type="button" id="saveSecret">Save in tab</button>
           <button type="button" class="primary" id="refreshBtn">Reload</button>
-          <button type="button" id="syncSheet2Btn" title="Push KPI tiles to your dashboard workspace using current filters.">
+          <button type="button" id="syncSheet2Btn" title="Runs automatically after reload with current filters. Click to sync again.">
             Sync dashboard
           </button>
           <button
@@ -1236,6 +1236,7 @@
       var leadChartInstances = [];
       var lastLeadStatsPayload = null;
       var LEAD_STATS_VIEW_KEY = "lead_stats_view";
+      var dashboardSheetSyncBusy = false;
 
       function destroyLeadCharts() {
         leadChartInstances.forEach(function (ch) {
@@ -2456,6 +2457,81 @@
         );
       });
 
+      /**
+       * Push executive dashboard tab to the linked spreadsheet (same From/To as this page).
+       * @param {{ interactive?: boolean }} [opts] When false (auto after reload), failures are logged only.
+       * @returns {Promise<boolean>}
+       */
+      function syncDashboardSheet(opts) {
+        opts = opts || {};
+        var interactive = !!opts.interactive;
+        var secret = secretEl.value.trim();
+        if (!secret) {
+          if (interactive) showErr("Enter viewer secret.");
+          return Promise.resolve(false);
+        }
+        if (dashboardSheetSyncBusy) {
+          return Promise.resolve(false);
+        }
+        dashboardSheetSyncBusy = true;
+        var fromV = dateFromEl && dateFromEl.value ? dateFromEl.value.trim() : "";
+        var toV = dateToEl && dateToEl.value ? dateToEl.value.trim() : "";
+        var qp = [];
+        if (fromV) qp.push("from=" + encodeURIComponent(fromV));
+        if (toV) qp.push("to=" + encodeURIComponent(toV));
+        var url =
+          apiBase() +
+          "/api/conversations-sheet-sync-dashboard" +
+          (qp.length ? "?" + qp.join("&") : "");
+        var prevBtnText = "";
+        if (interactive && syncSheet2Btn) {
+          syncSheet2Btn.disabled = true;
+          prevBtnText = syncSheet2Btn.textContent;
+          syncSheet2Btn.textContent = "Syncing…";
+        }
+        return fetch(url, {
+          method: "POST",
+          headers: { "X-Conversations-Sheet-Secret": secret },
+          cache: "no-store",
+          credentials: "same-origin"
+        })
+          .then(function (res) {
+            return res.json().then(function (j) {
+              return { res: res, j: j };
+            });
+          })
+          .then(function (o) {
+            if (!o.res.ok || !o.j || !o.j.ok) {
+              var failMsg = (o.j && o.j.error) || "Sync failed.";
+              if (interactive) showErr(failMsg);
+              else console.warn("[conversations-sheet] dashboard sync:", failMsg);
+              return false;
+            }
+            var okLine =
+              "Dashboard refreshed · " + (o.j.rowsWritten || "?") + " rows updated.";
+            if (interactive) {
+              setStatus(okLine);
+            } else if (statusLine) {
+              var cur = statusLine.textContent || "";
+              setStatus(cur ? cur + " · " + okLine : okLine);
+            }
+            return true;
+          })
+          .catch(function (e) {
+            var msg = String(e && e.message ? e.message : e);
+            if (interactive) showErr(msg);
+            else console.warn("[conversations-sheet] dashboard sync:", msg);
+            return false;
+          })
+          .finally(function () {
+            dashboardSheetSyncBusy = false;
+            if (interactive && syncSheet2Btn) {
+              syncSheet2Btn.disabled = false;
+              syncSheet2Btn.textContent = prevBtnText;
+            }
+          });
+      }
+
       async function load() {
         var secret = secretEl.value.trim();
         showErr("");
@@ -2529,6 +2605,7 @@
           syncPagerUi(json);
           render(json);
           void loadLeadStats();
+          void syncDashboardSheet({ interactive: false });
         } catch (e) {
           lastSuccessfulSheetJson = null;
           if (e && e.name === "AbortError") showErr("Timed out.");
@@ -2782,51 +2859,8 @@
 
       if (syncSheet2Btn) {
         syncSheet2Btn.addEventListener("click", function () {
-          var secret = secretEl.value.trim();
           showErr("");
-          if (!secret) {
-            showErr("Enter viewer secret.");
-            return;
-          }
-          var fromV = dateFromEl && dateFromEl.value ? dateFromEl.value.trim() : "";
-          var toV = dateToEl && dateToEl.value ? dateToEl.value.trim() : "";
-          var qp = [];
-          if (fromV) qp.push("from=" + encodeURIComponent(fromV));
-          if (toV) qp.push("to=" + encodeURIComponent(toV));
-          var url =
-            apiBase() +
-            "/api/conversations-sheet-sync-dashboard" +
-            (qp.length ? "?" + qp.join("&") : "");
-          syncSheet2Btn.disabled = true;
-          var prev = syncSheet2Btn.textContent;
-          syncSheet2Btn.textContent = "Syncing…";
-          fetch(url, {
-            method: "POST",
-            headers: { "X-Conversations-Sheet-Secret": secret },
-            cache: "no-store",
-            credentials: "same-origin"
-          })
-            .then(function (res) {
-              return res.json().then(function (j) {
-                return { res: res, j: j };
-              });
-            })
-            .then(function (o) {
-              if (!o.res.ok || !o.j || !o.j.ok) {
-                showErr((o.j && o.j.error) || "Sync failed.");
-                return;
-              }
-              setStatus(
-                "Dashboard refreshed · " + (o.j.rowsWritten || "?") + " rows updated."
-              );
-            })
-            .catch(function (e) {
-              showErr(String(e && e.message ? e.message : e));
-            })
-            .finally(function () {
-              syncSheet2Btn.disabled = false;
-              syncSheet2Btn.textContent = prev;
-            });
+          void syncDashboardSheet({ interactive: true });
         });
       }
 
