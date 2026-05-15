@@ -121,11 +121,55 @@
       font-size: 0.8rem;
       margin-top: 8px;
     }
-    .details-wrap {
-      max-width: 560px;
+    .main-grid {
+      flex: 1;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: clamp(16px, 2.5vw, 24px);
       width: 100%;
+      max-width: 1180px;
       margin: 0 auto;
-      padding: 0 clamp(16px, 4vw, 28px) 8px;
+      padding: 0 clamp(16px, 4vw, 28px) 24px;
+      min-height: 0;
+      align-items: stretch;
+    }
+    @media (min-width: 900px) {
+      .main-grid.main-grid--split {
+        grid-template-columns: minmax(0, 1fr) minmax(260px, 380px);
+        align-items: start;
+      }
+    }
+    .chat-column {
+      min-width: 0;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      max-height: calc(100dvh - clamp(132px, 22vh, 280px));
+    }
+    .main-grid.main-grid--split .chat-column {
+      max-height: calc(100dvh - clamp(100px, 16vh, 200px));
+    }
+    .summary-rail {
+      min-width: 0;
+      display: none;
+    }
+    .main-grid.main-grid--split .summary-rail {
+      display: block;
+    }
+    .summary-rail-inner {
+      position: sticky;
+      top: 12px;
+      max-height: calc(100dvh - 24px);
+      overflow-y: auto;
+      scrollbar-gutter: stable;
+      padding-bottom: 8px;
+    }
+    .details-wrap {
+      max-width: none;
+      width: 100%;
+      margin: 0;
+      padding: 0;
     }
     .details-wrap h2 {
       margin: 0 0 8px;
@@ -156,21 +200,22 @@
       display: flex;
       flex-direction: column;
       min-height: 0;
-      max-width: 560px;
       width: 100%;
-      margin: 0 auto;
-      padding: 0 clamp(16px, 4vw, 28px) 24px;
+      margin: 0;
+      padding: 0;
     }
     .chat-stream {
       flex: 1;
-      min-height: 200px;
-      max-height: min(72vh, 720px);
+      min-height: 220px;
       overflow-y: auto;
       padding: 12px 4px 16px;
       display: flex;
       flex-direction: column;
       gap: 10px;
       scrollbar-gutter: stable;
+      background: rgba(255, 255, 255, 0.35);
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
     }
     .day-line {
       text-align: center;
@@ -238,9 +283,9 @@
     .source-tag {
       font-size: 0.68rem;
       color: var(--muted);
-      padding: 0 clamp(16px, 4vw, 28px) 8px;
-      max-width: 560px;
-      margin: 0 auto;
+      padding: 0 4px 4px;
+      margin: 0;
+      max-width: none;
     }
   </style>
 </head>
@@ -258,17 +303,23 @@
     </div>
   </header>
 
-  <div class="details-wrap" id="detailsWrap" hidden>
-    <h2>Lead details (sheet + submission)</h2>
-    <div class="panel">
-      <dl class="dl-grid" id="detailsDl"></dl>
+  <div class="main-grid" id="mainGrid">
+    <div class="chat-column">
+      <p class="source-tag" id="sourceTag" hidden></p>
+      <div class="chat-wrap">
+        <div class="chat-stream" id="thread" aria-live="polite"></div>
+      </div>
     </div>
-  </div>
-
-  <p class="source-tag" id="sourceTag" hidden></p>
-
-  <div class="chat-wrap">
-    <div class="chat-stream" id="thread" aria-live="polite"></div>
+    <aside class="summary-rail" id="summaryRail" hidden>
+      <div class="summary-rail-inner">
+        <div class="details-wrap" id="detailsWrap" hidden>
+          <h2>Lead details (sheet + submission)</h2>
+          <div class="panel">
+            <dl class="dl-grid" id="detailsDl"></dl>
+          </div>
+        </div>
+      </div>
+    </aside>
   </div>
 
   <script>
@@ -285,6 +336,8 @@
       var sourceTag = document.getElementById("sourceTag");
       var authPanel = document.getElementById("authPanel");
       var toggleAuth = document.getElementById("toggleAuth");
+      var mainGrid = document.getElementById("mainGrid");
+      var summaryRail = document.getElementById("summaryRail");
 
       try {
         var saved = localStorage.getItem(LS_KEY);
@@ -388,9 +441,13 @@
 
         if (!pairs.length) {
           detailsWrap.hidden = true;
+          summaryRail.hidden = true;
+          mainGrid.classList.remove("main-grid--split");
           return;
         }
         detailsWrap.hidden = false;
+        summaryRail.hidden = false;
+        mainGrid.classList.add("main-grid--split");
         var chunks = [];
         for (var j = 0; j < pairs.length; j++) {
           chunks.push(
@@ -405,6 +462,8 @@
         thread.innerHTML = "";
         detailsDl.innerHTML = "";
         detailsWrap.hidden = true;
+        summaryRail.hidden = true;
+        mainGrid.classList.remove("main-grid--split");
         sourceTag.hidden = true;
 
         var session = sessionFromUrl();
