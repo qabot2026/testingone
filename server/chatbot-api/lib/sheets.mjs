@@ -2730,11 +2730,99 @@ function sheetA1TabPrefix_(title) {
     return `'${t}'`;
 }
 
+/** RGB for Sheets API (0–1 floats). */
+function sheetRgb_(hex) {
+    const h = String(hex || "").replace(/^#/, "");
+    const n = Number.parseInt(h.length === 6 ? h : "000000", 16);
+    return {
+        red: ((n >> 16) & 255) / 255,
+        green: ((n >> 8) & 255) / 255,
+        blue: (n & 255) / 255
+    };
+}
+
 /**
- * @param {Awaited<ReturnType<typeof fetchConversationLeadCaptureStats>>} payload
- * @returns {(string|number)[][]}
+ * @param {import("googleapis").sheets_v4.Sheets} sheets
+ * @param {string} tabTitle
+ * @returns {Promise<number>}
  */
-function buildLeadDashboardSheetValues_(payload) {
+async function getSheetIdForTitle_(sheets, tabTitle) {
+    const meta = await sheets.spreadsheets.get({
+        spreadsheetId: SPREADSHEET_ID,
+        fields: "sheets.properties(title,sheetId)"
+    });
+    const want = normalizedSheetTabKey_(tabTitle);
+    for (const s of meta.data.sheets || []) {
+        const p = s.properties;
+        const t = p && typeof p.title === "string" ? p.title.trim() : "";
+        if (p && typeof p.sheetId === "number" && t && normalizedSheetTabKey_(t) === want) {
+            return p.sheetId;
+        }
+    }
+    throw new Error(`Sheet tab not found: ${tabTitle}`);
+}
+
+/**
+ * Remove charts + merges in the dashboard area so re-sync stays idempotent.
+ *
+ * @param {import("googleapis").sheets_v4.Sheets} sheets
+ * @param {number} sheetId
+ */
+async function resetDashboardSheetDecor_(sheets, sheetId) {
+    const meta = await sheets.spreadsheets.get({
+        spreadsheetId: SPREADSHEET_ID,
+        fields: "sheets(properties,charts)"
+    });
+    /** @type {unknown[]} */
+    const requests = [];
+    for (const sh of meta.data.sheets || []) {
+        const p = sh.properties;
+        const sid = p && typeof p.sheetId === "number" ? p.sheetId : -1;
+        if (sid !== sheetId) {
+            continue;
+        }
+        const charts = Array.isArray(sh.charts) ? sh.charts : [];
+        for (let i = 0; i < charts.length; i += 1) {
+            const cid =
+                charts[i]
+                && /** @type {{ chartId?: number }} */ (charts[i]).chartId !== undefined
+                    ? /** @type {{ chartId?: number }} */ (charts[i]).chartId
+                    : undefined;
+            if (typeof cid === "number") {
+                requests.push({ deleteEmbeddedObject: { objectId: cid } });
+            }
+        }
+        break;
+    }
+    requests.push({
+        unmergeCells: {
+            range: {
+                sheetId,
+                startRowIndex: 0,
+                endRowIndex: 100,
+                startColumnIndex: 0,
+                endColumnIndex: 16
+            }
+        }
+    });
+    await sheets.spreadsheets.batchUpdate({
+        spreadsheetId: SPREADSHEET_ID,
+        requestBody: { requests }
+    });
+}
+
+/**
+ * @returns {{
+ *   values: (string|number)[][],
+ *   layout: {
+ *     channelTableHeaderRow: number,
+ *     channelTableEndRow: number,
+ *     pieRowsStart: number,
+ *     pieRowsEnd: number
+ *   }
+ * }}
+ */
+function buildLeadDashboardSheetPayload_(payload) {
     const tot = payload.totals;
     const conv = tot.conversations || 0;
     const leads = (tot.onlyMobile || 0) + (tot.onlyEmail || 0) + (tot.mobileAndEmail || 0);
@@ -2744,23 +2832,68 @@ function buildLeadDashboardSheetValues_(payload) {
             : conv
               ? Math.round((leads * 10_000) / conv) / 100
               : "";
+    const pctDisp = pct === "" ? "—" : pct;
+    const appt = tot.appointmentBooked ?? tot.appointmentScheduled ?? 0;
+    const pad8 = (/** @type {(string|number)[]} */ row) => {
+        while (row.length < 8) {
+            row.push("");
+        }
+        return row;
+    };
+
     /** @type {(string|number)[][]} */
     const lines = [];
-    lines.push(["Lead dashboard (live sync — same logic as /conversations-sheet)", new Date().toISOString()]);
-    lines.push([]);
-    lines.push(["Total conversations", conv]);
-    lines.push(["Lead capture %", pct === "" ? "" : pct]);
-    lines.push(["Appointments booked", tot.appointmentBooked ?? tot.appointmentScheduled ?? 0]);
-    lines.push([]);
-    lines.push(["Conversations by channel", ""]);
-    lines.push(["Web", tot.channelWeb || 0]);
-    lines.push(["WhatsApp", tot.channelWhatsapp || 0]);
-    lines.push(["Instagram", tot.channelInstagram || 0]);
-    lines.push(["Facebook", tot.channelFacebook || 0]);
-    lines.push(["Other / uncategorized", tot.channelOther || 0]);
-    lines.push([]);
-    lines.push(["Contact detail captured"]);
-    lines.push(["Segment", "Total", "Web", "WhatsApp", "Instagram", "Facebook", "Other"]);
+    lines.push(
+        pad8([
+            "LEAD INTELLIGENCE · Executive dashboard",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            ""
+        ])
+    );
+    lines.push(
+        pad8([
+            `Live sync · ${new Date().toISOString()} · Same metrics as staff web viewer`,
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            ""
+        ])
+    );
+    lines.push(pad8([]));
+    lines.push(
+        pad8([
+            "TOTAL CONVERSATIONS",
+            "",
+            "LEAD CAPTURE %",
+            "",
+            "APPOINTMENTS BOOKED",
+            "",
+            "",
+            ""
+        ])
+    );
+    lines.push(pad8([conv, "", pctDisp, "", appt, "", "", ""]));
+    lines.push(pad8([]));
+    lines.push(pad8(["CHANNEL DISTRIBUTION · Volume by source", "", "", "", "", "", "", ""]));
+    lines.push(pad8(["Channel", "Conversations", "", "", "", "", "", ""]));
+    lines.push(pad8(["Web", tot.channelWeb || 0, "", "", "", "", "", ""]));
+    lines.push(pad8(["WhatsApp", tot.channelWhatsapp || 0, "", "", "", "", "", ""]));
+    lines.push(pad8(["Instagram", tot.channelInstagram || 0, "", "", "", "", "", ""]));
+    lines.push(pad8(["Facebook", tot.channelFacebook || 0, "", "", "", "", "", ""]));
+    lines.push(pad8(["Other / uncategorized", tot.channelOther || 0, "", "", "", "", "", ""]));
+    lines.push(pad8([]));
+    lines.push(pad8(["CONTACT CAPTURE · Detail mix × channel", "", "", "", "", "", "", ""]));
+    lines.push(
+        pad8(["Segment", "Total", "Web", "WhatsApp", "Instagram", "Facebook", "Other", ""])
+    );
     const omCh = tot.onlyMobileByChannel || {};
     const oeCh = tot.onlyEmailByChannel || {};
     const bothCh = tot.mobileAndEmailByChannel || {};
@@ -2771,7 +2904,8 @@ function buildLeadDashboardSheetValues_(payload) {
         omCh.whatsapp || 0,
         omCh.instagram || 0,
         omCh.facebook || 0,
-        omCh.other || 0
+        omCh.other || 0,
+        ""
     ]);
     lines.push([
         "Email only",
@@ -2780,7 +2914,8 @@ function buildLeadDashboardSheetValues_(payload) {
         oeCh.whatsapp || 0,
         oeCh.instagram || 0,
         oeCh.facebook || 0,
-        oeCh.other || 0
+        oeCh.other || 0,
+        ""
     ]);
     lines.push([
         "Mobile & email",
@@ -2789,22 +2924,407 @@ function buildLeadDashboardSheetValues_(payload) {
         bothCh.whatsapp || 0,
         bothCh.instagram || 0,
         bothCh.facebook || 0,
-        bothCh.other || 0
+        bothCh.other || 0,
+        ""
     ]);
-    lines.push([]);
-    lines.push(["Neither mobile nor email (conversation still counted)", tot.neither || 0]);
+    lines.push(
+        pad8([
+            "Neither mobile nor email (still counted)",
+            tot.neither || 0,
+            "",
+            "",
+            "",
+            "",
+            "",
+            ""
+        ])
+    );
     if (payload.dateFilter && payload.dateFilter.applied) {
-        lines.push([]);
-        lines.push([
-            "Date filter (inclusive)",
-            `${payload.dateFilter.from || "—"} … ${payload.dateFilter.to || "—"}`
-        ]);
+        lines.push(pad8([]));
+        lines.push(
+            pad8([
+                "DATE FILTER (inclusive)",
+                `${payload.dateFilter.from || "—"} … ${payload.dateFilter.to || "—"}`,
+                "",
+                "",
+                "",
+                "",
+                "",
+                ""
+            ])
+        );
     }
-    return lines;
+
+    return {
+        values: lines,
+        layout: {
+            channelTableHeaderRow: 7,
+            channelTableEndRow: 12,
+            pieRowsStart: 16,
+            pieRowsEnd: 18
+        }
+    };
 }
 
 /**
- * Writes KPI tables to a second tab on the live spreadsheet (default `Sheet2`).
+ * @param {import("googleapis").sheets_v4.Sheets} sheets
+ * @param {number} sheetId
+ * @param {ReturnType<typeof buildLeadDashboardSheetPayload_>["layout"]} layout
+ * @param {number} rowCount
+ */
+async function applyLeadDashboardChartsAndFormatting_(sheets, sheetId, layout, rowCount) {
+    const navy = sheetRgb_("#0f172a");
+    const slate = sheetRgb_("#1e293b");
+    const teal = sheetRgb_("#0d9488");
+    const white = { red: 1, green: 1, blue: 1 };
+    const muted = sheetRgb_("#64748b");
+    const rowTeal = sheetRgb_("#ecfdfd");
+    const rowWhite = sheetRgb_("#ffffff");
+
+    /** @type {unknown[]} */
+    const requests = [];
+
+    requests.push({
+        mergeCells: {
+            range: {
+                sheetId,
+                startRowIndex: 0,
+                endRowIndex: 1,
+                startColumnIndex: 0,
+                endColumnIndex: 8
+            },
+            mergeType: "MERGE_ALL"
+        }
+    });
+    requests.push({
+        mergeCells: {
+            range: {
+                sheetId,
+                startRowIndex: 1,
+                endRowIndex: 2,
+                startColumnIndex: 0,
+                endColumnIndex: 8
+            },
+            mergeType: "MERGE_ALL"
+        }
+    });
+    requests.push({
+        mergeCells: {
+            range: {
+                sheetId,
+                startRowIndex: 6,
+                endRowIndex: 7,
+                startColumnIndex: 0,
+                endColumnIndex: 8
+            },
+            mergeType: "MERGE_ALL"
+        }
+    });
+    requests.push({
+        mergeCells: {
+            range: {
+                sheetId,
+                startRowIndex: 14,
+                endRowIndex: 15,
+                startColumnIndex: 0,
+                endColumnIndex: 8
+            },
+            mergeType: "MERGE_ALL"
+        }
+    });
+
+    /**
+     * @param {number} startRow
+     * @param {number} endRow
+     * @param {Record<string, unknown>} format
+     */
+    const repeatRows = (startRow, endRow, format) => {
+        requests.push({
+            repeatCell: {
+                range: {
+                    sheetId,
+                    startRowIndex: startRow,
+                    endRowIndex: endRow,
+                    startColumnIndex: 0,
+                    endColumnIndex: 8
+                },
+                cell: { userEnteredFormat: format },
+                fields:
+                    "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment,verticalAlignment,borders)"
+            }
+        });
+    };
+
+    repeatRows(0, 1, {
+        backgroundColor: navy,
+        horizontalAlignment: "LEFT",
+        verticalAlignment: "MIDDLE",
+        textFormat: { foregroundColor: white, bold: true, fontSize: 16, fontFamily: "Roboto" },
+        borders: {
+            bottom: { style: "SOLID_MEDIUM", color: teal }
+        }
+    });
+    repeatRows(1, 2, {
+        backgroundColor: slate,
+        horizontalAlignment: "LEFT",
+        verticalAlignment: "MIDDLE",
+        textFormat: { foregroundColor: { red: 0.85, green: 0.9, blue: 0.95 }, fontSize: 10, italic: true }
+    });
+    repeatRows(3, 4, {
+        backgroundColor: sheetRgb_("#f1f5f9"),
+        horizontalAlignment: "CENTER",
+        verticalAlignment: "BOTTOM",
+        textFormat: { foregroundColor: muted, fontSize: 9, bold: true }
+    });
+    repeatRows(4, 5, {
+        backgroundColor: rowWhite,
+        horizontalAlignment: "CENTER",
+        verticalAlignment: "TOP",
+        textFormat: { foregroundColor: navy, fontSize: 20, bold: true },
+        borders: {
+            bottom: { style: "SOLID", color: sheetRgb_("#e2e8f0") }
+        }
+    });
+    repeatRows(6, 7, {
+        backgroundColor: teal,
+        horizontalAlignment: "LEFT",
+        verticalAlignment: "MIDDLE",
+        textFormat: { foregroundColor: white, bold: true, fontSize: 11 }
+    });
+    repeatRows(7, 8, {
+        backgroundColor: slate,
+        horizontalAlignment: "LEFT",
+        verticalAlignment: "MIDDLE",
+        textFormat: { foregroundColor: white, bold: true, fontSize: 10 }
+    });
+    for (let r = 8; r <= 12; r += 1) {
+        const bg = r % 2 === 0 ? rowWhite : rowTeal;
+        repeatRows(r, r + 1, {
+            backgroundColor: bg,
+            horizontalAlignment: "LEFT",
+            verticalAlignment: "MIDDLE",
+            textFormat: { foregroundColor: navy, fontSize: 11 },
+            borders: {
+                bottom: { style: "SOLID", color: sheetRgb_("#e2e8f0") }
+            }
+        });
+    }
+    repeatRows(14, 15, {
+        backgroundColor: teal,
+        horizontalAlignment: "LEFT",
+        verticalAlignment: "MIDDLE",
+        textFormat: { foregroundColor: white, bold: true, fontSize: 11 }
+    });
+    repeatRows(15, 16, {
+        backgroundColor: slate,
+        horizontalAlignment: "CENTER",
+        verticalAlignment: "MIDDLE",
+        textFormat: { foregroundColor: white, bold: true, fontSize: 9 }
+    });
+    for (let r = 16; r <= 18; r += 1) {
+        const bg = r % 2 === 0 ? rowWhite : rowTeal;
+        repeatRows(r, r + 1, {
+            backgroundColor: bg,
+            horizontalAlignment: "CENTER",
+            verticalAlignment: "MIDDLE",
+            textFormat: { foregroundColor: navy, fontSize: 10 },
+            borders: {
+                bottom: { style: "SOLID", color: sheetRgb_("#e2e8f0") }
+            }
+        });
+    }
+    repeatRows(19, 20, {
+        backgroundColor: sheetRgb_("#fff7ed"),
+        horizontalAlignment: "LEFT",
+        verticalAlignment: "MIDDLE",
+        textFormat: { foregroundColor: slate, fontSize: 10, italic: true }
+    });
+
+    if (rowCount > 20) {
+        repeatRows(20, rowCount, {
+            backgroundColor: sheetRgb_("#f8fafc"),
+            horizontalAlignment: "LEFT",
+            verticalAlignment: "MIDDLE",
+            textFormat: { foregroundColor: muted, fontSize: 10 }
+        });
+    }
+
+    await sheets.spreadsheets.batchUpdate({
+        spreadsheetId: SPREADSHEET_ID,
+        requestBody: { requests }
+    });
+
+    await sheets.spreadsheets.batchUpdate({
+        spreadsheetId: SPREADSHEET_ID,
+        requestBody: {
+            requests: [
+                {
+                    updateDimensionProperties: {
+                        range: {
+                            sheetId,
+                            dimension: "COLUMNS",
+                            startIndex: 0,
+                            endIndex: 1
+                        },
+                        properties: { pixelSize: 200 },
+                        fields: "pixelSize"
+                    }
+                },
+                {
+                    updateDimensionProperties: {
+                        range: {
+                            sheetId,
+                            dimension: "COLUMNS",
+                            startIndex: 1,
+                            endIndex: 2
+                        },
+                        properties: { pixelSize: 100 },
+                        fields: "pixelSize"
+                    }
+                },
+                {
+                    updateDimensionProperties: {
+                        range: {
+                            sheetId,
+                            dimension: "COLUMNS",
+                            startIndex: 2,
+                            endIndex: 8
+                        },
+                        properties: { pixelSize: 88 },
+                        fields: "pixelSize"
+                    }
+                }
+            ]
+        }
+    });
+
+    const chHeader = layout.channelTableHeaderRow;
+    const chEnd = layout.channelTableEndRow;
+    const pieStart = layout.pieRowsStart;
+    const pieEnd = layout.pieRowsEnd;
+
+    /** @type {unknown[]} */
+    const chartReqs = [
+        {
+            addChart: {
+                chart: {
+                    spec: {
+                        title: "Conversations by channel",
+                        basicChart: {
+                            chartType: "COLUMN",
+                            legendPosition: "NO_LEGEND",
+                            axis: [
+                                { position: "BOTTOM_AXIS", title: "Channel" },
+                                { position: "LEFT_AXIS", title: "Count" }
+                            ],
+                            domains: [
+                                {
+                                    domain: {
+                                        sourceRange: {
+                                            sources: [
+                                                {
+                                                    sheetId,
+                                                    startRowIndex: chHeader,
+                                                    endRowIndex: chEnd + 1,
+                                                    startColumnIndex: 0,
+                                                    endColumnIndex: 1
+                                                }
+                                            ]
+                                        }
+                                    }
+                                }
+                            ],
+                            series: [
+                                {
+                                    series: {
+                                        sourceRange: {
+                                            sources: [
+                                                {
+                                                    sheetId,
+                                                    startRowIndex: chHeader,
+                                                    endRowIndex: chEnd + 1,
+                                                    startColumnIndex: 1,
+                                                    endColumnIndex: 2
+                                                }
+                                            ]
+                                        }
+                                    },
+                                    targetAxis: "LEFT_AXIS",
+                                    color: teal
+                                }
+                            ],
+                            headerCount: 1
+                        }
+                    },
+                    position: {
+                        overlayPosition: {
+                            anchorCell: { sheetId, rowIndex: 6, columnIndex: 3 },
+                            offsetXPixels: 10,
+                            offsetYPixels: 0,
+                            widthPixels: 460,
+                            heightPixels: 300
+                        }
+                    }
+                }
+            }
+        },
+        {
+            addChart: {
+                chart: {
+                    spec: {
+                        title: "Lead capture segments",
+                        pieChart: {
+                            domain: {
+                                sourceRange: {
+                                    sources: [
+                                        {
+                                            sheetId,
+                                            startRowIndex: pieStart,
+                                            endRowIndex: pieEnd + 1,
+                                            startColumnIndex: 0,
+                                            endColumnIndex: 1
+                                        }
+                                    ]
+                                }
+                            },
+                            series: {
+                                sourceRange: {
+                                    sources: [
+                                        {
+                                            sheetId,
+                                            startRowIndex: pieStart,
+                                            endRowIndex: pieEnd + 1,
+                                            startColumnIndex: 1,
+                                            endColumnIndex: 2
+                                        }
+                                    ]
+                                }
+                            },
+                            legendPosition: "RIGHT_LEGEND",
+                            pieHoleSize: 0.35
+                        }
+                    },
+                    position: {
+                        overlayPosition: {
+                            anchorCell: { sheetId, rowIndex: 14, columnIndex: 3 },
+                            offsetXPixels: 10,
+                            offsetYPixels: 0,
+                            widthPixels: 420,
+                            heightPixels: 320
+                        }
+                    }
+                }
+            }
+        }
+    ];
+
+    await sheets.spreadsheets.batchUpdate({
+        spreadsheetId: SPREADSHEET_ID,
+        requestBody: { requests: chartReqs }
+    });
+}
+
+/**
  * Same numbers as `fetchConversationLeadCaptureStats` / the staff web dashboard.
  *
  * @param {{ from?: string, to?: string }} [opts] Optional date bounds (YYYY-MM-DD), same as stats API.
@@ -2822,11 +3342,13 @@ export async function writeLeadCaptureDashboardToSheet2(opts = {}) {
         );
     }
     const payload = await fetchConversationLeadCaptureStats(opts);
-    const values = buildLeadDashboardSheetValues_(payload);
+    const { values, layout } = buildLeadDashboardSheetPayload_(payload);
     const client = await getSheetsAuthClient();
     const sheets = google.sheets({ version: "v4", auth: client });
     const { created, title } = await ensureSpreadsheetWorksheet_(sheets, dashTab);
+    const sheetId = await getSheetIdForTitle_(sheets, title);
     const prefix = sheetA1TabPrefix_(title);
+    await resetDashboardSheetDecor_(sheets, sheetId);
     await sheets.spreadsheets.values.clear({
         spreadsheetId: SPREADSHEET_ID,
         range: `${prefix}!A:Z`
@@ -2837,6 +3359,14 @@ export async function writeLeadCaptureDashboardToSheet2(opts = {}) {
         valueInputOption: "USER_ENTERED",
         requestBody: { values }
     });
+    try {
+        await applyLeadDashboardChartsAndFormatting_(sheets, sheetId, layout, values.length);
+    } catch (fmtErr) {
+        const m = fmtErr && /** @type {{ message?: string }} */ (fmtErr).message
+            ? String(/** @type {{ message?: string }} */ (fmtErr).message)
+            : String(fmtErr);
+        console.error("[chatbot-api] Dashboard sheet presentation/charts (data was written):", m.slice(0, 800));
+    }
     const colW = values.reduce((m, r) => Math.max(m, r.length), 0);
     return {
         tab: title,
