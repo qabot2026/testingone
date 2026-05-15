@@ -503,46 +503,93 @@
 
     .sheet-pager-bar {
       flex: 0 0 auto;
-      padding: 12px 14px 14px;
+      padding: 10px 14px 12px;
       border-top: 1px solid var(--border);
       background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
     }
     .sheet-pager-bar[hidden] {
       display: none !important;
     }
-    .pager-row-main {
+    .pager-compact {
       display: flex;
       flex-wrap: wrap;
+      align-items: center;
+      justify-content: center;
+      gap: 10px 14px;
+    }
+    .pager-compact-controls {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px 14px;
+      flex-wrap: wrap;
+      font-variant-numeric: tabular-nums;
+    }
+    .pager-btn {
+      margin: 0;
+      padding: 0;
+      border: none;
+      background: #fff;
+      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+      border-radius: 10px;
+      font: inherit;
+      font-weight: 700;
+      font-size: 14px;
+      line-height: 1;
+      min-width: 40px;
+      min-height: 40px;
+      cursor: pointer;
+      color: var(--brand-strong);
+      border: 1px solid var(--border);
+      transition: border-color 0.15s, background 0.15s, color 0.15s;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .pager-btn:hover:not(:disabled) {
+      background: var(--brand-soft);
+      border-color: rgba(13, 148, 136, 0.45);
+    }
+    .pager-btn:disabled {
+      opacity: 0.38;
+      cursor: not-allowed;
+      transform: none;
+      box-shadow: none;
+    }
+    .pager-btn--edge {
+      font-size: 13px;
+      letter-spacing: 0.06em;
+    }
+    .pager-gap {
+      display: inline-flex;
       align-items: center;
       gap: 8px;
+      padding: 4px 10px;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.65);
+      border: 1px solid rgba(148, 163, 184, 0.35);
+      font-variant-numeric: tabular-nums;
     }
-    .pager-actions {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      gap: 6px;
+    .pager-num {
+      font-weight: 800;
+      font-size: 15px;
+      color: var(--text);
+      min-width: 1.25rem;
+      text-align: center;
     }
-    .sheet-pager-bar select {
-      padding: 7px 12px;
-      border-radius: 999px;
-      font-weight: 600;
-      font-size: 11.5px;
-      width: auto;
-      min-width: 120px;
-      background: #fff;
-      cursor: pointer;
-    }
-    #pageJump {
-      min-width: 100px;
-      max-width: min(280px, 46vw);
+    .pager-num.is-dim {
+      font-weight: 700;
+      font-size: 14px;
+      color: var(--muted);
     }
     .pager-hint {
       display: block;
-      margin-top: 8px;
-      font-size: 11px;
+      margin-top: 6px;
+      text-align: center;
+      font-size: 10.5px;
       color: var(--muted);
       font-weight: 600;
-      line-height: 1.45;
+      line-height: 1.4;
     }
 
     .date-fields-row {
@@ -1146,14 +1193,20 @@
         </div>
       </div>
       <footer class="sheet-pager-bar" id="pagerWrap" hidden aria-label="Sheet paging">
-        <div class="pager-row-main">
-          <span class="mini" style="margin: 0 4px 0 0;">Pages</span>
-          <div class="pager-actions">
-            <button type="button" class="preset" id="pagerFirst" title="Newest rows (first page)">« First</button>
-            <button type="button" class="preset" id="pagerNewer" title="Newer page">⟨ Newer</button>
-            <select id="pageJump" title="Jump to page" aria-label="Jump to page"></select>
-            <button type="button" class="preset" id="pagerOlder" title="Older page">Older ⟩</button>
-            <button type="button" class="preset" id="pagerLast" title="Oldest rows (last page)">Last »</button>
+        <div class="pager-compact">
+          <div class="pager-compact-controls">
+            <button type="button" class="pager-btn pager-btn--edge" id="pagerFirst" title="First page">1st</button>
+            <div class="pager-gap" aria-label="Current page and navigation">
+              <span class="pager-num" id="pagerCurPage" aria-live="polite">1</span>
+              <button type="button" class="pager-btn" id="pagerPrev" title="Previous page" aria-label="Previous page">
+                &lt;
+              </button>
+              <button type="button" class="pager-btn" id="pagerNext" title="Next page" aria-label="Next page">
+                &gt;
+              </button>
+              <span class="pager-num is-dim" id="pagerTotalPages">1</span>
+            </div>
+            <button type="button" class="pager-btn pager-btn--edge" id="pagerLast" title="Last page">Last</button>
           </div>
         </div>
         <span class="pager-hint" id="pagerHint"></span>
@@ -1174,10 +1227,11 @@
       var downloadReportBtn = document.getElementById("downloadReportBtn");
       var pagerWrap = document.getElementById("pagerWrap");
       var pagerFirst = document.getElementById("pagerFirst");
-      var pagerNewer = document.getElementById("pagerNewer");
-      var pagerOlder = document.getElementById("pagerOlder");
+      var pagerPrev = document.getElementById("pagerPrev");
+      var pagerNext = document.getElementById("pagerNext");
       var pagerLast = document.getElementById("pagerLast");
-      var pageJump = document.getElementById("pageJump");
+      var pagerCurPage = document.getElementById("pagerCurPage");
+      var pagerTotalPages = document.getElementById("pagerTotalPages");
       var pagerHint = document.getElementById("pagerHint");
       var statusLine = document.getElementById("statusLine");
       var copyToastEl = document.getElementById("copyToast");
@@ -2116,7 +2170,6 @@
       var selectedRowSig = null;
       var sheetOffset = 0;
       var hadLoadedSheet = false;
-      var ignorePageJumpChange = false;
       var convDateReloadTimer = 0;
       /** @type {Record<string, unknown>|null} */
       var lastSuccessfulSheetJson = null;
@@ -2296,7 +2349,16 @@
       wireFilter();
 
       function syncPagerUi(json) {
-        if (!pagerWrap || !pageJump || !pagerHint || !pagerFirst || !pagerNewer || !pagerOlder || !pagerLast)
+        if (
+          !pagerWrap ||
+          !pagerHint ||
+          !pagerFirst ||
+          !pagerPrev ||
+          !pagerNext ||
+          !pagerLast ||
+          !pagerCurPage ||
+          !pagerTotalPages
+        )
           return;
         if (!json || json.totalDataRows == null || json.limit == null) {
           pagerWrap.hidden = true;
@@ -2316,63 +2378,15 @@
           return;
         }
         pagerWrap.hidden = false;
+        pagerCurPage.textContent = String(curPage);
+        pagerTotalPages.textContent = String(totalPages);
         pagerFirst.disabled = off <= 0;
-        pagerNewer.disabled = !json.hasNewer;
-        pagerOlder.disabled = !json.hasOlder;
+        pagerPrev.disabled = !json.hasNewer;
+        pagerNext.disabled = !json.hasOlder;
         pagerLast.disabled = !json.hasOlder;
-        ignorePageJumpChange = true;
-        try {
-          pageJump.innerHTML = "";
-          var maxList = Math.min(totalPages, 500);
-          for (var p = 1; p <= maxList; p++) {
-            var opt = document.createElement("option");
-            opt.value = String(p);
-            opt.textContent =
-              p === 1 ? "1 (newest)" : p === totalPages ? String(p) + " (oldest)" : String(p);
-            pageJump.appendChild(opt);
-          }
-          if (totalPages > maxList) {
-            var skip = document.createElement("option");
-            skip.disabled = true;
-            skip.value = "";
-            skip.textContent = "… +" + (totalPages - maxList) + " pages (use Last »)";
-            pageJump.appendChild(skip);
-          }
-          if (curPage > maxList) {
-            var here = document.createElement("option");
-            here.value = String(curPage);
-            here.textContent = String(curPage) + " (current)";
-            pageJump.appendChild(here);
-          }
-          pageJump.value = String(curPage);
-          if (pageJump.value !== String(curPage)) {
-            var one = document.createElement("option");
-            one.value = String(curPage);
-            one.textContent = String(curPage);
-            pageJump.appendChild(one);
-            pageJump.value = String(curPage);
-          }
-        } finally {
-          ignorePageJumpChange = false;
-        }
         var rowWord =
           json.dateFilter && json.dateFilter.serverApplied ? "rows in date range" : "rows in tab";
-        var towardOlderLeft = Math.max(0, totalPages - curPage);
-        var towardNewerBack = Math.max(0, curPage - 1);
-        var parts = [];
-        parts.push(
-          "Page " + curPage + " of " + totalPages + " · last page is " + totalPages + " (oldest rows)"
-        );
-        if (towardOlderLeft > 0) {
-          parts.push(towardOlderLeft + " more page(s) available toward older data (Older » or Last)");
-        } else {
-          parts.push("Oldest page — no older pages ahead");
-        }
-        if (towardNewerBack > 0) {
-          parts.push(towardNewerBack + " page(s) back toward newer (First « or Newer)");
-        }
-        parts.push("~" + total + " " + rowWord + " · " + lim + " rows/page");
-        pagerHint.textContent = parts.join(" · ");
+        pagerHint.textContent = "~" + total + " " + rowWord + " · " + lim + " rows/page";
       }
 
       if (pagerFirst) {
@@ -2383,43 +2397,39 @@
         });
       }
 
-      pagerNewer.addEventListener("click", function () {
-        if (pagerNewer.disabled) return;
-        var lim = parseInt(String(limitEl.value), 10) || 100;
-        sheetOffset = Math.max(0, sheetOffset - lim);
-        load();
-      });
-      pagerOlder.addEventListener("click", function () {
-        if (pagerOlder.disabled) return;
-        var lim = parseInt(String(limitEl.value), 10) || 100;
-        sheetOffset = sheetOffset + lim;
-        load();
-      });
+      if (pagerPrev) {
+        pagerPrev.addEventListener("click", function () {
+          if (pagerPrev.disabled) return;
+          var lim = parseInt(String(limitEl.value), 10) || 100;
+          sheetOffset = Math.max(0, sheetOffset - lim);
+          load();
+        });
+      }
+
+      if (pagerNext) {
+        pagerNext.addEventListener("click", function () {
+          if (pagerNext.disabled) return;
+          var lim = parseInt(String(limitEl.value), 10) || 100;
+          sheetOffset = sheetOffset + lim;
+          load();
+        });
+      }
 
       if (pagerLast) {
         pagerLast.addEventListener("click", function () {
           if (pagerLast.disabled || !lastSuccessfulSheetJson) return;
           var j = /** @type {Record<string, unknown>} */ (lastSuccessfulSheetJson);
-          var total = Number(j.totalDataRows) || 0;
-          var lim =
+          var tot = Number(j.totalDataRows) || 0;
+          var limUse =
             Number(j.limit) && Number.isFinite(Number(j.limit))
               ? Number(j.limit)
               : parseInt(String(limitEl.value), 10) || 100;
-          if (total < 1 || lim < 1) return;
-          var totalPages = Math.max(1, Math.ceil(total / lim));
-          sheetOffset = (totalPages - 1) * lim;
+          if (tot < 1 || limUse < 1) return;
+          var totalPages = Math.max(1, Math.ceil(tot / limUse));
+          sheetOffset = (totalPages - 1) * limUse;
           load();
         });
       }
-
-      pageJump.addEventListener("change", function () {
-        if (ignorePageJumpChange) return;
-        var lim = parseInt(String(limitEl.value), 10) || 100;
-        var pg = parseInt(String(pageJump.value), 10);
-        if (!Number.isFinite(pg) || pg < 1) return;
-        sheetOffset = (pg - 1) * lim;
-        load();
-      });
 
       convList.addEventListener("click", function (ev) {
         if (ev.target.closest && ev.target.closest("a")) return;
