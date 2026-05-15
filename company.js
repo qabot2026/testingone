@@ -67,6 +67,8 @@ const CONTACT_FORM_ENDPOINT = "/contact-form-submissions";
 const CONTACT_FORM_MOBILE_SHEET_SYNC_ENDPOINT = "/contact-form-mobile-sheet-sync";
 /** Live-sync user_queries to Sheets (User Queries column; optional secret matches Railway CONTACT_FORM_MOBILE_SHEET_SYNC_SECRET). */
 const CONTACT_FORM_SESSION_SHEET_SYNC_ENDPOINT = "/contact-form-session-sheet-sync";
+/** POST JSON: visitor CSAT / helpful → Firestore `chat_feedback` (optional CHAT_FEEDBACK_SECRET). */
+const CHAT_FEEDBACK_ENDPOINT = "/chat-feedback";
 /** Caps how long the Submit button waits for the API before aborting (Sheets/Firestore latency). */
 const CONTACT_FORM_SUBMIT_FETCH_TIMEOUT_MS = 90000;
 const API_BASE_URL_META_NAME = "dfchat-api-base-url";
@@ -1424,7 +1426,7 @@ const originalTextNodeContent = new Map();
 const originalElementAttributes = new Map();
 const googleTranslationCache = new Map();
 
-const COMPANY_JS_BUILD_TAG = "20260515-01";
+const COMPANY_JS_BUILD_TAG = "20260516-01";
 const COMPANY_DEBUG_QUERY_FLAG = "dfchatDebug";
 let debugMountAttemptSeq = 0;
 let debugBadgeLastRenderAt = 0;
@@ -13917,6 +13919,156 @@ function postSessionQueriesToSheetRow_() {
     } catch {
         /* ignore */
     }
+}
+
+/**
+ * POST visitor CSAT / helpful to chatbot-api → Firestore collection `chat_feedback` (no BigQuery).
+ * From CX inline/custom script or console: `dfchatPostFeedback({ helpful: true })` or `{ rating: 5, tag: "after_booking" }`.
+ * Optional page meta: `<meta name="dfchat-chat-feedback-secret" content="…" />` when Railway sets CHAT_FEEDBACK_SECRET.
+ * Mirrors last values into `client_context` so the next contact submit carries feedback_* fields.
+ *
+ * @param {{ helpful?: boolean, rating?: number, comment?: string, tag?: string, client_session_id?: string }} partial
+ */
+function postChatFeedbackToApi_(partial) {
+    const p = partial && typeof partial === "object" ? partial : {};
+    const endpoint = getApiEndpoint(CHAT_FEEDBACK_ENDPOINT);
+    if (!endpoint || typeof fetch !== "function") {
+        return;
+    }
+
+    let sid = typeof p.client_session_id === "string" ? p.client_session_id.trim() : "";
+    if (!sid) {
+        try {
+            sid = dfParameterScalarToString(readStoredClientContext().client_session_id || "").trim();
+        } catch {
+            sid = "";
+        }
+    }
+    if (!sid) {
+        try {
+            const cx = getClientContext();
+            sid = typeof cx.client_session_id === "string" ? cx.client_session_id.trim() : "";
+        } catch {
+            sid = "";
+        }
+    }
+    if (!sid) {
+        return;
+    }
+
+    const hasHelpful = p.helpful === true || p.helpful === false;
+    let ratingNum;
+    if (typeof p.rating === "number" && Number.isFinite(p.rating)) {
+        const ri = Math.round(p.rating);
+        if (ri >= 1 && ri <= 5) {
+            ratingNum = ri;
+        }
+    }
+    const commentTrim = typeof p.comment === "string" ? p.comment.trim().slice(0, 2000) : "";
+    const tagTrim = typeof p.tag === "string" ? p.tag.trim().slice(0, 120) : "";
+    if (!hasHelpful && ratingNum === undefined && !commentTrim && !tagTrim) {
+        return;
+    }
+
+    try {
+        const prev = readStoredClientContext();
+        const next = { ...prev };
+        if (hasHelpful) {
+            next.feedback_helpful = p.helpful;
+        }
+        if (ratingNum !== undefined) {
+            next.feedback_rating = ratingNum;
+        }
+        if (commentTrim) {
+            next.feedback_comment = commentTrim;
+        }
+        if (tagTrim) {
+            next.feedback_tag = tagTrim;
+        }
+        next.feedback_recorded_at = Date.now();
+        persistClientContext(next);
+    } catch {
+        /* ignore */
+    }
+
+    /** @type {Record<string, string>} */
+    const headers = {
+        "Content-Type": "application/json"
+    };
+    try {
+        const metaNode =
+            typeof document !== "undefined"
+                ? document.querySelector('meta[name="dfchat-chat-feedback-secret"]')
+                : null;
+        const mv = metaNode && metaNode instanceof HTMLMetaElement ? metaNode.getAttribute("content") : null;
+        const sec = typeof mv === "string" ? mv.trim() : "";
+        if (sec) {
+            headers["X-Chat-Feedback-Secret"] = sec;
+        }
+    } catch {
+        /* ignore */
+    }
+
+    const embedParentHref = getEmbedParentPageUrl();
+    const pageUrl =
+        embedParentHref
+        || (typeof window !== "undefined" && window.location ? window.location.href : "")
+        || "";
+
+    /** @type {Record<string, unknown>} */
+    const body = {
+        client_session_id: sid,
+        channel: "web",
+        source_url: pageUrl
+    };
+    if (hasHelpful) {
+        body.helpful = p.helpful;
+    }
+    if (ratingNum !== undefined) {
+        body.rating = ratingNum;
+    }
+    if (commentTrim) {
+        body.comment = commentTrim;
+    }
+    if (tagTrim) {
+        body.tag = tagTrim;
+    }
+
+    fetch(endpoint, {
+        method: "POST",
+        headers,
+        credentials: "omit",
+        body: JSON.stringify(body),
+        keepalive: true
+    })
+        .then(async (resp) => {
+            if (resp.ok) {
+                return;
+            }
+            let detail = "";
+            try {
+                detail = (await resp.text()).slice(0, 240);
+            } catch {
+                /* ignore */
+            }
+            if (typeof console !== "undefined" && console.warn) {
+                console.warn(
+                    "[dfchat] Chat feedback POST failed:",
+                    resp.status,
+                    detail || resp.statusText,
+                    "— set meta dfchat-chat-feedback-secret if CHAT_FEEDBACK_SECRET is set on the API."
+                );
+            }
+        })
+        .catch(() => {});
+}
+
+try {
+    if (typeof window !== "undefined" && window != null) {
+        window.dfchatPostFeedback = postChatFeedbackToApi_;
+    }
+} catch {
+    /* ignore */
 }
 
 /**

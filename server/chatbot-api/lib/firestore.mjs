@@ -85,6 +85,23 @@ export async function fetchLatestContactSubmissionForClientSession(sessionId) {
     }
 }
 
+/** Collection for lightweight visitor ratings / CSAT (no BigQuery). Override with FIRESTORE_CHAT_FEEDBACK_COLLECTION. */
+const CHAT_FEEDBACK_COLLECTION = (process.env.FIRESTORE_CHAT_FEEDBACK_COLLECTION || "chat_feedback").trim();
+
+/**
+ * Append one chat feedback document (helpful / rating / comment). Uses same Firebase credentials as leads.
+ *
+ * @param {Record<string, unknown>} record
+ */
+export async function persistChatFeedbackRecord(record) {
+    firebaseAdminInit();
+    const db = getFirestoreDb();
+    await db.collection(CHAT_FEEDBACK_COLLECTION || "chat_feedback").add({
+        ...record,
+        saved_at: admin.firestore.FieldValue.serverTimestamp()
+    });
+}
+
 export async function persistToFirestore(record) {
     // Ensure Admin app exists before Firestore use.
     firebaseAdminInit();

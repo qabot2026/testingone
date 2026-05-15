@@ -46,7 +46,11 @@ import multer from "multer";
 import admin from "firebase-admin";
 import "firebase-admin/database";
 import { firebaseAdminInit } from "./lib/firebase-admin-init.mjs";
-import { persistToFirestore, fetchLatestContactSubmissionForClientSession } from "./lib/firestore.mjs";
+import {
+    persistToFirestore,
+    fetchLatestContactSubmissionForClientSession,
+    persistChatFeedbackRecord
+} from "./lib/firestore.mjs";
 import {
     appendContactRowToSheet,
     fetchConversationLeadCaptureStats,
@@ -108,6 +112,7 @@ const PORT = Number(process.env.PORT) || 8080;
 const PATHNAME = "/contact-form-submissions";
 const PATHNAME_MOBILE_SHEET_SYNC = "/contact-form-mobile-sheet-sync";
 const PATHNAME_SESSION_SHEET_SYNC = "/contact-form-session-sheet-sync";
+const PATHNAME_CHAT_FEEDBACK = "/chat-feedback";
 /** “Just put files in Drive” — skips Firestore; Sheets are independent (see SHEETS_DISABLED). */
 const DRIVE_ONLY = process.env.DRIVE_ONLY === "1";
 const FIRESTORE_DISABLED = process.env.DISABLE_FIRESTORE === "1" || DRIVE_ONLY;
@@ -598,13 +603,19 @@ const app = express();
 app.use(cors({
     origin: corsOriginOption(),
     methods: ["GET", "POST", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "X-Contact-Form-Mobile-Sync-Secret", "X-Catalog-Sync-Secret"],
+    allowedHeaders: [
+        "Content-Type",
+        "X-Contact-Form-Mobile-Sync-Secret",
+        "X-Catalog-Sync-Secret",
+        "X-Chat-Feedback-Secret"
+    ],
     optionsSuccessStatus: 204
 }));
 
 app.options(PATHNAME, (_req, res) => res.sendStatus(204));
 app.options(PATHNAME_MOBILE_SHEET_SYNC, (_req, res) => res.sendStatus(204));
 app.options(PATHNAME_SESSION_SHEET_SYNC, (_req, res) => res.sendStatus(204));
+app.options(PATHNAME_CHAT_FEEDBACK, (_req, res) => res.sendStatus(204));
 
 // SMS OTP routes: /api/sms-otp/send, /api/sms-otp/verify, /api/sms-otp/health.
 // Active provider via SMS_OTP_PROVIDER env (default "msg91"). See lib/sms-otp/README.md.
@@ -2869,6 +2880,115 @@ app.post(
     }
 );
 
+/**
+ * Lightweight CSAT / helpful feedback → Firestore `chat_feedback` (no BigQuery).
+ * Widget: `window.dfchatPostFeedback({ helpful: true })` or `{ rating: 5 }` — see company.js.
+ */
+app.post(
+    PATHNAME_CHAT_FEEDBACK,
+    express.json({ limit: "32kb" }),
+    async (req, res) => {
+        const syncSecret = (process.env.CHAT_FEEDBACK_SECRET || "").trim();
+        if (syncSecret) {
+            const sent =
+                typeof req.headers["x-chat-feedback-secret"] === "string"
+                    ? req.headers["x-chat-feedback-secret"].trim()
+                    : "";
+            if (sent !== syncSecret) {
+                return res.status(401).json({
+                    ok: false,
+                    error: "Unauthorized — set header X-Chat-Feedback-Secret to match CHAT_FEEDBACK_SECRET."
+                });
+            }
+        }
+        if (FIRESTORE_DISABLED) {
+            return res.status(503).json({
+                ok: false,
+                error:
+                    "Firestore is disabled — unset DISABLE_FIRESTORE / DRIVE_ONLY or enable Firebase for feedback storage."
+            });
+        }
+
+        const body = req.body && typeof req.body === "object" ? req.body : {};
+        const sidRaw =
+            typeof body.client_session_id === "string" ? body.client_session_id.trim() : "";
+        if (
+            !sidRaw
+            || sidRaw.length < 8
+            || sidRaw.length > 128
+            || !/^[a-zA-Z0-9_-]+$/.test(sidRaw)
+        ) {
+            return res.status(400).json({
+                ok: false,
+                error: "Missing or invalid client_session_id (use widget session id)."
+            });
+        }
+
+        /** @type {Record<string, unknown>} */
+        const doc = {
+            client_session_id: sidRaw,
+            channel: normalizeLeadChannel(body.channel)
+        };
+
+        if (body.helpful === true || body.helpful === false) {
+            doc.helpful = body.helpful;
+        }
+
+        if (body.rating != null) {
+            const r = Number(body.rating);
+            if (Number.isFinite(r)) {
+                const ri = Math.round(r);
+                if (ri >= 1 && ri <= 5) {
+                    doc.rating = ri;
+                }
+            }
+        }
+
+        const comment =
+            typeof body.comment === "string" ? body.comment.trim().slice(0, 2000) : "";
+        if (comment) {
+            doc.comment = comment;
+        }
+
+        const tag = typeof body.tag === "string" ? body.tag.trim().slice(0, 120) : "";
+        if (tag) {
+            doc.tag = tag;
+        }
+
+        const sourceUrl =
+            typeof body.source_url === "string" ? body.source_url.trim().slice(0, 2000) : "";
+        if (sourceUrl) {
+            doc.source_url = sourceUrl;
+        }
+
+        if (
+            doc.helpful === undefined
+            && doc.rating === undefined
+            && !doc.comment
+            && !doc.tag
+        ) {
+            return res.status(400).json({
+                ok: false,
+                error: "Send at least one of: helpful (boolean), rating (1–5), comment, tag."
+            });
+        }
+
+        doc.ip = extractRequestIp(req);
+
+        try {
+            await persistChatFeedbackRecord(doc);
+            return res.status(200).json({ ok: true, message: "Recorded." });
+        } catch (e) {
+            const msg =
+                e && /** @type {{ message?: string }} */ (e).message
+                    ? String(e.message)
+                    : String(e);
+            console.error("[chatbot-api] chat-feedback", msg.slice(0, 280), e);
+            return res.status(500).json({ ok: false, error: msg.slice(0, 400) });
+        }
+    }
+);
+
 app.get("/health", (_req, res) => res.status(200).send("ok"));
 
 /** Default: HTML page (avoids browsers “downloading” bare JSON). JSON only via ?format=json or Accept JSON-only. */
@@ -3083,7 +3203,7 @@ app.get("/conversations-sheet", (_req, res) => {
     });
 });
 
-/** Staff: one session’s user + assistant lines (same auth as conversations inbox). */
+/** Staff: one session’s transcript UI (`?session=`). Sheet “Chat transcript” → same URL via SHEETS_ROW_OPEN_LINK_COLUMN + CONVERSATIONS_PUBLIC_BASE_URL. Auth: CONVERSATIONS_SHEET_VIEW_SECRET (see GET /api/conversation-transcript). */
 app.get("/conversation-transcript", (_req, res) => {
     res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
     res.setHeader("Pragma", "no-cache");
@@ -3989,6 +4109,7 @@ app.get("/", (_req, res) => {
             `POST JSON or multipart/form-data → ${PATHNAME}`,
             `POST JSON (chat mobile) → ${PATHNAME_MOBILE_SHEET_SYNC}`,
             `POST JSON (session queries) → ${PATHNAME_SESSION_SHEET_SYNC}`,
+            `POST JSON ${PATHNAME_CHAT_FEEDBACK} → visitor CSAT/helpful (Firestore chat_feedback; optional CHAT_FEEDBACK_SECRET).`,
             `GET /health → health check.`,
             `GET /contact-form-sheets-health → JSON: Sheets env + tab names (spreadsheet READ probe).`,
             `GET /contact-form-email-health → JSON: lead email env (no secrets; check missing_env).`,
@@ -4014,6 +4135,6 @@ app.listen(PORT, "0.0.0.0", () => {
           : "uploads=DriveAPI";
     const mode = DRIVE_ONLY ? " DRIVE_ONLY" : "";
     console.log(
-        `chatbot-api listening on :${PORT} ${PATHNAME} ${PATHNAME_MOBILE_SHEET_SYNC} ${PATHNAME_SESSION_SHEET_SYNC} — ${fsHint} ${sheetHint} ${driveHint}${mode}`
+        `chatbot-api listening on :${PORT} ${PATHNAME} ${PATHNAME_MOBILE_SHEET_SYNC} ${PATHNAME_SESSION_SHEET_SYNC} ${PATHNAME_CHAT_FEEDBACK} — ${fsHint} ${sheetHint} ${driveHint}${mode}`
     );
 });
