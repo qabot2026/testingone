@@ -3462,6 +3462,47 @@ function userTurnCount_(turns) {
     return n;
 }
 
+/** Max `at` / `seq` on transcript turns — for picking live Sheet sync over frozen Firestore. */
+function transcriptFreshnessMetric_(raw) {
+    if (!Array.isArray(raw) || !raw.length) {
+        return { at: -1, seq: -1 };
+    }
+    let maxAt = -1;
+    let maxSeq = -1;
+    for (let i = 0; i < raw.length; i += 1) {
+        const t = raw[i];
+        if (!t || typeof t !== "object") {
+            continue;
+        }
+        const o = /** @type {{ at?: unknown, seq?: unknown }} */ (t);
+        if (typeof o.at === "number" && Number.isFinite(o.at)) {
+            maxAt = Math.max(maxAt, o.at);
+        }
+        if (typeof o.seq === "number" && Number.isFinite(o.seq)) {
+            maxSeq = Math.max(maxSeq, o.seq);
+        }
+    }
+    return { at: maxAt, seq: maxSeq };
+}
+
+/**
+ * True when Sheet transcript JSON reflects newer messaging than embedded Firestore (post-submit session sync vs lead snapshot).
+ *
+ * @param {{ at?: unknown, seq?: unknown }[]} sheetTurns
+ * @param {{ at?: unknown, seq?: unknown }[]} fbTurns
+ */
+function sheetTranscriptIsAheadOfFirestore_(sheetTurns, fbTurns) {
+    const a = transcriptFreshnessMetric_(fbTurns);
+    const b = transcriptFreshnessMetric_(sheetTurns);
+    if (b.seq > a.seq) {
+        return true;
+    }
+    if (b.at > a.at) {
+        return true;
+    }
+    return false;
+}
+
 /**
  * Last-resort assistant bubble from saved lead / sheet row when bot replay was never stored.
  *
@@ -3872,10 +3913,14 @@ app.get(PATHNAME_CONVERSATION_TRANSCRIPT_JSON, async (req, res) => {
         } else if (
             hasAssistantTurns_(turns)
             && hasAssistantTurns_(sheetChatTurns)
-            && sheetChatTurns.length > turns.length
+            && (sheetChatTurns.length > turns.length
+                || sheetTranscriptIsAheadOfFirestore_(sheetChatTurns, turns))
         ) {
             turns = sheetChatTurns.slice();
-            source = `${source};prefer_longer_sheet_transcript`;
+            source =
+                sheetChatTurns.length > turns.length
+                    ? `${source};prefer_longer_sheet_transcript`
+                    : `${source};prefer_newer_sheet_transcript`;
         }
 
         if (!turns.length && !SHEETS_DISABLED) {
