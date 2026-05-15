@@ -878,7 +878,7 @@
     }
     @media (min-width: 1100px) {
       .lead-stats-chart-grid {
-        grid-template-columns: repeat(3, minmax(0, 1fr));
+        grid-template-columns: repeat(4, minmax(0, 1fr));
       }
     }
     @media (max-width: 900px) {
@@ -904,6 +904,15 @@
       letter-spacing: 0.06em;
       color: var(--muted);
       line-height: 1.2;
+    }
+    .lead-chart-card-total {
+      margin: 0 0 8px;
+      font-size: 0.8125rem;
+      font-weight: 800;
+      font-variant-numeric: tabular-nums;
+      color: var(--brand-strong);
+      line-height: 1.25;
+      letter-spacing: -0.01em;
     }
     .lead-chart-card .chart-canvas-wrap {
       flex: none;
@@ -1209,12 +1218,10 @@
           slate: "#94a3b8"
         };
         var chBarEl = document.getElementById("lcBarChannel");
-        var chPieEl = document.getElementById("lcPieChannel");
         var leadPieEl = document.getElementById("lcPieLead");
         var funnelEl = document.getElementById("lcBarFunnel");
         var covEl = document.getElementById("lcPieCoverage");
-        var segEl = document.getElementById("lcBarSegments");
-        if (!chBarEl || !chPieEl || !leadPieEl || !funnelEl || !covEl || !segEl) return;
+        if (!chBarEl || !leadPieEl || !funnelEl || !covEl) return;
 
         var chLabels = ["Web", "WhatsApp", "Instagram", "Facebook", "Other"];
         var chData = [cw, cwa, cinst, cfb, coth];
@@ -1240,22 +1247,6 @@
               maintainAspectRatio: false,
               plugins: Object.assign({ legend: { display: false } }, barDl),
               scales: barAxes
-            }
-          })
-        );
-
-        leadChartInstances.push(
-          new Chart(chPieEl, {
-            type: "doughnut",
-            data: {
-              labels: chLabels,
-              datasets: [{ data: chData, backgroundColor: chColors }]
-            },
-            options: {
-              layout: chartLayoutTight,
-              responsive: true,
-              maintainAspectRatio: false,
-              plugins: Object.assign({ legend: doughnutLegend }, doughnutDl)
             }
           })
         );
@@ -1322,30 +1313,6 @@
               responsive: true,
               maintainAspectRatio: false,
               plugins: Object.assign({ legend: doughnutLegend }, doughnutDl)
-            }
-          })
-        );
-
-        leadChartInstances.push(
-          new Chart(segEl, {
-            type: "bar",
-            data: {
-              labels: ["Mobile only", "Email only", "Both", "Neither"],
-              datasets: [
-                {
-                  label: "Conversations",
-                  data: [om, oe, be, ni],
-                  backgroundColor: [pal.teal, pal.sky, pal.indigo, "#fdba74"],
-                  maxBarThickness: 36
-                }
-              ]
-            },
-            options: {
-              layout: chartLayoutTight,
-              responsive: true,
-              maintainAspectRatio: false,
-              plugins: Object.assign({ legend: { display: false } }, barDl),
-              scales: barAxes
             }
           })
         );
@@ -2531,12 +2498,26 @@
           '<div id="leadStatsVisualBlock" class="lead-stats-visual-block" hidden>' +
           '<h3 class="lead-stats-section-h">Visual analytics</h3>' +
           '<div class="lead-stats-chart-grid">' +
-          '<div class="lead-chart-card"><h4>Volume by channel</h4><div class="chart-canvas-wrap"><canvas id="lcBarChannel"></canvas></div></div>' +
-          '<div class="lead-chart-card"><h4>Channel mix</h4><div class="chart-canvas-wrap"><canvas id="lcPieChannel"></canvas></div></div>' +
-          '<div class="lead-chart-card"><h4>Lead capture split</h4><div class="chart-canvas-wrap"><canvas id="lcPieLead"></canvas></div></div>' +
-          '<div class="lead-chart-card"><h4>Pipeline</h4><div class="chart-canvas-wrap"><canvas id="lcBarFunnel"></canvas></div></div>' +
-          '<div class="lead-chart-card"><h4>Contact vs gaps</h4><div class="chart-canvas-wrap"><canvas id="lcPieCoverage"></canvas></div></div>' +
-          '<div class="lead-chart-card"><h4>All segments</h4><div class="chart-canvas-wrap"><canvas id="lcBarSegments"></canvas></div></div>' +
+          '<div class="lead-chart-card"><h4>Volume by channel</h4><p class="lead-chart-card-total">Total · ' +
+          escapeHtml(String(n)) +
+          '</p><div class="chart-canvas-wrap"><canvas id="lcBarChannel"></canvas></div></div>' +
+          '<div class="lead-chart-card"><h4>Lead capture split</h4><p class="lead-chart-card-total">With contact · ' +
+          escapeHtml(String(leads)) +
+          '</p><div class="chart-canvas-wrap"><canvas id="lcPieLead"></canvas></div></div>' +
+          '<div class="lead-chart-card"><h4>Pipeline</h4><p class="lead-chart-card-total">' +
+          escapeHtml(String(n)) +
+          " → " +
+          escapeHtml(String(leads)) +
+          " → " +
+          escapeHtml(String(apt)) +
+          '</p><div class="chart-canvas-wrap"><canvas id="lcBarFunnel"></canvas></div></div>' +
+          '<div class="lead-chart-card"><h4>Contact vs gaps</h4><p class="lead-chart-card-total">Total · ' +
+          escapeHtml(String(n)) +
+          " · " +
+          escapeHtml(String(leads)) +
+          " with contact · " +
+          escapeHtml(String(ni)) +
+          ' no contact</p><div class="chart-canvas-wrap"><canvas id="lcPieCoverage"></canvas></div></div>' +
           "</div></div>";
         lastLeadStatsPayload = payload;
         var viewMode = "numeric";
