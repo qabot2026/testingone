@@ -963,6 +963,14 @@
           <button type="button" id="syncSheet2Btn" title="Writes KPIs to the live Google Sheet (Sheet2 by default). Uses current date filters.">
             Sync Sheet2
           </button>
+          <button
+            type="button"
+            class="preset"
+            id="downloadReportBtn"
+            title="Downloads a CSV of lead rows within the spreadsheet scan range. Setting From / To restricts rows by the conversation date column (same rules as KPI stats)."
+          >
+            Download Report
+          </button>
         </div>
         <p class="hint-foot">
           Variable on Railway: <span class="kbd">CONVERSATIONS_SHEET_VIEW_SECRET</span> &mdash; redeploy after edits.
@@ -1051,6 +1059,7 @@
       var limitEl = document.getElementById("limit");
       var refreshBtn = document.getElementById("refreshBtn");
       var syncSheet2Btn = document.getElementById("syncSheet2Btn");
+      var downloadReportBtn = document.getElementById("downloadReportBtn");
       var pagerWrap = document.getElementById("pagerWrap");
       var pagerNewer = document.getElementById("pagerNewer");
       var pagerOlder = document.getElementById("pagerOlder");
@@ -2701,6 +2710,93 @@
             .finally(function () {
               syncSheet2Btn.disabled = false;
               syncSheet2Btn.textContent = prev;
+            });
+        });
+      }
+
+      if (downloadReportBtn) {
+        downloadReportBtn.addEventListener("click", function () {
+          var secret = secretEl.value.trim();
+          showErr("");
+          if (!secret) {
+            showErr("Enter viewer secret.");
+            return;
+          }
+          var fromV = dateFromEl && dateFromEl.value ? dateFromEl.value.trim() : "";
+          var toV = dateToEl && dateToEl.value ? dateToEl.value.trim() : "";
+          var qp = [];
+          if (fromV) qp.push("from=" + encodeURIComponent(fromV));
+          if (toV) qp.push("to=" + encodeURIComponent(toV));
+          var url =
+            apiBase() +
+            "/api/conversations-sheet-export" +
+            (qp.length ? "?" + qp.join("&") : "");
+          downloadReportBtn.disabled = true;
+          var prev = downloadReportBtn.textContent;
+          downloadReportBtn.textContent = "Preparing…";
+          fetch(url, {
+            method: "GET",
+            headers: { "X-Conversations-Sheet-Secret": secret },
+            cache: "no-store",
+            credentials: "same-origin"
+          })
+            .then(function (res) {
+              var ct = (res.headers.get("content-type") || "").toLowerCase();
+              if (!res.ok) {
+                return res.json().then(function (j) {
+                  showErr((j && j.error) || "Download failed (HTTP " + res.status + ").");
+                });
+              }
+              if (
+                ct.indexOf("text/csv") < 0 &&
+                ct.indexOf("application/octet-stream") < 0 &&
+                ct.indexOf("text/plain") < 0
+              ) {
+                return res.text().then(function () {
+                  showErr("Unexpected response type — report was not CSV.");
+                });
+              }
+              return res.blob().then(function (blob) {
+                return { blob: blob, res: res };
+              });
+            })
+            .then(function (packed) {
+              if (!packed || !packed.blob) return;
+              var res = packed.res;
+              var disp = res.headers.get("Content-Disposition") || "";
+              var mQuoted = /filename\s*=\s*"([^"]+)"/i.exec(disp);
+              var mBare = !mQuoted ? /filename\s*=\s*([^;\s]+)/i.exec(disp) : null;
+              var fn =
+                (mQuoted && mQuoted[1] && mQuoted[1].trim()) ||
+                (mBare && mBare[1] && mBare[1].trim()) ||
+                "conversation-report.csv";
+              var u = URL.createObjectURL(packed.blob);
+              var a = document.createElement("a");
+              a.href = u;
+              a.download = fn;
+              document.body.appendChild(a);
+              a.click();
+              a.remove();
+              window.setTimeout(function () {
+                URL.revokeObjectURL(u);
+              }, 5000);
+              var sz =
+                packed.blob && typeof packed.blob.size === "number"
+                  ? Math.max(0, Math.round(packed.blob.size / 1024))
+                  : 0;
+              setStatus(
+                "CSV report downloaded" +
+                  (fromV || toV ? " (date filter applied)" : "") +
+                  (sz ? " · ~" + sz + " KB" : "") +
+                  "."
+              );
+            })
+            .catch(function (e) {
+              showErr(String(e && e.message ? e.message : e));
+            })
+            .finally(function () {
+              downloadReportBtn.disabled = false;
+              downloadReportBtn.textContent = prev;
             });
         });
       }

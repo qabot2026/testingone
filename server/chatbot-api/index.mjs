@@ -51,6 +51,7 @@ import {
     appendContactRowToSheet,
     fetchConversationLeadCaptureStats,
     fetchConversationSheetPreview,
+    fetchConversationSheetExport,
     formatConversationDateForSheet,
     formatConversationTimeForSheet,
     probeSheetsSpreadsheetAccess,
@@ -3062,6 +3063,7 @@ app.get("/conversations-sheet", (_req, res) => {
 const PATHNAME_CONVERSATIONS_SHEET_JSON = "/api/conversations-sheet";
 const PATHNAME_CONVERSATIONS_SHEET_STATS = "/api/conversations-sheet-stats";
 const PATHNAME_CONVERSATIONS_SHEET_SYNC_DASHBOARD = "/api/conversations-sheet-sync-dashboard";
+const PATHNAME_CONVERSATIONS_SHEET_EXPORT = "/api/conversations-sheet-export";
 
 function conversationsSheetSecretFromReq_(req) {
     const want = (process.env.CONVERSATIONS_SHEET_VIEW_SECRET || "").trim();
@@ -3109,6 +3111,11 @@ app.options(PATHNAME_CONVERSATIONS_SHEET_STATS, (req, res) => {
 });
 
 app.options(PATHNAME_CONVERSATIONS_SHEET_SYNC_DASHBOARD, (req, res) => {
+    setConversationsSheetCors_(req, res);
+    res.status(204).end();
+});
+
+app.options(PATHNAME_CONVERSATIONS_SHEET_EXPORT, (req, res) => {
     setConversationsSheetCors_(req, res);
     res.status(204).end();
 });
@@ -3225,6 +3232,100 @@ app.get(PATHNAME_CONVERSATIONS_SHEET_STATS, async (req, res) => {
     }
 });
 
+/**
+ * @param {unknown} v
+ */
+function csvEscapeConversationCell_(v) {
+    const s = String(v == null ? "" : v);
+    if (/[\r\n",]/.test(s)) {
+        return `"${s.replace(/"/g, '""')}"`;
+    }
+    return s;
+}
+
+/**
+ * @param {string[]} headers
+ * @param {Record<string, string>[]} conversations
+ */
+function conversationSheetRowsToCsv_(headers, conversations) {
+    /** @type {string[]} */
+    const lines = [headers.map(csvEscapeConversationCell_).join(",")];
+    for (let i = 0; i < conversations.length; i += 1) {
+        const row = conversations[i] || {};
+        lines.push(headers.map((h) => csvEscapeConversationCell_(row[h])).join(","));
+    }
+    return lines.join("\r\n");
+}
+
+function conversationSheetExportFilename_(fromIso, toIso) {
+    const iso = (s) =>
+        typeof s === "string" && /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(s.trim()) ? s.trim() : "";
+    const a = iso(fromIso);
+    const b = iso(toIso);
+    if (a && b) {
+        return `conversation-leads_${a}_to_${b}.csv`;
+    }
+    if (a) return `conversation-leads_from-${a}.csv`;
+    if (b) return `conversation-leads_until-${b}.csv`;
+    return "conversation-leads_all.csv";
+}
+
+app.get(PATHNAME_CONVERSATIONS_SHEET_EXPORT, async (req, res) => {
+    setConversationsSheetCors_(req, res);
+    res.setHeader("Cache-Control", "no-store");
+    try {
+        const cfg = conversationsSheetSecretFromReq_(req);
+        if (cfg.reason === "unset") {
+            return res.status(503).json({
+                ok: false,
+                error:
+                    "Server has no CONVERSATIONS_SHEET_VIEW_SECRET. Set a random secret in Railway Variables, redeploy, then open /conversations-sheet and paste it once."
+            });
+        }
+        if (!cfg.ok) {
+            return res.status(401).json({
+                ok: false,
+                error:
+                    "Unauthorized — send header X-Conversations-Sheet-Secret or Authorization: Bearer <secret> matching CONVERSATIONS_SHEET_VIEW_SECRET."
+            });
+        }
+        if (SHEETS_DISABLED) {
+            return res.status(503).json({
+                ok: false,
+                error:
+                    "Sheets reads disabled (DISABLE_SHEETS=1 or missing SHEETS_SPREADSHEET_ID). Viewer needs the same Sheet as lead capture."
+            });
+        }
+        if (!getServiceAccountCredentials()) {
+            return res.status(503).json({
+                ok: false,
+                error: "Missing service account JSON — same as Sheets writes (FIREBASE_SERVICE_ACCOUNT_JSON)."
+            });
+        }
+        const q = req.query || {};
+        const from = typeof q.from === "string" ? q.from.trim() : "";
+        const to = typeof q.to === "string" ? q.to.trim() : "";
+        const payload = await fetchConversationSheetExport(
+            from || to ? { from: from || undefined, to: to || undefined } : {}
+        );
+        const csvBody = conversationSheetRowsToCsv_(payload.headers, payload.conversations);
+        const df = payload.dateFilter && typeof payload.dateFilter === "object" ? payload.dateFilter : {};
+        const fn = conversationSheetExportFilename_(df.from, df.to);
+        res.status(200);
+        res.setHeader("Content-Type", "text/csv; charset=utf-8");
+        res.setHeader("Content-Disposition", `attachment; filename="${fn}"`);
+        return res.send(`\uFEFF${csvBody}`);
+    } catch (e) {
+        const msg = e && /** @type {{ message?: string }} */ (e).message ? String(e.message) : String(e);
+        const low = msg.toLowerCase();
+        if (low.includes("invalid date parameter")) {
+            return res.status(400).json({ ok: false, error: msg.slice(0, 400) });
+        }
+        console.error("[chatbot-api] conversations-sheet export:", msg);
+        return res.status(500).json({ ok: false, error: msg.slice(0, 500) });
+    }
+});
+
 async function handleConversationsSheetSyncDashboard_(req, res) {
     setConversationsSheetCors_(req, res);
     res.setHeader("Cache-Control", "no-store");
@@ -3287,6 +3388,7 @@ app.get("/", (_req, res) => {
             `GET /conversations-sheet → staff inbox (Sheet leads; requires CONVERSATIONS_SHEET_VIEW_SECRET).`,
             `GET /api/conversations-sheet?limit=&offset=&from=YYYY-MM-DD&to=YYYY-MM-DD → JSON rows (same secret; optional sheet-wide date filter).`,
             `GET /api/conversations-sheet-stats?from=YYYY-MM-DD&to=YYYY-MM-DD → mobile/email lead ratios (same secret).`,
+            `GET /api/conversations-sheet-export?from=&to= → CSV download for all scanned rows or date-filtered rows (same secret).`,
             `GET|POST /api/conversations-sheet-sync-dashboard?from=&to= → write KPI dashboard to SHEETS_DASHBOARD_TAB (default Sheet2; same secret).`,
             `POST JSON or multipart/form-data → ${PATHNAME}`,
             `POST JSON (chat mobile) → ${PATHNAME_MOBILE_SHEET_SYNC}`,

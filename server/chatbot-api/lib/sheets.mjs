@@ -4281,3 +4281,202 @@ export async function fetchConversationSheetPreview(opts = {}) {
     };
 }
 
+/**
+ * Staff CSV export: every data row in scan order (oldest → newest), optionally filtered by conv. date (same rules as the viewer when from/to are set).
+ *
+ * @param {{ from?: string, to?: string }} [opts]
+ * @returns {Promise<{ tab: string, title: string, headers: string[], conversations: Record<string, string>[], dateFilter: { applied: boolean, serverApplied?: boolean, from: string|null, to: string|null } }>}
+ */
+export async function fetchConversationSheetExport(opts = {}) {
+    if (!SPREADSHEET_ID) {
+        throw new Error("SHEETS_SPREADSHEET_ID is not set.");
+    }
+    const fromIn = opts && typeof opts.from === "string" ? opts.from.trim() : "";
+    const toIn = opts && typeof opts.to === "string" ? opts.to.trim() : "";
+    /** @type {string|null} */
+    let previewFromIso = fromIn && isoYyyyMmDdOk_(fromIn) ? fromIn : null;
+    /** @type {string|null} */
+    let previewToIso = toIn && isoYyyyMmDdOk_(toIn) ? toIn : null;
+    if ((fromIn && !previewFromIso) || (toIn && !previewToIso)) {
+        throw new Error("Invalid date parameter — use YYYY-MM-DD for from/to.");
+    }
+    if (previewFromIso && previewToIso && previewFromIso > previewToIso) {
+        const swap = previewFromIso;
+        previewFromIso = previewToIso;
+        previewToIso = swap;
+    }
+    const previewDateFilterActive = !!(previewFromIso || previewToIso);
+    let previewFromEff = "1900-01-01";
+    let previewToEff = "9999-12-31";
+    if (previewDateFilterActive) {
+        if (previewFromIso) {
+            previewFromEff = previewFromIso;
+        }
+        if (previewToIso) {
+            previewToEff = previewToIso;
+        }
+    }
+    /** @type {{ applied: boolean, serverApplied?: boolean, from: string|null, to: string|null }} */
+    const dateFilterEcho = previewDateFilterActive
+        ? {
+              applied: true,
+              serverApplied: true,
+              from: previewFromIso,
+              to: previewToIso
+          }
+        : { applied: false, serverApplied: false, from: null, to: null };
+
+    const client = await getSheetsAuthClient();
+    const sheets = google.sheets({ version: "v4", auth: client });
+    const tab = tabNameFromRange(RANGE);
+
+    const titleGot = await sheets.spreadsheets.get({
+        spreadsheetId: SPREADSHEET_ID,
+        fields: "properties.title"
+    });
+    const title =
+        titleGot.data.properties && typeof titleGot.data.properties.title === "string"
+            ? titleGot.data.properties.title.trim()
+            : "";
+
+    const headerGot = await sheets.spreadsheets.values.get({
+        spreadsheetId: SPREADSHEET_ID,
+        range: `${tab}!1:1`
+    });
+    const headersRaw = Array.isArray(headerGot.data.values) && headerGot.data.values[0]
+        ? /** @type {unknown[]} */ (headerGot.data.values[0])
+        : [];
+    const headers = [];
+    const usedKeys = new Set();
+    for (let i = 0; i < headersRaw.length; i += 1) {
+        let label = sheetCellString_(headersRaw[i]);
+        if (!label) {
+            label = `Column_${i + 1}`;
+        }
+        let key = label;
+        let nDup = 2;
+        while (usedKeys.has(key)) {
+            key = `${label} (${nDup})`;
+            nDup += 1;
+        }
+        usedKeys.add(key);
+        headers.push(key);
+    }
+
+    const hardCap = Math.min(
+        15_000,
+        Math.max(
+            250,
+            Number.parseInt(
+                String((process.env.CONVERSATIONS_SHEET_SCAN_MAX_ROWS || "").trim() || "8000"),
+                10
+            ) || 8000
+        )
+    );
+
+    /** @type {number} */
+    let capRow = hardCap;
+    try {
+        const meta = await sheets.spreadsheets.get({
+            spreadsheetId: SPREADSHEET_ID,
+            fields: "sheets.properties(title,gridProperties(rowCount))"
+        });
+        const sh = Array.isArray(meta.data.sheets) ? meta.data.sheets : [];
+        const tabKey = normalizedSheetTabKey_(tab);
+        for (let si = 0; si < sh.length; si += 1) {
+            const p = sh[si] && sh[si].properties;
+            const st = p && typeof p.title === "string" ? p.title.trim() : "";
+            if (st && normalizedSheetTabKey_(st) === tabKey) {
+                const gr =
+                    p && p.gridProperties && typeof p.gridProperties.rowCount === "number"
+                        ? p.gridProperties.rowCount
+                        : 0;
+                if (Number.isFinite(gr) && gr > 0) {
+                    capRow = Math.min(hardCap, gr);
+                }
+                break;
+            }
+        }
+    } catch {
+        /* fall back hardCap */
+    }
+
+    const colAGot = await sheets.spreadsheets.values.get({
+        spreadsheetId: SPREADSHEET_ID,
+        range: `${tab}!A1:A${capRow}`
+    });
+    const colVals = Array.isArray(colAGot.data.values) ? colAGot.data.values : [];
+    let nRows = 0;
+    for (let ri = colVals.length - 1; ri >= 0; ri -= 1) {
+        if (!isBlankSheetCell_(colVals[ri] && colVals[ri][0])) {
+            nRows = ri + 1;
+            break;
+        }
+    }
+    if (nRows <= 1) {
+        return {
+            tab,
+            title,
+            headers,
+            conversations: [],
+            dateFilter: dateFilterEcho
+        };
+    }
+
+    const previewLastCol0 = Math.min(175, Math.max(headersRaw.length - 1, 17));
+    const previewRightLetter = columnLetterFromIndex_(previewLastCol0);
+    const headerMap = await getHeaderIndexMap_(sheets, tab);
+    const dateIdx = pickHeaderIndex_(headerMap, SHEET_H_CONV_DATE_CELL, 0);
+
+    const fullGot = await sheets.spreadsheets.values.get({
+        spreadsheetId: SPREADSHEET_ID,
+        range: `${tab}!A2:${previewRightLetter}${nRows}`
+    });
+    const dataRowsAll = Array.isArray(fullGot.data.values) ? fullGot.data.values : [];
+
+    /** @type {Record<string, string>[]} */
+    const out = [];
+
+    for (let ri = 0; ri < dataRowsAll.length; ri += 1) {
+        const cells = dataRowsAll[ri] || [];
+        let rowHasAny = false;
+        for (let ci = 0; ci < cells.length; ci += 1) {
+            if (!isBlankSheetCell_(cells[ci])) {
+                rowHasAny = true;
+                break;
+            }
+        }
+        if (!rowHasAny) continue;
+
+        if (previewDateFilterActive) {
+            const dateMs = parseConversationDateCellWide_(cells[dateIdx]);
+            if (!Number.isFinite(dateMs)) {
+                continue;
+            }
+            const ymd = conversationRowYmdInSheetTz_(dateMs);
+            if (!ymd || ymd < previewFromEff || ymd > previewToEff) {
+                continue;
+            }
+        }
+
+        /** @type {Record<string, string>} */
+        const o = {};
+        for (let c = 0; c < headers.length; c += 1) {
+            const h = headers[c];
+            o[h] = sheetCellString_(cells[c]);
+        }
+        if (!Object.values(o).some((v) => v && v.trim())) {
+            continue;
+        }
+        out.push(o);
+    }
+
+    return {
+        tab,
+        title,
+        headers,
+        conversations: out,
+        dateFilter: dateFilterEcho
+    };
+}
+
