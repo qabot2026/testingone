@@ -3536,12 +3536,6 @@ function hasAssistantTurns_(turns) {
 }
 
 /**
- * Dedup key for staff transcript turns (role + trimmed text).
- *
- * @param {{ role?: unknown, text?: unknown } | null | undefined} t
- * @returns {string}
- */
-/**
  * Dedup within {@link mergeConversationTranscriptTurnSources_}: same role+text at different timestamps stay;
  * repeats without timestamps get a stable occurrence suffix. Turns with the same `at` but distinct `seq`
  * (multiple bot lines in one widget tick) stay separate.
@@ -3730,6 +3724,57 @@ function mergeConversationTranscriptTurnSources_(a, b) {
     return out;
 }
 
+/** Normalizes free-text comparison for Firebase `user_queries` vs transcript user bubbles. */
+function transcriptUserCompareNorm_(text) {
+    return String(text ?? "").trim().replace(/\s+/g, " ");
+}
+
+/**
+ * Contact form submission summary (widget `join("  \\n")` or server «Form submission» block).
+ *
+ * @param {unknown} text
+ * @returns {boolean}
+ */
+function isContactFormSubmissionSummaryAssistantText_(text) {
+    const tx = String(text ?? "").trim();
+    if (!tx) {
+        return false;
+    }
+    if (/^Form submission\b/im.test(tx)) {
+        return true;
+    }
+    /** Client `company.js`: `lines.join("  \\n")` markdown hard breaks plus `Label - value` rows */
+    return tx.includes("  \n") && /\s-\s/.test(tx);
+}
+
+/**
+ * Staff inbox: once a session has submitted a contact form, show **only** the last form-summary bubble and
+ * everything after it (post-submit visitor + bot). Avoids repeating all pre-form user_queries / Sheet CSV dumps.
+ *
+ * @param {{ role: string, text: string, at?: number, seq?: number }[]} turns
+ * @returns {{ role: string, text: string, at?: number, seq?: number }[]}
+ */
+function sliceTranscriptTurnsFromLastContactFormSubmission_(turns) {
+    if (!Array.isArray(turns) || !turns.length) {
+        return [];
+    }
+    let idx = -1;
+    for (let i = 0; i < turns.length; i += 1) {
+        const t = turns[i];
+        if (
+            t
+            && t.role === "assistant"
+            && isContactFormSubmissionSummaryAssistantText_(t.text)
+        ) {
+            idx = i;
+        }
+    }
+    if (idx < 0) {
+        return turns.slice();
+    }
+    return turns.slice(idx);
+}
+
 /**
  * Staff transcript from widget/Firestore `client_context`: merge stored `chat_transcript` with `user_queries`.
  * After submit, the merge pipeline can persist only an assistant «Form submission…» row while `user_queries`
@@ -3761,16 +3806,17 @@ function transcriptTurnsFromClientContext_(cx) {
     }
 
     const userTextsInChat = new Set(
-        base.filter((t) => t.role === "user").map((t) => String(t.text || "").trim())
+        base.filter((t) => t.role === "user").map((t) => transcriptUserCompareNorm_(t.text))
     );
     /** @type {{ role: string, text: string, at?: number }[]} */
     const missingUsers = [];
     for (let i = 0; i < uqList.length; i++) {
-        const text = uqList[i];
-        if (!userTextsInChat.has(text)) {
-            missingUsers.push({ role: "user", text });
-            userTextsInChat.add(text);
+        const norm = transcriptUserCompareNorm_(uqList[i]);
+        if (!norm || userTextsInChat.has(norm)) {
+            continue;
         }
+        missingUsers.push({ role: "user", text: uqList[i].trim() });
+        userTextsInChat.add(norm);
     }
     if (!missingUsers.length) {
         return base;
@@ -3788,7 +3834,7 @@ function transcriptTurnsFromClientContext_(cx) {
             continue;
         }
         const tx = String(base[j].text || "").trim();
-        if (/^form submission/im.test(tx)) {
+        if (isContactFormSubmissionSummaryAssistantText_(tx)) {
             formAssistantIdx = j;
             break;
         }
@@ -4106,7 +4152,8 @@ app.get(PATHNAME_CONVERSATION_TRANSCRIPT_JSON, async (req, res) => {
             try {
                 const { csv } = await fetchLeadSheetUserQueriesForSession(session);
                 const fromSheetQueries = userTurnsFromSheetQueriesCsv_(csv);
-                if (fromSheetQueries.length) {
+                /** When Sheet already has Chat transcript JSON, the User Queries CSV is the full-history dump and re-merging replays every pre-submit line below the chronological thread */
+                if (fromSheetQueries.length && sheetChatTurns.length === 0) {
                     sourceParts.push("sheet_user_queries_csv");
                     turns = mergeConversationTranscriptTurnSources_(turns, fromSheetQueries);
                 }
@@ -4124,6 +4171,8 @@ app.get(PATHNAME_CONVERSATION_TRANSCRIPT_JSON, async (req, res) => {
                 turns = mergeConversationTranscriptTurnSources_(turns, synthLead);
             }
         }
+
+        turns = sliceTranscriptTurnsFromLastContactFormSubmission_(turns);
 
         transcript_fallback = "";
         const source = sourceParts.length ? sourceParts.join("+") : "none";
