@@ -3343,11 +3343,16 @@ function transcriptTurnsFromStoredChatArray_(arr) {
         tmp.push({ role, text, seq, ord: ord++, atMs, atSort });
     }
     const seqCount = tmp.filter((x) => typeof x.seq === "number" && Number.isFinite(x.seq)).length;
-    if (seqCount === tmp.length && tmp.length > 0) {
+    const allSeq = seqCount === tmp.length && tmp.length > 0;
+    const anyMissingAt = tmp.some((x) => x.atMs === undefined);
+    if (allSeq) {
         tmp.sort(
             (a, b) =>
                 /** @type {number} */ (a.seq) - /** @type {number} */ (b.seq) || a.ord - b.ord
         );
+    } else if (anyMissingAt) {
+        // Avoid sorting undated rows to the end (Infinity bucket), which clusters roles out of order.
+        tmp.sort((a, b) => a.ord - b.ord);
     } else {
         tmp.sort((a, b) => {
             if (a.atSort !== b.atSort) {
