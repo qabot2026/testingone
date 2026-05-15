@@ -14422,7 +14422,6 @@ function appendChatTranscriptAssistantLines_(lines) {
             chat_transcript: transcript.slice(-MAX_CHAT_TRANSCRIPT_TURNS),
             chat_transcript_seq: seq
         });
-        scheduleSessionQueriesSheetSync_();
     } catch {
         /* ignore */
     }
