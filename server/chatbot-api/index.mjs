@@ -3447,58 +3447,104 @@ function hasAssistantTurns_(turns) {
     return Array.isArray(turns) && turns.some((t) => t && t.role === "assistant");
 }
 
-/** @param {{ role: string, text: string, at?: unknown }[]} turns */
-function userTurnCount_(turns) {
-    if (!Array.isArray(turns)) {
-        return 0;
+/**
+ * Dedup key for staff transcript turns (role + trimmed text).
+ *
+ * @param {{ role?: unknown, text?: unknown } | null | undefined} t
+ * @returns {string}
+ */
+function transcriptTurnSignature_(t) {
+    if (!t || typeof t !== "object") {
+        return "";
     }
-    let n = 0;
-    for (let i = 0; i < turns.length; i += 1) {
-        const t = turns[i];
-        if (t && t.role === "user") {
-            n += 1;
-        }
+    const role = /** @type {{ role?: unknown }} */ (t).role === "assistant" ? "assistant" : "user";
+    const text = String(/** @type {{ text?: unknown }} */ (t).text || "").trim();
+    if (!text) {
+        return "";
     }
-    return n;
-}
-
-/** Max `at` / `seq` among turns — compares live Sheet JSON vs frozen Firestore at last form submit. */
-function transcriptFreshnessMetric_(raw) {
-    if (!Array.isArray(raw) || !raw.length) {
-        return { at: -1, seq: -1 };
-    }
-    let maxAt = -1;
-    let maxSeq = -1;
-    for (let i = 0; i < raw.length; i += 1) {
-        const t = raw[i];
-        if (!t || typeof t !== "object") {
-            continue;
-        }
-        const o = /** @type {{ at?: unknown, seq?: unknown }} */ (t);
-        if (typeof o.at === "number" && Number.isFinite(o.at)) {
-            maxAt = Math.max(maxAt, o.at);
-        }
-        if (typeof o.seq === "number" && Number.isFinite(o.seq)) {
-            maxSeq = Math.max(maxSeq, o.seq);
-        }
-    }
-    return { at: maxAt, seq: maxSeq };
+    return `${role}|${text}`;
 }
 
 /**
- * @param {{ at?: unknown, seq?: unknown }[]} sheetTurns
- * @param {{ at?: unknown, seq?: unknown }[]} fbTurns
+ * Union-merge two transcript sources: timed turns ordered by `at`, then user lines without timestamps
+ * (Firebase `user_queries` merge, Sheet CSV, etc.) in stream order so post-submit Sheet lines are not dropped
+ * when Firestore froze at the last lead save.
+ *
+ * @param {{ role: string, text: string, at?: number }[]} a
+ * @param {{ role: string, text: string, at?: number }[]} b
+ * @returns {{ role: string, text: string, at?: number }[]}
  */
-function sheetTranscriptIsAheadOfFirestore_(sheetTurns, fbTurns) {
-    const a = transcriptFreshnessMetric_(fbTurns);
-    const b = transcriptFreshnessMetric_(sheetTurns);
-    if (b.seq > a.seq) {
-        return true;
+function mergeConversationTranscriptTurnSources_(a, b) {
+    const aa = Array.isArray(a) ? a.filter((t) => t && typeof t === "object") : [];
+    const bb = Array.isArray(b) ? b.filter((t) => t && typeof t === "object") : [];
+    if (!aa.length) {
+        return bb.map((t) => ({ role: t.role, text: t.text, ...(t.at !== undefined ? { at: t.at } : {}) }));
     }
-    if (b.at > a.at) {
-        return true;
+    if (!bb.length) {
+        return aa.map((t) => ({ role: t.role, text: t.text, ...(t.at !== undefined ? { at: t.at } : {}) }));
     }
-    return false;
+
+    /** @type {{ role: string, text: string, at?: number }[]} */
+    const noAtA = [];
+    /** @type {{ role: string, text: string, at?: number }[]} */
+    const noAtB = [];
+    /** @type {{ turn: { role: string, text: string, at?: number }, ord: number }[]} */
+    const withAt = [];
+    let ord = 0;
+    for (let i = 0; i < aa.length; i += 1) {
+        const t = aa[i];
+        const rawAt = t.at;
+        if (typeof rawAt === "number" && Number.isFinite(rawAt)) {
+            withAt.push({ turn: { role: t.role, text: t.text, at: rawAt }, ord: ord++ });
+        } else {
+            noAtA.push({ role: t.role, text: t.text });
+        }
+    }
+    for (let j = 0; j < bb.length; j += 1) {
+        const t = bb[j];
+        const rawAt = t.at;
+        if (typeof rawAt === "number" && Number.isFinite(rawAt)) {
+            withAt.push({ turn: { role: t.role, text: t.text, at: rawAt }, ord: ord++ });
+        } else {
+            noAtB.push({ role: t.role, text: t.text });
+        }
+    }
+
+    withAt.sort((x, y) => x.turn.at - y.turn.at || x.ord - y.ord);
+
+    /** @type {Set<string>} */
+    const seen = new Set();
+    /** @type {{ role: string, text: string, at?: number }[]} */
+    const out = [];
+
+    for (let k = 0; k < withAt.length; k += 1) {
+        const turn = withAt[k].turn;
+        const sig = transcriptTurnSignature_(turn);
+        if (!sig || seen.has(sig)) {
+            continue;
+        }
+        seen.add(sig);
+        out.push({ role: turn.role, text: turn.text, at: turn.at });
+    }
+    for (let u = 0; u < noAtA.length; u += 1) {
+        const t = noAtA[u];
+        const sig = transcriptTurnSignature_(t);
+        if (!sig || seen.has(sig)) {
+            continue;
+        }
+        seen.add(sig);
+        out.push({ role: t.role, text: t.text });
+    }
+    for (let v = 0; v < noAtB.length; v += 1) {
+        const t = noAtB[v];
+        const sig = transcriptTurnSignature_(t);
+        if (!sig || seen.has(sig)) {
+            continue;
+        }
+        seen.add(sig);
+        out.push({ role: t.role, text: t.text });
+    }
+    return out;
 }
 
 /**
@@ -3864,8 +3910,9 @@ app.get(PATHNAME_CONVERSATION_TRANSCRIPT_JSON, async (req, res) => {
         }
 
         /** @type {{ role: string, text: string, at?: number }[]} */
-        let turns = [];
-        let source = "none";
+        let fbTurns = [];
+        /** @type {string[]} */
+        const sourceParts = [];
         /** @type {string} */
         let transcript_fallback = "";
         /** @type {Record<string, unknown>} */
@@ -3894,9 +3941,10 @@ app.get(PATHNAME_CONVERSATION_TRANSCRIPT_JSON, async (req, res) => {
                             ? rec.client_context
                             : {}
                     );
-                    turns = transcriptTurnsFromClientContext_(cx);
-                    /** Staff-facing label: data is Firebase Cloud Firestore in your Firebase project. */
-                    source = "firebase";
+                    fbTurns = transcriptTurnsFromClientContext_(cx);
+                    if (fbTurns.length) {
+                        sourceParts.push("firebase");
+                    }
                     meta = {
                         name: rec.name,
                         email: rec.email,
@@ -3929,56 +3977,20 @@ app.get(PATHNAME_CONVERSATION_TRANSCRIPT_JSON, async (req, res) => {
             }
         }
 
-        /** Merge Sheet JSON widget transcript: assistants we lack, or more user turns when Firebase has no assistant (stale snapshot). */
-        const sheetUserN = userTurnCount_(sheetChatTurns);
-        const fbUserN = userTurnCount_(turns);
-
-        if (!hasAssistantTurns_(turns) && hasAssistantTurns_(sheetChatTurns)) {
-            turns = sheetChatTurns.slice();
-            source =
-                source === "firebase"
-                    ? "sheet_chat_transcript_json"
-                    : source === "none"
-                      ? "sheet_chat_transcript_json"
-                      : `${source}+sheet_chat_transcript_json`;
-        /**
-         * Sheet “more user turns” heuristic is only meant for stale Firestore snippets that omit bot lines.
-         * If Firebase already has assistant replies, switching to Sheet on user-count alone drops the full threaded script after form submits.
-         */
-        } else if (
-            sheetChatTurns.length > 0
-            && sheetUserN > fbUserN
-            && !hasAssistantTurns_(turns)
-        ) {
-            turns = sheetChatTurns.slice();
-            source =
-                source === "firebase"
-                    ? "sheet_chat_transcript_json_more_users"
-                    : source === "none"
-                      ? "sheet_chat_transcript_json"
-                      : `${source};prefer_sheet_user_turns`;
-        } else if (
-            hasAssistantTurns_(turns)
-            && hasAssistantTurns_(sheetChatTurns)
-            && (sheetChatTurns.length > turns.length
-                || sheetTranscriptIsAheadOfFirestore_(sheetChatTurns, turns))
-        ) {
-            turns = sheetChatTurns.slice();
-            source =
-                sheetChatTurns.length > turns.length
-                    ? `${source};prefer_longer_sheet_transcript`
-                    : `${source};prefer_newer_sheet_transcript`;
+        if (sheetChatTurns.length) {
+            sourceParts.push("sheet_chat_transcript_json");
         }
 
-        if (!turns.length && !SHEETS_DISABLED) {
+        /** Union-merge: Firestore freezes at last submit while Sheet keeps syncing user + bot lines after submit. */
+        let turns = mergeConversationTranscriptTurnSources_(fbTurns, sheetChatTurns);
+
+        if (!SHEETS_DISABLED) {
             try {
                 const { csv } = await fetchLeadSheetUserQueriesForSession(session);
-                const fromSheet = userTurnsFromSheetQueriesCsv_(csv);
-                if (fromSheet.length) {
-                    turns = fromSheet;
-                    if (source === "none") {
-                        source = "sheet";
-                    }
+                const fromSheetQueries = userTurnsFromSheetQueriesCsv_(csv);
+                if (fromSheetQueries.length) {
+                    sourceParts.push("sheet_user_queries_csv");
+                    turns = mergeConversationTranscriptTurnSources_(turns, fromSheetQueries);
                 }
             } catch (se) {
                 const msg = se && /** @type {{ message?: string }} */ (se).message ? String(se.message) : String(se);
@@ -3986,20 +3998,23 @@ app.get(PATHNAME_CONVERSATION_TRANSCRIPT_JSON, async (req, res) => {
             }
         }
 
-        if (!hasAssistantTurns_(turns) && firestoreRec) {
+        /** Merge even when bots already appear in transcript — avoids dropping lead-only summary rows. */
+        if (firestoreRec) {
             const synthLead = syntheticFormSubmissionAssistantTurnsFromLead_(firestoreRec);
             if (synthLead.length) {
-                turns = [...turns, ...synthLead];
+                sourceParts.push("synthetic_lead");
+                turns = mergeConversationTranscriptTurnSources_(turns, synthLead);
             }
         }
 
-        if (!hasAssistantTurns_(turns)) {
-            const snap = assistantLeadSnapshotTurns_(meta, sheet, firestoreRec);
-            if (snap.length) {
-                turns = [...turns, ...snap];
-                transcript_fallback = "lead_snapshot";
-            }
+        const snap = assistantLeadSnapshotTurns_(meta, sheet, firestoreRec);
+        if (snap.length && (!turns.length || !hasAssistantTurns_(turns))) {
+            sourceParts.push("lead_snapshot");
+            turns = mergeConversationTranscriptTurnSources_(turns, snap);
         }
+
+        transcript_fallback = sourceParts.includes("lead_snapshot") ? "lead_snapshot" : "";
+        const source = sourceParts.length ? sourceParts.join("+") : "none";
 
         return res.json({
             ok: true,
