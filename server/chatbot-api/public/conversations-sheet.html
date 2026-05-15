@@ -2359,7 +2359,6 @@
         var om = statNum(tot, "onlyMobile", 0);
         var oe = statNum(tot, "onlyEmail", 0);
         var be = statNum(tot, "mobileAndEmail", 0);
-        var ni = statNum(tot, "neither", 0);
         var leads = om + oe + be;
         var apt =
           statNum(tot, "appointmentBooked", NaN);
@@ -2507,13 +2506,7 @@
           escapeHtml(String(leads)) +
           '</p><div class="chart-canvas-wrap"><canvas id="lcPieLead"></canvas></div></div>' +
           '<div class="lead-chart-card"><h4>Pipeline</h4><div class="chart-canvas-wrap"><canvas id="lcBarFunnel"></canvas></div></div>' +
-          '<div class="lead-chart-card"><h4>Contact vs gaps</h4><p class="lead-chart-card-total">Total · ' +
-          escapeHtml(String(n)) +
-          " · " +
-          escapeHtml(String(leads)) +
-          " with contact · " +
-          escapeHtml(String(ni)) +
-          ' no contact</p><div class="chart-canvas-wrap"><canvas id="lcPieCoverage"></canvas></div></div>' +
+          '<div class="lead-chart-card"><h4>Contact vs gaps</h4><div class="chart-canvas-wrap"><canvas id="lcPieCoverage"></canvas></div></div>' +
           "</div></div>";
         lastLeadStatsPayload = payload;
         var viewMode = "numeric";
