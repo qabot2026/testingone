@@ -53,6 +53,7 @@ import {
     fetchConversationSheetPreview,
     fetchConversationSheetExport,
     fetchLeadSheetUserQueriesForSession,
+    fetchLeadSheetRowKeyValuesForSession,
     formatConversationDateForSheet,
     formatConversationTimeForSheet,
     probeSheetsSpreadsheetAccess,
@@ -3126,8 +3127,8 @@ function transcriptTurnsFromClientContext_(cx) {
     }
     const ct = cx.chat_transcript;
     if (Array.isArray(ct) && ct.length) {
-        /** @type {{ role: string, text: string }[]} */
-        const out = [];
+        /** @type {{ role: string, text: string, at: number }[]} */
+        const tmp = [];
         for (const item of ct) {
             if (!item || typeof item !== "object") {
                 continue;
@@ -3138,9 +3139,15 @@ function transcriptTurnsFromClientContext_(cx) {
             if (!text) {
                 continue;
             }
-            out.push({ role, text });
+            const rawAt = o.at;
+            const at =
+                typeof rawAt === "number" && Number.isFinite(rawAt)
+                    ? rawAt
+                    : tmp.length * 1e-6;
+            tmp.push({ role, text, at });
         }
-        return out;
+        tmp.sort((a, b) => a.at - b.at);
+        return tmp.map(({ role, text }) => ({ role, text }));
     }
     const uq = cx.user_queries;
     if (Array.isArray(uq) && uq.length) {
@@ -3221,6 +3228,17 @@ app.get(PATHNAME_CONVERSATION_TRANSCRIPT_JSON, async (req, res) => {
         let source = "none";
         /** @type {Record<string, unknown>} */
         let meta = {};
+        /** @type {{ rowNumber: number, columns: Record<string, string> } | null} */
+        let sheet = null;
+
+        if (!SHEETS_DISABLED) {
+            try {
+                sheet = await fetchLeadSheetRowKeyValuesForSession(session);
+            } catch (se) {
+                const msg = se && /** @type {{ message?: string }} */ (se).message ? String(se.message) : String(se);
+                console.warn("[chatbot-api] conversation-transcript Sheet row:", msg.slice(0, 240));
+            }
+        }
 
         if (!FIRESTORE_DISABLED) {
             try {
@@ -3232,15 +3250,14 @@ app.get(PATHNAME_CONVERSATION_TRANSCRIPT_JSON, async (req, res) => {
                             : {}
                     );
                     turns = transcriptTurnsFromClientContext_(cx);
-                    if (turns.length) {
-                        source = "firestore";
-                        meta = {
-                            name: rec.name,
-                            email: rec.email,
-                            mobile: rec.mobile,
-                            submitted_at: rec.submitted_at
-                        };
-                    }
+                    source = "firestore";
+                    meta = {
+                        name: rec.name,
+                        email: rec.email,
+                        mobile: rec.mobile,
+                        submitted_at: rec.submitted_at,
+                        form_id: rec.form_id
+                    };
                 }
             } catch (fe) {
                 const msg = fe && /** @type {{ message?: string }} */ (fe).message ? String(fe.message) : String(fe);
@@ -3251,9 +3268,12 @@ app.get(PATHNAME_CONVERSATION_TRANSCRIPT_JSON, async (req, res) => {
         if (!turns.length && !SHEETS_DISABLED) {
             try {
                 const { csv } = await fetchLeadSheetUserQueriesForSession(session);
-                turns = userTurnsFromSheetQueriesCsv_(csv);
-                if (turns.length) {
-                    source = "sheet";
+                const fromSheet = userTurnsFromSheetQueriesCsv_(csv);
+                if (fromSheet.length) {
+                    turns = fromSheet;
+                    if (source === "none") {
+                        source = "sheet";
+                    }
                 }
             } catch (se) {
                 const msg = se && /** @type {{ message?: string }} */ (se).message ? String(se.message) : String(se);
@@ -3261,7 +3281,7 @@ app.get(PATHNAME_CONVERSATION_TRANSCRIPT_JSON, async (req, res) => {
             }
         }
 
-        return res.json({ ok: true, session, source, meta, turns });
+        return res.json({ ok: true, session, source, meta, sheet, turns });
     } catch (e) {
         const msg = e && /** @type {{ message?: string }} */ (e).message ? String(e.message) : String(e);
         return res.status(500).json({ ok: false, error: msg });

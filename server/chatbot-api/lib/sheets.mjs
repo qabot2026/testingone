@@ -76,8 +76,26 @@ const RANGE = (process.env.SHEETS_RANGE || "Sheet1!A:R").trim();
  * Leave unset to skip (default). Add a matching header on row 1 in your sheet if you want a label.
  */
 const SHEETS_ROW_OPEN_LINK_COLUMN = (process.env.SHEETS_ROW_OPEN_LINK_COLUMN || "").trim().toUpperCase();
-/** API origin for staff links from Sheets (e.g. https://YOUR-APP.up.railway.app). Enables “Chat transcript” hyperlinks. */
-const CONVERSATIONS_PUBLIC_BASE_URL = (process.env.CONVERSATIONS_PUBLIC_BASE_URL || "").trim().replace(/\/+$/, "");
+/**
+ * Resolves HTTPS origin for staff transcript links. Set CONVERSATIONS_PUBLIC_BASE_URL, or rely on
+ * Railway’s RAILWAY_PUBLIC_DOMAIN / RAILWAY_STATIC_URL when unset.
+ */
+function resolvedConversationsPublicBaseUrl_() {
+    const explicit = (process.env.CONVERSATIONS_PUBLIC_BASE_URL || "").trim().replace(/\/+$/, "");
+    if (explicit) {
+        return explicit;
+    }
+    const dom = (process.env.RAILWAY_PUBLIC_DOMAIN || "").trim();
+    if (dom) {
+        const host = dom.replace(/^https?:\/\//i, "").split("/")[0] || "";
+        return host ? `https://${host}` : "";
+    }
+    const st = (process.env.RAILWAY_STATIC_URL || "").trim().replace(/\/+$/, "");
+    if (st) {
+        return /^https?:\/\//i.test(st) ? st : `https://${st}`;
+    }
+    return "";
+}
 /** Secondary tab for lead KPIs (created if missing). Must differ from `SHEETS_RANGE` data tab. */
 const DASHBOARD_SHEET_TAB = (process.env.SHEETS_DASHBOARD_TAB || "Sheet2").trim() || "Sheet2";
 /** After each new lead row append, refresh the dashboard tab (best-effort; does not fail the request). */
@@ -1789,7 +1807,8 @@ function rowNumberFromUpdatedRange_(updatedRange) {
 }
 
 /**
- * Writes a clickable cell: prefers `/conversation-transcript?session=…` when CONVERSATIONS_PUBLIC_BASE_URL + session id exist.
+ * Writes a clickable cell: prefers `/conversation-transcript?session=…` when a public API base URL
+ * (CONVERSATIONS_PUBLIC_BASE_URL or Railway RAILWAY_PUBLIC_DOMAIN / RAILWAY_STATIC_URL) and session id exist.
  *
  * @param {import("googleapis").sheets_v4.Sheets} sheets
  * @param {string} tabTitle Worksheet title (not RANGE prefix).
@@ -1806,8 +1825,9 @@ async function maybeWriteSheetRowOpenLink_(sheets, tabTitle, rowNumber, clientSe
     let url = "";
     /** @type {string} */
     let label = "Open row";
-    if (CONVERSATIONS_PUBLIC_BASE_URL && sid) {
-        url = `${CONVERSATIONS_PUBLIC_BASE_URL}/conversation-transcript?session=${encodeURIComponent(sid)}`;
+    const base = resolvedConversationsPublicBaseUrl_();
+    if (base && sid) {
+        url = `${base}/conversation-transcript?session=${encodeURIComponent(sid)}`;
         label = "Chat transcript";
     } else if (SPREADSHEET_ID) {
         try {
@@ -1862,6 +1882,60 @@ export async function fetchLeadSheetUserQueriesForSession(sessionId) {
     const row0 = Array.isArray(got.data.values) && got.data.values[0] ? got.data.values[0] : [];
     const csv = sheetCellString_(row0[0]);
     return { csv, rowNumber };
+}
+
+/**
+ * One lead row on the configured tab, keyed by header labels (matches Google Sheet columns).
+ *
+ * @param {string} sessionId
+ * @returns {Promise<{ rowNumber: number, columns: Record<string, string> } | null>}
+ */
+export async function fetchLeadSheetRowKeyValuesForSession(sessionId) {
+    const sid = typeof sessionId === "string" ? sessionId.trim() : "";
+    if (!sid || !SPREADSHEET_ID) {
+        return null;
+    }
+    const client = await getSheetsAuthClient();
+    const sheets = google.sheets({ version: "v4", auth: client });
+    const tab = tabNameFromRange(RANGE);
+    const rowNumber = await findSessionRowNumberBySessionId_(sheets, tab, sid);
+    if (!rowNumber) {
+        return null;
+    }
+    const maxCol0 = 40;
+    const lastLetter = columnLetterFromIndex_(maxCol0);
+    const hGot = await sheets.spreadsheets.values.get({
+        spreadsheetId: SPREADSHEET_ID,
+        range: `${tab}!A1:${lastLetter}1`
+    });
+    const dGot = await sheets.spreadsheets.values.get({
+        spreadsheetId: SPREADSHEET_ID,
+        range: `${tab}!A${rowNumber}:${lastLetter}${rowNumber}`
+    });
+    const headers = Array.isArray(hGot.data.values) && hGot.data.values[0] ? hGot.data.values[0] : [];
+    const cells = Array.isArray(dGot.data.values) && dGot.data.values[0] ? dGot.data.values[0] : [];
+    /** @type {Record<string, number>} */
+    const seen = {};
+    /** @type {Record<string, string>} */
+    const columns = {};
+    for (let i = 0; i < Math.max(headers.length, cells.length); i += 1) {
+        const hRaw = headers[i];
+        let label =
+            typeof hRaw === "string" && hRaw.trim()
+                ? hRaw.trim()
+                : `Column ${columnLetterFromIndex_(i)}`;
+        const v = sheetCellString_(cells[i]).trim();
+        if (!v) {
+            continue;
+        }
+        const n = (seen[label] || 0) + 1;
+        seen[label] = n;
+        if (n > 1) {
+            label = `${label} (${n})`;
+        }
+        columns[label] = v;
+    }
+    return { rowNumber, columns };
 }
 
 /**
