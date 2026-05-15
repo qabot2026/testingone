@@ -689,7 +689,11 @@
           for (var i = 0; i < turns.length; i++) {
             var t = turns[i];
             var role = t && t.role === "assistant" ? "assistant" : "user";
-            var text = t && typeof t.text === "string" ? t.text : "";
+            var rawText = t && typeof t.text === "string" ? t.text : "";
+            var text =
+              rawText.trim() !== ""
+                ? rawText
+                : "(No message text was stored for this line — it may be rich media or a fallback bubble.)";
             var who = role === "assistant" ? "Assistant" : "User";
             var atMs =
               t && typeof t.at === "number" && Number.isFinite(t.at) ? t.at : null;
