@@ -305,30 +305,6 @@
       box-shadow: var(--shadow-sm);
     }
 
-    #sheetWrap {
-      overflow: auto;
-      max-height: calc(100dvh - 200px);
-      min-height: 200px;
-      border-radius: var(--radius);
-      border: 1px solid var(--border);
-      background: var(--surface-solid);
-      box-shadow: var(--shadow-md);
-      scrollbar-width: thin;
-      scrollbar-color: rgba(13, 148, 136, 0.45) #f1f5f9;
-    }
-    #sheetWrap::-webkit-scrollbar {
-      width: 9px;
-      height: 9px;
-    }
-    #sheetWrap::-webkit-scrollbar-thumb {
-      background: linear-gradient(180deg, rgba(13, 148, 136, 0.5), rgba(8, 145, 178, 0.5));
-      border-radius: 99px;
-    }
-    #sheetWrap::-webkit-scrollbar-track {
-      background: #f8fafc;
-      border-radius: 0 var(--radius) var(--radius) 0;
-    }
-
     table.sheet {
       border-collapse: separate;
       border-spacing: 0;
@@ -495,26 +471,152 @@
       font-weight: 500;
     }
 
-    .pager-tool {
-      min-width: 200px;
+    .sheet-wrap-shell {
+      display: flex;
+      flex-direction: column;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      background: var(--surface-solid);
+      box-shadow: var(--shadow-md);
+      overflow: hidden;
+      min-height: 200px;
     }
-    .pager-row {
+    .sheet-scroll-pane {
+      overflow: auto;
+      max-height: calc(100dvh - 280px);
+      min-height: 200px;
+      flex: 1 1 auto;
+      scrollbar-width: thin;
+      scrollbar-color: rgba(13, 148, 136, 0.45) #f1f5f9;
+    }
+    .sheet-scroll-pane::-webkit-scrollbar {
+      width: 9px;
+      height: 9px;
+    }
+    .sheet-scroll-pane::-webkit-scrollbar-thumb {
+      background: linear-gradient(180deg, rgba(13, 148, 136, 0.5), rgba(8, 145, 178, 0.5));
+      border-radius: 99px;
+    }
+    .sheet-scroll-pane::-webkit-scrollbar-track {
+      background: #f8fafc;
+    }
+
+    .sheet-pager-bar {
+      flex: 0 0 auto;
+      padding: 12px 14px 14px;
+      border-top: 1px solid var(--border);
+      background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
+    }
+    .sheet-pager-bar[hidden] {
+      display: none !important;
+    }
+    .pager-row-main {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+    }
+    .pager-actions {
       display: flex;
       flex-wrap: wrap;
       align-items: center;
       gap: 6px;
     }
+    .sheet-pager-bar select {
+      padding: 7px 12px;
+      border-radius: 999px;
+      font-weight: 600;
+      font-size: 11.5px;
+      width: auto;
+      min-width: 120px;
+      background: #fff;
+      cursor: pointer;
+    }
     #pageJump {
-      min-width: 88px;
-      max-width: min(260px, 42vw);
+      min-width: 100px;
+      max-width: min(280px, 46vw);
     }
     .pager-hint {
       display: block;
-      margin-top: 5px;
-      font-size: 10.5px;
+      margin-top: 8px;
+      font-size: 11px;
       color: var(--muted);
-      font-weight: 500;
-      line-height: 1.35;
+      font-weight: 600;
+      line-height: 1.45;
+    }
+
+    .date-fields-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px 14px;
+      align-items: flex-end;
+    }
+    .date-field-modern-wrap {
+      min-width: 148px;
+    }
+    .date-field-modern-wrap label.mini {
+      margin-bottom: 6px;
+    }
+    .date-field-modern {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 2px 4px 2px 10px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: linear-gradient(165deg, #ffffff 0%, #f8fafc 55%, #f1f5f9 100%);
+      box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.9),
+        0 1px 2px rgba(15, 23, 42, 0.04);
+      transition: border-color 0.18s ease, box-shadow 0.18s ease;
+    }
+    .date-field-modern:focus-within {
+      border-color: var(--brand);
+      box-shadow: 0 0 0 3px var(--brand-soft), inset 0 1px 0 rgba(255, 255, 255, 0.95);
+      background: #fff;
+    }
+    .date-field-modern .date-cal-ic {
+      flex: 0 0 auto;
+      width: 18px;
+      height: 18px;
+      color: var(--brand-strong);
+      opacity: 0.88;
+      pointer-events: none;
+    }
+    .date-field-modern input[type="date"] {
+      flex: 1 1 auto;
+      min-width: 0;
+      border: none;
+      background: transparent;
+      padding: 9px 8px 9px 0;
+      margin: 0;
+      border-radius: 0;
+      font-weight: 600;
+      font-size: 13px;
+      letter-spacing: -0.01em;
+      color: var(--text);
+      box-shadow: none;
+      accent-color: var(--brand);
+    }
+    .date-field-modern input[type="date"]:hover {
+      background: transparent;
+      border-color: transparent;
+    }
+    .date-field-modern input[type="date"]:focus {
+      outline: none;
+      border: none;
+      box-shadow: none;
+      background: transparent;
+    }
+    .date-field-modern input[type="date"]::-webkit-calendar-picker-indicator {
+      cursor: pointer;
+      opacity: 0.75;
+      border-radius: 6px;
+      padding: 4px;
+    }
+    .date-field-modern input[type="date"]::-webkit-calendar-picker-indicator:hover {
+      opacity: 1;
+      background: var(--brand-soft);
     }
 
     .lead-stats {
@@ -983,28 +1085,32 @@
         <label class="mini" for="filter">Contains (any column)</label>
         <input id="filter" type="text" placeholder="Filter rows…" autocomplete="off" />
       </div>
-      <div class="tool">
-        <label class="mini" for="dateFrom">From date</label>
-        <input
-          id="dateFrom"
-          type="date"
-          title="Filter uses the same calendar day as your sheet (ISO yyyy-mm-dd internally). Pickers may display dd/mm or mm/dd depending on browser locale."
-        />
-      </div>
-      <div class="tool">
-        <label class="mini" for="dateTo">To date</label>
-        <input
-          id="dateTo"
-          type="date"
-          title="Inclusive end date; compares full calendar dates, not raw cell text formatting."
-        />
-      </div>
-      <div class="tool">
-        <label class="mini" for="sortOrder">Order</label>
-        <select id="sortOrder">
-          <option value="sheet">Like sheet &mdash; oldest &rarr; newest</option>
-          <option value="newest">Newest first</option>
-        </select>
+      <div class="tool date-fields-row">
+        <div class="date-field-modern-wrap">
+          <label class="mini" for="dateFrom">From date</label>
+          <div class="date-field-modern">
+            <svg class="date-cal-ic" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+              <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+              <path d="M16 2v4M8 2v4M3 10h18" />
+            </svg>
+            <input
+              id="dateFrom"
+              type="date"
+              title="Inclusive start (ISO yyyy-mm-dd). Uses conversation date column for server filtering."
+              autocomplete="off"
+            />
+          </div>
+        </div>
+        <div class="date-field-modern-wrap">
+          <label class="mini" for="dateTo">To date</label>
+          <div class="date-field-modern">
+            <svg class="date-cal-ic" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+              <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+              <path d="M16 2v4M8 2v4M3 10h18" />
+            </svg>
+            <input id="dateTo" type="date" title="Inclusive end date (full calendar days)." autocomplete="off" />
+          </div>
+        </div>
       </div>
       <div class="tool">
         <label class="mini" for="limit">Load rows</label>
@@ -1014,15 +1120,6 @@
           <option value="200">200</option>
           <option value="300">300</option>
         </select>
-      </div>
-      <div class="tool pager-tool" id="pagerWrap" hidden>
-        <label class="mini">Pages (older sheets)</label>
-        <div class="pager-row">
-          <button type="button" class="preset" id="pagerNewer">⟨ Newer</button>
-          <select id="pageJump" title="Jump to page"></select>
-          <button type="button" class="preset" id="pagerOlder">Older ⟩</button>
-        </div>
-        <span class="pager-hint" id="pagerHint"></span>
       </div>
       <div class="presets tool" style="min-width: 220px;">
         <span class="mini" style="width:100%; margin-bottom:2px;">Quick range</span>
@@ -1042,10 +1139,25 @@
       <div id="leadStatsErr" class="err" style="display: none; margin-top: 8px;"></div>
     </section>
 
-    <div id="sheetWrap">
-      <div id="convList">
-        <div class="empty">Paste your secret and tap Reload (saved secrets load automatically).</div>
+    <div id="sheetWrap" class="sheet-wrap-shell">
+      <div id="sheetScroll" class="sheet-scroll-pane">
+        <div id="convList">
+          <div class="empty">Paste your secret and tap Reload (saved secrets load automatically).</div>
+        </div>
       </div>
+      <footer class="sheet-pager-bar" id="pagerWrap" hidden aria-label="Sheet paging">
+        <div class="pager-row-main">
+          <span class="mini" style="margin: 0 4px 0 0;">Pages</span>
+          <div class="pager-actions">
+            <button type="button" class="preset" id="pagerFirst" title="Newest rows (first page)">« First</button>
+            <button type="button" class="preset" id="pagerNewer" title="Newer page">⟨ Newer</button>
+            <select id="pageJump" title="Jump to page" aria-label="Jump to page"></select>
+            <button type="button" class="preset" id="pagerOlder" title="Older page">Older ⟩</button>
+            <button type="button" class="preset" id="pagerLast" title="Oldest rows (last page)">Last »</button>
+          </div>
+        </div>
+        <span class="pager-hint" id="pagerHint"></span>
+      </footer>
     </div>
   </div>
 
@@ -1061,8 +1173,10 @@
       var syncSheet2Btn = document.getElementById("syncSheet2Btn");
       var downloadReportBtn = document.getElementById("downloadReportBtn");
       var pagerWrap = document.getElementById("pagerWrap");
+      var pagerFirst = document.getElementById("pagerFirst");
       var pagerNewer = document.getElementById("pagerNewer");
       var pagerOlder = document.getElementById("pagerOlder");
+      var pagerLast = document.getElementById("pagerLast");
       var pageJump = document.getElementById("pageJump");
       var pagerHint = document.getElementById("pagerHint");
       var statusLine = document.getElementById("statusLine");
@@ -1073,7 +1187,6 @@
       var convList = document.getElementById("convList");
       var dateFromEl = document.getElementById("dateFrom");
       var dateToEl = document.getElementById("dateTo");
-      var sortOrderEl = document.getElementById("sortOrder");
       var rowPill = document.getElementById("rowPill");
       var authBox = document.getElementById("authBox");
       var leadStatsList = document.getElementById("leadStatsList");
@@ -2005,6 +2118,8 @@
       var hadLoadedSheet = false;
       var ignorePageJumpChange = false;
       var convDateReloadTimer = 0;
+      /** @type {Record<string, unknown>|null} */
+      var lastSuccessfulSheetJson = null;
 
       function scheduleReloadForDateFilter() {
         if (convDateReloadTimer) window.clearTimeout(convDateReloadTimer);
@@ -2054,14 +2169,7 @@
           rows.push(rawRows[i]);
         }
 
-        var order = sortOrderEl.value === "sheet" ? "sheet" : "newest";
-        if (order === "sheet") {
-          rows.sort(compareRowsSheetLike);
-        } else {
-          rows.sort(function (a, b) {
-            return compareRowsSheetLike(b, a);
-          });
-        }
+        rows.sort(compareRowsSheetLike);
 
         var filtered = [];
         for (var r = 0; r < rows.length; r++) {
@@ -2162,13 +2270,13 @@
       }
 
       (function attachStickyResizeWatch() {
-        var sheetWrap = document.getElementById("sheetWrap");
-        if (!sheetWrap || window.ResizeObserver == null || convList._sheetStickyRo) return;
+        var sheetScroll = document.getElementById("sheetScroll");
+        if (!sheetScroll || window.ResizeObserver == null || convList._sheetStickyRo) return;
         convList._sheetStickyRo = new ResizeObserver(function () {
           var t = convList.querySelector("table.sheet");
           scheduleStickyResync(t);
         });
-        convList._sheetStickyRo.observe(sheetWrap);
+        convList._sheetStickyRo.observe(sheetScroll);
       })();
       function wireFilter() {
         filterEl.addEventListener("input", function () {
@@ -2180,9 +2288,6 @@
         dateToEl.addEventListener("change", scheduleReloadForDateFilter);
         dateToEl.addEventListener("input", scheduleReloadForDateFilter);
         dateToEl.addEventListener("blur", scheduleReloadForDateFilter);
-        sortOrderEl.addEventListener("change", function () {
-          if (lastPayload) render(lastPayload);
-        });
         limitEl.addEventListener("change", function () {
           sheetOffset = 0;
           if (hadLoadedSheet && secretEl.value.trim()) load();
@@ -2191,7 +2296,8 @@
       wireFilter();
 
       function syncPagerUi(json) {
-        if (!pagerWrap || !pageJump || !pagerHint || !pagerNewer || !pagerOlder) return;
+        if (!pagerWrap || !pageJump || !pagerHint || !pagerFirst || !pagerNewer || !pagerOlder || !pagerLast)
+          return;
         if (!json || json.totalDataRows == null || json.limit == null) {
           pagerWrap.hidden = true;
           return;
@@ -2210,8 +2316,10 @@
           return;
         }
         pagerWrap.hidden = false;
+        pagerFirst.disabled = off <= 0;
         pagerNewer.disabled = !json.hasNewer;
         pagerOlder.disabled = !json.hasOlder;
+        pagerLast.disabled = !json.hasOlder;
         ignorePageJumpChange = true;
         try {
           pageJump.innerHTML = "";
@@ -2219,14 +2327,15 @@
           for (var p = 1; p <= maxList; p++) {
             var opt = document.createElement("option");
             opt.value = String(p);
-            opt.textContent = p === 1 ? "1 (newest)" : String(p);
+            opt.textContent =
+              p === 1 ? "1 (newest)" : p === totalPages ? String(p) + " (oldest)" : String(p);
             pageJump.appendChild(opt);
           }
           if (totalPages > maxList) {
             var skip = document.createElement("option");
             skip.disabled = true;
             skip.value = "";
-            skip.textContent = "… +" + (totalPages - maxList) + " pages";
+            skip.textContent = "… +" + (totalPages - maxList) + " pages (use Last »)";
             pageJump.appendChild(skip);
           }
           if (curPage > maxList) {
@@ -2248,18 +2357,30 @@
         }
         var rowWord =
           json.dateFilter && json.dateFilter.serverApplied ? "rows in date range" : "rows in tab";
-        pagerHint.textContent =
-          "Page " +
-          curPage +
-          " of " +
-          totalPages +
-          " · ~" +
-          total +
-          " " +
-          rowWord +
-          " · " +
-          lim +
-          " per page";
+        var towardOlderLeft = Math.max(0, totalPages - curPage);
+        var towardNewerBack = Math.max(0, curPage - 1);
+        var parts = [];
+        parts.push(
+          "Page " + curPage + " of " + totalPages + " · last page is " + totalPages + " (oldest rows)"
+        );
+        if (towardOlderLeft > 0) {
+          parts.push(towardOlderLeft + " more page(s) available toward older data (Older » or Last)");
+        } else {
+          parts.push("Oldest page — no older pages ahead");
+        }
+        if (towardNewerBack > 0) {
+          parts.push(towardNewerBack + " page(s) back toward newer (First « or Newer)");
+        }
+        parts.push("~" + total + " " + rowWord + " · " + lim + " rows/page");
+        pagerHint.textContent = parts.join(" · ");
+      }
+
+      if (pagerFirst) {
+        pagerFirst.addEventListener("click", function () {
+          if (pagerFirst.disabled) return;
+          sheetOffset = 0;
+          load();
+        });
       }
 
       pagerNewer.addEventListener("click", function () {
@@ -2274,6 +2395,23 @@
         sheetOffset = sheetOffset + lim;
         load();
       });
+
+      if (pagerLast) {
+        pagerLast.addEventListener("click", function () {
+          if (pagerLast.disabled || !lastSuccessfulSheetJson) return;
+          var j = /** @type {Record<string, unknown>} */ (lastSuccessfulSheetJson);
+          var total = Number(j.totalDataRows) || 0;
+          var lim =
+            Number(j.limit) && Number.isFinite(Number(j.limit))
+              ? Number(j.limit)
+              : parseInt(String(limitEl.value), 10) || 100;
+          if (total < 1 || lim < 1) return;
+          var totalPages = Math.max(1, Math.ceil(total / lim));
+          sheetOffset = (totalPages - 1) * lim;
+          load();
+        });
+      }
+
       pageJump.addEventListener("change", function () {
         if (ignorePageJumpChange) return;
         var lim = parseInt(String(limitEl.value), 10) || 100;
@@ -2361,12 +2499,14 @@
             return null;
           });
           if (!res.ok || !json || !json.ok) {
+            lastSuccessfulSheetJson = null;
             showErr((json && json.error) || "HTTP " + res.status);
             setStatus("");
             if (pagerWrap) pagerWrap.hidden = true;
             if (leadStatsList) leadStatsList.hidden = true;
             return;
           }
+          lastSuccessfulSheetJson = json;
           setStatus(
             "Spreadsheet “" +
               (json.title || "?") +
@@ -2388,6 +2528,7 @@
           render(json);
           void loadLeadStats();
         } catch (e) {
+          lastSuccessfulSheetJson = null;
           if (e && e.name === "AbortError") showErr("Timed out.");
           else showErr(String(e && e.message ? e.message : e));
           setStatus("");
