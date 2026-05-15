@@ -2312,7 +2312,7 @@ export async function probeSheetsSpreadsheetAccess() {
  *   dateFilter: { applied: boolean, from: string|null, to: string|null },
  *   scan: { sheetLastRow1Based: number, dataRowsConsidered: number, scanHardCapEnv: number },
  *   columns: { dateIdx0: number, mobileIdx0: number, emailIdx0: number, channelIdx0: number, appointmentBookedIdx0: number, dateHeader: string, mobileHeader: string, emailHeader: string, channelHeader: string, appointmentBookedHeader: string },
- *   totals: { conversations: number, onlyMobile: number, onlyEmail: number, mobileAndEmail: number, neither: number, rowsSkippedNoParsableDate: number, leadsCaptured: number, appointmentScheduled: number, channelWeb: number, channelWhatsapp: number, channelInstagram: number, channelFacebook: number, channelOther: number },
+ *   totals: { conversations: number, onlyMobile: number, onlyEmail: number, mobileAndEmail: number, neither: number, rowsSkippedNoParsableDate: number, leadsCaptured: number, appointmentScheduled: number, appointmentBooked: number, channelWeb: number, channelWhatsapp: number, channelInstagram: number, channelFacebook: number, channelOther: number },
  *   ratios: {
  *     onlyMobile: string,
  *     onlyEmail: string,
@@ -2486,6 +2486,7 @@ export async function fetchConversationLeadCaptureStats(opts = {}) {
             rowsSkippedNoParsableDate: 0,
             leadsCaptured: 0,
             appointmentScheduled: 0,
+            appointmentBooked: 0,
             channelWeb: 0,
             channelWhatsapp: 0,
             channelInstagram: 0,
@@ -2615,6 +2616,7 @@ export async function fetchConversationLeadCaptureStats(opts = {}) {
     out.totals.rowsSkippedNoParsableDate = filterActive ? skippedNoDate : 0;
     out.totals.leadsCaptured = leadsCaptured;
     out.totals.appointmentScheduled = appointmentScheduled;
+    out.totals.appointmentBooked = appointmentScheduled;
     out.totals.channelWeb = channelWeb;
     out.totals.channelWhatsapp = channelWhatsapp;
     out.totals.channelInstagram = channelInstagram;

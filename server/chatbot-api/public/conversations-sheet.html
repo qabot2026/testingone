@@ -1745,7 +1745,9 @@
         var om = statNum(tot, "onlyMobile", 0);
         var oe = statNum(tot, "onlyEmail", 0);
         var be = statNum(tot, "mobileAndEmail", 0);
-        var apt = statNum(tot, "appointmentScheduled", 0);
+        var apt =
+          statNum(tot, "appointmentBooked", NaN);
+        if (!Number.isFinite(apt)) apt = statNum(tot, "appointmentScheduled", 0);
         var cw = statNum(tot, "channelWeb", 0);
         var cwa = statNum(tot, "channelWhatsapp", 0);
         var cinst = statNum(tot, "channelInstagram", 0);
@@ -1777,12 +1779,9 @@
           row("Only Email", val(oe)) +
           row("Mobile & Email", val(be)) +
           row("Lead %", leadPctDisp) +
-          '<hr class="lead-stats-divider" />' +
-          '<div class="lead-stats-section-title">Appointments</div>' +
-          row("Appointment Scheduled", val(apt)) +
-          '<div class="lead-stats-section-title">Channel (conversations)</div>' +
+          row("Appointment booked", val(apt)) +
           row("Web", val(cw)) +
-          row("WhatsApp", val(cwa)) +
+          row("Whatsapp", val(cwa)) +
           row("Instagram", val(cinst)) +
           row("Facebook", val(cfb)) +
           "</div>";
