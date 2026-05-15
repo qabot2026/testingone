@@ -518,12 +518,12 @@
     }
 
     .lead-stats {
-      margin-bottom: 10px;
-      padding: 10px 16px;
+      margin-bottom: 12px;
+      padding: 16px 18px 18px;
       border-radius: var(--radius);
-      border: 1px solid var(--border);
-      background: var(--surface-solid);
-      box-shadow: var(--shadow-md);
+      border: 1px solid rgba(13, 148, 136, 0.22);
+      background: linear-gradient(145deg, #ffffff 0%, #f8fafc 42%, #f0fdfa 100%);
+      box-shadow: var(--shadow-md), 0 0 0 1px rgba(255, 255, 255, 0.6) inset;
     }
     .lead-stats-list {
       margin: 0;
@@ -531,39 +531,216 @@
       font-size: 13px;
       font-weight: 600;
       color: var(--text);
-      line-height: 1.65;
+      line-height: 1.5;
       font-variant-numeric: tabular-nums;
     }
-    .lead-stats-stack {
+    .lead-stats-dash-head {
       display: flex;
-      flex-direction: column;
-      align-items: stretch;
-      gap: 0;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 14px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--border);
     }
-    .lead-stats-divider {
-      height: 0;
-      margin: 14px 0 10px;
-      border: 0;
-      border-top: 1px solid var(--border);
-    }
-    .lead-stats-section-title {
-      font-size: 11px;
+    .lead-stats-dash-title {
+      margin: 0;
+      font-size: 0.6875rem;
       font-weight: 800;
       text-transform: uppercase;
-      letter-spacing: 0.06em;
+      letter-spacing: 0.09em;
       color: var(--muted);
-      margin: 14px 0 6px;
-      padding: 0;
     }
-    .lead-stats-divider + .lead-stats-section-title {
-      margin-top: 10px;
-    }
-    .lead-stats-line {
+    .lead-stats-dash-sub {
       margin: 0;
-      padding: 3px 0;
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--muted);
+    }
+    .lead-stats-hero {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 14px;
+    }
+    .lead-stats-hero-label {
+      display: block;
+      font-size: 0.75rem;
+      font-weight: 700;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 4px;
+    }
+    .lead-stats-hero-value {
+      font-size: clamp(1.65rem, 4.5vw, 2.05rem);
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      line-height: 1;
+      color: var(--text);
+      background: linear-gradient(115deg, #0f766e, #0e7490);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .lead-stats-kpi-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+    .lead-stat-kpi {
+      border-radius: var(--radius-sm);
+      padding: 12px 14px;
+      border: 1px solid var(--border);
+      background: rgba(255, 255, 255, 0.92);
+      box-shadow: var(--shadow-sm);
+      min-height: 72px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 4px;
+    }
+    .lead-stat-kpi--primary {
+      border-color: rgba(13, 148, 136, 0.4);
+      background: linear-gradient(135deg, rgba(13, 148, 136, 0.14), rgba(99, 102, 241, 0.08));
+    }
+    .lead-stat-kpi-label {
+      font-size: 0.6875rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.055em;
+      color: var(--muted);
+    }
+    .lead-stat-kpi-value {
+      font-size: 1.35rem;
+      font-weight: 800;
+      color: var(--brand-strong);
+      line-height: 1.08;
+      letter-spacing: -0.02em;
+    }
+    .lead-stats-section-h {
+      margin: 0 0 8px;
+      font-size: 0.6875rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+    }
+    .lead-stats-section-h:not(:first-of-type) {
+      margin-top: 6px;
+    }
+    .lead-stats-channel-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+    @media (max-width: 900px) {
+      .lead-stats-channel-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+    @media (max-width: 420px) {
+      .lead-stats-channel-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+    .channel-tile {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      padding: 11px 13px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+      background: rgba(255, 255, 255, 0.95);
+      box-shadow: var(--shadow-sm);
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+    .channel-tile:hover {
+      border-color: rgba(148, 163, 184, 0.65);
+      box-shadow: 0 4px 14px rgba(15, 23, 42, 0.08);
+    }
+    .channel-tile-icon {
+      width: 38px;
+      height: 38px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .channel-tile-icon svg {
+      width: 22px;
+      height: 22px;
+      display: block;
+    }
+    .channel-tile--web .channel-tile-icon {
+      background: rgba(37, 99, 235, 0.12);
+      color: #1d4ed8;
+    }
+    .channel-tile--whatsapp .channel-tile-icon {
+      background: rgba(37, 211, 102, 0.15);
+      color: #128c7e;
+    }
+    .channel-tile--instagram .channel-tile-icon {
+      background: linear-gradient(145deg, rgba(253, 29, 29, 0.12), rgba(225, 48, 108, 0.12), rgba(131, 58, 180, 0.12));
+      color: #c026d3;
+    }
+    .channel-tile--facebook .channel-tile-icon {
+      background: rgba(24, 119, 242, 0.12);
+      color: #1877f2;
+    }
+    .channel-tile-body {
+      min-width: 0;
+      flex: 1;
+    }
+    .channel-tile-name {
+      font-size: 0.8125rem;
+      font-weight: 700;
+      color: var(--text);
+      line-height: 1.2;
+    }
+    .channel-tile-count {
+      font-size: 1.125rem;
+      font-weight: 800;
+      font-variant-numeric: tabular-nums;
+      color: var(--brand-strong);
+      margin-top: 2px;
+    }
+    .lead-stats-contact-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+    }
+    @media (max-width: 640px) {
+      .lead-stats-contact-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+    .lead-stat-mini {
+      border-radius: var(--radius-sm);
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      background: rgba(255, 255, 255, 0.88);
+    }
+    .lead-stat-mini-label {
+      font-size: 0.6875rem;
+      font-weight: 700;
+      color: var(--muted);
+      line-height: 1.3;
+    }
+    .lead-stat-mini-value {
+      font-size: 1.05rem;
+      font-weight: 800;
+      color: var(--brand-strong);
+      margin-top: 4px;
     }
     .lead-stats-list .stat-frac {
-      font-weight: 700;
+      font-weight: 800;
       color: var(--brand-strong);
       letter-spacing: 0.02em;
     }
@@ -664,7 +841,7 @@
     <div id="statusLine"></div>
     <div id="errBox" class="err" style="display: none;"></div>
 
-    <section class="lead-stats" id="leadStatsWrap">
+    <section class="lead-stats" id="leadStatsWrap" aria-label="Lead performance overview">
       <div id="leadStatsList" class="lead-stats-list" hidden aria-live="polite"></div>
       <div id="leadStatsErr" class="err" style="display: none; margin-top: 8px;"></div>
     </section>
@@ -1755,36 +1932,77 @@
         var rat = payload.ratios || {};
         var pctRaw = rat.leadCapturePct;
         var pct = typeof pctRaw === "number" && Number.isFinite(pctRaw) ? pctRaw : Number(pctRaw);
-        function val(x) {
-          return '<span class="stat-frac">' + escapeHtml(String(x)) + "</span>";
-        }
-        function row(label, valHtml) {
-          return (
-            '<div class="lead-stats-line">' +
-            escapeHtml(label) +
-            " = " +
-            valHtml +
-            "</div>"
-          );
-        }
-        var leadPctDisp =
+        var leadCaptureDisp =
           n > 0 && pct != null && Number.isFinite(pct)
             ? '<span class="stat-frac">' + escapeHtml(String(pct)) + "%</span>"
-            : '<span class="stat-frac">—</span>';
+            : '<span class="stat-frac">—</span>";
+        var iconWeb =
+          '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>';
+        var iconWa =
+          '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.435 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>';
+        var iconIg =
+          '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/></svg>';
+        var iconFb =
+          '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>';
+        function channelTile(mod, label, count, svg) {
+          return (
+            '<div class="channel-tile channel-tile--' +
+            mod +
+            '" role="listitem">' +
+            '<div class="channel-tile-icon">' +
+            svg +
+            "</div>" +
+            '<div class="channel-tile-body">' +
+            '<div class="channel-tile-name">' +
+            escapeHtml(label) +
+            "</div>" +
+            '<div class="channel-tile-count">' +
+            escapeHtml(String(count)) +
+            "</div>" +
+            "</div></div>"
+          );
+        }
         leadStatsList.hidden = false;
         leadStatsList.innerHTML =
-          '<div class="lead-stats-stack">' +
-          row("Total conversation", val(n)) +
-          row("Only Mobile", val(om)) +
-          row("Only Email", val(oe)) +
-          row("Mobile & Email", val(be)) +
-          row("Lead %", leadPctDisp) +
-          row("Appointment booked", val(apt)) +
-          row("Web", val(cw)) +
-          row("Whatsapp", val(cwa)) +
-          row("Instagram", val(cinst)) +
-          row("Facebook", val(cfb)) +
-          "</div>";
+          '<div class="lead-stats-dash-head">' +
+          '<p class="lead-stats-dash-title">Performance overview</p>' +
+          '<p class="lead-stats-dash-sub">Same filters as the table below</p>' +
+          "</div>" +
+          '<div class="lead-stats-hero">' +
+          '<div>' +
+          '<span class="lead-stats-hero-label">Total conversations</span>' +
+          '<div class="lead-stats-hero-value">' +
+          escapeHtml(String(n)) +
+          "</div></div></div>" +
+          '<div class="lead-stats-kpi-row">' +
+          '<div class="lead-stat-kpi lead-stat-kpi--primary">' +
+          '<span class="lead-stat-kpi-label">Lead capture %</span>' +
+          '<div class="lead-stat-kpi-value">' +
+          leadCaptureDisp +
+          "</div></div>" +
+          '<div class="lead-stat-kpi">' +
+          '<span class="lead-stat-kpi-label">Appointments booked</span>' +
+          '<div class="lead-stat-kpi-value">' +
+          escapeHtml(String(apt)) +
+          "</div></div></div>" +
+          '<h3 class="lead-stats-section-h">Conversations by channel</h3>' +
+          '<div class="lead-stats-channel-grid" role="list">' +
+          channelTile("web", "Web", cw, iconWeb) +
+          channelTile("whatsapp", "WhatsApp", cwa, iconWa) +
+          channelTile("instagram", "Instagram", cinst, iconIg) +
+          channelTile("facebook", "Facebook", cfb, iconFb) +
+          "</div>" +
+          '<h3 class="lead-stats-section-h">Contact detail captured</h3>' +
+          '<div class="lead-stats-contact-grid">' +
+          '<div class="lead-stat-mini"><div class="lead-stat-mini-label">Mobile only</div><div class="lead-stat-mini-value">' +
+          escapeHtml(String(om)) +
+          "</div></div>" +
+          '<div class="lead-stat-mini"><div class="lead-stat-mini-label">Email only</div><div class="lead-stat-mini-value">' +
+          escapeHtml(String(oe)) +
+          "</div></div>" +
+          '<div class="lead-stat-mini"><div class="lead-stat-mini-label">Mobile &amp; email</div><div class="lead-stat-mini-value">' +
+          escapeHtml(String(be)) +
+          "</div></div></div>";
       }
 
       async function loadLeadStats() {
