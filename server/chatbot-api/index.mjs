@@ -3320,10 +3320,11 @@ function normalizeTranscriptItemRole_(rec) {
 
 /**
  * @param {Record<string, unknown>} o
+ * @param {number} [depth]
  * @returns {string}
  */
-function transcriptTurnTextFromItem_(o) {
-    if (!o || typeof o !== "object") {
+function transcriptTurnTextFromItem_(o, depth = 0) {
+    if (!o || typeof o !== "object" || depth > 8) {
         return "";
     }
     const rec = /** @type {Record<string, unknown>} */ (o);
@@ -3388,6 +3389,35 @@ function transcriptTurnTextFromItem_(o) {
         const v = rec[k];
         if (typeof v === "string" && v.trim()) {
             return v.trim();
+        }
+    }
+    /** Dialogflow CX / Messenger: full message objects sometimes only carry `fulfillment_response.messages`. */
+    const fr = rec.fulfillment_response || rec.fulfillmentResponse;
+    if (fr && typeof fr === "object") {
+        const msgs = /** @type {{ messages?: unknown[] }} */ (fr).messages;
+        if (Array.isArray(msgs) && msgs.length) {
+            /** @type {string[]} */
+            const bits = [];
+            for (let mi = 0; mi < msgs.length; mi += 1) {
+                const m = msgs[mi];
+                const sub =
+                    m && typeof m === "object"
+                        ? transcriptTurnTextFromItem_(/** @type {Record<string, unknown>} */ (m), depth + 1)
+                        : "";
+                if (sub) {
+                    bits.push(sub);
+                }
+            }
+            if (bits.length) {
+                return bits.join("\n\n");
+            }
+        }
+    }
+    const pay = rec.payload;
+    if (pay && typeof pay === "object") {
+        const nested = transcriptTurnTextFromItem_(/** @type {Record<string, unknown>} */ (pay), depth + 1);
+        if (nested) {
+            return nested;
         }
     }
     return "";
@@ -3674,7 +3704,23 @@ function mergeConversationTranscriptTurnSources_(a, b) {
 
     for (let k = 0; k < withAt.length; k += 1) {
         const turn = withAt[k].turn;
-        const sig = transcriptTurnMergeDedupeKey_(turn, noAtDupCount);
+        const mergeOrd = withAt[k].ord;
+        const atMs = typeof turn.at === "number" && Number.isFinite(turn.at) ? turn.at : undefined;
+        const rawSeq = turn.seq;
+        const seqParsed =
+            typeof rawSeq === "number" && Number.isFinite(rawSeq)
+                ? rawSeq
+                : typeof rawSeq === "string" && Number.isFinite(Number(String(rawSeq).trim()))
+                  ? Number(String(rawSeq).trim())
+                  : NaN;
+        const seq = Number.isFinite(seqParsed) ? seqParsed : undefined;
+        /** Without `seq`, `role|text|at` falsely dedupes multiple bot bubbles in the same millisecond from the Sheet. */
+        const sig =
+            typeof atMs === "number" && Number.isFinite(atMs)
+                ? typeof seq === "number"
+                    ? `${turn.role}|${String(turn.text).trim()}|${atMs}|seq${seq}`
+                    : `${turn.role}|${String(turn.text).trim()}|${atMs}|o${mergeOrd}`
+                : transcriptTurnMergeDedupeKey_(turn, noAtDupCount);
         if (!sig || seen.has(sig)) {
             continue;
         }
