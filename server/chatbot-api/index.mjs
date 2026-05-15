@@ -3573,6 +3573,10 @@ function assistantLeadSnapshotTurns_(meta, sheet, rec) {
 }
 
 /**
+ * Staff transcript from widget/Firestore `client_context`: merge stored `chat_transcript` with `user_queries`.
+ * After submit, the merge pipeline can persist only an assistant «Form submission…» row while `user_queries`
+ * still holds the visitor turns; reading transcript alone then hides the chat.
+ *
  * @param {Record<string, unknown>} cx
  * @returns {{ role: string, text: string, at?: number }[]}
  */
@@ -3580,17 +3584,62 @@ function transcriptTurnsFromClientContext_(cx) {
     if (!cx || typeof cx !== "object") {
         return [];
     }
-    const ct = cx.chat_transcript;
-    if (Array.isArray(ct) && ct.length) {
-        return transcriptTurnsFromStoredChatArray_(ct);
+    const rawChat = Array.isArray(cx.chat_transcript) ? /** @type {unknown[]} */ (cx.chat_transcript) : [];
+    const base = rawChat.length ? transcriptTurnsFromStoredChatArray_(rawChat) : [];
+
+    const uqSrc = cx.user_queries;
+    const uqList =
+        Array.isArray(uqSrc)
+            ? uqSrc
+                  .filter((x) => typeof x === "string" && x.trim())
+                  .map((x) => String(x).trim())
+            : [];
+
+    if (!base.length) {
+        if (!uqList.length) {
+            return [];
+        }
+        return uqList.map((text) => ({ role: "user", text }));
     }
-    const uq = cx.user_queries;
-    if (Array.isArray(uq) && uq.length) {
-        return uq
-            .filter((x) => typeof x === "string" && x.trim())
-            .map((x) => ({ role: "user", text: String(x).trim() }));
+
+    const userTextsInChat = new Set(
+        base.filter((t) => t.role === "user").map((t) => String(t.text || "").trim())
+    );
+    /** @type {{ role: string, text: string, at?: number }[]} */
+    const missingUsers = [];
+    for (let i = 0; i < uqList.length; i++) {
+        const text = uqList[i];
+        if (!userTextsInChat.has(text)) {
+            missingUsers.push({ role: "user", text });
+            userTextsInChat.add(text);
+        }
     }
-    return [];
+    if (!missingUsers.length) {
+        return base;
+    }
+
+    const hadUserTurn = base.some((t) => t.role === "user");
+    if (!hadUserTurn) {
+        return [...missingUsers, ...base];
+    }
+
+    /** Server-side form merge uses «Form submission…» assistant text (see mergeLeadFormAssistantIntoClientContextIfMissing_). */
+    let formAssistantIdx = -1;
+    for (let j = base.length - 1; j >= 0; j--) {
+        if (base[j].role !== "assistant") {
+            continue;
+        }
+        const tx = String(base[j].text || "").trim();
+        if (/^form submission/im.test(tx)) {
+            formAssistantIdx = j;
+            break;
+        }
+    }
+    if (formAssistantIdx >= 0) {
+        return [...base.slice(0, formAssistantIdx), ...missingUsers, ...base.slice(formAssistantIdx)];
+    }
+
+    return [...base, ...missingUsers];
 }
 
 /** Max transcript items kept in sync with widget (`company.js` MAX_CHAT_TRANSCRIPT_TURNS). */
