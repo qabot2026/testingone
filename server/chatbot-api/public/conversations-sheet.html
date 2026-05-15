@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="color-scheme" content="light" />
-  <title>Conversation leads · Sheet sync</title>
+  <title>Conversation leads</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link
@@ -1078,8 +1078,8 @@
       <div class="brand-block">
         <h1>Conversation leads</h1>
         <span class="sub"
-          >Google Sheet mirrored here &mdash; search any column, pick a date range, or use quick presets. Table columns stay
-          in your sheet&apos;s order.</span
+          >Browse conversations from every channel in one place. Search any column, filter by date, page through results &mdash;
+          columns stay in the original capture order.</span
         >
       </div>
       <span class="pill" id="rowPill">&nbsp;</span>
@@ -1101,14 +1101,14 @@
           <button type="button" id="toggleSecret">Show</button>
           <button type="button" id="saveSecret">Save in tab</button>
           <button type="button" class="primary" id="refreshBtn">Reload</button>
-          <button type="button" id="syncSheet2Btn" title="Writes KPIs to the live Google Sheet (Sheet2 by default). Uses current date filters.">
-            Sync Sheet2
+          <button type="button" id="syncSheet2Btn" title="Push KPI tiles to your dashboard workspace using current filters.">
+            Sync dashboard
           </button>
           <button
             type="button"
             class="preset"
             id="downloadReportBtn"
-            title="Downloads a CSV of lead rows within the spreadsheet scan range. Setting From / To restricts rows by the conversation date column (same rules as KPI stats)."
+            title="Download CSV for leads in the current view; From / To narrows by conversation date."
           >
             Download Report
           </button>
@@ -1184,7 +1184,7 @@
           <div class="empty">Paste your secret and tap Reload (saved secrets load automatically).</div>
         </div>
       </div>
-      <footer class="sheet-pager-bar" id="pagerWrap" hidden aria-label="Sheet paging">
+      <footer class="sheet-pager-bar" id="pagerWrap" hidden aria-label="Pagination">
         <div class="pager-compact">
           <div class="pager-compact-controls">
             <button type="button" class="pager-btn pager-btn--jump" id="pagerFirst" title="First page" aria-label="Go to page 1">
@@ -2235,10 +2235,10 @@
           var hasDr = !!(dateFromEl.value || dateToEl.value);
           var why = [];
           if (hasText) why.push("Contains filter");
-          if (hasDr) why.push("date range (rows need a parseable date column)");
+          if (hasDr) why.push("date filters");
           emp.textContent = rawRows.length
             ? "No rows match " + (why.length ? why.join(" and ") : "filters") + "."
-            : "No rows returned from API.";
+            : "Nothing loaded yet — tap Reload.";
           convList.appendChild(emp);
           return;
         }
@@ -2372,8 +2372,10 @@
         pagerNext.disabled = !json.hasOlder;
         pagerLast.disabled = !json.hasOlder;
         var rowWord =
-          json.dateFilter && json.dateFilter.serverApplied ? "rows in date range" : "rows in tab";
-        pagerHint.textContent = "~" + total + " " + rowWord + " · " + lim + " rows/page";
+          json.dateFilter && json.dateFilter.serverApplied
+            ? "conversations (date filter)"
+            : "conversations in this list";
+        pagerHint.textContent = total + " " + rowWord + " · " + lim + " per page";
       }
 
       if (pagerFirst) {
@@ -2504,21 +2506,24 @@
             return;
           }
           lastSuccessfulSheetJson = json;
-          setStatus(
-            "Spreadsheet “" +
-              (json.title || "?") +
-              "” · tab " +
-              (json.tab || "?") +
-              " · ~" +
-              (json.rowCount || "?") +
-              " rows tall · loaded " +
-              (json.conversations || []).length +
-              " row(s) on this page" +
-              (typeof json.offset === "number" && json.offset > 0
-                ? " (offset " + json.offset + ")"
-                : "") +
-              "."
+          var loaded = (json.conversations || []).length;
+          var totalListed =
+            typeof json.totalDataRows === "number" && Number.isFinite(json.totalDataRows)
+              ? Math.max(0, Math.trunc(json.totalDataRows))
+              : 0;
+          var msgParts = [];
+          msgParts.push(
+            "Showing " +
+              loaded +
+              " conversation" +
+              (loaded === 1 ? "" : "s") +
+              " on this page"
           );
+          if (totalListed > 0) {
+            msgParts.push(totalListed + " in this list");
+            if (totalListed > loaded) msgParts.push("more available via paging");
+          }
+          setStatus(msgParts.join(" · ") + ".");
           sheetOffset = Number(json.offset) || 0;
           hadLoadedSheet = true;
           syncPagerUi(json);
@@ -2812,11 +2817,7 @@
                 return;
               }
               setStatus(
-                "Live spreadsheet tab “" +
-                  (o.j.tab || "Sheet2") +
-                  "” updated (" +
-                  (o.j.rowsWritten || "?") +
-                  " rows written)."
+                "Dashboard refreshed · " + (o.j.rowsWritten || "?") + " rows updated."
               );
             })
             .catch(function (e) {
