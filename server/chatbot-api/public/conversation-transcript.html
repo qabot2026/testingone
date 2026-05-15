@@ -668,11 +668,6 @@
                 " — refreshes when the visitor chats and sync/submit runs."
             );
           }
-          if (json.transcript_fallback === "lead_snapshot") {
-            parts.push(
-              "Fallback: assistant bubble shows saved lead/form fields only (exact bot replies were not stored). Add Sheet column SHEETS_CHAT_TRANSCRIPT_JSON_COLUMN or header “Chat transcript JSON”, redeploy, and run new chats so sync writes JSON."
-            );
-          }
           if (parts.length) {
             sourceTag.hidden = false;
             sourceTag.textContent = parts.join(" ");

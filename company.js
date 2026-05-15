@@ -15914,9 +15914,14 @@ function titleCaseSummaryLabel_(key) {
  */
 function buildContactFormSubmissionSummaryLines_(payload) {
     const cfg = readContactFormConfig();
+    /** Internal / redundant fields — omit from chat transcript summary (match server `buildContactLeadSummaryTextForTranscript_`). */
+    const skipKeys = new Set(["form_id", "submitted_at", "generalappointmentslotminutes"]);
     /** @type {string[]} */
     const lines = [];
     for (const key of cfg.chatSummaryFieldNames) {
+        if (skipKeys.has(String(key || "").trim().toLowerCase())) {
+            continue;
+        }
         const v = payload && key in payload ? String(payload[key] || "").trim() : "";
         const field = getContactFormFieldByPayloadName(key);
         const labelKey = field && field.i18nSummaryLabel;

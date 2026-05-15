@@ -3731,77 +3731,6 @@ function mergeConversationTranscriptTurnSources_(a, b) {
 }
 
 /**
- * Last-resort assistant bubble from saved lead / sheet row when bot replay was never stored.
- *
- * @param {Record<string, unknown>} meta
- * @param {{ columns?: Record<string, string> } | null} sheet
- * @param {Record<string, unknown> | null} rec
- */
-function assistantLeadSnapshotTurns_(meta, sheet, rec) {
-    /** @type {string[]} */
-    const lines = [];
-    const add = (label, val) => {
-        const s =
-            typeof val === "string"
-                ? val.trim()
-                : val != null && typeof val !== "object"
-                  ? String(val).trim()
-                  : "";
-        if (s) {
-            lines.push(`${label}: ${s}`);
-        }
-    };
-    if (meta && typeof meta === "object") {
-        add("Name", meta.name);
-        add("Email", meta.email);
-        add("Mobile", meta.mobile);
-        add("Submitted at", meta.submitted_at);
-        add("Form id", meta.form_id);
-    }
-    const fields =
-        rec && typeof rec === "object" && rec.fields && typeof rec.fields === "object"
-            ? /** @type {Record<string, unknown>} */ (rec.fields)
-            : {};
-    for (const [k, val] of Object.entries(fields)) {
-        const s = scalarFormValue(val);
-        if (s) {
-            lines.push(`${k}: ${s}`);
-        }
-    }
-    const skipHdr =
-        /^(user\s*queries|queries|session|conversation\s*date|conversation\s*time|channel)$/i;
-    if (!lines.length && sheet && sheet.columns && typeof sheet.columns === "object") {
-        for (const [k, val] of Object.entries(sheet.columns)) {
-            const lab = typeof k === "string" ? k.trim() : "";
-            if (!lab || skipHdr.test(lab)) {
-                continue;
-            }
-            const s = String(val || "").trim();
-            if (!s || (s.startsWith("[") && s.includes('"role"'))) {
-                continue;
-            }
-            lines.push(`${lab}: ${s}`);
-        }
-    }
-    if (!lines.length) {
-        return [];
-    }
-    const block = lines.join("\n");
-    const atMs = meta && typeof meta === "object" ? submittedAtEpochMs_(meta.submitted_at) : undefined;
-    /** @type {{ role: string, text: string, at?: number }} */
-    const row = {
-        role: "assistant",
-        text:
-            "Captured lead / form snapshot (exact bot wording was not stored). Expand row details above for full Sheet columns.\n\n"
-            + block
-    };
-    if (atMs !== undefined) {
-        row.at = atMs;
-    }
-    return [row];
-}
-
-/**
  * Staff transcript from widget/Firestore `client_context`: merge stored `chat_transcript` with `user_queries`.
  * After submit, the merge pipeline can persist only an assistant «Form submission…» row while `user_queries`
  * still holds the visitor turns; reading transcript alone then hides the chat.
@@ -3888,6 +3817,13 @@ function prettyTranscriptFieldLabel_(key) {
     return words.map((w) => (w ? w.charAt(0).toUpperCase() + w.slice(1) : w)).join(" ");
 }
 
+/** Lowercased `fields` keys skipped in «Form submission» assistant text (met redundant with chat). */
+const CONTACT_FORM_TRANSCRIPT_SKIP_FIELD_KEYS_LOWER_ = new Set([
+    "form_id",
+    "submitted_at",
+    "generalappointmentslotminutes"
+]);
+
 /**
  * One assistant bubble built from saved lead fields (not Dialogflow wording).
  *
@@ -3915,12 +3851,10 @@ function buildContactLeadSummaryTextForTranscript_(opt) {
     pushLine("Name", o.name);
     pushLine("Email", o.email);
     pushLine("Mobile", o.mobile);
-    pushLine("Form id", o.form_id);
-    pushLine("Submitted at", o.submitted_at);
     const used = new Set(["name", "email", "mobile"]);
     for (const [k, val] of Object.entries(fields)) {
         const keyLower = typeof k === "string" ? k.trim().toLowerCase() : "";
-        if (!keyLower || used.has(keyLower)) {
+        if (!keyLower || used.has(keyLower) || CONTACT_FORM_TRANSCRIPT_SKIP_FIELD_KEYS_LOWER_.has(keyLower)) {
             continue;
         }
         const sv = scalarFormValue(val);
@@ -4191,13 +4125,7 @@ app.get(PATHNAME_CONVERSATION_TRANSCRIPT_JSON, async (req, res) => {
             }
         }
 
-        const snap = assistantLeadSnapshotTurns_(meta, sheet, firestoreRec);
-        if (snap.length) {
-            sourceParts.push("lead_snapshot");
-            turns = mergeConversationTranscriptTurnSources_(turns, snap);
-        }
-
-        transcript_fallback = sourceParts.includes("lead_snapshot") ? "lead_snapshot" : "";
+        transcript_fallback = "";
         const source = sourceParts.length ? sourceParts.join("+") : "none";
 
         return res.json({

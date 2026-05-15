@@ -1,0 +1,17 @@
+---
+description: Always commit and push after completing code changes in this repo
+alwaysApply: true
+---
+
+# Commit and push
+
+When you finish substantive edits the user asked for (features, fixes, refactors in this repository):
+
+1. **Commit** the relevant files with a clear, accurate message (explain *why* when it helps).
+2. **Push** to the tracked remote branch (usually `origin/main`).
+
+**Do not commit:** secrets (`.env`, private keys, `credentials.json`), `__pycache__/`, or other obvious local-only junk unless the user explicitly asked to track it.
+
+**Safety:** Do not run destructive git commands or `git config` changes. Do not force-push to `main` unless the user asks.
+
+If there is nothing meaningful to commit after a read-only task, skip the commit.
