@@ -525,6 +525,9 @@
       background: linear-gradient(145deg, #ffffff 0%, #f8fafc 42%, #f0fdfa 100%);
       box-shadow: var(--shadow-md), 0 0 0 1px rgba(255, 255, 255, 0.6) inset;
     }
+    .lead-stats.lead-stats-wrap--visual {
+      padding: 10px 14px 12px;
+    }
     .lead-stats-list {
       margin: 0;
       padding: 0;
@@ -854,17 +857,24 @@
       color: var(--muted);
       line-height: 1.45;
     }
+    .lead-stats-numeric-block[hidden] {
+      display: none !important;
+    }
     .lead-stats-visual-block {
-      margin-top: 4px;
+      margin-top: 2px;
     }
     .lead-stats-visual-block[hidden] {
       display: none !important;
     }
+    .lead-stats-visual-block > .lead-stats-section-h {
+      margin: 0 0 4px;
+    }
     .lead-stats-chart-grid {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 10px;
-      margin-top: 8px;
+      gap: 6px;
+      margin-top: 2px;
+      max-width: 520px;
     }
     @media (max-width: 900px) {
       .lead-stats-chart-grid {
@@ -875,25 +885,27 @@
       border-radius: var(--radius-sm);
       border: 1px solid var(--border);
       background: rgba(255, 255, 255, 0.92);
-      padding: 10px 10px 8px;
+      padding: 5px 6px 4px;
       box-shadow: var(--shadow-sm);
-      min-height: 198px;
+      min-height: 0;
       display: flex;
       flex-direction: column;
     }
     .lead-chart-card h4 {
-      margin: 0 0 6px;
-      font-size: 0.65rem;
+      margin: 0 0 3px;
+      font-size: 0.6rem;
       font-weight: 700;
       text-transform: uppercase;
-      letter-spacing: 0.07em;
+      letter-spacing: 0.06em;
       color: var(--muted);
+      line-height: 1.2;
     }
     .lead-chart-card .chart-canvas-wrap {
-      flex: 1;
+      flex: none;
       position: relative;
-      min-height: 132px;
-      max-height: 200px;
+      height: 112px;
+      min-height: 112px;
+      max-height: 112px;
     }
   </style>
   <script
@@ -1065,23 +1077,24 @@
         try {
           localStorage.setItem(LEAD_STATS_VIEW_KEY, mode);
         } catch (ignore) {}
+        var wrap = document.getElementById("leadStatsWrap");
+        if (wrap) wrap.classList.toggle("lead-stats-wrap--visual", mode === "visual");
+        var numBlock = document.getElementById("leadStatsNumericBlock");
         var block = document.getElementById("leadStatsVisualBlock");
         var btns = document.querySelectorAll("#leadStatsList .lead-view-btn");
         btns.forEach(function (b) {
           b.classList.toggle("is-active", b.getAttribute("data-mode") === mode);
         });
-        if (!block) {
-          destroyLeadCharts();
-          return;
-        }
         if (mode === "numeric") {
-          block.hidden = true;
+          if (numBlock) numBlock.hidden = false;
+          if (block) block.hidden = true;
           destroyLeadCharts();
           return;
         }
-        block.hidden = false;
+        if (numBlock) numBlock.hidden = true;
+        if (block) block.hidden = false;
         var p = payload || lastLeadStatsPayload;
-        if (p) {
+        if (p && block) {
           try {
             mountLeadStatsCharts(p);
           } catch (chartErr) {
@@ -1119,9 +1132,9 @@
           datalabels: {
             anchor: "end",
             align: "top",
-            offset: -2,
+            offset: 0,
             color: "#0f172a",
-            font: { weight: "700", size: 10 },
+            font: { weight: "700", size: 9 },
             formatter: function (v) {
               var n = typeof v === "number" ? v : Number(v);
               if (!Number.isFinite(n) || n === 0) return "";
@@ -1133,7 +1146,7 @@
           datalabels: {
             anchor: "center",
             align: "center",
-            font: { weight: "700", size: 10 },
+            font: { weight: "700", size: 9 },
             formatter: function (v) {
               var n = typeof v === "number" ? v : Number(v);
               if (!Number.isFinite(n) || n === 0) return "";
@@ -1151,6 +1164,17 @@
             textStrokeWidth: 2
           }
         };
+        var chartLayoutTight = { padding: { top: 4, right: 2, bottom: 0, left: 0 } };
+        var barAxes = {
+          x: { grid: { display: false }, ticks: { font: { size: 8 }, maxRotation: 55 } },
+          y: {
+            beginAtZero: true,
+            ticks: { precision: 0, font: { size: 8 } },
+            grid: { color: "rgba(148,163,184,0.15)" },
+            border: { display: false }
+          }
+        };
+        var doughnutLegend = { position: "bottom", labels: { boxWidth: 6, padding: 4, font: { size: 8 } } };
         var tot = payload.totals || {};
         function statNum(o, key, fb) {
           var v = o[key];
@@ -1200,17 +1224,17 @@
                 {
                   label: "Conversations",
                   data: chData,
-                  backgroundColor: chColors
+                  backgroundColor: chColors,
+                  maxBarThickness: 22
                 }
               ]
             },
             options: {
+              layout: chartLayoutTight,
               responsive: true,
               maintainAspectRatio: false,
               plugins: Object.assign({ legend: { display: false } }, barDl),
-              scales: {
-                y: { beginAtZero: true, ticks: { precision: 0 } }
-              }
+              scales: barAxes
             }
           })
         );
@@ -1223,12 +1247,10 @@
               datasets: [{ data: chData, backgroundColor: chColors }]
             },
             options: {
+              layout: chartLayoutTight,
               responsive: true,
               maintainAspectRatio: false,
-              plugins: Object.assign(
-                { legend: { position: "bottom", labels: { boxWidth: 10, font: { size: 10 } } } },
-                doughnutDl
-              )
+              plugins: Object.assign({ legend: doughnutLegend }, doughnutDl)
             }
           })
         );
@@ -1246,12 +1268,10 @@
               ]
             },
             options: {
+              layout: chartLayoutTight,
               responsive: true,
               maintainAspectRatio: false,
-              plugins: Object.assign(
-                { legend: { position: "bottom", labels: { boxWidth: 10, font: { size: 10 } } } },
-                doughnutDl
-              )
+              plugins: Object.assign({ legend: doughnutLegend }, doughnutDl)
             }
           })
         );
@@ -1265,17 +1285,17 @@
                 {
                   label: "Count",
                   data: [n, leads, apt],
-                  backgroundColor: [pal.slate, pal.teal, pal.sky]
+                  backgroundColor: [pal.slate, pal.teal, pal.sky],
+                  maxBarThickness: 22
                 }
               ]
             },
             options: {
+              layout: chartLayoutTight,
               responsive: true,
               maintainAspectRatio: false,
               plugins: Object.assign({ legend: { display: false } }, barDl),
-              scales: {
-                y: { beginAtZero: true, ticks: { precision: 0 } }
-              }
+              scales: barAxes
             }
           })
         );
@@ -1293,12 +1313,10 @@
               ]
             },
             options: {
+              layout: chartLayoutTight,
               responsive: true,
               maintainAspectRatio: false,
-              plugins: Object.assign(
-                { legend: { position: "bottom", labels: { boxWidth: 10, font: { size: 10 } } } },
-                doughnutDl
-              )
+              plugins: Object.assign({ legend: doughnutLegend }, doughnutDl)
             }
           })
         );
@@ -1312,17 +1330,17 @@
                 {
                   label: "Conversations",
                   data: [om, oe, be, ni],
-                  backgroundColor: [pal.teal, pal.sky, pal.indigo, "#fdba74"]
+                  backgroundColor: [pal.teal, pal.sky, pal.indigo, "#fdba74"],
+                  maxBarThickness: 22
                 }
               ]
             },
             options: {
+              layout: chartLayoutTight,
               responsive: true,
               maintainAspectRatio: false,
               plugins: Object.assign({ legend: { display: false } }, barDl),
-              scales: {
-                y: { beginAtZero: true, ticks: { precision: 0 } }
-              }
+              scales: barAxes
             }
           })
         );
@@ -2474,6 +2492,7 @@
           '<button type="button" class="lead-view-btn" data-mode="numeric">Numeric</button>' +
           '<button type="button" class="lead-view-btn" data-mode="visual">Visual</button>' +
           "</div></div>" +
+          '<div id="leadStatsNumericBlock" class="lead-stats-numeric-block">' +
           '<div class="lead-stats-hero">' +
           '<div>' +
           '<span class="lead-stats-hero-label">Total conversations</span>' +
@@ -2503,7 +2522,7 @@
           contactMini("Mobile only", om, tot.onlyMobileByChannel) +
           contactMini("Email only", oe, tot.onlyEmailByChannel) +
           contactMini("Mobile &amp; email", be, tot.mobileAndEmailByChannel) +
-          "</div>" +
+          "</div></div>" +
           '<div id="leadStatsVisualBlock" class="lead-stats-visual-block" hidden>' +
           '<h3 class="lead-stats-section-h">Visual analytics</h3>' +
           '<div class="lead-stats-chart-grid">' +
