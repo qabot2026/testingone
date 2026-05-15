@@ -71,6 +71,11 @@ function loadSheetExtraMappingsFromDisk_() {
 const SPREADSHEET_ID = (process.env.SHEETS_SPREADSHEET_ID || "").trim();
 // Default schema: no Form ID (A–R). Col A Date, B Time (12h TZ from SHEETS_CONV_DATETIME_TZ), then name…
 const RANGE = (process.env.SHEETS_RANGE || "Sheet1!A:R").trim();
+/**
+ * Optional A1 column letter (e.g. S). When set, new/updated rows get =HYPERLINK(...) to open that row in this spreadsheet.
+ * Leave unset to skip (default). Add a matching header on row 1 in your sheet if you want a label.
+ */
+const SHEETS_ROW_OPEN_LINK_COLUMN = (process.env.SHEETS_ROW_OPEN_LINK_COLUMN || "").trim().toUpperCase();
 /** Secondary tab for lead KPIs (created if missing). Must differ from `SHEETS_RANGE` data tab. */
 const DASHBOARD_SHEET_TAB = (process.env.SHEETS_DASHBOARD_TAB || "Sheet2").trim() || "Sheet2";
 /** After each new lead row append, refresh the dashboard tab (best-effort; does not fail the request). */
@@ -1782,6 +1787,39 @@ function rowNumberFromUpdatedRange_(updatedRange) {
 }
 
 /**
+ * Writes a clickable cell that opens this spreadsheet scrolled to `rowNumber` (same tab).
+ *
+ * @param {import("googleapis").sheets_v4.Sheets} sheets
+ * @param {string} tabTitle Worksheet title (not RANGE prefix).
+ * @param {number} rowNumber 1-based sheet row
+ */
+async function maybeWriteSheetRowOpenLink_(sheets, tabTitle, rowNumber) {
+    const col = SHEETS_ROW_OPEN_LINK_COLUMN;
+    if (!col || !/^[A-Z]{1,3}$/.test(col) || rowNumber < 2) {
+        return;
+    }
+    if (!SPREADSHEET_ID) {
+        return;
+    }
+    try {
+        const gid = await getSheetIdForTitle_(sheets, tabTitle);
+        const url = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/edit?gid=${gid}#range=A${rowNumber}`;
+        const formula = `=HYPERLINK("${url.replace(/"/g, '""')}","Open row")`;
+        await sheets.spreadsheets.values.update({
+            spreadsheetId: SPREADSHEET_ID,
+            range: `${sheetA1TabPrefix_(tabTitle)}!${col}${rowNumber}`,
+            valueInputOption: "USER_ENTERED",
+            requestBody: { values: [[formula]] }
+        });
+    } catch (e) {
+        const m = e && /** @type {{ message?: string }} */ (e).message
+            ? String(/** @type {{ message?: string }} */ (e).message)
+            : String(e);
+        console.warn("[chatbot-api] SHEETS_ROW_OPEN_LINK_COLUMN write failed:", m);
+    }
+}
+
+/**
  * @param {import("googleapis").sheets_v4.Sheets} sheets
  * @param {string} tab
  * @param {number} rowNumber
@@ -2052,6 +2090,9 @@ export async function appendContactRowToSheet(row, opts) {
                 console.warn("[chatbot-api] Dashboard tab sync failed:", msg);
             });
         }
+        if (patched) {
+            await maybeWriteSheetRowOpenLink_(sheets, tabResolved, scan.matchedRowNumber);
+        }
         return {
             action: patched ? "duplicate_updated" : "duplicate_noop",
             patched,
@@ -2129,10 +2170,10 @@ export async function appendContactRowToSheet(row, opts) {
         );
     }
 
+    const appendedRowNum = rowNumberFromUpdatedRange_(googleAppend.updatedRange);
     try {
-        const rowNumber = rowNumberFromUpdatedRange_(googleAppend.updatedRange);
-        if (rowNumber) {
-            await writeLeadRowByHeader_(sheets, tabResolved, rowNumber, {
+        if (appendedRowNum) {
+            await writeLeadRowByHeader_(sheets, tabResolved, appendedRowNum, {
                 convDate: convParts.convDate,
                 convTime: convParts.convTime,
                 name: row.name,
@@ -2158,6 +2199,7 @@ export async function appendContactRowToSheet(row, opts) {
         const msg = e && e.message ? e.message : String(e);
         console.error("[chatbot-api] Sheets header-mapped patch failed; row still appended.", msg);
     }
+    await maybeWriteSheetRowOpenLink_(sheets, tabResolved, appendedRowNum);
     if (SYNC_DASHBOARD_ON_APPEND) {
         void writeLeadCaptureDashboardToSheet2({}).catch((err) => {
             const msg = err && /** @type {{ message?: string }} */ (err).message
@@ -2171,6 +2213,7 @@ export async function appendContactRowToSheet(row, opts) {
         patched: true,
         tab: tabResolved,
         appendRangeUsed,
+        sheetRowNumber: appendedRowNum || undefined,
         googleAppend: Object.keys(googleAppend).length ? googleAppend : undefined
     };
 }
@@ -2289,6 +2332,7 @@ export async function upsertSessionQueriesInSheet(row) {
             },
             {}
         );
+        await maybeWriteSheetRowOpenLink_(sheets, tab, rowNumber);
         return {
             mode: "merge_into_existing_row",
             tab,
