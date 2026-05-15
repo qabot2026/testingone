@@ -2799,9 +2799,9 @@ async function resetDashboardSheetDecor_(sheets, sheetId) {
             range: {
                 sheetId,
                 startRowIndex: 0,
-                endRowIndex: 100,
+                endRowIndex: 200,
                 startColumnIndex: 0,
-                endColumnIndex: 16
+                endColumnIndex: 24
             }
         }
     });
@@ -2815,10 +2815,24 @@ async function resetDashboardSheetDecor_(sheets, sheetId) {
  * @returns {{
  *   values: (string|number)[][],
  *   layout: {
+ *     colCount: number,
+ *     rowBannerTitle: number,
+ *     rowBannerSub: number,
+ *     rowKpiLabels: number,
+ *     rowKpiValues: number,
+ *     rowChannelSection: number,
  *     channelTableHeaderRow: number,
  *     channelTableEndRow: number,
+ *     rowBetweenChannelContact: number,
+ *     rowContactSection: number,
+ *     contactHeaderRow: number,
  *     pieRowsStart: number,
- *     pieRowsEnd: number
+ *     pieRowsEnd: number,
+ *     rowContactNeither: number,
+ *     rowFunnelSection: number,
+ *     funnelHeaderRow: number,
+ *     funnelDataStart: number,
+ *     funnelDataEnd: number
  *   }
  * }}
  */
@@ -2834,70 +2848,144 @@ function buildLeadDashboardSheetPayload_(payload) {
               : "";
     const pctDisp = pct === "" ? "—" : pct;
     const appt = tot.appointmentBooked ?? tot.appointmentScheduled ?? 0;
-    const pad8 = (/** @type {(string|number)[]} */ row) => {
-        while (row.length < 8) {
-            row.push("");
+    const COLS = 10;
+    const pad = (/** @type {(string|number)[]} */ row) => {
+        const r = row.slice();
+        while (r.length < COLS) {
+            r.push("");
         }
-        return row;
+        return r;
     };
 
     /** @type {(string|number)[][]} */
     const lines = [];
-    lines.push(
-        pad8([
-            "LEAD INTELLIGENCE · Executive dashboard",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            ""
-        ])
-    );
-    lines.push(
-        pad8([
-            `Live sync · ${new Date().toISOString()} · Same metrics as staff web viewer`,
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            ""
-        ])
-    );
-    lines.push(pad8([]));
-    lines.push(
-        pad8([
-            "TOTAL CONVERSATIONS",
-            "",
-            "LEAD CAPTURE %",
-            "",
-            "APPOINTMENTS BOOKED",
-            "",
-            "",
-            ""
-        ])
-    );
-    lines.push(pad8([conv, "", pctDisp, "", appt, "", "", ""]));
-    lines.push(pad8([]));
-    lines.push(pad8(["CHANNEL DISTRIBUTION · Volume by source", "", "", "", "", "", "", ""]));
-    lines.push(pad8(["Channel", "Conversations", "", "", "", "", "", ""]));
-    lines.push(pad8(["Web", tot.channelWeb || 0, "", "", "", "", "", ""]));
-    lines.push(pad8(["WhatsApp", tot.channelWhatsapp || 0, "", "", "", "", "", ""]));
-    lines.push(pad8(["Instagram", tot.channelInstagram || 0, "", "", "", "", "", ""]));
-    lines.push(pad8(["Facebook", tot.channelFacebook || 0, "", "", "", "", "", ""]));
-    lines.push(pad8(["Other / uncategorized", tot.channelOther || 0, "", "", "", "", "", ""]));
-    lines.push(pad8([]));
-    lines.push(pad8(["CONTACT CAPTURE · Detail mix × channel", "", "", "", "", "", "", ""]));
-    lines.push(
-        pad8(["Segment", "Total", "Web", "WhatsApp", "Instagram", "Facebook", "Other", ""])
-    );
+    /** @type {Record<string, number>} */
+    const L = {};
+
+    const push = (/** @type {(string|number)[]} */ cells) => {
+        lines.push(pad(cells));
+        return lines.length - 1;
+    };
+
+    L.rowBannerTitle = push([
+        "Lead intelligence · executive dashboard",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+    ]);
+    L.rowBannerSub = push([
+        `Live sync · ${new Date().toISOString()} · Source: same metrics as staff viewer`,
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+    ]);
+    push([]);
+    L.rowKpiLabels = push([
+        "Total conversations",
+        "",
+        "Lead capture rate",
+        "",
+        "Appointments booked",
+        "",
+        "",
+        "",
+        "Conversion funnel",
+        ""
+    ]);
+    L.rowKpiValues = push([
+        conv,
+        "",
+        pctDisp,
+        "",
+        appt,
+        "",
+        "",
+        "",
+        "",
+        ""
+    ]);
+    push([]);
+    L.rowChannelSection = push([
+        "Channel distribution · volume by source",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+    ]);
+    L.channelTableHeaderRow = push([
+        "Channel",
+        "Conversations",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+    ]);
+    push(["Web", tot.channelWeb || 0, "", "", "", "", "", "", "", ""]);
+    push(["WhatsApp", tot.channelWhatsapp || 0, "", "", "", "", "", "", "", ""]);
+    push(["Instagram", tot.channelInstagram || 0, "", "", "", "", "", "", "", ""]);
+    push(["Facebook", tot.channelFacebook || 0, "", "", "", "", "", "", "", ""]);
+    L.channelTableEndRow = push([
+        "Other / uncategorized",
+        tot.channelOther || 0,
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+    ]);
+    L.rowBetweenChannelContact = push([]);
+    L.rowContactSection = push([
+        "Contact capture · segment × channel (stacked analysis uses rows below)",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+    ]);
+    L.contactHeaderRow = push([
+        "Segment",
+        "Total",
+        "Web",
+        "WhatsApp",
+        "Instagram",
+        "Facebook",
+        "Other",
+        "",
+        "",
+        ""
+    ]);
     const omCh = tot.onlyMobileByChannel || {};
     const oeCh = tot.onlyEmailByChannel || {};
     const bothCh = tot.mobileAndEmailByChannel || {};
-    lines.push([
+    L.pieRowsStart = push([
         "Mobile only",
         tot.onlyMobile || 0,
         omCh.web || 0,
@@ -2905,9 +2993,11 @@ function buildLeadDashboardSheetPayload_(payload) {
         omCh.instagram || 0,
         omCh.facebook || 0,
         omCh.other || 0,
+        "",
+        "",
         ""
     ]);
-    lines.push([
+    push([
         "Email only",
         tot.onlyEmail || 0,
         oeCh.web || 0,
@@ -2915,9 +3005,11 @@ function buildLeadDashboardSheetPayload_(payload) {
         oeCh.instagram || 0,
         oeCh.facebook || 0,
         oeCh.other || 0,
+        "",
+        "",
         ""
     ]);
-    lines.push([
+    L.pieRowsEnd = push([
         "Mobile & email",
         tot.mobileAndEmail || 0,
         bothCh.web || 0,
@@ -2925,43 +3017,119 @@ function buildLeadDashboardSheetPayload_(payload) {
         bothCh.instagram || 0,
         bothCh.facebook || 0,
         bothCh.other || 0,
+        "",
+        "",
         ""
     ]);
-    lines.push(
-        pad8([
-            "Neither mobile nor email (still counted)",
-            tot.neither || 0,
+    L.rowContactNeither = push([
+        "Neither mobile nor email (conversation still counted)",
+        tot.neither || 0,
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+    ]);
+    if (payload.dateFilter && payload.dateFilter.applied) {
+        push([]);
+        push([
+            "Date filter (inclusive)",
+            `${payload.dateFilter.from || "—"} … ${payload.dateFilter.to || "—"}`,
+            "",
+            "",
             "",
             "",
             "",
             "",
             "",
             ""
-        ])
-    );
-    if (payload.dateFilter && payload.dateFilter.applied) {
-        lines.push(pad8([]));
-        lines.push(
-            pad8([
-                "DATE FILTER (inclusive)",
-                `${payload.dateFilter.from || "—"} … ${payload.dateFilter.to || "—"}`,
-                "",
-                "",
-                "",
-                "",
-                "",
-                ""
-            ])
-        );
+        ]);
     }
+    L.rowFunnelSection = push([
+        "— Chart source: pipeline (rows hidden after sync) —",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+    ]);
+    L.funnelHeaderRow = push([
+        "Stage",
+        "Count",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+    ]);
+    L.funnelDataStart = push([
+        "All conversations",
+        conv,
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+    ]);
+    push([
+        "With contact detail captured",
+        leads,
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+    ]);
+    L.funnelDataEnd = push([
+        "Appointments booked",
+        appt,
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+    ]);
 
     return {
         values: lines,
         layout: {
-            channelTableHeaderRow: 7,
-            channelTableEndRow: 12,
-            pieRowsStart: 16,
-            pieRowsEnd: 18
+            colCount: COLS,
+            rowBannerTitle: L.rowBannerTitle,
+            rowBannerSub: L.rowBannerSub,
+            rowKpiLabels: L.rowKpiLabels,
+            rowKpiValues: L.rowKpiValues,
+            rowChannelSection: L.rowChannelSection,
+            channelTableHeaderRow: L.channelTableHeaderRow,
+            channelTableEndRow: L.channelTableEndRow,
+            rowBetweenChannelContact: L.rowBetweenChannelContact,
+            rowContactSection: L.rowContactSection,
+            contactHeaderRow: L.contactHeaderRow,
+            pieRowsStart: L.pieRowsStart,
+            pieRowsEnd: L.pieRowsEnd,
+            rowContactNeither: L.rowContactNeither,
+            rowFunnelSection: L.rowFunnelSection,
+            funnelHeaderRow: L.funnelHeaderRow,
+            funnelDataStart: L.funnelDataStart,
+            funnelDataEnd: L.funnelDataEnd
         }
     };
 }
@@ -2973,65 +3141,62 @@ function buildLeadDashboardSheetPayload_(payload) {
  * @param {number} rowCount
  */
 async function applyLeadDashboardChartsAndFormatting_(sheets, sheetId, layout, rowCount) {
-    const navy = sheetRgb_("#0f172a");
+    const navy = sheetRgb_("#0c1222");
     const slate = sheetRgb_("#1e293b");
     const teal = sheetRgb_("#0d9488");
+    const accent = sheetRgb_("#38bdf8");
     const white = { red: 1, green: 1, blue: 1 };
     const muted = sheetRgb_("#64748b");
-    const rowTeal = sheetRgb_("#ecfdfd");
+    const rowTeal = sheetRgb_("#f0fdfa");
     const rowWhite = sheetRgb_("#ffffff");
+    const borderSoft = sheetRgb_("#e2e8f0");
+    const cols = layout.colCount;
+
+    const ch = layout.channelTableHeaderRow;
+    const chEnd = layout.channelTableEndRow;
+    const pieS = layout.pieRowsStart;
+    const pieE = layout.pieRowsEnd;
+    const cHead = layout.contactHeaderRow;
+    const funnelHideStart = layout.rowFunnelSection;
+    const funnelHideEnd = layout.funnelDataEnd + 1;
 
     /** @type {unknown[]} */
     const requests = [];
 
     requests.push({
-        mergeCells: {
-            range: {
+        updateSheetProperties: {
+            properties: {
                 sheetId,
-                startRowIndex: 0,
-                endRowIndex: 1,
-                startColumnIndex: 0,
-                endColumnIndex: 8
+                gridProperties: {
+                    frozenRowCount: 3,
+                    hideGridlines: true
+                }
             },
-            mergeType: "MERGE_ALL"
+            fields: "gridProperties(frozenRowCount,hideGridlines)"
         }
     });
-    requests.push({
-        mergeCells: {
-            range: {
-                sheetId,
-                startRowIndex: 1,
-                endRowIndex: 2,
-                startColumnIndex: 0,
-                endColumnIndex: 8
-            },
-            mergeType: "MERGE_ALL"
-        }
-    });
-    requests.push({
-        mergeCells: {
-            range: {
-                sheetId,
-                startRowIndex: 6,
-                endRowIndex: 7,
-                startColumnIndex: 0,
-                endColumnIndex: 8
-            },
-            mergeType: "MERGE_ALL"
-        }
-    });
-    requests.push({
-        mergeCells: {
-            range: {
-                sheetId,
-                startRowIndex: 14,
-                endRowIndex: 15,
-                startColumnIndex: 0,
-                endColumnIndex: 8
-            },
-            mergeType: "MERGE_ALL"
-        }
-    });
+
+    const mergeRange = (r0, r1, c0, c1) =>
+        requests.push({
+            mergeCells: {
+                range: { sheetId, startRowIndex: r0, endRowIndex: r1, startColumnIndex: c0, endColumnIndex: c1 },
+                mergeType: "MERGE_ALL"
+            }
+        });
+
+    mergeRange(layout.rowBannerTitle, layout.rowBannerTitle + 1, 0, cols);
+    mergeRange(layout.rowBannerSub, layout.rowBannerSub + 1, 0, cols);
+    mergeRange(layout.rowChannelSection, layout.rowChannelSection + 1, 0, cols);
+    mergeRange(layout.rowContactSection, layout.rowContactSection + 1, 0, cols);
+
+    mergeRange(layout.rowKpiLabels, layout.rowKpiLabels + 1, 0, 2);
+    mergeRange(layout.rowKpiLabels, layout.rowKpiLabels + 1, 2, 4);
+    mergeRange(layout.rowKpiLabels, layout.rowKpiLabels + 1, 4, 6);
+    mergeRange(layout.rowKpiLabels, layout.rowKpiLabels + 1, 8, cols);
+    mergeRange(layout.rowKpiValues, layout.rowKpiValues + 1, 0, 2);
+    mergeRange(layout.rowKpiValues, layout.rowKpiValues + 1, 2, 4);
+    mergeRange(layout.rowKpiValues, layout.rowKpiValues + 1, 4, 6);
+    mergeRange(layout.rowKpiValues, layout.rowKpiValues + 1, 8, cols);
 
     /**
      * @param {number} startRow
@@ -3046,7 +3211,7 @@ async function applyLeadDashboardChartsAndFormatting_(sheets, sheetId, layout, r
                     startRowIndex: startRow,
                     endRowIndex: endRow,
                     startColumnIndex: 0,
-                    endColumnIndex: 8
+                    endColumnIndex: cols
                 },
                 cell: { userEnteredFormat: format },
                 fields:
@@ -3055,93 +3220,89 @@ async function applyLeadDashboardChartsAndFormatting_(sheets, sheetId, layout, r
         });
     };
 
-    repeatRows(0, 1, {
+    repeatRows(layout.rowBannerTitle, layout.rowBannerTitle + 1, {
         backgroundColor: navy,
         horizontalAlignment: "LEFT",
         verticalAlignment: "MIDDLE",
-        textFormat: { foregroundColor: white, bold: true, fontSize: 16, fontFamily: "Roboto" },
-        borders: {
-            bottom: { style: "SOLID_MEDIUM", color: teal }
-        }
+        textFormat: { foregroundColor: white, bold: true, fontSize: 18, fontFamily: "Roboto" },
+        borders: { bottom: { style: "SOLID_MEDIUM", color: accent } }
     });
-    repeatRows(1, 2, {
+    repeatRows(layout.rowBannerSub, layout.rowBannerSub + 1, {
         backgroundColor: slate,
         horizontalAlignment: "LEFT",
         verticalAlignment: "MIDDLE",
-        textFormat: { foregroundColor: { red: 0.85, green: 0.9, blue: 0.95 }, fontSize: 10, italic: true }
-    });
-    repeatRows(3, 4, {
-        backgroundColor: sheetRgb_("#f1f5f9"),
-        horizontalAlignment: "CENTER",
-        verticalAlignment: "BOTTOM",
-        textFormat: { foregroundColor: muted, fontSize: 9, bold: true }
-    });
-    repeatRows(4, 5, {
-        backgroundColor: rowWhite,
-        horizontalAlignment: "CENTER",
-        verticalAlignment: "TOP",
-        textFormat: { foregroundColor: navy, fontSize: 20, bold: true },
-        borders: {
-            bottom: { style: "SOLID", color: sheetRgb_("#e2e8f0") }
+        textFormat: {
+            foregroundColor: { red: 0.82, green: 0.88, blue: 0.96 },
+            fontSize: 10,
+            italic: true
         }
     });
-    repeatRows(6, 7, {
+    repeatRows(layout.rowKpiLabels, layout.rowKpiLabels + 1, {
+        backgroundColor: sheetRgb_("#f8fafc"),
+        horizontalAlignment: "CENTER",
+        verticalAlignment: "MIDDLE",
+        textFormat: { foregroundColor: muted, fontSize: 9, bold: true }
+    });
+    repeatRows(layout.rowKpiValues, layout.rowKpiValues + 1, {
+        backgroundColor: rowWhite,
+        horizontalAlignment: "CENTER",
+        verticalAlignment: "MIDDLE",
+        textFormat: { foregroundColor: navy, fontSize: 22, bold: true },
+        borders: { bottom: { style: "SOLID", color: borderSoft } }
+    });
+    repeatRows(layout.rowChannelSection, layout.rowChannelSection + 1, {
         backgroundColor: teal,
         horizontalAlignment: "LEFT",
         verticalAlignment: "MIDDLE",
         textFormat: { foregroundColor: white, bold: true, fontSize: 11 }
     });
-    repeatRows(7, 8, {
+    repeatRows(ch, ch + 1, {
         backgroundColor: slate,
         horizontalAlignment: "LEFT",
         verticalAlignment: "MIDDLE",
         textFormat: { foregroundColor: white, bold: true, fontSize: 10 }
     });
-    for (let r = 8; r <= 12; r += 1) {
-        const bg = r % 2 === 0 ? rowWhite : rowTeal;
+    for (let r = ch + 1; r <= chEnd; r += 1) {
+        const bg = r % 2 === 1 ? rowWhite : rowTeal;
         repeatRows(r, r + 1, {
             backgroundColor: bg,
             horizontalAlignment: "LEFT",
             verticalAlignment: "MIDDLE",
             textFormat: { foregroundColor: navy, fontSize: 11 },
-            borders: {
-                bottom: { style: "SOLID", color: sheetRgb_("#e2e8f0") }
-            }
+            borders: { bottom: { style: "SOLID", color: borderSoft } }
         });
     }
-    repeatRows(14, 15, {
+    repeatRows(layout.rowContactSection, layout.rowContactSection + 1, {
         backgroundColor: teal,
         horizontalAlignment: "LEFT",
         verticalAlignment: "MIDDLE",
         textFormat: { foregroundColor: white, bold: true, fontSize: 11 }
     });
-    repeatRows(15, 16, {
+    repeatRows(cHead, cHead + 1, {
         backgroundColor: slate,
         horizontalAlignment: "CENTER",
         verticalAlignment: "MIDDLE",
         textFormat: { foregroundColor: white, bold: true, fontSize: 9 }
     });
-    for (let r = 16; r <= 18; r += 1) {
+    for (let r = pieS; r <= pieE; r += 1) {
         const bg = r % 2 === 0 ? rowWhite : rowTeal;
         repeatRows(r, r + 1, {
             backgroundColor: bg,
             horizontalAlignment: "CENTER",
             verticalAlignment: "MIDDLE",
             textFormat: { foregroundColor: navy, fontSize: 10 },
-            borders: {
-                bottom: { style: "SOLID", color: sheetRgb_("#e2e8f0") }
-            }
+            borders: { bottom: { style: "SOLID", color: borderSoft } }
         });
     }
-    repeatRows(19, 20, {
+    repeatRows(layout.rowContactNeither, layout.rowContactNeither + 1, {
         backgroundColor: sheetRgb_("#fff7ed"),
         horizontalAlignment: "LEFT",
         verticalAlignment: "MIDDLE",
         textFormat: { foregroundColor: slate, fontSize: 10, italic: true }
     });
 
-    if (rowCount > 20) {
-        repeatRows(20, rowCount, {
+    if (rowCount > layout.rowContactNeither + 1) {
+        repeatRows(layout.rowContactNeither + 1, rowCount, {
             backgroundColor: sheetRgb_("#f8fafc"),
             horizontalAlignment: "LEFT",
             verticalAlignment: "MIDDLE",
@@ -3160,37 +3321,29 @@ async function applyLeadDashboardChartsAndFormatting_(sheets, sheetId, layout, r
             requests: [
                 {
                     updateDimensionProperties: {
-                        range: {
-                            sheetId,
-                            dimension: "COLUMNS",
-                            startIndex: 0,
-                            endIndex: 1
-                        },
-                        properties: { pixelSize: 200 },
+                        range: { sheetId, dimension: "ROWS", startIndex: funnelHideStart, endIndex: funnelHideEnd },
+                        properties: { hiddenByUser: true },
+                        fields: "hiddenByUser"
+                    }
+                },
+                {
+                    updateDimensionProperties: {
+                        range: { sheetId, dimension: "COLUMNS", startIndex: 0, endIndex: 1 },
+                        properties: { pixelSize: 210 },
                         fields: "pixelSize"
                     }
                 },
                 {
                     updateDimensionProperties: {
-                        range: {
-                            sheetId,
-                            dimension: "COLUMNS",
-                            startIndex: 1,
-                            endIndex: 2
-                        },
-                        properties: { pixelSize: 100 },
+                        range: { sheetId, dimension: "COLUMNS", startIndex: 1, endIndex: 2 },
+                        properties: { pixelSize: 108 },
                         fields: "pixelSize"
                     }
                 },
                 {
                     updateDimensionProperties: {
-                        range: {
-                            sheetId,
-                            dimension: "COLUMNS",
-                            startIndex: 2,
-                            endIndex: 8
-                        },
-                        properties: { pixelSize: 88 },
+                        range: { sheetId, dimension: "COLUMNS", startIndex: 2, endIndex: cols },
+                        properties: { pixelSize: 92 },
                         fields: "pixelSize"
                     }
                 }
@@ -3198,10 +3351,13 @@ async function applyLeadDashboardChartsAndFormatting_(sheets, sheetId, layout, r
         }
     });
 
-    const chHeader = layout.channelTableHeaderRow;
-    const chEnd = layout.channelTableEndRow;
-    const pieStart = layout.pieRowsStart;
-    const pieEnd = layout.pieRowsEnd;
+    const stackColors = [
+        sheetRgb_("#2563eb"),
+        teal,
+        sheetRgb_("#7c3aed"),
+        sheetRgb_("#d97706"),
+        sheetRgb_("#e11d48")
+    ];
 
     /** @type {unknown[]} */
     const chartReqs = [
@@ -3209,13 +3365,13 @@ async function applyLeadDashboardChartsAndFormatting_(sheets, sheetId, layout, r
             addChart: {
                 chart: {
                     spec: {
-                        title: "Conversations by channel",
+                        title: "Volume by channel",
                         basicChart: {
                             chartType: "COLUMN",
                             legendPosition: "NO_LEGEND",
                             axis: [
-                                { position: "BOTTOM_AXIS", title: "Channel" },
-                                { position: "LEFT_AXIS", title: "Count" }
+                                { position: "BOTTOM_AXIS", title: "Source" },
+                                { position: "LEFT_AXIS", title: "Conversations" }
                             ],
                             domains: [
                                 {
@@ -3224,7 +3380,7 @@ async function applyLeadDashboardChartsAndFormatting_(sheets, sheetId, layout, r
                                             sources: [
                                                 {
                                                     sheetId,
-                                                    startRowIndex: chHeader,
+                                                    startRowIndex: ch,
                                                     endRowIndex: chEnd + 1,
                                                     startColumnIndex: 0,
                                                     endColumnIndex: 1
@@ -3241,7 +3397,7 @@ async function applyLeadDashboardChartsAndFormatting_(sheets, sheetId, layout, r
                                             sources: [
                                                 {
                                                     sheetId,
-                                                    startRowIndex: chHeader,
+                                                    startRowIndex: ch,
                                                     endRowIndex: chEnd + 1,
                                                     startColumnIndex: 1,
                                                     endColumnIndex: 2
@@ -3258,11 +3414,11 @@ async function applyLeadDashboardChartsAndFormatting_(sheets, sheetId, layout, r
                     },
                     position: {
                         overlayPosition: {
-                            anchorCell: { sheetId, rowIndex: 6, columnIndex: 3 },
-                            offsetXPixels: 10,
-                            offsetYPixels: 0,
-                            widthPixels: 460,
-                            heightPixels: 300
+                            anchorCell: { sheetId, rowIndex: layout.rowChannelSection, columnIndex: 3 },
+                            offsetXPixels: 6,
+                            offsetYPixels: 2,
+                            widthPixels: 500,
+                            heightPixels: 320
                         }
                     }
                 }
@@ -3272,15 +3428,77 @@ async function applyLeadDashboardChartsAndFormatting_(sheets, sheetId, layout, r
             addChart: {
                 chart: {
                     spec: {
-                        title: "Lead capture segments",
+                        title: "Segment mix · channel contribution",
+                        basicChart: {
+                            chartType: "BAR",
+                            legendPosition: "RIGHT_LEGEND",
+                            stackedType: "STACKED",
+                            axis: [
+                                { position: "LEFT_AXIS", title: "Segment" },
+                                { position: "BOTTOM_AXIS", title: "Conversations" }
+                            ],
+                            domains: [
+                                {
+                                    domain: {
+                                        sourceRange: {
+                                            sources: [
+                                                {
+                                                    sheetId,
+                                                    startRowIndex: cHead,
+                                                    endRowIndex: pieE + 1,
+                                                    startColumnIndex: 0,
+                                                    endColumnIndex: 1
+                                                }
+                                            ]
+                                        }
+                                    }
+                                }
+                            ],
+                            series: [2, 3, 4, 5, 6].map((colIdx) => ({
+                                series: {
+                                    sourceRange: {
+                                        sources: [
+                                            {
+                                                sheetId,
+                                                startRowIndex: cHead,
+                                                endRowIndex: pieE + 1,
+                                                startColumnIndex: colIdx,
+                                                endColumnIndex: colIdx + 1
+                                            }
+                                        ]
+                                    }
+                                },
+                                targetAxis: "BOTTOM_AXIS",
+                                color: stackColors[colIdx - 2] ?? teal
+                            })),
+                            headerCount: 1
+                        }
+                    },
+                    position: {
+                        overlayPosition: {
+                            anchorCell: { sheetId, rowIndex: layout.rowBetweenChannelContact, columnIndex: 0 },
+                            offsetXPixels: 0,
+                            offsetYPixels: 0,
+                            widthPixels: 720,
+                            heightPixels: 280
+                        }
+                    }
+                }
+            }
+        },
+        {
+            addChart: {
+                chart: {
+                    spec: {
+                        title: "Lead capture composition",
                         pieChart: {
                             domain: {
                                 sourceRange: {
                                     sources: [
                                         {
                                             sheetId,
-                                            startRowIndex: pieStart,
-                                            endRowIndex: pieEnd + 1,
+                                            startRowIndex: pieS,
+                                            endRowIndex: pieE + 1,
                                             startColumnIndex: 0,
                                             endColumnIndex: 1
                                         }
@@ -3292,8 +3510,8 @@ async function applyLeadDashboardChartsAndFormatting_(sheets, sheetId, layout, r
                                     sources: [
                                         {
                                             sheetId,
-                                            startRowIndex: pieStart,
-                                            endRowIndex: pieEnd + 1,
+                                            startRowIndex: pieS,
+                                            endRowIndex: pieE + 1,
                                             startColumnIndex: 1,
                                             endColumnIndex: 2
                                         }
@@ -3301,16 +3519,79 @@ async function applyLeadDashboardChartsAndFormatting_(sheets, sheetId, layout, r
                                 }
                             },
                             legendPosition: "RIGHT_LEGEND",
-                            pieHoleSize: 0.35
+                            pieHoleSize: 0.45
                         }
                     },
                     position: {
                         overlayPosition: {
-                            anchorCell: { sheetId, rowIndex: 14, columnIndex: 3 },
-                            offsetXPixels: 10,
+                            anchorCell: { sheetId, rowIndex: layout.rowContactSection, columnIndex: 3 },
+                            offsetXPixels: 6,
                             offsetYPixels: 0,
-                            widthPixels: 420,
-                            heightPixels: 320
+                            widthPixels: 440,
+                            heightPixels: 340
+                        }
+                    }
+                }
+            }
+        },
+        {
+            addChart: {
+                chart: {
+                    spec: {
+                        title: "Pipeline funnel",
+                        basicChart: {
+                            chartType: "COLUMN",
+                            legendPosition: "NO_LEGEND",
+                            axis: [
+                                { position: "BOTTOM_AXIS", title: "Stage" },
+                                { position: "LEFT_AXIS", title: "Count" }
+                            ],
+                            domains: [
+                                {
+                                    domain: {
+                                        sourceRange: {
+                                            sources: [
+                                                {
+                                                    sheetId,
+                                                    startRowIndex: layout.funnelHeaderRow,
+                                                    endRowIndex: layout.funnelDataEnd + 1,
+                                                    startColumnIndex: 0,
+                                                    endColumnIndex: 1
+                                                }
+                                            ]
+                                        }
+                                    }
+                                }
+                            ],
+                            series: [
+                                {
+                                    series: {
+                                        sourceRange: {
+                                            sources: [
+                                                {
+                                                    sheetId,
+                                                    startRowIndex: layout.funnelHeaderRow,
+                                                    endRowIndex: layout.funnelDataEnd + 1,
+                                                    startColumnIndex: 1,
+                                                    endColumnIndex: 2
+                                                }
+                                            ]
+                                        }
+                                    },
+                                    targetAxis: "LEFT_AXIS",
+                                    color: accent
+                                }
+                            ],
+                            headerCount: 1
+                        }
+                    },
+                    position: {
+                        overlayPosition: {
+                            anchorCell: { sheetId, rowIndex: layout.rowKpiLabels, columnIndex: 7 },
+                            offsetXPixels: 4,
+                            offsetYPixels: 0,
+                            widthPixels: 380,
+                            heightPixels: 220
                         }
                     }
                 }
