@@ -13790,6 +13790,14 @@ function attachPersonaHandlers(dfMessenger) {
     window.addEventListener("df-response-received", handleDfResponseReceived, true);
 }
 
+function bumpChatTranscriptSeq_(prev) {
+    const n =
+        prev && typeof prev.chat_transcript_seq === "number" && Number.isFinite(prev.chat_transcript_seq)
+            ? prev.chat_transcript_seq
+            : 0;
+    return n + 1;
+}
+
 function trackChatUserQueryInSessionContext_(raw) {
     const tRaw = typeof raw === "string" ? raw.trim() : "";
     if (!tRaw) {
@@ -13809,6 +13817,7 @@ function trackChatUserQueryInSessionContext_(raw) {
             return;
         }
         const now = Date.now();
+        const seq = bumpChatTranscriptSeq_(prev);
 
         next.push(t);
         // Cap to keep long sessions useful (matches server-side merge limit).
@@ -13817,13 +13826,14 @@ function trackChatUserQueryInSessionContext_(raw) {
             prev.chat_transcript && Array.isArray(prev.chat_transcript)
                 ? prev.chat_transcript.slice()
                 : [];
-        transcript.push({ role: "user", text: t, at: now });
+        transcript.push({ role: "user", text: t, at: now, seq });
         const cappedTr = transcript.slice(-MAX_CHAT_TRANSCRIPT_TURNS);
         persistClientContext({
             ...prev,
             user_queries: capped,
             user_queries_last_at: now,
-            chat_transcript: cappedTr
+            chat_transcript: cappedTr,
+            chat_transcript_seq: seq
         });
         scheduleSessionQueriesSheetSync_();
     } catch {
@@ -14045,36 +14055,82 @@ function responseHasVisibleBotText_(event) {
 }
 
 /**
- * Plain assistant text chunks from a Dialogflow Messenger / CX response (no custom payloads).
- * @param {Event & { detail?: { raw?: { queryResult?: { responseMessages?: Array<unknown> } }, data?: { messages?: Array<unknown> } } }} event
+ * Pull assistant-visible strings from one CX/Messenger message node (recursive).
+ * Plain text is kept even when the same node carries `open_form` so staff transcripts match the widget.
+ * @param {unknown} m
+ * @param {string[]} parts
+ * @param {WeakSet<object>} seen
+ */
+function pushAssistantVisibleTextsFromDfMessage_(m, parts, seen) {
+    if (!m || typeof m !== "object") {
+        return;
+    }
+    const obj = /** @type {Record<string, unknown>} */ (m);
+    if (seen.has(obj)) {
+        return;
+    }
+    seen.add(obj);
+
+    const cxText = obj.text && typeof obj.text === "object" && Array.isArray(obj.text.text) ? obj.text.text : null;
+    if (cxText) {
+        for (const s of cxText) {
+            if (typeof s === "string" && s.trim()) {
+                parts.push(s.trim());
+            }
+        }
+    } else if (typeof obj.text === "string" && obj.text.trim()) {
+        parts.push(obj.text.trim());
+    }
+
+    for (const k of ["outputText", "displayText"]) {
+        const v = obj[k];
+        if (typeof v === "string" && v.trim()) {
+            parts.push(v.trim());
+        }
+    }
+
+    const opensForm = messageContainsOpenFormAction(m);
+
+    if (!opensForm && obj.payload && typeof obj.payload === "object") {
+        const pay = /** @type {Record<string, unknown>} */ (obj.payload);
+        const fr = pay.fulfillment_response;
+        if (fr && typeof fr === "object") {
+            const msgs = /** @type {{ messages?: unknown[] }} */ (fr).messages;
+            if (Array.isArray(msgs)) {
+                for (let i = 0; i < msgs.length; i += 1) {
+                    pushAssistantVisibleTextsFromDfMessage_(msgs[i], parts, seen);
+                }
+            }
+        }
+    }
+
+    const frTop = obj.fulfillment_response;
+    if (frTop && typeof frTop === "object") {
+        const msgs = /** @type {{ messages?: unknown[] }} */ (frTop).messages;
+        if (Array.isArray(msgs)) {
+            for (let i = 0; i < msgs.length; i += 1) {
+                pushAssistantVisibleTextsFromDfMessage_(msgs[i], parts, seen);
+            }
+        }
+    }
+}
+
+/**
+ * Plain assistant text chunks from Dialogflow Messenger / CX (`df-response-received`).
+ * @param {Event & { detail?: { raw?: { queryResult?: { responseMessages?: Array<unknown> } }, data?: { messages?: Array<unknown> }, messages?: Array<unknown> } }} event
  * @returns {string[]}
  */
 function extractAssistantVisibleTextsFromDfResponse_(event) {
+    const d = event && event.detail;
     const responseMessages = mergeCxResponseEnvelopeForGallery(event);
-
-    const messengerMessages = event && event.detail && event.detail.data && Array.isArray(event.detail.data.messages)
-        ? event.detail.data.messages
-        : [];
+    const messengerMessages = d && d.data && Array.isArray(d.data.messages) ? d.data.messages : [];
+    const topMessages = d && Array.isArray(d.messages) ? d.messages : [];
 
     /** @type {string[]} */
     const parts = [];
-    for (const m of [...responseMessages, ...messengerMessages]) {
-        if (!m || typeof m !== "object") {
-            continue;
-        }
-        if (messageContainsOpenFormAction(m)) {
-            continue;
-        }
-        const cxText = m.text && typeof m.text === "object" && Array.isArray(m.text.text) ? m.text.text : null;
-        if (cxText) {
-            for (const s of cxText) {
-                if (typeof s === "string" && s.trim()) {
-                    parts.push(s.trim());
-                }
-            }
-        } else if (typeof m.text === "string" && m.text.trim()) {
-            parts.push(m.text.trim());
-        }
+    const seen = new WeakSet();
+    for (const m of [...responseMessages, ...messengerMessages, ...topMessages]) {
+        pushAssistantVisibleTextsFromDfMessage_(m, parts, seen);
     }
     return parts;
 }
@@ -14093,6 +14149,10 @@ function appendChatTranscriptAssistantLines_(lines) {
                 ? prev.chat_transcript.slice()
                 : [];
         const now = Date.now();
+        let seq =
+            typeof prev.chat_transcript_seq === "number" && Number.isFinite(prev.chat_transcript_seq)
+                ? prev.chat_transcript_seq
+                : 0;
         for (let i = 0; i < lines.length; i += 1) {
             const raw = lines[i];
             const trimmed = typeof raw === "string" ? raw.trim() : "";
@@ -14107,11 +14167,13 @@ function appendChatTranscriptAssistantLines_(lines) {
             if (last && last.role === "assistant" && last.text === text) {
                 continue;
             }
-            transcript.push({ role: "assistant", text, at: now });
+            seq += 1;
+            transcript.push({ role: "assistant", text, at: now, seq });
         }
         persistClientContext({
             ...prev,
-            chat_transcript: transcript.slice(-MAX_CHAT_TRANSCRIPT_TURNS)
+            chat_transcript: transcript.slice(-MAX_CHAT_TRANSCRIPT_TURNS),
+            chat_transcript_seq: seq
         });
     } catch {
         /* ignore */
@@ -15545,6 +15607,7 @@ function renderContactFormSubmissionResponse(payload) {
 
     renderBotPersona(activeDfMessenger, Date.now());
     activeDfMessenger.renderCustomText(responseText, true);
+    appendChatTranscriptAssistantLines_([responseText]);
 }
 
 /**

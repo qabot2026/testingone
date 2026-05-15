@@ -54,6 +54,7 @@ import {
     fetchConversationSheetExport,
     fetchLeadSheetUserQueriesForSession,
     fetchLeadSheetRowKeyValuesForSession,
+    fetchLeadSheetChatTranscriptJsonForSession,
     formatConversationDateForSheet,
     formatConversationTimeForSheet,
     probeSheetsSpreadsheetAccess,
@@ -2412,6 +2413,7 @@ app.post(
             const sheetsT0Ms = Date.now();
             if (!SHEETS_DISABLED) {
                 try {
+                    const chatTranscriptJson = stringifyChatTranscriptForSheetPayload_(mergedClientContext);
                     sheetOutcome = await appendContactRowToSheet(
                         {
                             convDate: convSheetDate,
@@ -2431,7 +2433,8 @@ app.post(
                             appointmentBooked,
                             appointmentDate,
                             appointmentTime,
-                            userQueriesCsv
+                            userQueriesCsv,
+                            chatTranscriptJson
                         },
                         {
                             preferIncomingContact: true,
@@ -2636,6 +2639,7 @@ app.post(
             || (await resolveCityForRequest(req));
         const userQueriesCsv = normalizeUserQueriesCsvFromClientContext(mergedClientContext);
         const sourceUrl = resolveSourceUrlForSheet(mergedClientContext);
+        const chatTranscriptJson = stringifyChatTranscriptForSheetPayload_(mergedClientContext);
 
         try {
             const sheetOutcome = await appendContactRowToSheet(
@@ -2657,7 +2661,8 @@ app.post(
                     appointmentBooked: "No",
                     appointmentDate: "",
                     appointmentTime: "",
-                    userQueriesCsv
+                    userQueriesCsv,
+                    chatTranscriptJson
                 },
                 {
                     sheetExtrasSources: {
@@ -2836,7 +2841,8 @@ app.post(
                 appointmentBooked: "No",
                 appointmentDate: "",
                 appointmentTime: "",
-                userQueriesCsv
+                userQueriesCsv,
+                chatTranscriptJson: stringifyChatTranscriptForSheetPayload_(mergedClientContext)
             });
             return res.status(200).json({
                 ok: true,
@@ -3136,6 +3142,190 @@ function transcriptTurnTextFromItem_(o) {
     return "";
 }
 
+const CHAT_TRANSCRIPT_SHEET_CELL_MAX = 49000;
+
+/** Serialize widget `chat_transcript` for optional Google Sheets column (see SHEETS_CHAT_TRANSCRIPT_JSON_COLUMN). */
+function stringifyChatTranscriptForSheetPayload_(clientContext) {
+    const cx = clientContext && typeof clientContext === "object" ? clientContext : {};
+    const ct = cx.chat_transcript;
+    if (!Array.isArray(ct) || !ct.length) {
+        return "";
+    }
+    try {
+        const full = JSON.stringify(ct);
+        if (full.length <= CHAT_TRANSCRIPT_SHEET_CELL_MAX) {
+            return full;
+        }
+        let lo = 0;
+        let hi = ct.length;
+        /** @type {string} */
+        let best = "";
+        while (lo < hi) {
+            const mid = Math.ceil((lo + hi) / 2);
+            const slice = ct.slice(-mid);
+            const tryStr = JSON.stringify(slice);
+            if (tryStr.length <= CHAT_TRANSCRIPT_SHEET_CELL_MAX) {
+                best = tryStr;
+                lo = mid;
+            } else {
+                hi = mid - 1;
+            }
+        }
+        return best || JSON.stringify(ct.slice(-3));
+    } catch {
+        return "";
+    }
+}
+
+/**
+ * @param {unknown[]} arr
+ * @returns {{ role: string, text: string }[]}
+ */
+function transcriptTurnsFromStoredChatArray_(arr) {
+    if (!Array.isArray(arr) || !arr.length) {
+        return [];
+    }
+    /** @type {{ role: string, text: string, at: number, seq?: number }[]} */
+    const tmp = [];
+    for (const item of arr) {
+        if (!item || typeof item !== "object") {
+            continue;
+        }
+        const o = /** @type {Record<string, unknown>} */ (item);
+        const role = o.role === "assistant" ? "assistant" : "user";
+        const text = transcriptTurnTextFromItem_(o);
+        if (!text) {
+            continue;
+        }
+        const rawAt = o.at;
+        const at =
+            typeof rawAt === "number" && Number.isFinite(rawAt)
+                ? rawAt
+                : tmp.length * 1e-6;
+        const rawSeq = o.seq;
+        const seq =
+            typeof rawSeq === "number" && Number.isFinite(rawSeq) ? rawSeq : undefined;
+        tmp.push({ role, text, at, seq });
+    }
+    const seqCount = tmp.filter((x) => typeof x.seq === "number" && Number.isFinite(x.seq)).length;
+    if (seqCount === tmp.length && tmp.length > 0) {
+        tmp.sort((a, b) => /** @type {number} */ (a.seq) - /** @type {number} */ (b.seq));
+    } else {
+        tmp.sort((a, b) => {
+            if (a.at !== b.at) {
+                return a.at - b.at;
+            }
+            return (a.role === "user" ? 0 : 1) - (b.role === "user" ? 0 : 1);
+        });
+    }
+    return tmp.map(({ role, text }) => ({ role, text }));
+}
+
+function parseChatTranscriptJsonCell_(raw) {
+    const s = typeof raw === "string" ? raw.trim() : "";
+    if (!s.startsWith("[") || !s.includes('"role"')) {
+        return [];
+    }
+    try {
+        const arr = JSON.parse(s);
+        return Array.isArray(arr) ? arr : [];
+    } catch {
+        return [];
+    }
+}
+
+/** Scan wide row dump for any cell containing serialised `chat_transcript` JSON. */
+function transcriptTurnsFromSheetColumnsChatScan_(columns) {
+    if (!columns || typeof columns !== "object") {
+        return [];
+    }
+    /** @type {{ role: string, text: string }[]} */
+    let best = [];
+    for (const v of Object.values(columns)) {
+        const arr = parseChatTranscriptJsonCell_(typeof v === "string" ? v : String(v || ""));
+        if (!arr.length) {
+            continue;
+        }
+        const turns = transcriptTurnsFromStoredChatArray_(arr);
+        const nAsst = turns.filter((t) => t.role === "assistant").length;
+        if (nAsst > 0 && turns.length >= best.length) {
+            best = turns;
+        }
+    }
+    return best;
+}
+
+function hasAssistantTurns_(turns) {
+    return Array.isArray(turns) && turns.some((t) => t && t.role === "assistant");
+}
+
+/**
+ * Last-resort assistant bubble from saved lead / sheet row when bot replay was never stored.
+ *
+ * @param {Record<string, unknown>} meta
+ * @param {{ columns?: Record<string, string> } | null} sheet
+ * @param {Record<string, unknown> | null} rec
+ */
+function assistantLeadSnapshotTurns_(meta, sheet, rec) {
+    /** @type {string[]} */
+    const lines = [];
+    const add = (label, val) => {
+        const s =
+            typeof val === "string"
+                ? val.trim()
+                : val != null && typeof val !== "object"
+                  ? String(val).trim()
+                  : "";
+        if (s) {
+            lines.push(`${label}: ${s}`);
+        }
+    };
+    if (meta && typeof meta === "object") {
+        add("Name", meta.name);
+        add("Email", meta.email);
+        add("Mobile", meta.mobile);
+        add("Submitted at", meta.submitted_at);
+        add("Form id", meta.form_id);
+    }
+    const fields =
+        rec && typeof rec === "object" && rec.fields && typeof rec.fields === "object"
+            ? /** @type {Record<string, unknown>} */ (rec.fields)
+            : {};
+    for (const [k, val] of Object.entries(fields)) {
+        const s = scalarFormValue(val);
+        if (s) {
+            lines.push(`${k}: ${s}`);
+        }
+    }
+    const skipHdr =
+        /^(user\s*queries|queries|session|conversation\s*date|conversation\s*time|channel)$/i;
+    if (!lines.length && sheet && sheet.columns && typeof sheet.columns === "object") {
+        for (const [k, val] of Object.entries(sheet.columns)) {
+            const lab = typeof k === "string" ? k.trim() : "";
+            if (!lab || skipHdr.test(lab)) {
+                continue;
+            }
+            const s = String(val || "").trim();
+            if (!s || (s.startsWith("[") && s.includes('"role"'))) {
+                continue;
+            }
+            lines.push(`${lab}: ${s}`);
+        }
+    }
+    if (!lines.length) {
+        return [];
+    }
+    const block = lines.join("\n");
+    return [
+        {
+            role: "assistant",
+            text:
+                "Captured lead / form snapshot (exact bot wording was not stored). Expand row details above for full Sheet columns.\n\n"
+                + block
+        }
+    ];
+}
+
 /**
  * @param {Record<string, unknown>} cx
  * @returns {{ role: string, text: string }[]}
@@ -3146,27 +3336,7 @@ function transcriptTurnsFromClientContext_(cx) {
     }
     const ct = cx.chat_transcript;
     if (Array.isArray(ct) && ct.length) {
-        /** @type {{ role: string, text: string, at: number }[]} */
-        const tmp = [];
-        for (const item of ct) {
-            if (!item || typeof item !== "object") {
-                continue;
-            }
-            const o = /** @type {Record<string, unknown>} */ (item);
-            const role = o.role === "assistant" ? "assistant" : "user";
-            const text = transcriptTurnTextFromItem_(o);
-            if (!text) {
-                continue;
-            }
-            const rawAt = o.at;
-            const at =
-                typeof rawAt === "number" && Number.isFinite(rawAt)
-                    ? rawAt
-                    : tmp.length * 1e-6;
-            tmp.push({ role, text, at });
-        }
-        tmp.sort((a, b) => a.at - b.at);
-        return tmp.map(({ role, text }) => ({ role, text }));
+        return transcriptTurnsFromStoredChatArray_(ct);
     }
     const uq = cx.user_queries;
     if (Array.isArray(uq) && uq.length) {
@@ -3245,10 +3415,14 @@ app.get(PATHNAME_CONVERSATION_TRANSCRIPT_JSON, async (req, res) => {
         /** @type {{ role: string, text: string }[]} */
         let turns = [];
         let source = "none";
+        /** @type {string} */
+        let transcript_fallback = "";
         /** @type {Record<string, unknown>} */
         let meta = {};
         /** @type {{ rowNumber: number, columns: Record<string, string> } | null} */
         let sheet = null;
+        /** @type {Record<string, unknown> | null} */
+        let firestoreRec = null;
 
         if (!SHEETS_DISABLED) {
             try {
@@ -3263,13 +3437,15 @@ app.get(PATHNAME_CONVERSATION_TRANSCRIPT_JSON, async (req, res) => {
             try {
                 const rec = await fetchLatestContactSubmissionForClientSession(session);
                 if (rec && typeof rec === "object") {
+                    firestoreRec = /** @type {Record<string, unknown>} */ (rec);
                     const cx = /** @type {Record<string, unknown>} */ (
                         rec.client_context && typeof rec.client_context === "object"
                             ? rec.client_context
                             : {}
                     );
                     turns = transcriptTurnsFromClientContext_(cx);
-                    source = "firestore";
+                    /** Staff-facing label: data is Firebase Cloud Firestore in your Firebase project. */
+                    source = "firebase";
                     meta = {
                         name: rec.name,
                         email: rec.email,
@@ -3280,8 +3456,43 @@ app.get(PATHNAME_CONVERSATION_TRANSCRIPT_JSON, async (req, res) => {
                 }
             } catch (fe) {
                 const msg = fe && /** @type {{ message?: string }} */ (fe).message ? String(fe.message) : String(fe);
-                console.warn("[chatbot-api] conversation-transcript Firestore:", msg.slice(0, 240));
+                console.warn("[chatbot-api] conversation-transcript Firebase saved lead:", msg.slice(0, 240));
             }
+        }
+
+        /** @type {{ role: string, text: string }[]} */
+        let sheetChatTurns = [];
+        if (!SHEETS_DISABLED) {
+            try {
+                const { raw } = await fetchLeadSheetChatTranscriptJsonForSession(session);
+                sheetChatTurns = transcriptTurnsFromStoredChatArray_(parseChatTranscriptJsonCell_(raw));
+            } catch (te) {
+                const msg = te && /** @type {{ message?: string }} */ (te).message ? String(te.message) : String(te);
+                console.warn("[chatbot-api] conversation-transcript Sheet chat JSON:", msg.slice(0, 240));
+            }
+        }
+        if (!hasAssistantTurns_(sheetChatTurns) && sheet?.columns) {
+            const scanned = transcriptTurnsFromSheetColumnsChatScan_(sheet.columns);
+            if (scanned.length) {
+                sheetChatTurns = scanned;
+            }
+        }
+
+        if (!hasAssistantTurns_(turns) && hasAssistantTurns_(sheetChatTurns)) {
+            turns = sheetChatTurns;
+            source =
+                source === "firebase"
+                    ? "sheet_chat_transcript_json"
+                    : source === "none"
+                      ? "sheet_chat_transcript_json"
+                      : `${source}+sheet_chat_transcript_json`;
+        } else if (
+            hasAssistantTurns_(turns)
+            && hasAssistantTurns_(sheetChatTurns)
+            && sheetChatTurns.length > turns.length
+        ) {
+            turns = sheetChatTurns;
+            source = `${source};prefer_longer_sheet_transcript`;
         }
 
         if (!turns.length && !SHEETS_DISABLED) {
@@ -3300,7 +3511,15 @@ app.get(PATHNAME_CONVERSATION_TRANSCRIPT_JSON, async (req, res) => {
             }
         }
 
-        return res.json({ ok: true, session, source, meta, sheet, turns });
+        if (!hasAssistantTurns_(turns)) {
+            const snap = assistantLeadSnapshotTurns_(meta, sheet, firestoreRec);
+            if (snap.length) {
+                turns = [...turns, ...snap];
+                transcript_fallback = "lead_snapshot";
+            }
+        }
+
+        return res.json({ ok: true, session, source, meta, sheet, turns, transcript_fallback });
     } catch (e) {
         const msg = e && /** @type {{ message?: string }} */ (e).message ? String(e.message) : String(e);
         return res.status(500).json({ ok: false, error: msg });

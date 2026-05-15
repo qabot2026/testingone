@@ -1,6 +1,6 @@
 /**
- * Firestore writer via firebase-admin.
- * Production (Railway): set FIREBASE_SERVICE_ACCOUNT_JSON from Firebase Console → Service accounts → private key.
+ * Firebase Cloud Firestore — contact submissions via firebase-admin (same Firebase project as your console).
+ * Production (Railway): set FIREBASE_SERVICE_ACCOUNT_JSON from Firebase Console → Project settings → Service accounts → private key.
  * Local: GOOGLE_APPLICATION_CREDENTIALS pointing at the same JSON file, or FIREBASE_SERVICE_ACCOUNT_JSON.
  */
 

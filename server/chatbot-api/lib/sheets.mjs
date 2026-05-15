@@ -77,6 +77,11 @@ const RANGE = (process.env.SHEETS_RANGE || "Sheet1!A:R").trim();
  */
 const SHEETS_ROW_OPEN_LINK_COLUMN = (process.env.SHEETS_ROW_OPEN_LINK_COLUMN || "").trim().toUpperCase();
 /**
+ * Optional: A1 column letter (e.g. `T`) or rely on row-1 header aliases (Chat transcript JSON, …).
+ * When set / matched, session sync and contact-form writes store the widget `chat_transcript` JSON so staff transcripts include bot lines even if Firestore is empty or client_context drops them.
+ */
+const SHEETS_CHAT_TRANSCRIPT_JSON_COLUMN = (process.env.SHEETS_CHAT_TRANSCRIPT_JSON_COLUMN || "").trim().toUpperCase();
+/**
  * Resolves HTTPS origin for staff transcript links. Set CONVERSATIONS_PUBLIC_BASE_URL, or rely on
  * Railway’s RAILWAY_PUBLIC_DOMAIN / RAILWAY_STATIC_URL when unset.
  */
@@ -1856,6 +1861,65 @@ async function maybeWriteSheetRowOpenLink_(sheets, tabTitle, rowNumber, clientSe
     }
 }
 
+const CHAT_TRANSCRIPT_HEADER_ALIASES = [
+    "chat_transcript_json",
+    "chat_transcript",
+    "chattranscript",
+    "df_chat_transcript",
+    "conversation_transcript",
+    "bot_transcript",
+    "assistant_transcript",
+    "chat transcript json"
+];
+
+/**
+ * @param {import("googleapis").sheets_v4.Sheets} sheets
+ * @param {string} tab
+ * @returns {Promise<string>}
+ */
+async function resolveChatTranscriptColumnLetter_(sheets, tab) {
+    const envCol = SHEETS_CHAT_TRANSCRIPT_JSON_COLUMN.replace(/[^A-Z]/g, "");
+    if (/^[A-Z]{1,3}$/.test(envCol)) {
+        return envCol;
+    }
+    const headerMap = await getHeaderIndexMap_(sheets, tab);
+    const idx0 = pickHeaderIndex_(headerMap, CHAT_TRANSCRIPT_HEADER_ALIASES, -1);
+    if (idx0 < 0) {
+        return "";
+    }
+    return columnLetterFromIndex_(idx0);
+}
+
+/**
+ * @param {import("googleapis").sheets_v4.Sheets} sheets
+ * @param {string} tab
+ * @param {number} rowNumber
+ * @param {string} chatTranscriptJson
+ */
+async function maybeWriteChatTranscriptJsonToSheetCell_(sheets, tab, rowNumber, chatTranscriptJson) {
+    const raw = typeof chatTranscriptJson === "string" ? chatTranscriptJson.trim() : "";
+    if (!raw || !rowNumber || rowNumber < 1) {
+        return false;
+    }
+    const letter = await resolveChatTranscriptColumnLetter_(sheets, tab);
+    if (!letter) {
+        return false;
+    }
+    try {
+        await sheets.spreadsheets.values.update({
+            spreadsheetId: SPREADSHEET_ID,
+            range: `${tab}!${letter}${rowNumber}`,
+            valueInputOption: "RAW",
+            requestBody: { values: [[raw]] }
+        });
+        return true;
+    } catch (e) {
+        const msg = e && /** @type {{ message?: string }} */ (e).message ? String(e.message) : String(e);
+        console.warn("[chatbot-api] Chat transcript JSON column write failed:", msg.slice(0, 240));
+        return false;
+    }
+}
+
 /**
  * User Queries cell for the lead row with this session id (for transcript API fallback).
  *
@@ -1936,6 +2000,41 @@ export async function fetchLeadSheetRowKeyValuesForSession(sessionId) {
         columns[label] = v;
     }
     return { rowNumber, columns };
+}
+
+/**
+ * Reads optional JSON `chat_transcript` cell for this session (see SHEETS_CHAT_TRANSCRIPT_JSON_COLUMN / header aliases).
+ *
+ * @param {string} sessionId
+ * @returns {Promise<{ raw: string, rowNumber: number }>}
+ */
+export async function fetchLeadSheetChatTranscriptJsonForSession(sessionId) {
+    const sid = typeof sessionId === "string" ? sessionId.trim() : "";
+    if (!sid || !SPREADSHEET_ID) {
+        return { raw: "", rowNumber: 0 };
+    }
+    const client = await getSheetsAuthClient();
+    const sheets = google.sheets({ version: "v4", auth: client });
+    const tab = tabNameFromRange(RANGE);
+    const rowNumber = await findSessionRowNumberBySessionId_(sheets, tab, sid);
+    if (!rowNumber) {
+        return { raw: "", rowNumber: 0 };
+    }
+    const letter = await resolveChatTranscriptColumnLetter_(sheets, tab);
+    if (!letter) {
+        return { raw: "", rowNumber };
+    }
+    try {
+        const got = await sheets.spreadsheets.values.get({
+            spreadsheetId: SPREADSHEET_ID,
+            range: `${tab}!${letter}${rowNumber}:${letter}${rowNumber}`
+        });
+        const row0 = Array.isArray(got.data.values) && got.data.values[0] ? got.data.values[0] : [];
+        const raw = sheetCellString_(row0[0]);
+        return { raw, rowNumber };
+    } catch {
+        return { raw: "", rowNumber };
+    }
 }
 
 /**
@@ -2210,6 +2309,14 @@ export async function appendContactRowToSheet(row, opts) {
             });
         }
         await maybeWriteSheetRowOpenLink_(sheets, tabResolved, scan.matchedRowNumber, row.clientSessionId);
+        if (typeof row.chatTranscriptJson === "string" && row.chatTranscriptJson.trim()) {
+            await maybeWriteChatTranscriptJsonToSheetCell_(
+                sheets,
+                tabResolved,
+                scan.matchedRowNumber,
+                row.chatTranscriptJson
+            );
+        }
         return {
             action: patched ? "duplicate_updated" : "duplicate_noop",
             patched,
@@ -2317,6 +2424,18 @@ export async function appendContactRowToSheet(row, opts) {
         console.error("[chatbot-api] Sheets header-mapped patch failed; row still appended.", msg);
     }
     await maybeWriteSheetRowOpenLink_(sheets, tabResolved, appendedRowNum, row.clientSessionId);
+    if (
+        appendedRowNum
+        && typeof row.chatTranscriptJson === "string"
+        && row.chatTranscriptJson.trim()
+    ) {
+        await maybeWriteChatTranscriptJsonToSheetCell_(
+            sheets,
+            tabResolved,
+            appendedRowNum,
+            row.chatTranscriptJson
+        );
+    }
     if (SYNC_DASHBOARD_ON_APPEND) {
         void writeLeadCaptureDashboardToSheet2({}).catch((err) => {
             const msg = err && /** @type {{ message?: string }} */ (err).message
@@ -2380,7 +2499,7 @@ async function findSessionRowNumberBySessionId_(sheets, tab, sessionId) {
  * Merge latest user_queries into the User Queries column for this session, or append a minimal row if none exists.
  * Used for live chat query sync without requiring another form POST.
  *
- * @param {{ iso?: string, convDate?: string, convTime?: string, formId?: string, name: string, mobile: string, email: string, clientSessionId: string, browserName: string, deviceType: string, channel: string, fileLinks?: string, city?: string, ip?: string, userQueriesCsv?: string }} row
+ * @param {{ iso?: string, convDate?: string, convTime?: string, formId?: string, name: string, mobile: string, email: string, clientSessionId: string, browserName: string, deviceType: string, channel: string, fileLinks?: string, city?: string, ip?: string, userQueriesCsv?: string, chatTranscriptJson?: string }} row
  */
 export async function upsertSessionQueriesInSheet(row) {
     if (!SPREADSHEET_ID) {
@@ -2388,7 +2507,9 @@ export async function upsertSessionQueriesInSheet(row) {
     }
     const incomingQRaw = typeof row.userQueriesCsv === "string" ? row.userQueriesCsv.trim() : "";
     const incomingQ = sanitizeUserQueriesCsvForSheet(incomingQRaw);
-    if (!incomingQ) {
+    const chatTranscriptJson =
+        typeof row.chatTranscriptJson === "string" ? row.chatTranscriptJson.trim() : "";
+    if (!incomingQ && !chatTranscriptJson) {
         return { mode: "skipped_empty_queries" };
     }
     const client = await getSheetsAuthClient();
@@ -2408,48 +2529,59 @@ export async function upsertSessionQueriesInSheet(row) {
         });
         const r0 = Array.isArray(got.data.values) && got.data.values[0] ? got.data.values[0] : [];
         const existingCsv = sanitizeUserQueriesCsvForSheet(sheetCellString_(r0[queriesCol.colIdx]));
-        const merged = mergeCsvUnique_(existingCsv, incomingQ, 200);
-        const queryColumnWritten = merged !== existingCsv;
+        let merged = existingCsv;
+        let queryColumnWritten = false;
         /** @type {{ totalUpdatedCells?: number, totalUpdatedRows?: number, updatedRanges: string[] } | null} */
         let googleBatchQueries = null;
-        if (queryColumnWritten) {
-            const nBatch = await sheets.spreadsheets.values.batchUpdate({
-                spreadsheetId: SPREADSHEET_ID,
-                requestBody: {
-                    valueInputOption: "USER_ENTERED",
-                    data: [{ range: `${tab}!${queriesCol.colLetter}${rowNumber}`, values: [[merged]] }]
-                }
-            });
-            googleBatchQueries = googleBatchSummaryFromResponse_(nBatch);
+        if (incomingQ) {
+            merged = mergeCsvUnique_(existingCsv, incomingQ, 200);
+            queryColumnWritten = merged !== existingCsv;
+            if (queryColumnWritten) {
+                const nBatch = await sheets.spreadsheets.values.batchUpdate({
+                    spreadsheetId: SPREADSHEET_ID,
+                    requestBody: {
+                        valueInputOption: "USER_ENTERED",
+                        data: [{ range: `${tab}!${queriesCol.colLetter}${rowNumber}`, values: [[merged]] }]
+                    }
+                });
+                googleBatchQueries = googleBatchSummaryFromResponse_(nBatch);
+            }
         }
         // Chat may append a row on mobile first (blank name/email), then capture fields later; session
         // query sync still hits this path — fill blank contact columns without rewriting the queries column twice.
-        const contact = await updateExistingSessionRow_(
-            sheets,
-            tab,
-            rowNumber,
-            {
-                name: typeof row.name === "string" ? row.name : "",
-                mobile: typeof row.mobile === "string" ? row.mobile : "",
-                email: typeof row.email === "string" ? row.email : "",
-                browserName: typeof row.browserName === "string" ? row.browserName : "",
-                deviceType: typeof row.deviceType === "string" ? row.deviceType : "",
-                channel: typeof row.channel === "string" ? row.channel : "",
-                fileLinks: typeof row.fileLinks === "string" ? row.fileLinks : "",
-                city: typeof row.city === "string" ? row.city : "",
-                ip: typeof row.ip === "string" ? row.ip : "",
-                sourceUrl: typeof row.sourceUrl === "string" ? row.sourceUrl : "",
-                appointmentBooked:
-                    typeof row.appointmentBooked === "string" ? row.appointmentBooked : "",
-                appointmentDate:
-                    typeof row.appointmentDate === "string" ? row.appointmentDate : "",
-                appointmentTime:
-                    typeof row.appointmentTime === "string" ? row.appointmentTime : "",
-                userQueriesCsv: ""
-            },
-            {}
-        );
+        /** @type {{ applied: boolean, googleBatch?: { totalUpdatedCells?: number, totalUpdatedRows?: number, updatedRanges: string[] } }} */
+        let contact = { applied: false };
+        if (incomingQ) {
+            contact = await updateExistingSessionRow_(
+                sheets,
+                tab,
+                rowNumber,
+                {
+                    name: typeof row.name === "string" ? row.name : "",
+                    mobile: typeof row.mobile === "string" ? row.mobile : "",
+                    email: typeof row.email === "string" ? row.email : "",
+                    browserName: typeof row.browserName === "string" ? row.browserName : "",
+                    deviceType: typeof row.deviceType === "string" ? row.deviceType : "",
+                    channel: typeof row.channel === "string" ? row.channel : "",
+                    fileLinks: typeof row.fileLinks === "string" ? row.fileLinks : "",
+                    city: typeof row.city === "string" ? row.city : "",
+                    ip: typeof row.ip === "string" ? row.ip : "",
+                    sourceUrl: typeof row.sourceUrl === "string" ? row.sourceUrl : "",
+                    appointmentBooked:
+                        typeof row.appointmentBooked === "string" ? row.appointmentBooked : "",
+                    appointmentDate:
+                        typeof row.appointmentDate === "string" ? row.appointmentDate : "",
+                    appointmentTime:
+                        typeof row.appointmentTime === "string" ? row.appointmentTime : "",
+                    userQueriesCsv: ""
+                },
+                {}
+            );
+        }
         await maybeWriteSheetRowOpenLink_(sheets, tab, rowNumber, sid);
+        if (chatTranscriptJson) {
+            await maybeWriteChatTranscriptJsonToSheetCell_(sheets, tab, rowNumber, chatTranscriptJson);
+        }
         return {
             mode: "merge_into_existing_row",
             tab,
@@ -2463,7 +2595,18 @@ export async function upsertSessionQueriesInSheet(row) {
         };
     }
 
+    if (!incomingQ) {
+        return { mode: "skipped_no_session_row_for_transcript" };
+    }
+
     const sheetOutcome = await appendContactRowToSheet(row);
+    let appendedRn =
+        typeof sheetOutcome.sheetRowNumber === "number" && sheetOutcome.sheetRowNumber > 0
+            ? sheetOutcome.sheetRowNumber
+            : 0;
+    if (chatTranscriptJson && appendedRn) {
+        await maybeWriteChatTranscriptJsonToSheetCell_(sheets, tab, appendedRn, chatTranscriptJson);
+    }
     return { mode: "appended_new_row", sheetOutcome };
 }
 
