@@ -76,6 +76,8 @@ const RANGE = (process.env.SHEETS_RANGE || "Sheet1!A:R").trim();
  * Leave unset to skip (default). Add a matching header on row 1 in your sheet if you want a label.
  */
 const SHEETS_ROW_OPEN_LINK_COLUMN = (process.env.SHEETS_ROW_OPEN_LINK_COLUMN || "").trim().toUpperCase();
+/** API origin for staff links from Sheets (e.g. https://YOUR-APP.up.railway.app). Enables “Chat transcript” hyperlinks. */
+const CONVERSATIONS_PUBLIC_BASE_URL = (process.env.CONVERSATIONS_PUBLIC_BASE_URL || "").trim().replace(/\/+$/, "");
 /** Secondary tab for lead KPIs (created if missing). Must differ from `SHEETS_RANGE` data tab. */
 const DASHBOARD_SHEET_TAB = (process.env.SHEETS_DASHBOARD_TAB || "Sheet2").trim() || "Sheet2";
 /** After each new lead row append, refresh the dashboard tab (best-effort; does not fail the request). */
@@ -1787,24 +1789,39 @@ function rowNumberFromUpdatedRange_(updatedRange) {
 }
 
 /**
- * Writes a clickable cell that opens this spreadsheet scrolled to `rowNumber` (same tab).
+ * Writes a clickable cell: prefers `/conversation-transcript?session=…` when CONVERSATIONS_PUBLIC_BASE_URL + session id exist.
  *
  * @param {import("googleapis").sheets_v4.Sheets} sheets
  * @param {string} tabTitle Worksheet title (not RANGE prefix).
  * @param {number} rowNumber 1-based sheet row
+ * @param {string} [clientSessionId]
  */
-async function maybeWriteSheetRowOpenLink_(sheets, tabTitle, rowNumber) {
+async function maybeWriteSheetRowOpenLink_(sheets, tabTitle, rowNumber, clientSessionId = "") {
     const col = SHEETS_ROW_OPEN_LINK_COLUMN;
     if (!col || !/^[A-Z]{1,3}$/.test(col) || rowNumber < 2) {
         return;
     }
-    if (!SPREADSHEET_ID) {
+    const sid = typeof clientSessionId === "string" ? clientSessionId.trim() : "";
+    /** @type {string} */
+    let url = "";
+    /** @type {string} */
+    let label = "Open row";
+    if (CONVERSATIONS_PUBLIC_BASE_URL && sid) {
+        url = `${CONVERSATIONS_PUBLIC_BASE_URL}/conversation-transcript?session=${encodeURIComponent(sid)}`;
+        label = "Chat transcript";
+    } else if (SPREADSHEET_ID) {
+        try {
+            const gid = await getSheetIdForTitle_(sheets, tabTitle);
+            url = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/edit?gid=${gid}#range=A${rowNumber}`;
+            label = "Open row";
+        } catch {
+            return;
+        }
+    } else {
         return;
     }
     try {
-        const gid = await getSheetIdForTitle_(sheets, tabTitle);
-        const url = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/edit?gid=${gid}#range=A${rowNumber}`;
-        const formula = `=HYPERLINK("${url.replace(/"/g, '""')}","Open row")`;
+        const formula = `=HYPERLINK("${url.replace(/"/g, '""')}","${label.replace(/"/g, '""')}")`;
         await sheets.spreadsheets.values.update({
             spreadsheetId: SPREADSHEET_ID,
             range: `${sheetA1TabPrefix_(tabTitle)}!${col}${rowNumber}`,
@@ -1817,6 +1834,34 @@ async function maybeWriteSheetRowOpenLink_(sheets, tabTitle, rowNumber) {
             : String(e);
         console.warn("[chatbot-api] SHEETS_ROW_OPEN_LINK_COLUMN write failed:", m);
     }
+}
+
+/**
+ * User Queries cell for the lead row with this session id (for transcript API fallback).
+ *
+ * @param {string} sessionId
+ * @returns {Promise<{ csv: string, rowNumber: number }>}
+ */
+export async function fetchLeadSheetUserQueriesForSession(sessionId) {
+    const sid = typeof sessionId === "string" ? sessionId.trim() : "";
+    if (!sid || !SPREADSHEET_ID) {
+        return { csv: "", rowNumber: 0 };
+    }
+    const client = await getSheetsAuthClient();
+    const sheets = google.sheets({ version: "v4", auth: client });
+    const tab = tabNameFromRange(RANGE);
+    const rowNumber = await findSessionRowNumberBySessionId_(sheets, tab, sid);
+    if (!rowNumber) {
+        return { csv: "", rowNumber: 0 };
+    }
+    const queriesCol = await getUserQueriesColumnInfo_(sheets, tab);
+    const got = await sheets.spreadsheets.values.get({
+        spreadsheetId: SPREADSHEET_ID,
+        range: `${tab}!${queriesCol.colLetter}${rowNumber}:${queriesCol.colLetter}${rowNumber}`
+    });
+    const row0 = Array.isArray(got.data.values) && got.data.values[0] ? got.data.values[0] : [];
+    const csv = sheetCellString_(row0[0]);
+    return { csv, rowNumber };
 }
 
 /**
@@ -2090,9 +2135,7 @@ export async function appendContactRowToSheet(row, opts) {
                 console.warn("[chatbot-api] Dashboard tab sync failed:", msg);
             });
         }
-        if (patched) {
-            await maybeWriteSheetRowOpenLink_(sheets, tabResolved, scan.matchedRowNumber);
-        }
+        await maybeWriteSheetRowOpenLink_(sheets, tabResolved, scan.matchedRowNumber, row.clientSessionId);
         return {
             action: patched ? "duplicate_updated" : "duplicate_noop",
             patched,
@@ -2199,7 +2242,7 @@ export async function appendContactRowToSheet(row, opts) {
         const msg = e && e.message ? e.message : String(e);
         console.error("[chatbot-api] Sheets header-mapped patch failed; row still appended.", msg);
     }
-    await maybeWriteSheetRowOpenLink_(sheets, tabResolved, appendedRowNum);
+    await maybeWriteSheetRowOpenLink_(sheets, tabResolved, appendedRowNum, row.clientSessionId);
     if (SYNC_DASHBOARD_ON_APPEND) {
         void writeLeadCaptureDashboardToSheet2({}).catch((err) => {
             const msg = err && /** @type {{ message?: string }} */ (err).message
@@ -2332,7 +2375,7 @@ export async function upsertSessionQueriesInSheet(row) {
             },
             {}
         );
-        await maybeWriteSheetRowOpenLink_(sheets, tab, rowNumber);
+        await maybeWriteSheetRowOpenLink_(sheets, tab, rowNumber, sid);
         return {
             mode: "merge_into_existing_row",
             tab,

@@ -46,12 +46,13 @@ import multer from "multer";
 import admin from "firebase-admin";
 import "firebase-admin/database";
 import { firebaseAdminInit } from "./lib/firebase-admin-init.mjs";
-import { persistToFirestore } from "./lib/firestore.mjs";
+import { persistToFirestore, fetchLatestContactSubmissionForClientSession } from "./lib/firestore.mjs";
 import {
     appendContactRowToSheet,
     fetchConversationLeadCaptureStats,
     fetchConversationSheetPreview,
     fetchConversationSheetExport,
+    fetchLeadSheetUserQueriesForSession,
     formatConversationDateForSheet,
     formatConversationTimeForSheet,
     probeSheetsSpreadsheetAccess,
@@ -2384,6 +2385,7 @@ app.post(
             mobile,
             fields,
             client_context: mergedClientContext,
+            ...(clientSessionId ? { client_session_id: clientSessionId } : {}),
             ...(drive_uploads.length
                 ? {
                     drive_uploads,
@@ -3039,6 +3041,7 @@ app.get("/contact-form-sheets-health", async (_req, res) => {
 /** Reception/staff: same-slot view as the chat widget (reads RTDB via /api/slots). */
 const RECEPTION_SCHEDULE_HTML = path.join(__dirname_api, "public", "reception-schedule.html");
 const CONVERSATIONS_SHEET_HTML = path.join(__dirname_api, "public", "conversations-sheet.html");
+const CONVERSATION_TRANSCRIPT_HTML = path.join(__dirname_api, "public", "conversation-transcript.html");
 app.get("/reception-schedule", (_req, res) => {
     res.sendFile(RECEPTION_SCHEDULE_HTML, (err) => {
         if (err) {
@@ -3060,10 +3063,23 @@ app.get("/conversations-sheet", (_req, res) => {
     });
 });
 
+/** Staff: one session’s user + assistant lines (same auth as conversations inbox). */
+app.get("/conversation-transcript", (_req, res) => {
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+    res.setHeader("Pragma", "no-cache");
+    res.sendFile(CONVERSATION_TRANSCRIPT_HTML, (err) => {
+        if (err) {
+            console.error("[chatbot-api] conversation-transcript:", err.message);
+            res.status(404).type("text/plain; charset=utf-8").send("Staff UI missing: add public/conversation-transcript.html and redeploy.");
+        }
+    });
+});
+
 const PATHNAME_CONVERSATIONS_SHEET_JSON = "/api/conversations-sheet";
 const PATHNAME_CONVERSATIONS_SHEET_STATS = "/api/conversations-sheet-stats";
 const PATHNAME_CONVERSATIONS_SHEET_SYNC_DASHBOARD = "/api/conversations-sheet-sync-dashboard";
 const PATHNAME_CONVERSATIONS_SHEET_EXPORT = "/api/conversations-sheet-export";
+const PATHNAME_CONVERSATION_TRANSCRIPT_JSON = "/api/conversation-transcript";
 
 function conversationsSheetSecretFromReq_(req) {
     const want = (process.env.CONVERSATIONS_SHEET_VIEW_SECRET || "").trim();
@@ -3100,6 +3116,57 @@ function setConversationsSheetCors_(req, res) {
     );
 }
 
+/**
+ * @param {Record<string, unknown>} cx
+ * @returns {{ role: string, text: string }[]}
+ */
+function transcriptTurnsFromClientContext_(cx) {
+    if (!cx || typeof cx !== "object") {
+        return [];
+    }
+    const ct = cx.chat_transcript;
+    if (Array.isArray(ct) && ct.length) {
+        /** @type {{ role: string, text: string }[]} */
+        const out = [];
+        for (const item of ct) {
+            if (!item || typeof item !== "object") {
+                continue;
+            }
+            const o = /** @type {Record<string, unknown>} */ (item);
+            const role = o.role === "assistant" ? "assistant" : "user";
+            const text = typeof o.text === "string" ? o.text.trim() : "";
+            if (!text) {
+                continue;
+            }
+            out.push({ role, text });
+        }
+        return out;
+    }
+    const uq = cx.user_queries;
+    if (Array.isArray(uq) && uq.length) {
+        return uq
+            .filter((x) => typeof x === "string" && x.trim())
+            .map((x) => ({ role: "user", text: String(x).trim() }));
+    }
+    return [];
+}
+
+/** @param {string} csv */
+function userTurnsFromSheetQueriesCsv_(csv) {
+    const s = typeof csv === "string" ? csv.trim() : "";
+    if (!s) {
+        return [];
+    }
+    const bits = s.split(",").map((x) => x.trim()).filter(Boolean);
+    if (bits.length === 0) {
+        return [];
+    }
+    if (bits.length === 1) {
+        return [{ role: "user", text: bits[0] }];
+    }
+    return bits.map((text) => ({ role: "user", text }));
+}
+
 app.options(PATHNAME_CONVERSATIONS_SHEET_JSON, (req, res) => {
     setConversationsSheetCors_(req, res);
     res.status(204).end();
@@ -3118,6 +3185,87 @@ app.options(PATHNAME_CONVERSATIONS_SHEET_SYNC_DASHBOARD, (req, res) => {
 app.options(PATHNAME_CONVERSATIONS_SHEET_EXPORT, (req, res) => {
     setConversationsSheetCors_(req, res);
     res.status(204).end();
+});
+
+app.options(PATHNAME_CONVERSATION_TRANSCRIPT_JSON, (req, res) => {
+    setConversationsSheetCors_(req, res);
+    res.status(204).end();
+});
+
+app.get(PATHNAME_CONVERSATION_TRANSCRIPT_JSON, async (req, res) => {
+    setConversationsSheetCors_(req, res);
+    res.setHeader("Cache-Control", "no-store");
+    try {
+        const cfg = conversationsSheetSecretFromReq_(req);
+        if (cfg.reason === "unset") {
+            return res.status(503).json({
+                ok: false,
+                error:
+                    "Server has no CONVERSATIONS_SHEET_VIEW_SECRET. Set it in Railway Variables (same as conversations inbox)."
+            });
+        }
+        if (!cfg.ok) {
+            return res.status(401).json({
+                ok: false,
+                error:
+                    "Unauthorized — send header X-Conversations-Sheet-Secret, Authorization: Bearer …, or ?secret="
+            });
+        }
+        const session = typeof req.query.session === "string" ? req.query.session.trim() : "";
+        if (!session) {
+            return res.status(400).json({ ok: false, error: "Missing session query parameter." });
+        }
+
+        /** @type {{ role: string, text: string }[]} */
+        let turns = [];
+        let source = "none";
+        /** @type {Record<string, unknown>} */
+        let meta = {};
+
+        if (!FIRESTORE_DISABLED) {
+            try {
+                const rec = await fetchLatestContactSubmissionForClientSession(session);
+                if (rec && typeof rec === "object") {
+                    const cx = /** @type {Record<string, unknown>} */ (
+                        rec.client_context && typeof rec.client_context === "object"
+                            ? rec.client_context
+                            : {}
+                    );
+                    turns = transcriptTurnsFromClientContext_(cx);
+                    if (turns.length) {
+                        source = "firestore";
+                        meta = {
+                            name: rec.name,
+                            email: rec.email,
+                            mobile: rec.mobile,
+                            submitted_at: rec.submitted_at
+                        };
+                    }
+                }
+            } catch (fe) {
+                const msg = fe && /** @type {{ message?: string }} */ (fe).message ? String(fe.message) : String(fe);
+                console.warn("[chatbot-api] conversation-transcript Firestore:", msg.slice(0, 240));
+            }
+        }
+
+        if (!turns.length && !SHEETS_DISABLED) {
+            try {
+                const { csv } = await fetchLeadSheetUserQueriesForSession(session);
+                turns = userTurnsFromSheetQueriesCsv_(csv);
+                if (turns.length) {
+                    source = "sheet";
+                }
+            } catch (se) {
+                const msg = se && /** @type {{ message?: string }} */ (se).message ? String(se.message) : String(se);
+                console.warn("[chatbot-api] conversation-transcript Sheet:", msg.slice(0, 240));
+            }
+        }
+
+        return res.json({ ok: true, session, source, meta, turns });
+    } catch (e) {
+        const msg = e && /** @type {{ message?: string }} */ (e).message ? String(e.message) : String(e);
+        return res.status(500).json({ ok: false, error: msg });
+    }
 });
 
 app.get(PATHNAME_CONVERSATIONS_SHEET_JSON, async (req, res) => {
@@ -3424,6 +3572,8 @@ app.get("/", (_req, res) => {
             `Contact leads API running.`,
             `GET /reception-schedule → staff calendar (booked vs free slots).`,
             `GET /conversations-sheet → staff inbox (Sheet leads; requires CONVERSATIONS_SHEET_VIEW_SECRET).`,
+            `GET /conversation-transcript?session=… → staff chat transcript page (same secret via header or localStorage).`,
+            `GET /api/conversation-transcript?session=… → JSON { turns: [{role,text}] } (same secret as inbox).`,
             `GET /api/conversations-sheet?limit=&offset=&from=YYYY-MM-DD&to=YYYY-MM-DD → JSON rows (same secret; optional sheet-wide date filter).`,
             `GET /api/conversations-sheet-stats?from=YYYY-MM-DD&to=YYYY-MM-DD → mobile/email lead ratios (same secret).`,
             `GET /api/conversations-sheet-export?from=&to= → CSV download for all scanned rows or date-filtered rows (same secret).`,

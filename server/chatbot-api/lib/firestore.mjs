@@ -22,6 +22,69 @@ function getFirestoreDb() {
     return getFirestore(admin.app(), id);
 }
 
+/**
+ * Latest contact submission for a widget session id (top-level `client_session_id` or nested `client_context.client_session_id`).
+ *
+ * @param {string} sessionId
+ * @returns {Promise<FirestoreRecord|null>}
+ */
+export async function fetchLatestContactSubmissionForClientSession(sessionId) {
+    firebaseAdminInit();
+    const db = getFirestoreDb();
+    const sid = typeof sessionId === "string" ? sessionId.trim() : "";
+    if (!sid) {
+        return null;
+    }
+
+    /** @param {*} qs */
+    const newestFromSnap = (qs) => {
+        if (!qs || qs.empty) {
+            return null;
+        }
+        /** @type {{ ms: number, data: FirestoreRecord }[]} */
+        const rows = [];
+        for (const doc of qs.docs) {
+            const data = /** @type {FirestoreRecord} */ (doc.data());
+            let ms = 0;
+            const sa = /** @type {{ toMillis?: () => number }} */ (data.saved_at);
+            if (sa && typeof sa.toMillis === "function") {
+                ms = sa.toMillis();
+            }
+            const sub = data.submitted_at;
+            if (typeof sub === "string") {
+                const t = Date.parse(sub);
+                if (Number.isFinite(t)) {
+                    ms = Math.max(ms, t);
+                }
+            }
+            rows.push({ ms, data });
+        }
+        rows.sort((a, b) => b.ms - a.ms);
+        return rows.length ? rows[0].data : null;
+    };
+
+    try {
+        const snapTop = await db.collection(COLLECTION).where("client_session_id", "==", sid).limit(25).get();
+        const hitTop = newestFromSnap(snapTop);
+        if (hitTop) {
+            return hitTop;
+        }
+    } catch {
+        /* fall through */
+    }
+
+    try {
+        const snapNest = await db
+            .collection(COLLECTION)
+            .where("client_context.client_session_id", "==", sid)
+            .limit(25)
+            .get();
+        return newestFromSnap(snapNest);
+    } catch {
+        return null;
+    }
+}
+
 export async function persistToFirestore(record) {
     // Ensure Admin app exists before Firestore use.
     firebaseAdminInit();

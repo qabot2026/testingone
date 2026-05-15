@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Chat transcript</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,400;0,600;0,700;1,400&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --text: #0f172a;
+      --muted: #64748b;
+      --border: rgba(148, 163, 184, 0.45);
+      --user-bg: #ccfbf1;
+      --assistant-bg: #e2e8f0;
+      --surface: #ffffff;
+      --radius: 12px;
+      font-family: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+      font-size: 14px;
+      line-height: 1.5;
+      color: var(--text);
+      background: linear-gradient(180deg, #f8fafc 0%, #e2e8f0 100%);
+      min-height: 100dvh;
+    }
+    body {
+      margin: 0;
+      padding: clamp(16px, 3vw, 28px);
+      max-width: 720px;
+      margin-inline: auto;
+    }
+    h1 {
+      font-size: 1.25rem;
+      font-weight: 700;
+      margin: 0 0 4px;
+      letter-spacing: -0.02em;
+    }
+    .sub {
+      color: var(--muted);
+      font-size: 0.8125rem;
+      margin-bottom: 18px;
+    }
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px 16px;
+      margin-bottom: 14px;
+      box-shadow: 0 4px 24px rgba(15, 23, 42, 0.06);
+    }
+    label {
+      display: block;
+      font-size: 0.68rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+    input[type="password"] {
+      width: 100%;
+      padding: 8px 12px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      font: inherit;
+      box-sizing: border-box;
+    }
+    button {
+      margin-top: 10px;
+      padding: 8px 16px;
+      border-radius: 10px;
+      font: inherit;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      background: linear-gradient(135deg, #14b8a6, #0d9488);
+      color: #f0fdfa;
+    }
+    button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+    .err {
+      color: #b91c1c;
+      font-size: 0.8125rem;
+      margin-top: 8px;
+    }
+    .meta {
+      font-size: 0.75rem;
+      color: var(--muted);
+      margin-bottom: 12px;
+    }
+    .turn {
+      margin-bottom: 12px;
+      padding: 10px 14px;
+      border-radius: var(--radius);
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .turn--user {
+      background: var(--user-bg);
+      margin-right: 12px;
+    }
+    .turn--assistant {
+      background: var(--assistant-bg);
+      margin-left: 12px;
+    }
+    .turn-label {
+      font-size: 0.65rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+    .empty {
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+  </style>
+</head>
+<body>
+  <h1>Chat transcript</h1>
+  <p class="sub">User and assistant messages for this widget session (same viewer secret as the conversations inbox).</p>
+
+  <div class="panel" id="authPanel">
+    <label for="secret">Viewer secret</label>
+    <input id="secret" type="password" autocomplete="current-password" placeholder="Paste CONVERSATIONS_SHEET_VIEW_SECRET if not saved" />
+    <button type="button" id="loadBtn">Load transcript</button>
+    <p class="err" id="errBox" hidden></p>
+  </div>
+
+  <div id="thread"></div>
+
+  <script>
+    (function () {
+      var LS_KEY = "conversations_sheet_secret_v1";
+      var secretEl = document.getElementById("secret");
+      var loadBtn = document.getElementById("loadBtn");
+      var errBox = document.getElementById("errBox");
+      var thread = document.getElementById("thread");
+
+      try {
+        var saved = localStorage.getItem(LS_KEY);
+        if (saved) secretEl.value = saved;
+      } catch (ignore) {}
+
+      function escapeHtml(s) {
+        return String(s || "")
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;");
+      }
+
+      function sessionFromUrl() {
+        try {
+          var q = new URLSearchParams(window.location.search).get("session");
+          return q && q.trim() ? q.trim() : "";
+        } catch {
+          return "";
+        }
+      }
+
+      function showErr(msg) {
+        if (!msg) {
+          errBox.hidden = true;
+          errBox.textContent = "";
+          return;
+        }
+        errBox.hidden = false;
+        errBox.textContent = msg;
+      }
+
+      async function loadTranscript() {
+        showErr("");
+        thread.innerHTML = "";
+        var session = sessionFromUrl();
+        if (!session) {
+          showErr("Missing session in URL. Open this page from the Sheet link or add ?session=…");
+          return;
+        }
+        var secret = secretEl.value.trim();
+        if (!secret) {
+          showErr("Enter the viewer secret (same as conversations inbox).");
+          return;
+        }
+        try {
+          localStorage.setItem(LS_KEY, secret);
+        } catch (ignore) {}
+
+        loadBtn.disabled = true;
+        try {
+          var url =
+            "/api/conversation-transcript?session=" + encodeURIComponent(session);
+          var res = await fetch(url, {
+            method: "GET",
+            headers: { "X-Conversations-Sheet-Secret": secret },
+            cache: "no-store",
+            credentials: "same-origin"
+          });
+          var json = await res.json().catch(function () {
+            return null;
+          });
+          if (!res.ok || !json || !json.ok) {
+            showErr((json && json.error) || "HTTP " + res.status);
+            return;
+          }
+
+          var parts = [];
+          parts.push('<div class="meta">Session · <code>' + escapeHtml(session) + "</code>");
+          if (json.source) {
+            parts.push(" · Source: " + escapeHtml(json.source));
+          }
+          parts.push("</div>");
+
+          var meta = json.meta && typeof json.meta === "object" ? json.meta : {};
+          if (meta.name || meta.mobile || meta.email || meta.submitted_at) {
+            parts.push('<div class="meta">');
+            if (meta.name) parts.push("Name: " + escapeHtml(String(meta.name)) + " · ");
+            if (meta.mobile) parts.push("Mobile: " + escapeHtml(String(meta.mobile)) + " · ");
+            if (meta.email) parts.push("Email: " + escapeHtml(String(meta.email)) + " · ");
+            if (meta.submitted_at) parts.push("Submitted: " + escapeHtml(String(meta.submitted_at)));
+            parts.push("</div>");
+          }
+
+          var turns = Array.isArray(json.turns) ? json.turns : [];
+          if (!turns.length) {
+            parts.push(
+              '<p class="empty">No transcript stored yet. Full user + assistant script appears after the visitor sends messages and submits a lead (Firestore), or user lines from the Sheet if only live sync ran.</p>'
+            );
+          } else {
+            for (var i = 0; i < turns.length; i++) {
+              var t = turns[i];
+              var role = t && t.role === "assistant" ? "assistant" : "user";
+              var text = t && typeof t.text === "string" ? t.text : "";
+              var label = role === "assistant" ? "Assistant" : "User";
+              parts.push(
+                '<div class="turn turn--' +
+                  role +
+                  '"><div class="turn-label">' +
+                  escapeHtml(label) +
+                  "</div>" +
+                  escapeHtml(text) +
+                  "</div>"
+              );
+            }
+          }
+          thread.innerHTML = parts.join("");
+        } catch (e) {
+          showErr(String(e && e.message ? e.message : e));
+        } finally {
+          loadBtn.disabled = false;
+        }
+      }
+
+      loadBtn.addEventListener("click", function () {
+        void loadTranscript();
+      });
+
+      if (secretEl.value.trim() && sessionFromUrl()) {
+        void loadTranscript();
+      }
+    })();
+  </script>
+</body>
+</html>

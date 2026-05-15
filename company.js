@@ -4382,6 +4382,9 @@ let restartFromUserPhraseTimerId = null;
 
 /** Keep in sync with server `collectUserQueriesLinesFromContext_` per-line ceiling (truncation, not omission). */
 const MAX_STORED_CHAT_USER_QUERY_CHARS = 500;
+/** Interleaved transcript lines sent with `client_context` (contact form + session sync). */
+const MAX_CHAT_TRANSCRIPT_TEXT_CHARS = 2000;
+const MAX_CHAT_TRANSCRIPT_TURNS = 120;
 /** Last typed line from `df-user-input-entered` when `df-request-sent` omits text in `detail` (gate + thanks need it). */
 let dfchatPendingTypedUtteranceForGate_ = "";
 
@@ -13630,6 +13633,12 @@ function handleDfResponseReceived(event) {
 
     maybeIncrementBubbleUnreadFromResponse(event);
 
+    const assistantLines = extractAssistantVisibleTextsFromDfResponse_(event);
+    if (assistantLines.length) {
+        appendChatTranscriptAssistantLines_(assistantLines);
+        scheduleSessionQueriesSheetSync_();
+    }
+
     scheduleDomTranslationRefresh();
 }
 
@@ -13804,10 +13813,17 @@ function trackChatUserQueryInSessionContext_(raw) {
         next.push(t);
         // Cap to keep long sessions useful (matches server-side merge limit).
         const capped = next.slice(Math.max(0, next.length - 120));
+        const transcript =
+            prev.chat_transcript && Array.isArray(prev.chat_transcript)
+                ? prev.chat_transcript.slice()
+                : [];
+        transcript.push({ role: "user", text: t, at: now });
+        const cappedTr = transcript.slice(-MAX_CHAT_TRANSCRIPT_TURNS);
         persistClientContext({
             ...prev,
             user_queries: capped,
-            user_queries_last_at: now
+            user_queries_last_at: now,
+            chat_transcript: cappedTr
         });
         scheduleSessionQueriesSheetSync_();
     } catch {
@@ -14026,6 +14042,83 @@ function responseHasVisibleBotText_(event) {
         }
     }
     return false;
+}
+
+/**
+ * Plain assistant text chunks from a Dialogflow Messenger / CX response (no custom payloads).
+ * @param {Event & { detail?: { raw?: { queryResult?: { responseMessages?: Array<unknown> } }, data?: { messages?: Array<unknown> } } }} event
+ * @returns {string[]}
+ */
+function extractAssistantVisibleTextsFromDfResponse_(event) {
+    const responseMessages = event && event.detail && event.detail.raw && event.detail.raw.queryResult
+        && Array.isArray(event.detail.raw.queryResult.responseMessages)
+        ? event.detail.raw.queryResult.responseMessages
+        : [];
+
+    const messengerMessages = event && event.detail && event.detail.data && Array.isArray(event.detail.data.messages)
+        ? event.detail.data.messages
+        : [];
+
+    /** @type {string[]} */
+    const parts = [];
+    for (const m of [...responseMessages, ...messengerMessages]) {
+        if (!m || typeof m !== "object") {
+            continue;
+        }
+        if (messageContainsOpenFormAction(m)) {
+            continue;
+        }
+        const cxText = m.text && typeof m.text === "object" && Array.isArray(m.text.text) ? m.text.text : null;
+        if (cxText) {
+            for (const s of cxText) {
+                if (typeof s === "string" && s.trim()) {
+                    parts.push(s.trim());
+                }
+            }
+        } else if (typeof m.text === "string" && m.text.trim()) {
+            parts.push(m.text.trim());
+        }
+    }
+    return parts;
+}
+
+/**
+ * @param {string[]} lines
+ */
+function appendChatTranscriptAssistantLines_(lines) {
+    if (!lines || !lines.length) {
+        return;
+    }
+    try {
+        const prev = readStoredClientContext();
+        const transcript =
+            prev.chat_transcript && Array.isArray(prev.chat_transcript)
+                ? prev.chat_transcript.slice()
+                : [];
+        const now = Date.now();
+        for (let i = 0; i < lines.length; i += 1) {
+            const raw = lines[i];
+            const trimmed = typeof raw === "string" ? raw.trim() : "";
+            if (!trimmed) {
+                continue;
+            }
+            const text =
+                trimmed.length > MAX_CHAT_TRANSCRIPT_TEXT_CHARS
+                    ? `${trimmed.slice(0, MAX_CHAT_TRANSCRIPT_TEXT_CHARS)}…`
+                    : trimmed;
+            const last = transcript.length ? transcript[transcript.length - 1] : null;
+            if (last && last.role === "assistant" && last.text === text) {
+                continue;
+            }
+            transcript.push({ role: "assistant", text, at: now });
+        }
+        persistClientContext({
+            ...prev,
+            chat_transcript: transcript.slice(-MAX_CHAT_TRANSCRIPT_TURNS)
+        });
+    } catch {
+        /* ignore */
+    }
 }
 
 /**
