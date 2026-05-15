@@ -3298,10 +3298,47 @@ function coerceTranscriptAtMs_(raw) {
 
 /**
  * @param {Record<string, unknown>} rec
+ * @returns {boolean}
+ */
+function transcriptItemLooksLikeCxAssistantPayload_(rec) {
+    if (!rec || typeof rec !== "object") {
+        return false;
+    }
+    if (rec.fulfillment_response || rec.fulfillmentResponse) {
+        return true;
+    }
+    const pl = rec.payload;
+    if (pl && typeof pl === "object") {
+        const p = /** @type {Record<string, unknown>} */ (pl);
+        if (p.fulfillment_response || p.fulfillmentResponse) {
+            return true;
+        }
+    }
+    const tx = rec.text;
+    if (tx && typeof tx === "object" && !Array.isArray(tx)) {
+        /** CX outbound: `{ text: { text: string[] } }` without `role` */
+        const nest = /** @type {{ text?: unknown }} */ (tx).text;
+        if (Array.isArray(nest) && nest.some((x) => typeof x === "string" && x.trim())) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * @param {Record<string, unknown>} rec
  * @returns {"assistant" | "user"}
  */
 function normalizeTranscriptItemRole_(rec) {
-    const raw = rec.role ?? rec.type ?? rec.sender ?? rec.participant;
+    const raw =
+        rec.role
+        ?? rec.type
+        ?? rec.sender
+        ?? rec.participant
+        ?? rec.author
+        ?? rec.messageFrom
+        ?? rec.source
+        ?? rec.speaker;
     const r = typeof raw === "string" ? raw.trim().toLowerCase() : "";
     if (
         r === "assistant"
@@ -3312,10 +3349,32 @@ function normalizeTranscriptItemRole_(rec) {
         || r === "virtual_agent"
         || r === "df-bot"
         || r === "system"
+        || r === "chirp"
+        || r.includes("automated")
     ) {
         return "assistant";
     }
+    if (r === "user" || r === "human" || r === "customer" || r === "client" || r === "end_user" || r === "enduser") {
+        return "user";
+    }
+    if (transcriptItemLooksLikeCxAssistantPayload_(rec)) {
+        return "assistant";
+    }
     return "user";
+}
+
+/** @param {{ role: string, text: string, at?: number, seq?: number }[]} turns */
+function assistantTurnCount_(turns) {
+    if (!Array.isArray(turns)) {
+        return 0;
+    }
+    let n = 0;
+    for (let i = 0; i < turns.length; i += 1) {
+        if (turns[i] && turns[i].role === "assistant") {
+            n += 1;
+        }
+    }
+    return n;
 }
 
 /**
@@ -3343,6 +3402,23 @@ function transcriptTurnTextFromItem_(o, depth = 0) {
             if (bits.length) {
                 return bits.join("\n");
             }
+        }
+    }
+    if (Array.isArray(rec.messages) && rec.messages.length && depth < 8) {
+        /** @type {string[]} */
+        const msgBits = [];
+        for (let mi = 0; mi < rec.messages.length; mi += 1) {
+            const m = rec.messages[mi];
+            const sub =
+                m && typeof m === "object"
+                    ? transcriptTurnTextFromItem_(/** @type {Record<string, unknown>} */ (m), depth + 1)
+                    : "";
+            if (sub) {
+                msgBits.push(sub);
+            }
+        }
+        if (msgBits.length) {
+            return msgBits.join("\n\n");
         }
     }
     /** @param {unknown} v */
@@ -4206,6 +4282,15 @@ app.get(PATHNAME_CONVERSATION_TRANSCRIPT_JSON, async (req, res) => {
 
         /** Union-merge: Firestore freezes at last submit while Sheet keeps syncing user + bot lines after submit. */
         let turns = mergeConversationTranscriptTurnSources_(fbTurns, sheetChatTurns);
+        if (sheetChatTurns.length > 0) {
+            const mergedAssistants = assistantTurnCount_(turns);
+            const sheetAssistants = assistantTurnCount_(sheetChatTurns);
+            /** Sheet is live; if it still has more bot lines than the merge, rebuild with Sheet first so CX-shaped rows are not lost behind stale Firebase. */
+            if (sheetAssistants > mergedAssistants) {
+                turns = mergeConversationTranscriptTurnSources_(sheetChatTurns, fbTurns);
+                sourceParts.push("sheet_first_assistant_rich");
+            }
+        }
 
         if (!SHEETS_DISABLED) {
             try {
