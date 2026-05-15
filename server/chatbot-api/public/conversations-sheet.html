@@ -878,7 +878,7 @@
     }
     @media (min-width: 1100px) {
       .lead-stats-chart-grid {
-        grid-template-columns: repeat(4, minmax(0, 1fr));
+        grid-template-columns: repeat(3, minmax(0, 1fr));
       }
     }
     @media (max-width: 900px) {
@@ -1211,7 +1211,6 @@
         var om = statNum(tot, "onlyMobile", 0);
         var oe = statNum(tot, "onlyEmail", 0);
         var be = statNum(tot, "mobileAndEmail", 0);
-        var ni = statNum(tot, "neither", 0);
         var leads = om + oe + be;
         var apt = statNum(tot, "appointmentBooked", NaN);
         if (!Number.isFinite(apt)) apt = statNum(tot, "appointmentScheduled", 0);
@@ -1233,8 +1232,7 @@
         var chBarEl = document.getElementById("lcBarChannel");
         var leadPieEl = document.getElementById("lcPieLead");
         var funnelEl = document.getElementById("lcBarFunnel");
-        var covEl = document.getElementById("lcPieCoverage");
-        if (!chBarEl || !leadPieEl || !funnelEl || !covEl) return;
+        if (!chBarEl || !leadPieEl || !funnelEl) return;
 
         var chLabels = ["Web", "WhatsApp", "Instagram", "Facebook"];
         var chData = [cw, cwa, cinst, cfb];
@@ -1371,7 +1369,7 @@
           new Chart(funnelEl, {
             type: "bar",
             data: {
-              labels: ["Conversations", "With contact detail", "Appointments booked"],
+              labels: ["Conversations", "Lead captured", "Appointments booked"],
               datasets: [
                 {
                   label: "Count",
@@ -1391,26 +1389,6 @@
           })
         );
 
-        leadChartInstances.push(
-          new Chart(covEl, {
-            type: "doughnut",
-            data: {
-              labels: ["With contact detail", "No phone/email"],
-              datasets: [
-                {
-                  data: [leads, ni],
-                  backgroundColor: [pal.teal, "#fdba74"]
-                }
-              ]
-            },
-            options: {
-              layout: chartLayoutTight,
-              responsive: true,
-              maintainAspectRatio: false,
-              plugins: Object.assign({ legend: doughnutLegend }, doughnutDl)
-            }
-          })
-        );
         }
       }
 
@@ -2598,11 +2576,10 @@
           '<div class="lead-chart-card"><h4>Volume by channel</h4><p class="lead-chart-card-total">Total · ' +
           escapeHtml(String(n)) +
           '</p><div class="chart-canvas-wrap"><canvas id="lcBarChannel"></canvas></div></div>' +
-          '<div class="lead-chart-card"><h4>Lead capture split</h4><p class="lead-chart-card-total">With contact · ' +
+          '<div class="lead-chart-card"><h4>Lead capture split</h4><p class="lead-chart-card-total">Leads Captured · ' +
           escapeHtml(String(leads)) +
           '</p><div class="chart-canvas-wrap"><canvas id="lcPieLead"></canvas></div></div>' +
           '<div class="lead-chart-card"><h4>Pipeline</h4><div class="chart-canvas-wrap"><canvas id="lcBarFunnel"></canvas></div></div>' +
-          '<div class="lead-chart-card"><h4>Contact vs gaps</h4><div class="chart-canvas-wrap"><canvas id="lcPieCoverage"></canvas></div></div>' +
           "</div></div>";
         lastLeadStatsPayload = payload;
         var viewMode = "numeric";

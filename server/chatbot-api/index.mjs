@@ -3257,16 +3257,54 @@ function conversationSheetRowsToCsv_(headers, conversations) {
     return lines.join("\r\n");
 }
 
-function conversationSheetExportFilename_(fromIso, toIso) {
-    const iso = (s) =>
-        typeof s === "string" && /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(s.trim()) ? s.trim() : "";
-    const a = iso(fromIso);
-    const b = iso(toIso);
-    if (a && b) {
-        return `conversation-leads_${a}_to_${b}.csv`;
+const CONVERSATIONS_EXPORT_MONTHS_SHORT = /** @type {const} */ ([
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec"
+]);
+
+/**
+ * @param {unknown} isoYmd
+ */
+function isoYmdToConversationExportFilenameSegment_(isoYmd) {
+    const s = typeof isoYmd === "string" ? isoYmd.trim() : "";
+    if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(s)) {
+        return "";
     }
-    if (a) return `conversation-leads_from-${a}.csv`;
-    if (b) return `conversation-leads_until-${b}.csv`;
+    const [ys, ms, ds] = s.split("-");
+    const y = Number.parseInt(ys, 10);
+    const mo = Number.parseInt(ms, 10);
+    const d = Number.parseInt(ds, 10);
+    if (!Number.isFinite(y) || !Number.isFinite(mo) || mo < 1 || mo > 12) {
+        return "";
+    }
+    if (!Number.isFinite(d) || d < 1 || d > 31) {
+        return "";
+    }
+    const monthLabel = CONVERSATIONS_EXPORT_MONTHS_SHORT[mo - 1];
+    if (!monthLabel) {
+        return "";
+    }
+    return `${d}_${monthLabel}_${y}`;
+}
+
+function conversationSheetExportFilename_(fromIso, toIso) {
+    const segFrom = isoYmdToConversationExportFilenameSegment_(fromIso);
+    const segTo = isoYmdToConversationExportFilenameSegment_(toIso);
+    if (segFrom && segTo) {
+        return `conversation-leads_${segFrom}_to_${segTo}.csv`;
+    }
+    if (segFrom) return `conversation-leads_from_${segFrom}.csv`;
+    if (segTo) return `conversation-leads_until_${segTo}.csv`;
     return "conversation-leads_all.csv";
 }
 
