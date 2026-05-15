@@ -526,7 +526,7 @@
       box-shadow: var(--shadow-md), 0 0 0 1px rgba(255, 255, 255, 0.6) inset;
     }
     .lead-stats.lead-stats-wrap--visual {
-      padding: 10px 14px 12px;
+      padding: 14px 18px 16px;
     }
     .lead-stats-list {
       margin: 0;
@@ -872,9 +872,14 @@
     .lead-stats-chart-grid {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 6px;
-      margin-top: 2px;
-      max-width: 520px;
+      gap: 12px;
+      margin-top: 6px;
+      width: 100%;
+    }
+    @media (min-width: 1100px) {
+      .lead-stats-chart-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
     }
     @media (max-width: 900px) {
       .lead-stats-chart-grid {
@@ -885,15 +890,15 @@
       border-radius: var(--radius-sm);
       border: 1px solid var(--border);
       background: rgba(255, 255, 255, 0.92);
-      padding: 5px 6px 4px;
+      padding: 10px 12px 8px;
       box-shadow: var(--shadow-sm);
       min-height: 0;
       display: flex;
       flex-direction: column;
     }
     .lead-chart-card h4 {
-      margin: 0 0 3px;
-      font-size: 0.6rem;
+      margin: 0 0 6px;
+      font-size: 0.65rem;
       font-weight: 700;
       text-transform: uppercase;
       letter-spacing: 0.06em;
@@ -903,9 +908,9 @@
     .lead-chart-card .chart-canvas-wrap {
       flex: none;
       position: relative;
-      height: 112px;
-      min-height: 112px;
-      max-height: 112px;
+      height: 210px;
+      min-height: 210px;
+      max-height: 210px;
     }
   </style>
   <script
@@ -1134,7 +1139,7 @@
             align: "top",
             offset: 0,
             color: "#0f172a",
-            font: { weight: "700", size: 9 },
+            font: { weight: "700", size: 10 },
             formatter: function (v) {
               var n = typeof v === "number" ? v : Number(v);
               if (!Number.isFinite(n) || n === 0) return "";
@@ -1146,7 +1151,7 @@
           datalabels: {
             anchor: "center",
             align: "center",
-            font: { weight: "700", size: 9 },
+            font: { weight: "700", size: 10 },
             formatter: function (v) {
               var n = typeof v === "number" ? v : Number(v);
               if (!Number.isFinite(n) || n === 0) return "";
@@ -1164,17 +1169,17 @@
             textStrokeWidth: 2
           }
         };
-        var chartLayoutTight = { padding: { top: 4, right: 2, bottom: 0, left: 0 } };
+        var chartLayoutTight = { padding: { top: 6, right: 4, bottom: 2, left: 2 } };
         var barAxes = {
-          x: { grid: { display: false }, ticks: { font: { size: 8 }, maxRotation: 55 } },
+          x: { grid: { display: false }, ticks: { font: { size: 9 }, maxRotation: 55 } },
           y: {
             beginAtZero: true,
-            ticks: { precision: 0, font: { size: 8 } },
+            ticks: { precision: 0, font: { size: 9 } },
             grid: { color: "rgba(148,163,184,0.15)" },
             border: { display: false }
           }
         };
-        var doughnutLegend = { position: "bottom", labels: { boxWidth: 6, padding: 4, font: { size: 8 } } };
+        var doughnutLegend = { position: "bottom", labels: { boxWidth: 8, padding: 6, font: { size: 9 } } };
         var tot = payload.totals || {};
         function statNum(o, key, fb) {
           var v = o[key];
@@ -1225,7 +1230,7 @@
                   label: "Conversations",
                   data: chData,
                   backgroundColor: chColors,
-                  maxBarThickness: 22
+                  maxBarThickness: 36
                 }
               ]
             },
@@ -1286,7 +1291,7 @@
                   label: "Count",
                   data: [n, leads, apt],
                   backgroundColor: [pal.slate, pal.teal, pal.sky],
-                  maxBarThickness: 22
+                  maxBarThickness: 36
                 }
               ]
             },
@@ -1331,7 +1336,7 @@
                   label: "Conversations",
                   data: [om, oe, be, ni],
                   backgroundColor: [pal.teal, pal.sky, pal.indigo, "#fdba74"],
-                  maxBarThickness: 22
+                  maxBarThickness: 36
                 }
               ]
             },
