@@ -2832,7 +2832,10 @@ async function resetDashboardSheetDecor_(sheets, sheetId) {
  *     rowFunnelSection: number,
  *     funnelHeaderRow: number,
  *     funnelDataStart: number,
- *     funnelDataEnd: number
+ *     funnelDataEnd: number,
+ *     coverageTitleRow: number,
+ *     coverageDataStart: number,
+ *     coverageDataEnd: number
  *   }
  * }}
  */
@@ -2880,7 +2883,7 @@ function buildLeadDashboardSheetPayload_(payload) {
         ""
     ]);
     L.rowBannerSub = push([
-        `Live sync · ${new Date().toISOString()} · Source: same metrics as staff viewer`,
+        `Live sync · ${new Date().toISOString()} · Tables + embedded charts (graphs) refresh on each sync`,
         "",
         "",
         "",
@@ -3108,6 +3111,42 @@ function buildLeadDashboardSheetPayload_(payload) {
         "",
         ""
     ]);
+    L.coverageTitleRow = push([
+        "— Chart source: lead coverage (hidden) —",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+    ]);
+    L.coverageDataStart = push([
+        "With contact detail captured",
+        leads,
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+    ]);
+    L.coverageDataEnd = push([
+        "No phone or email on file",
+        tot.neither || 0,
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+    ]);
 
     return {
         values: lines,
@@ -3129,7 +3168,10 @@ function buildLeadDashboardSheetPayload_(payload) {
             rowFunnelSection: L.rowFunnelSection,
             funnelHeaderRow: L.funnelHeaderRow,
             funnelDataStart: L.funnelDataStart,
-            funnelDataEnd: L.funnelDataEnd
+            funnelDataEnd: L.funnelDataEnd,
+            coverageTitleRow: L.coverageTitleRow,
+            coverageDataStart: L.coverageDataStart,
+            coverageDataEnd: L.coverageDataEnd
         }
     };
 }
@@ -3158,7 +3200,7 @@ async function applyLeadDashboardChartsAndFormatting_(sheets, sheetId, layout, r
     const pieE = layout.pieRowsEnd;
     const cHead = layout.contactHeaderRow;
     const funnelHideStart = layout.rowFunnelSection;
-    const funnelHideEnd = layout.funnelDataEnd + 1;
+    const funnelHideEnd = layout.coverageDataEnd + 1;
 
     /** @type {unknown[]} */
     const requests = [];
@@ -3417,8 +3459,56 @@ async function applyLeadDashboardChartsAndFormatting_(sheets, sheetId, layout, r
                             anchorCell: { sheetId, rowIndex: layout.rowChannelSection, columnIndex: 3 },
                             offsetXPixels: 6,
                             offsetYPixels: 2,
-                            widthPixels: 500,
-                            heightPixels: 320
+                            widthPixels: 420,
+                            heightPixels: 290
+                        }
+                    }
+                }
+            }
+        },
+        {
+            addChart: {
+                chart: {
+                    spec: {
+                        title: "Channel mix (share of traffic)",
+                        pieChart: {
+                            domain: {
+                                sourceRange: {
+                                    sources: [
+                                        {
+                                            sheetId,
+                                            startRowIndex: ch + 1,
+                                            endRowIndex: chEnd + 1,
+                                            startColumnIndex: 0,
+                                            endColumnIndex: 1
+                                        }
+                                    ]
+                                }
+                            },
+                            series: {
+                                sourceRange: {
+                                    sources: [
+                                        {
+                                            sheetId,
+                                            startRowIndex: ch + 1,
+                                            endRowIndex: chEnd + 1,
+                                            startColumnIndex: 1,
+                                            endColumnIndex: 2
+                                        }
+                                    ]
+                                }
+                            },
+                            legendPosition: "RIGHT_LEGEND",
+                            pieHoleSize: 0.4
+                        }
+                    },
+                    position: {
+                        overlayPosition: {
+                            anchorCell: { sheetId, rowIndex: layout.rowChannelSection, columnIndex: 3 },
+                            offsetXPixels: 430,
+                            offsetYPixels: 2,
+                            widthPixels: 380,
+                            heightPixels: 290
                         }
                     }
                 }
@@ -3479,8 +3569,8 @@ async function applyLeadDashboardChartsAndFormatting_(sheets, sheetId, layout, r
                             anchorCell: { sheetId, rowIndex: layout.rowBetweenChannelContact, columnIndex: 0 },
                             offsetXPixels: 0,
                             offsetYPixels: 0,
-                            widthPixels: 720,
-                            heightPixels: 280
+                            widthPixels: 700,
+                            heightPixels: 255
                         }
                     }
                 }
@@ -3527,8 +3617,71 @@ async function applyLeadDashboardChartsAndFormatting_(sheets, sheetId, layout, r
                             anchorCell: { sheetId, rowIndex: layout.rowContactSection, columnIndex: 3 },
                             offsetXPixels: 6,
                             offsetYPixels: 0,
-                            widthPixels: 440,
-                            heightPixels: 340
+                            widthPixels: 410,
+                            heightPixels: 300
+                        }
+                    }
+                }
+            }
+        },
+        {
+            addChart: {
+                chart: {
+                    spec: {
+                        title: "All segments · volume",
+                        basicChart: {
+                            chartType: "COLUMN",
+                            legendPosition: "NO_LEGEND",
+                            axis: [
+                                { position: "BOTTOM_AXIS", title: "Segment" },
+                                { position: "LEFT_AXIS", title: "Conversations" }
+                            ],
+                            domains: [
+                                {
+                                    domain: {
+                                        sourceRange: {
+                                            sources: [
+                                                {
+                                                    sheetId,
+                                                    startRowIndex: cHead,
+                                                    endRowIndex: layout.rowContactNeither + 1,
+                                                    startColumnIndex: 0,
+                                                    endColumnIndex: 1
+                                                }
+                                            ]
+                                        }
+                                    }
+                                }
+                            ],
+                            series: [
+                                {
+                                    series: {
+                                        sourceRange: {
+                                            sources: [
+                                                {
+                                                    sheetId,
+                                                    startRowIndex: cHead,
+                                                    endRowIndex: layout.rowContactNeither + 1,
+                                                    startColumnIndex: 1,
+                                                    endColumnIndex: 2
+                                                }
+                                            ]
+                                        }
+                                    },
+                                    targetAxis: "LEFT_AXIS",
+                                    color: sheetRgb_("#6366f1")
+                                }
+                            ],
+                            headerCount: 1
+                        }
+                    },
+                    position: {
+                        overlayPosition: {
+                            anchorCell: { sheetId, rowIndex: layout.rowContactSection, columnIndex: 3 },
+                            offsetXPixels: 430,
+                            offsetYPixels: 4,
+                            widthPixels: 400,
+                            heightPixels: 300
                         }
                     }
                 }
@@ -3601,7 +3754,59 @@ async function applyLeadDashboardChartsAndFormatting_(sheets, sheetId, layout, r
 
     await sheets.spreadsheets.batchUpdate({
         spreadsheetId: SPREADSHEET_ID,
-        requestBody: { requests: chartReqs }
+        requestBody: {
+            requests: [
+                ...chartReqs,
+                {
+                    addChart: {
+                        chart: {
+                            spec: {
+                                title: "Contact capture vs gaps",
+                                pieChart: {
+                                    domain: {
+                                        sourceRange: {
+                                            sources: [
+                                                {
+                                                    sheetId,
+                                                    startRowIndex: layout.coverageDataStart,
+                                                    endRowIndex: layout.coverageDataEnd + 1,
+                                                    startColumnIndex: 0,
+                                                    endColumnIndex: 1
+                                                }
+                                            ]
+                                        }
+                                    },
+                                    series: {
+                                        sourceRange: {
+                                            sources: [
+                                                {
+                                                    sheetId,
+                                                    startRowIndex: layout.coverageDataStart,
+                                                    endRowIndex: layout.coverageDataEnd + 1,
+                                                    startColumnIndex: 1,
+                                                    endColumnIndex: 2
+                                                }
+                                            ]
+                                        }
+                                    },
+                                    legendPosition: "RIGHT_LEGEND",
+                                    pieHoleSize: 0.35
+                                }
+                            },
+                            position: {
+                                overlayPosition: {
+                                    anchorCell: { sheetId, rowIndex: layout.rowBetweenChannelContact, columnIndex: 0 },
+                                    offsetXPixels: 710,
+                                    offsetYPixels: 8,
+                                    widthPixels: 340,
+                                    heightPixels: 255
+                                }
+                            }
+                        }
+                    }
+                }
+            ]
+        }
     });
 }
 
