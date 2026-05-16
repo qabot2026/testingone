@@ -1101,6 +1101,15 @@ function sheetOutboundCell_(v) {
     return String(v);
 }
 
+/** Force Conv. Date / Conv. Time to stay plain text in Sheets (avoids serial 46158 / 0.96… on USER_ENTERED). */
+function sheetConvDateOrTimeCell_(v) {
+    const s = sheetOutboundCell_(v);
+    if (!s) {
+        return "";
+    }
+    return /^'/.test(s) ? s : `'${s}`;
+}
+
 /** @param {import("googleapis").gaxios.GaxiosResponse<import("googleapis").sheets_v4.Schema$BatchUpdateValuesResponse> | null | undefined} batchRes */
 function googleBatchSummaryFromResponse_(batchRes) {
     const br = batchRes && batchRes.data ? batchRes.data : {};
@@ -2283,7 +2292,7 @@ async function buildStandardLeadRowUpdates_(sheets, tab, rowNumber, lead) {
             "date"
         ],
         1,
-        lead.convDate
+        sheetConvDateOrTimeCell_(lead.convDate)
     );
     put(
         [
@@ -2294,7 +2303,7 @@ async function buildStandardLeadRowUpdates_(sheets, tab, rowNumber, lead) {
             "time"
         ],
         2,
-        lead.convTime
+        sheetConvDateOrTimeCell_(lead.convTime)
     );
     put(SHEET_H_NAME, 3, lead.name);
     put(SHEET_H_MOBILE, 4, lead.mobile);
@@ -2570,8 +2579,8 @@ export async function appendContactRowToSheet(row, opts) {
     // Append A–S directly (Conv. link, Date, Time, then lead fields …).
     const values = [[
         colAFormula || "",
-        sheetOutboundCell_(convParts.convDate),
-        sheetOutboundCell_(convParts.convTime),
+        sheetConvDateOrTimeCell_(convParts.convDate),
+        sheetConvDateOrTimeCell_(convParts.convTime),
         sheetOutboundCell_(row.name),
         sheetOutboundCell_(row.mobile),
         sheetOutboundCell_(row.email),

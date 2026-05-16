@@ -129,10 +129,11 @@ const SHEETS_DISABLED =
 /** When set, file fields are not accepted; use Sheet + service account only (no Drive/OAuth). */
 const DISABLE_DRIVE_UPLOAD = process.env.DISABLE_DRIVE_UPLOAD === "1";
 /**
- * Session-id dedupe (update row instead of append) caused “Saved” rows invisible when the wrong Sheet tab/SHEETS_RANGE was used or the patch became a noop.
- * Default: OFF — each contact-form POST appends one row so leads always appear. Set SHEETS_STRICT_SESSION_DEDUP=1 for previous “single row per session” behaviour (chat sync + dedupe updates).
+ * When `1`, each contact-form POST appends a new row even if chat sync already created one (duplicate session ids).
+ * Default: strict — one row per `client_session_id`; form submit updates the chat-sync row.
+ * Set `SHEETS_CONTACT_FORM_APPEND_FREELY=1` to allow duplicate rows. (`SHEETS_STRICT_SESSION_DEDUP=1` is legacy, same as default.)
  */
-const SHEETS_CONTACT_FORM_APPEND_FREELY = process.env.SHEETS_STRICT_SESSION_DEDUP !== "1";
+const SHEETS_CONTACT_FORM_APPEND_FREELY = process.env.SHEETS_CONTACT_FORM_APPEND_FREELY === "1";
 /**
  * When `1`: after a successful Sheets append, defer `persistToFirestore` until **after** HTTP 200 finishes.
  * Faster “Saved…” for chat users; Sheets remains the authoritative row for this request.
