@@ -13636,18 +13636,30 @@ function handleDfResponseReceived(event) {
 
     maybeIncrementBubbleUnreadFromResponse(event);
 
-    const structuredTurns = extractAssistantTranscriptStructuredTurns_(event);
-    if (structuredTurns.length) {
-        appendChatTranscriptAssistantEntries_(structuredTurns);
-    } else {
-        let assistantLines = extractAssistantVisibleTextsFromDfResponse_(event);
-        if (!assistantLines.length) {
-            assistantLines = extractAssistantVisibleTextsDeepFallback_(event);
-            assistantLines = assistantLines.filter((line) => !isTranscriptNoiseLine_(line));
+    try {
+        const structuredTurns = extractAssistantTranscriptStructuredTurns_(event);
+        const hasStructuredRich =
+            structuredTurns.length > 0
+            && structuredTurns.some((e) => e && e.rich && typeof e.rich === "object");
+        if (structuredTurns.length) {
+            appendChatTranscriptAssistantEntries_(structuredTurns);
         }
-        if (assistantLines.length) {
-            appendChatTranscriptAssistantLines_(assistantLines);
+        if (!hasStructuredRich) {
+            let assistantLines = extractAssistantVisibleTextsFromDfResponse_(event);
+            const richPlainLines = extractAssistantPlainTextFromCxRichContent_(event);
+            if (richPlainLines.length) {
+                assistantLines = assistantLines.concat(richPlainLines);
+            }
+            if (!assistantLines.length) {
+                assistantLines = extractAssistantVisibleTextsDeepFallback_(event);
+                assistantLines = assistantLines.filter((line) => !isTranscriptNoiseLine_(line));
+            }
+            if (assistantLines.length) {
+                appendChatTranscriptAssistantLines_(assistantLines);
+            }
         }
+    } catch {
+        /* transcript capture must not break df-response handling */
     }
 
     scheduleDomTranslationRefresh();
@@ -14628,13 +14640,84 @@ function pushPlainTextLabelsFromTranscriptPayloadBody_(body, labels) {
 }
 
 /**
- * @param {Event & { detail?: { data?: { messages?: Array<unknown> }, messages?: Array<unknown> } }} event
+ * Plain assistant labels from CX `richContent` / custom payloads when structured capture has no `rich`.
+ *
+ * @param {Event & { detail?: { raw?: { queryResult?: { responseMessages?: Array<unknown> } }, data?: { messages?: Array<unknown> }, messages?: Array<unknown> } }} event
  * @returns {string[]}
  */
+function extractAssistantPlainTextFromCxRichContent_(event) {
+    const d = event && event.detail;
+    const responseMessages = mergeCxResponseEnvelopeForGallery(event);
+    const messengerMessages = d && d.data && Array.isArray(d.data.messages) ? d.data.messages : [];
+    const topMessages = d && Array.isArray(d.messages) ? d.messages : [];
+    const allMessages = [...responseMessages, ...messengerMessages, ...topMessages];
+
+    const rich = mergeTranscriptRichFromCxMessages_(allMessages)
+        || (d && d.raw ? mergeTranscriptRichFromCxMessages_([d.raw]) : null)
+        || (d && d.data ? mergeTranscriptRichFromCxMessages_([d.data]) : null);
+    if (!rich) {
+        return [];
+    }
+    /** @type {string[]} */
+    const labels = [];
+    pushPlainTextLabelsFromTranscriptPayloadBody_(rich, labels);
+    const unique = [...new Set(labels)].filter((ln) => ln && !isTranscriptNoiseLine_(ln));
+    return unique.length ? [unique.join("\n")] : [];
+}
+
 /**
- * @param {unknown[]} messages
- * @returns {Record<string, unknown> | null}
+ * Deep-scan CX event JSON for `richContent` rows (Messenger/protobuf shapes vary).
+ *
+ * @param {unknown} node
+ * @param {unknown[][]} richRows
+ * @param {WeakSet<object>} seen
+ * @param {number} depth
  */
+function collectRichContentRowsFromNode_(node, richRows, seen, depth) {
+    if (depth > 14 || richRows.length > 32) {
+        return;
+    }
+    if (node == null) {
+        return;
+    }
+    if (typeof node === "string") {
+        const t = node.trim();
+        if (t.startsWith("{") && t.includes("richContent")) {
+            try {
+                collectRichContentRowsFromNode_(JSON.parse(t), richRows, seen, depth + 1);
+            } catch {
+                /* ignore */
+            }
+        }
+        return;
+    }
+    if (typeof node !== "object") {
+        return;
+    }
+    if (Array.isArray(node)) {
+        for (let i = 0; i < node.length; i += 1) {
+            collectRichContentRowsFromNode_(node[i], richRows, seen, depth + 1);
+        }
+        return;
+    }
+    const o = /** @type {Record<string, unknown>} */ (node);
+    if (seen.has(o)) {
+        return;
+    }
+    seen.add(o);
+    if (Array.isArray(o.richContent)) {
+        for (let ri = 0; ri < o.richContent.length; ri += 1) {
+            const row = o.richContent[ri];
+            if (Array.isArray(row)) {
+                richRows.push(row);
+            }
+        }
+    }
+    for (const v of Object.values(o)) {
+        collectRichContentRowsFromNode_(v, richRows, seen, depth + 1);
+    }
+}
+
 function mergeTranscriptRichFromCxMessages_(messages) {
     if (!Array.isArray(messages) || !messages.length) {
         return null;
@@ -14649,6 +14732,7 @@ function mergeTranscriptRichFromCxMessages_(messages) {
     for (let i = 0; i < messages.length; i += 1) {
         collectTranscriptPayloadBodiesFromMessage_(messages[i], bodies, seen);
     }
+    collectRichContentRowsFromNode_(messages, richRows, new WeakSet(), 0);
     for (let bi = 0; bi < bodies.length; bi += 1) {
         const b = bodies[bi];
         if (Array.isArray(b.richContent)) {
@@ -14699,7 +14783,9 @@ function extractAssistantTranscriptStructuredTurns_(event) {
     const topMessages = d && Array.isArray(d.messages) ? d.messages : [];
     const allMessages = [...responseMessages, ...messengerMessages, ...topMessages];
 
-    const rich = mergeTranscriptRichFromCxMessages_(allMessages);
+    const rich = mergeTranscriptRichFromCxMessages_(allMessages)
+        || (d && d.raw ? mergeTranscriptRichFromCxMessages_([d.raw]) : null)
+        || (d && d.data ? mergeTranscriptRichFromCxMessages_([d.data]) : null);
     const textLines = extractAssistantVisibleTextsFromDfResponse_(event).filter((line) => !isTranscriptNoiseLine_(line));
     const coalesced = coalesceAssistantTranscriptLines_(textLines);
     const text = coalesced.length ? coalesced.join(coalesced.length > 1 ? "\n\n" : "") : "";

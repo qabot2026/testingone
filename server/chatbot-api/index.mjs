@@ -3413,7 +3413,7 @@ function transcriptSourceRichness_(turns) {
             maxSeq = s;
         }
     }
-    return turns.length + maxSeq * 1000;
+    return turns.length + maxSeq * 1000 + assistantTurnCount_(turns) * 500;
 }
 
 /**
@@ -4561,7 +4561,11 @@ app.get(PATHNAME_CONVERSATION_TRANSCRIPT_JSON, async (req, res) => {
                     const liveTurns = transcriptTurnsFromClientContext_(liveCx);
                     if (liveTurns.length) {
                         sourceParts.push("firebase_session_transcript");
-                        fbTurns = mergeConversationTranscriptTurnSources_(fbTurns, liveTurns);
+                        if (assistantTurnCount_(liveTurns) > assistantTurnCount_(fbTurns)) {
+                            fbTurns = mergeConversationTranscriptTurnSources_(liveTurns, fbTurns);
+                        } else {
+                            fbTurns = mergeConversationTranscriptTurnSources_(fbTurns, liveTurns);
+                        }
                     }
                 }
             } catch (fe) {

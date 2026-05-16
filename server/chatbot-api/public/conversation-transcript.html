@@ -639,16 +639,16 @@
       }
 
       function renderAssistantBody(turn) {
+        if (!turn || turn.role !== "assistant") {
+          return '<p class="rc-text">' + escapeHtml((turn && turn.text) || "") + "</p>";
+        }
         var rich = resolveRich(turn);
-        var text = cleanText(turn && turn.text, rich);
+        var text = cleanText(turn.text, rich);
         var html = "";
         if (text) html += '<p class="rc-text">' + escapeHtml(text) + "</p>";
         if (rich) {
           if (Array.isArray(rich.richContent)) html += richRowsHtml(rich.richContent);
           else if (rich.action || Array.isArray(rich.urls) || Array.isArray(rich.cards)) html += actionHtml(rich);
-        }
-        if (!html && text) {
-          html = '<p class="rc-text">' + escapeHtml(text) + "</p>";
         }
         return html || '<p class="rc-text">(No message stored for this line.)</p>';
       }

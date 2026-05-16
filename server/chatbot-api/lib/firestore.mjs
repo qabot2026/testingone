@@ -164,6 +164,11 @@ function mergeChatTranscriptArrays_(prev, next) {
             const o = /** @type {Record<string, unknown>} */ (it);
             const role = o.role === "assistant" ? "assistant" : "user";
             const text = String(o.text ?? "").trim();
+            const rich =
+                o.rich && typeof o.rich === "object" && !Array.isArray(o.rich)
+                    ? /** @type {Record<string, unknown>} */ (o.rich)
+                    : null;
+            const richSig = rich ? JSON.stringify(rich).slice(0, 240) : "";
             const seqRaw = o.seq;
             const seq =
                 typeof seqRaw === "number" && Number.isFinite(seqRaw)
@@ -188,12 +193,23 @@ function mergeChatTranscriptArrays_(prev, next) {
             const key = isFormSummary
                 ? `asstform|${textNorm}`
                 : Number.isFinite(seq)
-                  ? `seq:${seq}|${role}`
+                  ? richSig
+                      ? `seq:${seq}|${role}|${richSig}`
+                      : `seq:${seq}|${role}|${textNorm}`
                   : Number.isFinite(at)
-                    ? `at:${at}|${role}|${textNorm}`
-                    : `ord:${byKey.size}|${role}|${textNorm}`;
+                    ? richSig
+                        ? `at:${at}|${role}|${richSig}`
+                        : `at:${at}|${role}|${textNorm}`
+                    : richSig
+                      ? `ord:${byKey.size}|${role}|${richSig}`
+                      : `ord:${byKey.size}|${role}|${textNorm}`;
             if (!byKey.has(key)) {
                 byKey.set(key, o);
+            } else if (rich) {
+                const prev = byKey.get(key);
+                if (prev && typeof prev === "object") {
+                    byKey.set(key, { ...prev, ...o, rich });
+                }
             }
         }
     };
