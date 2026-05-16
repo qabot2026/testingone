@@ -141,6 +141,35 @@ const DEFER_FIRESTORE_UNTIL_AFTER_HTTP_RESPONSE =
     !SHEETS_DISABLED &&
     process.env.CONTACT_FORM_DEFER_FIRESTORE_AFTER_RESPONSE === "1";
 
+/**
+ * Live session transcript doc + patch newest lead `client_context` (bot lines for staff script).
+ *
+ * @param {string} sessionId
+ * @param {Record<string, unknown>} clientContext
+ * @returns {Promise<boolean>}
+ */
+async function patchSessionTranscriptFirestore_(sessionId, clientContext) {
+    const sid = typeof sessionId === "string" ? sessionId.trim() : "";
+    if (!sid || FIRESTORE_DISABLED || !clientContext || typeof clientContext !== "object") {
+        return false;
+    }
+    const ct = clientContext.chat_transcript;
+    const aq = clientContext.assistant_queries;
+    const hasTranscript = Array.isArray(ct) && ct.length > 0;
+    const hasAssistantQueries = Array.isArray(aq) && aq.length > 0;
+    if (!hasTranscript && !hasAssistantQueries) {
+        return false;
+    }
+    try {
+        await upsertSessionChatTranscriptDoc(sid, clientContext);
+        return await patchLatestContactSubmissionClientContext(sid, clientContext);
+    } catch (e) {
+        const detail = e && /** @type {{ message?: string }} */ (e).message ? String(e.message) : String(e);
+        console.warn("[chatbot-api] patchSessionTranscriptFirestore:", detail.slice(0, 240));
+        return false;
+    }
+}
+
 function hasFirebaseCredentials() {
     if ((process.env.FIREBASE_SERVICE_ACCOUNT_JSON || "").trim()) {
         return true;
@@ -238,6 +267,18 @@ function scheduleContactPostSuccessTail_(res, work) {
             const fsT0 = Date.now();
             try {
                 await persistToFirestore(work.deferFirestoreRecord);
+                const defRec = work.deferFirestoreRecord;
+                const defSid =
+                    typeof defRec.client_session_id === "string"
+                        ? defRec.client_session_id.trim()
+                        : "";
+                const defCx =
+                    defRec.client_context && typeof defRec.client_context === "object"
+                        ? /** @type {Record<string, unknown>} */ (defRec.client_context)
+                        : null;
+                if (defSid && defCx) {
+                    await patchSessionTranscriptFirestore_(defSid, defCx);
+                }
                 console.log(`[contact-form] deferred_firestore_ms=${Date.now() - fsT0}`);
             } catch (fe) {
                 const detail = fe && fe.message ? String(fe.message) : String(fe);
@@ -2488,6 +2529,9 @@ app.post(
                 const fsT0Ms = Date.now();
                 try {
                     await persistToFirestore(record);
+                    if (clientSessionId) {
+                        await patchSessionTranscriptFirestore_(clientSessionId, mergedClientContext);
+                    }
                     console.log(`[contact-form] firestore_wall_ms=${Date.now() - fsT0Ms}`);
                 } catch (fe) {
                     const detail = fe && fe.message ? fe.message : String(fe);
@@ -2773,13 +2817,6 @@ app.post(
                 });
             }
         }
-        if (SHEETS_DISABLED) {
-            return res.status(503).json({
-                ok: false,
-                error:
-                    "Google Sheets is not enabled. Set SHEETS_SPREADSHEET_ID or remove DISABLE_SHEETS=1."
-            });
-        }
 
         let body = req.body && typeof req.body === "object" ? req.body : {};
 
@@ -2808,7 +2845,9 @@ app.post(
 
         const userQueriesCsv = normalizeUserQueriesCsvFromClientContext(mergedClientContext);
         const hasLiveChatTranscript =
-            Array.isArray(mergedClientContext.chat_transcript) && mergedClientContext.chat_transcript.length > 0;
+            (Array.isArray(mergedClientContext.chat_transcript) && mergedClientContext.chat_transcript.length > 0)
+            || (Array.isArray(mergedClientContext.assistant_queries)
+                && mergedClientContext.assistant_queries.length > 0);
         if (!userQueriesCsv && !hasLiveChatTranscript) {
             return res.status(200).json({ ok: true, message: "Nothing to sync." });
         }
@@ -2847,8 +2886,36 @@ app.post(
             || (await resolveCityForRequest(req));
         const sourceUrl = resolveSourceUrlForSheet(mergedClientContext);
 
+        let firestoreTranscriptPatched = false;
+        if (!FIRESTORE_DISABLED && hasLiveChatTranscript) {
+            try {
+                await upsertSessionChatTranscriptDoc(clientSessionId, mergedClientContext);
+                firestoreTranscriptPatched = await patchLatestContactSubmissionClientContext(
+                    clientSessionId,
+                    mergedClientContext
+                );
+            } catch (fe) {
+                const detail = fe && fe.message ? fe.message : String(fe);
+                console.warn("[chatbot-api] session-sheet-sync Firestore transcript patch:", detail.slice(0, 240));
+            }
+        }
+
         /** @type {Record<string, unknown>} */
         let syncDetail = { mode: "skipped_empty_queries" };
+        if (SHEETS_DISABLED) {
+            return res.status(200).json({
+                ok: true,
+                message: hasLiveChatTranscript ? "Transcript synced (Firestore)." : "Nothing to sync.",
+                sheet_integration: {
+                    enabled: false,
+                    reason:
+                        process.env.DISABLE_SHEETS === "1"
+                            ? "DISABLE_SHEETS=1"
+                            : "SHEETS_SPREADSHEET_ID is not set"
+                },
+                firestore_transcript_patched: firestoreTranscriptPatched
+            });
+        }
         if (userQueriesCsv) {
             try {
                 syncDetail = await upsertSessionQueriesInSheet({
@@ -2875,20 +2942,6 @@ app.post(
                 const detail = se && se.message ? se.message : String(se);
                 console.error("[chatbot-api] session-sheet-sync", detail, se);
                 return res.status(500).json({ ok: false, error: detail });
-            }
-        }
-
-        let firestoreTranscriptPatched = false;
-        if (!FIRESTORE_DISABLED && hasLiveChatTranscript) {
-            try {
-                await upsertSessionChatTranscriptDoc(clientSessionId, mergedClientContext);
-                firestoreTranscriptPatched = await patchLatestContactSubmissionClientContext(
-                    clientSessionId,
-                    mergedClientContext
-                );
-            } catch (fe) {
-                const detail = fe && fe.message ? fe.message : String(fe);
-                console.warn("[chatbot-api] session-sheet-sync Firestore transcript patch:", detail.slice(0, 240));
             }
         }
 
@@ -3872,8 +3925,12 @@ function hasAssistantTurns_(turns) {
  * @returns {{ role: string, text: string, rich?: Record<string, unknown>, at?: number, seq?: number }}
  */
 function cloneTranscriptTurnForMerge_(t) {
+    const role =
+        t && typeof t === "object"
+            ? normalizeTranscriptItemRole_(/** @type {Record<string, unknown>} */ (t))
+            : "user";
     const out = /** @type {{ role: string, text: string, rich?: Record<string, unknown>, at?: number, seq?: number }} */ ({
-        role: t && t.role === "assistant" ? "assistant" : "user",
+        role,
         text: String(t && t.text != null ? t.text : "")
     });
     const rich = t && t.rich;
@@ -3909,7 +3966,10 @@ function transcriptTurnMergeDedupeKey_(t, noAtDupCount) {
     if (!t || typeof t !== "object") {
         return "";
     }
-    const role = /** @type {{ role?: unknown }} */ (t).role === "assistant" ? "assistant" : "user";
+    const role =
+        t && typeof t === "object"
+            ? normalizeTranscriptItemRole_(/** @type {Record<string, unknown>} */ (t))
+            : "user";
     const text = String(/** @type {{ text?: unknown }} */ (t).text || "").trim();
     const rich = /** @type {{ rich?: unknown }} */ (t).rich;
     const richStem =
@@ -4222,12 +4282,48 @@ function orderTranscriptTurnsForDisplay_(turns) {
  * @param {Record<string, unknown>} cx
  * @returns {{ role: string, text: string, at?: number }[]}
  */
+/**
+ * Plain assistant lines stored beside `chat_transcript` when CX payloads are hard to serialize.
+ *
+ * @param {Record<string, unknown>} cx
+ * @returns {{ role: string, text: string }[]}
+ */
+function assistantTurnsFromAssistantQueries_(cx) {
+    const aqSrc = cx.assistant_queries;
+    const aqList =
+        Array.isArray(aqSrc)
+            ? aqSrc
+                  .filter((x) => typeof x === "string" && x.trim())
+                  .map((x) => String(x).trim())
+            : [];
+    if (!aqList.length) {
+        return [];
+    }
+    return aqList.map((text) => ({ role: "assistant", text }));
+}
+
 function transcriptTurnsFromClientContext_(cx) {
     if (!cx || typeof cx !== "object") {
         return [];
     }
     const rawChat = Array.isArray(cx.chat_transcript) ? /** @type {unknown[]} */ (cx.chat_transcript) : [];
-    const base = rawChat.length ? transcriptTurnsFromStoredChatArray_(rawChat) : [];
+    let base = rawChat.length ? transcriptTurnsFromStoredChatArray_(rawChat) : [];
+
+    const fromAssistantQueries = assistantTurnsFromAssistantQueries_(cx);
+    if (fromAssistantQueries.length) {
+        const existingAssistantNorm = new Set(
+            base
+                .filter((t) => t.role === "assistant")
+                .map((t) => transcriptAssistantCompareNorm_(t.text || ""))
+        );
+        const extra = fromAssistantQueries.filter((t) => {
+            const norm = transcriptAssistantCompareNorm_(t.text);
+            return norm && !existingAssistantNorm.has(norm);
+        });
+        if (extra.length) {
+            base = mergeConversationTranscriptTurnSources_(base, extra);
+        }
+    }
 
     const uqSrc = cx.user_queries;
     const uqList =
@@ -4659,6 +4755,25 @@ app.get(PATHNAME_CONVERSATION_TRANSCRIPT_JSON, async (req, res) => {
 
         turns = orderTranscriptTurnsForDisplay_(turns);
         turns = dedupeTranscriptTurnsForDisplay_(turns);
+
+        if (!assistantTurnCount_(turns) && firestoreRec?.client_context) {
+            const rawCx = /** @type {Record<string, unknown>} */ (firestoreRec.client_context);
+            const rawArr = Array.isArray(rawCx.chat_transcript) ? rawCx.chat_transcript : [];
+            const rawAssistants = rawArr.filter(
+                (it) =>
+                    it
+                    && typeof it === "object"
+                    && normalizeTranscriptItemRole_(/** @type {Record<string, unknown>} */ (it)) === "assistant"
+            ).length;
+            if (rawAssistants > 0) {
+                console.warn(
+                    "[chatbot-api] conversation-transcript: lead has",
+                    rawAssistants,
+                    "stored assistant row(s) but merged turns are user-only; session=",
+                    session
+                );
+            }
+        }
 
         transcript_fallback = "";
         const source = sourceParts.length ? sourceParts.join("+") : "none";

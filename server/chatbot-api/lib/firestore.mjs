@@ -137,6 +137,51 @@ function normalizeTranscriptTextKey_(text) {
 }
 
 /**
+ * @param {Record<string, unknown>} o
+ * @returns {"assistant" | "user"}
+ */
+function normalizeTranscriptMergeRole_(o) {
+    const raw =
+        o.role
+        ?? o.type
+        ?? o.sender
+        ?? o.participant
+        ?? o.author
+        ?? o.messageFrom
+        ?? o.source
+        ?? o.speaker;
+    const r = typeof raw === "string" ? raw.trim().toLowerCase() : "";
+    if (
+        r === "assistant"
+        || r === "bot"
+        || r === "agent"
+        || r === "model"
+        || r === "assistant_bot"
+        || r === "virtual_agent"
+        || r === "df-bot"
+        || r === "system"
+        || r === "chirp"
+        || r.includes("automated")
+    ) {
+        return "assistant";
+    }
+    if (r === "user" || r === "human" || r === "customer" || r === "client" || r === "end_user" || r === "enduser") {
+        return "user";
+    }
+    if (o.fulfillment_response || o.fulfillmentResponse) {
+        return "assistant";
+    }
+    const tx = o.text;
+    if (tx && typeof tx === "object" && !Array.isArray(tx)) {
+        const nest = /** @type {{ text?: unknown }} */ (tx).text;
+        if (Array.isArray(nest) && nest.some((x) => typeof x === "string" && x.trim())) {
+            return "assistant";
+        }
+    }
+    return "user";
+}
+
+/**
  * Union-merge widget transcript arrays (never drop a longer history because `seq` advanced on a shorter slice).
  *
  * @param {unknown} prev
@@ -162,7 +207,7 @@ function mergeChatTranscriptArrays_(prev, next) {
                 continue;
             }
             const o = /** @type {Record<string, unknown>} */ (it);
-            const role = o.role === "assistant" ? "assistant" : "user";
+            const role = normalizeTranscriptMergeRole_(o);
             const text = String(o.text ?? "").trim();
             const rich =
                 o.rich && typeof o.rich === "object" && !Array.isArray(o.rich)
@@ -205,10 +250,19 @@ function mergeChatTranscriptArrays_(prev, next) {
                       : `ord:${byKey.size}|${role}|${textNorm}`;
             if (!byKey.has(key)) {
                 byKey.set(key, o);
-            } else if (rich) {
-                const prev = byKey.get(key);
-                if (prev && typeof prev === "object") {
-                    byKey.set(key, { ...prev, ...o, rich });
+            } else {
+                const prevEntry = byKey.get(key);
+                if (prevEntry && typeof prevEntry === "object") {
+                    const merged = { ...prevEntry, ...o };
+                    if (rich) {
+                        merged.rich = rich;
+                    }
+                    const prevText = String(prevEntry.text ?? "").trim();
+                    const nextText = String(o.text ?? "").trim();
+                    if (!prevText && nextText) {
+                        merged.text = nextText;
+                    }
+                    byKey.set(key, merged);
                 }
             }
         }

@@ -802,6 +802,8 @@ function mergeCxResponseEnvelopeForGallery(event) {
         && detail.data.queryResult
         && detail.data.queryResult.responseMessages
     );
+    add(detail && Array.isArray(detail.messages) ? detail.messages : null);
+    add(detail && detail.data && Array.isArray(detail.data.messages) ? detail.data.messages : null);
 
     return out;
 }
@@ -13638,25 +13640,20 @@ function handleDfResponseReceived(event) {
 
     try {
         const structuredTurns = extractAssistantTranscriptStructuredTurns_(event);
-        const hasStructuredRich =
-            structuredTurns.length > 0
-            && structuredTurns.some((e) => e && e.rich && typeof e.rich === "object");
         if (structuredTurns.length) {
             appendChatTranscriptAssistantEntries_(structuredTurns);
         }
-        if (!hasStructuredRich) {
-            let assistantLines = extractAssistantVisibleTextsFromDfResponse_(event);
-            const richPlainLines = extractAssistantPlainTextFromCxRichContent_(event);
-            if (richPlainLines.length) {
-                assistantLines = assistantLines.concat(richPlainLines);
-            }
-            if (!assistantLines.length) {
-                assistantLines = extractAssistantVisibleTextsDeepFallback_(event);
-                assistantLines = assistantLines.filter((line) => !isTranscriptNoiseLine_(line));
-            }
-            if (assistantLines.length) {
-                appendChatTranscriptAssistantLines_(assistantLines);
-            }
+        let assistantLines = extractAssistantVisibleTextsFromDfResponse_(event);
+        const richPlainLines = extractAssistantPlainTextFromCxRichContent_(event);
+        if (richPlainLines.length) {
+            assistantLines = assistantLines.concat(richPlainLines);
+        }
+        if (!assistantLines.length) {
+            assistantLines = extractAssistantVisibleTextsDeepFallback_(event);
+            assistantLines = assistantLines.filter((line) => !isTranscriptNoiseLine_(line));
+        }
+        if (assistantLines.length) {
+            appendChatTranscriptAssistantLines_(assistantLines);
         }
     } catch {
         /* transcript capture must not break df-response handling */
@@ -13819,6 +13816,39 @@ function bumpChatTranscriptSeq_(prev) {
             ? prev.chat_transcript_seq
             : 0;
     return n + 1;
+}
+
+/**
+ * Plain-text backup for staff transcript when `chat_transcript` rich payloads fail to round-trip.
+ *
+ * @param {string} raw
+ */
+function trackAssistantQueryInSessionContext_(raw) {
+    const tRaw = typeof raw === "string" ? raw.trim() : "";
+    if (!tRaw || isTranscriptNoiseLine_(tRaw)) {
+        return;
+    }
+    const t =
+        tRaw.length > MAX_CHAT_TRANSCRIPT_TEXT_CHARS
+            ? `${tRaw.slice(0, MAX_CHAT_TRANSCRIPT_TEXT_CHARS)}…`
+            : tRaw;
+    try {
+        const prev = readStoredClientContext();
+        const existing = prev && Array.isArray(prev.assistant_queries) ? prev.assistant_queries : [];
+        const next = existing.filter((x) => typeof x === "string" && x.trim());
+        const last = next.length ? String(next[next.length - 1]).trim() : "";
+        if (last && normalizeChatTranscriptCompareText_(last) === normalizeChatTranscriptCompareText_(t)) {
+            return;
+        }
+        next.push(t);
+        const capped = next.slice(Math.max(0, next.length - 120));
+        persistClientContext({
+            ...prev,
+            assistant_queries: capped
+        });
+    } catch {
+        /* ignore */
+    }
 }
 
 function trackChatUserQueryInSessionContext_(raw) {
@@ -14874,6 +14904,9 @@ function appendChatTranscriptAssistantEntries_(entries) {
                 row.rich = rich;
             }
             transcript.push(row);
+            if (text) {
+                trackAssistantQueryInSessionContext_(text);
+            }
         }
         persistClientContext({
             ...prev,
@@ -14928,6 +14961,7 @@ function appendChatTranscriptAssistantLines_(lines) {
             }
             seq += 1;
             transcript.push({ role: "assistant", text, at: now, seq });
+            trackAssistantQueryInSessionContext_(text);
         }
         persistClientContext({
             ...prev,
