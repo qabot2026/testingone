@@ -3958,11 +3958,6 @@ function transcriptUserCompareNorm_(text) {
 /** Widget form bubbles use `  \\n` between rows; flatten before comparing assistant duplicates. */
 function transcriptAssistantCompareNorm_(text) {
     return String(text ?? "")
-        .replace(/!\[[^\]]*\]\([^)]*\)/g, "")
-        .replace(/\*\*([^*]+)\*\*/g, "$1")
-        .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
-        .replace(/`{1,3}[^`]*`{1,3}/g, "")
-        .replace(/\*/g, "")
         .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, "")
         .replace(/\uFE0F/g, "")
         .replace(/\s{2,}\n/g, " ")
@@ -4407,6 +4402,15 @@ app.get(PATHNAME_CONVERSATION_TRANSCRIPT_JSON, async (req, res) => {
                 const rec = await fetchLatestContactSubmissionForClientSession(session);
                 if (rec && typeof rec === "object") {
                     firestoreRec = /** @type {Record<string, unknown>} */ (rec);
+                    const cx = /** @type {Record<string, unknown>} */ (
+                        rec.client_context && typeof rec.client_context === "object"
+                            ? rec.client_context
+                            : {}
+                    );
+                    fbTurns = transcriptTurnsFromClientContext_(cx);
+                    if (fbTurns.length) {
+                        sourceParts.push("firebase");
+                    }
                     meta = {
                         name: rec.name,
                         email: rec.email,
@@ -4415,24 +4419,12 @@ app.get(PATHNAME_CONVERSATION_TRANSCRIPT_JSON, async (req, res) => {
                         form_id: rec.form_id
                     };
                 }
-                /** Live session doc is canonical; merging lead + session duplicated every bot line. */
                 const liveCx = await fetchSessionChatTranscriptContext(session);
                 if (liveCx && typeof liveCx === "object") {
-                    fbTurns = dedupeTranscriptTurnsForDisplay_(
-                        transcriptTurnsFromClientContext_(liveCx)
-                    );
-                    if (fbTurns.length) {
+                    const liveTurns = transcriptTurnsFromClientContext_(liveCx);
+                    if (liveTurns.length) {
                         sourceParts.push("firebase_session_transcript");
-                    }
-                } else if (firestoreRec) {
-                    const cx = /** @type {Record<string, unknown>} */ (
-                        firestoreRec.client_context && typeof firestoreRec.client_context === "object"
-                            ? firestoreRec.client_context
-                            : {}
-                    );
-                    fbTurns = dedupeTranscriptTurnsForDisplay_(transcriptTurnsFromClientContext_(cx));
-                    if (fbTurns.length) {
-                        sourceParts.push("firebase");
+                        fbTurns = mergeConversationTranscriptTurnSources_(fbTurns, liveTurns);
                     }
                 }
             } catch (fe) {
@@ -4463,17 +4455,23 @@ app.get(PATHNAME_CONVERSATION_TRANSCRIPT_JSON, async (req, res) => {
             sourceParts.push("sheet_chat_transcript_json");
         }
 
-        /**
-         * Firestore session transcript is authoritative when present — legacy Sheet JSON re-imported
-         * the same bot bubbles and showed every line twice.
-         */
+        /** Union-merge: prefer the richer source first (Firestore is patched on session sync; Sheet JSON is optional legacy). */
         let turns;
-        if (fbTurns.length > 0) {
-            turns = fbTurns;
-        } else if (sheetChatTurns.length > 0) {
-            turns = sheetChatTurns;
+        const fbRich = transcriptSourceRichness_(fbTurns);
+        const sheetRich = transcriptSourceRichness_(sheetChatTurns);
+        if (sheetRich > fbRich) {
+            turns = mergeConversationTranscriptTurnSources_(sheetChatTurns, fbTurns);
+            sourceParts.push("sheet_first_richer");
         } else {
-            turns = [];
+            turns = mergeConversationTranscriptTurnSources_(fbTurns, sheetChatTurns);
+        }
+        if (sheetChatTurns.length > 0) {
+            const mergedAssistants = assistantTurnCount_(turns);
+            const sheetAssistants = assistantTurnCount_(sheetChatTurns);
+            if (sheetAssistants > mergedAssistants) {
+                turns = mergeConversationTranscriptTurnSources_(sheetChatTurns, fbTurns);
+                sourceParts.push("sheet_first_assistant_rich");
+            }
         }
 
         if (!SHEETS_DISABLED) {
