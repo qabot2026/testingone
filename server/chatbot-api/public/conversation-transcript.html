@@ -526,6 +526,14 @@
         if (k === "scheduled") return true;
         if (k === "conv. link" || k === "conv link" || kn === "conv.link") return true;
         if (
+          k === "chat link"
+          || k === "chat script"
+          || kn === "chatlink"
+          || kn === "chatscript"
+        )
+          return true;
+        if (k === "ip address" || kn === "ipaddress" || k === "ip") return true;
+        if (
           k === "submitted at"
           || kn === "submittedat"
           || kn === "sheetrow"

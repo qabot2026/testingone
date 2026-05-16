@@ -14384,6 +14384,28 @@ function extractAssistantVisibleTextsDeepFallback_(event) {
 /**
  * @param {string[]} lines
  */
+function chatTranscriptAlreadyHasAssistantText_(transcript, text) {
+    const norm = String(text || "")
+        .trim()
+        .replace(/\s+/g, " ");
+    if (!norm) {
+        return false;
+    }
+    for (let i = transcript.length - 1; i >= 0; i -= 1) {
+        const row = transcript[i];
+        if (!row || row.role !== "assistant") {
+            continue;
+        }
+        const existing = String(row.text || "")
+            .trim()
+            .replace(/\s+/g, " ");
+        if (existing === norm) {
+            return true;
+        }
+    }
+    return false;
+}
+
 function appendChatTranscriptAssistantLines_(lines) {
     if (!lines || !lines.length) {
         return;
@@ -14409,8 +14431,7 @@ function appendChatTranscriptAssistantLines_(lines) {
                 trimmed.length > MAX_CHAT_TRANSCRIPT_TEXT_CHARS
                     ? `${trimmed.slice(0, MAX_CHAT_TRANSCRIPT_TEXT_CHARS)}…`
                     : trimmed;
-            const last = transcript.length ? transcript[transcript.length - 1] : null;
-            if (last && last.role === "assistant" && last.text === text) {
+            if (chatTranscriptAlreadyHasAssistantText_(transcript, text)) {
                 continue;
             }
             seq += 1;
@@ -15969,7 +15990,10 @@ function cloneClientContextWithTranscriptAssistantTurn_(ctx, assistantPlain) {
         raw.length > MAX_CHAT_TRANSCRIPT_TEXT_CHARS
             ? `${raw.slice(0, MAX_CHAT_TRANSCRIPT_TEXT_CHARS)}…`
             : raw;
-    transcript.push({ role: "assistant", text, at: Date.now(), seq });
+    if (!chatTranscriptAlreadyHasAssistantText_(transcript, text)) {
+        seq += 1;
+        transcript.push({ role: "assistant", text, at: Date.now(), seq });
+    }
     return {
         ...base,
         chat_transcript: transcript.slice(-MAX_CHAT_TRANSCRIPT_TURNS),

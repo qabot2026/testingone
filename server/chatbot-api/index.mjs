@@ -3954,7 +3954,58 @@ function isContactFormSubmissionSummaryAssistantText_(text) {
     }
     /** Client `company.js`: `lines.join("  \\n")` — multiple `Label - value` rows; require ≥2 rows so normal bot markdown is not mistaken for a form summary */
     const parts = tx.split("  \n").map((p) => p.trim()).filter(Boolean);
-    return parts.length >= 2 && parts.every((p) => /\s-\s/.test(p));
+    if (parts.length >= 2 && parts.every((p) => /\s-\s/.test(p))) {
+        return true;
+    }
+    /** Single-bubble form confirm (`Name - … Thank you for sharing.`). */
+    if (/thank you for sharing\.?$/i.test(tx)) {
+        const dashPairs = tx.match(/\s-\s/g);
+        return !!(dashPairs && dashPairs.length >= 2);
+    }
+    return false;
+}
+
+/**
+ * Collapse duplicate assistant lines (same text from widget + Firestore merge sources or double capture on submit).
+ *
+ * @param {{ role: string, text: string, at?: number, seq?: number }[]} turns
+ * @returns {{ role: string, text: string, at?: number, seq?: number }[]}
+ */
+function dedupeTranscriptTurnsForDisplay_(turns) {
+    if (!Array.isArray(turns) || turns.length < 2) {
+        return Array.isArray(turns) ? turns.slice() : [];
+    }
+    /** @type {Set<string>} */
+    const seenAssistant = new Set();
+    /** @type {{ role: string, text: string, at?: number, seq?: number }[]} */
+    const out = [];
+    for (let i = 0; i < turns.length; i += 1) {
+        const t = turns[i];
+        if (!t || typeof t !== "object") {
+            continue;
+        }
+        const role = t.role === "assistant" ? "assistant" : "user";
+        const text = String(t.text || "").trim();
+        if (!text) {
+            continue;
+        }
+        if (role === "assistant") {
+            const key = transcriptUserCompareNorm_(text);
+            if (seenAssistant.has(key)) {
+                continue;
+            }
+            seenAssistant.add(key);
+        }
+        const row = /** @type {{ role: string, text: string, at?: number, seq?: number }} */ ({ role, text });
+        if (typeof t.at === "number" && Number.isFinite(t.at)) {
+            row.at = t.at;
+        }
+        if (typeof t.seq === "number" && Number.isFinite(t.seq)) {
+            row.seq = t.seq;
+        }
+        out.push(row);
+    }
+    return out;
 }
 
 /**
@@ -4425,16 +4476,23 @@ app.get(PATHNAME_CONVERSATION_TRANSCRIPT_JSON, async (req, res) => {
             }
         }
 
-        /** Merge even when bots already appear in transcript — avoids dropping lead-only summary rows. */
+        /** Merge only when the widget transcript lacks a form-summary assistant bubble. */
         if (firestoreRec) {
+            const hasFormSummaryAssistant = turns.some(
+                (t) =>
+                    t
+                    && t.role === "assistant"
+                    && isContactFormSubmissionSummaryAssistantText_(t.text)
+            );
             const synthLead = syntheticFormSubmissionAssistantTurnsFromLead_(firestoreRec);
-            if (synthLead.length) {
+            if (synthLead.length && !hasFormSummaryAssistant) {
                 sourceParts.push("synthetic_lead");
                 turns = mergeConversationTranscriptTurnSources_(turns, synthLead);
             }
         }
 
         turns = orderTranscriptTurnsForDisplay_(turns);
+        turns = dedupeTranscriptTurnsForDisplay_(turns);
 
         transcript_fallback = "";
         const source = sourceParts.length ? sourceParts.join("+") : "none";
