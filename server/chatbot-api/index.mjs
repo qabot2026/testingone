@@ -3622,6 +3622,87 @@ function stringifyChatTranscriptForSheetPayload_(clientContext) {
 }
 
 /**
+ * Plain text for staff transcript when widget stored structured `rich` without `text`
+ * (e.g. after partial revert while Firestore still has rich-only assistant rows).
+ *
+ * @param {unknown} rich
+ * @returns {string}
+ */
+function transcriptTextFromStoredRich_(rich) {
+    if (!rich || typeof rich !== "object" || Array.isArray(rich)) {
+        return "";
+    }
+    const r = /** @type {Record<string, unknown>} */ (rich);
+    /** @type {string[]} */
+    const bits = [];
+    const msg = typeof r.message === "string" ? r.message.trim() : "";
+    if (msg) {
+        bits.push(msg);
+    }
+    const rc = r.richContent;
+    if (Array.isArray(rc)) {
+        for (let ri = 0; ri < rc.length; ri += 1) {
+            const row = rc[ri];
+            if (!Array.isArray(row)) {
+                continue;
+            }
+            for (let ci = 0; ci < row.length; ci += 1) {
+                const item = row[ci];
+                if (!item || typeof item !== "object") {
+                    continue;
+                }
+                const type = String(/** @type {{ type?: unknown }} */ (item).type || "").toLowerCase();
+                if (type === "chips") {
+                    const opts = /** @type {{ options?: unknown[] }} */ (item).options;
+                    if (Array.isArray(opts)) {
+                        for (const opt of opts) {
+                            const t =
+                                typeof opt === "string"
+                                    ? opt.trim()
+                                    : opt && typeof opt === "object" && typeof /** @type {{ text?: unknown }} */ (opt).text === "string"
+                                      ? String(/** @type {{ text?: string }} */ (opt).text).trim()
+                                      : "";
+                            if (t && t !== "Chips" && t !== "HANDLER_PROMPT" && t !== "Virtual Agent") {
+                                bits.push(t);
+                            }
+                        }
+                    }
+                } else if (type === "info" || type === "accordion") {
+                    const title =
+                        typeof /** @type {{ title?: unknown }} */ (item).title === "string"
+                            ? String(/** @type {{ title?: string }} */ (item).title).trim()
+                            : "";
+                    const sub =
+                        typeof /** @type {{ subtitle?: unknown }} */ (item).subtitle === "string"
+                            ? String(/** @type {{ subtitle?: string }} */ (item).subtitle).trim()
+                            : "";
+                    if (title) {
+                        bits.push(sub ? `${title} — ${sub}` : title);
+                    } else if (sub) {
+                        bits.push(sub);
+                    }
+                }
+            }
+        }
+    }
+    if (Array.isArray(r.options)) {
+        for (const opt of r.options) {
+            if (!opt || typeof opt !== "object") {
+                continue;
+            }
+            const label =
+                typeof /** @type {{ label?: unknown }} */ (opt).label === "string"
+                    ? String(/** @type {{ label?: string }} */ (opt).label).trim()
+                    : "";
+            if (label) {
+                bits.push(label);
+            }
+        }
+    }
+    return [...new Set(bits)].join("\n");
+}
+
+/**
  * @param {unknown[]} arr
  * @returns {{ role: string, text: string, at?: number, seq?: number }[]}
  */
@@ -3638,7 +3719,10 @@ function transcriptTurnsFromStoredChatArray_(arr) {
         }
         const o = /** @type {Record<string, unknown>} */ (item);
         const role = normalizeTranscriptItemRole_(o);
-        const text = transcriptTurnTextFromItem_(o);
+        let text = transcriptTurnTextFromItem_(o);
+        if (!text && o.rich) {
+            text = transcriptTextFromStoredRich_(o.rich);
+        }
         if (!text) {
             continue;
         }
