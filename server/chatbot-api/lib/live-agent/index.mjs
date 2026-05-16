@@ -91,9 +91,19 @@ function sendHealthJson_(res) {
 /**
  * @param {import('express').Express} app
  */
+function sendLiveAgentIndex_(res, next) {
+    const indexPath = path.join(STATIC_DIR, "index.html");
+    fs.access(indexPath)
+        .then(() => res.sendFile(indexPath))
+        .catch(() => next());
+}
+
 export function mountLiveAgentRoutes(app) {
     app.get("/live-agent/health", (_req, res) => sendHealthJson_(res));
     app.get("/api/live-agent/health", (_req, res) => sendHealthJson_(res));
+
+    app.get("/live-agent", (_req, res, next) => sendLiveAgentIndex_(res, next));
+    app.get("/live-agent/", (_req, res, next) => sendLiveAgentIndex_(res, next));
 
     app.use("/live-agent", express.static(STATIC_DIR, {
         index: ["index.html"],
@@ -104,12 +114,6 @@ export function mountLiveAgentRoutes(app) {
             }
         }
     }));
-
-    app.get("/live-agent", (_req, res, next) => {
-        fs.access(path.join(STATIC_DIR, "index.html"))
-            .then(() => res.sendFile(path.join(STATIC_DIR, "index.html")))
-            .catch(() => next());
-    });
 
     const router = express.Router();
     router.use(express.json({ limit: "256kb" }));
