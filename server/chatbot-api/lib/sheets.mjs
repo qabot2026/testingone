@@ -116,6 +116,12 @@ const SYNC_DASHBOARD_ON_APPEND = /^(1|true|yes)$/i.test(
 const STANDARD_SESSION_COLUMN_INDEX0_PRIMARY = 10;
 const STANDARD_SESSION_COLUMN_INDEX0_PRE_TRANSCRIPT = 9;
 const STANDARD_SESSION_COLUMN_INDEX0_LEGACY = 8;
+/** Column A (0): staff “Chat script” = Conv. link HYPERLINK — never raw JSON. */
+const STANDARD_CHAT_SCRIPT_LINK_COL_INDEX0 = 0;
+/** Column S (18): Document / drive file links — never transcript JSON or duplicate link. */
+const STANDARD_DOCUMENT_COL_INDEX0 = 18;
+/** Optional hidden column for serialised `chat_transcript` JSON when not configured via env/header. */
+const STANDARD_CHAT_TRANSCRIPT_JSON_COL_LETTER = "T";
 const DEDUP_LOOKBACK_ROWS = Math.max(
     10,
     Number.parseInt(process.env.SHEETS_DEDUP_LOOKBACK_ROWS || "500", 10) || 500
@@ -1940,7 +1946,7 @@ async function conversationLinkFormulaForLeadSheetCell_(sheets, tabTitle, rowNum
     const base = resolvedConversationsPublicBaseUrl_();
     if (base && sid) {
         const url = `${base}/conversation-transcript?session=${encodeURIComponent(sid)}`;
-        const label = "Conv. link";
+        const label = "Chat script";
         return `=HYPERLINK("${url.replace(/"/g, '""')}","${label.replace(/"/g, '""')}")`;
     }
     if (SPREADSHEET_ID && rowNumber >= 2) {
@@ -2002,6 +2008,10 @@ async function maybeWriteSheetRowOpenLink_(sheets, tabTitle, rowNumber, clientSe
     if (col === "A") {
         return;
     }
+    const colIdx0 = columnLetterToIndex0_(col);
+    if (colIdx0 === STANDARD_DOCUMENT_COL_INDEX0) {
+        return;
+    }
     const sid = typeof clientSessionId === "string" ? clientSessionId.trim() : "";
     /** @type {string} */
     let url = "";
@@ -2038,19 +2048,23 @@ async function maybeWriteSheetRowOpenLink_(sheets, tabTitle, rowNumber, clientSe
     }
 }
 
-const CHAT_TRANSCRIPT_HEADER_ALIASES = [
+/** Row-1 headers for **JSON** storage only — not “Chat script” in column A (that is the Conv. link). */
+const CHAT_TRANSCRIPT_JSON_HEADER_ALIASES = [
     "chat_transcript_json",
-    "chat_transcript",
-    "chattranscript",
-    "chatscript",
-    "chat_script",
-    "df_chat_transcript",
-    "conversation_transcript",
-    "bot_transcript",
-    "assistant_transcript",
+    "chattranscriptjson",
+    "df_chat_transcript_json",
+    "conversation_transcript_json",
+    "bot_transcript_json",
+    "assistant_transcript_json",
     "chat transcript json",
-    "chat script"
+    "transcriptjson",
+    "chathistoryjson"
 ];
+
+/** @param {number} idx0 */
+function isReservedColumnForChatTranscriptJson_(idx0) {
+    return idx0 === STANDARD_CHAT_SCRIPT_LINK_COL_INDEX0 || idx0 === STANDARD_DOCUMENT_COL_INDEX0;
+}
 
 /**
  * @param {import("googleapis").sheets_v4.Sheets} sheets
@@ -2060,21 +2074,29 @@ const CHAT_TRANSCRIPT_HEADER_ALIASES = [
 async function resolveChatTranscriptColumnLetter_(sheets, tab) {
     const envCol = SHEETS_CHAT_TRANSCRIPT_JSON_COLUMN.replace(/[^A-Z]/g, "");
     if (/^[A-Z]{1,3}$/.test(envCol)) {
-        return envCol;
+        const envIdx = columnLetterToIndex0_(envCol);
+        if (!isReservedColumnForChatTranscriptJson_(envIdx)) {
+            return envCol;
+        }
+        console.warn(
+            "[chatbot-api] SHEETS_CHAT_TRANSCRIPT_JSON_COLUMN must not be A (Chat script link) or S (Document); using column",
+            STANDARD_CHAT_TRANSCRIPT_JSON_COL_LETTER,
+            "instead."
+        );
     }
     const headerMap = await getHeaderIndexMap_(sheets, tab);
-    const transcriptIdx = firstHeaderIdxFromAliases_(headerMap, CHAT_TRANSCRIPT_HEADER_ALIASES);
-    if (transcriptIdx !== undefined) {
+    const transcriptIdx = firstHeaderIdxFromAliases_(headerMap, CHAT_TRANSCRIPT_JSON_HEADER_ALIASES);
+    if (transcriptIdx !== undefined && !isReservedColumnForChatTranscriptJson_(transcriptIdx)) {
         return columnLetterFromIndex_(transcriptIdx);
     }
     const convDateIdx = firstHeaderIdxFromAliases_(headerMap, SHEET_H_CONV_DATE_CELL);
     if (convDateIdx === 1) {
-        return "T";
+        return STANDARD_CHAT_TRANSCRIPT_JSON_COL_LETTER;
     }
     if (!Object.keys(headerMap).length) {
-        return "T";
+        return STANDARD_CHAT_TRANSCRIPT_JSON_COL_LETTER;
     }
-    return "";
+    return STANDARD_CHAT_TRANSCRIPT_JSON_COL_LETTER;
 }
 
 /**
@@ -2306,7 +2328,11 @@ async function buildStandardLeadRowUpdates_(sheets, tab, rowNumber, lead) {
     put(["appointmentbooked", "appointment_booked", "isappointmentbooked"], 15, lead.appointmentBooked);
     put(["appointmentdate"], 16, lead.appointmentDate);
     put(["appointmenttime"], 17, lead.appointmentTime);
-    put(["drivefilelink", "drive file link", "drivefile", "filelink", "filelinks", "drivelink"], 18, lead.driveFileLink);
+    put(
+        ["document", "documents", "drivefilelink", "drive file link", "drivefile", "filelink", "filelinks", "drivelink"],
+        18,
+        lead.driveFileLink
+    );
 
     return updates;
 }
