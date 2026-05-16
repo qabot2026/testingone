@@ -419,58 +419,42 @@
     }
     table.sheet thead th.col-conv-link,
     table.sheet tbody td.col-conv-link {
-      min-width: 72px;
-      max-width: 108px;
-      width: auto;
-      padding: 4px 8px;
+      min-width: 40px;
+      max-width: 48px;
+      width: 44px;
+      padding: 2px 4px;
       text-align: center;
     }
     table.sheet tbody td.col-conv-link {
       cursor: default;
     }
-    .conv-link-cell {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 6px;
-      max-width: 100%;
-      margin: 0 auto;
-    }
     .conv-link-eye {
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      flex-shrink: 0;
-      width: 30px;
-      height: 30px;
-      margin: 0;
+      width: 28px;
+      height: 28px;
+      margin: 0 auto;
       padding: 0;
       border: none;
-      border-radius: 50%;
-      background: linear-gradient(145deg, #ecfdf5 0%, #d1fae5 55%, #a7f3d0 100%);
-      color: #0f766e;
+      border-radius: 8px;
+      background: transparent;
+      color: #64748b;
       cursor: pointer;
       vertical-align: middle;
-      box-shadow:
-        0 1px 2px rgba(15, 118, 110, 0.12),
-        inset 0 1px 0 rgba(255, 255, 255, 0.85);
       line-height: 0;
       transition:
-        transform 0.18s cubic-bezier(0.34, 1.4, 0.64, 1),
-        box-shadow 0.18s ease,
-        background 0.18s ease,
-        color 0.18s ease;
+        color 0.16s ease,
+        background 0.16s ease,
+        transform 0.16s cubic-bezier(0.34, 1.2, 0.64, 1);
     }
     .conv-link-eye:hover {
-      background: linear-gradient(145deg, #ccfbf1 0%, #5eead4 100%);
-      color: #0d9488;
-      transform: scale(1.08);
-      box-shadow:
-        0 4px 14px rgba(13, 148, 136, 0.28),
-        inset 0 1px 0 rgba(255, 255, 255, 0.9);
+      background: var(--brand-soft);
+      color: var(--brand-strong);
+      transform: scale(1.1);
     }
     .conv-link-eye:active {
-      transform: scale(1.02);
+      transform: scale(1.03);
     }
     .conv-link-eye:focus-visible {
       outline: 2px solid var(--brand);
@@ -478,41 +462,14 @@
     }
     .conv-link-eye--disabled {
       cursor: not-allowed;
-      opacity: 0.32;
+      opacity: 0.22;
       pointer-events: none;
-      filter: grayscale(0.4);
     }
     .conv-link-eye svg {
-      width: 17px;
-      height: 17px;
+      width: 20px;
+      height: 20px;
       display: block;
       pointer-events: none;
-    }
-    .conv-link-sheet-text {
-      font-size: 10.5px;
-      font-weight: 600;
-      letter-spacing: 0.01em;
-      color: var(--brand-strong);
-      text-decoration: underline;
-      text-decoration-color: rgba(15, 118, 110, 0.45);
-      text-underline-offset: 2px;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      max-width: 5.5rem;
-      cursor: pointer;
-      background: none;
-      border: none;
-      padding: 0;
-      font-family: inherit;
-    }
-    .conv-link-sheet-text:hover {
-      color: var(--brand);
-    }
-    .conv-link-sheet-text:focus-visible {
-      outline: 2px solid var(--brand);
-      outline-offset: 2px;
-      border-radius: 2px;
     }
     table.sheet td a {
       color: var(--brand-strong);
@@ -2206,8 +2163,8 @@
 
       var CONV_LINK_EYE_SVG =
         '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" aria-hidden="true">' +
-        '<path d="M12 4.75C7.1 4.75 3.2 7.9 2 12c1.2 4.1 5.1 7.25 10 7.25s8.8-3.15 10-7.25c-1.2-4.1-5.1-7.25-10-7.25Z" stroke="currentColor" stroke-width="1.55" stroke-linecap="round" stroke-linejoin="round"/>' +
-        '<path d="M12 15.25a3.25 3.25 0 1 0 0-6.5 3.25 3.25 0 0 0 0 6.5Z" fill="currentColor"/>' +
+        '<path d="M2.036 12.322c1.398-2.37 3.99-3.822 7.464-3.822 3.473 0 6.066 1.452 7.464 3.822.12.204.12.448 0 .652-1.398 2.37-3.99 3.822-7.464 3.822-3.473 0-6.066-1.452-7.464-3.822-.12-.204-.12-.448 0-.652Z" stroke="currentColor" stroke-width="1.15" stroke-linecap="round" stroke-linejoin="round"/>' +
+        '<circle cx="12" cy="12" r="2.15" stroke="currentColor" stroke-width="1.15"/>' +
         "</svg>";
 
       function openConvTranscript_(url, e) {
@@ -2223,16 +2180,12 @@
         var sid = sessionIdFromRow(row);
         var url = transcriptUrlForSession(sid);
         var sheetLabel = chatLinkLabelFromSheetCell(rawCell);
-        var tip = sheetLabel
-          ? sheetLabel + (url ? " — open transcript" : "")
-          : url
-            ? "Open conversation transcript"
-            : "No session id on this row";
-        td.title = tip;
-        td._clipboardValue = url || sheetLabel || "";
-
-        var wrap = document.createElement("div");
-        wrap.className = "conv-link-cell";
+        td.title = url
+          ? sheetLabel
+            ? "Open transcript (" + sheetLabel + ")"
+            : "Open conversation transcript"
+          : "No session id on this row";
+        td._clipboardValue = url || "";
 
         var btn = document.createElement("button");
         btn.type = "button";
@@ -2248,29 +2201,7 @@
             openConvTranscript_(url, e);
           });
         }
-        wrap.appendChild(btn);
-
-        if (sheetLabel) {
-          if (url) {
-            var linkBtn = document.createElement("button");
-            linkBtn.type = "button";
-            linkBtn.className = "conv-link-sheet-text";
-            linkBtn.textContent = sheetLabel;
-            linkBtn.addEventListener("click", function (e) {
-              openConvTranscript_(url, e);
-            });
-            wrap.appendChild(linkBtn);
-          } else {
-            var span = document.createElement("span");
-            span.className = "conv-link-sheet-text";
-            span.textContent = sheetLabel;
-            span.style.cursor = "default";
-            span.style.textDecoration = "none";
-            wrap.appendChild(span);
-          }
-        }
-
-        td.appendChild(wrap);
+        td.appendChild(btn);
       }
 
       function linkifyCellForTable(text) {
