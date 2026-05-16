@@ -48,23 +48,6 @@
       font-weight: 700;
       letter-spacing: -0.03em;
     }
-    .sub {
-      margin: 0;
-      color: var(--muted);
-      font-size: 0.82rem;
-    }
-    .session-pill {
-      margin-top: 10px;
-      font-size: 0.72rem;
-      color: var(--muted);
-      word-break: break-all;
-    }
-    .session-pill code {
-      font-size: 0.75rem;
-      background: rgba(148, 163, 184, 0.15);
-      padding: 2px 8px;
-      border-radius: 8px;
-    }
     .panel {
       background: var(--surface);
       border: 1px solid var(--border);
@@ -280,20 +263,11 @@
       font-size: 0.88rem;
       padding: 24px 12px;
     }
-    .source-tag {
-      font-size: 0.68rem;
-      color: var(--muted);
-      padding: 0 4px 4px;
-      margin: 0;
-      max-width: none;
-    }
   </style>
 </head>
 <body>
   <header class="top">
     <h1>Conversation</h1>
-    <p class="sub">User and assistant messages, plus the same lead fields as your Google Sheet row.</p>
-    <div class="session-pill" id="sessionLine" hidden>Session <code id="sessionCode"></code></div>
     <div class="panel" id="authPanel">
       <label class="mini" for="secret">Viewer secret</label>
       <input id="secret" type="password" autocomplete="current-password" placeholder="Same as conversations inbox" />
@@ -305,7 +279,6 @@
 
   <div class="main-grid" id="mainGrid">
     <div class="chat-column">
-      <p class="source-tag" id="sourceTag" hidden></p>
       <div class="chat-wrap">
         <div class="chat-stream" id="thread" aria-live="polite"></div>
       </div>
@@ -329,11 +302,8 @@
       var loadBtn = document.getElementById("loadBtn");
       var errBox = document.getElementById("errBox");
       var thread = document.getElementById("thread");
-      var sessionLine = document.getElementById("sessionLine");
-      var sessionCode = document.getElementById("sessionCode");
       var detailsWrap = document.getElementById("detailsWrap");
       var detailsDl = document.getElementById("detailsDl");
-      var sourceTag = document.getElementById("sourceTag");
       var authPanel = document.getElementById("authPanel");
       var toggleAuth = document.getElementById("toggleAuth");
       var mainGrid = document.getElementById("mainGrid");
@@ -679,16 +649,11 @@
         detailsWrap.hidden = true;
         summaryRail.hidden = true;
         mainGrid.classList.remove("main-grid--split");
-        sourceTag.hidden = true;
-
         var session = sessionFromUrl();
         if (!session) {
           showErr("Missing ?session= in the URL. Use the link from your Google Sheet “Chat transcript” column.");
-          sessionLine.hidden = true;
           return;
         }
-        sessionLine.hidden = false;
-        sessionCode.textContent = session;
 
         var secret = secretEl.value.trim();
         if (!secret) {
@@ -726,19 +691,6 @@
               : "";
           var transcriptIncDate =
             json.transcript_time_includes_date === true ? true : false;
-
-          var parts = [];
-          if (json.source && json.source !== "none") {
-            parts.push(
-              "Data source: " +
-                json.source +
-                " — refreshes when the visitor chats and sync/submit runs."
-            );
-          }
-          if (parts.length) {
-            sourceTag.hidden = false;
-            sourceTag.textContent = parts.join(" ");
-          }
 
           var turns = Array.isArray(json.turns) ? json.turns : [];
           if (!turns.length) {
