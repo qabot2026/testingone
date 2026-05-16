@@ -4385,6 +4385,10 @@ let restartFromUserPhraseTimerId = null;
 
 /** Keep in sync with server `collectUserQueriesLinesFromContext_` per-line ceiling (truncation, not omission). */
 const MAX_STORED_CHAT_USER_QUERY_CHARS = 8000;
+/** Last assistant line appended (blocks duplicate `df-response-received` / render double-capture). */
+let dfchatLastAssistantTranscriptNorm_ = "";
+let dfchatLastAssistantTranscriptAtMs_ = 0;
+
 /** Interleaved transcript lines sent with `client_context` (contact form + session sync). */
 const MAX_CHAT_TRANSCRIPT_TEXT_CHARS = 50000;
 const MAX_CHAT_TRANSCRIPT_TURNS = 120;
@@ -13641,7 +13645,20 @@ function handleDfResponseReceived(event) {
         assistantLines = extractAssistantVisibleTextsDeepFallback_(event);
     }
     if (assistantLines.length) {
-        appendChatTranscriptAssistantLines_(assistantLines);
+        try {
+            const prev = readStoredClientContext();
+            const tr =
+                prev.chat_transcript && Array.isArray(prev.chat_transcript)
+                    ? prev.chat_transcript
+                    : [];
+            const batch = coalesceAssistantTranscriptLines_(assistantLines);
+            const fresh = batch.filter((line) => !chatTranscriptAlreadyHasAssistantText_(tr, line));
+            if (fresh.length) {
+                appendChatTranscriptAssistantLines_(fresh);
+            }
+        } catch {
+            appendChatTranscriptAssistantLines_(assistantLines);
+        }
     }
 
     scheduleDomTranslationRefresh();
@@ -14386,6 +14403,11 @@ function extractAssistantVisibleTextsDeepFallback_(event) {
  */
 function normalizeChatTranscriptCompareText_(text) {
     return String(text || "")
+        .replace(/!\[[^\]]*\]\([^)]*\)/g, "")
+        .replace(/\*\*([^*]+)\*\*/g, "$1")
+        .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+        .replace(/`{1,3}[^`]*`{1,3}/g, "")
+        .replace(/\*/g, "")
         .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, "")
         .replace(/\uFE0F/g, "")
         .replace(/\s{2,}\n/g, " ")
@@ -14479,11 +14501,21 @@ function appendChatTranscriptAssistantLines_(lines) {
                 trimmed.length > MAX_CHAT_TRANSCRIPT_TEXT_CHARS
                     ? `${trimmed.slice(0, MAX_CHAT_TRANSCRIPT_TEXT_CHARS)}…`
                     : trimmed;
+            const norm = normalizeChatTranscriptCompareText_(text);
+            if (
+                norm
+                && norm === dfchatLastAssistantTranscriptNorm_
+                && now - dfchatLastAssistantTranscriptAtMs_ < 900
+            ) {
+                continue;
+            }
             if (chatTranscriptAlreadyHasAssistantText_(transcript, text)) {
                 continue;
             }
             seq += 1;
             transcript.push({ role: "assistant", text, at: now, seq });
+            dfchatLastAssistantTranscriptNorm_ = norm;
+            dfchatLastAssistantTranscriptAtMs_ = now;
         }
         persistClientContext({
             ...prev,
@@ -14541,17 +14573,8 @@ function installRenderedBotTranscriptHook_(host) {
     }
     const orig = /** @type {(text: unknown, isBot?: boolean) => unknown} */ (el.renderCustomText.bind(el));
     el.renderCustomText = (text, isBot) => {
-        const ret = orig(text, isBot);
-        try {
-            // df-messenger often renders agent markdown with a single-arg call (`isBot` omitted).
-            // User lane uses `renderCustomText(t, false)`; user persona uses `(md, true)` but carries USER_PERSONA_TEXT_SENTINEL (filtered below).
-            if (isBot !== false && typeof text === "string") {
-                maybeRecordRenderedBotMarkdownForTranscript_(text);
-            }
-        } catch {
-            /* ignore */
-        }
-        return ret;
+        /** Bot lines are recorded once in `handleDfResponseReceived` — hook + CX extract duplicated every bubble. */
+        return orig(text, isBot);
     };
     el.dataset.dfchatTranscriptRenderHook = "1";
 }
