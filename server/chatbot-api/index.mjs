@@ -1052,6 +1052,34 @@ function haversineKm_(lat1, lng1, lat2, lng2) {
  * Returns branches sorted by distance from the supplied coordinates.
  * Branches without numeric Latitude/Longitude are filtered out.
  */
+/** Best-effort visitor city from CDN headers or GeoIP (widget stores in `client_context.city`). */
+app.get("/api/visitor-city", async (req, res) => {
+    try {
+        const city = await resolveCityForRequest(req);
+        return res.status(200).json({ ok: true, city: city || "" });
+    } catch (e) {
+        const detail = e && e.message ? e.message : String(e);
+        return res.status(500).json({ ok: false, error: detail.slice(0, 240) });
+    }
+});
+
+/**
+ * @param {Record<string, unknown>} ctx
+ * @param {import("express").Request} req
+ * @returns {Promise<Record<string, unknown>>}
+ */
+async function mergeVisitorCityIntoClientContext_(ctx, req) {
+    const merged = ctx && typeof ctx === "object" ? { ...ctx } : {};
+    if (pickCityFromClientContextMerged_(merged)) {
+        return merged;
+    }
+    const city = await resolveCityForRequest(req);
+    if (city) {
+        merged.city = city;
+    }
+    return merged;
+}
+
 app.get("/api/nearest-branches", async (req, res) => {
     const latRaw = typeof req.query.lat === "string" ? req.query.lat.trim() : "";
     const lngRaw = typeof req.query.lng === "string" ? req.query.lng.trim() : "";
@@ -2325,7 +2353,7 @@ app.post(
         const clientContext =
             body.client_context && typeof body.client_context === "object" ? body.client_context : {};
         const channel = normalizeLeadChannel(clientContext.channel);
-        const mergedClientContext = clientContextForStorageWithoutChatScriptUnlessEngaged_({
+        let mergedClientContext = clientContextForStorageWithoutChatScriptUnlessEngaged_({
             ...clientContext,
             channel
         });
@@ -2487,9 +2515,11 @@ app.post(
         const convSheetDate = formatConversationDateForSheet(convAt);
         const convSheetTime = formatConversationTimeForSheet(convAt);
         const ip = extractRequestIp(req);
+        const mergedWithCity = await mergeVisitorCityIntoClientContext_(mergedClientContext, req);
+        mergedClientContext = mergedWithCity;
         const cityFromFields = typeof fields.city === "string" ? fields.city.trim() : "";
         const cityFromContext = pickCityFromClientContextMerged_(mergedClientContext);
-        const city = cityFromFields || cityFromContext || await resolveCityForRequest(req);
+        const city = cityFromFields || cityFromContext || (await resolveCityForRequest(req));
         const userQueriesCsv = normalizeUserQueriesCsvFromClientContext(mergedClientContext);
         const sourceUrl = resolveSourceUrlForSheet(mergedClientContext);
         const appointmentDateRaw =
@@ -2754,7 +2784,7 @@ app.post(
         const clientContext =
             body.client_context && typeof body.client_context === "object" ? body.client_context : {};
         const channel = normalizeLeadChannel(clientContext.channel);
-        const mergedClientContext = clientContextForStorageWithoutChatScriptUnlessEngaged_({
+        let mergedClientContext = clientContextForStorageWithoutChatScriptUnlessEngaged_({
             ...clientContext,
             channel
         });
@@ -2804,6 +2834,8 @@ app.post(
         const convSheetDate = formatConversationDateForSheet(convAt);
         const convSheetTime = formatConversationTimeForSheet(convAt);
         const ip = extractRequestIp(req);
+        const mergedWithCity = await mergeVisitorCityIntoClientContext_(mergedClientContext, req);
+        mergedClientContext = mergedWithCity;
         const city = pickCityFromClientContextMerged_(mergedClientContext)
             || (await resolveCityForRequest(req));
         const userQueriesCsv = normalizeUserQueriesCsvFromClientContext(mergedClientContext);
@@ -2929,7 +2961,7 @@ app.post(
         const clientContext =
             body.client_context && typeof body.client_context === "object" ? body.client_context : {};
         const channel = normalizeLeadChannel(clientContext.channel);
-        const mergedClientContext = clientContextForStorageWithoutChatScriptUnlessEngaged_({
+        let mergedClientContext = clientContextForStorageWithoutChatScriptUnlessEngaged_({
             ...clientContext,
             channel
         });
@@ -2993,6 +3025,8 @@ app.post(
         const convSheetDate = formatConversationDateForSheet(convAt);
         const convSheetTime = formatConversationTimeForSheet(convAt);
         const ip = extractRequestIp(req);
+        const mergedWithCity = await mergeVisitorCityIntoClientContext_(mergedClientContext, req);
+        mergedClientContext = mergedWithCity;
         const city = pickCityFromClientContextMerged_(mergedClientContext)
             || (await resolveCityForRequest(req));
         const sourceUrl = resolveSourceUrlForSheet(mergedClientContext);

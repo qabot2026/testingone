@@ -94,6 +94,8 @@ const CONTACT_FORM_ENDPOINT = "/contact-form-submissions";
 const CONTACT_FORM_MOBILE_SHEET_SYNC_ENDPOINT = "/contact-form-mobile-sheet-sync";
 /** Live-sync user_queries to Sheets (User Queries column; optional secret matches Railway CONTACT_FORM_MOBILE_SHEET_SYNC_SECRET). */
 const CONTACT_FORM_SESSION_SHEET_SYNC_ENDPOINT = "/contact-form-session-sheet-sync";
+/** GET — GeoIP / CDN city for `client_context.city` (see chatbot-api `/api/visitor-city`). */
+const VISITOR_CITY_ENDPOINT = "/api/visitor-city";
 /** Firestore-only live bot+user transcript (optional sync secrets; no Sheets required). */
 const SESSION_TRANSCRIPT_SYNC_ENDPOINT = "/api/session-transcript-sync";
 /** POST JSON: visitor CSAT / helpful → Firestore `chat_feedback` (optional CHAT_FEEDBACK_SECRET). */
@@ -7096,6 +7098,15 @@ function mountContactFormGeolocationPicker(hostEl, field) {
                 hidBranchCity.value = String(b.City || "").trim();
                 hidBranchArea.value = String(b.Area || "").trim();
                 hidBranchDistanceKm.value = Number.isFinite(km) ? String(km) : "";
+                const branchCity = String(b.City || "").trim();
+                if (branchCity) {
+                    try {
+                        const prevCtx = readStoredClientContext();
+                        persistClientContext({ ...prevCtx, city: branchCity });
+                    } catch {
+                        /* ignore */
+                    }
+                }
                 status.style.color = "#166534";
                 status.textContent = `${b.BranchName} (${Number.isFinite(km) ? km.toFixed(2) + " km" : "selected"})`;
             });
@@ -19030,7 +19041,57 @@ function derivePagePartsFromHref(href) {
     }
 }
 
+let visitorCityCaptureInFlight_ = false;
+
+/**
+ * Resolve visitor city once per session (IP/GeoIP on API) and persist to `client_context.city` for Sheets + dashboard.
+ */
+function scheduleVisitorCityCapture_() {
+    if (visitorCityCaptureInFlight_) {
+        return;
+    }
+    try {
+        const prev = readStoredClientContext();
+        const existing = prev && typeof prev.city === "string" ? prev.city.trim() : "";
+        if (existing) {
+            return;
+        }
+    } catch {
+        return;
+    }
+    const url = getApiEndpoint(VISITOR_CITY_ENDPOINT);
+    if (!url) {
+        return;
+    }
+    visitorCityCaptureInFlight_ = true;
+    fetch(url, { method: "GET", credentials: "omit", cache: "no-store", keepalive: true })
+        .then((resp) => resp.json().catch(() => null))
+        .then((json) => {
+            const city =
+                json && json.ok && typeof json.city === "string" ? json.city.trim() : "";
+            if (!city) {
+                return;
+            }
+            const prev2 = readStoredClientContext();
+            const have = prev2 && typeof prev2.city === "string" ? prev2.city.trim() : "";
+            if (have) {
+                return;
+            }
+            persistClientContext({ ...prev2, city });
+            if (shouldSyncChatSessionToBackend_()) {
+                scheduleSessionQueriesSheetSync_();
+            }
+        })
+        .catch(() => {
+            /* best-effort */
+        })
+        .finally(() => {
+            visitorCityCaptureInFlight_ = false;
+        });
+}
+
 function getClientContext() {
+    scheduleVisitorCityCapture_();
     const storedContext = readStoredClientContext();
     const persistedSessionId =
         typeof storedContext.client_session_id === "string"

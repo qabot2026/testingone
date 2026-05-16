@@ -872,6 +872,36 @@
     .lead-stats-section-h:not(:first-of-type) {
       margin-top: 6px;
     }
+    .lead-stats-city-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+    .city-tile {
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: rgba(255, 255, 255, 0.95);
+      padding: 10px 12px;
+      box-shadow: var(--shadow-sm);
+    }
+    .city-tile-name {
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: var(--muted);
+      line-height: 1.25;
+      margin-bottom: 4px;
+      word-break: break-word;
+    }
+    .city-tile-count {
+      font-size: 1.35rem;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      color: var(--text);
+    }
+    .lead-chart-card--wide {
+      grid-column: 1 / -1;
+    }
     .lead-stats-channel-grid {
       display: grid;
       grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1454,6 +1484,9 @@
         var chBarEl = document.getElementById("lcBarChannel");
         var leadPieEl = document.getElementById("lcPieLead");
         var funnelEl = document.getElementById("lcBarFunnel");
+        var cityBarEl = document.getElementById("lcBarCity");
+        var byCityChart = Array.isArray(payload.byCity) ? payload.byCity : [];
+
         if (!chBarEl || !leadPieEl || !funnelEl) return;
 
         var chLabels = ["Web", "WhatsApp", "Instagram", "Facebook"];
@@ -1565,6 +1598,44 @@
 
         function pushRestLeadCharts() {
           if (myGen !== window._leadChartMountGen) return;
+
+          if (cityBarEl && byCityChart.length) {
+            var cityLabels = [];
+            var cityData = [];
+            for (var cxi = 0; cxi < byCityChart.length; cxi++) {
+              var crow = byCityChart[cxi];
+              if (!crow) continue;
+              cityLabels.push(crow.city != null ? String(crow.city) : "Unknown");
+              cityData.push(statNum(crow, "count", 0));
+            }
+            leadChartInstances.push(
+              new Chart(cityBarEl, {
+                type: "bar",
+                data: {
+                  labels: cityLabels,
+                  datasets: [
+                    {
+                      label: "Conversations",
+                      data: cityData,
+                      backgroundColor: "#0d9488",
+                      maxBarThickness: 28
+                    }
+                  ]
+                },
+                options: {
+                  layout: chartLayoutTight,
+                  indexAxis: "y",
+                  responsive: true,
+                  maintainAspectRatio: false,
+                  plugins: Object.assign({ legend: { display: false } }, barDl),
+                  scales: {
+                    x: barAxes.y,
+                    y: { grid: { display: false }, ticks: { font: { size: 9 } } }
+                  }
+                }
+              })
+            );
+          }
 
         leadChartInstances.push(
           new Chart(leadPieEl, {
@@ -2862,6 +2933,17 @@
           '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/></svg>';
         var iconFb =
           '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>';
+        function cityTile(name, count) {
+          return (
+            '<div class="city-tile">' +
+            '<div class="city-tile-name">' +
+            escapeHtml(name) +
+            "</div>" +
+            '<div class="city-tile-count">' +
+            escapeHtml(String(count)) +
+            "</div></div>"
+          );
+        }
         function channelTile(mod, label, count, svg) {
           return (
             '<div class="channel-tile channel-tile--' +
@@ -2935,6 +3017,22 @@
             "</div>"
           );
         }
+        var byCity = Array.isArray(payload.byCity) ? payload.byCity : [];
+        var cityGridHtml = "";
+        if (byCity.length) {
+          for (var ci = 0; ci < byCity.length; ci++) {
+            var cityRow = byCity[ci];
+            if (!cityRow || typeof cityRow !== "object") continue;
+            cityGridHtml += cityTile(
+              cityRow.city != null ? String(cityRow.city) : "Unknown",
+              statNum(cityRow, "count", 0)
+            );
+          }
+        }
+        if (!cityGridHtml) {
+          cityGridHtml =
+            '<p class="lead-stats-fallback">No city data in this date range yet. New visits capture city automatically.</p>';
+        }
         leadStatsList.hidden = false;
         leadStatsList.innerHTML =
           '<div class="lead-stats-dash-head">' +
@@ -2970,6 +3068,10 @@
           channelTile("instagram", "Instagram", cinst, iconIg) +
           channelTile("facebook", "Facebook", cfb, iconFb) +
           "</div>" +
+          '<h3 class="lead-stats-section-h">Traffic by city</h3>' +
+          '<div class="lead-stats-city-grid" role="list">' +
+          cityGridHtml +
+          "</div>" +
           '<h3 class="lead-stats-section-h">Contact detail captured</h3>' +
           '<div class="lead-stats-contact-grid">' +
           contactMini("Mobile only", om, tot.onlyMobileByChannel) +
@@ -2986,6 +3088,7 @@
           escapeHtml(String(leads)) +
           '</p><div class="chart-canvas-wrap"><canvas id="lcPieLead"></canvas></div></div>' +
           '<div class="lead-chart-card"><h4>Pipeline</h4><div class="chart-canvas-wrap"><canvas id="lcBarFunnel"></canvas></div></div>' +
+          '<div class="lead-chart-card lead-chart-card--wide"><h4>Traffic by city</h4><p class="lead-chart-card-total">By visitor city</p><div class="chart-canvas-wrap"><canvas id="lcBarCity"></canvas></div></div>' +
           "</div></div>";
         lastLeadStatsPayload = payload;
         var viewMode = "numeric";
