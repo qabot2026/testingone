@@ -69,7 +69,7 @@ function loadSheetExtraMappingsFromDisk_() {
 }
 
 const SPREADSHEET_ID = (process.env.SHEETS_SPREADSHEET_ID || "").trim();
-// Default schema: no Form ID (A–S). Col A Chat transcript JSON, B Date, C Time (12h TZ from SHEETS_CONV_DATETIME_TZ), then name…
+// Default schema: no Form ID (A–S). Col A = Conv. link (HYPERLINK), B Date, C Time (12h TZ from SHEETS_CONV_DATETIME_TZ), then name… through S = Document; JSON transcript defaults to column T (see SHEETS_CHAT_TRANSCRIPT_JSON_COLUMN).
 const RANGE = (process.env.SHEETS_RANGE || "Sheet1!A:S").trim();
 /**
  * Optional A1 column letter (e.g. S). When set, new/updated rows get =HYPERLINK(...) to open that row in this spreadsheet.
@@ -77,8 +77,8 @@ const RANGE = (process.env.SHEETS_RANGE || "Sheet1!A:S").trim();
  */
 const SHEETS_ROW_OPEN_LINK_COLUMN = (process.env.SHEETS_ROW_OPEN_LINK_COLUMN || "").trim().toUpperCase();
 /**
- * Optional: A1 column letter (e.g. `T`) or rely on row-1 header aliases (Chat transcript JSON, …).
- * When unset, transcript JSON defaults to column A (Chat transcript first in default A–S row order).
+ * Optional: A1 column letter for **JSON** `chat_transcript` (e.g. `T`) or row-1 header aliases.
+ * When unset, JSON defaults to column **T** on the A–S lead layout (column A is the Conv. link formula, not JSON).
  * When set / matched, session sync and contact-form writes store the widget `chat_transcript` JSON so staff transcripts include bot lines even if Firestore is empty or client_context drops them.
  */
 const SHEETS_CHAT_TRANSCRIPT_JSON_COLUMN = (process.env.SHEETS_CHAT_TRANSCRIPT_JSON_COLUMN || "").trim().toUpperCase();
@@ -110,7 +110,7 @@ const SYNC_DASHBOARD_ON_APPEND = /^(1|true|yes)$/i.test(
 );
 
 /**
- * Session id column (0-based): K (10) with Chat transcript in A; J (9) legacy Date-first A–R row;
+ * Session id column (0-based): K (10) with Conv. link in A and date in B; J (9) legacy Date-first A–R row;
  * I (8) older single “Conv” column layout.
  */
 const STANDARD_SESSION_COLUMN_INDEX0_PRIMARY = 10;
@@ -166,7 +166,7 @@ function conversationSheetBaseDate_(d) {
 }
 
 /**
- * Conversation **date only** for Sheets column B when Chat transcript is column A (same TZ as combined stamp).
+ * Conversation **date only** for Sheets column B when column A is the Conv. link (same TZ as combined stamp).
  * @param {Date} [d]
  * @returns {string}
  */
@@ -192,7 +192,7 @@ export function formatConversationDateForSheet(d = new Date()) {
 }
 
 /**
- * Conversation **time only** for Sheets column C (12-hour clock) when Chat transcript occupies column A.
+ * Conversation **time only** for Sheets column C (12-hour clock) when column A is the Conv. link.
  * @param {Date} [d]
  * @returns {string}
  */
@@ -245,7 +245,7 @@ export function formatConversationDateTimeForSheet(d = new Date()) {
 }
 
 /**
- * Force append into our schema columns (A–S: Chat transcript, Date, Time, then lead fields…).
+ * Force append into our schema columns (A–S: Conv. link, Date, Time, then lead fields…).
  *
  * We previously used `A:Z` to avoid truncation when env was set to `A:H`, but `values.append`
  * may choose a "table" anchored later in the sheet and append at an unexpected start column
@@ -1926,6 +1926,66 @@ function rowNumberFromUpdatedRange_(updatedRange) {
 }
 
 /**
+ * Lead sheet column A: `=HYPERLINK(...)` to staff transcript when `CONVERSATIONS_PUBLIC_BASE_URL` (or Railway) + session exist.
+ * Otherwise, when `rowNumber` ≥ 2, link to this row in the spreadsheet. Pass `rowNumber` **0** before the row exists (only transcript URL is returned when base + session exist).
+ *
+ * @param {import("googleapis").sheets_v4.Sheets} sheets
+ * @param {string} tabTitle
+ * @param {number} rowNumber 1-based sheet row, or **0** if not yet appended
+ * @param {string} clientSessionId
+ * @returns {Promise<string>} formula or ""
+ */
+async function conversationLinkFormulaForLeadSheetCell_(sheets, tabTitle, rowNumber, clientSessionId) {
+    const sid = typeof clientSessionId === "string" ? clientSessionId.trim() : "";
+    const base = resolvedConversationsPublicBaseUrl_();
+    if (base && sid) {
+        const url = `${base}/conversation-transcript?session=${encodeURIComponent(sid)}`;
+        const label = "Conv. link";
+        return `=HYPERLINK("${url.replace(/"/g, '""')}","${label.replace(/"/g, '""')}")`;
+    }
+    if (SPREADSHEET_ID && rowNumber >= 2) {
+        try {
+            const gid = await getSheetIdForTitle_(sheets, tabTitle);
+            const url = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/edit?gid=${gid}#range=A${rowNumber}`;
+            const label = "Open row";
+            return `=HYPERLINK("${url.replace(/"/g, '""')}","${label.replace(/"/g, '""')}")`;
+        } catch {
+            return "";
+        }
+    }
+    return "";
+}
+
+/**
+ * @param {import("googleapis").sheets_v4.Sheets} sheets
+ * @param {string} tabTitle
+ * @param {number} rowNumber 1-based
+ * @param {string} clientSessionId
+ */
+async function maybeWriteLeadConvLinkColumnA_(sheets, tabTitle, rowNumber, clientSessionId) {
+    if (!rowNumber || rowNumber < 2) {
+        return;
+    }
+    const f = await conversationLinkFormulaForLeadSheetCell_(sheets, tabTitle, rowNumber, clientSessionId);
+    if (!f) {
+        return;
+    }
+    try {
+        await sheets.spreadsheets.values.update({
+            spreadsheetId: SPREADSHEET_ID,
+            range: `${sheetA1TabPrefix_(tabTitle)}!A${rowNumber}`,
+            valueInputOption: "USER_ENTERED",
+            requestBody: { values: [[f]] }
+        });
+    } catch (e) {
+        const m = e && /** @type {{ message?: string }} */ (e).message
+            ? String(/** @type {{ message?: string }} */ (e).message)
+            : String(e);
+        console.warn("[chatbot-api] Lead Conv. link column A write failed:", m.slice(0, 240));
+    }
+}
+
+/**
  * Writes a clickable cell: prefers `/conversation-transcript?session=…` when a public API base URL
  * (CONVERSATIONS_PUBLIC_BASE_URL or Railway RAILWAY_PUBLIC_DOMAIN / RAILWAY_STATIC_URL) and session id exist.
  *
@@ -1937,6 +1997,9 @@ function rowNumberFromUpdatedRange_(updatedRange) {
 async function maybeWriteSheetRowOpenLink_(sheets, tabTitle, rowNumber, clientSessionId = "") {
     const col = SHEETS_ROW_OPEN_LINK_COLUMN;
     if (!col || !/^[A-Z]{1,3}$/.test(col) || rowNumber < 2) {
+        return;
+    }
+    if (col === "A") {
         return;
     }
     const sid = typeof clientSessionId === "string" ? clientSessionId.trim() : "";
@@ -2006,10 +2069,10 @@ async function resolveChatTranscriptColumnLetter_(sheets, tab) {
     }
     const convDateIdx = firstHeaderIdxFromAliases_(headerMap, SHEET_H_CONV_DATE_CELL);
     if (convDateIdx === 1) {
-        return "A";
+        return "T";
     }
     if (!Object.keys(headerMap).length) {
-        return "A";
+        return "T";
     }
     return "";
 }
@@ -2353,9 +2416,10 @@ async function applySheetExtrasAfterDuplicateSessionRow_(sheets, tab, rowNumber,
 }
 
 /**
- * Default columns A–S (no Form ID):
- * Chat transcript JSON, Date, Time, Name, Mobile, Email, Channel, User Queries, Repeated User, Source URL, Session id,
- * Device, Browser, City, IP, Appointment booked/date/time, Drive link.
+ * Default columns A–S (no Form ID), matching typical lead headers:
+ * Conv. link (HYPERLINK in A), Conv. Date, Conv. Time, Name, Mobile, Email, Channel, User Queries,
+ * Repeated User, Source URL, Session id, Device, Browser, City, IP Address, App. Booked, App. Date, App. Time, Document.
+ * Widget `chat_transcript` JSON is written to column **T** by default (see `SHEETS_CHAT_TRANSCRIPT_JSON_COLUMN`).
  *
  * @param {{ convDate?: string, convTime?: string, iso?: string, formId?: string, name: string, mobile: string, email: string, clientSessionId: string, browserName: string, deviceType: string, channel: string, fileLinks?: string, city?: string, ip?: string, sourceUrl?: string, appointmentBooked?: string, appointmentDate?: string, appointmentTime?: string, userQueriesCsv?: string }} row Preferred: `convDate` + `convTime`; legacy combined `iso` is split when needed. `formId` ignored for Sheets.
  * @param {{ preferIncomingContact?: boolean, skipSessionDedup?: boolean, sheetExtrasSources?: { clientContext?: Record<string, unknown> | null, fields?: Record<string, unknown> | null } }} [opts] `skipSessionDedup` (with `preferIncomingContact`) skips “one row per session” and always appends — default for main contact-form POST. `sheetExtrasSources` uses dot paths from `sheet-integration.config.json`.
@@ -2432,6 +2496,7 @@ export async function appendContactRowToSheet(row, opts) {
                 console.warn("[chatbot-api] Dashboard tab sync failed:", msg);
             });
         }
+        await maybeWriteLeadConvLinkColumnA_(sheets, tabResolved, scan.matchedRowNumber, row.clientSessionId);
         await maybeWriteSheetRowOpenLink_(sheets, tabResolved, scan.matchedRowNumber, row.clientSessionId);
         if (typeof row.chatTranscriptJson === "string" && row.chatTranscriptJson.trim()) {
             await maybeWriteChatTranscriptJsonToSheetCell_(
@@ -2474,12 +2539,11 @@ export async function appendContactRowToSheet(row, opts) {
     );
     const repeated = repeatedUserLabelFromRepeatedFlag_(scanFull.repeatedAcrossSessions);
     const convParts = conversationPartsFromIncomingRow_(row);
-    const chatCell = sheetOutboundCell_(
-        typeof row.chatTranscriptJson === "string" ? row.chatTranscriptJson : ""
-    );
-    // Append A–S directly (Chat transcript, Date, Time, then lead fields …).
+    const sid0 = typeof row.clientSessionId === "string" ? row.clientSessionId.trim() : "";
+    const colAFormula = await conversationLinkFormulaForLeadSheetCell_(sheets, tabResolved, 0, sid0);
+    // Append A–S directly (Conv. link, Date, Time, then lead fields …).
     const values = [[
-        chatCell,
+        colAFormula || "",
         sheetOutboundCell_(convParts.convDate),
         sheetOutboundCell_(convParts.convTime),
         sheetOutboundCell_(row.name),
@@ -2527,6 +2591,9 @@ export async function appendContactRowToSheet(row, opts) {
     }
 
     const appendedRowNum = rowNumberFromUpdatedRange_(googleAppend.updatedRange);
+    if (appendedRowNum && !colAFormula && sid0) {
+        await maybeWriteLeadConvLinkColumnA_(sheets, tabResolved, appendedRowNum, sid0);
+    }
     try {
         if (appendedRowNum) {
             await writeLeadRowByHeader_(sheets, tabResolved, appendedRowNum, {
@@ -2711,6 +2778,7 @@ export async function upsertSessionQueriesInSheet(row) {
                 {}
             );
         }
+        await maybeWriteLeadConvLinkColumnA_(sheets, tab, rowNumber, sid);
         await maybeWriteSheetRowOpenLink_(sheets, tab, rowNumber, sid);
         if (chatTranscriptJson) {
             await maybeWriteChatTranscriptJsonToSheetCell_(sheets, tab, rowNumber, chatTranscriptJson);
