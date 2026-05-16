@@ -804,13 +804,161 @@
     .lead-stats-numeric-block {
       display: flex;
       flex-direction: column;
-      gap: 12px;
+      gap: 0;
+    }
+    .lead-stats-compact-line {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 6px 16px;
+      width: 100%;
+    }
+    .lead-stats-compact-line--kpis {
+      padding-bottom: 8px;
+      margin-bottom: 8px;
+      border-bottom: 1px solid rgba(15, 23, 42, 0.07);
+    }
+    .lead-stats-compact-line--detail {
+      align-items: center;
+      gap: 10px 18px;
+    }
+    .lead-inline-stat {
+      display: inline-flex;
+      align-items: baseline;
+      gap: 5px;
+      white-space: nowrap;
+    }
+    .lead-inline-stat-label {
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: #64748b;
+    }
+    .lead-inline-stat-val {
+      font-size: 0.9375rem;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      color: #0f172a;
+    }
+    .lead-inline-stat-val--accent {
+      color: #0f766e;
+    }
+    .lead-compact-block {
+      display: inline-flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 6px 8px;
+      min-width: 0;
+    }
+    .lead-compact-heading {
+      font-size: 0.6875rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: #475569;
+      white-space: nowrap;
+    }
+    .lead-channel-rows {
+      display: inline-flex;
+      flex-direction: column;
+      gap: 4px;
+      align-items: flex-start;
+    }
+    .lead-channel-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 6px;
+    }
+    .channel-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 8px 2px 6px;
+      border-radius: 6px;
+      border: 1px solid rgba(15, 23, 42, 0.08);
+      background: #ffffff;
+      font-size: 0.75rem;
+      line-height: 1.2;
+      white-space: nowrap;
+    }
+    .channel-chip-ic {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 16px;
+      height: 16px;
+      border-radius: 4px;
+      flex-shrink: 0;
+    }
+    .channel-chip-ic svg {
+      width: 10px;
+      height: 10px;
+      display: block;
+    }
+    .channel-chip--web .channel-chip-ic {
+      background: rgba(37, 99, 235, 0.12);
+      color: #1d4ed8;
+    }
+    .channel-chip--whatsapp .channel-chip-ic {
+      background: rgba(37, 211, 102, 0.15);
+      color: #128c7e;
+    }
+    .channel-chip--instagram .channel-chip-ic {
+      background: linear-gradient(
+        145deg,
+        rgba(253, 29, 29, 0.1),
+        rgba(225, 48, 108, 0.1),
+        rgba(131, 58, 180, 0.1)
+      );
+      color: #c026d3;
+    }
+    .channel-chip--facebook .channel-chip-ic {
+      background: rgba(24, 119, 242, 0.12);
+      color: #1877f2;
+    }
+    .channel-chip-label {
+      font-weight: 600;
+      color: #334155;
+    }
+    .channel-chip-val {
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      color: #0f766e;
+    }
+    .lead-contact-row {
+      display: inline-flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 6px;
+    }
+    .contact-chip {
+      display: inline-flex;
+      align-items: baseline;
+      gap: 4px;
+      padding: 2px 8px;
+      border-radius: 6px;
+      border: 1px solid rgba(15, 23, 42, 0.08);
+      background: #ffffff;
+      font-size: 0.75rem;
+      white-space: nowrap;
+    }
+    .contact-chip-lbl {
+      font-weight: 600;
+      color: #64748b;
+    }
+    .contact-chip strong {
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      color: #0f172a;
+    }
+    .lead-compact-sep {
+      flex: 0 0 1px;
+      align-self: stretch;
+      min-height: 1.75rem;
+      background: rgba(15, 23, 42, 0.1);
     }
     .lead-stats-metric-strip {
-      display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 10px;
-      width: 100%;
+      display: none;
     }
     .lead-stat-kpi--total .lead-stat-kpi-value {
       font-size: clamp(1.15rem, 2.2vw, 1.45rem);
@@ -1119,15 +1267,6 @@
       max-height: 140px;
     }
 
-    @media (max-width: 900px) {
-      .lead-stats-detail-row {
-        grid-template-columns: 1fr;
-      }
-      .lead-stats-channel-grid {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-      }
-    }
-
     @media (max-width: 640px) {
       .lead-stats {
         padding: 10px 12px 12px;
@@ -1146,15 +1285,12 @@
         padding: 9px 8px;
         min-height: 38px;
       }
-      .lead-stats-metric-strip {
-        grid-template-columns: 1fr;
-        gap: 8px;
+      .lead-stats-compact-line--detail {
+        flex-direction: column;
+        align-items: flex-start;
       }
-      .lead-stats-channel-grid {
-        grid-template-columns: 1fr;
-      }
-      .lead-stats-contact-grid {
-        grid-template-columns: 1fr;
+      .lead-compact-sep {
+        display: none;
       }
       .lead-stats-chart-grid {
         grid-template-columns: 1fr;
@@ -2930,6 +3066,45 @@
             "</div></div>"
           );
         }
+        function channelChip(mod, label, count, svg) {
+          return (
+            '<span class="channel-chip channel-chip--' +
+            mod +
+            '" role="listitem">' +
+            '<span class="channel-chip-ic" aria-hidden="true">' +
+            svg +
+            "</span>" +
+            '<span class="channel-chip-label">' +
+            escapeHtml(label) +
+            "</span>" +
+            '<span class="channel-chip-val">' +
+            escapeHtml(String(count)) +
+            "</span></span>"
+          );
+        }
+        function kpiInline(label, valueHtml, accent) {
+          return (
+            '<span class="lead-inline-stat">' +
+            '<span class="lead-inline-stat-label">' +
+            escapeHtml(label) +
+            "</span>" +
+            '<span class="lead-inline-stat-val' +
+            (accent ? " lead-inline-stat-val--accent" : "") +
+            '">' +
+            valueHtml +
+            "</span></span>"
+          );
+        }
+        function contactChip(label, total) {
+          return (
+            '<span class="contact-chip">' +
+            '<span class="contact-chip-lbl">' +
+            escapeHtml(label) +
+            "</span> <strong>" +
+            escapeHtml(String(total)) +
+            "</strong></span>"
+          );
+        }
         function readContactSeg(obj) {
           if (!obj || typeof obj !== "object") {
             return { web: 0, whatsapp: 0, instagram: 0, facebook: 0, other: 0 };
@@ -2996,38 +3171,31 @@
           '<button type="button" class="lead-view-btn" data-mode="visual">Visual</button>' +
           "</div></div>" +
           '<div id="leadStatsNumericBlock" class="lead-stats-numeric-block">' +
-          '<div class="lead-stats-metric-strip">' +
-          '<div class="lead-stat-kpi lead-stat-kpi--total">' +
-          '<span class="lead-stat-kpi-label">Total conversations</span>' +
-          '<div class="lead-stat-kpi-value">' +
-          escapeHtml(String(n)) +
-          "</div></div>" +
-          '<div class="lead-stat-kpi lead-stat-kpi--primary">' +
-          '<span class="lead-stat-kpi-label">Lead capture rate</span>' +
-          '<div class="lead-stat-kpi-value">' +
-          leadCaptureDisp +
-          "</div></div>" +
-          '<div class="lead-stat-kpi">' +
-          '<span class="lead-stat-kpi-label">Appointments booked</span>' +
-          '<div class="lead-stat-kpi-value">' +
-          escapeHtml(String(apt)) +
+          '<div class="lead-stats-compact-line lead-stats-compact-line--kpis">' +
+          kpiInline("Total conversations", escapeHtml(String(n)), true) +
+          kpiInline("Lead capture rate", leadCaptureDisp, false) +
+          kpiInline("Appointments booked", escapeHtml(String(apt)), false) +
+          "</div>" +
+          '<div class="lead-stats-compact-line lead-stats-compact-line--detail">' +
+          '<div class="lead-compact-block" aria-label="Conversations by channel">' +
+          '<span class="lead-compact-heading">By channel</span>' +
+          '<div class="lead-channel-rows" role="list">' +
+          '<div class="lead-channel-row">' +
+          channelChip("web", "Web", cw, iconWeb) +
+          channelChip("whatsapp", "WhatsApp", cwa, iconWa) +
+          "</div>" +
+          '<div class="lead-channel-row">' +
+          channelChip("instagram", "Instagram", cinst, iconIg) +
+          channelChip("facebook", "Facebook", cfb, iconFb) +
           "</div></div></div>" +
-          '<div class="lead-stats-detail-row">' +
-          '<section class="lead-stats-panel" aria-label="Conversations by channel">' +
-          '<h3 class="lead-stats-section-h">By channel</h3>' +
-          '<div class="lead-stats-channel-grid" role="list">' +
-          channelTile("web", "Web", cw, iconWeb) +
-          channelTile("whatsapp", "WhatsApp", cwa, iconWa) +
-          channelTile("instagram", "Instagram", cinst, iconIg) +
-          channelTile("facebook", "Facebook", cfb, iconFb) +
-          '</div></section>' +
-          '<section class="lead-stats-panel" aria-label="Contact detail captured">' +
-          '<h3 class="lead-stats-section-h">Contact captured</h3>' +
-          '<div class="lead-stats-contact-grid">' +
-          contactMini("Mobile only", om, tot.onlyMobileByChannel) +
-          contactMini("Email only", oe, tot.onlyEmailByChannel) +
-          contactMini("Mobile &amp; email", be, tot.mobileAndEmailByChannel) +
-          "</div></section></div></div>" +
+          '<span class="lead-compact-sep" aria-hidden="true"></span>' +
+          '<div class="lead-compact-block" aria-label="Contact detail captured">' +
+          '<span class="lead-compact-heading">Contact captured</span>' +
+          '<div class="lead-contact-row">' +
+          contactChip("Mobile only", om) +
+          contactChip("Email only", oe) +
+          contactChip("Mobile & email", be) +
+          "</div></div></div>" +
           '<div id="leadStatsVisualBlock" class="lead-stats-visual-block" hidden>' +
           '<div class="lead-stats-chart-grid">' +
           '<div class="lead-chart-card"><h4>Volume by channel</h4><p class="lead-chart-card-total">Total · ' +
