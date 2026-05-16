@@ -14384,10 +14384,24 @@ function extractAssistantVisibleTextsDeepFallback_(event) {
 /**
  * @param {string[]} lines
  */
-function chatTranscriptAlreadyHasAssistantText_(transcript, text) {
-    const norm = String(text || "")
+function normalizeChatTranscriptCompareText_(text) {
+    return String(text || "")
         .trim()
         .replace(/\s+/g, " ");
+}
+
+/** Widget form confirm bubble (`Name - … Thank you for sharing.`). */
+function isWidgetFormThankYouSummaryLine_(text) {
+    const t = String(text || "").trim();
+    if (!t || !/thank you for sharing\.?$/i.test(t)) {
+        return false;
+    }
+    const dashPairs = t.match(/\s-\s/g);
+    return !!(dashPairs && dashPairs.length >= 2);
+}
+
+function chatTranscriptAlreadyHasAssistantText_(transcript, text) {
+    const norm = normalizeChatTranscriptCompareText_(text);
     if (!norm) {
         return false;
     }
@@ -14396,10 +14410,7 @@ function chatTranscriptAlreadyHasAssistantText_(transcript, text) {
         if (!row || row.role !== "assistant") {
             continue;
         }
-        const existing = String(row.text || "")
-            .trim()
-            .replace(/\s+/g, " ");
-        if (existing === norm) {
+        if (normalizeChatTranscriptCompareText_(row.text) === norm) {
             return true;
         }
     }
@@ -14431,7 +14442,14 @@ function appendChatTranscriptAssistantLines_(lines) {
                 trimmed.length > MAX_CHAT_TRANSCRIPT_TEXT_CHARS
                     ? `${trimmed.slice(0, MAX_CHAT_TRANSCRIPT_TEXT_CHARS)}…`
                     : trimmed;
-            if (chatTranscriptAlreadyHasAssistantText_(transcript, text)) {
+            const last = transcript.length ? transcript[transcript.length - 1] : null;
+            if (last && last.role === "assistant" && last.text === text) {
+                continue;
+            }
+            if (
+                isWidgetFormThankYouSummaryLine_(text)
+                && chatTranscriptAlreadyHasAssistantText_(transcript, text)
+            ) {
                 continue;
             }
             seq += 1;
@@ -15990,7 +16008,11 @@ function cloneClientContextWithTranscriptAssistantTurn_(ctx, assistantPlain) {
         raw.length > MAX_CHAT_TRANSCRIPT_TEXT_CHARS
             ? `${raw.slice(0, MAX_CHAT_TRANSCRIPT_TEXT_CHARS)}…`
             : raw;
-    if (!chatTranscriptAlreadyHasAssistantText_(transcript, text)) {
+    const last = transcript.length ? transcript[transcript.length - 1] : null;
+    const duplicateLast = !!(last && last.role === "assistant" && last.text === text);
+    const duplicateForm =
+        isWidgetFormThankYouSummaryLine_(text) && chatTranscriptAlreadyHasAssistantText_(transcript, text);
+    if (!duplicateLast && !duplicateForm) {
         seq += 1;
         transcript.push({ role: "assistant", text, at: Date.now(), seq });
     }

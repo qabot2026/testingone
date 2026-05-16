@@ -3966,7 +3966,7 @@ function isContactFormSubmissionSummaryAssistantText_(text) {
 }
 
 /**
- * Collapse duplicate assistant lines (same text from widget + Firestore merge sources or double capture on submit).
+ * Collapse duplicate **form confirmation** assistant bubbles only (multi-source merge / double submit capture).
  *
  * @param {{ role: string, text: string, at?: number, seq?: number }[]} turns
  * @returns {{ role: string, text: string, at?: number, seq?: number }[]}
@@ -3976,7 +3976,7 @@ function dedupeTranscriptTurnsForDisplay_(turns) {
         return Array.isArray(turns) ? turns.slice() : [];
     }
     /** @type {Set<string>} */
-    const seenAssistant = new Set();
+    const seenFormSummary = new Set();
     /** @type {{ role: string, text: string, at?: number, seq?: number }[]} */
     const out = [];
     for (let i = 0; i < turns.length; i += 1) {
@@ -3989,12 +3989,12 @@ function dedupeTranscriptTurnsForDisplay_(turns) {
         if (!text) {
             continue;
         }
-        if (role === "assistant") {
+        if (role === "assistant" && isContactFormSubmissionSummaryAssistantText_(text)) {
             const key = transcriptUserCompareNorm_(text);
-            if (seenAssistant.has(key)) {
+            if (seenFormSummary.has(key)) {
                 continue;
             }
-            seenAssistant.add(key);
+            seenFormSummary.add(key);
         }
         const row = /** @type {{ role: string, text: string, at?: number, seq?: number }} */ ({ role, text });
         if (typeof t.at === "number" && Number.isFinite(t.at)) {
@@ -4395,11 +4395,7 @@ app.get(PATHNAME_CONVERSATION_TRANSCRIPT_JSON, async (req, res) => {
                     const liveTurns = transcriptTurnsFromClientContext_(liveCx);
                     if (liveTurns.length) {
                         sourceParts.push("firebase_session_transcript");
-                        if (transcriptSourceRichness_(liveTurns) > transcriptSourceRichness_(fbTurns)) {
-                            fbTurns = mergeConversationTranscriptTurnSources_(liveTurns, fbTurns);
-                        } else {
-                            fbTurns = mergeConversationTranscriptTurnSources_(fbTurns, liveTurns);
-                        }
+                        fbTurns = mergeConversationTranscriptTurnSources_(fbTurns, liveTurns);
                     }
                 }
             } catch (fe) {

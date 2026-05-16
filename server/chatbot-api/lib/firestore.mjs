@@ -124,14 +124,16 @@ function maxChatTranscriptSeq_(arr) {
     return max;
 }
 
+const CHAT_TRANSCRIPT_MERGE_CAP = 120;
+
 /**
- * Prefer the transcript array with more turns or a higher `seq` (live widget sync after form submit).
+ * Union-merge widget transcript arrays (never drop a longer history because `seq` advanced on a shorter slice).
  *
  * @param {unknown} prev
  * @param {unknown} next
  * @returns {unknown[]}
  */
-function pickRicherChatTranscript_(prev, next) {
+function mergeChatTranscriptArrays_(prev, next) {
     const p = Array.isArray(prev) ? prev : [];
     const n = Array.isArray(next) ? next : [];
     if (!n.length) {
@@ -140,12 +142,68 @@ function pickRicherChatTranscript_(prev, next) {
     if (!p.length) {
         return n;
     }
-    const pSeq = maxChatTranscriptSeq_(p);
-    const nSeq = maxChatTranscriptSeq_(n);
-    if (nSeq > pSeq || n.length > p.length) {
-        return n;
-    }
-    return p;
+    /** @type {Map<string, Record<string, unknown>>} */
+    const byKey = new Map();
+    /** @param {unknown[]} arr */
+    const ingest = (arr) => {
+        for (let i = 0; i < arr.length; i += 1) {
+            const it = arr[i];
+            if (!it || typeof it !== "object") {
+                continue;
+            }
+            const o = /** @type {Record<string, unknown>} */ (it);
+            const role = o.role === "assistant" ? "assistant" : "user";
+            const text = String(o.text ?? "").trim();
+            const seqRaw = o.seq;
+            const seq =
+                typeof seqRaw === "number" && Number.isFinite(seqRaw)
+                    ? seqRaw
+                    : typeof seqRaw === "string" && Number.isFinite(Number(seqRaw.trim()))
+                      ? Number(seqRaw.trim())
+                      : NaN;
+            const atRaw = o.at;
+            const at =
+                typeof atRaw === "number" && Number.isFinite(atRaw)
+                    ? atRaw
+                    : typeof atRaw === "string" && Number.isFinite(Number(atRaw.trim()))
+                      ? Number(atRaw.trim())
+                      : NaN;
+            const key = Number.isFinite(seq)
+                ? `seq:${seq}|${role}`
+                : Number.isFinite(at)
+                  ? `at:${at}|${role}|${text}`
+                  : `ord:${byKey.size}|${role}|${text}`;
+            if (!byKey.has(key)) {
+                byKey.set(key, o);
+            }
+        }
+    };
+    ingest(p);
+    ingest(n);
+    const merged = Array.from(byKey.values());
+    merged.sort((a, b) => {
+        const sa =
+            typeof a.seq === "number" && Number.isFinite(a.seq)
+                ? a.seq
+                : typeof a.seq === "string" && Number.isFinite(Number(a.seq))
+                  ? Number(a.seq)
+                  : 0;
+        const sb =
+            typeof b.seq === "number" && Number.isFinite(b.seq)
+                ? b.seq
+                : typeof b.seq === "string" && Number.isFinite(Number(b.seq))
+                  ? Number(b.seq)
+                  : 0;
+        if (sa !== sb) {
+            return sa - sb;
+        }
+        const aa = typeof a.at === "number" && Number.isFinite(a.at) ? a.at : 0;
+        const ab = typeof b.at === "number" && Number.isFinite(b.at) ? b.at : 0;
+        return aa - ab;
+    });
+    return merged.length > CHAT_TRANSCRIPT_MERGE_CAP
+        ? merged.slice(-CHAT_TRANSCRIPT_MERGE_CAP)
+        : merged;
 }
 
 /**
@@ -212,13 +270,15 @@ export async function upsertSessionChatTranscriptDoc(sessionId, clientContextPat
         ...prevCx,
         ...clientContextPatch,
         client_session_id: sid,
-        chat_transcript: pickRicherChatTranscript_(prevCx.chat_transcript, clientContextPatch.chat_transcript)
+        chat_transcript: mergeChatTranscriptArrays_(prevCx.chat_transcript, clientContextPatch.chat_transcript)
     };
     const prevSeq = prevCx.chat_transcript_seq;
     const patchSeq = clientContextPatch.chat_transcript_seq;
     if (typeof patchSeq === "number" && Number.isFinite(patchSeq)) {
         merged.chat_transcript_seq =
             typeof prevSeq === "number" && Number.isFinite(prevSeq) ? Math.max(prevSeq, patchSeq) : patchSeq;
+    } else if (typeof prevSeq === "number" && Number.isFinite(prevSeq)) {
+        merged.chat_transcript_seq = prevSeq;
     }
     if (Array.isArray(clientContextPatch.user_queries) && clientContextPatch.user_queries.length) {
         merged.user_queries = clientContextPatch.user_queries;
@@ -307,7 +367,7 @@ export async function patchLatestContactSubmissionClientContext(sessionId, clien
                 : typeof prevCx.client_session_id === "string"
                   ? prevCx.client_session_id
                   : sid,
-        chat_transcript: pickRicherChatTranscript_(prevCx.chat_transcript, patchCx.chat_transcript)
+        chat_transcript: mergeChatTranscriptArrays_(prevCx.chat_transcript, patchCx.chat_transcript)
     };
     const prevSeq = prevCx.chat_transcript_seq;
     const patchSeq = patchCx.chat_transcript_seq;
