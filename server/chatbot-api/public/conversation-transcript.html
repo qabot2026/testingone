@@ -436,6 +436,28 @@
         secretEl.value = savedSecret;
       }
 
+      function scrollTranscriptPageToTop_() {
+        try {
+          window.scrollTo(0, 0);
+        } catch (ignore) {}
+        if (document.documentElement) {
+          document.documentElement.scrollTop = 0;
+        }
+        if (document.body) {
+          document.body.scrollTop = 0;
+        }
+        if (thread) {
+          thread.scrollTop = 0;
+        }
+      }
+
+      try {
+        if (history.scrollRestoration) {
+          history.scrollRestoration = "manual";
+        }
+      } catch (ignore) {}
+      scrollTranscriptPageToTop_();
+
       function escapeHtml(s) {
         return String(s || "")
           .replace(/&/g, "&amp;")
@@ -1063,6 +1085,7 @@
 
       async function loadTranscript() {
         showErr("");
+        scrollTranscriptPageToTop_();
         thread.innerHTML = "";
         detailsDl.innerHTML = "";
         detailsWrap.hidden = true;
@@ -1115,6 +1138,7 @@
           if (!turns.length) {
             thread.innerHTML =
               '<div class="empty-hint">No chat lines stored for this session yet. After visitors message the bot and submit a lead, the full script appears here. User-only lines may still show from the Sheet if live sync ran.</div>';
+            scrollTranscriptPageToTop_();
             return;
           }
 
@@ -1180,7 +1204,10 @@
               "</div>";
             thread.appendChild(row);
           }
-          thread.scrollTop = thread.scrollHeight;
+          scrollTranscriptPageToTop_();
+          requestAnimationFrame(function () {
+            scrollTranscriptPageToTop_();
+          });
         } catch (e) {
           showErr(String(e && e.message ? e.message : e));
         } finally {
