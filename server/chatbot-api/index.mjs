@@ -603,6 +603,56 @@ function normalizeUserQueriesCsvFromClientContext(clientContext) {
     return csv;
 }
 
+/** At least one user chat line (message or chip) — welcome-only sessions are not conversations. */
+function clientContextHasUserChatEngagement_(clientContext) {
+    const ctx = clientContext && typeof clientContext === "object" ? clientContext : {};
+    if (collectUserQueriesLinesFromContext_(ctx).length > 0) {
+        return true;
+    }
+    if (normalizeUserQueriesCsvFromClientContext(ctx)) {
+        return true;
+    }
+    const raw = ctx.chat_transcript;
+    if (!Array.isArray(raw)) {
+        return false;
+    }
+    for (let i = 0; i < raw.length; i += 1) {
+        const it = raw[i];
+        if (!it || typeof it !== "object") {
+            continue;
+        }
+        const role = String(/** @type {{ role?: unknown }} */ (it).role || "")
+            .trim()
+            .toLowerCase();
+        if (role !== "user") {
+            continue;
+        }
+        const text = typeof /** @type {{ text?: unknown }} */ (it).text === "string"
+            ? /** @type {{ text: string }} */ (it).text.trim()
+            : "";
+        if (text) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/** Drop bot-only transcript payloads when the visitor never messaged in chat. */
+function clientContextForStorageWithoutChatScriptUnlessEngaged_(clientContext) {
+    const ctx = clientContext && typeof clientContext === "object" ? clientContext : {};
+    if (clientContextHasUserChatEngagement_(ctx)) {
+        return ctx;
+    }
+    const out = { ...ctx };
+    delete out.chat_transcript;
+    delete out.assistant_queries;
+    delete out.chat_transcript_seq;
+    if (Array.isArray(out.user_queries)) {
+        out.user_queries = [];
+    }
+    return out;
+}
+
 /** First non-empty string among common Dialogflow/widget keys sent in `client_context`. */
 function pickCityFromClientContextMerged_(ctx) {
     if (!ctx || typeof ctx !== "object") {
@@ -2278,7 +2328,10 @@ app.post(
         const clientContext =
             body.client_context && typeof body.client_context === "object" ? body.client_context : {};
         const channel = normalizeLeadChannel(clientContext.channel);
-        const mergedClientContext = { ...clientContext, channel };
+        const mergedClientContext = clientContextForStorageWithoutChatScriptUnlessEngaged_({
+            ...clientContext,
+            channel
+        });
 
         /** @type {Record<string, string>} */
         const fields = {};
@@ -2704,7 +2757,19 @@ app.post(
         const clientContext =
             body.client_context && typeof body.client_context === "object" ? body.client_context : {};
         const channel = normalizeLeadChannel(clientContext.channel);
-        const mergedClientContext = { ...clientContext, channel };
+        const mergedClientContext = clientContextForStorageWithoutChatScriptUnlessEngaged_({
+            ...clientContext,
+            channel
+        });
+
+        if (!clientContextHasUserChatEngagement_(clientContext)) {
+            return res.status(200).json({
+                ok: true,
+                message: "No user chat engagement; mobile sheet sync skipped.",
+                skipped: true,
+                reason: "no_user_engagement"
+            });
+        }
 
         /** @type {Record<string, string>} */
         const fields = {};
@@ -2867,13 +2932,25 @@ app.post(
         const clientContext =
             body.client_context && typeof body.client_context === "object" ? body.client_context : {};
         const channel = normalizeLeadChannel(clientContext.channel);
-        const mergedClientContext = { ...clientContext, channel };
+        const mergedClientContext = clientContextForStorageWithoutChatScriptUnlessEngaged_({
+            ...clientContext,
+            channel
+        });
 
         const clientSessionId = typeof clientContext.client_session_id === "string"
             ? clientContext.client_session_id.trim()
             : "";
         if (!clientSessionId) {
             return res.status(400).json({ ok: false, error: "Missing client_session_id in client_context." });
+        }
+
+        if (!clientContextHasUserChatEngagement_(clientContext)) {
+            return res.status(200).json({
+                ok: true,
+                message: "No user chat engagement; sync skipped.",
+                skipped: true,
+                reason: "no_user_engagement"
+            });
         }
 
         const userQueriesCsv = normalizeUserQueriesCsvFromClientContext(mergedClientContext);
@@ -3031,6 +3108,16 @@ app.post(
             typeof clientContext.client_session_id === "string" ? clientContext.client_session_id.trim() : "";
         if (!sid) {
             return res.status(400).json({ ok: false, error: "Missing client_session_id in client_context." });
+        }
+
+        if (!clientContextHasUserChatEngagement_(clientContext)) {
+            return res.status(200).json({
+                ok: true,
+                message: "No user chat engagement; transcript not stored.",
+                stored_turns: 0,
+                skipped: true,
+                reason: "no_user_engagement"
+            });
         }
 
         if (FIRESTORE_DISABLED) {

@@ -153,8 +153,8 @@ window.COMPANY_CHAT_UI_CONFIG = {
 
       /**
        * After the visitor interacts once (message or chip), if they send nothing for `idleMs`, the widget
-       * sends `dialogflowEvent` to CX. No interaction at all (welcome only) does not trigger the event.
-       * Timer resets only on user actions — bot replies do not reset it.
+       * sends `dialogflowEvent` to CX. Welcome-only sessions do not sync transcript/Sheet/Firestore and do
+       * not trigger the idle event. Timer resets only on user actions — bot replies do not reset it.
        */
       idleEndConversation: {
         enabled: true,

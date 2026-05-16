@@ -26,6 +26,27 @@ let idleEndConversationArmed = false;
 let idleEndConversationFired = false;
 /** True after the visitor sends at least one message or taps a chip/button/list item. */
 let idleEndConversationUserHasEngaged = false;
+
+function hasChatUserEngaged_() {
+    return idleEndConversationUserHasEngaged === true;
+}
+
+function shouldSyncChatSessionToBackend_() {
+    return hasChatUserEngaged_();
+}
+
+/** Lead submit when the visitor never messaged in chat — omit transcript blobs from the API payload. */
+function clientContextForLeadSubmitWithoutChatScript_() {
+    const ctx = getClientContext();
+    const out = { ...ctx };
+    delete out.chat_transcript;
+    delete out.assistant_queries;
+    delete out.chat_transcript_seq;
+    if (Array.isArray(out.user_queries)) {
+        out.user_queries = [];
+    }
+    return out;
+}
 let isChatWindowOpen = false;
 /** Agent replies while the chat panel is closed; shown on the launcher bubble until the user opens chat. */
 let bubbleUnreadCount = 0;
@@ -14211,6 +14232,9 @@ function trackChatUserQueryInSessionContext_(raw) {
 let sessionSheetSyncDebounceTimer = 0;
 
 function scheduleSessionQueriesSheetSync_() {
+    if (!shouldSyncChatSessionToBackend_()) {
+        return;
+    }
     if (sessionSheetSyncDebounceTimer) {
         window.clearTimeout(sessionSheetSyncDebounceTimer);
     }
@@ -14269,6 +14293,9 @@ let sessionTranscriptFirestoreSyncTimer = 0;
 
 /** Debounced Firestore flush so staff script sees bot lines without waiting for form submit. */
 function scheduleSessionTranscriptFirestoreSync_() {
+    if (!shouldSyncChatSessionToBackend_()) {
+        return;
+    }
     if (sessionTranscriptFirestoreSyncTimer) {
         window.clearTimeout(sessionTranscriptFirestoreSyncTimer);
     }
@@ -14279,6 +14306,9 @@ function scheduleSessionTranscriptFirestoreSync_() {
 }
 
 function postSessionTranscriptToFirestore_() {
+    if (!shouldSyncChatSessionToBackend_()) {
+        return;
+    }
     const endpoint = getApiEndpoint(SESSION_TRANSCRIPT_SYNC_ENDPOINT);
     if (!endpoint || typeof fetch !== "function") {
         return;
@@ -14325,6 +14355,9 @@ function postSessionTranscriptToFirestore_() {
 }
 
 function postSessionQueriesToSheetRow_() {
+    if (!shouldSyncChatSessionToBackend_()) {
+        return;
+    }
     const endpoint = getApiEndpoint(CONTACT_FORM_SESSION_SHEET_SYNC_ENDPOINT);
     if (!endpoint || typeof fetch !== "function") {
         return;
@@ -16484,7 +16517,10 @@ function submitContactForm(event) {
     const otpStep = isOtpForm ? getOtpFormStep() : "otp";
     const isOtpUpdateMobile = isOtpForm && otpStep === "mobile";
 
-    const payload = { client_context: getClientContext(), _contactFormId: cfg0.formKey };
+    const payload = {
+        client_context: hasChatUserEngaged_() ? getClientContext() : clientContextForLeadSubmitWithoutChatScript_(),
+        _contactFormId: cfg0.formKey
+    };
     let chatSummaryPayload = /** @type {Record<string, string> | null} */ (null);
     let useMultipart = false;
     for (let fi = 0; fi < fieldDefs.length; fi += 1) {
@@ -16978,7 +17014,9 @@ function submitContactForm(event) {
                 formMobileValue = m;
             }
         }
-        const clientSnapshot = getClientContext();
+        const clientSnapshot = hasChatUserEngaged_()
+            ? getClientContext()
+            : clientContextForLeadSubmitWithoutChatScript_();
         const sessionMobile =
             dfParameterScalarToString(
                 clientSnapshot && clientSnapshot.mobile != null ? clientSnapshot.mobile : ""
@@ -17011,8 +17049,11 @@ function submitContactForm(event) {
         const summaryPayloadJson = chatSummaryPayload != null ? chatSummaryPayload : payload;
         const summaryLinesJson = buildContactFormSubmissionSummaryLines_(summaryPayloadJson);
         const assistantMarkdownJson = summaryLinesJson.join("  \n");
+        const baseCtxJson = hasChatUserEngaged_()
+            ? getClientContext()
+            : clientContextForLeadSubmitWithoutChatScript_();
         payload.client_context = cloneClientContextWithTranscriptAssistantTurn_(
-            getClientContext(),
+            baseCtxJson,
             assistantMarkdownJson
         );
         fetchBody = JSON.stringify(payload);
