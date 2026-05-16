@@ -1263,6 +1263,18 @@
     (function () {
       var LS_KEY = "conversations_sheet_secret_v1";
       var secretEl = document.getElementById("secret");
+
+      /** Shared with conversation-transcript.html (localStorage survives new tabs from the eye icon). */
+      function persistViewerSecret_(secret) {
+        var s = typeof secret === "string" ? secret.trim() : "";
+        if (!s) return;
+        try {
+          sessionStorage.setItem(LS_KEY, s);
+        } catch (ignore) {}
+        try {
+          localStorage.setItem(LS_KEY, s);
+        } catch (ignore) {}
+      }
       var filterEl = document.getElementById("filter");
       var limitEl = document.getElementById("limit");
       var refreshBtn = document.getElementById("refreshBtn");
@@ -2172,6 +2184,7 @@
           e.stopPropagation();
           e.preventDefault();
         }
+        persistViewerSecret_(secretEl.value.trim());
         if (url) window.open(url, "_blank", "noopener,noreferrer");
       }
 
@@ -2257,10 +2270,11 @@
       }
 
       try {
-        var saved = sessionStorage.getItem(LS_KEY);
+        var saved = sessionStorage.getItem(LS_KEY) || localStorage.getItem(LS_KEY);
         if (saved) {
           secretEl.value = saved;
           authBox.open = false;
+          persistViewerSecret_(saved);
         }
       } catch (e) {}
 
@@ -2270,7 +2284,7 @@
 
       document.getElementById("saveSecret").addEventListener("click", function () {
         try {
-          sessionStorage.setItem(LS_KEY, secretEl.value.trim());
+          persistViewerSecret_(secretEl.value.trim());
           authBox.open = false;
           setStatus("Secret saved.");
         } catch (e) {
@@ -2711,6 +2725,7 @@
           if (leadStatsList) leadStatsList.hidden = true;
           return;
         }
+        persistViewerSecret_(secret);
         refreshBtn.disabled = true;
         var reloadLbl = refreshBtn.textContent;
         refreshBtn.textContent = "Loading…";

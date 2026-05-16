@@ -339,10 +339,30 @@
       var mainGrid = document.getElementById("mainGrid");
       var summaryRail = document.getElementById("summaryRail");
 
-      try {
-        var saved = localStorage.getItem(LS_KEY);
-        if (saved) secretEl.value = saved;
-      } catch (ignore) {}
+      function readSavedViewerSecret() {
+        try {
+          var s = sessionStorage.getItem(LS_KEY) || localStorage.getItem(LS_KEY) || "";
+          return typeof s === "string" ? s.trim() : "";
+        } catch (ignore) {
+          return "";
+        }
+      }
+
+      function persistViewerSecret(secret) {
+        var s = typeof secret === "string" ? secret.trim() : "";
+        if (!s) return;
+        try {
+          sessionStorage.setItem(LS_KEY, s);
+        } catch (ignore) {}
+        try {
+          localStorage.setItem(LS_KEY, s);
+        } catch (ignore) {}
+      }
+
+      var savedSecret = readSavedViewerSecret();
+      if (savedSecret) {
+        secretEl.value = savedSecret;
+      }
 
       function escapeHtml(s) {
         return String(s || "")
@@ -667,9 +687,7 @@
           showErr("Enter the viewer secret (same variable as CONVERSATIONS_SHEET_VIEW_SECRET).");
           return;
         }
-        try {
-          localStorage.setItem(LS_KEY, secret);
-        } catch (ignore) {}
+        persistViewerSecret(secret);
 
         loadBtn.disabled = true;
         try {
@@ -767,7 +785,9 @@
         toggleAuth.hidden = true;
       });
 
-      if (secretEl.value.trim() && sessionFromUrl()) {
+      if (savedSecret && sessionFromUrl()) {
+        authPanel.style.display = "none";
+        toggleAuth.hidden = false;
         void loadTranscript();
       }
     })();
