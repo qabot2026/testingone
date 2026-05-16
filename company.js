@@ -14644,7 +14644,6 @@ function extractAssistantVisibleTextsFromDfResponse_(event) {
     for (const m of [...responseMessages, ...messengerMessages, ...topMessages]) {
         pushAssistantVisibleTextsFromDfMessage_(m, parts, seen, textNorms);
     }
-    const d = event && event.detail;
     if (d && d.raw && typeof d.raw === "object") {
         pushAssistantVisibleTextsFromDfMessage_(d.raw, parts, seen, textNorms);
     }
