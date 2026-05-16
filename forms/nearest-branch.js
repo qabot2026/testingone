@@ -11,6 +11,7 @@
 (function (w) {
   w.__DFCHAT_FORMS__ = w.__DFCHAT_FORMS__ || {};
   w.__DFCHAT_FORMS__.nearestBranch = {
+    staffFormLabel: "nearest-branch",
     titleByLanguage: {
       en: "Find nearest hospital",
       hi: "नज़दीकी अस्पताल खोजें",

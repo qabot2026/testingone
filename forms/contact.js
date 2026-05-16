@@ -5,6 +5,7 @@
 (function (w) {
   w.__DFCHAT_FORMS__ = w.__DFCHAT_FORMS__ || {};
   w.__DFCHAT_FORMS__.contact = {
+    staffFormLabel: "contact",
     titleByLanguage: {
       en: "Contact us",
       hi: "हमसे संपर्क करें",

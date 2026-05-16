@@ -104,6 +104,7 @@ import { maybeSendAppointmentChatbotStaffNotifyEmail } from "./lib/mail/appointm
 import { maybeSendAppointmentClientAckEmail } from "./lib/mail/appointment-client-ack-email.mjs";
 import { mountSmsOtpRoutes } from "./lib/sms-otp/index.mjs";
 import { mountDashboardRoutes } from "./lib/dashboard/index.mjs";
+import { normalizeSheetFormId as normalizeStaffSheetFormId_ } from "./lib/form-staff-labels.mjs";
 
 const APPS_SCRIPT_WEBAPP_URL = (process.env.GOOGLE_APPS_SCRIPT_WEBAPP_URL || "").trim();
 
@@ -250,12 +251,7 @@ function resolveSourceUrlForSheet(cx) {
 
 /** Normalize `_contactFormId` for Sheets; chat-only rows use `web` unless `DEFAULT_SHEET_FORM_ID` is set. */
 function normalizeSheetFormId(explicit) {
-    const t = typeof explicit === "string" ? explicit.trim() : "";
-    if (t) {
-        return t === "appintmentformdocot" ? "appintmentformdoctor" : t;
-    }
-    const envDefault = (process.env.DEFAULT_SHEET_FORM_ID || "").trim();
-    return envDefault || "web";
+    return normalizeStaffSheetFormId_(explicit, (process.env.DEFAULT_SHEET_FORM_ID || "").trim());
 }
 
 /**

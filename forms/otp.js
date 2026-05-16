@@ -4,6 +4,7 @@
 (function (w) {
   w.__DFCHAT_FORMS__ = w.__DFCHAT_FORMS__ || {};
   w.__DFCHAT_FORMS__.otp = {
+    staffFormLabel: "otp",
     titleByLanguage: {
       en: "Verify OTP",
       hi: "OTP सत्यापित करें",

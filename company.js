@@ -5872,6 +5872,38 @@ function setupOtpFormTwoStepIfNeeded() {
  * @param {string} requestedId
  * @returns {string}
  */
+/**
+ * Staff-facing form id (Sheets, transcript, `_contactFormId`). Registry keys stay on `forms/*.js`.
+ * @param {string} [formKey]
+ * @returns {string}
+ */
+function staffFormLabelForKey_(formKey) {
+    const key = typeof formKey === "string" ? formKey.trim() : "";
+    if (!key || key === "default") {
+        return "contact";
+    }
+    const merged = getRuntimeMergedFormDefinitions_();
+    const block = merged[key];
+    if (block && typeof block === "object") {
+        const lbl = /** @type {{ staffFormLabel?: unknown }} */ (block).staffFormLabel;
+        if (typeof lbl === "string" && lbl.trim()) {
+            return lbl.trim();
+        }
+    }
+    /** @type {Record<string, string>} */
+    const builtIn = {
+        uploadDocument: "upload",
+        nearestBranch: "nearest-branch",
+        appintmentformgeneral: "general-appointment",
+        appintmentformdoctor: "doctor-appointment",
+        birthform: "birth"
+    };
+    if (builtIn[key]) {
+        return builtIn[key];
+    }
+    return key;
+}
+
 function canonicalContactFormId_(requestedId) {
     const merged = getRuntimeMergedFormDefinitions_();
     const raw = String(requestedId || "").trim();
@@ -14375,7 +14407,7 @@ function postSessionQueriesToSheetRow_() {
             credentials: "omit",
             body: JSON.stringify({
                 client_context,
-                _contactFormId: fk || getDefaultContactFormId()
+                _contactFormId: staffFormLabelForKey_(fk || getDefaultContactFormId())
             }),
             keepalive: true
         })
@@ -15479,6 +15511,21 @@ function leanTranscriptRichForStorage_(rich) {
             const k = keys[ki];
             if (rich[k] != null) {
                 lean[k] = rich[k];
+            }
+        }
+        if (transcriptRichCxActionKey_(lean) === "open_form") {
+            try {
+                const cfg = readContactFormConfig();
+                const label = staffFormLabelForKey_(cfg.formKey);
+                if (label) {
+                    lean.form_id = label;
+                    lean.formId = label;
+                }
+                if (cfg.formKey) {
+                    lean.form_key = cfg.formKey;
+                }
+            } catch {
+                /* ignore */
             }
         }
         return Object.keys(lean).length ? lean : null;
@@ -16651,7 +16698,7 @@ function submitContactForm(event) {
 
     const payload = {
         client_context: hasChatUserEngaged_() ? getClientContext() : clientContextForLeadSubmitWithoutChatScript_(),
-        _contactFormId: cfg0.formKey
+        _contactFormId: staffFormLabelForKey_(cfg0.formKey)
     };
     let chatSummaryPayload = /** @type {Record<string, string> | null} */ (null);
     let useMultipart = false;
@@ -16977,7 +17024,7 @@ function submitContactForm(event) {
     let fetchHeaders;
     if (!isOtpUpdateMobile && useMultipart) {
         const fd = new FormData();
-        fd.append("_contactFormId", cfg0.formKey);
+        fd.append("_contactFormId", staffFormLabelForKey_(cfg0.formKey));
         /** Form `mobile` field value if any (may be empty when chatbot collected the number). */
         let formMobileValue = "";
         let formNameValue = "";
@@ -19474,7 +19521,7 @@ function postCapturedMobileToSheetRow(mobileValue) {
         body: JSON.stringify({
             mobile: mobileDigits,
             client_context: clientSnapshot,
-            _contactFormId: formKey,
+            _contactFormId: staffFormLabelForKey_(formKey),
             _source: "dialogflow_chat"
         }),
         keepalive: true

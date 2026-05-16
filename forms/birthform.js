@@ -5,6 +5,7 @@
 (function (w) {
   w.__DFCHAT_FORMS__ = w.__DFCHAT_FORMS__ || {};
   w.__DFCHAT_FORMS__.birthform = {
+    staffFormLabel: "birth",
     titleByLanguage: {
       en: "Date of birth",
       hi: "जन्म तिथि",

@@ -411,6 +411,33 @@
       var mainGrid = document.getElementById("mainGrid");
       var summaryRail = document.getElementById("summaryRail");
 
+      /** Staff label for open_form / Sheets (matches `forms/*.js` `staffFormLabel` + API `form-staff-labels.mjs`). */
+      var FORM_STAFF_LABELS = {
+        contact: "contact",
+        upload: "upload",
+        uploadDocument: "upload",
+        otp: "otp",
+        feedback: "feedback",
+        birth: "birth",
+        birthform: "birth",
+        nearestBranch: "nearest-branch",
+        "nearest-branch": "nearest-branch",
+        appointment: "appointment",
+        appintmentformgeneral: "general-appointment",
+        "general-appointment": "general-appointment",
+        appintmentformdoctor: "doctor-appointment",
+        "doctor-appointment": "doctor-appointment"
+      };
+
+      function staffFormDisplayLabel(rawId) {
+        var t = typeof rawId === "string" ? rawId.trim() : "";
+        if (!t) return "";
+        if (FORM_STAFF_LABELS[t]) return FORM_STAFF_LABELS[t];
+        var compact = t.toLowerCase().replace(/[\s_-]+/g, "");
+        if (compact === "upload" || compact === "uploaddocument") return "upload";
+        return t;
+      }
+
       function readSavedViewerSecret() {
         try {
           var s = sessionStorage.getItem(LS_KEY) || localStorage.getItem(LS_KEY) || "";
@@ -642,7 +669,15 @@
             })
           );
         } else if (action === "open_form") {
-          html += '<p class="rc-text">Form: <strong>' + escapeHtml(unwrapStr(pl.form_id) || unwrapStr(pl.formId) || "contact") + "</strong></p>";
+          var rawFormId =
+            unwrapStr(pl.form_id) ||
+            unwrapStr(pl.formId) ||
+            unwrapStr(pl.form_key) ||
+            "";
+          var formLabel = staffFormDisplayLabel(rawFormId);
+          if (formLabel) {
+            html += '<p class="rc-text">Form: <strong>' + escapeHtml(formLabel) + "</strong></p>";
+          }
         }
         return html;
       }

@@ -5,6 +5,7 @@
 (function (w) {
   w.__DFCHAT_FORMS__ = w.__DFCHAT_FORMS__ || {};
   w.__DFCHAT_FORMS__.appointment = {
+    staffFormLabel: "appointment",
     titleByLanguage: {
       en: "Appointment",
       hi: "अपॉइंटमेंट",

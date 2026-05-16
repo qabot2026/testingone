@@ -4,6 +4,7 @@
 (function (w) {
   w.__DFCHAT_FORMS__ = w.__DFCHAT_FORMS__ || {};
   w.__DFCHAT_FORMS__.feedback = {
+    staffFormLabel: "feedback",
     titleByLanguage: {
       en: "Feedback",
       hi: "फीडबैक",
