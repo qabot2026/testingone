@@ -147,18 +147,18 @@ const DEFER_FIRESTORE_UNTIL_AFTER_HTTP_RESPONSE =
  *
  * @param {string} sessionId
  * @param {Record<string, unknown>} clientContext
- * @returns {Promise<boolean>}
+ * @returns {Promise<{ sessionStored: boolean, leadPatched: boolean }>}
  */
 async function patchSessionTranscriptFirestore_(sessionId, clientContext) {
     const sid = typeof sessionId === "string" ? sessionId.trim() : "";
     if (!sid || FIRESTORE_DISABLED || !clientContext || typeof clientContext !== "object") {
-        return false;
+        return { sessionStored: false, leadPatched: false };
     }
     const cx = /** @type {Record<string, unknown>} */ ({ ...clientContext });
     const ct = coerceChatTranscriptArray_(cx.chat_transcript);
     const aq = Array.isArray(cx.assistant_queries) ? cx.assistant_queries : [];
     if (!ct.length && !aq.length) {
-        return false;
+        return { sessionStored: false, leadPatched: false };
     }
     cx.chat_transcript = ct;
     if (aq.length) {
@@ -166,42 +166,44 @@ async function patchSessionTranscriptFirestore_(sessionId, clientContext) {
     }
     try {
         await upsertSessionChatTranscriptDoc(sid, cx);
-        return await patchLatestContactSubmissionClientContext(sid, cx);
+        let leadPatched = false;
+        try {
+            leadPatched = await patchLatestContactSubmissionClientContext(sid, cx);
+        } catch (le) {
+            const detail =
+                le && /** @type {{ message?: string }} */ (le).message ? String(le.message) : String(le);
+            console.warn("[chatbot-api] patchSessionTranscriptFirestore lead:", detail.slice(0, 240));
+        }
+        return { sessionStored: true, leadPatched: !!leadPatched };
     } catch (e) {
         const detail = e && /** @type {{ message?: string }} */ (e).message ? String(e.message) : String(e);
         console.warn("[chatbot-api] patchSessionTranscriptFirestore:", detail.slice(0, 240));
-        return false;
+        return { sessionStored: false, leadPatched: false };
     }
 }
 
 /**
+ * Widget session sync auth — same rule as POST /contact-form-session-sheet-sync (not staff CONVERSATIONS_SHEET_VIEW_SECRET).
+ *
  * @param {import("express").Request} req
- * @returns {{ ok: boolean, reason?: string }}
+ * @returns {{ ok: boolean }}
  */
-function sessionTranscriptSyncSecretFromReq_(req) {
-    const mobile = (process.env.CONTACT_FORM_MOBILE_SHEET_SYNC_SECRET || "").trim();
-    const sheet = (process.env.CONVERSATIONS_SHEET_VIEW_SECRET || "").trim();
-    if (!mobile && !sheet) {
+function contactFormSessionSyncSecretFromReq_(req) {
+    const syncSecret = (process.env.CONTACT_FORM_MOBILE_SHEET_SYNC_SECRET || "").trim();
+    if (!syncSecret) {
         return { ok: true };
     }
-    const sentMobile =
+    const sent =
         typeof req.headers["x-contact-form-mobile-sync-secret"] === "string"
             ? req.headers["x-contact-form-mobile-sync-secret"].trim()
-            : "";
-    const sentSheet =
-        typeof req.headers["x-conversations-sheet-secret"] === "string"
-            ? req.headers["x-conversations-sheet-secret"].trim()
             : "";
     const authHdr =
         typeof req.headers.authorization === "string" ? req.headers.authorization.trim() : "";
     const bearer = authHdr.toLowerCase().startsWith("bearer ") ? authHdr.slice(7).trim() : "";
-    if (mobile && (sentMobile === mobile || bearer === mobile)) {
+    if (sent === syncSecret || bearer === syncSecret) {
         return { ok: true };
     }
-    if (sheet && (sentSheet === sheet || bearer === sheet)) {
-        return { ok: true };
-    }
-    return { ok: false, reason: "unauthorized" };
+    return { ok: false };
 }
 
 function hasFirebaseCredentials() {
@@ -2840,17 +2842,13 @@ app.post(
     PATHNAME_SESSION_SHEET_SYNC,
     express.json({ limit: "512kb" }),
     async (req, res) => {
-        const syncSecret = (process.env.CONTACT_FORM_MOBILE_SHEET_SYNC_SECRET || "").trim();
-        if (syncSecret) {
-            const sent = typeof req.headers["x-contact-form-mobile-sync-secret"] === "string"
-                ? req.headers["x-contact-form-mobile-sync-secret"].trim()
-                : "";
-            if (sent !== syncSecret) {
-                return res.status(401).json({
-                    ok: false,
-                    error: "Unauthorized (set X-Contact-Form-Mobile-Sync-Secret or CONTACT_FORM_MOBILE_SHEET_SYNC_SECRET)."
-                });
-            }
+        const sheetSyncAuth = contactFormSessionSyncSecretFromReq_(req);
+        if (!sheetSyncAuth.ok) {
+            return res.status(401).json({
+                ok: false,
+                error:
+                    "Unauthorized (set X-Contact-Form-Mobile-Sync-Secret matching CONTACT_FORM_MOBILE_SHEET_SYNC_SECRET)."
+            });
         }
 
         let body = req.body && typeof req.body === "object" ? req.body : {};
@@ -2925,13 +2923,16 @@ app.post(
             || (await resolveCityForRequest(req));
         const sourceUrl = resolveSourceUrlForSheet(mergedClientContext);
 
-        let firestoreTranscriptPatched = false;
+        let sessionTranscriptStored = false;
+        let leadTranscriptPatched = false;
         if (!FIRESTORE_DISABLED && (hasLiveChatTranscript || userQueriesCsv)) {
             try {
-                firestoreTranscriptPatched = await patchSessionTranscriptFirestore_(
+                const fsPatch = await patchSessionTranscriptFirestore_(
                     clientSessionId,
                     mergedClientContext
                 );
+                sessionTranscriptStored = fsPatch.sessionStored;
+                leadTranscriptPatched = fsPatch.leadPatched;
             } catch (fe) {
                 const detail = fe && fe.message ? fe.message : String(fe);
                 console.warn("[chatbot-api] session-sheet-sync Firestore transcript patch:", detail.slice(0, 240));
@@ -2951,7 +2952,9 @@ app.post(
                             ? "DISABLE_SHEETS=1"
                             : "SHEETS_SPREADSHEET_ID is not set"
                 },
-                firestore_transcript_patched: firestoreTranscriptPatched
+                firestore_transcript_patched: sessionTranscriptStored,
+                lead_transcript_patched: leadTranscriptPatched,
+                firestore_disabled: FIRESTORE_DISABLED
             });
         }
         if (userQueriesCsv) {
@@ -2991,7 +2994,9 @@ app.post(
             sheet_integration: userQueriesCsv
                 ? { enabled: true, result: syncDetail }
                 : { enabled: true, skipped: "queries_only_in_firestore" },
-            firestore_transcript_patched: firestoreTranscriptPatched,
+            firestore_transcript_patched: sessionTranscriptStored,
+            lead_transcript_patched: leadTranscriptPatched,
+            firestore_disabled: FIRESTORE_DISABLED,
             chat_transcript_turns: coercedTranscript.length,
             chat_transcript_json_written: Boolean(chatTranscriptJson)
         });
@@ -3003,12 +3008,12 @@ app.post(
     PATHNAME_SESSION_TRANSCRIPT_SYNC,
     express.json({ limit: "512kb" }),
     async (req, res) => {
-        const auth = sessionTranscriptSyncSecretFromReq_(req);
+        const auth = contactFormSessionSyncSecretFromReq_(req);
         if (!auth.ok) {
             return res.status(401).json({
                 ok: false,
                 error:
-                    "Unauthorized — set X-Contact-Form-Mobile-Sync-Secret or X-Conversations-Sheet-Secret."
+                    "Unauthorized (set X-Contact-Form-Mobile-Sync-Secret matching CONTACT_FORM_MOBILE_SHEET_SYNC_SECRET)."
             });
         }
 
@@ -3047,10 +3052,18 @@ app.post(
             patch.assistant_queries = aq;
         }
 
+        let sessionStored = false;
         let leadPatched = false;
         try {
             await upsertSessionChatTranscriptDoc(sid, patch);
-            leadPatched = await patchLatestContactSubmissionClientContext(sid, patch);
+            sessionStored = true;
+            try {
+                leadPatched = await patchLatestContactSubmissionClientContext(sid, patch);
+            } catch (le) {
+                const detail =
+                    le && /** @type {{ message?: string }} */ (le).message ? String(le.message) : String(le);
+                console.warn("[chatbot-api] session-transcript-sync lead patch:", detail.slice(0, 240));
+            }
         } catch (e) {
             const detail = e && /** @type {{ message?: string }} */ (e).message ? String(e.message) : String(e);
             return res.status(500).json({ ok: false, error: detail });
@@ -3072,6 +3085,7 @@ app.post(
 
         return res.status(200).json({
             ok: true,
+            session_stored: sessionStored,
             stored_turns: ct.length,
             stored_assistant_rows: assistantRows,
             stored_assistant_queries: aq.length,

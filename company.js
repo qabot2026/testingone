@@ -14126,20 +14126,6 @@ function buildSessionSyncRequestHeaders_() {
     } catch {
         /* ignore */
     }
-    try {
-        const metaSheet =
-            typeof document !== "undefined"
-                ? document.querySelector('meta[name="dfchat-conversations-sheet-secret"]')
-                : null;
-        const sv =
-            metaSheet && metaSheet instanceof HTMLMetaElement ? metaSheet.getAttribute("content") : null;
-        const sheetSec = typeof sv === "string" ? sv.trim() : "";
-        if (sheetSec) {
-            headers["X-Conversations-Sheet-Secret"] = sheetSec;
-        }
-    } catch {
-        /* ignore */
-    }
     return headers;
 }
 
