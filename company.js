@@ -67,6 +67,8 @@ const CONTACT_FORM_ENDPOINT = "/contact-form-submissions";
 const CONTACT_FORM_MOBILE_SHEET_SYNC_ENDPOINT = "/contact-form-mobile-sheet-sync";
 /** Live-sync user_queries to Sheets (User Queries column; optional secret matches Railway CONTACT_FORM_MOBILE_SHEET_SYNC_SECRET). */
 const CONTACT_FORM_SESSION_SHEET_SYNC_ENDPOINT = "/contact-form-session-sheet-sync";
+/** Firestore-only live bot+user transcript (optional sync secrets; no Sheets required). */
+const SESSION_TRANSCRIPT_SYNC_ENDPOINT = "/api/session-transcript-sync";
 /** POST JSON: visitor CSAT / helpful → Firestore `chat_feedback` (optional CHAT_FEEDBACK_SECRET). */
 const CHAT_FEEDBACK_ENDPOINT = "/chat-feedback";
 /** Caps how long the Submit button waits for the API before aborting (Sheets/Firestore latency). */
@@ -13818,6 +13820,7 @@ function captureDomBotTranscriptLines_(dfMessenger) {
         });
         if (fresh.length) {
             appendChatTranscriptAssistantLines_(fresh);
+            scheduleSessionTranscriptFirestoreSync_();
         }
     } catch {
         /* ignore */
@@ -14078,7 +14081,125 @@ function scheduleSessionQueriesSheetSync_() {
     sessionSheetSyncDebounceTimer = window.setTimeout(() => {
         sessionSheetSyncDebounceTimer = 0;
         postSessionQueriesToSheetRow_();
+        postSessionTranscriptToFirestore_();
     }, 600);
+}
+
+/**
+ * Prefer sessionStorage transcript arrays over a fresh getClientContext() snapshot so bot lines are not dropped on sync.
+ *
+ * @returns {Record<string, unknown>}
+ */
+function buildClientContextForServerSync_() {
+    const stored = readStoredClientContext();
+    const live = getClientContext();
+    const out = { ...live };
+    if (Array.isArray(stored.chat_transcript) && stored.chat_transcript.length) {
+        out.chat_transcript = stored.chat_transcript;
+    }
+    if (Array.isArray(stored.assistant_queries) && stored.assistant_queries.length) {
+        out.assistant_queries = stored.assistant_queries;
+    }
+    if (Array.isArray(stored.user_queries) && stored.user_queries.length) {
+        out.user_queries = stored.user_queries;
+    }
+    return out;
+}
+
+/**
+ * @returns {Record<string, string>}
+ */
+function buildSessionSyncRequestHeaders_() {
+    /** @type {Record<string, string>} */
+    const headers = { "Content-Type": "application/json" };
+    try {
+        const metaMobile =
+            typeof document !== "undefined"
+                ? document.querySelector('meta[name="dfchat-contact-form-mobile-sync-secret"]')
+                : null;
+        const mv =
+            metaMobile && metaMobile instanceof HTMLMetaElement ? metaMobile.getAttribute("content") : null;
+        const mobileSec = typeof mv === "string" ? mv.trim() : "";
+        if (mobileSec) {
+            headers["X-Contact-Form-Mobile-Sync-Secret"] = mobileSec;
+        }
+    } catch {
+        /* ignore */
+    }
+    try {
+        const metaSheet =
+            typeof document !== "undefined"
+                ? document.querySelector('meta[name="dfchat-conversations-sheet-secret"]')
+                : null;
+        const sv =
+            metaSheet && metaSheet instanceof HTMLMetaElement ? metaSheet.getAttribute("content") : null;
+        const sheetSec = typeof sv === "string" ? sv.trim() : "";
+        if (sheetSec) {
+            headers["X-Conversations-Sheet-Secret"] = sheetSec;
+        }
+    } catch {
+        /* ignore */
+    }
+    return headers;
+}
+
+let sessionTranscriptFirestoreSyncTimer = 0;
+
+/** Debounced Firestore flush so staff script sees bot lines without waiting for form submit. */
+function scheduleSessionTranscriptFirestoreSync_() {
+    if (sessionTranscriptFirestoreSyncTimer) {
+        window.clearTimeout(sessionTranscriptFirestoreSyncTimer);
+    }
+    sessionTranscriptFirestoreSyncTimer = window.setTimeout(() => {
+        sessionTranscriptFirestoreSyncTimer = 0;
+        postSessionTranscriptToFirestore_();
+    }, 400);
+}
+
+function postSessionTranscriptToFirestore_() {
+    const endpoint = getApiEndpoint(SESSION_TRANSCRIPT_SYNC_ENDPOINT);
+    if (!endpoint || typeof fetch !== "function") {
+        return;
+    }
+    let client_context;
+    try {
+        client_context = buildClientContextForServerSync_();
+    } catch {
+        return;
+    }
+    const ct = client_context.chat_transcript;
+    const aq = client_context.assistant_queries;
+    const hasTranscript = Array.isArray(ct) && ct.length > 0;
+    const hasAssistantQueries = Array.isArray(aq) && aq.length > 0;
+    if (!hasTranscript && !hasAssistantQueries) {
+        return;
+    }
+    fetch(endpoint, {
+        method: "POST",
+        headers: buildSessionSyncRequestHeaders_(),
+        credentials: "omit",
+        body: JSON.stringify({ client_context }),
+        keepalive: true
+    })
+        .then(async (resp) => {
+            if (resp.ok) {
+                return;
+            }
+            let detail = "";
+            try {
+                detail = (await resp.text()).slice(0, 240);
+            } catch {
+                /* ignore */
+            }
+            if (typeof console !== "undefined" && console.warn) {
+                console.warn(
+                    "[dfchat] Session transcript Firestore sync failed:",
+                    resp.status,
+                    detail || resp.statusText
+                );
+            }
+        })
+        .catch(() => {});
 }
 
 function postSessionQueriesToSheetRow_() {
@@ -14086,25 +14207,9 @@ function postSessionQueriesToSheetRow_() {
     if (!endpoint || typeof fetch !== "function") {
         return;
     }
-    /** @type {Record<string, string>} */
-    const headers = {
-        "Content-Type": "application/json"
-    };
+    const headers = buildSessionSyncRequestHeaders_();
     try {
-        const metaNode =
-            typeof document !== "undefined"
-                ? document.querySelector('meta[name="dfchat-contact-form-mobile-sync-secret"]')
-                : null;
-        const mv = metaNode && metaNode instanceof HTMLMetaElement ? metaNode.getAttribute("content") : null;
-        const sec = typeof mv === "string" ? mv.trim() : "";
-        if (sec) {
-            headers["X-Contact-Form-Mobile-Sync-Secret"] = sec;
-        }
-    } catch {
-        /* ignore */
-    }
-    try {
-        const client_context = getClientContext();
+        const client_context = buildClientContextForServerSync_();
         /** Use resolved form key (default form when overlay never opened — not literal "chat"). */
         const sessCfg = readContactFormConfig();
         const fk = typeof sessCfg.formKey === "string" ? sessCfg.formKey.trim() : "";
@@ -15096,6 +15201,7 @@ function appendChatTranscriptAssistantEntries_(entries) {
             chat_transcript_seq: seq
         });
         scheduleSessionQueriesSheetSync_();
+        scheduleSessionTranscriptFirestoreSync_();
     } catch {
         /* ignore */
     }
@@ -15151,6 +15257,7 @@ function appendChatTranscriptAssistantLines_(lines) {
             chat_transcript_seq: seq
         });
         scheduleSessionQueriesSheetSync_();
+        scheduleSessionTranscriptFirestoreSync_();
     } catch {
         /* ignore */
     }

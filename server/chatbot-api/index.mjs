@@ -117,6 +117,7 @@ const PORT = Number(process.env.PORT) || 8080;
 const PATHNAME = "/contact-form-submissions";
 const PATHNAME_MOBILE_SHEET_SYNC = "/contact-form-mobile-sheet-sync";
 const PATHNAME_SESSION_SHEET_SYNC = "/contact-form-session-sheet-sync";
+const PATHNAME_SESSION_TRANSCRIPT_SYNC = "/api/session-transcript-sync";
 const PATHNAME_CHAT_FEEDBACK = "/chat-feedback";
 /** “Just put files in Drive” — skips Firestore; Sheets are independent (see SHEETS_DISABLED). */
 const DRIVE_ONLY = process.env.DRIVE_ONLY === "1";
@@ -153,21 +154,54 @@ async function patchSessionTranscriptFirestore_(sessionId, clientContext) {
     if (!sid || FIRESTORE_DISABLED || !clientContext || typeof clientContext !== "object") {
         return false;
     }
-    const ct = clientContext.chat_transcript;
-    const aq = clientContext.assistant_queries;
-    const hasTranscript = Array.isArray(ct) && ct.length > 0;
-    const hasAssistantQueries = Array.isArray(aq) && aq.length > 0;
-    if (!hasTranscript && !hasAssistantQueries) {
+    const cx = /** @type {Record<string, unknown>} */ ({ ...clientContext });
+    const ct = coerceChatTranscriptArray_(cx.chat_transcript);
+    const aq = Array.isArray(cx.assistant_queries) ? cx.assistant_queries : [];
+    if (!ct.length && !aq.length) {
         return false;
     }
+    cx.chat_transcript = ct;
+    if (aq.length) {
+        cx.assistant_queries = aq;
+    }
     try {
-        await upsertSessionChatTranscriptDoc(sid, clientContext);
-        return await patchLatestContactSubmissionClientContext(sid, clientContext);
+        await upsertSessionChatTranscriptDoc(sid, cx);
+        return await patchLatestContactSubmissionClientContext(sid, cx);
     } catch (e) {
         const detail = e && /** @type {{ message?: string }} */ (e).message ? String(e.message) : String(e);
         console.warn("[chatbot-api] patchSessionTranscriptFirestore:", detail.slice(0, 240));
         return false;
     }
+}
+
+/**
+ * @param {import("express").Request} req
+ * @returns {{ ok: boolean, reason?: string }}
+ */
+function sessionTranscriptSyncSecretFromReq_(req) {
+    const mobile = (process.env.CONTACT_FORM_MOBILE_SHEET_SYNC_SECRET || "").trim();
+    const sheet = (process.env.CONVERSATIONS_SHEET_VIEW_SECRET || "").trim();
+    if (!mobile && !sheet) {
+        return { ok: true };
+    }
+    const sentMobile =
+        typeof req.headers["x-contact-form-mobile-sync-secret"] === "string"
+            ? req.headers["x-contact-form-mobile-sync-secret"].trim()
+            : "";
+    const sentSheet =
+        typeof req.headers["x-conversations-sheet-secret"] === "string"
+            ? req.headers["x-conversations-sheet-secret"].trim()
+            : "";
+    const authHdr =
+        typeof req.headers.authorization === "string" ? req.headers.authorization.trim() : "";
+    const bearer = authHdr.toLowerCase().startsWith("bearer ") ? authHdr.slice(7).trim() : "";
+    if (mobile && (sentMobile === mobile || bearer === mobile)) {
+        return { ok: true };
+    }
+    if (sheet && (sentSheet === sheet || bearer === sheet)) {
+        return { ok: true };
+    }
+    return { ok: false, reason: "unauthorized" };
 }
 
 function hasFirebaseCredentials() {
@@ -661,6 +695,7 @@ app.use(cors({
 app.options(PATHNAME, (_req, res) => res.sendStatus(204));
 app.options(PATHNAME_MOBILE_SHEET_SYNC, (_req, res) => res.sendStatus(204));
 app.options(PATHNAME_SESSION_SHEET_SYNC, (_req, res) => res.sendStatus(204));
+app.options(PATHNAME_SESSION_TRANSCRIPT_SYNC, (_req, res) => res.sendStatus(204));
 app.options(PATHNAME_CHAT_FEEDBACK, (_req, res) => res.sendStatus(204));
 
 // SMS OTP routes: /api/sms-otp/send, /api/sms-otp/verify, /api/sms-otp/health.
@@ -2844,10 +2879,14 @@ app.post(
         }
 
         const userQueriesCsv = normalizeUserQueriesCsvFromClientContext(mergedClientContext);
+        const coercedTranscript = coerceChatTranscriptArray_(mergedClientContext.chat_transcript);
+        mergedClientContext.chat_transcript = coercedTranscript;
+        const assistantQueries = Array.isArray(mergedClientContext.assistant_queries)
+            ? mergedClientContext.assistant_queries
+            : [];
         const hasLiveChatTranscript =
-            (Array.isArray(mergedClientContext.chat_transcript) && mergedClientContext.chat_transcript.length > 0)
-            || (Array.isArray(mergedClientContext.assistant_queries)
-                && mergedClientContext.assistant_queries.length > 0);
+            coercedTranscript.length > 0 || assistantQueries.length > 0;
+        const chatTranscriptJson = stringifyChatTranscriptForSheetPayload_(mergedClientContext);
         if (!userQueriesCsv && !hasLiveChatTranscript) {
             return res.status(200).json({ ok: true, message: "Nothing to sync." });
         }
@@ -2887,10 +2926,9 @@ app.post(
         const sourceUrl = resolveSourceUrlForSheet(mergedClientContext);
 
         let firestoreTranscriptPatched = false;
-        if (!FIRESTORE_DISABLED && hasLiveChatTranscript) {
+        if (!FIRESTORE_DISABLED && (hasLiveChatTranscript || userQueriesCsv)) {
             try {
-                await upsertSessionChatTranscriptDoc(clientSessionId, mergedClientContext);
-                firestoreTranscriptPatched = await patchLatestContactSubmissionClientContext(
+                firestoreTranscriptPatched = await patchSessionTranscriptFirestore_(
                     clientSessionId,
                     mergedClientContext
                 );
@@ -2936,7 +2974,9 @@ app.post(
                     appointmentBooked: "No",
                     appointmentDate: "",
                     appointmentTime: "",
-                    userQueriesCsv
+                    userQueriesCsv,
+                    chatTranscriptJson,
+                    writeChatTranscriptOnSessionSync: true
                 });
             } catch (se) {
                 const detail = se && se.message ? se.message : String(se);
@@ -2951,7 +2991,91 @@ app.post(
             sheet_integration: userQueriesCsv
                 ? { enabled: true, result: syncDetail }
                 : { enabled: true, skipped: "queries_only_in_firestore" },
-            firestore_transcript_patched: firestoreTranscriptPatched
+            firestore_transcript_patched: firestoreTranscriptPatched,
+            chat_transcript_turns: coercedTranscript.length,
+            chat_transcript_json_written: Boolean(chatTranscriptJson)
+        });
+    }
+);
+
+/** Firestore-only live transcript sync from widget (bot + user lines in `chat_transcript`). */
+app.post(
+    PATHNAME_SESSION_TRANSCRIPT_SYNC,
+    express.json({ limit: "512kb" }),
+    async (req, res) => {
+        const auth = sessionTranscriptSyncSecretFromReq_(req);
+        if (!auth.ok) {
+            return res.status(401).json({
+                ok: false,
+                error:
+                    "Unauthorized — set X-Contact-Form-Mobile-Sync-Secret or X-Conversations-Sheet-Secret."
+            });
+        }
+
+        let body = req.body && typeof req.body === "object" ? req.body : {};
+        if (typeof body.client_context === "string") {
+            try {
+                body = { ...body, client_context: JSON.parse(body.client_context) };
+            } catch {
+                body = { ...body, client_context: {} };
+            }
+        }
+        const clientContext =
+            body.client_context && typeof body.client_context === "object" ? body.client_context : {};
+        const sid =
+            typeof clientContext.client_session_id === "string" ? clientContext.client_session_id.trim() : "";
+        if (!sid) {
+            return res.status(400).json({ ok: false, error: "Missing client_session_id in client_context." });
+        }
+
+        if (FIRESTORE_DISABLED) {
+            return res.status(503).json({ ok: false, error: "Firestore is disabled on this server." });
+        }
+
+        const ct = coerceChatTranscriptArray_(clientContext.chat_transcript);
+        const aq = Array.isArray(clientContext.assistant_queries) ? clientContext.assistant_queries : [];
+        if (!ct.length && !aq.length) {
+            return res.status(200).json({ ok: true, message: "Nothing to store.", stored_turns: 0 });
+        }
+
+        const patch = /** @type {Record<string, unknown>} */ ({
+            ...clientContext,
+            channel: normalizeLeadChannel(clientContext.channel),
+            chat_transcript: ct
+        });
+        if (aq.length) {
+            patch.assistant_queries = aq;
+        }
+
+        let leadPatched = false;
+        try {
+            await upsertSessionChatTranscriptDoc(sid, patch);
+            leadPatched = await patchLatestContactSubmissionClientContext(sid, patch);
+        } catch (e) {
+            const detail = e && /** @type {{ message?: string }} */ (e).message ? String(e.message) : String(e);
+            return res.status(500).json({ ok: false, error: detail });
+        }
+
+        let assistantRows = 0;
+        for (let i = 0; i < ct.length; i += 1) {
+            const it = ct[i];
+            if (
+                it
+                && typeof it === "object"
+                && String(/** @type {{ role?: unknown }} */ (it).role || "")
+                    .trim()
+                    .toLowerCase() === "assistant"
+            ) {
+                assistantRows += 1;
+            }
+        }
+
+        return res.status(200).json({
+            ok: true,
+            stored_turns: ct.length,
+            stored_assistant_rows: assistantRows,
+            stored_assistant_queries: aq.length,
+            lead_patched: leadPatched
         });
     }
 );
@@ -3707,8 +3831,8 @@ function stripLeadingAssistantSplashForSheet_(arr) {
 /** Serialize widget `chat_transcript` for optional Google Sheets column (see SHEETS_CHAT_TRANSCRIPT_JSON_COLUMN). */
 function stringifyChatTranscriptForSheetPayload_(clientContext) {
     const cx = clientContext && typeof clientContext === "object" ? clientContext : {};
-    const ctRaw = cx.chat_transcript;
-    if (!Array.isArray(ctRaw) || !ctRaw.length) {
+    const ctRaw = coerceChatTranscriptArray_(cx.chat_transcript);
+    if (!ctRaw.length) {
         return "";
     }
     const ct = stripLeadingAssistantSplashForSheet_(ctRaw);
@@ -5316,6 +5440,7 @@ app.get("/", (_req, res) => {
             `POST JSON or multipart/form-data → ${PATHNAME}`,
             `POST JSON (chat mobile) → ${PATHNAME_MOBILE_SHEET_SYNC}`,
             `POST JSON (session queries) → ${PATHNAME_SESSION_SHEET_SYNC}`,
+            `POST JSON (live transcript) → ${PATHNAME_SESSION_TRANSCRIPT_SYNC}`,
             `POST JSON ${PATHNAME_CHAT_FEEDBACK} → visitor CSAT/helpful (Firestore chat_feedback; optional CHAT_FEEDBACK_SECRET).`,
             `GET /health → health check.`,
             `GET /contact-form-sheets-health → JSON: Sheets env + tab names (spreadsheet READ probe).`,
@@ -5342,6 +5467,6 @@ app.listen(PORT, "0.0.0.0", () => {
           : "uploads=DriveAPI";
     const mode = DRIVE_ONLY ? " DRIVE_ONLY" : "";
     console.log(
-        `chatbot-api listening on :${PORT} ${PATHNAME} ${PATHNAME_MOBILE_SHEET_SYNC} ${PATHNAME_SESSION_SHEET_SYNC} ${PATHNAME_CHAT_FEEDBACK} — ${fsHint} ${sheetHint} ${driveHint}${mode}`
+        `chatbot-api listening on :${PORT} ${PATHNAME} ${PATHNAME_MOBILE_SHEET_SYNC} ${PATHNAME_SESSION_SHEET_SYNC} ${PATHNAME_SESSION_TRANSCRIPT_SYNC} ${PATHNAME_CHAT_FEEDBACK} — ${fsHint} ${sheetHint} ${driveHint}${mode}`
     );
 });

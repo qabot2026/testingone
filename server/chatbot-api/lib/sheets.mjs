@@ -2101,8 +2101,9 @@ async function resolveChatTranscriptColumnLetter_(sheets, tab) {
  * @param {number} rowNumber
  * @param {string} chatTranscriptJson
  */
-async function maybeWriteChatTranscriptJsonToSheetCell_(sheets, tab, rowNumber, chatTranscriptJson) {
-    if (!SHEETS_WRITE_CHAT_TRANSCRIPT_JSON) {
+async function maybeWriteChatTranscriptJsonToSheetCell_(sheets, tab, rowNumber, chatTranscriptJson, opts) {
+    const forceSessionSync = !!(opts && opts.sessionSync === true);
+    if (!SHEETS_WRITE_CHAT_TRANSCRIPT_JSON && !forceSessionSync) {
         return false;
     }
     const raw = typeof chatTranscriptJson === "string" ? chatTranscriptJson.trim() : "";
@@ -2734,7 +2735,8 @@ export async function upsertSessionQueriesInSheet(row) {
     const incomingQ = sanitizeUserQueriesCsvForSheet(incomingQRaw);
     const chatTranscriptJson =
         typeof row.chatTranscriptJson === "string" ? row.chatTranscriptJson.trim() : "";
-    if (!incomingQ) {
+    const writeChatTranscriptOnSessionSync = row.writeChatTranscriptOnSessionSync === true;
+    if (!incomingQ && !chatTranscriptJson) {
         return { mode: "skipped_empty_queries" };
     }
     const client = await getSheetsAuthClient();
@@ -2806,7 +2808,17 @@ export async function upsertSessionQueriesInSheet(row) {
         await maybeWriteLeadConvLinkColumnA_(sheets, tab, rowNumber, sid);
         await maybeWriteSheetRowOpenLink_(sheets, tab, rowNumber, sid);
         if (chatTranscriptJson) {
-            await maybeWriteChatTranscriptJsonToSheetCell_(sheets, tab, rowNumber, chatTranscriptJson);
+            await maybeWriteChatTranscriptJsonToSheetCell_(sheets, tab, rowNumber, chatTranscriptJson, {
+                sessionSync: writeChatTranscriptOnSessionSync
+            });
+        }
+        if (!incomingQ) {
+            return {
+                mode: "transcript_only_existing_row",
+                tab,
+                sheetRowNumber: rowNumber,
+                chat_transcript_json_written: Boolean(chatTranscriptJson)
+            };
         }
         return {
             mode: "merge_into_existing_row",
@@ -2831,7 +2843,9 @@ export async function upsertSessionQueriesInSheet(row) {
             ? sheetOutcome.sheetRowNumber
             : 0;
     if (chatTranscriptJson && appendedRn) {
-        await maybeWriteChatTranscriptJsonToSheetCell_(sheets, tab, appendedRn, chatTranscriptJson);
+        await maybeWriteChatTranscriptJsonToSheetCell_(sheets, tab, appendedRn, chatTranscriptJson, {
+            sessionSync: writeChatTranscriptOnSessionSync
+        });
     }
     return { mode: "appended_new_row", sheetOutcome };
 }
