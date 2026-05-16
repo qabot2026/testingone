@@ -69,7 +69,7 @@ function loadSheetExtraMappingsFromDisk_() {
 }
 
 const SPREADSHEET_ID = (process.env.SHEETS_SPREADSHEET_ID || "").trim();
-// Default schema: no Form ID (A–S). Col A = Conv. link (HYPERLINK), B Date, C Time (12h TZ from SHEETS_CONV_DATETIME_TZ), then name… through S = Document; JSON transcript defaults to column T (see SHEETS_CHAT_TRANSCRIPT_JSON_COLUMN).
+// Default schema: no Form ID (A–S). Col A = Conv. link (HYPERLINK), B Date, C Time (12h TZ from SHEETS_CONV_DATETIME_TZ), then name… through S = Document. Sheet JSON transcript column is opt-in only (SHEETS_CHAT_TRANSCRIPT_JSON_COLUMN).
 const RANGE = (process.env.SHEETS_RANGE || "Sheet1!A:S").trim();
 /**
  * Optional A1 column letter (e.g. S). When set, new/updated rows get =HYPERLINK(...) to open that row in this spreadsheet.
@@ -77,8 +77,8 @@ const RANGE = (process.env.SHEETS_RANGE || "Sheet1!A:S").trim();
  */
 const SHEETS_ROW_OPEN_LINK_COLUMN = (process.env.SHEETS_ROW_OPEN_LINK_COLUMN || "").trim().toUpperCase();
 /**
- * Optional: A1 column letter for **JSON** `chat_transcript` (e.g. `T`) or row-1 header aliases.
- * When unset, JSON defaults to column **T** on the A–S lead layout (column A is the Conv. link formula, not JSON).
+ * Optional: A1 column letter for **JSON** `chat_transcript` (e.g. `T`). When unset, JSON is **not** written to the Sheet
+ * (column A stays the Chat script / Conv. link only; staff transcript uses Firestore + session sync elsewhere).
  * When set / matched, session sync and contact-form writes store the widget `chat_transcript` JSON so staff transcripts include bot lines even if Firestore is empty or client_context drops them.
  */
 const SHEETS_CHAT_TRANSCRIPT_JSON_COLUMN = (process.env.SHEETS_CHAT_TRANSCRIPT_JSON_COLUMN || "").trim().toUpperCase();
@@ -120,7 +120,7 @@ const STANDARD_SESSION_COLUMN_INDEX0_LEGACY = 8;
 const STANDARD_CHAT_SCRIPT_LINK_COL_INDEX0 = 0;
 /** Column S (18): Document / drive file links — never transcript JSON or duplicate link. */
 const STANDARD_DOCUMENT_COL_INDEX0 = 18;
-/** Optional hidden column for serialised `chat_transcript` JSON when not configured via env/header. */
+/** Only used when env mistakenly targets A or S for JSON — never written by default. */
 const STANDARD_CHAT_TRANSCRIPT_JSON_COL_LETTER = "T";
 const DEDUP_LOOKBACK_ROWS = Math.max(
     10,
@@ -2079,24 +2079,16 @@ async function resolveChatTranscriptColumnLetter_(sheets, tab) {
             return envCol;
         }
         console.warn(
-            "[chatbot-api] SHEETS_CHAT_TRANSCRIPT_JSON_COLUMN must not be A (Chat script link) or S (Document); using column",
-            STANDARD_CHAT_TRANSCRIPT_JSON_COL_LETTER,
-            "instead."
+            "[chatbot-api] SHEETS_CHAT_TRANSCRIPT_JSON_COLUMN must not be A (Chat script link) or S (Document); JSON sheet writes skipped."
         );
+        return "";
     }
     const headerMap = await getHeaderIndexMap_(sheets, tab);
     const transcriptIdx = firstHeaderIdxFromAliases_(headerMap, CHAT_TRANSCRIPT_JSON_HEADER_ALIASES);
     if (transcriptIdx !== undefined && !isReservedColumnForChatTranscriptJson_(transcriptIdx)) {
         return columnLetterFromIndex_(transcriptIdx);
     }
-    const convDateIdx = firstHeaderIdxFromAliases_(headerMap, SHEET_H_CONV_DATE_CELL);
-    if (convDateIdx === 1) {
-        return STANDARD_CHAT_TRANSCRIPT_JSON_COL_LETTER;
-    }
-    if (!Object.keys(headerMap).length) {
-        return STANDARD_CHAT_TRANSCRIPT_JSON_COL_LETTER;
-    }
-    return STANDARD_CHAT_TRANSCRIPT_JSON_COL_LETTER;
+    return "";
 }
 
 /**
