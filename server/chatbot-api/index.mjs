@@ -4393,6 +4393,41 @@ function isContactFormSubmissionSummaryAssistantText_(text) {
  *
  * @param {{ role: string, text: string, rich?: Record<string, unknown>, at?: number, seq?: number }[]} turns
  */
+/**
+ * Drop back-to-back identical assistant bubbles (same stored text and/or rich JSON).
+ *
+ * @param {{ role: string, text: string, rich?: Record<string, unknown>, at?: number, seq?: number }[]} turns
+ */
+function collapseIdenticalAssistantTranscriptTurns_(turns) {
+    if (!Array.isArray(turns) || turns.length < 2) {
+        return Array.isArray(turns) ? turns.slice() : [];
+    }
+    /** @type {typeof turns} */
+    const out = [];
+    for (let i = 0; i < turns.length; i += 1) {
+        const t = turns[i];
+        if (!t || t.role !== "assistant") {
+            out.push(t);
+            continue;
+        }
+        const prev = out.length ? out[out.length - 1] : null;
+        if (prev && prev.role === "assistant") {
+            const tA = transcriptAssistantCompareNorm_(prev.text || "");
+            const tB = transcriptAssistantCompareNorm_(t.text || "");
+            const rA = prev.rich ? JSON.stringify(prev.rich) : "";
+            const rB = t.rich ? JSON.stringify(t.rich) : "";
+            if ((tA && tA === tB) || (!tA && !tB && rA && rA === rB)) {
+                if (t.rich && !prev.rich) {
+                    prev.rich = t.rich;
+                }
+                continue;
+            }
+        }
+        out.push(t);
+    }
+    return out;
+}
+
 function collapseRedundantAssistantTranscriptTurns_(turns) {
     if (!Array.isArray(turns) || turns.length < 2) {
         return Array.isArray(turns) ? turns.slice() : [];
@@ -5108,6 +5143,7 @@ app.get(PATHNAME_CONVERSATION_TRANSCRIPT_JSON, async (req, res) => {
         }
 
         turns = orderTranscriptTurnsForDisplay_(turns);
+        turns = collapseIdenticalAssistantTranscriptTurns_(turns);
         turns = collapseRedundantAssistantTranscriptTurns_(turns);
         turns = dedupeTranscriptTurnsForDisplay_(turns);
 

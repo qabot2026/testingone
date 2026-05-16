@@ -15125,6 +15125,140 @@ function collectRichContentRowsFromNode_(node, richRows, seen, depth) {
     }
 }
 
+/**
+ * @param {Record<string, unknown> | null | undefined} rich
+ * @returns {string}
+ */
+function transcriptRichCxActionKey_(rich) {
+    if (!rich || typeof rich !== "object") {
+        return "";
+    }
+    return typeof rich.action === "string" ? rich.action.trim().toLowerCase() : "";
+}
+
+/**
+ * @param {Record<string, unknown> | null | undefined} rich
+ */
+function transcriptRichIsCxActionUi_(rich) {
+    const act = transcriptRichCxActionKey_(rich);
+    return (
+        act === "open_card_carousel"
+        || act === "open_video"
+        || act === "open_gallery"
+        || act === "dfchat_inline_select"
+        || act === "open_form"
+    );
+}
+
+/**
+ * @param {Record<string, unknown> | null | undefined} rich
+ */
+function transcriptRichHasChipRows_(rich) {
+    const rc = rich && Array.isArray(rich.richContent) ? rich.richContent : null;
+    if (!rc) {
+        return false;
+    }
+    for (let ri = 0; ri < rc.length; ri += 1) {
+        const row = rc[ri];
+        if (!Array.isArray(row)) {
+            continue;
+        }
+        for (let ci = 0; ci < row.length; ci += 1) {
+            const item = row[ci];
+            if (
+                item
+                && typeof item === "object"
+                && String(/** @type {{ type?: unknown }} */ (item).type || "").toLowerCase() === "chips"
+            ) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+/**
+ * Store only fields the staff transcript UI needs (avoids nested arrays + scraped protobuf junk).
+ *
+ * @param {Record<string, unknown> | null | undefined} rich
+ * @returns {Record<string, unknown> | null}
+ */
+function leanTranscriptRichForStorage_(rich) {
+    if (!rich || typeof rich !== "object" || Array.isArray(rich)) {
+        return null;
+    }
+    if (transcriptRichIsCxActionUi_(rich)) {
+        /** @type {Record<string, unknown>} */
+        const lean = {};
+        const keys = [
+            "action",
+            "message",
+            "url",
+            "videoUrl",
+            "video_url",
+            "cards",
+            "urls",
+            "options",
+            "placeholder",
+            "form_id",
+            "formId"
+        ];
+        for (let ki = 0; ki < keys.length; ki += 1) {
+            const k = keys[ki];
+            if (rich[k] != null) {
+                lean[k] = rich[k];
+            }
+        }
+        return Object.keys(lean).length ? lean : null;
+    }
+    if (transcriptRichHasChipRows_(rich)) {
+        /** @type {Record<string, unknown>} */
+        const lean = {};
+        if (Array.isArray(rich.richContent)) {
+            lean.richContent = rich.richContent;
+        }
+        const msg = typeof rich.message === "string" ? rich.message.trim() : "";
+        if (msg) {
+            lean.message = msg;
+        }
+        return lean;
+    }
+    return { ...rich };
+}
+
+/**
+ * @param {{ role?: string, text?: string, rich?: Record<string, unknown> }[]} transcript
+ */
+function dedupeConsecutiveAssistantTranscriptRows_(transcript) {
+    if (!Array.isArray(transcript) || transcript.length < 2) {
+        return transcript;
+    }
+    /** @type {typeof transcript} */
+    const out = [];
+    for (let i = 0; i < transcript.length; i += 1) {
+        const row = transcript[i];
+        if (!row || row.role !== "assistant") {
+            out.push(row);
+            continue;
+        }
+        const prev = out.length ? out[out.length - 1] : null;
+        if (prev && prev.role === "assistant") {
+            const tA = normalizeChatTranscriptCompareText_(prev.text || "");
+            const tB = normalizeChatTranscriptCompareText_(row.text || "");
+            const rA = prev.rich ? JSON.stringify(leanTranscriptRichForStorage_(prev.rich)) : "";
+            const rB = row.rich ? JSON.stringify(leanTranscriptRichForStorage_(row.rich)) : "";
+            if ((tA && tA === tB) || (!tA && !tB && rA && rA === rB)) {
+                if (row.rich && !prev.rich) {
+                    prev.rich = row.rich;
+                }
+                continue;
+            }
+        }
+        out.push(row);
+    }
+    return out;
+}
+
 function mergeTranscriptRichFromCxMessages_(messages) {
     if (!Array.isArray(messages) || !messages.length) {
         return null;
@@ -15139,17 +15273,8 @@ function mergeTranscriptRichFromCxMessages_(messages) {
     for (let i = 0; i < messages.length; i += 1) {
         collectTranscriptPayloadBodiesFromMessage_(messages[i], bodies, seen);
     }
-    collectRichContentRowsFromNode_(messages, richRows, new WeakSet(), 0);
     for (let bi = 0; bi < bodies.length; bi += 1) {
         const b = bodies[bi];
-        if (Array.isArray(b.richContent)) {
-            for (let ri = 0; ri < b.richContent.length; ri += 1) {
-                const row = b.richContent[ri];
-                if (Array.isArray(row)) {
-                    richRows.push(row);
-                }
-            }
-        }
         const act = typeof b.action === "string" ? b.action.trim().toLowerCase() : "";
         if (
             act === "open_gallery"
@@ -15161,13 +15286,39 @@ function mergeTranscriptRichFromCxMessages_(messages) {
             actionPayload = b;
         }
     }
-    if (!richRows.length && !actionPayload) {
+    if (actionPayload && transcriptRichIsCxActionUi_(actionPayload)) {
+        return leanTranscriptRichForStorage_(actionPayload);
+    }
+    collectRichContentRowsFromNode_(messages, richRows, new WeakSet(), 0);
+    for (let bj = 0; bj < bodies.length; bj += 1) {
+        const b2 = bodies[bj];
+        if (Array.isArray(b2.richContent)) {
+            for (let ri = 0; ri < b2.richContent.length; ri += 1) {
+                const row = b2.richContent[ri];
+                if (Array.isArray(row)) {
+                    richRows.push(row);
+                }
+            }
+        }
+    }
+    /** @type {unknown[][]} */
+    const dedupedRows = [];
+    const rowSeen = new Set();
+    for (let dr = 0; dr < richRows.length; dr += 1) {
+        const key = JSON.stringify(richRows[dr]);
+        if (rowSeen.has(key)) {
+            continue;
+        }
+        rowSeen.add(key);
+        dedupedRows.push(richRows[dr]);
+    }
+    if (!dedupedRows.length && !actionPayload) {
         return null;
     }
     /** @type {Record<string, unknown>} */
     const rich = {};
-    if (richRows.length) {
-        rich.richContent = richRows;
+    if (dedupedRows.length) {
+        rich.richContent = dedupedRows;
     }
     if (actionPayload) {
         for (const [k, v] of Object.entries(actionPayload)) {
@@ -15176,7 +15327,7 @@ function mergeTranscriptRichFromCxMessages_(messages) {
             }
         }
     }
-    return rich;
+    return leanTranscriptRichForStorage_(rich);
 }
 
 /**
@@ -15193,9 +15344,19 @@ function extractAssistantTranscriptStructuredTurns_(event) {
     const rich = mergeTranscriptRichFromCxMessages_(allMessages)
         || (d && d.raw ? mergeTranscriptRichFromCxMessages_([d.raw]) : null)
         || (d && d.data ? mergeTranscriptRichFromCxMessages_([d.data]) : null);
-    const textLines = extractAssistantVisibleTextsFromDfResponse_(event).filter((line) => !isTranscriptNoiseLine_(line));
-    const coalesced = coalesceAssistantTranscriptLines_(textLines);
-    const text = coalesced.length ? coalesced.join(coalesced.length > 1 ? "\n\n" : "") : "";
+    let text = "";
+    if (rich && (transcriptRichIsCxActionUi_(rich) || transcriptRichHasChipRows_(rich))) {
+        const msg = typeof rich.message === "string" ? rich.message.trim() : "";
+        if (msg && !isTranscriptNoiseLine_(msg)) {
+            text = msg;
+        }
+    } else {
+        const textLines = extractAssistantVisibleTextsFromDfResponse_(event).filter((line) =>
+            !isTranscriptNoiseLine_(line)
+        );
+        const coalesced = coalesceAssistantTranscriptLines_(textLines);
+        text = coalesced.length ? coalesced.join(coalesced.length > 1 ? "\n\n" : "") : "";
+    }
 
     if (!rich && !text) {
         return [];
@@ -15241,14 +15402,32 @@ function appendChatTranscriptAssistantEntries_(entries) {
                     : rawText;
             let rich =
                 entry.rich && typeof entry.rich === "object" && !Array.isArray(entry.rich)
-                    ? entry.rich
+                    ? leanTranscriptRichForStorage_(entry.rich)
                     : null;
-            if (rich && !text) {
+            if (
+                rich
+                && !text
+                && !transcriptRichIsCxActionUi_(rich)
+                && !transcriptRichHasChipRows_(rich)
+            ) {
                 const labels = [];
                 pushPlainTextLabelsFromTranscriptPayloadBody_(rich, labels);
                 const unique = [...new Set(labels)];
                 if (unique.length) {
                     text = unique.join("\n");
+                }
+            }
+            if (rich && text && (transcriptRichIsCxActionUi_(rich) || transcriptRichHasChipRows_(rich))) {
+                /** @type {string[]} */
+                const labelProbe = [];
+                pushPlainTextLabelsFromTranscriptPayloadBody_(rich, labelProbe);
+                const joined = [...new Set(labelProbe)].join("\n");
+                if (
+                    normalizeChatTranscriptCompareText_(joined)
+                    === normalizeChatTranscriptCompareText_(text)
+                ) {
+                    const msgOnly = typeof rich.message === "string" ? rich.message.trim() : "";
+                    text = msgOnly && !isTranscriptNoiseLine_(msgOnly) ? msgOnly : "";
                 }
             }
             if (!text && !rich) {
@@ -15292,9 +15471,12 @@ function appendChatTranscriptAssistantEntries_(entries) {
                 );
             }
         }
+        const capped = dedupeConsecutiveAssistantTranscriptRows_(
+            transcript.slice(-MAX_CHAT_TRANSCRIPT_TURNS)
+        );
         persistClientContext({
             ...prev,
-            chat_transcript: transcript.slice(-MAX_CHAT_TRANSCRIPT_TURNS),
+            chat_transcript: capped,
             chat_transcript_seq: seq
         });
         scheduleSessionQueriesSheetSync_();
@@ -15348,9 +15530,12 @@ function appendChatTranscriptAssistantLines_(lines) {
             transcript.push({ role: "assistant", text, at: now, seq });
             trackAssistantQueryInSessionContext_(text);
         }
+        const capped = dedupeConsecutiveAssistantTranscriptRows_(
+            transcript.slice(-MAX_CHAT_TRANSCRIPT_TURNS)
+        );
         persistClientContext({
             ...prev,
-            chat_transcript: transcript.slice(-MAX_CHAT_TRANSCRIPT_TURNS),
+            chat_transcript: capped,
             chat_transcript_seq: seq
         });
         scheduleSessionQueriesSheetSync_();

@@ -443,7 +443,14 @@
           .replace(/>/g, "&gt;");
       }
 
-      var TRANSCRIPT_NOISE = { HANDLER_PROMPT: 1, "Virtual Agent": 1, Chips: 1, chips: 1, chip: 1 };
+      var TRANSCRIPT_NOISE = {
+        HANDLER_PROMPT: 1,
+        "Virtual Agent": 1,
+        VIRTUAL_AGENT: 1,
+        Chips: 1,
+        chips: 1,
+        chip: 1
+      };
 
       function unwrapStr(v) {
         if (typeof v === "string") return v.trim();
@@ -576,10 +583,17 @@
             if (gu) html += '<img class="rc-img" src="' + escapeHtml(gu) + '" alt="" loading="lazy" />';
           }
           html += "</div>" + chipsHtml(pl.options);
-        } else if (action === "open_video" && pl.url) {
-          var emb = ytEmbed(unwrapStr(pl.url));
+        } else if (action === "open_video") {
+          var videoUrl =
+            unwrapStr(pl.url) || unwrapStr(pl.videoUrl) || unwrapStr(pl.video_url);
+          var emb = videoUrl ? ytEmbed(videoUrl) : "";
           if (emb) {
             html += '<div class="rc-video"><iframe src="' + escapeHtml(emb) + '" title="Video" allowfullscreen loading="lazy"></iframe></div>';
+          } else if (videoUrl) {
+            html +=
+              '<p class="rc-text"><a href="' +
+              escapeHtml(videoUrl) +
+              '" target="_blank" rel="noopener">Open video</a></p>';
           }
           html += chipsHtml(pl.options);
         } else if (action === "open_card_carousel" && Array.isArray(pl.cards)) {
@@ -611,9 +625,28 @@
         return html;
       }
 
+      function richHasActionUi(rich) {
+        if (!rich || typeof rich !== "object") return false;
+        var a = String(rich.action || "").toLowerCase();
+        return (
+          a === "open_card_carousel" ||
+          a === "open_video" ||
+          a === "open_gallery" ||
+          a === "dfchat_inline_select" ||
+          a === "open_form"
+        );
+      }
+
       function resolveRich(turn) {
-        if (turn && turn.rich && typeof turn.rich === "object") return turn.rich;
-        var raw = turn && typeof turn.text === "string" ? turn.text.trim() : "";
+        if (!turn || typeof turn !== "object") return null;
+        if (typeof turn.rich_json === "string" && turn.rich_json.trim()) {
+          try {
+            var parsedRich = JSON.parse(turn.rich_json);
+            if (parsedRich && typeof parsedRich === "object") return parsedRich;
+          } catch (ignoreRich) {}
+        }
+        if (turn.rich && typeof turn.rich === "object") return turn.rich;
+        var raw = typeof turn.text === "string" ? turn.text.trim() : "";
         if (raw.charAt(0) === "{" && (raw.indexOf("richContent") >= 0 || raw.indexOf('"action"') >= 0)) {
           try {
             var p = JSON.parse(raw);
@@ -625,7 +658,33 @@
 
       function chipLabelsFromRich(rich) {
         var labels = [];
-        if (!rich || typeof rich !== "object" || !Array.isArray(rich.richContent)) return labels;
+        if (!rich || typeof rich !== "object") return labels;
+        if (Array.isArray(rich.options)) {
+          for (var oi = 0; oi < rich.options.length; oi++) {
+            var opt = rich.options[oi];
+            var ol =
+              typeof opt === "string"
+                ? opt
+                : opt && typeof opt.label === "string"
+                  ? opt.label
+                  : opt && typeof opt.text === "string"
+                    ? opt.text
+                    : "";
+            ol = String(ol || "").trim().toLowerCase();
+            if (ol) labels.push(ol);
+          }
+        }
+        if (Array.isArray(rich.cards)) {
+          for (var ci = 0; ci < rich.cards.length; ci++) {
+            var card = rich.cards[ci];
+            if (!card || typeof card !== "object") continue;
+            ["title", "subtitle", "ctaLabel", "ctaValue", "id", "imageUrl"].forEach(function (k) {
+              var v = card[k];
+              if (typeof v === "string" && v.trim()) labels.push(v.trim().toLowerCase());
+            });
+          }
+        }
+        if (!Array.isArray(rich.richContent)) return labels;
         for (var r = 0; r < rich.richContent.length; r++) {
           var row = rich.richContent[r];
           if (!Array.isArray(row)) continue;
@@ -662,6 +721,10 @@
             if (!ln || TRANSCRIPT_NOISE[ln]) return false;
             if (rich && ln === "Chips" && rich.richContent) return false;
             if (chipLabels.length && chipLabels.indexOf(ln.toLowerCase()) >= 0) return false;
+            if (rich && richHasActionUi(rich)) {
+              if (/^https?:\/\//i.test(ln)) return false;
+              if (/^card_\d+$/i.test(ln)) return false;
+            }
             return true;
           })
           .join("\n")
@@ -673,12 +736,22 @@
           return '<p class="rc-text">' + escapeHtml((turn && turn.text) || "") + "</p>";
         }
         var rich = resolveRich(turn);
-        var text = cleanText(turn.text, rich);
+        var actionUi = rich && richHasActionUi(rich);
         var html = "";
-        if (text) html += '<p class="rc-text">' + escapeHtml(text) + "</p>";
         if (rich) {
-          if (Array.isArray(rich.richContent)) html += richRowsHtml(rich.richContent);
-          else if (rich.action || Array.isArray(rich.urls) || Array.isArray(rich.cards)) html += actionHtml(rich);
+          if (actionUi) {
+            html += actionHtml(rich);
+          } else if (Array.isArray(rich.richContent)) {
+            var text = cleanText(turn.text, rich);
+            if (text) html += '<p class="rc-text">' + escapeHtml(text) + "</p>";
+            html += richRowsHtml(rich.richContent);
+          } else if (rich.action || Array.isArray(rich.urls) || Array.isArray(rich.cards)) {
+            html += actionHtml(rich);
+          }
+        }
+        if (!html) {
+          var plain = cleanText(turn.text, rich);
+          if (plain) html += '<p class="rc-text">' + escapeHtml(plain) + "</p>";
         }
         return html || '<p class="rc-text">(No message stored for this line.)</p>';
       }
