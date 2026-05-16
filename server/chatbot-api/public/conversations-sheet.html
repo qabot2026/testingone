@@ -713,15 +713,17 @@
     }
 
     .lead-stats {
-      margin-bottom: 10px;
-      padding: 10px 12px 12px;
-      border-radius: var(--radius-sm);
-      border: 1px solid rgba(13, 148, 136, 0.22);
-      background: linear-gradient(145deg, #ffffff 0%, #f8fafc 42%, #f0fdfa 100%);
-      box-shadow: var(--shadow-sm), 0 0 0 1px rgba(255, 255, 255, 0.6) inset;
+      margin-bottom: 12px;
+      padding: 14px 16px 16px;
+      border-radius: var(--radius);
+      border: 1px solid rgba(15, 23, 42, 0.08);
+      background: linear-gradient(165deg, #ffffff 0%, #f8fafc 55%, #f1f5f9 100%);
+      box-shadow:
+        0 1px 2px rgba(15, 23, 42, 0.04),
+        0 10px 32px -8px rgba(15, 23, 42, 0.1);
     }
     .lead-stats.lead-stats-wrap--visual {
-      padding: 8px 12px 10px;
+      padding: 14px 16px 16px;
     }
     .lead-stats-list {
       margin: 0;
@@ -736,11 +738,11 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 8px;
+      gap: 10px;
       flex-wrap: wrap;
-      margin-bottom: 8px;
-      padding-bottom: 8px;
-      border-bottom: 1px solid var(--border);
+      margin-bottom: 12px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid rgba(15, 23, 42, 0.07);
     }
     .lead-stats-dash-head-main {
       flex: 1;
@@ -748,11 +750,13 @@
     }
     .lead-stats-view-toggle {
       display: inline-flex;
-      border-radius: 999px;
-      border: 1px solid var(--border);
+      border-radius: 8px;
+      border: 1px solid rgba(15, 23, 42, 0.08);
       overflow: hidden;
-      background: rgba(241, 245, 249, 0.95);
+      background: #f1f5f9;
       flex-shrink: 0;
+      padding: 2px;
+      gap: 2px;
     }
     .lead-view-btn {
       padding: 5px 11px;
@@ -775,43 +779,41 @@
     }
     .lead-view-btn.is-active {
       background: #fff;
-      color: var(--brand-strong);
-      box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+      color: #0f766e;
+      border-radius: 6px;
+      box-shadow: 0 1px 3px rgba(15, 23, 42, 0.1);
     }
     .lead-stats-dash-title {
       margin: 0;
-      font-size: 0.6875rem;
-      font-weight: 800;
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
       text-transform: uppercase;
-      letter-spacing: 0.09em;
-      color: var(--muted);
+      color: #334155;
     }
     .lead-stats-dash-sub {
-      margin: 0;
-      font-size: 0.6875rem;
-      font-weight: 600;
+      margin: 2px 0 0;
+      font-size: 0.75rem;
+      font-weight: 500;
       color: var(--muted);
     }
     .lead-stats-numeric-block,
     .lead-stats-visual-block {
-      width: max-content;
-      max-width: 100%;
+      width: 100%;
     }
     .lead-stats-numeric-block {
-      display: grid;
-      gap: 6px;
-      justify-items: start;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
     }
     .lead-stats-metric-strip {
       display: grid;
-      grid-template-columns: repeat(3, minmax(5.25rem, 6.75rem));
-      gap: 5px;
-      justify-content: start;
-      width: max-content;
-      max-width: 100%;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      width: 100%;
     }
     .lead-stat-kpi--total .lead-stat-kpi-value {
-      font-size: 0.95rem;
+      font-size: clamp(1.15rem, 2.2vw, 1.45rem);
     }
     @supports (-webkit-background-clip: text) {
       .lead-stat-kpi--total .lead-stat-kpi-value {
@@ -823,90 +825,111 @@
       }
     }
     .lead-stat-kpi {
-      border-radius: 6px;
-      padding: 5px 6px;
-      border: 1px solid var(--border);
-      background: rgba(255, 255, 255, 0.92);
-      box-shadow: var(--shadow-sm);
+      position: relative;
+      border-radius: 10px;
+      padding: 11px 12px 11px 14px;
+      border: 1px solid rgba(15, 23, 42, 0.07);
+      background: #ffffff;
+      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
       min-height: 0;
       min-width: 0;
       display: flex;
       flex-direction: column;
       justify-content: center;
-      gap: 1px;
+      gap: 4px;
+      overflow: hidden;
+    }
+    .lead-stat-kpi::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 3px;
+      background: linear-gradient(180deg, #0d9488, #0891b2);
+      opacity: 0.75;
     }
     .lead-stat-kpi--total {
-      border-color: rgba(13, 148, 136, 0.35);
-      background: linear-gradient(135deg, rgba(13, 148, 136, 0.1), rgba(255, 255, 255, 0.95));
+      background: linear-gradient(135deg, #ffffff 0%, #f0fdfa 100%);
+      border-color: rgba(13, 148, 136, 0.18);
+    }
+    .lead-stat-kpi--total::before {
+      opacity: 1;
     }
     .lead-stat-kpi--primary {
-      border-color: rgba(13, 148, 136, 0.4);
-      background: linear-gradient(135deg, rgba(13, 148, 136, 0.14), rgba(99, 102, 241, 0.08));
+      background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
     }
     .lead-stat-kpi-label {
-      font-size: 0.5625rem;
-      font-weight: 700;
-      text-transform: uppercase;
+      font-size: 0.6875rem;
+      font-weight: 600;
       letter-spacing: 0.04em;
-      color: var(--muted);
-      line-height: 1.15;
+      color: #64748b;
+      line-height: 1.2;
     }
     .lead-stat-kpi-value {
-      font-size: 0.875rem;
-      font-weight: 800;
-      color: var(--brand-strong);
-      line-height: 1.08;
+      font-size: 1.125rem;
+      font-weight: 700;
+      color: #0f172a;
+      line-height: 1.1;
       letter-spacing: -0.02em;
     }
-    .lead-stats-section-h {
-      margin: 0 0 5px;
-      font-size: 0.6875rem;
-      font-weight: 800;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      color: var(--muted);
+    .lead-stats-detail-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+      gap: 12px;
+      width: 100%;
     }
-    .lead-stats-section-h:not(:first-of-type) {
-      margin-top: 4px;
+    .lead-stats-panel {
+      min-width: 0;
+      padding: 10px 12px 12px;
+      border-radius: 10px;
+      border: 1px solid rgba(15, 23, 42, 0.06);
+      background: rgba(255, 255, 255, 0.72);
+    }
+    .lead-stats-section-h {
+      margin: 0 0 8px;
+      font-size: 0.6875rem;
+      font-weight: 700;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      color: #475569;
     }
     .lead-stats-channel-grid {
       display: grid;
-      grid-template-columns: repeat(4, minmax(4.5rem, 5.5rem));
-      gap: 5px;
-      margin-bottom: 6px;
-      justify-content: start;
-      width: max-content;
-      max-width: 100%;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+      width: 100%;
     }
     .channel-tile {
       display: flex;
-      flex-direction: column;
+      flex-direction: row;
       align-items: center;
-      justify-content: center;
-      gap: 2px;
-      padding: 4px 3px;
-      border-radius: 6px;
-      border: 1px solid var(--border);
-      background: rgba(255, 255, 255, 0.95);
-      box-shadow: var(--shadow-sm);
-      text-align: center;
+      gap: 8px;
+      padding: 8px 10px;
+      border-radius: 8px;
+      border: 1px solid rgba(15, 23, 42, 0.06);
+      background: #ffffff;
+      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
+      text-align: left;
       min-width: 0;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
     }
     .channel-tile:hover {
-      border-color: rgba(148, 163, 184, 0.65);
+      border-color: rgba(13, 148, 136, 0.28);
+      box-shadow: 0 4px 12px rgba(15, 23, 42, 0.06);
     }
     .channel-tile-icon {
-      width: 20px;
-      height: 20px;
-      border-radius: 5px;
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
       display: flex;
       align-items: center;
       justify-content: center;
       flex-shrink: 0;
     }
     .channel-tile-icon svg {
-      width: 12px;
-      height: 12px;
+      width: 17px;
+      height: 17px;
       display: block;
     }
     .channel-tile--web .channel-tile-icon {
@@ -930,65 +953,59 @@
       width: 100%;
     }
     .channel-tile-name {
-      font-size: 0.5625rem;
-      font-weight: 700;
-      color: var(--text);
-      line-height: 1.1;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      max-width: 100%;
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: #334155;
+      line-height: 1.2;
     }
     .channel-tile-count {
-      font-size: 0.8125rem;
-      font-weight: 800;
+      font-size: 1rem;
+      font-weight: 700;
       font-variant-numeric: tabular-nums;
-      color: var(--brand-strong);
-      margin-top: 0;
-      line-height: 1;
+      color: #0f766e;
+      margin-top: 1px;
+      line-height: 1.1;
     }
     .lead-stats-contact-grid {
       display: grid;
-      grid-template-columns: repeat(3, minmax(7.5rem, 9.25rem));
-      gap: 5px;
-      justify-content: start;
-      width: max-content;
-      max-width: 100%;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+      width: 100%;
     }
     .lead-stat-mini {
-      border-radius: 6px;
-      padding: 5px 6px;
+      border-radius: 8px;
+      padding: 8px 9px;
       min-width: 0;
-      border: 1px solid var(--border);
-      background: rgba(255, 255, 255, 0.88);
+      border: 1px solid rgba(15, 23, 42, 0.06);
+      background: #ffffff;
     }
     .lead-stat-mini-label {
-      font-size: 0.5625rem;
-      font-weight: 700;
-      color: var(--muted);
-      line-height: 1.2;
+      font-size: 0.6875rem;
+      font-weight: 600;
+      color: #64748b;
+      line-height: 1.25;
     }
     .lead-stat-mini-value {
-      font-size: 0.8125rem;
-      font-weight: 800;
-      color: var(--brand-strong);
-      margin-top: 1px;
+      font-size: 1rem;
+      font-weight: 700;
+      color: #0f172a;
+      margin-top: 2px;
     }
     .lead-stat-mini-chans {
       display: flex;
       flex-wrap: wrap;
       align-items: center;
-      gap: 3px 5px;
-      margin-top: 4px;
-      padding-top: 4px;
-      border-top: 1px solid rgba(148, 163, 184, 0.35);
+      gap: 6px 8px;
+      margin-top: 8px;
+      padding-top: 8px;
+      border-top: 1px solid rgba(15, 23, 42, 0.06);
     }
     .lead-mini-chan {
       display: inline-flex;
       align-items: center;
-      gap: 3px;
-      font-size: 0.625rem;
-      font-weight: 800;
+      gap: 4px;
+      font-size: 0.6875rem;
+      font-weight: 700;
       font-variant-numeric: tabular-nums;
       color: var(--text);
     }
@@ -1004,14 +1021,14 @@
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      width: 16px;
-      height: 16px;
-      border-radius: 4px;
+      width: 20px;
+      height: 20px;
+      border-radius: 5px;
       flex-shrink: 0;
     }
     .lead-mini-chan-ic svg {
-      width: 9px;
-      height: 9px;
+      width: 11px;
+      height: 11px;
       display: block;
     }
     .lead-mini-chan-ic--web {
@@ -1062,59 +1079,62 @@
     }
     .lead-stats-chart-grid {
       display: grid;
-      grid-template-columns: repeat(3, minmax(6.75rem, 8.25rem));
-      gap: 5px;
-      margin-top: 2px;
-      justify-content: start;
-      width: max-content;
-      max-width: 100%;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      width: 100%;
     }
     .lead-chart-card {
-      border-radius: 6px;
-      border: 1px solid var(--border);
-      background: rgba(255, 255, 255, 0.92);
-      padding: 4px 5px 3px;
-      box-shadow: var(--shadow-sm);
+      border-radius: 10px;
+      border: 1px solid rgba(15, 23, 42, 0.06);
+      background: #ffffff;
+      padding: 10px 12px 8px;
+      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
       min-height: 0;
       min-width: 0;
       display: flex;
       flex-direction: column;
     }
     .lead-chart-card h4 {
-      margin: 0 0 3px;
-      font-size: 0.6rem;
-      font-weight: 700;
+      margin: 0 0 4px;
+      font-size: 0.6875rem;
+      font-weight: 600;
+      letter-spacing: 0.05em;
       text-transform: uppercase;
-      letter-spacing: 0.06em;
-      color: var(--muted);
+      color: #64748b;
       line-height: 1.2;
     }
     .lead-chart-card-total {
-      margin: 0 0 4px;
-      font-size: 0.75rem;
-      font-weight: 800;
+      margin: 0 0 6px;
+      font-size: 0.8125rem;
+      font-weight: 700;
       font-variant-numeric: tabular-nums;
-      color: var(--brand-strong);
+      color: #0f766e;
       line-height: 1.25;
-      letter-spacing: -0.01em;
     }
     .lead-chart-card .chart-canvas-wrap {
-      flex: none;
+      flex: 1;
       position: relative;
-      height: 72px;
-      min-height: 72px;
-      max-height: 72px;
+      height: 120px;
+      min-height: 120px;
+      max-height: 140px;
+    }
+
+    @media (max-width: 900px) {
+      .lead-stats-detail-row {
+        grid-template-columns: 1fr;
+      }
+      .lead-stats-channel-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
     }
 
     @media (max-width: 640px) {
       .lead-stats {
-        padding: 8px 10px 10px;
-        margin-bottom: 8px;
+        padding: 10px 12px 12px;
       }
       .lead-stats-dash-head {
         flex-direction: column;
         align-items: stretch;
-        gap: 6px;
       }
       .lead-stats-view-toggle {
         width: 100%;
@@ -1123,44 +1143,26 @@
       .lead-view-btn {
         flex: 1;
         text-align: center;
-        padding: 8px 6px;
-        font-size: 10px;
-        min-height: 36px;
-      }
-      .lead-stats-numeric-block,
-      .lead-stats-visual-block {
-        width: 100%;
+        padding: 9px 8px;
+        min-height: 38px;
       }
       .lead-stats-metric-strip {
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-        width: 100%;
-        gap: 4px;
-      }
-      .lead-stat-kpi {
-        padding: 5px 4px;
+        grid-template-columns: 1fr;
+        gap: 8px;
       }
       .lead-stats-channel-grid {
-        grid-template-columns: repeat(4, minmax(0, 1fr));
-        width: 100%;
-        gap: 4px;
+        grid-template-columns: 1fr;
       }
       .lead-stats-contact-grid {
         grid-template-columns: 1fr;
-        width: 100%;
-        gap: 4px;
       }
       .lead-stats-chart-grid {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        width: 100%;
-      }
-      .lead-stats-chart-grid .lead-chart-card:last-child {
-        grid-column: 1 / -1;
-        max-width: 12rem;
+        grid-template-columns: 1fr;
       }
       .lead-chart-card .chart-canvas-wrap {
-        height: 64px;
-        min-height: 64px;
-        max-height: 64px;
+        height: 110px;
+        min-height: 110px;
+        max-height: 110px;
       }
     }
   </style>
@@ -2996,33 +2998,36 @@
           '<div id="leadStatsNumericBlock" class="lead-stats-numeric-block">' +
           '<div class="lead-stats-metric-strip">' +
           '<div class="lead-stat-kpi lead-stat-kpi--total">' +
-          '<span class="lead-stat-kpi-label">Conversations</span>' +
+          '<span class="lead-stat-kpi-label">Total conversations</span>' +
           '<div class="lead-stat-kpi-value">' +
           escapeHtml(String(n)) +
           "</div></div>" +
           '<div class="lead-stat-kpi lead-stat-kpi--primary">' +
-          '<span class="lead-stat-kpi-label">Capture %</span>' +
+          '<span class="lead-stat-kpi-label">Lead capture rate</span>' +
           '<div class="lead-stat-kpi-value">' +
           leadCaptureDisp +
           "</div></div>" +
           '<div class="lead-stat-kpi">' +
-          '<span class="lead-stat-kpi-label">Appointments</span>' +
+          '<span class="lead-stat-kpi-label">Appointments booked</span>' +
           '<div class="lead-stat-kpi-value">' +
           escapeHtml(String(apt)) +
           "</div></div></div>" +
-          '<h3 class="lead-stats-section-h">Conversations by channel</h3>' +
+          '<div class="lead-stats-detail-row">' +
+          '<section class="lead-stats-panel" aria-label="Conversations by channel">' +
+          '<h3 class="lead-stats-section-h">By channel</h3>' +
           '<div class="lead-stats-channel-grid" role="list">' +
           channelTile("web", "Web", cw, iconWeb) +
           channelTile("whatsapp", "WhatsApp", cwa, iconWa) +
           channelTile("instagram", "Instagram", cinst, iconIg) +
           channelTile("facebook", "Facebook", cfb, iconFb) +
-          "</div>" +
-          '<h3 class="lead-stats-section-h">Contact detail captured</h3>' +
+          '</div></section>' +
+          '<section class="lead-stats-panel" aria-label="Contact detail captured">' +
+          '<h3 class="lead-stats-section-h">Contact captured</h3>' +
           '<div class="lead-stats-contact-grid">' +
-          contactMini("Mobile", om, tot.onlyMobileByChannel) +
-          contactMini("Email", oe, tot.onlyEmailByChannel) +
-          contactMini("Both", be, tot.mobileAndEmailByChannel) +
-          "</div></div>" +
+          contactMini("Mobile only", om, tot.onlyMobileByChannel) +
+          contactMini("Email only", oe, tot.onlyEmailByChannel) +
+          contactMini("Mobile &amp; email", be, tot.mobileAndEmailByChannel) +
+          "</div></section></div></div>" +
           '<div id="leadStatsVisualBlock" class="lead-stats-visual-block" hidden>' +
           '<div class="lead-stats-chart-grid">' +
           '<div class="lead-chart-card"><h4>Volume by channel</h4><p class="lead-chart-card-total">Total · ' +
