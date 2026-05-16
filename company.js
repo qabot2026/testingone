@@ -13639,27 +13639,76 @@ function handleDfResponseReceived(event) {
     maybeIncrementBubbleUnreadFromResponse(event);
 
     try {
-        const structuredTurns = extractAssistantTranscriptStructuredTurns_(event);
-        if (structuredTurns.length) {
-            appendChatTranscriptAssistantEntries_(structuredTurns);
-        }
-        let assistantLines = extractAssistantVisibleTextsFromDfResponse_(event);
-        const richPlainLines = extractAssistantPlainTextFromCxRichContent_(event);
-        if (richPlainLines.length) {
-            assistantLines = assistantLines.concat(richPlainLines);
-        }
-        if (!assistantLines.length) {
-            assistantLines = extractAssistantVisibleTextsDeepFallback_(event);
-            assistantLines = assistantLines.filter((line) => !isTranscriptNoiseLine_(line));
-        }
-        if (assistantLines.length) {
-            appendChatTranscriptAssistantLines_(assistantLines);
-        }
+        ensureAssistantTranscriptCapturedForDfEvent_(event);
     } catch {
         /* transcript capture must not break df-response handling */
     }
 
     scheduleDomTranslationRefresh();
+}
+
+/**
+ * Persist at least one assistant line per bot turn for the staff script (structured + plain + fallback).
+ *
+ * @param {Event & { detail?: { raw?: { queryResult?: { responseMessages?: Array<unknown> } }, data?: { messages?: Array<unknown> }, messages?: Array<unknown> } }} event
+ */
+function ensureAssistantTranscriptCapturedForDfEvent_(event) {
+    const prev = readStoredClientContext();
+    const seqBefore =
+        typeof prev.chat_transcript_seq === "number" && Number.isFinite(prev.chat_transcript_seq)
+            ? prev.chat_transcript_seq
+            : 0;
+
+    const structuredTurns = extractAssistantTranscriptStructuredTurns_(event);
+    if (structuredTurns.length) {
+        appendChatTranscriptAssistantEntries_(structuredTurns);
+    }
+    let assistantLines = extractAssistantVisibleTextsFromDfResponse_(event);
+    const richPlainLines = extractAssistantPlainTextFromCxRichContent_(event);
+    if (richPlainLines.length) {
+        assistantLines = assistantLines.concat(richPlainLines);
+    }
+    if (!assistantLines.length) {
+        assistantLines = extractAssistantVisibleTextsDeepFallback_(event);
+        assistantLines = assistantLines.filter((line) => !isTranscriptNoiseLine_(line));
+    }
+    if (assistantLines.length) {
+        appendChatTranscriptAssistantLines_(assistantLines);
+    }
+
+    const after = readStoredClientContext();
+    const seqAfter =
+        typeof after.chat_transcript_seq === "number" && Number.isFinite(after.chat_transcript_seq)
+            ? after.chat_transcript_seq
+            : 0;
+    if (seqAfter > seqBefore) {
+        return;
+    }
+
+    const intentLabel = getIntentDisplayNameFromDfEvent(event);
+    /** @type {string[]} */
+    const forceLines = [];
+    if (intentLabel && !isTranscriptNoiseLine_(intentLabel)) {
+        forceLines.push(intentLabel);
+    }
+    const d = event && event.detail;
+    const messengerMessages = d && d.data && Array.isArray(d.data.messages) ? d.data.messages : [];
+    for (let mi = 0; mi < messengerMessages.length; mi += 1) {
+        const m = messengerMessages[mi];
+        if (!m || typeof m !== "object") {
+            continue;
+        }
+        const mt = /** @type {{ text?: unknown }} */ (m).text;
+        if (typeof mt === "string" && mt.trim() && !isTranscriptNoiseLine_(mt.trim())) {
+            forceLines.push(mt.trim());
+        }
+    }
+    if (forceLines.length) {
+        appendChatTranscriptAssistantLines_(forceLines);
+        return;
+    }
+
+    appendChatTranscriptAssistantLines_(["(Bot response)"]);
 }
 
 function attachPersonaHandlers(dfMessenger) {
@@ -14906,6 +14955,13 @@ function appendChatTranscriptAssistantEntries_(entries) {
             transcript.push(row);
             if (text) {
                 trackAssistantQueryInSessionContext_(text);
+            } else if (rich) {
+                const labels = [];
+                pushPlainTextLabelsFromTranscriptPayloadBody_(rich, labels);
+                const unique = [...new Set(labels)].filter((ln) => ln && !isTranscriptNoiseLine_(ln));
+                trackAssistantQueryInSessionContext_(
+                    unique.length ? unique.join("\n") : "(Bot interactive response)"
+                );
             }
         }
         persistClientContext({

@@ -3816,6 +3816,12 @@ function transcriptTurnsFromStoredChatArray_(arr) {
             continue;
         }
         const o = /** @type {Record<string, unknown>} */ (item);
+        const roleRaw = String(o.role ?? o.type ?? "").trim().toLowerCase();
+        const explicitAssistant =
+            roleRaw === "assistant"
+            || roleRaw === "bot"
+            || roleRaw === "agent"
+            || roleRaw === "virtual_agent";
         const role = normalizeTranscriptItemRole_(o);
         const rich = transcriptTurnRichFromItem_(o);
         let text = transcriptTurnTextFromItem_(o);
@@ -3826,7 +3832,11 @@ function transcriptTurnsFromStoredChatArray_(arr) {
             text = transcriptTextFromStoredRich_(rich);
         }
         if (!text && !rich) {
-            continue;
+            if (explicitAssistant || role === "assistant") {
+                text = "(Bot message)";
+            } else {
+                continue;
+            }
         }
         const atMs = coerceTranscriptAtMs_(o.at);
         const rawSeq = o.seq;
@@ -4186,14 +4196,21 @@ function dedupeTranscriptTurnsForDisplay_(turns) {
         if (!t || typeof t !== "object") {
             continue;
         }
-        const role = t.role === "assistant" ? "assistant" : "user";
+        const role =
+            t && typeof t === "object"
+                ? normalizeTranscriptItemRole_(/** @type {Record<string, unknown>} */ (t))
+                : "user";
         const text = String(t.text || "").trim();
         const rich =
             t.rich && typeof t.rich === "object" && !Array.isArray(t.rich)
                 ? /** @type {Record<string, unknown>} */ (t.rich)
                 : undefined;
         if (!text && !rich) {
-            continue;
+            if (role === "assistant") {
+                /* keep explicit assistant rows */
+            } else {
+                continue;
+            }
         }
         if (role === "assistant") {
             const key = text
@@ -4215,7 +4232,7 @@ function dedupeTranscriptTurnsForDisplay_(turns) {
         }
         const row = /** @type {{ role: string, text: string, rich?: Record<string, unknown>, at?: number, seq?: number }} */ ({
             role,
-            text
+            text: text || (role === "assistant" ? "(Bot message)" : "")
         });
         if (rich) {
             row.rich = rich;
@@ -4288,6 +4305,70 @@ function orderTranscriptTurnsForDisplay_(turns) {
  * @param {Record<string, unknown>} cx
  * @returns {{ role: string, text: string }[]}
  */
+/**
+ * Last-resort: keep rows the widget tagged as assistant even when text/rich extraction fails.
+ *
+ * @param {unknown[]} arr
+ * @returns {{ role: string, text: string, rich?: Record<string, unknown>, at?: number, seq?: number }[]}
+ */
+function transcriptTurnsLenientRecoveryFromRawChat_(arr) {
+    if (!Array.isArray(arr) || !arr.length) {
+        return [];
+    }
+    /** @type {{ role: string, text: string, rich?: Record<string, unknown>, at?: number, seq?: number }[]} */
+    const out = [];
+    for (const item of arr) {
+        if (!item || typeof item !== "object") {
+            continue;
+        }
+        const o = /** @type {Record<string, unknown>} */ (item);
+        const roleRaw = String(o.role ?? o.type ?? "").trim().toLowerCase();
+        const explicitAssistant =
+            roleRaw === "assistant"
+            || roleRaw === "bot"
+            || roleRaw === "agent"
+            || roleRaw === "virtual_agent";
+        const role = normalizeTranscriptItemRole_(o);
+        if (!explicitAssistant && role !== "assistant") {
+            continue;
+        }
+        const rich = transcriptTurnRichFromItem_(o);
+        let text = transcriptTurnTextFromItem_(o);
+        if (rich && transcriptTextLooksLikeScrapedRichNoise_(text)) {
+            text = "";
+        }
+        if (!text && rich) {
+            text = transcriptTextFromStoredRich_(rich);
+        }
+        if (!text) {
+            text = "(Bot message)";
+        }
+        const atMs = coerceTranscriptAtMs_(o.at);
+        const rawSeq = o.seq;
+        const seqParsed =
+            typeof rawSeq === "number" && Number.isFinite(rawSeq)
+                ? rawSeq
+                : typeof rawSeq === "string" && Number.isFinite(Number(rawSeq.trim()))
+                  ? Number(rawSeq.trim())
+                  : NaN;
+        const row = /** @type {{ role: string, text: string, rich?: Record<string, unknown>, at?: number, seq?: number }} */ ({
+            role: "assistant",
+            text
+        });
+        if (rich && typeof rich === "object") {
+            row.rich = rich;
+        }
+        if (typeof atMs === "number" && Number.isFinite(atMs)) {
+            row.at = atMs;
+        }
+        if (Number.isFinite(seqParsed)) {
+            row.seq = seqParsed;
+        }
+        out.push(row);
+    }
+    return out;
+}
+
 function assistantTurnsFromAssistantQueries_(cx) {
     const aqSrc = cx.assistant_queries;
     const aqList =
@@ -4620,6 +4701,8 @@ app.get(PATHNAME_CONVERSATION_TRANSCRIPT_JSON, async (req, res) => {
         let sheet = null;
         /** @type {Record<string, unknown> | null} */
         let firestoreRec = null;
+        /** @type {Record<string, unknown> | null} */
+        let liveCx = null;
 
         if (!SHEETS_DISABLED) {
             try {
@@ -4652,7 +4735,7 @@ app.get(PATHNAME_CONVERSATION_TRANSCRIPT_JSON, async (req, res) => {
                         form_id: rec.form_id
                     };
                 }
-                const liveCx = await fetchSessionChatTranscriptContext(session);
+                liveCx = await fetchSessionChatTranscriptContext(session);
                 if (liveCx && typeof liveCx === "object") {
                     const liveTurns = transcriptTurnsFromClientContext_(liveCx);
                     if (liveTurns.length) {
@@ -4753,6 +4836,28 @@ app.get(PATHNAME_CONVERSATION_TRANSCRIPT_JSON, async (req, res) => {
             }
         }
 
+        if (!assistantTurnCount_(turns)) {
+            /** @type {unknown[][]} */
+            const recoveryArrays = [];
+            if (firestoreRec?.client_context) {
+                const rawCx = /** @type {Record<string, unknown>} */ (firestoreRec.client_context);
+                if (Array.isArray(rawCx.chat_transcript)) {
+                    recoveryArrays.push(/** @type {unknown[]} */ (rawCx.chat_transcript));
+                }
+            }
+            if (liveCx && Array.isArray(liveCx.chat_transcript)) {
+                recoveryArrays.push(/** @type {unknown[]} */ (liveCx.chat_transcript));
+            }
+            for (let ri = 0; ri < recoveryArrays.length; ri += 1) {
+                const recovered = transcriptTurnsLenientRecoveryFromRawChat_(recoveryArrays[ri]);
+                if (recovered.length) {
+                    turns = mergeConversationTranscriptTurnSources_(turns, recovered);
+                    sourceParts.push("recovery_assistant_rows");
+                    break;
+                }
+            }
+        }
+
         turns = orderTranscriptTurnsForDisplay_(turns);
         turns = dedupeTranscriptTurnsForDisplay_(turns);
 
@@ -4778,6 +4883,24 @@ app.get(PATHNAME_CONVERSATION_TRANSCRIPT_JSON, async (req, res) => {
         transcript_fallback = "";
         const source = sourceParts.length ? sourceParts.join("+") : "none";
 
+        const rawLeadArr =
+            firestoreRec?.client_context
+            && typeof firestoreRec.client_context === "object"
+            && Array.isArray(/** @type {Record<string, unknown>} */ (firestoreRec.client_context).chat_transcript)
+                ? /** @type {unknown[]} */ (/** @type {Record<string, unknown>} */ (firestoreRec.client_context).chat_transcript)
+                : [];
+        const rawLiveArr =
+            liveCx && Array.isArray(liveCx.chat_transcript) ? /** @type {unknown[]} */ (liveCx.chat_transcript) : [];
+        const countRawAssistant = (arr) =>
+            arr.filter(
+                (it) =>
+                    it
+                    && typeof it === "object"
+                    && String(/** @type {{ role?: unknown }} */ (it).role || "")
+                        .trim()
+                        .toLowerCase() === "assistant"
+            ).length;
+
         return res.json({
             ok: true,
             session,
@@ -4786,6 +4909,23 @@ app.get(PATHNAME_CONVERSATION_TRANSCRIPT_JSON, async (req, res) => {
             sheet,
             turns,
             transcript_fallback,
+            transcript_stats: {
+                assistant_turns: assistantTurnCount_(turns),
+                user_turns: turns.filter((t) => t && t.role === "user").length,
+                stored_lead_assistant_rows: countRawAssistant(rawLeadArr),
+                stored_session_assistant_rows: countRawAssistant(rawLiveArr),
+                assistant_queries_count: Array.isArray(
+                    firestoreRec?.client_context
+                    && typeof firestoreRec.client_context === "object"
+                    && /** @type {Record<string, unknown>} */ (firestoreRec.client_context).assistant_queries
+                )
+                    ? /** @type {unknown[]} */ (
+                          /** @type {Record<string, unknown>} */ (firestoreRec.client_context).assistant_queries
+                      ).length
+                    : liveCx && Array.isArray(liveCx.assistant_queries)
+                      ? liveCx.assistant_queries.length
+                      : 0
+            },
             transcript_time_zone: getConversationDateTimeZoneForTranscript(),
             transcript_time_includes_date: transcriptTimeIncludesDateFromEnv_()
         });

@@ -1011,7 +1011,29 @@
             return;
           }
 
-          thread.innerHTML = '<div class="day-line">Messages</div>';
+          var stats = json.transcript_stats && typeof json.transcript_stats === "object" ? json.transcript_stats : null;
+          var assistantN = 0;
+          for (var ai = 0; ai < turns.length; ai += 1) {
+            if (turns[ai] && turns[ai].role === "assistant") assistantN += 1;
+          }
+
+          thread.innerHTML = "";
+          if (assistantN === 0 && stats) {
+            var diag =
+              '<div class="empty-hint" style="margin-bottom:12px">User lines are present but no bot lines are in this transcript. ';
+            if ((stats.stored_lead_assistant_rows || 0) > 0 || (stats.stored_session_assistant_rows || 0) > 0) {
+              diag +=
+                "The server has stored assistant data — redeploy the API to the latest build and reload. ";
+            } else {
+              diag += "Publish the latest company.js on the chat site and test with a new session. ";
+            }
+            diag += "Source: " + escapeHtml(String(json.source || "")) + ".</div>";
+            thread.innerHTML = diag;
+          }
+          var dayLine = document.createElement("div");
+          dayLine.className = "day-line";
+          dayLine.textContent = "Messages";
+          thread.appendChild(dayLine);
           for (var i = 0; i < turns.length; i++) {
             var t = turns[i];
             var role = t && t.role === "assistant" ? "assistant" : "user";
