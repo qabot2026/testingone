@@ -240,7 +240,7 @@ function isIdleEndConversationEnabled_() {
 
 function getIdleEndConversationMs_() {
     const n = IDLE_END_CONVERSATION_CONFIG.idleMs;
-    if (typeof n === "number" && Number.isFinite(n) && n >= 30000) {
+    if (typeof n === "number" && Number.isFinite(n) && n >= 10000) {
         return Math.min(3600000, Math.round(n));
     }
     return IDLE_END_CONVERSATION_DEFAULT_MS;
