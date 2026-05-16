@@ -14386,8 +14386,45 @@ function extractAssistantVisibleTextsDeepFallback_(event) {
  */
 function normalizeChatTranscriptCompareText_(text) {
     return String(text || "")
+        .replace(/\s{2,}\n/g, " ")
+        .replace(/\r\n/g, "\n")
+        .replace(/\n+/g, " ")
         .trim()
         .replace(/\s+/g, " ");
+}
+
+/**
+ * Dialogflow often returns one form summary as multiple lines; store/compare as one assistant bubble.
+ *
+ * @param {string[]} lines
+ * @returns {string[]}
+ */
+function coalesceAssistantTranscriptLines_(lines) {
+    if (!lines || !lines.length) {
+        return [];
+    }
+    const parts = [];
+    for (let i = 0; i < lines.length; i += 1) {
+        const t = typeof lines[i] === "string" ? lines[i].trim() : "";
+        if (t) {
+            parts.push(t);
+        }
+    }
+    if (!parts.length) {
+        return [];
+    }
+    if (parts.length === 1) {
+        return parts;
+    }
+    const joined = parts.join("  \n");
+    const last = parts[parts.length - 1];
+    if (
+        /thank you for sharing\.?$/i.test(last)
+        || parts.every((p) => /\s-\s/.test(p))
+    ) {
+        return [joined];
+    }
+    return parts;
 }
 
 /** Widget form confirm bubble (`Name - … Thank you for sharing.`). */
@@ -14418,7 +14455,8 @@ function chatTranscriptAlreadyHasAssistantText_(transcript, text) {
 }
 
 function appendChatTranscriptAssistantLines_(lines) {
-    if (!lines || !lines.length) {
+    const batch = coalesceAssistantTranscriptLines_(lines);
+    if (!batch.length) {
         return;
     }
     try {
@@ -14432,8 +14470,8 @@ function appendChatTranscriptAssistantLines_(lines) {
             typeof prev.chat_transcript_seq === "number" && Number.isFinite(prev.chat_transcript_seq)
                 ? prev.chat_transcript_seq
                 : 0;
-        for (let i = 0; i < lines.length; i += 1) {
-            const raw = lines[i];
+        for (let i = 0; i < batch.length; i += 1) {
+            const raw = batch[i];
             const trimmed = typeof raw === "string" ? raw.trim() : "";
             if (!trimmed) {
                 continue;
@@ -14442,14 +14480,7 @@ function appendChatTranscriptAssistantLines_(lines) {
                 trimmed.length > MAX_CHAT_TRANSCRIPT_TEXT_CHARS
                     ? `${trimmed.slice(0, MAX_CHAT_TRANSCRIPT_TEXT_CHARS)}…`
                     : trimmed;
-            const last = transcript.length ? transcript[transcript.length - 1] : null;
-            if (last && last.role === "assistant" && last.text === text) {
-                continue;
-            }
-            if (
-                isWidgetFormThankYouSummaryLine_(text)
-                && chatTranscriptAlreadyHasAssistantText_(transcript, text)
-            ) {
+            if (chatTranscriptAlreadyHasAssistantText_(transcript, text)) {
                 continue;
             }
             seq += 1;
@@ -16003,16 +16034,11 @@ function cloneClientContextWithTranscriptAssistantTurn_(ctx, assistantPlain) {
         typeof base.chat_transcript_seq === "number" && Number.isFinite(base.chat_transcript_seq)
             ? base.chat_transcript_seq
             : 0;
-    seq += 1;
     const text =
         raw.length > MAX_CHAT_TRANSCRIPT_TEXT_CHARS
             ? `${raw.slice(0, MAX_CHAT_TRANSCRIPT_TEXT_CHARS)}…`
             : raw;
-    const last = transcript.length ? transcript[transcript.length - 1] : null;
-    const duplicateLast = !!(last && last.role === "assistant" && last.text === text);
-    const duplicateForm =
-        isWidgetFormThankYouSummaryLine_(text) && chatTranscriptAlreadyHasAssistantText_(transcript, text);
-    if (!duplicateLast && !duplicateForm) {
+    if (!chatTranscriptAlreadyHasAssistantText_(transcript, text)) {
         seq += 1;
         transcript.push({ role: "assistant", text, at: Date.now(), seq });
     }
@@ -16033,7 +16059,18 @@ function renderContactFormSubmissionResponse(payload) {
 
     renderBotPersona(activeDfMessenger, Date.now());
     activeDfMessenger.renderCustomText(responseText, true);
-    appendChatTranscriptAssistantLines_([responseText]);
+    try {
+        const prev = readStoredClientContext();
+        const tr =
+            prev.chat_transcript && Array.isArray(prev.chat_transcript)
+                ? prev.chat_transcript
+                : [];
+        if (!chatTranscriptAlreadyHasAssistantText_(tr, responseText)) {
+            appendChatTranscriptAssistantLines_([responseText]);
+        }
+    } catch {
+        appendChatTranscriptAssistantLines_([responseText]);
+    }
 }
 
 /**

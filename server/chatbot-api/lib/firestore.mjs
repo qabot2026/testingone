@@ -126,6 +126,16 @@ function maxChatTranscriptSeq_(arr) {
 
 const CHAT_TRANSCRIPT_MERGE_CAP = 120;
 
+/** @param {unknown} text */
+function normalizeTranscriptTextKey_(text) {
+    return String(text ?? "")
+        .replace(/\s{2,}\n/g, " ")
+        .replace(/\r\n/g, "\n")
+        .replace(/\n+/g, " ")
+        .trim()
+        .replace(/\s+/g, " ");
+}
+
 /**
  * Union-merge widget transcript arrays (never drop a longer history because `seq` advanced on a shorter slice).
  *
@@ -168,11 +178,15 @@ function mergeChatTranscriptArrays_(prev, next) {
                     : typeof atRaw === "string" && Number.isFinite(Number(atRaw.trim()))
                       ? Number(atRaw.trim())
                       : NaN;
-            const key = Number.isFinite(seq)
-                ? `seq:${seq}|${role}`
-                : Number.isFinite(at)
-                  ? `at:${at}|${role}|${text}`
-                  : `ord:${byKey.size}|${role}|${text}`;
+            const textNorm = normalizeTranscriptTextKey_(text);
+            const key =
+                role === "assistant" && textNorm
+                    ? `asst|${textNorm}`
+                    : Number.isFinite(seq)
+                      ? `seq:${seq}|${role}`
+                      : Number.isFinite(at)
+                        ? `at:${at}|${role}|${textNorm}`
+                        : `ord:${byKey.size}|${role}|${textNorm}`;
             if (!byKey.has(key)) {
                 byKey.set(key, o);
             }

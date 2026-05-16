@@ -3877,13 +3877,20 @@ function mergeConversationTranscriptTurnSources_(a, b) {
                   ? Number(String(rawSeq).trim())
                   : NaN;
         const seq = Number.isFinite(seqParsed) ? seqParsed : undefined;
-        /** Without `seq`, `role|text|at` falsely dedupes multiple bot bubbles in the same millisecond from the Sheet. */
-        const sig =
-            typeof atMs === "number" && Number.isFinite(atMs)
-                ? typeof seq === "number"
-                    ? `${turn.role}|${String(turn.text).trim()}|${atMs}|seq${seq}`
-                    : `${turn.role}|${String(turn.text).trim()}|${atMs}|o${mergeOrd}`
-                : transcriptTurnMergeDedupeKey_(turn, noAtDupCount);
+        const role = turn.role === "assistant" ? "assistant" : "user";
+        const textTrim = String(turn.text || "").trim();
+        /** Assistant: same bubble re-imported with new `seq`/`at` from widget + Firestore — dedupe by text. */
+        let sig;
+        if (role === "assistant" && textTrim) {
+            sig = `asst|${transcriptAssistantCompareNorm_(textTrim)}`;
+        } else if (typeof atMs === "number" && Number.isFinite(atMs)) {
+            sig =
+                typeof seq === "number"
+                    ? `${role}|${textTrim}|${atMs}|seq${seq}`
+                    : `${role}|${textTrim}|${atMs}|o${mergeOrd}`;
+        } else {
+            sig = transcriptTurnMergeDedupeKey_(turn, noAtDupCount);
+        }
         if (!sig || seen.has(sig)) {
             continue;
         }
@@ -3900,7 +3907,12 @@ function mergeConversationTranscriptTurnSources_(a, b) {
     }
     for (let u = 0; u < noAtA.length; u += 1) {
         const t = noAtA[u];
-        const sig = transcriptTurnMergeDedupeKey_(t, noAtDupCount);
+        const roleNoAt = t.role === "assistant" ? "assistant" : "user";
+        const textNoAt = String(t.text || "").trim();
+        const sig =
+            roleNoAt === "assistant" && textNoAt
+                ? `asst|${transcriptAssistantCompareNorm_(textNoAt)}`
+                : transcriptTurnMergeDedupeKey_(t, noAtDupCount);
         if (!sig || seen.has(sig)) {
             continue;
         }
@@ -3916,7 +3928,12 @@ function mergeConversationTranscriptTurnSources_(a, b) {
     }
     for (let v = 0; v < noAtB.length; v += 1) {
         const t = noAtB[v];
-        const sig = transcriptTurnMergeDedupeKey_(t, noAtDupCount);
+        const roleNoAtB = t.role === "assistant" ? "assistant" : "user";
+        const textNoAtB = String(t.text || "").trim();
+        const sig =
+            roleNoAtB === "assistant" && textNoAtB
+                ? `asst|${transcriptAssistantCompareNorm_(textNoAtB)}`
+                : transcriptTurnMergeDedupeKey_(t, noAtDupCount);
         if (!sig || seen.has(sig)) {
             continue;
         }
@@ -3936,6 +3953,16 @@ function mergeConversationTranscriptTurnSources_(a, b) {
 /** Normalizes free-text comparison for Firebase `user_queries` vs transcript user bubbles. */
 function transcriptUserCompareNorm_(text) {
     return String(text ?? "").trim().replace(/\s+/g, " ");
+}
+
+/** Widget form bubbles use `  \\n` between rows; flatten before comparing assistant duplicates. */
+function transcriptAssistantCompareNorm_(text) {
+    return String(text ?? "")
+        .replace(/\s{2,}\n/g, " ")
+        .replace(/\r\n/g, "\n")
+        .replace(/\n+/g, " ")
+        .trim()
+        .replace(/\s+/g, " ");
 }
 
 /**
@@ -3966,7 +3993,7 @@ function isContactFormSubmissionSummaryAssistantText_(text) {
 }
 
 /**
- * Collapse duplicate **form confirmation** assistant bubbles only (multi-source merge / double submit capture).
+ * Collapse duplicate assistant bubbles (same text re-imported with new `seq`/`at` from widget + Firestore merge).
  *
  * @param {{ role: string, text: string, at?: number, seq?: number }[]} turns
  * @returns {{ role: string, text: string, at?: number, seq?: number }[]}
@@ -3976,7 +4003,7 @@ function dedupeTranscriptTurnsForDisplay_(turns) {
         return Array.isArray(turns) ? turns.slice() : [];
     }
     /** @type {Set<string>} */
-    const seenFormSummary = new Set();
+    const seenAssistant = new Set();
     /** @type {{ role: string, text: string, at?: number, seq?: number }[]} */
     const out = [];
     for (let i = 0; i < turns.length; i += 1) {
@@ -3989,12 +4016,12 @@ function dedupeTranscriptTurnsForDisplay_(turns) {
         if (!text) {
             continue;
         }
-        if (role === "assistant" && isContactFormSubmissionSummaryAssistantText_(text)) {
-            const key = transcriptUserCompareNorm_(text);
-            if (seenFormSummary.has(key)) {
+        if (role === "assistant") {
+            const key = transcriptAssistantCompareNorm_(text);
+            if (seenAssistant.has(key)) {
                 continue;
             }
-            seenFormSummary.add(key);
+            seenAssistant.add(key);
         }
         const row = /** @type {{ role: string, text: string, at?: number, seq?: number }} */ ({ role, text });
         if (typeof t.at === "number" && Number.isFinite(t.at)) {
