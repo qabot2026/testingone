@@ -419,39 +419,51 @@
     }
     table.sheet thead th.col-conv-link,
     table.sheet tbody td.col-conv-link {
-      min-width: 52px;
-      max-width: 64px;
-      width: 52px;
-      padding: 4px 6px;
+      min-width: 44px;
+      max-width: 52px;
+      width: 48px;
+      padding: 2px 4px;
+      text-align: center;
+    }
+    table.sheet tbody td.col-conv-link {
+      cursor: default;
     }
     .conv-link-eye {
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      width: 32px;
-      height: 32px;
-      margin: 0 auto;
-      padding: 0;
-      border: 1px solid rgba(148, 163, 184, 0.55);
-      border-radius: 8px;
-      background: #fff;
-      color: #2563eb;
+      margin: 0;
+      padding: 5px;
+      border: none;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--brand-strong);
       cursor: pointer;
       vertical-align: middle;
-      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+      box-shadow: none;
+      line-height: 0;
+      transition: color 0.15s ease, background 0.15s ease, transform 0.15s ease;
     }
     .conv-link-eye:hover {
-      background: #eff6ff;
-      border-color: #93c5fd;
-      color: #1d4ed8;
+      background: var(--brand-soft);
+      color: var(--brand);
+      transform: scale(1.12);
+    }
+    .conv-link-eye:active {
+      transform: scale(1.04);
     }
     .conv-link-eye:focus-visible {
-      outline: 2px solid #2563eb;
+      outline: 2px solid var(--brand);
       outline-offset: 2px;
     }
+    .conv-link-eye--disabled {
+      cursor: not-allowed;
+      opacity: 0.28;
+      pointer-events: none;
+    }
     .conv-link-eye svg {
-      width: 18px;
-      height: 18px;
+      width: 21px;
+      height: 21px;
       display: block;
       pointer-events: none;
     }
@@ -2127,7 +2139,11 @@
       }
 
       var CONV_LINK_EYE_SVG =
-        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>';
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" aria-hidden="true">' +
+        '<path d="M2.25 12c2.2-4.2 5.6-6.5 9.75-6.5s7.55 2.3 9.75 6.5c-2.2 4.2-5.6 6.5-9.75 6.5S4.45 16.2 2.25 12Z" stroke="currentColor" stroke-width="1.65" stroke-linejoin="round"/>' +
+        '<circle cx="12" cy="12" r="2.85" fill="currentColor" opacity="0.22"/>' +
+        '<circle cx="12" cy="12" r="1.35" fill="currentColor"/>' +
+        "</svg>";
 
       function appendChatScriptConvLinkCell(td, row) {
         td.classList.add("col-conv-link");
@@ -2137,20 +2153,19 @@
           ? "Open conversation transcript (new tab)"
           : "No session id on this row";
         td._clipboardValue = url || "";
-        if (!url) {
-          td.appendChild(document.createTextNode("—"));
-          return;
-        }
         var btn = document.createElement("button");
         btn.type = "button";
-        btn.className = "conv-link-eye";
+        btn.className = "conv-link-eye" + (url ? "" : " conv-link-eye--disabled");
         btn.setAttribute("aria-label", "Open conversation transcript");
+        btn.disabled = !url;
         btn.innerHTML = CONV_LINK_EYE_SVG;
-        btn.addEventListener("click", function (e) {
-          e.stopPropagation();
-          e.preventDefault();
-          window.open(url, "_blank", "noopener,noreferrer");
-        });
+        if (url) {
+          btn.addEventListener("click", function (e) {
+            e.stopPropagation();
+            e.preventDefault();
+            window.open(url, "_blank", "noopener,noreferrer");
+          });
+        }
         td.appendChild(btn);
       }
 
