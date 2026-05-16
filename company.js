@@ -13686,6 +13686,7 @@ function ensureAssistantTranscriptCapturedForDfEvent_(event) {
         assistantLines = assistantLines.filter((line) => !isTranscriptNoiseLine_(line));
     }
     if (assistantLines.length) {
+        assistantLines = dedupeAssistantTranscriptTextLines_(assistantLines);
         const lastRow = lastAssistantTranscriptRow_(undefined);
         const filtered = assistantLines.filter(
             (line) => !plainTextRedundantWithAssistantRow_(line, lastRow)
@@ -14565,8 +14566,9 @@ function responseHasVisibleBotText_(event) {
  * @param {unknown} m
  * @param {string[]} parts
  * @param {WeakSet<object>} seen
+ * @param {Set<string>} textNorms
  */
-function pushAssistantVisibleTextsFromDfMessage_(m, parts, seen) {
+function pushAssistantVisibleTextsFromDfMessage_(m, parts, seen, textNorms) {
     if (!m || typeof m !== "object") {
         return;
     }
@@ -14576,21 +14578,35 @@ function pushAssistantVisibleTextsFromDfMessage_(m, parts, seen) {
     }
     seen.add(obj);
 
+    /** @param {string} raw */
+    const pushUnique = (raw) => {
+        const t = typeof raw === "string" ? raw.trim() : "";
+        if (!t || isTranscriptNoiseLine_(t)) {
+            return;
+        }
+        const norm = normalizeChatTranscriptCompareText_(t);
+        if (!norm || textNorms.has(norm)) {
+            return;
+        }
+        textNorms.add(norm);
+        parts.push(t);
+    };
+
     const cxText = obj.text && typeof obj.text === "object" && Array.isArray(obj.text.text) ? obj.text.text : null;
     if (cxText) {
         for (const s of cxText) {
             if (typeof s === "string" && s.trim()) {
-                parts.push(s.trim());
+                pushUnique(s);
             }
         }
     } else if (typeof obj.text === "string" && obj.text.trim()) {
-        parts.push(obj.text.trim());
+        pushUnique(obj.text);
     }
 
     for (const k of ["outputText", "displayText"]) {
         const v = obj[k];
         if (typeof v === "string" && v.trim()) {
-            parts.push(v.trim());
+            pushUnique(v);
         }
     }
 
@@ -14603,7 +14619,7 @@ function pushAssistantVisibleTextsFromDfMessage_(m, parts, seen) {
             const msgs = /** @type {{ messages?: unknown[] }} */ (fr).messages;
             if (Array.isArray(msgs)) {
                 for (let i = 0; i < msgs.length; i += 1) {
-                    pushAssistantVisibleTextsFromDfMessage_(msgs[i], parts, seen);
+                    pushAssistantVisibleTextsFromDfMessage_(msgs[i], parts, seen, textNorms);
                 }
             }
         }
@@ -14614,7 +14630,7 @@ function pushAssistantVisibleTextsFromDfMessage_(m, parts, seen) {
         const msgs = /** @type {{ messages?: unknown[] }} */ (frTop).messages;
         if (Array.isArray(msgs)) {
             for (let i = 0; i < msgs.length; i += 1) {
-                pushAssistantVisibleTextsFromDfMessage_(msgs[i], parts, seen);
+                pushAssistantVisibleTextsFromDfMessage_(msgs[i], parts, seen, textNorms);
             }
         }
     }
@@ -14634,10 +14650,11 @@ function extractAssistantVisibleTextsFromDfResponse_(event) {
     /** @type {string[]} */
     const parts = [];
     const seen = new WeakSet();
+    const textNorms = new Set();
     for (const m of [...responseMessages, ...messengerMessages, ...topMessages]) {
-        pushAssistantVisibleTextsFromDfMessage_(m, parts, seen);
+        pushAssistantVisibleTextsFromDfMessage_(m, parts, seen, textNorms);
     }
-    return parts;
+    return dedupeAssistantTranscriptTextLines_(parts);
 }
 
 /**
@@ -14744,22 +14761,38 @@ function normalizeChatTranscriptCompareText_(text) {
 }
 
 /**
- * Dialogflow often returns one form summary as multiple lines; store/compare as one assistant bubble.
+ * Drop repeated assistant lines (CX often sends the same prompt in responseMessages + messenger messages).
  *
  * @param {string[]} lines
  * @returns {string[]}
  */
+function dedupeAssistantTranscriptTextLines_(lines) {
+    if (!Array.isArray(lines) || !lines.length) {
+        return [];
+    }
+    /** @type {string[]} */
+    const out = [];
+    const norms = new Set();
+    for (let i = 0; i < lines.length; i += 1) {
+        const t = typeof lines[i] === "string" ? lines[i].trim() : "";
+        if (!t) {
+            continue;
+        }
+        const norm = normalizeChatTranscriptCompareText_(t);
+        if (!norm || norms.has(norm)) {
+            continue;
+        }
+        norms.add(norm);
+        out.push(t);
+    }
+    return out;
+}
+
 function coalesceAssistantTranscriptLines_(lines) {
     if (!lines || !lines.length) {
         return [];
     }
-    const parts = [];
-    for (let i = 0; i < lines.length; i += 1) {
-        const t = typeof lines[i] === "string" ? lines[i].trim() : "";
-        if (t) {
-            parts.push(t);
-        }
-    }
+    const parts = dedupeAssistantTranscriptTextLines_(lines);
     if (!parts.length) {
         return [];
     }
@@ -15351,11 +15384,18 @@ function extractAssistantTranscriptStructuredTurns_(event) {
             text = msg;
         }
     } else {
-        const textLines = extractAssistantVisibleTextsFromDfResponse_(event).filter((line) =>
-            !isTranscriptNoiseLine_(line)
+        const textLines = dedupeAssistantTranscriptTextLines_(
+            extractAssistantVisibleTextsFromDfResponse_(event).filter((line) =>
+                !isTranscriptNoiseLine_(line)
+            )
         );
         const coalesced = coalesceAssistantTranscriptLines_(textLines);
-        text = coalesced.length ? coalesced.join(coalesced.length > 1 ? "\n\n" : "") : "";
+        text =
+            coalesced.length === 1
+                ? coalesced[0]
+                : coalesced.length
+                  ? coalesced.join(coalesced.length > 1 ? "\n\n" : "")
+                  : "";
     }
 
     if (!rich && !text) {
@@ -15487,7 +15527,7 @@ function appendChatTranscriptAssistantEntries_(entries) {
 }
 
 function appendChatTranscriptAssistantLines_(lines) {
-    const batch = coalesceAssistantTranscriptLines_(lines);
+    const batch = coalesceAssistantTranscriptLines_(dedupeAssistantTranscriptTextLines_(lines));
     if (!batch.length) {
         return;
     }
@@ -15574,10 +15614,18 @@ function maybeRecordRenderedBotMarkdownForTranscript_(markdown) {
     if (plain.length < 3) {
         return;
     }
-    const lastRow = lastAssistantTranscriptRow_(undefined);
+    const prev = readStoredClientContext();
+    const tr =
+        prev.chat_transcript && Array.isArray(prev.chat_transcript)
+            ? prev.chat_transcript
+            : [];
+    if (chatTranscriptAlreadyHasAssistantText_(tr, plain)) {
+        return;
+    }
+    const lastRow = lastAssistantTranscriptRow_(tr);
     if (
         plainTextRedundantWithAssistantRow_(plain, lastRow)
-        || assistantTranscriptCapturedWithinMs_(3500, undefined)
+        || assistantTranscriptCapturedWithinMs_(3500, tr)
     ) {
         return;
     }

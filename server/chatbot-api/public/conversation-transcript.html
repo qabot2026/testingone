@@ -712,6 +712,7 @@
         var t = typeof text === "string" ? text.trim() : "";
         if (!t) return t;
         var chipLabels = rich ? chipLabelsFromRich(rich) : [];
+        var seenLine = {};
         return t
           .split(/\r?\n/)
           .map(function (ln) {
@@ -725,6 +726,9 @@
               if (/^https?:\/\//i.test(ln)) return false;
               if (/^card_\d+$/i.test(ln)) return false;
             }
+            var norm = ln.toLowerCase().replace(/\s+/g, " ");
+            if (seenLine[norm]) return false;
+            seenLine[norm] = 1;
             return true;
           })
           .join("\n")

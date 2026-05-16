@@ -4044,6 +4044,9 @@ function transcriptTurnsFromStoredChatArray_(arr) {
                 continue;
             }
         }
+        if (role === "assistant") {
+            text = dedupeTranscriptDisplayText_(text);
+        }
         const atMs = coerceTranscriptAtMs_(o.at);
         const rawSeq = o.seq;
         const seqParsed =
@@ -4353,6 +4356,31 @@ function transcriptAssistantCompareNorm_(text) {
         .replace(/\n+/g, " ")
         .trim()
         .replace(/\s+/g, " ");
+}
+
+/** @param {unknown} text */
+function dedupeTranscriptDisplayText_(text) {
+    const t = String(text ?? "").trim();
+    if (!t) {
+        return "";
+    }
+    const lines = t.split(/\r?\n/).map((ln) => ln.trim()).filter(Boolean);
+    if (lines.length < 2) {
+        return t;
+    }
+    /** @type {string[]} */
+    const out = [];
+    const seen = new Set();
+    for (let i = 0; i < lines.length; i += 1) {
+        const ln = lines[i];
+        const norm = transcriptAssistantCompareNorm_(ln);
+        if (!norm || seen.has(norm)) {
+            continue;
+        }
+        seen.add(norm);
+        out.push(ln);
+    }
+    return out.join("\n");
 }
 
 /**
