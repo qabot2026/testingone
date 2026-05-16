@@ -69,8 +69,8 @@ function loadSheetExtraMappingsFromDisk_() {
 }
 
 const SPREADSHEET_ID = (process.env.SHEETS_SPREADSHEET_ID || "").trim();
-// Default schema: no Form ID (A–R). Col A Date, B Time (12h TZ from SHEETS_CONV_DATETIME_TZ), then name…
-const RANGE = (process.env.SHEETS_RANGE || "Sheet1!A:R").trim();
+// Default schema: no Form ID (A–S). Col A Chat transcript JSON, B Date, C Time (12h TZ from SHEETS_CONV_DATETIME_TZ), then name…
+const RANGE = (process.env.SHEETS_RANGE || "Sheet1!A:S").trim();
 /**
  * Optional A1 column letter (e.g. S). When set, new/updated rows get =HYPERLINK(...) to open that row in this spreadsheet.
  * Leave unset to skip (default). Add a matching header on row 1 in your sheet if you want a label.
@@ -78,6 +78,7 @@ const RANGE = (process.env.SHEETS_RANGE || "Sheet1!A:R").trim();
 const SHEETS_ROW_OPEN_LINK_COLUMN = (process.env.SHEETS_ROW_OPEN_LINK_COLUMN || "").trim().toUpperCase();
 /**
  * Optional: A1 column letter (e.g. `T`) or rely on row-1 header aliases (Chat transcript JSON, …).
+ * When unset, transcript JSON defaults to column A (Chat transcript first in default A–S row order).
  * When set / matched, session sync and contact-form writes store the widget `chat_transcript` JSON so staff transcripts include bot lines even if Firestore is empty or client_context drops them.
  */
 const SHEETS_CHAT_TRANSCRIPT_JSON_COLUMN = (process.env.SHEETS_CHAT_TRANSCRIPT_JSON_COLUMN || "").trim().toUpperCase();
@@ -108,8 +109,12 @@ const SYNC_DASHBOARD_ON_APPEND = /^(1|true|yes)$/i.test(
     String(process.env.SHEETS_SYNC_DASHBOARD_ON_APPEND || "").trim()
 );
 
-/** Session id column (0-based) when using default Date + Time lead layout (column J); legacy single Conv column layout used I (index 8). */
-const STANDARD_SESSION_COLUMN_INDEX0_NEW = 9;
+/**
+ * Session id column (0-based): K (10) with Chat transcript in A; J (9) legacy Date-first A–R row;
+ * I (8) older single “Conv” column layout.
+ */
+const STANDARD_SESSION_COLUMN_INDEX0_PRIMARY = 10;
+const STANDARD_SESSION_COLUMN_INDEX0_PRE_TRANSCRIPT = 9;
 const STANDARD_SESSION_COLUMN_INDEX0_LEGACY = 8;
 const DEDUP_LOOKBACK_ROWS = Math.max(
     10,
@@ -161,7 +166,7 @@ function conversationSheetBaseDate_(d) {
 }
 
 /**
- * Conversation **date only** for Sheets column A (same TZ as combined stamp).
+ * Conversation **date only** for Sheets column B when Chat transcript is column A (same TZ as combined stamp).
  * @param {Date} [d]
  * @returns {string}
  */
@@ -187,7 +192,7 @@ export function formatConversationDateForSheet(d = new Date()) {
 }
 
 /**
- * Conversation **time only** for Sheets column B (12-hour clock).
+ * Conversation **time only** for Sheets column C (12-hour clock) when Chat transcript occupies column A.
  * @param {Date} [d]
  * @returns {string}
  */
@@ -240,7 +245,7 @@ export function formatConversationDateTimeForSheet(d = new Date()) {
 }
 
 /**
- * Force append into our schema columns (A–R: Date, Time, then lead fields…).
+ * Force append into our schema columns (A–S: Chat transcript, Date, Time, then lead fields…).
  *
  * We previously used `A:Z` to avoid truncation when env was set to `A:H`, but `values.append`
  * may choose a "table" anchored later in the sheet and append at an unexpected start column
@@ -250,7 +255,7 @@ export function formatConversationDateTimeForSheet(d = new Date()) {
  */
 function appendRangeSchemaWidth_(raw) {
     const tab = tabNameFromRange(raw);
-    return `${tab}!A:R`;
+    return `${tab}!A:S`;
 }
 
 /**
@@ -571,12 +576,12 @@ function buildConfiguredExtraCellUpdates_(tab, rowNumber, sources, standardUpdat
     return out;
 }
 
-let headerCache_ = { tab: "", at: 0, mobileColIdx: 3, mobileColLetter: "D" };
+let headerCache_ = { tab: "", at: 0, mobileColIdx: 4, mobileColLetter: "E" };
 const HEADER_CACHE_TTL_MS = 5 * 60 * 1000;
 
 /**
  * Detect mobile column position by header row.
- * Falls back to the default schema (column D) if not found.
+ * Falls back to the default schema (column E) if not found.
  *
  * @param {import("googleapis").sheets_v4.Sheets} sheets
  * @param {string} tab
@@ -586,8 +591,8 @@ async function getMobileColumnInfo_(sheets, tab) {
     if (headerCache_.tab === tab && now - headerCache_.at < HEADER_CACHE_TTL_MS) {
         return headerCache_;
     }
-    let mobileColIdx = 3;
-    let mobileColLetter = "D";
+    let mobileColIdx = 4;
+    let mobileColLetter = "E";
     try {
         const got = await sheets.spreadsheets.values.get({
             spreadsheetId: SPREADSHEET_ID,
@@ -621,7 +626,7 @@ async function getMobileColumnInfo_(sheets, tab) {
     return headerCache_;
 }
 
-let repeatedHeaderCache_ = { tab: "", at: 0, repeatedColIdx: 7, repeatedColLetter: "H" };
+let repeatedHeaderCache_ = { tab: "", at: 0, repeatedColIdx: 8, repeatedColLetter: "I" };
 
 /** Sheet-facing label when we only know repeat from session scan (`false` ⇒ first-time). */
 function repeatedUserLabelFromRepeatedFlag_(repeatedAcrossSessions) {
@@ -868,9 +873,9 @@ async function getRepeatedColumnInfo_(sheets, tab) {
     if (repeatedHeaderCache_.tab === tab && now - repeatedHeaderCache_.at < HEADER_CACHE_TTL_MS) {
         return repeatedHeaderCache_;
     }
-    /** Default A–R schema: Repeated User is column H (index 7). */
-    let repeatedColIdx = 7;
-    let repeatedColLetter = "H";
+    /** Default A–S schema: Repeated User is column I (index 8). */
+    let repeatedColIdx = 8;
+    let repeatedColLetter = "I";
     try {
         const got = await sheets.spreadsheets.values.get({
             spreadsheetId: SPREADSHEET_ID,
@@ -895,7 +900,7 @@ async function getRepeatedColumnInfo_(sheets, tab) {
                 break;
             }
         }
-        if (repeatedColIdx === 7) {
+        if (repeatedColIdx === 8) {
             for (let i = 0; i < header.length; i += 1) {
                 const k = normalizedHeaderKey_(sheetCellString_(header[i]));
                 if (k.includes("repeat") && k.includes("user")) {
@@ -912,10 +917,10 @@ async function getRepeatedColumnInfo_(sheets, tab) {
     return repeatedHeaderCache_;
 }
 
-let userQueriesHeaderCache_ = { tab: "", at: 0, colIdx: 6, colLetter: "G" };
+let userQueriesHeaderCache_ = { tab: "", at: 0, colIdx: 7, colLetter: "H" };
 
 /**
- * Column for merged live-chat `user_queries` CSV — default column G (A–R lead layout).
+ * Column for merged live-chat `user_queries` CSV — default column H (A–S lead layout).
  *
  * @param {import("googleapis").sheets_v4.Sheets} sheets
  * @param {string} tab
@@ -925,8 +930,8 @@ async function getUserQueriesColumnInfo_(sheets, tab) {
     if (userQueriesHeaderCache_.tab === tab && now - userQueriesHeaderCache_.at < HEADER_CACHE_TTL_MS) {
         return userQueriesHeaderCache_;
     }
-    let colIdx = 6;
-    let colLetter = "G";
+    let colIdx = 7;
+    let colLetter = "H";
     try {
         const got = await sheets.spreadsheets.values.get({
             spreadsheetId: SPREADSHEET_ID,
@@ -1007,7 +1012,7 @@ function mobileKeyFromRow_(r, mobileColIdx) {
     }
     const idx = typeof mobileColIdx === "number" && Number.isFinite(mobileColIdx)
         ? mobileColIdx
-        : 3;
+        : 4;
     // Prefer detected mobile column first.
     const primary = mobileKeyFromCell_(r[idx]);
     if (primary) {
@@ -1048,6 +1053,25 @@ function sheetCellString_(v) {
 /** @param {unknown} rawCell sheet cell value before coercion */
 function isBlankSheetCell_(rawCell) {
     return !sheetCellString_(rawCell);
+}
+
+/**
+ * Last 1-based sheet row with any value in column A or B (chat JSON in A, conv. date in B on default schema).
+ * @param {unknown[][]} abRows from `${tab}!A1:B${cap}`
+ */
+function lastDataRow1BasedFromAB_(abRows) {
+    if (!Array.isArray(abRows) || !abRows.length) {
+        return 0;
+    }
+    for (let ri = abRows.length - 1; ri >= 0; ri -= 1) {
+        const row = abRows[ri];
+        const a = row && row[0];
+        const b = row && row[1];
+        if (!isBlankSheetCell_(a) || !isBlankSheetCell_(b)) {
+            return ri + 1;
+        }
+    }
+    return 0;
 }
 
 /** Coerce outbound row cells to plain strings — API payloads must not contain `undefined` (can break inserts). */
@@ -1120,11 +1144,11 @@ function countOtherRowsWithSameMobile_(rows, incomingDigits, mobileColIdx, exclu
         /** @type {unknown[]} */
         const ra = Array.isArray(r) ? r : [];
         let k = mobileKeyFromRow_(ra, mobileColIdx);
+        if (!k && ra.length > 4) {
+            k = mobileKeyFromCell_(ra[4]);
+        }
         if (!k && ra.length > 3) {
             k = mobileKeyFromCell_(ra[3]);
-        }
-        if (!k && ra.length > 2) {
-            k = mobileKeyFromCell_(ra[2]);
         }
         if (k && k === incomingDigits) {
             n += 1;
@@ -1195,7 +1219,8 @@ async function scanSheetTailForDedupeAndRepeat_(sheets, row) {
     for (let i = tail.length - 1; i >= 0; i--) {
         const r = tail[i] || [];
         const existingSid =
-            sheetCellString_(r[STANDARD_SESSION_COLUMN_INDEX0_NEW])
+            sheetCellString_(r[STANDARD_SESSION_COLUMN_INDEX0_PRIMARY])
+            || sheetCellString_(r[STANDARD_SESSION_COLUMN_INDEX0_PRE_TRANSCRIPT])
             || sheetCellString_(r[STANDARD_SESSION_COLUMN_INDEX0_LEGACY]);
         const rowNumber = tailOffset + i + 1; // 1-based row number in the sheet
 
@@ -1372,12 +1397,12 @@ async function updateExistingSessionRow_(sheets, tab, rowNumber, incoming, optio
     const queriesCol = await getUserQueriesColumnInfo_(sheets, tab);
     const got = await sheets.spreadsheets.values.get({
         spreadsheetId: SPREADSHEET_ID,
-        range: `${tab}!A${rowNumber}:R${rowNumber}`
+        range: `${tab}!A${rowNumber}:S${rowNumber}`
     });
     const row = Array.isArray(got.data.values) && got.data.values[0] ? got.data.values[0] : [];
     const colL = columnLetterFromIndex_;
 
-    /** C–E: contact-form submits should overwrite an older chat-sync row when values are present. */
+    /** C–E → D–F on A–S schema: contact-form submits should overwrite an older chat-sync row when values are present. */
     const contactPatchFor = (v, colIdx) => {
         const s = typeof v === "string" ? v.trim() : "";
         if (!s) {
@@ -1401,17 +1426,17 @@ async function updateExistingSessionRow_(sheets, tab, rowNumber, incoming, optio
         return isBlankSheetCell_(row[idx]) ? s : "";
     };
 
-    const name = contactPatchFor(typeof incoming.name === "string" ? incoming.name : "", 2);
-    const mobile = contactPatchFor(typeof incoming.mobile === "string" ? incoming.mobile : "", 3);
-    const email = contactPatchFor(typeof incoming.email === "string" ? incoming.email : "", 4);
-    const channelRaw = patchScalarInto(typeof incoming.channel === "string" ? incoming.channel : "", 5);
+    const name = contactPatchFor(typeof incoming.name === "string" ? incoming.name : "", 3);
+    const mobile = contactPatchFor(typeof incoming.mobile === "string" ? incoming.mobile : "", 4);
+    const email = contactPatchFor(typeof incoming.email === "string" ? incoming.email : "", 5);
+    const channelRaw = patchScalarInto(typeof incoming.channel === "string" ? incoming.channel : "", 6);
     const channel = channelRaw ? formatChannelForSheetDisplay(channelRaw) : "";
-    const deviceTypeRaw = patchScalarInto(typeof incoming.deviceType === "string" ? incoming.deviceType : "", 10);
+    const deviceTypeRaw = patchScalarInto(typeof incoming.deviceType === "string" ? incoming.deviceType : "", 11);
     const deviceType = deviceTypeRaw ? formatDeviceTypeForSheetDisplay(deviceTypeRaw) : "";
     const browserName =
-        patchScalarInto(typeof incoming.browserName === "string" ? incoming.browserName : "", 11);
-    const city = patchScalarInto(typeof incoming.city === "string" ? incoming.city : "", 12);
-    const ip = patchScalarInto(typeof incoming.ip === "string" ? incoming.ip : "", 13);
+        patchScalarInto(typeof incoming.browserName === "string" ? incoming.browserName : "", 12);
+    const city = patchScalarInto(typeof incoming.city === "string" ? incoming.city : "", 13);
+    const ip = patchScalarInto(typeof incoming.ip === "string" ? incoming.ip : "", 14);
 
     const repeatedIncoming = typeof incoming.repeated === "string" ? incoming.repeated.trim() : "";
     const existingRepeatedSem = repeatedUserSheetSemantics_(sheetCellString_(row[repeatedCol.repeatedColIdx]));
@@ -1427,11 +1452,11 @@ async function updateExistingSessionRow_(sheets, tab, rowNumber, incoming, optio
 
     const sourceUrl = patchScalarInto(
         typeof incoming.sourceUrl === "string" ? incoming.sourceUrl : "",
-        8
+        9
     );
     const incomingAbRaw = typeof incoming.appointmentBooked === "string" ? incoming.appointmentBooked : "";
     const desiredAb = appointmentBookedSheetValue_(incomingAbRaw);
-    const existingAbSem = appointmentBookedSheetValue_(sheetCellString_(row[14]));
+    const existingAbSem = appointmentBookedSheetValue_(sheetCellString_(row[15]));
     /** @type {string | null} */
     let appointmentBookedPatch = null;
     if (preferIncomingContact) {
@@ -1443,15 +1468,15 @@ async function updateExistingSessionRow_(sheets, tab, rowNumber, incoming, optio
     }
     const appointmentDate = patchScalarInto(
         typeof incoming.appointmentDate === "string" ? incoming.appointmentDate : "",
-        15
+        16
     );
     const appointmentTime = patchScalarInto(
         typeof incoming.appointmentTime === "string" ? incoming.appointmentTime : "",
-        16
+        17
     );
     const fileLinks = patchScalarInto(
         typeof incoming.fileLinks === "string" ? incoming.fileLinks : "",
-        17
+        18
     );
 
     const existingQueries = sheetCellString_(row[queriesCol.colIdx]);
@@ -1460,22 +1485,22 @@ async function updateExistingSessionRow_(sheets, tab, rowNumber, incoming, optio
 
     /** @type {Array<{ range: string, values: string[][] }>} */
     const data = [];
-    if (name) data.push({ range: `${tab}!${colL(2)}${rowNumber}`, values: [[name]] });
-    if (mobile) data.push({ range: `${tab}!${colL(3)}${rowNumber}`, values: [[mobile]] });
-    if (email) data.push({ range: `${tab}!${colL(4)}${rowNumber}`, values: [[email]] });
-    if (channel) data.push({ range: `${tab}!${colL(5)}${rowNumber}`, values: [[channel]] });
+    if (name) data.push({ range: `${tab}!${colL(3)}${rowNumber}`, values: [[name]] });
+    if (mobile) data.push({ range: `${tab}!${colL(4)}${rowNumber}`, values: [[mobile]] });
+    if (email) data.push({ range: `${tab}!${colL(5)}${rowNumber}`, values: [[email]] });
+    if (channel) data.push({ range: `${tab}!${colL(6)}${rowNumber}`, values: [[channel]] });
     if (repeated) data.push({ range: `${tab}!${repeatedCol.repeatedColLetter}${rowNumber}`, values: [[repeated]] });
-    if (sourceUrl) data.push({ range: `${tab}!${colL(8)}${rowNumber}`, values: [[sourceUrl]] });
-    if (deviceType) data.push({ range: `${tab}!${colL(10)}${rowNumber}`, values: [[deviceType]] });
-    if (browserName) data.push({ range: `${tab}!${colL(11)}${rowNumber}`, values: [[browserName]] });
-    if (city) data.push({ range: `${tab}!${colL(12)}${rowNumber}`, values: [[city]] });
-    if (ip) data.push({ range: `${tab}!${colL(13)}${rowNumber}`, values: [[ip]] });
+    if (sourceUrl) data.push({ range: `${tab}!${colL(9)}${rowNumber}`, values: [[sourceUrl]] });
+    if (deviceType) data.push({ range: `${tab}!${colL(11)}${rowNumber}`, values: [[deviceType]] });
+    if (browserName) data.push({ range: `${tab}!${colL(12)}${rowNumber}`, values: [[browserName]] });
+    if (city) data.push({ range: `${tab}!${colL(13)}${rowNumber}`, values: [[city]] });
+    if (ip) data.push({ range: `${tab}!${colL(14)}${rowNumber}`, values: [[ip]] });
     if (appointmentBookedPatch !== null) {
-        data.push({ range: `${tab}!${colL(14)}${rowNumber}`, values: [[appointmentBookedPatch]] });
+        data.push({ range: `${tab}!${colL(15)}${rowNumber}`, values: [[appointmentBookedPatch]] });
     }
-    if (appointmentDate) data.push({ range: `${tab}!${colL(15)}${rowNumber}`, values: [[appointmentDate]] });
-    if (appointmentTime) data.push({ range: `${tab}!${colL(16)}${rowNumber}`, values: [[appointmentTime]] });
-    if (fileLinks) data.push({ range: `${tab}!${colL(17)}${rowNumber}`, values: [[fileLinks]] });
+    if (appointmentDate) data.push({ range: `${tab}!${colL(16)}${rowNumber}`, values: [[appointmentDate]] });
+    if (appointmentTime) data.push({ range: `${tab}!${colL(17)}${rowNumber}`, values: [[appointmentTime]] });
+    if (fileLinks) data.push({ range: `${tab}!${colL(18)}${rowNumber}`, values: [[fileLinks]] });
     if (userQueriesCsv) {
         data.push({ range: `${tab}!${queriesCol.colLetter}${rowNumber}`, values: [[userQueriesCsv]] });
     }
@@ -1657,7 +1682,7 @@ const SHEET_H_SESSION = [
     "session_id_client"
 ];
 
-/** Header aliases for “Appointment booked” / scheduled (stats); default sheet column index 14 (same as ingest). */
+/** Header aliases for “Appointment booked” / scheduled (stats); default sheet column index 15 (same as ingest). */
 const SHEET_H_APPOINTMENT_BOOKED = [
     "appointmentbooked",
     "appointment_booked",
@@ -1754,7 +1779,7 @@ function pickAppointmentStatsColumnIdx_(headerMap, headersRaw, fallbackIdx) {
     return fallbackIdx;
 }
 
-/** Header aliases for conversation date column (stats + period filter); default column A index 0. */
+/** Header aliases for conversation date column (stats + period filter); default column B index 1 when column A is chat transcript. */
 const SHEET_H_CONV_DATE_CELL = [
     "conversationdate",
     "convdate",
@@ -1954,11 +1979,14 @@ const CHAT_TRANSCRIPT_HEADER_ALIASES = [
     "chat_transcript_json",
     "chat_transcript",
     "chattranscript",
+    "chatscript",
+    "chat_script",
     "df_chat_transcript",
     "conversation_transcript",
     "bot_transcript",
     "assistant_transcript",
-    "chat transcript json"
+    "chat transcript json",
+    "chat script"
 ];
 
 /**
@@ -1972,11 +2000,18 @@ async function resolveChatTranscriptColumnLetter_(sheets, tab) {
         return envCol;
     }
     const headerMap = await getHeaderIndexMap_(sheets, tab);
-    const idx0 = pickHeaderIndex_(headerMap, CHAT_TRANSCRIPT_HEADER_ALIASES, -1);
-    if (idx0 < 0) {
-        return "";
+    const transcriptIdx = firstHeaderIdxFromAliases_(headerMap, CHAT_TRANSCRIPT_HEADER_ALIASES);
+    if (transcriptIdx !== undefined) {
+        return columnLetterFromIndex_(transcriptIdx);
     }
-    return columnLetterFromIndex_(idx0);
+    const convDateIdx = firstHeaderIdxFromAliases_(headerMap, SHEET_H_CONV_DATE_CELL);
+    if (convDateIdx === 1) {
+        return "A";
+    }
+    if (!Object.keys(headerMap).length) {
+        return "A";
+    }
+    return "";
 }
 
 /**
@@ -2153,7 +2188,7 @@ async function buildStandardLeadRowUpdates_(sheets, tab, rowNumber, lead) {
         updates.push({ range: `${tab}!${col(idx0)}${rowNumber}`, values: [[v]] });
     };
 
-    // Prefer declared A–R schema (Date, Time, then lead fields…); aliases correct column when order differs.
+    // Prefer declared A–S schema (Chat transcript, Date, Time, then lead fields…); aliases correct column when order differs.
     put(
         [
             "conversationdate",
@@ -2162,7 +2197,7 @@ async function buildStandardLeadRowUpdates_(sheets, tab, rowNumber, lead) {
             "conversiondate",
             "date"
         ],
-        0,
+        1,
         lead.convDate
     );
     put(
@@ -2173,13 +2208,13 @@ async function buildStandardLeadRowUpdates_(sheets, tab, rowNumber, lead) {
             "conversiontime",
             "time"
         ],
-        1,
+        2,
         lead.convTime
     );
-    put(SHEET_H_NAME, 2, lead.name);
-    put(SHEET_H_MOBILE, 3, lead.mobile);
-    put(SHEET_H_EMAIL, 4, lead.email);
-    put(["channel"], 5, formatChannelForSheetDisplay(lead.channel));
+    put(SHEET_H_NAME, 3, lead.name);
+    put(SHEET_H_MOBILE, 4, lead.mobile);
+    put(SHEET_H_EMAIL, 5, lead.email);
+    put(["channel"], 6, formatChannelForSheetDisplay(lead.channel));
     put(
         [
             "userqueries",
@@ -2190,25 +2225,25 @@ async function buildStandardLeadRowUpdates_(sheets, tab, rowNumber, lead) {
             "visitorqueries",
             "conversationqueries"
         ],
-        6,
+        7,
         lead.userQueriesCsv
     );
-    put(["repeateduser", "repeated_user", "isrepeated", "repuser"], 7, lead.repeated);
-    put(["sourceurl", "source_url", "pageurl", "embedurl"], 8, lead.sourceUrl);
-    put(SHEET_H_SESSION, 9, lead.clientSessionId);
-    put(["device", "devicetype"], 10, formatDeviceTypeForSheetDisplay(lead.deviceType));
-    put(["browser", "browsername"], 11, lead.browserName);
+    put(["repeateduser", "repeated_user", "isrepeated", "repuser"], 8, lead.repeated);
+    put(["sourceurl", "source_url", "pageurl", "embedurl"], 9, lead.sourceUrl);
+    put(SHEET_H_SESSION, 10, lead.clientSessionId);
+    put(["device", "devicetype"], 11, formatDeviceTypeForSheetDisplay(lead.deviceType));
+    put(["browser", "browsername"], 12, lead.browserName);
     put(
         ["city", "visitorcity", "usercity", "cityname", "location", "preferredcity"],
-        12,
+        13,
         lead.city
     );
-    put(["ip", "ipaddress", "ip_address"], 13, lead.ip);
+    put(["ip", "ipaddress", "ip_address"], 14, lead.ip);
     // Prefer exact "Appointment Booked" match only — aliases like `appointment` would hit Date/Time headers.
-    put(["appointmentbooked", "appointment_booked", "isappointmentbooked"], 14, lead.appointmentBooked);
-    put(["appointmentdate"], 15, lead.appointmentDate);
-    put(["appointmenttime"], 16, lead.appointmentTime);
-    put(["drivefilelink", "drive file link", "drivefile", "filelink", "filelinks", "drivelink"], 17, lead.driveFileLink);
+    put(["appointmentbooked", "appointment_booked", "isappointmentbooked"], 15, lead.appointmentBooked);
+    put(["appointmentdate"], 16, lead.appointmentDate);
+    put(["appointmenttime"], 17, lead.appointmentTime);
+    put(["drivefilelink", "drive file link", "drivefile", "filelink", "filelinks", "drivelink"], 18, lead.driveFileLink);
 
     return updates;
 }
@@ -2318,8 +2353,8 @@ async function applySheetExtrasAfterDuplicateSessionRow_(sheets, tab, rowNumber,
 }
 
 /**
- * Default columns A–R (no Form ID):
- * Date, Time, Name, Mobile, Email, Channel, User Queries, Repeated User, Source URL, Session id,
+ * Default columns A–S (no Form ID):
+ * Chat transcript JSON, Date, Time, Name, Mobile, Email, Channel, User Queries, Repeated User, Source URL, Session id,
  * Device, Browser, City, IP, Appointment booked/date/time, Drive link.
  *
  * @param {{ convDate?: string, convTime?: string, iso?: string, formId?: string, name: string, mobile: string, email: string, clientSessionId: string, browserName: string, deviceType: string, channel: string, fileLinks?: string, city?: string, ip?: string, sourceUrl?: string, appointmentBooked?: string, appointmentDate?: string, appointmentTime?: string, userQueriesCsv?: string }} row Preferred: `convDate` + `convTime`; legacy combined `iso` is split when needed. `formId` ignored for Sheets.
@@ -2439,8 +2474,12 @@ export async function appendContactRowToSheet(row, opts) {
     );
     const repeated = repeatedUserLabelFromRepeatedFlag_(scanFull.repeatedAcrossSessions);
     const convParts = conversationPartsFromIncomingRow_(row);
-    // Append A–R directly (Date, Time, then lead fields …).
+    const chatCell = sheetOutboundCell_(
+        typeof row.chatTranscriptJson === "string" ? row.chatTranscriptJson : ""
+    );
+    // Append A–S directly (Chat transcript, Date, Time, then lead fields …).
     const values = [[
+        chatCell,
         sheetOutboundCell_(convParts.convDate),
         sheetOutboundCell_(convParts.convTime),
         sheetOutboundCell_(row.name),
@@ -2548,7 +2587,7 @@ export async function appendContactRowToSheet(row, opts) {
 }
 
 /**
- * Find 1-based row number whose Session id column matches (default column J in A–R layout, legacy column I), or any cell.
+ * Find 1-based row number whose Session id column matches (default column K in A–S layout; J or I on older layouts), or any cell.
  * @param {import("googleapis").sheets_v4.Sheets} sheets
  * @param {string} tab
  * @param {string} sessionId
@@ -2571,7 +2610,8 @@ async function findSessionRowNumberBySessionId_(sheets, tab, sessionId) {
     for (let i = tail.length - 1; i >= 0; i--) {
         const r = tail[i] || [];
         const existingSid =
-            sheetCellString_(r[STANDARD_SESSION_COLUMN_INDEX0_NEW])
+            sheetCellString_(r[STANDARD_SESSION_COLUMN_INDEX0_PRIMARY])
+            || sheetCellString_(r[STANDARD_SESSION_COLUMN_INDEX0_PRE_TRANSCRIPT])
             || sheetCellString_(r[STANDARD_SESSION_COLUMN_INDEX0_LEGACY]);
         if (existingSid === sid) {
             return tailOffset + i + 1;
@@ -2618,7 +2658,7 @@ export async function upsertSessionQueriesInSheet(row) {
         const queriesCol = await getUserQueriesColumnInfo_(sheets, tab);
         const got = await sheets.spreadsheets.values.get({
             spreadsheetId: SPREADSHEET_ID,
-            range: `${tab}!A${rowNumber}:R${rowNumber}`
+            range: `${tab}!A${rowNumber}:S${rowNumber}`
         });
         const r0 = Array.isArray(got.data.values) && got.data.values[0] ? got.data.values[0] : [];
         const existingCsv = sanitizeUserQueriesCsvForSheet(sheetCellString_(r0[queriesCol.colIdx]));
@@ -2825,13 +2865,13 @@ export async function fetchConversationLeadCaptureStats(opts = {}) {
         ? /** @type {unknown[]} */ (headerGot.data.values[0])
         : [];
     const headerMap = await getHeaderIndexMap_(sheets, tab);
-    const dateIdx = pickHeaderIndex_(headerMap, SHEET_H_CONV_DATE_CELL, 0);
-    const mobileIdx = pickHeaderIndex_(headerMap, SHEET_H_MOBILE, 3);
-    const emailIdx = pickHeaderIndex_(headerMap, SHEET_H_EMAIL, 4);
-    const channelIdx = pickHeaderIndex_(headerMap, SHEET_H_CHANNEL, 5);
-    const appointmentBookedIdx = pickAppointmentStatsColumnIdx_(headerMap, headersRaw, 14);
-    const appointmentDateIdx = pickHeaderIndex_(headerMap, SHEET_H_APPOINTMENT_DATE, 15);
-    const appointmentTimeIdx = pickHeaderIndex_(headerMap, SHEET_H_APPOINTMENT_TIME, 16);
+    const dateIdx = pickHeaderIndex_(headerMap, SHEET_H_CONV_DATE_CELL, 1);
+    const mobileIdx = pickHeaderIndex_(headerMap, SHEET_H_MOBILE, 4);
+    const emailIdx = pickHeaderIndex_(headerMap, SHEET_H_EMAIL, 5);
+    const channelIdx = pickHeaderIndex_(headerMap, SHEET_H_CHANNEL, 6);
+    const appointmentBookedIdx = pickAppointmentStatsColumnIdx_(headerMap, headersRaw, 15);
+    const appointmentDateIdx = pickHeaderIndex_(headerMap, SHEET_H_APPOINTMENT_DATE, 16);
+    const appointmentTimeIdx = pickHeaderIndex_(headerMap, SHEET_H_APPOINTMENT_TIME, 17);
     const appointmentDatetimeIdx = firstHeaderIdxFromAliases_(headerMap, SHEET_H_APPOINTMENT_DATETIME);
 
     const hardCap = Math.min(
@@ -2871,19 +2911,13 @@ export async function fetchConversationLeadCaptureStats(opts = {}) {
         /* fallback hardCap */
     }
 
-    const colAGot = await sheets.spreadsheets.values.get({
+    const colABGot = await sheets.spreadsheets.values.get({
         spreadsheetId: SPREADSHEET_ID,
-        range: `${tab}!A1:A${capRow}`
+        range: `${tab}!A1:B${capRow}`
     });
-    const colVals = Array.isArray(colAGot.data.values) ? colAGot.data.values : [];
-    /** 1-based last row with column A populated. */
-    let nLast = 0;
-    for (let ri = colVals.length - 1; ri >= 0; ri -= 1) {
-        if (!isBlankSheetCell_(colVals[ri] && colVals[ri][0])) {
-            nLast = ri + 1;
-            break;
-        }
-    }
+    const colVals = Array.isArray(colABGot.data.values) ? colABGot.data.values : [];
+    /** 1-based last row with column A or B populated (conv. date in B when chat cell A is still blank). */
+    const nLast = lastDataRow1BasedFromAB_(colVals);
     const tz = conversationDateTimeZoneForIntl_();
     const timezoneNote =
         tz === undefined ? "server default (SHEETS_CONV_DATETIME_TZ empty)" : `IANA TZ: ${tz}`;
@@ -2966,7 +3000,7 @@ export async function fetchConversationLeadCaptureStats(opts = {}) {
         appointmentDateIdx,
         appointmentTimeIdx,
         appointmentDatetimeIdx === undefined ? appointmentDateIdx : appointmentDatetimeIdx,
-        17
+        18
     );
     const lastColIdx = Math.min(175, lastColBound);
     const colLetter = columnLetterFromIndex_(lastColIdx);
@@ -4404,7 +4438,7 @@ export async function writeLeadCaptureDashboardToSheet2(opts = {}) {
 
 /**
  * Staff viewer: header row + up to `maxRows` most recent data rows (sheet append adds at bottom).
- * Bounded column-A scan (never `A:A`) so large tabs do not stall the API.
+ * Bounded A:B scan for last row (never `A:A`) so large tabs do not stall the API.
  *
  * @param {{ maxRows?: number, offset?: number, from?: string, to?: string }} [opts]
  * @returns {Promise<{ tab: string, title: string, rowCount: number, headers: string[], conversations: Record<string, string>[], offset: number, limit: number, hasOlder: boolean, hasNewer: boolean, totalDataRows: number, dateFilter: { applied: boolean, serverApplied?: boolean, from: string|null, to: string|null } }>}
@@ -4537,20 +4571,14 @@ export async function fetchConversationSheetPreview(opts = {}) {
         /* fall back hardCap */
     }
 
-    const colAGot = await sheets.spreadsheets.values.get({
+    const colABGot = await sheets.spreadsheets.values.get({
         spreadsheetId: SPREADSHEET_ID,
-        range: `${tab}!A1:A${capRow}`
+        range: `${tab}!A1:B${capRow}`
     });
     /** @type {unknown[][]} */
-    const colVals = Array.isArray(colAGot.data.values) ? colAGot.data.values : [];
-    /** 1-based last row with column A populated (fallback: length if full block used). */
-    let n = 0;
-    for (let ri = colVals.length - 1; ri >= 0; ri -= 1) {
-        if (!isBlankSheetCell_(colVals[ri] && colVals[ri][0])) {
-            n = ri + 1;
-            break;
-        }
-    }
+    const colVals = Array.isArray(colABGot.data.values) ? colABGot.data.values : [];
+    /** 1-based last row with column A or B populated (fallback: length if full block used). */
+    const n = lastDataRow1BasedFromAB_(colVals);
     if (n <= 1) {
         return {
             tab,
@@ -4572,12 +4600,12 @@ export async function fetchConversationSheetPreview(opts = {}) {
         offset = 0;
     }
     /** Same right edge as statistics scan so the date column is always fetched. */
-    const previewLastCol0 = Math.min(175, Math.max(headersRaw.length - 1, 17));
+    const previewLastCol0 = Math.min(175, Math.max(headersRaw.length - 1, 18));
     const previewRightLetter = columnLetterFromIndex_(previewLastCol0);
 
     if (previewDateFilterActive) {
         const headerMap = await getHeaderIndexMap_(sheets, tab);
-        const dateIdx = pickHeaderIndex_(headerMap, SHEET_H_CONV_DATE_CELL, 0);
+        const dateIdx = pickHeaderIndex_(headerMap, SHEET_H_CONV_DATE_CELL, 1);
         const fullGot = await sheets.spreadsheets.values.get({
             spreadsheetId: SPREADSHEET_ID,
             range: `${tab}!A2:${previewRightLetter}${n}`
@@ -4819,18 +4847,12 @@ export async function fetchConversationSheetExport(opts = {}) {
         /* fall back hardCap */
     }
 
-    const colAGot = await sheets.spreadsheets.values.get({
+    const colABGot = await sheets.spreadsheets.values.get({
         spreadsheetId: SPREADSHEET_ID,
-        range: `${tab}!A1:A${capRow}`
+        range: `${tab}!A1:B${capRow}`
     });
-    const colVals = Array.isArray(colAGot.data.values) ? colAGot.data.values : [];
-    let nRows = 0;
-    for (let ri = colVals.length - 1; ri >= 0; ri -= 1) {
-        if (!isBlankSheetCell_(colVals[ri] && colVals[ri][0])) {
-            nRows = ri + 1;
-            break;
-        }
-    }
+    const colVals = Array.isArray(colABGot.data.values) ? colABGot.data.values : [];
+    const nRows = lastDataRow1BasedFromAB_(colVals);
     if (nRows <= 1) {
         return {
             tab,
@@ -4841,10 +4863,10 @@ export async function fetchConversationSheetExport(opts = {}) {
         };
     }
 
-    const previewLastCol0 = Math.min(175, Math.max(headersRaw.length - 1, 17));
+    const previewLastCol0 = Math.min(175, Math.max(headersRaw.length - 1, 18));
     const previewRightLetter = columnLetterFromIndex_(previewLastCol0);
     const headerMap = await getHeaderIndexMap_(sheets, tab);
-    const dateIdx = pickHeaderIndex_(headerMap, SHEET_H_CONV_DATE_CELL, 0);
+    const dateIdx = pickHeaderIndex_(headerMap, SHEET_H_CONV_DATE_CELL, 1);
 
     const fullGot = await sheets.spreadsheets.values.get({
         spreadsheetId: SPREADSHEET_ID,

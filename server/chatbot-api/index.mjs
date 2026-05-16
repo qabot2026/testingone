@@ -2758,7 +2758,7 @@ app.post(
     }
 );
 
-/** Live-sync accumulated user_queries (sheet “User Queries” column — default column G in A–R layout). */
+/** Live-sync accumulated user_queries (sheet “User Queries” column — default column H in A–S layout). */
 app.post(
     PATHNAME_SESSION_SHEET_SYNC,
     express.json({ limit: "512kb" }),
@@ -3167,7 +3167,7 @@ app.get("/contact-form-sheets-health", async (_req, res) => {
             disable_sheets_flag: process.env.DISABLE_SHEETS === "1",
             spreadsheet_id_configured: !!id,
             spreadsheet_id_suffix: id ? id.slice(-8) : "",
-            sheets_default_range_env: (process.env.SHEETS_RANGE || "Sheet1!A:R").trim(),
+            sheets_default_range_env: (process.env.SHEETS_RANGE || "Sheet1!A:S").trim(),
             strict_session_dedup: process.env.SHEETS_STRICT_SESSION_DEDUP === "1",
             service_account_credentials_present: !!getServiceAccountCredentials()
         };
