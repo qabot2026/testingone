@@ -214,6 +214,142 @@
       word-break: break-word;
       font-size: 0.92rem;
     }
+    .msg-body--rich {
+      white-space: normal;
+    }
+    .rc-block {
+      margin-top: 6px;
+    }
+    .rc-block:first-child {
+      margin-top: 0;
+    }
+    .rc-text {
+      white-space: pre-wrap;
+      margin: 0 0 6px;
+    }
+    .rc-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 4px;
+    }
+    .rc-chip {
+      display: inline-block;
+      padding: 6px 12px;
+      border-radius: 999px;
+      border: 1px solid rgba(148, 163, 184, 0.55);
+      background: #fff;
+      font-size: 0.82rem;
+      line-height: 1.2;
+      color: var(--text);
+    }
+    .rc-img {
+      display: block;
+      max-width: 100%;
+      width: auto;
+      max-height: 200px;
+      border-radius: 10px;
+      margin: 4px 0;
+      object-fit: cover;
+      border: 1px solid var(--border);
+    }
+    .rc-gallery {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      padding: 2px 0 6px;
+      margin: 4px 0;
+    }
+    .rc-gallery .rc-img {
+      flex: 0 0 auto;
+      width: min(76vw, 180px);
+      max-height: 126px;
+    }
+    .rc-info {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 10px 12px;
+      background: #fff;
+      margin: 6px 0;
+      max-width: 280px;
+    }
+    .rc-info-title {
+      font-weight: 700;
+      font-size: 0.9rem;
+      margin: 0 0 2px;
+    }
+    .rc-info-sub {
+      font-size: 0.78rem;
+      color: var(--muted);
+      margin: 0 0 6px;
+    }
+    .rc-info-text {
+      font-size: 0.82rem;
+      margin: 6px 0 0;
+      white-space: pre-wrap;
+    }
+    .rc-btn-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 8px;
+    }
+    .rc-btn {
+      display: inline-block;
+      padding: 6px 10px;
+      border-radius: 8px;
+      border: 1px solid rgba(13, 148, 136, 0.35);
+      background: rgba(204, 251, 241, 0.5);
+      font-size: 0.78rem;
+      color: #0f766e;
+      text-decoration: none;
+    }
+    .rc-btn--ghost {
+      background: #fff;
+      border-color: rgba(148, 163, 184, 0.5);
+      color: var(--text);
+    }
+    .rc-card {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      background: #fff;
+      margin: 6px 0;
+      max-width: 240px;
+    }
+    .rc-card img {
+      width: 100%;
+      height: 120px;
+      object-fit: cover;
+      display: block;
+    }
+    .rc-card-body {
+      padding: 8px 10px;
+    }
+    .rc-select-hint {
+      font-size: 0.8rem;
+      color: var(--muted);
+      margin: 4px 0 6px;
+    }
+    .rc-file a {
+      color: #0d9488;
+      font-weight: 600;
+    }
+    .rc-video {
+      position: relative;
+      width: 100%;
+      max-width: 320px;
+      aspect-ratio: 16 / 9;
+      margin: 6px 0;
+      border-radius: 10px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+    }
+    .rc-video iframe {
+      width: 100%;
+      height: 100%;
+      border: 0;
+    }
     .msg--user {
       align-self: flex-end;
       background: var(--user-soft);
@@ -286,7 +422,7 @@
     <aside class="summary-rail" id="summaryRail" hidden>
       <div class="summary-rail-inner">
         <div class="details-wrap" id="detailsWrap" hidden>
-          <h2>Lead details (sheet + submission)</h2>
+          <h2>Summary</h2>
           <div class="panel">
             <dl class="dl-grid" id="detailsDl"></dl>
           </div>
@@ -339,6 +475,403 @@
           .replace(/&/g, "&amp;")
           .replace(/</g, "&lt;")
           .replace(/>/g, "&gt;");
+      }
+
+      var TRANSCRIPT_NOISE_LINES = {
+        HANDLER_PROMPT: true,
+        "Virtual Agent": true,
+        Chips: true,
+        chips: true,
+        chip: true
+      };
+
+      function unwrapPayloadString(v) {
+        if (typeof v === "string") {
+          return v.trim();
+        }
+        if (v && typeof v === "object" && typeof v.stringValue === "string") {
+          return v.stringValue.trim();
+        }
+        return "";
+      }
+
+      function imageUrlFromRichNode(node) {
+        if (!node || typeof node !== "object") {
+          return "";
+        }
+        if (typeof node.rawUrl === "string" && node.rawUrl.trim()) {
+          return node.rawUrl.trim();
+        }
+        var img = node.image;
+        if (!img || typeof img !== "object") {
+          return "";
+        }
+        if (typeof img.rawUrl === "string" && img.rawUrl.trim()) {
+          return img.rawUrl.trim();
+        }
+        if (img.src && typeof img.src.rawUrl === "string" && img.src.rawUrl.trim()) {
+          return img.src.rawUrl.trim();
+        }
+        return "";
+      }
+
+      function linkFromRichNode(node) {
+        if (!node || typeof node !== "object") {
+          return "";
+        }
+        if (typeof node.actionLink === "string" && node.actionLink.trim()) {
+          return node.actionLink.trim();
+        }
+        if (node.anchor && typeof node.anchor.href === "string" && node.anchor.href.trim()) {
+          return node.anchor.href.trim();
+        }
+        if (node.anchor && typeof node.anchor === "string" && node.anchor.trim()) {
+          return node.anchor.trim();
+        }
+        return "";
+      }
+
+      function renderRichChipsHtml(options) {
+        if (!Array.isArray(options) || !options.length) {
+          return "";
+        }
+        var parts = ['<div class="rc-chips">'];
+        for (var ci = 0; ci < options.length; ci += 1) {
+          var opt = options[ci];
+          var label =
+            typeof opt === "string"
+              ? opt.trim()
+              : unwrapPayloadString(opt && opt.text) || unwrapPayloadString(opt && opt.label);
+          if (!label || TRANSCRIPT_NOISE_LINES[label]) {
+            continue;
+          }
+          parts.push('<span class="rc-chip">' + escapeHtml(label) + "</span>");
+        }
+        parts.push("</div>");
+        return parts.join("");
+      }
+
+      function renderRichItemHtml(item) {
+        if (!item || typeof item !== "object") {
+          return "";
+        }
+        var type = String(item.type || "").toLowerCase();
+        if (type === "chips") {
+          return '<div class="rc-block">' + renderRichChipsHtml(item.options) + "</div>";
+        }
+        if (type === "image") {
+          var iu = imageUrlFromRichNode(item);
+          if (!iu) {
+            return "";
+          }
+          return (
+            '<div class="rc-block"><img class="rc-img" src="' +
+            escapeHtml(iu) +
+            '" alt="' +
+            escapeHtml(unwrapPayloadString(item.accessibilityText) || "") +
+            '" loading="lazy" /></div>'
+          );
+        }
+        if (type === "info" || type === "accordion") {
+          var title = unwrapPayloadString(item.title);
+          var sub = unwrapPayloadString(item.subtitle);
+          var body = unwrapPayloadString(item.text);
+          var iu2 = imageUrlFromRichNode(item);
+          var href = linkFromRichNode(item);
+          var html = '<div class="rc-block"><div class="rc-info">';
+          if (iu2) {
+            if (href) {
+              html +=
+                '<a href="' +
+                escapeHtml(href) +
+                '" target="_blank" rel="noopener noreferrer"><img class="rc-img" src="' +
+                escapeHtml(iu2) +
+                '" alt="" loading="lazy" /></a>';
+            } else {
+              html += '<img class="rc-img" src="' + escapeHtml(iu2) + '" alt="" loading="lazy" />';
+            }
+          }
+          if (title) {
+            html += '<div class="rc-info-title">' + escapeHtml(title) + "</div>";
+          }
+          if (sub) {
+            html += '<div class="rc-info-sub">' + escapeHtml(sub) + "</div>";
+          }
+          if (body) {
+            html += '<div class="rc-info-text">' + escapeHtml(body) + "</div>";
+          }
+          var btns = Array.isArray(item.buttons) ? item.buttons : [];
+          if (btns.length) {
+            html += '<div class="rc-btn-row">';
+            for (var bi = 0; bi < btns.length; bi += 1) {
+              var bt = btns[bi];
+              var btLabel = unwrapPayloadString(bt && bt.text) || unwrapPayloadString(bt && bt.label);
+              var btHref =
+                (bt && typeof bt.link === "string" && bt.link.trim()) ||
+                (bt && bt.link && typeof bt.link === "object" && typeof bt.link.uri === "string"
+                  ? bt.link.uri.trim()
+                  : "") ||
+                href;
+              if (!btLabel) {
+                continue;
+              }
+              if (btHref) {
+                html +=
+                  '<a class="rc-btn" href="' +
+                  escapeHtml(btHref) +
+                  '" target="_blank" rel="noopener noreferrer">' +
+                  escapeHtml(btLabel) +
+                  "</a>";
+              } else {
+                html += '<span class="rc-btn rc-btn--ghost">' + escapeHtml(btLabel) + "</span>";
+              }
+            }
+            html += "</div>";
+          } else if (href && title) {
+            html +=
+              '<div class="rc-btn-row"><a class="rc-btn" href="' +
+              escapeHtml(href) +
+              '" target="_blank" rel="noopener noreferrer">Open link</a></div>';
+          }
+          html += "</div></div>";
+          return html;
+        }
+        if (type === "files" && Array.isArray(item.files)) {
+          var fh = '<div class="rc-block rc-file">';
+          for (var fi = 0; fi < item.files.length; fi += 1) {
+            var f = item.files[fi];
+            if (!f || typeof f !== "object") {
+              continue;
+            }
+            var fname = unwrapPayloadString(f.name) || "Download";
+            var fhref =
+              (f.anchor && typeof f.anchor.href === "string" && f.anchor.href.trim()) || "";
+            if (fhref) {
+              fh += '<div><a href="' + escapeHtml(fhref) + '" target="_blank" rel="noopener noreferrer">' + escapeHtml(fname) + "</a></div>";
+            } else {
+              fh += "<div>" + escapeHtml(fname) + "</div>";
+            }
+          }
+          fh += "</div>";
+          return fh;
+        }
+        return "";
+      }
+
+      function renderRichContentRows(richContent) {
+        if (!Array.isArray(richContent) || !richContent.length) {
+          return "";
+        }
+        var out = "";
+        for (var ri = 0; ri < richContent.length; ri += 1) {
+          var row = richContent[ri];
+          if (!Array.isArray(row)) {
+            continue;
+          }
+          var rowImgs = [];
+          var rowHtml = "";
+          for (var ci = 0; ci < row.length; ci += 1) {
+            var piece = renderRichItemHtml(row[ci]);
+            if (!piece) {
+              continue;
+            }
+            if (row[ci] && String(row[ci].type || "").toLowerCase() === "image") {
+              rowImgs.push(piece);
+            } else {
+              rowHtml += piece;
+            }
+          }
+          if (rowImgs.length > 1) {
+            out += '<div class="rc-gallery">' + rowImgs.join("") + "</div>";
+          } else if (rowImgs.length === 1) {
+            out += rowImgs[0];
+          }
+          out += rowHtml;
+        }
+        return out;
+      }
+
+      function youtubeEmbedUrl(url) {
+        var u = typeof url === "string" ? url.trim() : "";
+        if (!u) {
+          return "";
+        }
+        var m = u.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([A-Za-z0-9_-]{6,})/i);
+        return m ? "https://www.youtube.com/embed/" + m[1] : "";
+      }
+
+      function renderActionPayloadHtml(pl) {
+        if (!pl || typeof pl !== "object") {
+          return "";
+        }
+        var action = String(pl.action || "").toLowerCase();
+        var html = "";
+        var msg = unwrapPayloadString(pl.message);
+        if (msg) {
+          html += '<p class="rc-text">' + escapeHtml(msg) + "</p>";
+        }
+        if (action === "open_gallery" && Array.isArray(pl.urls) && pl.urls.length) {
+          html += '<div class="rc-gallery">';
+          for (var gi = 0; gi < pl.urls.length; gi += 1) {
+            var gu = typeof pl.urls[gi] === "string" ? pl.urls[gi].trim() : "";
+            if (gu) {
+              html += '<img class="rc-img" src="' + escapeHtml(gu) + '" alt="" loading="lazy" />';
+            }
+          }
+          html += "</div>";
+          html += renderRichChipsHtml(pl.options);
+        } else if (action === "open_video" && pl.url) {
+          var emb = youtubeEmbedUrl(unwrapPayloadString(pl.url));
+          if (emb) {
+            html +=
+              '<div class="rc-video"><iframe src="' +
+              escapeHtml(emb) +
+              '" title="Video" allowfullscreen loading="lazy"></iframe></div>';
+          }
+          html += renderRichChipsHtml(pl.options);
+        } else if (action === "open_card_carousel" && Array.isArray(pl.cards)) {
+          for (var ci = 0; ci < pl.cards.length; ci += 1) {
+            var card = pl.cards[ci];
+            if (!card || typeof card !== "object") {
+              continue;
+            }
+            var cTitle = unwrapPayloadString(card.title);
+            var cSub = unwrapPayloadString(card.subtitle);
+            var cImg = typeof card.imageUrl === "string" ? card.imageUrl.trim() : "";
+            html += '<div class="rc-card">';
+            if (cImg) {
+              html += '<img src="' + escapeHtml(cImg) + '" alt="" loading="lazy" />';
+            }
+            html += '<div class="rc-card-body">';
+            if (cTitle) {
+              html += '<div class="rc-info-title">' + escapeHtml(cTitle) + "</div>";
+            }
+            if (cSub) {
+              html += '<div class="rc-info-sub">' + escapeHtml(cSub) + "</div>";
+            }
+            var cta = unwrapPayloadString(card.ctaLabel) || "View";
+            html += '<span class="rc-btn rc-btn--ghost">' + escapeHtml(cta) + "</span>";
+            html += "</div></div>";
+          }
+        } else if (action === "dfchat_inline_select" && Array.isArray(pl.options)) {
+          var ph = unwrapPayloadString(pl.placeholder) || "Choose…";
+          html += '<div class="rc-select-hint">' + escapeHtml(ph) + "</div>";
+          html += renderRichChipsHtml(
+            pl.options.map(function (o) {
+              return { text: unwrapPayloadString(o && o.label) || unwrapPayloadString(o && o.value) };
+            })
+          );
+        } else if (action === "open_form") {
+          var fid = unwrapPayloadString(pl.form_id) || unwrapPayloadString(pl.formId) || "form";
+          html += '<p class="rc-text">Contact form: <strong>' + escapeHtml(fid) + "</strong></p>";
+        }
+        return html;
+      }
+
+      function resolveTurnRich(turn) {
+        if (turn && turn.rich && typeof turn.rich === "object") {
+          return turn.rich;
+        }
+        var raw = turn && typeof turn.text === "string" ? turn.text.trim() : "";
+        if (raw.charAt(0) === "{" && (raw.indexOf("richContent") >= 0 || raw.indexOf('"action"') >= 0)) {
+          try {
+            var parsed = JSON.parse(raw);
+            if (parsed && typeof parsed === "object") {
+              return parsed;
+            }
+          } catch (ignore) {}
+        }
+        return null;
+      }
+
+      function sanitizeTranscriptText(text, rich) {
+        var t = typeof text === "string" ? text.trim() : "";
+        if (!t) {
+          return "";
+        }
+        if (!rich) {
+          return t;
+        }
+        var lines = t.split(/\r?\n/).map(function (ln) {
+          return ln.trim();
+        });
+        var kept = [];
+        for (var i = 0; i < lines.length; i += 1) {
+          if (!lines[i] || TRANSCRIPT_NOISE_LINES[lines[i]]) {
+            continue;
+          }
+          if (lines[i] === "Chips" && rich.richContent) {
+            continue;
+          }
+          kept.push(lines[i]);
+        }
+        return kept.join("\n").trim();
+      }
+
+      function salvageChipsFromLegacyText(text) {
+        var lines = String(text || "")
+          .split(/\r?\n/)
+          .map(function (ln) {
+            return ln.trim();
+          })
+          .filter(function (ln) {
+            return ln && !TRANSCRIPT_NOISE_LINES[ln];
+          });
+        if (lines.length < 2) {
+          return null;
+        }
+        var allShort = true;
+        for (var i = 0; i < lines.length; i += 1) {
+          if (lines[i].length > 48 || /[.!?…]/.test(lines[i])) {
+            allShort = false;
+            break;
+          }
+        }
+        if (!allShort) {
+          return null;
+        }
+        return {
+          richContent: [
+            [
+              {
+                type: "chips",
+                options: lines.map(function (t) {
+                  return { text: t };
+                })
+              }
+            ]
+          ]
+        };
+      }
+
+      function renderTurnBodyHtml(turn) {
+        var rich = resolveTurnRich(turn);
+        var text = sanitizeTranscriptText(turn && turn.text, rich);
+        if (!rich && text) {
+          rich = salvageChipsFromLegacyText(text);
+          if (rich) {
+            text = "";
+          }
+        }
+        var html = "";
+        if (text) {
+          html += '<p class="rc-text">' + escapeHtml(text) + "</p>";
+        }
+        if (rich) {
+          if (Array.isArray(rich.richContent)) {
+            html += renderRichContentRows(rich.richContent);
+          } else if (rich.action) {
+            html += renderActionPayloadHtml(rich);
+          } else if (Array.isArray(rich.cards)) {
+            html += renderActionPayloadHtml({ action: "open_card_carousel", cards: rich.cards, message: rich.message });
+          } else if (Array.isArray(rich.urls)) {
+            html += renderActionPayloadHtml({ action: "open_gallery", urls: rich.urls, options: rich.options, message: rich.message });
+          }
+        }
+        if (html) {
+          return html;
+        }
+        return '<p class="rc-text">(No message text was stored for this line.)</p>';
       }
 
       /** Match `company.js` getBotPersonaMessageTimeLabel (`en-IN`, optional short date). */
@@ -703,11 +1236,6 @@
           for (var i = 0; i < turns.length; i++) {
             var t = turns[i];
             var role = t && t.role === "assistant" ? "assistant" : "user";
-            var rawText = t && typeof t.text === "string" ? t.text : "";
-            var text =
-              rawText.trim() !== ""
-                ? rawText
-                : "(No message text was stored for this line — it may be rich media or a fallback bubble.)";
             var who = role === "assistant" ? "Assistant" : "User";
             var atMs =
               t && typeof t.at === "number" && Number.isFinite(t.at) ? t.at : null;
@@ -725,8 +1253,13 @@
               escapeHtml(who) +
               "</span>" +
               timeHtml +
-              "</div>" +
-              escapeHtml(text);
+              '</div><div class="msg-body' +
+              (role === "assistant" ? " msg-body--rich" : "") +
+              '">' +
+              (role === "assistant"
+                ? renderTurnBodyHtml(t)
+                : '<p class="rc-text">' + escapeHtml((t && t.text) || "") + "</p>") +
+              "</div>";
             thread.appendChild(row);
           }
           thread.scrollTop = thread.scrollHeight;

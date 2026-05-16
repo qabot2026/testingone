@@ -3417,6 +3417,53 @@ function transcriptSourceRichness_(turns) {
 }
 
 /**
+ * @param {unknown} raw
+ * @returns {Record<string, unknown> | null}
+ */
+function transcriptTurnRichFromItem_(raw) {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+        return null;
+    }
+    const rec = /** @type {Record<string, unknown>} */ (raw);
+    const direct = rec.rich;
+    if (direct && typeof direct === "object" && !Array.isArray(direct)) {
+        return /** @type {Record<string, unknown>} */ (direct);
+    }
+    const pay = rec.payload;
+    if (pay && typeof pay === "object" && !Array.isArray(pay)) {
+        const p = /** @type {Record<string, unknown>} */ (pay);
+        if (Array.isArray(p.richContent) || typeof p.action === "string") {
+            return p;
+        }
+    }
+    const text = typeof rec.text === "string" ? rec.text.trim() : "";
+    if (text.startsWith("{") && (text.includes("richContent") || text.includes('"action"'))) {
+        try {
+            const parsed = JSON.parse(text);
+            if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+                return /** @type {Record<string, unknown>} */ (parsed);
+            }
+        } catch {
+            /* ignore */
+        }
+    }
+    return null;
+}
+
+/** @param {string} text */
+function transcriptTextLooksLikeScrapedRichNoise_(text) {
+    const t = String(text || "").trim();
+    if (!t) {
+        return false;
+    }
+    if (/\bHANDLER_PROMPT\b/.test(t) || /\bVirtual Agent\b/.test(t)) {
+        return true;
+    }
+    const lines = t.split(/\r?\n/).map((ln) => ln.trim()).filter(Boolean);
+    return lines.some((ln) => ln === "Chips" || ln === "chips");
+}
+
+/**
  * @param {Record<string, unknown>} o
  * @param {number} [depth]
  * @returns {string}
@@ -3623,13 +3670,13 @@ function stringifyChatTranscriptForSheetPayload_(clientContext) {
 
 /**
  * @param {unknown[]} arr
- * @returns {{ role: string, text: string, at?: number, seq?: number }[]}
+ * @returns {{ role: string, text: string, rich?: Record<string, unknown>, at?: number, seq?: number }[]}
  */
 function transcriptTurnsFromStoredChatArray_(arr) {
     if (!Array.isArray(arr) || !arr.length) {
         return [];
     }
-    /** @type {{ role: string, text: string, seq?: number, ord: number, atMs?: number, atSort: number }[]} */
+    /** @type {{ role: string, text: string, rich?: Record<string, unknown>, seq?: number, ord: number, atMs?: number, atSort: number }[]} */
     const tmp = [];
     let ord = 0;
     for (const item of arr) {
@@ -3638,8 +3685,12 @@ function transcriptTurnsFromStoredChatArray_(arr) {
         }
         const o = /** @type {Record<string, unknown>} */ (item);
         const role = normalizeTranscriptItemRole_(o);
-        const text = transcriptTurnTextFromItem_(o);
-        if (!text) {
+        const rich = transcriptTurnRichFromItem_(o);
+        let text = transcriptTurnTextFromItem_(o);
+        if (rich && transcriptTextLooksLikeScrapedRichNoise_(text)) {
+            text = "";
+        }
+        if (!text && !rich) {
             continue;
         }
         const atMs = coerceTranscriptAtMs_(o.at);
@@ -3652,7 +3703,7 @@ function transcriptTurnsFromStoredChatArray_(arr) {
                   : NaN;
         const seq = Number.isFinite(seqParsed) ? seqParsed : undefined;
         const atSort = atMs !== undefined ? atMs : Number.POSITIVE_INFINITY;
-        tmp.push({ role, text, seq, ord: ord++, atMs, atSort });
+        tmp.push({ role, text: text || "", rich, seq, ord: ord++, atMs, atSort });
     }
     const seqCount = tmp.filter((x) => typeof x.seq === "number" && Number.isFinite(x.seq)).length;
     const allSeq = seqCount === tmp.length && tmp.length > 0;
@@ -3678,8 +3729,14 @@ function transcriptTurnsFromStoredChatArray_(arr) {
             return a.ord - b.ord;
         });
     }
-    return tmp.map(({ role, text, atMs, seq }) => {
-        const out = /** @type {{ role: string, text: string, at?: number, seq?: number }} */ ({ role, text });
+    return tmp.map(({ role, text, rich, atMs, seq }) => {
+        const out = /** @type {{ role: string, text: string, rich?: Record<string, unknown>, at?: number, seq?: number }} */ ({
+            role,
+            text
+        });
+        if (rich && typeof rich === "object") {
+            out.rich = rich;
+        }
         if (atMs !== undefined) {
             out.at = atMs;
         }
@@ -3733,7 +3790,7 @@ function hasAssistantTurns_(turns) {
  * repeats without timestamps get a stable occurrence suffix. Turns with the same `at` but distinct `seq`
  * (multiple bot lines in one widget tick) stay separate.
  *
- * @param {{ role?: unknown, text?: unknown, at?: unknown, seq?: unknown }} t
+ * @param {{ role?: unknown, text?: unknown, rich?: unknown, at?: unknown, seq?: unknown }} t
  * @param {Map<string, number>} noAtDupCount
  */
 function transcriptTurnMergeDedupeKey_(t, noAtDupCount) {
@@ -3742,9 +3799,15 @@ function transcriptTurnMergeDedupeKey_(t, noAtDupCount) {
     }
     const role = /** @type {{ role?: unknown }} */ (t).role === "assistant" ? "assistant" : "user";
     const text = String(/** @type {{ text?: unknown }} */ (t).text || "").trim();
-    if (!text) {
+    const rich = /** @type {{ rich?: unknown }} */ (t).rich;
+    const richStem =
+        rich && typeof rich === "object" && !Array.isArray(rich)
+            ? `rich:${JSON.stringify(rich)}`
+            : "";
+    if (!text && !richStem) {
         return "";
     }
+    const contentStem = text ? text : richStem;
     const atMs = coerceTranscriptAtMs_(/** @type {{ at?: unknown }} */ (t).at);
     const rawSeq = /** @type {{ seq?: unknown }} */ (t).seq;
     const seqParsed =
@@ -3755,9 +3818,11 @@ function transcriptTurnMergeDedupeKey_(t, noAtDupCount) {
               : NaN;
     const seq = Number.isFinite(seqParsed) ? seqParsed : undefined;
     if (typeof atMs === "number" && Number.isFinite(atMs)) {
-        return typeof seq === "number" ? `${role}|${text}|${atMs}|seq${seq}` : `${role}|${text}|${atMs}`;
+        return typeof seq === "number"
+            ? `${role}|${contentStem}|${atMs}|seq${seq}`
+            : `${role}|${contentStem}|${atMs}`;
     }
-    const stem = `${role}|${text}`;
+    const stem = `${role}|${contentStem}`;
     const next = (noAtDupCount.get(stem) || 0) + 1;
     noAtDupCount.set(stem, next);
     return `${stem}|#${next}`;
