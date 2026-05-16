@@ -3879,10 +3879,14 @@ function mergeConversationTranscriptTurnSources_(a, b) {
         const seq = Number.isFinite(seqParsed) ? seqParsed : undefined;
         const role = turn.role === "assistant" ? "assistant" : "user";
         const textTrim = String(turn.text || "").trim();
-        /** Assistant: same bubble re-imported with new `seq`/`at` from widget + Firestore — dedupe by text. */
+        /** Form confirms may repeat with new `seq`/`at`; other bot lines keep seq so fallback/menu turns stay distinct. */
         let sig;
-        if (role === "assistant" && textTrim) {
-            sig = `asst|${transcriptAssistantCompareNorm_(textTrim)}`;
+        if (
+            role === "assistant"
+            && textTrim
+            && isContactFormSubmissionSummaryAssistantText_(textTrim)
+        ) {
+            sig = `asstform|${transcriptAssistantCompareNorm_(textTrim)}`;
         } else if (typeof atMs === "number" && Number.isFinite(atMs)) {
             sig =
                 typeof seq === "number"
@@ -3910,8 +3914,10 @@ function mergeConversationTranscriptTurnSources_(a, b) {
         const roleNoAt = t.role === "assistant" ? "assistant" : "user";
         const textNoAt = String(t.text || "").trim();
         const sig =
-            roleNoAt === "assistant" && textNoAt
-                ? `asst|${transcriptAssistantCompareNorm_(textNoAt)}`
+            roleNoAt === "assistant"
+            && textNoAt
+            && isContactFormSubmissionSummaryAssistantText_(textNoAt)
+                ? `asstform|${transcriptAssistantCompareNorm_(textNoAt)}`
                 : transcriptTurnMergeDedupeKey_(t, noAtDupCount);
         if (!sig || seen.has(sig)) {
             continue;
@@ -3931,8 +3937,10 @@ function mergeConversationTranscriptTurnSources_(a, b) {
         const roleNoAtB = t.role === "assistant" ? "assistant" : "user";
         const textNoAtB = String(t.text || "").trim();
         const sig =
-            roleNoAtB === "assistant" && textNoAtB
-                ? `asst|${transcriptAssistantCompareNorm_(textNoAtB)}`
+            roleNoAtB === "assistant"
+            && textNoAtB
+            && isContactFormSubmissionSummaryAssistantText_(textNoAtB)
+                ? `asstform|${transcriptAssistantCompareNorm_(textNoAtB)}`
                 : transcriptTurnMergeDedupeKey_(t, noAtDupCount);
         if (!sig || seen.has(sig)) {
             continue;
@@ -3993,7 +4001,7 @@ function isContactFormSubmissionSummaryAssistantText_(text) {
 }
 
 /**
- * Collapse duplicate assistant bubbles (same text re-imported with new `seq`/`at` from widget + Firestore merge).
+ * Collapse duplicate form confirmations and back-to-back identical assistant bubbles (not unrelated repeats).
  *
  * @param {{ role: string, text: string, at?: number, seq?: number }[]} turns
  * @returns {{ role: string, text: string, at?: number, seq?: number }[]}
@@ -4003,9 +4011,10 @@ function dedupeTranscriptTurnsForDisplay_(turns) {
         return Array.isArray(turns) ? turns.slice() : [];
     }
     /** @type {Set<string>} */
-    const seenAssistant = new Set();
+    const seenFormSummary = new Set();
     /** @type {{ role: string, text: string, at?: number, seq?: number }[]} */
     const out = [];
+    let prevAssistantNorm = "";
     for (let i = 0; i < turns.length; i += 1) {
         const t = turns[i];
         if (!t || typeof t !== "object") {
@@ -4018,10 +4027,17 @@ function dedupeTranscriptTurnsForDisplay_(turns) {
         }
         if (role === "assistant") {
             const key = transcriptAssistantCompareNorm_(text);
-            if (seenAssistant.has(key)) {
+            if (isContactFormSubmissionSummaryAssistantText_(text)) {
+                if (seenFormSummary.has(key)) {
+                    continue;
+                }
+                seenFormSummary.add(key);
+            } else if (key && key === prevAssistantNorm) {
                 continue;
             }
-            seenAssistant.add(key);
+            prevAssistantNorm = key;
+        } else {
+            prevAssistantNorm = "";
         }
         const row = /** @type {{ role: string, text: string, at?: number, seq?: number }} */ ({ role, text });
         if (typeof t.at === "number" && Number.isFinite(t.at)) {

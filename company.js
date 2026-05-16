@@ -14417,11 +14417,7 @@ function coalesceAssistantTranscriptLines_(lines) {
         return parts;
     }
     const joined = parts.join("  \n");
-    const last = parts[parts.length - 1];
-    if (
-        /thank you for sharing\.?$/i.test(last)
-        || parts.every((p) => /\s-\s/.test(p))
-    ) {
+    if (isWidgetFormThankYouSummaryLine_(joined)) {
         return [joined];
     }
     return parts;
@@ -14480,7 +14476,18 @@ function appendChatTranscriptAssistantLines_(lines) {
                 trimmed.length > MAX_CHAT_TRANSCRIPT_TEXT_CHARS
                     ? `${trimmed.slice(0, MAX_CHAT_TRANSCRIPT_TEXT_CHARS)}…`
                     : trimmed;
-            if (chatTranscriptAlreadyHasAssistantText_(transcript, text)) {
+            const last = transcript.length ? transcript[transcript.length - 1] : null;
+            const sameAsLast =
+                last
+                && last.role === "assistant"
+                && normalizeChatTranscriptCompareText_(last.text) === normalizeChatTranscriptCompareText_(text);
+            if (sameAsLast) {
+                continue;
+            }
+            if (
+                isWidgetFormThankYouSummaryLine_(text)
+                && chatTranscriptAlreadyHasAssistantText_(transcript, text)
+            ) {
                 continue;
             }
             seq += 1;
@@ -16038,7 +16045,14 @@ function cloneClientContextWithTranscriptAssistantTurn_(ctx, assistantPlain) {
         raw.length > MAX_CHAT_TRANSCRIPT_TEXT_CHARS
             ? `${raw.slice(0, MAX_CHAT_TRANSCRIPT_TEXT_CHARS)}…`
             : raw;
-    if (!chatTranscriptAlreadyHasAssistantText_(transcript, text)) {
+    const last = transcript.length ? transcript[transcript.length - 1] : null;
+    const sameAsLast =
+        last
+        && last.role === "assistant"
+        && normalizeChatTranscriptCompareText_(last.text) === normalizeChatTranscriptCompareText_(text);
+    const duplicateForm =
+        isWidgetFormThankYouSummaryLine_(text) && chatTranscriptAlreadyHasAssistantText_(transcript, text);
+    if (!sameAsLast && !duplicateForm) {
         seq += 1;
         transcript.push({ role: "assistant", text, at: Date.now(), seq });
     }
