@@ -13636,17 +13636,18 @@ function handleDfResponseReceived(event) {
 
     maybeIncrementBubbleUnreadFromResponse(event);
 
-    let assistantLines = extractAssistantVisibleTextsFromDfResponse_(event);
-    const richPlainLines = extractAssistantPlainTextFromCxRichContent_(event);
-    if (richPlainLines.length) {
-        assistantLines = assistantLines.concat(richPlainLines);
-    }
-    if (!assistantLines.length) {
-        assistantLines = extractAssistantVisibleTextsDeepFallback_(event);
-        assistantLines = assistantLines.filter((line) => !isTranscriptNoiseLine_(line));
-    }
-    if (assistantLines.length) {
-        appendChatTranscriptAssistantLines_(assistantLines);
+    const structuredTurns = extractAssistantTranscriptStructuredTurns_(event);
+    if (structuredTurns.length) {
+        appendChatTranscriptAssistantEntries_(structuredTurns);
+    } else {
+        let assistantLines = extractAssistantVisibleTextsFromDfResponse_(event);
+        if (!assistantLines.length) {
+            assistantLines = extractAssistantVisibleTextsDeepFallback_(event);
+            assistantLines = assistantLines.filter((line) => !isTranscriptNoiseLine_(line));
+        }
+        if (assistantLines.length) {
+            appendChatTranscriptAssistantLines_(assistantLines);
+        }
     }
 
     scheduleDomTranslationRefresh();
@@ -14630,27 +14631,165 @@ function pushPlainTextLabelsFromTranscriptPayloadBody_(body, labels) {
  * @param {Event & { detail?: { data?: { messages?: Array<unknown> }, messages?: Array<unknown> } }} event
  * @returns {string[]}
  */
-function extractAssistantPlainTextFromCxRichContent_(event) {
+/**
+ * @param {unknown[]} messages
+ * @returns {Record<string, unknown> | null}
+ */
+function mergeTranscriptRichFromCxMessages_(messages) {
+    if (!Array.isArray(messages) || !messages.length) {
+        return null;
+    }
+    /** @type {unknown[][]} */
+    const richRows = [];
+    /** @type {Record<string, unknown> | null} */
+    let actionPayload = null;
+    const seen = new WeakSet();
+    /** @type {Record<string, unknown>[]} */
+    const bodies = [];
+    for (let i = 0; i < messages.length; i += 1) {
+        collectTranscriptPayloadBodiesFromMessage_(messages[i], bodies, seen);
+    }
+    for (let bi = 0; bi < bodies.length; bi += 1) {
+        const b = bodies[bi];
+        if (Array.isArray(b.richContent)) {
+            for (let ri = 0; ri < b.richContent.length; ri += 1) {
+                const row = b.richContent[ri];
+                if (Array.isArray(row)) {
+                    richRows.push(row);
+                }
+            }
+        }
+        const act = typeof b.action === "string" ? b.action.trim().toLowerCase() : "";
+        if (
+            act === "open_gallery"
+            || act === "open_video"
+            || act === "open_card_carousel"
+            || act === "dfchat_inline_select"
+            || act === "open_form"
+        ) {
+            actionPayload = b;
+        }
+    }
+    if (!richRows.length && !actionPayload) {
+        return null;
+    }
+    /** @type {Record<string, unknown>} */
+    const rich = {};
+    if (richRows.length) {
+        rich.richContent = richRows;
+    }
+    if (actionPayload) {
+        for (const [k, v] of Object.entries(actionPayload)) {
+            if (k !== "richContent") {
+                rich[k] = v;
+            }
+        }
+    }
+    return rich;
+}
+
+/**
+ * @param {Event & { detail?: { raw?: { queryResult?: { responseMessages?: Array<unknown> } }, data?: { messages?: Array<unknown> }, messages?: Array<unknown> } }} event
+ * @returns {Array<{ text?: string, rich?: Record<string, unknown> }>}
+ */
+function extractAssistantTranscriptStructuredTurns_(event) {
     const d = event && event.detail;
     const responseMessages = mergeCxResponseEnvelopeForGallery(event);
     const messengerMessages = d && d.data && Array.isArray(d.data.messages) ? d.data.messages : [];
     const topMessages = d && Array.isArray(d.messages) ? d.messages : [];
-    const seen = new WeakSet();
-    /** @type {Record<string, unknown>[]} */
-    const bodies = [];
-    for (const m of [...responseMessages, ...messengerMessages, ...topMessages]) {
-        collectTranscriptPayloadBodiesFromMessage_(m, bodies, seen);
-    }
-    /** @type {string[]} */
-    const labels = [];
-    for (let bi = 0; bi < bodies.length; bi += 1) {
-        pushPlainTextLabelsFromTranscriptPayloadBody_(bodies[bi], labels);
-    }
-    const unique = [...new Set(labels)];
-    if (!unique.length) {
+    const allMessages = [...responseMessages, ...messengerMessages, ...topMessages];
+
+    const rich = mergeTranscriptRichFromCxMessages_(allMessages);
+    const textLines = extractAssistantVisibleTextsFromDfResponse_(event).filter((line) => !isTranscriptNoiseLine_(line));
+    const coalesced = coalesceAssistantTranscriptLines_(textLines);
+    const text = coalesced.length ? coalesced.join(coalesced.length > 1 ? "\n\n" : "") : "";
+
+    if (!rich && !text) {
         return [];
     }
-    return [unique.join("\n")];
+    /** @type {{ text?: string, rich?: Record<string, unknown> }} */
+    const entry = {};
+    if (text) {
+        entry.text = text;
+    }
+    if (rich) {
+        entry.rich = rich;
+    }
+    return [entry];
+}
+
+/**
+ * @param {Array<{ text?: string, rich?: Record<string, unknown> }>} entries
+ */
+function appendChatTranscriptAssistantEntries_(entries) {
+    if (!entries || !entries.length) {
+        return;
+    }
+    try {
+        const prev = readStoredClientContext();
+        const transcript =
+            prev.chat_transcript && Array.isArray(prev.chat_transcript)
+                ? prev.chat_transcript.slice()
+                : [];
+        const now = Date.now();
+        let seq =
+            typeof prev.chat_transcript_seq === "number" && Number.isFinite(prev.chat_transcript_seq)
+                ? prev.chat_transcript_seq
+                : 0;
+        for (let ei = 0; ei < entries.length; ei += 1) {
+            const entry = entries[ei];
+            if (!entry || typeof entry !== "object") {
+                continue;
+            }
+            const rawText = typeof entry.text === "string" ? entry.text.trim() : "";
+            const text =
+                rawText && rawText.length > MAX_CHAT_TRANSCRIPT_TEXT_CHARS
+                    ? `${rawText.slice(0, MAX_CHAT_TRANSCRIPT_TEXT_CHARS)}…`
+                    : rawText;
+            const rich =
+                entry.rich && typeof entry.rich === "object" && !Array.isArray(entry.rich)
+                    ? entry.rich
+                    : null;
+            if (!text && !rich) {
+                continue;
+            }
+            const last = transcript.length ? transcript[transcript.length - 1] : null;
+            const richKey = rich ? JSON.stringify(rich) : "";
+            const sameAsLast =
+                last
+                && last.role === "assistant"
+                && normalizeChatTranscriptCompareText_(last.text || "") === normalizeChatTranscriptCompareText_(text)
+                && JSON.stringify(last.rich || null) === richKey;
+            if (sameAsLast) {
+                continue;
+            }
+            if (
+                text
+                && isWidgetFormThankYouSummaryLine_(text)
+                && chatTranscriptAlreadyHasAssistantText_(transcript, text)
+            ) {
+                continue;
+            }
+            seq += 1;
+            /** @type {{ role: string, at: number, seq: number, text?: string, rich?: Record<string, unknown> }} */
+            const row = { role: "assistant", at: now, seq };
+            if (text) {
+                row.text = text;
+            }
+            if (rich) {
+                row.rich = rich;
+            }
+            transcript.push(row);
+        }
+        persistClientContext({
+            ...prev,
+            chat_transcript: transcript.slice(-MAX_CHAT_TRANSCRIPT_TURNS),
+            chat_transcript_seq: seq
+        });
+        scheduleSessionQueriesSheetSync_();
+    } catch {
+        /* ignore */
+    }
 }
 
 function appendChatTranscriptAssistantLines_(lines) {

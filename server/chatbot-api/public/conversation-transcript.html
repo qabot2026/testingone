@@ -263,6 +263,108 @@
       font-size: 0.88rem;
       padding: 24px 12px;
     }
+    .msg-body--rich {
+      white-space: normal;
+    }
+    .rc-block { margin-top: 8px; }
+    .rc-block:first-child { margin-top: 0; }
+    .rc-text { white-space: pre-wrap; margin: 0 0 6px; }
+    .rc-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 4px;
+    }
+    .rc-chip {
+      display: inline-block;
+      padding: 7px 14px;
+      border-radius: 999px;
+      border: 1px solid rgba(148, 163, 184, 0.55);
+      background: #fff;
+      font-size: 0.84rem;
+      line-height: 1.2;
+      color: var(--text);
+    }
+    .rc-img {
+      display: block;
+      max-width: 100%;
+      width: auto;
+      max-height: 200px;
+      border-radius: 10px;
+      margin: 4px 0;
+      object-fit: cover;
+      border: 1px solid var(--border);
+    }
+    .rc-gallery {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      padding: 2px 0 8px;
+      margin: 4px 0;
+      scroll-snap-type: x mandatory;
+    }
+    .rc-gallery .rc-img {
+      flex: 0 0 auto;
+      width: min(76vw, 200px);
+      max-height: 126px;
+      scroll-snap-align: start;
+    }
+    .rc-info {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 10px 12px;
+      background: #fff;
+      margin: 6px 0;
+      max-width: 300px;
+    }
+    .rc-info-title { font-weight: 700; font-size: 0.9rem; margin: 0 0 2px; }
+    .rc-info-sub { font-size: 0.78rem; color: var(--muted); margin: 0 0 6px; }
+    .rc-info-text { font-size: 0.82rem; margin: 6px 0 0; white-space: pre-wrap; }
+    .rc-btn-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+    .rc-btn {
+      display: inline-block;
+      padding: 6px 10px;
+      border-radius: 8px;
+      border: 1px solid rgba(13, 148, 136, 0.35);
+      background: rgba(204, 251, 241, 0.5);
+      font-size: 0.78rem;
+      color: #0f766e;
+      text-decoration: none;
+    }
+    .rc-btn--ghost {
+      background: #fff;
+      border-color: rgba(148, 163, 184, 0.5);
+      color: var(--text);
+    }
+    .rc-card {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      background: #fff;
+      margin: 6px 0;
+      max-width: 260px;
+    }
+    .rc-card img { width: 100%; height: 120px; object-fit: cover; display: block; }
+    .rc-card-body { padding: 8px 10px; }
+    .rc-cards-row {
+      display: flex;
+      gap: 10px;
+      overflow-x: auto;
+      padding: 2px 0 8px;
+    }
+    .rc-select-hint { font-size: 0.8rem; color: var(--muted); margin: 4px 0 6px; }
+    .rc-file a { color: #0d9488; font-weight: 600; }
+    .rc-video {
+      position: relative;
+      width: 100%;
+      max-width: 360px;
+      aspect-ratio: 16 / 9;
+      margin: 6px 0;
+      border-radius: 10px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+    }
+    .rc-video iframe { width: 100%; height: 100%; border: 0; }
   </style>
 </head>
 <body>
@@ -286,7 +388,7 @@
     <aside class="summary-rail" id="summaryRail" hidden>
       <div class="summary-rail-inner">
         <div class="details-wrap" id="detailsWrap" hidden>
-          <h2>Lead details (sheet + submission)</h2>
+          <h2>Summary</h2>
           <div class="panel">
             <dl class="dl-grid" id="detailsDl"></dl>
           </div>
@@ -339,6 +441,213 @@
           .replace(/&/g, "&amp;")
           .replace(/</g, "&lt;")
           .replace(/>/g, "&gt;");
+      }
+
+      var TRANSCRIPT_NOISE = { HANDLER_PROMPT: 1, "Virtual Agent": 1, Chips: 1, chips: 1, chip: 1 };
+
+      function unwrapStr(v) {
+        if (typeof v === "string") return v.trim();
+        if (v && typeof v === "object" && typeof v.stringValue === "string") return v.stringValue.trim();
+        return "";
+      }
+
+      function imgUrl(node) {
+        if (!node || typeof node !== "object") return "";
+        if (typeof node.rawUrl === "string" && node.rawUrl.trim()) return node.rawUrl.trim();
+        var img = node.image;
+        if (!img || typeof img !== "object") return "";
+        if (typeof img.rawUrl === "string" && img.rawUrl.trim()) return img.rawUrl.trim();
+        if (img.src && typeof img.src.rawUrl === "string") return img.src.rawUrl.trim();
+        return "";
+      }
+
+      function linkUrl(node) {
+        if (!node || typeof node !== "object") return "";
+        if (typeof node.actionLink === "string" && node.actionLink.trim()) return node.actionLink.trim();
+        if (node.anchor && typeof node.anchor.href === "string") return node.anchor.href.trim();
+        return "";
+      }
+
+      function chipsHtml(options) {
+        if (!Array.isArray(options) || !options.length) return "";
+        var h = '<div class="rc-chips">';
+        for (var i = 0; i < options.length; i++) {
+          var o = options[i];
+          var label = typeof o === "string" ? o.trim() : unwrapStr(o && o.text) || unwrapStr(o && o.label);
+          if (!label || TRANSCRIPT_NOISE[label]) continue;
+          h += '<span class="rc-chip">' + escapeHtml(label) + "</span>";
+        }
+        return h + "</div>";
+      }
+
+      function richItemHtml(item) {
+        if (!item || typeof item !== "object") return "";
+        var type = String(item.type || "").toLowerCase();
+        if (type === "chips") return '<div class="rc-block">' + chipsHtml(item.options) + "</div>";
+        if (type === "image") {
+          var u = imgUrl(item);
+          if (!u) return "";
+          return '<div class="rc-block"><img class="rc-img" src="' + escapeHtml(u) + '" alt="' + escapeHtml(unwrapStr(item.accessibilityText)) + '" loading="lazy" /></div>';
+        }
+        if (type === "info" || type === "accordion") {
+          var title = unwrapStr(item.title);
+          var sub = unwrapStr(item.subtitle);
+          var body = unwrapStr(item.text);
+          var iu = imgUrl(item);
+          var href = linkUrl(item);
+          var html = '<div class="rc-block"><div class="rc-info">';
+          if (iu) {
+            html += href
+              ? '<a href="' + escapeHtml(href) + '" target="_blank" rel="noopener"><img class="rc-img" src="' + escapeHtml(iu) + '" alt="" loading="lazy" /></a>'
+              : '<img class="rc-img" src="' + escapeHtml(iu) + '" alt="" loading="lazy" />';
+          }
+          if (title) html += '<div class="rc-info-title">' + escapeHtml(title) + "</div>";
+          if (sub) html += '<div class="rc-info-sub">' + escapeHtml(sub) + "</div>";
+          if (body) html += '<div class="rc-info-text">' + escapeHtml(body) + "</div>";
+          var btns = Array.isArray(item.buttons) ? item.buttons : [];
+          if (btns.length) {
+            html += '<div class="rc-btn-row">';
+            for (var b = 0; b < btns.length; b++) {
+              var bt = btns[b];
+              var bl = unwrapStr(bt && bt.text) || unwrapStr(bt && bt.label);
+              var bh = href || (bt && bt.link && bt.link.uri ? String(bt.link.uri) : "");
+              if (!bl) continue;
+              html += bh
+                ? '<a class="rc-btn" href="' + escapeHtml(bh) + '" target="_blank" rel="noopener">' + escapeHtml(bl) + "</a>"
+                : '<span class="rc-btn rc-btn--ghost">' + escapeHtml(bl) + "</span>";
+            }
+            html += "</div>";
+          } else if (href && title) {
+            html += '<div class="rc-btn-row"><a class="rc-btn" href="' + escapeHtml(href) + '" target="_blank" rel="noopener">Open link</a></div>';
+          }
+          return html + "</div></div>";
+        }
+        if (type === "files" && Array.isArray(item.files)) {
+          var fh = '<div class="rc-block rc-file">';
+          for (var f = 0; f < item.files.length; f++) {
+            var file = item.files[f];
+            var fn = unwrapStr(file && file.name) || "Download";
+            var fhref = file && file.anchor && file.anchor.href ? String(file.anchor.href) : "";
+            fh += fhref
+              ? '<div><a href="' + escapeHtml(fhref) + '" target="_blank" rel="noopener">' + escapeHtml(fn) + "</a></div>"
+              : "<div>" + escapeHtml(fn) + "</div>";
+          }
+          return fh + "</div>";
+        }
+        return "";
+      }
+
+      function richRowsHtml(richContent) {
+        if (!Array.isArray(richContent)) return "";
+        var out = "";
+        for (var r = 0; r < richContent.length; r++) {
+          var row = richContent[r];
+          if (!Array.isArray(row)) continue;
+          var imgs = [];
+          var rest = "";
+          for (var c = 0; c < row.length; c++) {
+            var piece = richItemHtml(row[c]);
+            if (!piece) continue;
+            if (row[c] && String(row[c].type || "").toLowerCase() === "image") imgs.push(piece);
+            else rest += piece;
+          }
+          if (imgs.length > 1) out += '<div class="rc-gallery">' + imgs.join("") + "</div>";
+          else if (imgs.length === 1) out += imgs[0];
+          out += rest;
+        }
+        return out;
+      }
+
+      function ytEmbed(url) {
+        var m = String(url || "").match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([A-Za-z0-9_-]{6,})/i);
+        return m ? "https://www.youtube.com/embed/" + m[1] : "";
+      }
+
+      function actionHtml(pl) {
+        if (!pl || typeof pl !== "object") return "";
+        var action = String(pl.action || "").toLowerCase();
+        var html = "";
+        var msg = unwrapStr(pl.message);
+        if (msg) html += '<p class="rc-text">' + escapeHtml(msg) + "</p>";
+        if (action === "open_gallery" && Array.isArray(pl.urls)) {
+          html += '<div class="rc-gallery">';
+          for (var g = 0; g < pl.urls.length; g++) {
+            var gu = typeof pl.urls[g] === "string" ? pl.urls[g].trim() : "";
+            if (gu) html += '<img class="rc-img" src="' + escapeHtml(gu) + '" alt="" loading="lazy" />';
+          }
+          html += "</div>" + chipsHtml(pl.options);
+        } else if (action === "open_video" && pl.url) {
+          var emb = ytEmbed(unwrapStr(pl.url));
+          if (emb) {
+            html += '<div class="rc-video"><iframe src="' + escapeHtml(emb) + '" title="Video" allowfullscreen loading="lazy"></iframe></div>';
+          }
+          html += chipsHtml(pl.options);
+        } else if (action === "open_card_carousel" && Array.isArray(pl.cards)) {
+          html += '<div class="rc-cards-row">';
+          for (var k = 0; k < pl.cards.length; k++) {
+            var card = pl.cards[k];
+            if (!card || typeof card !== "object") continue;
+            var ct = unwrapStr(card.title);
+            var cs = unwrapStr(card.subtitle);
+            var ci = typeof card.imageUrl === "string" ? card.imageUrl.trim() : "";
+            html += '<div class="rc-card">';
+            if (ci) html += '<img src="' + escapeHtml(ci) + '" alt="" loading="lazy" />';
+            html += '<div class="rc-card-body">';
+            if (ct) html += '<div class="rc-info-title">' + escapeHtml(ct) + "</div>";
+            if (cs) html += '<div class="rc-info-sub">' + escapeHtml(cs) + "</div>";
+            html += '<span class="rc-btn rc-btn--ghost">' + escapeHtml(unwrapStr(card.ctaLabel) || "View") + "</span></div></div>";
+          }
+          html += "</div>";
+        } else if (action === "dfchat_inline_select" && Array.isArray(pl.options)) {
+          html += '<div class="rc-select-hint">' + escapeHtml(unwrapStr(pl.placeholder) || "Choose…") + "</div>";
+          html += chipsHtml(
+            pl.options.map(function (o) {
+              return { text: unwrapStr(o && o.label) || unwrapStr(o && o.value) };
+            })
+          );
+        } else if (action === "open_form") {
+          html += '<p class="rc-text">Form: <strong>' + escapeHtml(unwrapStr(pl.form_id) || unwrapStr(pl.formId) || "contact") + "</strong></p>";
+        }
+        return html;
+      }
+
+      function resolveRich(turn) {
+        if (turn && turn.rich && typeof turn.rich === "object") return turn.rich;
+        var raw = turn && typeof turn.text === "string" ? turn.text.trim() : "";
+        if (raw.charAt(0) === "{" && (raw.indexOf("richContent") >= 0 || raw.indexOf('"action"') >= 0)) {
+          try {
+            var p = JSON.parse(raw);
+            if (p && typeof p === "object") return p;
+          } catch (ignore) {}
+        }
+        return null;
+      }
+
+      function cleanText(text, rich) {
+        var t = typeof text === "string" ? text.trim() : "";
+        if (!t || !rich) return t;
+        return t
+          .split(/\r?\n/)
+          .map(function (ln) {
+            return ln.trim();
+          })
+          .filter(function (ln) {
+            return ln && !TRANSCRIPT_NOISE[ln] && !(ln === "Chips" && rich.richContent);
+          })
+          .join("\n")
+          .trim();
+      }
+
+      function renderAssistantBody(turn) {
+        var rich = resolveRich(turn);
+        var text = cleanText(turn && turn.text, rich);
+        var html = "";
+        if (text) html += '<p class="rc-text">' + escapeHtml(text) + "</p>";
+        if (rich) {
+          if (Array.isArray(rich.richContent)) html += richRowsHtml(rich.richContent);
+          else if (rich.action || Array.isArray(rich.urls) || Array.isArray(rich.cards)) html += actionHtml(rich);
+        }
+        return html || '<p class="rc-text">(No message stored for this line.)</p>';
       }
 
       /** Match `company.js` getBotPersonaMessageTimeLabel (`en-IN`, optional short date). */
@@ -703,11 +1012,6 @@
           for (var i = 0; i < turns.length; i++) {
             var t = turns[i];
             var role = t && t.role === "assistant" ? "assistant" : "user";
-            var rawText = t && typeof t.text === "string" ? t.text : "";
-            var text =
-              rawText.trim() !== ""
-                ? rawText
-                : "(No message text was stored for this line — it may be rich media or a fallback bubble.)";
             var who = role === "assistant" ? "Assistant" : "User";
             var atMs =
               t && typeof t.at === "number" && Number.isFinite(t.at) ? t.at : null;
@@ -718,6 +1022,10 @@
             var timeHtml = timeLbl
               ? '<span class="msg-time">' + escapeHtml(timeLbl) + "</span>"
               : "";
+            var bodyHtml =
+              role === "assistant"
+                ? renderAssistantBody(t)
+                : '<p class="rc-text">' + escapeHtml((t && t.text) || "") + "</p>";
             var row = document.createElement("div");
             row.className = "msg msg--" + role;
             row.innerHTML =
@@ -725,8 +1033,11 @@
               escapeHtml(who) +
               "</span>" +
               timeHtml +
-              "</div>" +
-              escapeHtml(text);
+              '</div><div class="msg-body' +
+              (role === "assistant" ? " msg-body--rich" : "") +
+              '">' +
+              bodyHtml +
+              "</div>";
             thread.appendChild(row);
           }
           thread.scrollTop = thread.scrollHeight;

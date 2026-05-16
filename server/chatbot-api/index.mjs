@@ -3632,6 +3632,41 @@ function stringifyChatTranscriptForSheetPayload_(clientContext) {
 }
 
 /**
+ * @param {Record<string, unknown>} o
+ * @returns {Record<string, unknown> | null}
+ */
+function transcriptTurnRichFromItem_(o) {
+    if (!o || typeof o !== "object") {
+        return null;
+    }
+    const direct = o.rich;
+    if (direct && typeof direct === "object" && !Array.isArray(direct)) {
+        return /** @type {Record<string, unknown>} */ (direct);
+    }
+    const pay = o.payload;
+    if (pay && typeof pay === "object" && !Array.isArray(pay)) {
+        const p = /** @type {Record<string, unknown>} */ (pay);
+        if (Array.isArray(p.richContent) || typeof p.action === "string") {
+            return p;
+        }
+    }
+    return null;
+}
+
+/** @param {string} text */
+function transcriptTextLooksLikeScrapedRichNoise_(text) {
+    const t = String(text || "").trim();
+    if (!t) {
+        return false;
+    }
+    if (/\bHANDLER_PROMPT\b/.test(t) || /\bVirtual Agent\b/.test(t)) {
+        return true;
+    }
+    const lines = t.split(/\r?\n/).map((ln) => ln.trim()).filter(Boolean);
+    return lines.some((ln) => ln === "Chips" || ln === "chips");
+}
+
+/**
  * Plain text for staff transcript when widget stored structured `rich` without `text`
  * (e.g. after partial revert while Firestore still has rich-only assistant rows).
  *
@@ -3714,13 +3749,13 @@ function transcriptTextFromStoredRich_(rich) {
 
 /**
  * @param {unknown[]} arr
- * @returns {{ role: string, text: string, at?: number, seq?: number }[]}
+ * @returns {{ role: string, text: string, rich?: Record<string, unknown>, at?: number, seq?: number }[]}
  */
 function transcriptTurnsFromStoredChatArray_(arr) {
     if (!Array.isArray(arr) || !arr.length) {
         return [];
     }
-    /** @type {{ role: string, text: string, seq?: number, ord: number, atMs?: number, atSort: number }[]} */
+    /** @type {{ role: string, text: string, rich?: Record<string, unknown>, seq?: number, ord: number, atMs?: number, atSort: number }[]} */
     const tmp = [];
     let ord = 0;
     for (const item of arr) {
@@ -3729,11 +3764,15 @@ function transcriptTurnsFromStoredChatArray_(arr) {
         }
         const o = /** @type {Record<string, unknown>} */ (item);
         const role = normalizeTranscriptItemRole_(o);
+        const rich = transcriptTurnRichFromItem_(o);
         let text = transcriptTurnTextFromItem_(o);
-        if (!text && o.rich) {
-            text = transcriptTextFromStoredRich_(o.rich);
+        if (rich && transcriptTextLooksLikeScrapedRichNoise_(text)) {
+            text = "";
         }
-        if (!text) {
+        if (!text && rich) {
+            text = transcriptTextFromStoredRich_(rich);
+        }
+        if (!text && !rich) {
             continue;
         }
         const atMs = coerceTranscriptAtMs_(o.at);
@@ -3746,7 +3785,7 @@ function transcriptTurnsFromStoredChatArray_(arr) {
                   : NaN;
         const seq = Number.isFinite(seqParsed) ? seqParsed : undefined;
         const atSort = atMs !== undefined ? atMs : Number.POSITIVE_INFINITY;
-        tmp.push({ role, text, seq, ord: ord++, atMs, atSort });
+        tmp.push({ role, text: text || "", rich, seq, ord: ord++, atMs, atSort });
     }
     const seqCount = tmp.filter((x) => typeof x.seq === "number" && Number.isFinite(x.seq)).length;
     const allSeq = seqCount === tmp.length && tmp.length > 0;
@@ -3772,8 +3811,14 @@ function transcriptTurnsFromStoredChatArray_(arr) {
             return a.ord - b.ord;
         });
     }
-    return tmp.map(({ role, text, atMs, seq }) => {
-        const out = /** @type {{ role: string, text: string, at?: number, seq?: number }} */ ({ role, text });
+    return tmp.map(({ role, text, rich, atMs, seq }) => {
+        const out = /** @type {{ role: string, text: string, rich?: Record<string, unknown>, at?: number, seq?: number }} */ ({
+            role,
+            text
+        });
+        if (rich && typeof rich === "object") {
+            out.rich = rich;
+        }
         if (atMs !== undefined) {
             out.at = atMs;
         }
@@ -3827,7 +3872,7 @@ function hasAssistantTurns_(turns) {
  * repeats without timestamps get a stable occurrence suffix. Turns with the same `at` but distinct `seq`
  * (multiple bot lines in one widget tick) stay separate.
  *
- * @param {{ role?: unknown, text?: unknown, at?: unknown, seq?: unknown }} t
+ * @param {{ role?: unknown, text?: unknown, rich?: unknown, at?: unknown, seq?: unknown }} t
  * @param {Map<string, number>} noAtDupCount
  */
 function transcriptTurnMergeDedupeKey_(t, noAtDupCount) {
@@ -3836,9 +3881,15 @@ function transcriptTurnMergeDedupeKey_(t, noAtDupCount) {
     }
     const role = /** @type {{ role?: unknown }} */ (t).role === "assistant" ? "assistant" : "user";
     const text = String(/** @type {{ text?: unknown }} */ (t).text || "").trim();
-    if (!text) {
+    const rich = /** @type {{ rich?: unknown }} */ (t).rich;
+    const richStem =
+        rich && typeof rich === "object" && !Array.isArray(rich)
+            ? `rich:${JSON.stringify(rich)}`
+            : "";
+    if (!text && !richStem) {
         return "";
     }
+    const contentStem = text || richStem;
     const atMs = coerceTranscriptAtMs_(/** @type {{ at?: unknown }} */ (t).at);
     const rawSeq = /** @type {{ seq?: unknown }} */ (t).seq;
     const seqParsed =
@@ -3849,9 +3900,11 @@ function transcriptTurnMergeDedupeKey_(t, noAtDupCount) {
               : NaN;
     const seq = Number.isFinite(seqParsed) ? seqParsed : undefined;
     if (typeof atMs === "number" && Number.isFinite(atMs)) {
-        return typeof seq === "number" ? `${role}|${text}|${atMs}|seq${seq}` : `${role}|${text}|${atMs}`;
+        return typeof seq === "number"
+            ? `${role}|${contentStem}|${atMs}|seq${seq}`
+            : `${role}|${contentStem}|${atMs}`;
     }
-    const stem = `${role}|${text}`;
+    const stem = `${role}|${contentStem}`;
     const next = (noAtDupCount.get(stem) || 0) + 1;
     noAtDupCount.set(stem, next);
     return `${stem}|#${next}`;
@@ -4097,8 +4150,8 @@ function isContactFormSubmissionSummaryAssistantText_(text) {
 /**
  * Collapse duplicate form confirmations and back-to-back identical assistant bubbles (not unrelated repeats).
  *
- * @param {{ role: string, text: string, at?: number, seq?: number }[]} turns
- * @returns {{ role: string, text: string, at?: number, seq?: number }[]}
+ * @param {{ role: string, text: string, rich?: Record<string, unknown>, at?: number, seq?: number }[]} turns
+ * @returns {{ role: string, text: string, rich?: Record<string, unknown>, at?: number, seq?: number }[]}
  */
 function dedupeTranscriptTurnsForDisplay_(turns) {
     if (!Array.isArray(turns) || turns.length < 2) {
@@ -4106,7 +4159,7 @@ function dedupeTranscriptTurnsForDisplay_(turns) {
     }
     /** @type {Set<string>} */
     const seenFormSummary = new Set();
-    /** @type {{ role: string, text: string, at?: number, seq?: number }[]} */
+    /** @type {{ role: string, text: string, rich?: Record<string, unknown>, at?: number, seq?: number }[]} */
     const out = [];
     let prevAssistantNorm = "";
     for (let i = 0; i < turns.length; i += 1) {
@@ -4116,12 +4169,20 @@ function dedupeTranscriptTurnsForDisplay_(turns) {
         }
         const role = t.role === "assistant" ? "assistant" : "user";
         const text = String(t.text || "").trim();
-        if (!text) {
+        const rich =
+            t.rich && typeof t.rich === "object" && !Array.isArray(t.rich)
+                ? /** @type {Record<string, unknown>} */ (t.rich)
+                : undefined;
+        if (!text && !rich) {
             continue;
         }
         if (role === "assistant") {
-            const key = transcriptAssistantCompareNorm_(text);
-            if (isContactFormSubmissionSummaryAssistantText_(text)) {
+            const key = text
+                ? transcriptAssistantCompareNorm_(text)
+                : rich
+                  ? `rich:${JSON.stringify(rich)}`
+                  : "";
+            if (text && isContactFormSubmissionSummaryAssistantText_(text)) {
                 if (seenFormSummary.has(key)) {
                     continue;
                 }
@@ -4133,7 +4194,13 @@ function dedupeTranscriptTurnsForDisplay_(turns) {
         } else {
             prevAssistantNorm = "";
         }
-        const row = /** @type {{ role: string, text: string, at?: number, seq?: number }} */ ({ role, text });
+        const row = /** @type {{ role: string, text: string, rich?: Record<string, unknown>, at?: number, seq?: number }} */ ({
+            role,
+            text
+        });
+        if (rich) {
+            row.rich = rich;
+        }
         if (typeof t.at === "number" && Number.isFinite(t.at)) {
             row.at = t.at;
         }
@@ -4149,8 +4216,8 @@ function dedupeTranscriptTurnsForDisplay_(turns) {
  * Final ordering for staff JSON: sort by wall time, then `seq`, then merge order. Undated rows (no `at`)
  * follow dated rows while preserving relative order — fixes user/bot blocks from two sources clustering wrong.
  *
- * @param {{ role: string, text: string, at?: number, seq?: number }[]} turns
- * @returns {{ role: string, text: string, at?: number, seq?: number }[]}
+ * @param {{ role: string, text: string, rich?: Record<string, unknown>, at?: number, seq?: number }[]} turns
+ * @returns {{ role: string, text: string, rich?: Record<string, unknown>, at?: number, seq?: number }[]}
  */
 function orderTranscriptTurnsForDisplay_(turns) {
     if (!Array.isArray(turns) || turns.length < 2) {
@@ -4171,10 +4238,13 @@ function orderTranscriptTurnsForDisplay_(turns) {
         return a.i - b.i;
     });
     return tagged.map(({ t }) => {
-        const out = /** @type {{ role: string, text: string, at?: number, seq?: number }} */ ({
+        const out = /** @type {{ role: string, text: string, rich?: Record<string, unknown>, at?: number, seq?: number }} */ ({
             role: t.role,
             text: t.text
         });
+        if (t.rich && typeof t.rich === "object") {
+            out.rich = /** @type {Record<string, unknown>} */ (t.rich);
+        }
         if (t.at !== undefined) {
             out.at = t.at;
         }
