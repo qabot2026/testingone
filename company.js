@@ -14746,10 +14746,18 @@ function appendChatTranscriptAssistantEntries_(entries) {
                 rawText && rawText.length > MAX_CHAT_TRANSCRIPT_TEXT_CHARS
                     ? `${rawText.slice(0, MAX_CHAT_TRANSCRIPT_TEXT_CHARS)}…`
                     : rawText;
-            const rich =
+            let rich =
                 entry.rich && typeof entry.rich === "object" && !Array.isArray(entry.rich)
                     ? entry.rich
                     : null;
+            if (rich && !text) {
+                const labels = [];
+                pushPlainTextLabelsFromTranscriptPayloadBody_(rich, labels);
+                const unique = [...new Set(labels)];
+                if (unique.length) {
+                    text = unique.join("\n");
+                }
+            }
             if (!text && !rich) {
                 continue;
             }

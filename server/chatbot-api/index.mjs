@@ -3868,6 +3868,36 @@ function hasAssistantTurns_(turns) {
 }
 
 /**
+ * @param {{ role?: unknown, text?: unknown, rich?: unknown, at?: unknown, seq?: unknown }} t
+ * @returns {{ role: string, text: string, rich?: Record<string, unknown>, at?: number, seq?: number }}
+ */
+function cloneTranscriptTurnForMerge_(t) {
+    const out = /** @type {{ role: string, text: string, rich?: Record<string, unknown>, at?: number, seq?: number }} */ ({
+        role: t && t.role === "assistant" ? "assistant" : "user",
+        text: String(t && t.text != null ? t.text : "")
+    });
+    const rich = t && t.rich;
+    if (rich && typeof rich === "object" && !Array.isArray(rich)) {
+        out.rich = /** @type {Record<string, unknown>} */ (rich);
+    }
+    const atMs = coerceTranscriptAtMs_(t && t.at);
+    if (typeof atMs === "number" && Number.isFinite(atMs)) {
+        out.at = atMs;
+    }
+    const rawSeq = t && t.seq;
+    const seqParsed =
+        typeof rawSeq === "number" && Number.isFinite(rawSeq)
+            ? rawSeq
+            : typeof rawSeq === "string" && Number.isFinite(Number(String(rawSeq).trim()))
+              ? Number(String(rawSeq).trim())
+              : NaN;
+    if (Number.isFinite(seqParsed)) {
+        out.seq = seqParsed;
+    }
+    return out;
+}
+
+/**
  * Dedup within {@link mergeConversationTranscriptTurnSources_}: same role+text at different timestamps stay;
  * repeats without timestamps get a stable occurrence suffix. Turns with the same `at` but distinct `seq`
  * (multiple bot lines in one widget tick) stay separate.
@@ -3915,91 +3945,47 @@ function transcriptTurnMergeDedupeKey_(t, noAtDupCount) {
  * (Firebase `user_queries` merge, Sheet CSV, etc.) in stream order so post-submit Sheet lines are not dropped
  * when Firestore froze at the last lead save.
  *
- * @param {{ role: string, text: string, at?: number, seq?: number }[]} a
- * @param {{ role: string, text: string, at?: number, seq?: number }[]} b
- * @returns {{ role: string, text: string, at?: number, seq?: number }[]}
+ * @param {{ role: string, text: string, rich?: Record<string, unknown>, at?: number, seq?: number }[]} a
+ * @param {{ role: string, text: string, rich?: Record<string, unknown>, at?: number, seq?: number }[]} b
+ * @returns {{ role: string, text: string, rich?: Record<string, unknown>, at?: number, seq?: number }[]}
  */
 function mergeConversationTranscriptTurnSources_(a, b) {
     const aa = Array.isArray(a) ? a.filter((t) => t && typeof t === "object") : [];
     const bb = Array.isArray(b) ? b.filter((t) => t && typeof t === "object") : [];
     if (!aa.length) {
-        return bb.map((t) => {
-            const out = /** @type {{ role: string, text: string, at?: number, seq?: number }} */ ({
-                role: t.role,
-                text: t.text
-            });
-            if (t.at !== undefined) {
-                out.at = t.at;
-            }
-            if (typeof t.seq === "number" && Number.isFinite(t.seq)) {
-                out.seq = t.seq;
-            }
-            return out;
-        });
+        return bb.map((t) => cloneTranscriptTurnForMerge_(/** @type {{ role?: unknown, text?: unknown, rich?: unknown, at?: unknown, seq?: unknown }} */ (t)));
     }
     if (!bb.length) {
-        return aa.map((t) => {
-            const out = /** @type {{ role: string, text: string, at?: number, seq?: number }} */ ({
-                role: t.role,
-                text: t.text
-            });
-            if (t.at !== undefined) {
-                out.at = t.at;
-            }
-            if (typeof t.seq === "number" && Number.isFinite(t.seq)) {
-                out.seq = t.seq;
-            }
-            return out;
-        });
+        return aa.map((t) => cloneTranscriptTurnForMerge_(/** @type {{ role?: unknown, text?: unknown, rich?: unknown, at?: unknown, seq?: unknown }} */ (t)));
     }
 
-    /** @type {{ role: string, text: string, at?: number, seq?: number }[]} */
+    /** @type {{ role: string, text: string, rich?: Record<string, unknown>, at?: number, seq?: number }[]} */
     const noAtA = [];
-    /** @type {{ role: string, text: string, at?: number, seq?: number }[]} */
+    /** @type {{ role: string, text: string, rich?: Record<string, unknown>, at?: number, seq?: number }[]} */
     const noAtB = [];
-    /** @type {{ turn: { role: string, text: string, at?: number, seq?: number }, ord: number }[]} */
+    /** @type {{ turn: { role: string, text: string, rich?: Record<string, unknown>, at?: number, seq?: number }, ord: number }[]} */
     const withAt = [];
     let ord = 0;
     for (let i = 0; i < aa.length; i += 1) {
         const t = aa[i];
-        const atMs = coerceTranscriptAtMs_(t.at);
+        const cloned = cloneTranscriptTurnForMerge_(/** @type {{ role?: unknown, text?: unknown, rich?: unknown, at?: unknown, seq?: unknown }} */ (t));
+        const atMs = coerceTranscriptAtMs_(cloned.at);
         if (typeof atMs === "number" && Number.isFinite(atMs)) {
-            withAt.push({
-                turn: {
-                    role: t.role,
-                    text: t.text,
-                    at: atMs,
-                    ...(typeof t.seq === "number" && Number.isFinite(t.seq) ? { seq: t.seq } : {})
-                },
-                ord: ord++
-            });
+            cloned.at = atMs;
+            withAt.push({ turn: cloned, ord: ord++ });
         } else {
-            noAtA.push({
-                role: t.role,
-                text: t.text,
-                ...(typeof t.seq === "number" && Number.isFinite(t.seq) ? { seq: t.seq } : {})
-            });
+            noAtA.push(cloned);
         }
     }
     for (let j = 0; j < bb.length; j += 1) {
         const t = bb[j];
-        const atMs = coerceTranscriptAtMs_(t.at);
+        const cloned = cloneTranscriptTurnForMerge_(/** @type {{ role?: unknown, text?: unknown, rich?: unknown, at?: unknown, seq?: unknown }} */ (t));
+        const atMs = coerceTranscriptAtMs_(cloned.at);
         if (typeof atMs === "number" && Number.isFinite(atMs)) {
-            withAt.push({
-                turn: {
-                    role: t.role,
-                    text: t.text,
-                    at: atMs,
-                    ...(typeof t.seq === "number" && Number.isFinite(t.seq) ? { seq: t.seq } : {})
-                },
-                ord: ord++
-            });
+            cloned.at = atMs;
+            withAt.push({ turn: cloned, ord: ord++ });
         } else {
-            noAtB.push({
-                role: t.role,
-                text: t.text,
-                ...(typeof t.seq === "number" && Number.isFinite(t.seq) ? { seq: t.seq } : {})
-            });
+            noAtB.push(cloned);
         }
     }
 
@@ -4034,11 +4020,6 @@ function mergeConversationTranscriptTurnSources_(a, b) {
             && isContactFormSubmissionSummaryAssistantText_(textTrim)
         ) {
             sig = `asstform|${transcriptAssistantCompareNorm_(textTrim)}`;
-        } else if (typeof atMs === "number" && Number.isFinite(atMs)) {
-            sig =
-                typeof seq === "number"
-                    ? `${role}|${textTrim}|${atMs}|seq${seq}`
-                    : `${role}|${textTrim}|${atMs}|o${mergeOrd}`;
         } else {
             sig = transcriptTurnMergeDedupeKey_(turn, noAtDupCount);
         }
@@ -4046,15 +4027,7 @@ function mergeConversationTranscriptTurnSources_(a, b) {
             continue;
         }
         seen.add(sig);
-        const row = /** @type {{ role: string, text: string, at?: number, seq?: number }} */ ({
-            role: turn.role,
-            text: turn.text,
-            at: turn.at
-        });
-        if (typeof turn.seq === "number" && Number.isFinite(turn.seq)) {
-            row.seq = turn.seq;
-        }
-        out.push(row);
+        out.push(cloneTranscriptTurnForMerge_(turn));
     }
     for (let u = 0; u < noAtA.length; u += 1) {
         const t = noAtA[u];
@@ -4070,14 +4043,7 @@ function mergeConversationTranscriptTurnSources_(a, b) {
             continue;
         }
         seen.add(sig);
-        const row = /** @type {{ role: string, text: string, at?: number, seq?: number }} */ ({
-            role: t.role,
-            text: t.text
-        });
-        if (typeof t.seq === "number" && Number.isFinite(t.seq)) {
-            row.seq = t.seq;
-        }
-        out.push(row);
+        out.push(cloneTranscriptTurnForMerge_(t));
     }
     for (let v = 0; v < noAtB.length; v += 1) {
         const t = noAtB[v];
@@ -4093,14 +4059,7 @@ function mergeConversationTranscriptTurnSources_(a, b) {
             continue;
         }
         seen.add(sig);
-        const row = /** @type {{ role: string, text: string, at?: number, seq?: number }} */ ({
-            role: t.role,
-            text: t.text
-        });
-        if (typeof t.seq === "number" && Number.isFinite(t.seq)) {
-            row.seq = t.seq;
-        }
-        out.push(row);
+        out.push(cloneTranscriptTurnForMerge_(t));
     }
     return out;
 }

@@ -647,6 +647,9 @@
           if (Array.isArray(rich.richContent)) html += richRowsHtml(rich.richContent);
           else if (rich.action || Array.isArray(rich.urls) || Array.isArray(rich.cards)) html += actionHtml(rich);
         }
+        if (!html && text) {
+          html = '<p class="rc-text">' + escapeHtml(text) + "</p>";
+        }
         return html || '<p class="rc-text">(No message stored for this line.)</p>';
       }
 
