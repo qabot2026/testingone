@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>Live agent inbox</title>
+  <link rel="stylesheet" href="/live-agent/live-agent.css" />
+</head>
+<body>
+
+  <section id="loginView" class="login-view hidden" aria-label="Sign in">
+    <div class="login-card">
+      <h1>Live agent inbox</h1>
+      <p class="muted">Sign in with your work email. Only allowlisted agents can access this page.</p>
+      <form id="loginForm">
+        <label>
+          Email
+          <input id="loginEmail" type="email" autocomplete="email" required placeholder="you@company.com" />
+        </label>
+        <button type="submit" class="btn primary" id="loginSubmitBtn">Send sign-in link</button>
+      </form>
+      <p id="loginMessage" class="login-message muted" role="status"></p>
+      <p class="muted small">Uses the same magic link as the UI dashboard. Check server logs if email is not configured.</p>
+    </div>
+  </section>
+
+  <section id="appView" class="app-view hidden" aria-label="Agent inbox">
+    <header class="top-bar">
+      <div class="top-bar-inner">
+        <div class="brand">
+          <h1>Live agent</h1>
+          <p class="muted" id="agentEmailLabel">—</p>
+        </div>
+        <div class="top-actions">
+          <label class="filter-label">
+            Queue
+            <select id="inboxFilter">
+              <option value="waiting">Waiting</option>
+              <option value="mine">My chats</option>
+              <option value="active">All active</option>
+              <option value="all">Open (waiting + active)</option>
+            </select>
+          </label>
+          <button type="button" class="btn ghost" id="refreshInboxBtn">Refresh</button>
+          <button type="button" class="btn ghost" id="logoutBtn">Sign out</button>
+        </div>
+      </div>
+    </header>
+
+    <div class="workspace">
+      <aside class="inbox-pane" aria-label="Conversation list">
+        <p id="inboxStatus" class="inbox-status muted">Loading…</p>
+        <ul id="inboxList" class="inbox-list"></ul>
+      </aside>
+
+      <main class="chat-pane" aria-label="Active conversation">
+        <div id="chatEmpty" class="chat-empty">
+          <p>Select a conversation from the queue, or claim a waiting chat.</p>
+        </div>
+
+        <div id="chatActive" class="chat-active hidden">
+          <header class="chat-head">
+            <div class="chat-head-meta">
+              <h2 id="chatTitle">Visitor</h2>
+              <p class="muted" id="chatMeta">—</p>
+            </div>
+            <div class="chat-head-actions">
+              <button type="button" class="btn primary small" id="claimBtn" hidden>Claim chat</button>
+              <button type="button" class="btn danger small" id="closeChatBtn" hidden>End chat</button>
+            </div>
+          </header>
+
+          <div id="messageList" class="message-list" role="log" aria-live="polite"></div>
+
+          <form id="composerForm" class="composer">
+            <textarea id="composerInput" rows="2" placeholder="Type a reply…" required></textarea>
+            <button type="submit" class="btn primary" id="sendBtn">Send</button>
+          </form>
+        </div>
+      </main>
+    </div>
+  </section>
+
+  <script src="/live-agent/live-agent.js" defer></script>
+</body>
+</html>

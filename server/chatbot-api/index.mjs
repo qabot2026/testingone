@@ -108,6 +108,7 @@ import { maybeSendAppointmentChatbotStaffNotifyEmail } from "./lib/mail/appointm
 import { maybeSendAppointmentClientAckEmail } from "./lib/mail/appointment-client-ack-email.mjs";
 import { mountSmsOtpRoutes } from "./lib/sms-otp/index.mjs";
 import { mountDashboardRoutes } from "./lib/dashboard/index.mjs";
+import { mountLiveAgentRoutes } from "./lib/live-agent/index.mjs";
 import { normalizeSheetFormId as normalizeStaffSheetFormId_ } from "./lib/form-staff-labels.mjs";
 
 const APPS_SCRIPT_WEBAPP_URL = (process.env.GOOGLE_APPS_SCRIPT_WEBAPP_URL || "").trim();
@@ -783,6 +784,9 @@ mountSmsOtpRoutes(app);
 // Customization dashboard: /dashboard (static SPA) + /api/dashboard/* (auth + settings)
 // + /api/public/widget-settings (read by chat-frame.html on load). See lib/dashboard/README.md.
 mountDashboardRoutes(app);
+
+// Live human-agent inbox: /live-agent (agent SPA) + /api/live-agent/* (see lib/live-agent/README.md).
+mountLiveAgentRoutes(app);
 
 // ---------------------------------------------------------------------------
 // Catalog + appointments: Firebase Realtime Database (CSV upload → RTDB)
