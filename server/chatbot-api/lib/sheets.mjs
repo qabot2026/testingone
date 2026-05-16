@@ -1946,7 +1946,7 @@ async function conversationLinkFormulaForLeadSheetCell_(sheets, tabTitle, rowNum
     const base = resolvedConversationsPublicBaseUrl_();
     if (base && sid) {
         const url = `${base}/conversation-transcript?session=${encodeURIComponent(sid)}`;
-        const label = "Chat script";
+        const label = "Chat link";
         return `=HYPERLINK("${url.replace(/"/g, '""')}","${label.replace(/"/g, '""')}")`;
     }
     if (SPREADSHEET_ID && rowNumber >= 2) {

@@ -419,38 +419,58 @@
     }
     table.sheet thead th.col-conv-link,
     table.sheet tbody td.col-conv-link {
-      min-width: 44px;
-      max-width: 52px;
-      width: 48px;
-      padding: 2px 4px;
+      min-width: 72px;
+      max-width: 108px;
+      width: auto;
+      padding: 4px 8px;
       text-align: center;
     }
     table.sheet tbody td.col-conv-link {
       cursor: default;
     }
+    .conv-link-cell {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      max-width: 100%;
+      margin: 0 auto;
+    }
     .conv-link-eye {
       display: inline-flex;
       align-items: center;
       justify-content: center;
+      flex-shrink: 0;
+      width: 30px;
+      height: 30px;
       margin: 0;
-      padding: 5px;
+      padding: 0;
       border: none;
-      border-radius: 6px;
-      background: transparent;
-      color: var(--brand-strong);
+      border-radius: 50%;
+      background: linear-gradient(145deg, #ecfdf5 0%, #d1fae5 55%, #a7f3d0 100%);
+      color: #0f766e;
       cursor: pointer;
       vertical-align: middle;
-      box-shadow: none;
+      box-shadow:
+        0 1px 2px rgba(15, 118, 110, 0.12),
+        inset 0 1px 0 rgba(255, 255, 255, 0.85);
       line-height: 0;
-      transition: color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+      transition:
+        transform 0.18s cubic-bezier(0.34, 1.4, 0.64, 1),
+        box-shadow 0.18s ease,
+        background 0.18s ease,
+        color 0.18s ease;
     }
     .conv-link-eye:hover {
-      background: var(--brand-soft);
-      color: var(--brand);
-      transform: scale(1.12);
+      background: linear-gradient(145deg, #ccfbf1 0%, #5eead4 100%);
+      color: #0d9488;
+      transform: scale(1.08);
+      box-shadow:
+        0 4px 14px rgba(13, 148, 136, 0.28),
+        inset 0 1px 0 rgba(255, 255, 255, 0.9);
     }
     .conv-link-eye:active {
-      transform: scale(1.04);
+      transform: scale(1.02);
     }
     .conv-link-eye:focus-visible {
       outline: 2px solid var(--brand);
@@ -458,14 +478,41 @@
     }
     .conv-link-eye--disabled {
       cursor: not-allowed;
-      opacity: 0.28;
+      opacity: 0.32;
       pointer-events: none;
+      filter: grayscale(0.4);
     }
     .conv-link-eye svg {
-      width: 21px;
-      height: 21px;
+      width: 17px;
+      height: 17px;
       display: block;
       pointer-events: none;
+    }
+    .conv-link-sheet-text {
+      font-size: 10.5px;
+      font-weight: 600;
+      letter-spacing: 0.01em;
+      color: var(--brand-strong);
+      text-decoration: underline;
+      text-decoration-color: rgba(15, 118, 110, 0.45);
+      text-underline-offset: 2px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 5.5rem;
+      cursor: pointer;
+      background: none;
+      border: none;
+      padding: 0;
+      font-family: inherit;
+    }
+    .conv-link-sheet-text:hover {
+      color: var(--brand);
+    }
+    .conv-link-sheet-text:focus-visible {
+      outline: 2px solid var(--brand);
+      outline-offset: 2px;
+      border-radius: 2px;
     }
     table.sheet td a {
       color: var(--brand-strong);
@@ -2094,12 +2141,31 @@
       function isChatScriptConvLinkColumn(headerTitle) {
         var nk = normKey(headerTitle);
         if (!nk) return false;
-        if (nk === "chatscript" || nk === "chatscriptlink" || nk === "convlink" || nk === "conversationlink") {
+        if (
+          nk === "chatscript" ||
+          nk === "chatscriptlink" ||
+          nk === "chatlink" ||
+          nk === "convlink" ||
+          nk === "conversationlink"
+        ) {
           return true;
         }
-        if (/chatscript/.test(nk) && !/json/.test(nk)) return true;
-        if (nk === "convlink" || nk === "chattranskript") return true;
+        if (/chatscript|chatlink|convlink/.test(nk) && !/json/.test(nk)) return true;
         return false;
+      }
+
+      function isJsonTranscriptSheetCell_(raw) {
+        var flat = flattenCellText(raw);
+        return flat.length > 80 && /^\s*\[\s*\{/.test(flat);
+      }
+
+      /** Display label from Sheet column A (e.g. “Chat script” from HYPERLINK), not raw JSON. */
+      function chatLinkLabelFromSheetCell(raw) {
+        if (isJsonTranscriptSheetCell_(raw)) return "";
+        var flat = flattenCellText(raw);
+        if (!flat) return "";
+        if (/^https?:\/\//i.test(flat)) return "Open link";
+        return flat;
       }
 
       /** Hide optional raw JSON storage columns (e.g. column T) from the staff inbox table. */
@@ -2140,33 +2206,71 @@
 
       var CONV_LINK_EYE_SVG =
         '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" aria-hidden="true">' +
-        '<path d="M2.25 12c2.2-4.2 5.6-6.5 9.75-6.5s7.55 2.3 9.75 6.5c-2.2 4.2-5.6 6.5-9.75 6.5S4.45 16.2 2.25 12Z" stroke="currentColor" stroke-width="1.65" stroke-linejoin="round"/>' +
-        '<circle cx="12" cy="12" r="2.85" fill="currentColor" opacity="0.22"/>' +
-        '<circle cx="12" cy="12" r="1.35" fill="currentColor"/>' +
+        '<path d="M12 4.75C7.1 4.75 3.2 7.9 2 12c1.2 4.1 5.1 7.25 10 7.25s8.8-3.15 10-7.25c-1.2-4.1-5.1-7.25-10-7.25Z" stroke="currentColor" stroke-width="1.55" stroke-linecap="round" stroke-linejoin="round"/>' +
+        '<path d="M12 15.25a3.25 3.25 0 1 0 0-6.5 3.25 3.25 0 0 0 0 6.5Z" fill="currentColor"/>' +
         "</svg>";
 
-      function appendChatScriptConvLinkCell(td, row) {
+      function openConvTranscript_(url, e) {
+        if (e) {
+          e.stopPropagation();
+          e.preventDefault();
+        }
+        if (url) window.open(url, "_blank", "noopener,noreferrer");
+      }
+
+      function appendChatScriptConvLinkCell(td, row, rawCell) {
         td.classList.add("col-conv-link");
         var sid = sessionIdFromRow(row);
         var url = transcriptUrlForSession(sid);
-        td.title = url
-          ? "Open conversation transcript (new tab)"
-          : "No session id on this row";
-        td._clipboardValue = url || "";
+        var sheetLabel = chatLinkLabelFromSheetCell(rawCell);
+        var tip = sheetLabel
+          ? sheetLabel + (url ? " — open transcript" : "")
+          : url
+            ? "Open conversation transcript"
+            : "No session id on this row";
+        td.title = tip;
+        td._clipboardValue = url || sheetLabel || "";
+
+        var wrap = document.createElement("div");
+        wrap.className = "conv-link-cell";
+
         var btn = document.createElement("button");
         btn.type = "button";
         btn.className = "conv-link-eye" + (url ? "" : " conv-link-eye--disabled");
-        btn.setAttribute("aria-label", "Open conversation transcript");
+        btn.setAttribute(
+          "aria-label",
+          sheetLabel ? "Open transcript: " + sheetLabel : "Open conversation transcript"
+        );
         btn.disabled = !url;
         btn.innerHTML = CONV_LINK_EYE_SVG;
         if (url) {
           btn.addEventListener("click", function (e) {
-            e.stopPropagation();
-            e.preventDefault();
-            window.open(url, "_blank", "noopener,noreferrer");
+            openConvTranscript_(url, e);
           });
         }
-        td.appendChild(btn);
+        wrap.appendChild(btn);
+
+        if (sheetLabel) {
+          if (url) {
+            var linkBtn = document.createElement("button");
+            linkBtn.type = "button";
+            linkBtn.className = "conv-link-sheet-text";
+            linkBtn.textContent = sheetLabel;
+            linkBtn.addEventListener("click", function (e) {
+              openConvTranscript_(url, e);
+            });
+            wrap.appendChild(linkBtn);
+          } else {
+            var span = document.createElement("span");
+            span.className = "conv-link-sheet-text";
+            span.textContent = sheetLabel;
+            span.style.cursor = "default";
+            span.style.textDecoration = "none";
+            wrap.appendChild(span);
+          }
+        }
+
+        td.appendChild(wrap);
       }
 
       function linkifyCellForTable(text) {
@@ -2408,7 +2512,7 @@
             td.classList.add("sheet-copy-tip");
             var raw = row[headers[ci]];
             if (isChatScriptConvLinkColumn(headers[ci])) {
-              appendChatScriptConvLinkCell(td, row);
+              appendChatScriptConvLinkCell(td, row, raw);
             } else {
               var clip = cellClipboardString(raw);
               td._clipboardValue = clip;
