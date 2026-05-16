@@ -129,8 +129,6 @@ const CHAT_TRANSCRIPT_MERGE_CAP = 120;
 /** @param {unknown} text */
 function normalizeTranscriptTextKey_(text) {
     return String(text ?? "")
-        .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, "")
-        .replace(/\uFE0F/g, "")
         .replace(/\s{2,}\n/g, " ")
         .replace(/\r\n/g, "\n")
         .replace(/\n+/g, " ")
@@ -181,14 +179,19 @@ function mergeChatTranscriptArrays_(prev, next) {
                       ? Number(atRaw.trim())
                       : NaN;
             const textNorm = normalizeTranscriptTextKey_(text);
-            const key =
-                role === "assistant" && textNorm
-                    ? `asst|${textNorm}`
-                    : Number.isFinite(seq)
-                      ? `seq:${seq}|${role}`
-                      : Number.isFinite(at)
-                        ? `at:${at}|${role}|${textNorm}`
-                        : `ord:${byKey.size}|${role}|${textNorm}`;
+            const isFormSummary =
+                role === "assistant"
+                && textNorm
+                && (/^form submission\b/im.test(textNorm)
+                    || (/thank you for sharing\.?$/i.test(textNorm)
+                        && (textNorm.match(/\s-\s/g) || []).length >= 2));
+            const key = isFormSummary
+                ? `asstform|${textNorm}`
+                : Number.isFinite(seq)
+                  ? `seq:${seq}|${role}`
+                  : Number.isFinite(at)
+                    ? `at:${at}|${role}|${textNorm}`
+                    : `ord:${byKey.size}|${role}|${textNorm}`;
             if (!byKey.has(key)) {
                 byKey.set(key, o);
             }
