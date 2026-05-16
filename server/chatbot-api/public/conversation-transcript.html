@@ -623,16 +623,46 @@
         return null;
       }
 
+      function chipLabelsFromRich(rich) {
+        var labels = [];
+        if (!rich || typeof rich !== "object" || !Array.isArray(rich.richContent)) return labels;
+        for (var r = 0; r < rich.richContent.length; r++) {
+          var row = rich.richContent[r];
+          if (!Array.isArray(row)) continue;
+          for (var c = 0; c < row.length; c++) {
+            var item = row[c];
+            if (!item || typeof item !== "object") continue;
+            if (String(item.type || "").toLowerCase() !== "chips" || !Array.isArray(item.options)) continue;
+            for (var o = 0; o < item.options.length; o++) {
+              var opt = item.options[o];
+              var tx =
+                typeof opt === "string"
+                  ? opt
+                  : opt && typeof opt.text === "string"
+                    ? opt.text
+                    : "";
+              tx = String(tx || "").trim().toLowerCase();
+              if (tx) labels.push(tx);
+            }
+          }
+        }
+        return labels;
+      }
+
       function cleanText(text, rich) {
         var t = typeof text === "string" ? text.trim() : "";
-        if (!t || !rich) return t;
+        if (!t) return t;
+        var chipLabels = rich ? chipLabelsFromRich(rich) : [];
         return t
           .split(/\r?\n/)
           .map(function (ln) {
             return ln.trim();
           })
           .filter(function (ln) {
-            return ln && !TRANSCRIPT_NOISE[ln] && !(ln === "Chips" && rich.richContent);
+            if (!ln || TRANSCRIPT_NOISE[ln]) return false;
+            if (rich && ln === "Chips" && rich.richContent) return false;
+            if (chipLabels.length && chipLabels.indexOf(ln.toLowerCase()) >= 0) return false;
+            return true;
           })
           .join("\n")
           .trim();

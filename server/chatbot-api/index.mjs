@@ -4388,6 +4388,45 @@ function isContactFormSubmissionSummaryAssistantText_(text) {
  * @param {{ role: string, text: string, rich?: Record<string, unknown>, at?: number, seq?: number }[]} turns
  * @returns {{ role: string, text: string, rich?: Record<string, unknown>, at?: number, seq?: number }[]}
  */
+/**
+ * Plain assistant line right after a rich bubble that only repeats chip/button labels.
+ *
+ * @param {{ role: string, text: string, rich?: Record<string, unknown>, at?: number, seq?: number }[]} turns
+ */
+function collapseRedundantAssistantTranscriptTurns_(turns) {
+    if (!Array.isArray(turns) || turns.length < 2) {
+        return Array.isArray(turns) ? turns.slice() : [];
+    }
+    /** @type {{ role: string, text: string, rich?: Record<string, unknown>, at?: number, seq?: number }[]} */
+    const out = [];
+    for (let i = 0; i < turns.length; i += 1) {
+        const t = turns[i];
+        if (!t || typeof t !== "object") {
+            continue;
+        }
+        const prev = out.length ? out[out.length - 1] : null;
+        if (
+            prev
+            && prev.role === "assistant"
+            && t.role === "assistant"
+            && prev.rich
+            && !t.rich
+        ) {
+            const plain = String(t.text || "").trim();
+            const fromRich = transcriptTextFromStoredRich_(prev.rich);
+            if (plain && fromRich) {
+                const pN = transcriptAssistantCompareNorm_(plain);
+                const rN = transcriptAssistantCompareNorm_(fromRich);
+                if (pN === rN || (rN.length > 8 && (rN.includes(pN) || pN.includes(rN)))) {
+                    continue;
+                }
+            }
+        }
+        out.push(t);
+    }
+    return out;
+}
+
 function dedupeTranscriptTurnsForDisplay_(turns) {
     if (!Array.isArray(turns) || turns.length < 2) {
         return Array.isArray(turns) ? turns.slice() : [];
@@ -5069,6 +5108,7 @@ app.get(PATHNAME_CONVERSATION_TRANSCRIPT_JSON, async (req, res) => {
         }
 
         turns = orderTranscriptTurnsForDisplay_(turns);
+        turns = collapseRedundantAssistantTranscriptTurns_(turns);
         turns = dedupeTranscriptTurnsForDisplay_(turns);
 
         if (!assistantTurnCount_(turns) && firestoreRec?.client_context) {

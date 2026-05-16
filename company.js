@@ -13645,7 +13645,6 @@ function handleDfResponseReceived(event) {
     } catch {
         /* transcript capture must not break df-response handling */
     }
-    scheduleDomBotTranscriptCapture_(activeDfMessenger);
 
     scheduleDomTranslationRefresh();
 }
@@ -13665,18 +13664,35 @@ function ensureAssistantTranscriptCapturedForDfEvent_(event) {
     const structuredTurns = extractAssistantTranscriptStructuredTurns_(event);
     if (structuredTurns.length) {
         appendChatTranscriptAssistantEntries_(structuredTurns);
+        const afterStructured = readStoredClientContext();
+        const seqAfterStructured =
+            typeof afterStructured.chat_transcript_seq === "number"
+            && Number.isFinite(afterStructured.chat_transcript_seq)
+                ? afterStructured.chat_transcript_seq
+                : 0;
+        if (seqAfterStructured > seqBefore) {
+            return;
+        }
     }
     let assistantLines = extractAssistantVisibleTextsFromDfResponse_(event);
-    const richPlainLines = extractAssistantPlainTextFromCxRichContent_(event);
-    if (richPlainLines.length) {
-        assistantLines = assistantLines.concat(richPlainLines);
+    if (!structuredTurns.length) {
+        const richPlainLines = extractAssistantPlainTextFromCxRichContent_(event);
+        if (richPlainLines.length) {
+            assistantLines = assistantLines.concat(richPlainLines);
+        }
     }
     if (!assistantLines.length) {
         assistantLines = extractAssistantVisibleTextsDeepFallback_(event);
         assistantLines = assistantLines.filter((line) => !isTranscriptNoiseLine_(line));
     }
     if (assistantLines.length) {
-        appendChatTranscriptAssistantLines_(assistantLines);
+        const lastRow = lastAssistantTranscriptRow_(undefined);
+        const filtered = assistantLines.filter(
+            (line) => !plainTextRedundantWithAssistantRow_(line, lastRow)
+        );
+        if (filtered.length) {
+            appendChatTranscriptAssistantLines_(filtered);
+        }
     }
 
     const after = readStoredClientContext();
@@ -13801,6 +13817,19 @@ function scrapeVisibleBotTranscriptTextsFromMessenger_(dfMessenger) {
  * @param {HTMLElement | null | undefined} dfMessenger
  */
 function captureDomBotTranscriptLines_(dfMessenger) {
+    const prevEarly = readStoredClientContext();
+    const trEarly =
+        prevEarly.chat_transcript && Array.isArray(prevEarly.chat_transcript)
+            ? prevEarly.chat_transcript
+            : [];
+    const lastEarly = lastAssistantTranscriptRow_(trEarly);
+    if (
+        lastEarly
+        && lastEarly.rich
+        && assistantTranscriptCapturedWithinMs_(6000, trEarly)
+    ) {
+        return;
+    }
     const lines = scrapeVisibleBotTranscriptTextsFromMessenger_(dfMessenger);
     if (!lines.length) {
         return;
@@ -13811,12 +13840,19 @@ function captureDomBotTranscriptLines_(dfMessenger) {
             prev.chat_transcript && Array.isArray(prev.chat_transcript)
                 ? prev.chat_transcript
                 : [];
+        const lastRow = lastAssistantTranscriptRow_(tr);
         const existing = new Set(
             tr.filter((r) => r && r.role === "assistant").map((r) => normalizeChatTranscriptCompareText_(r.text || ""))
         );
         const fresh = lines.filter((line) => {
             const norm = normalizeChatTranscriptCompareText_(line);
-            return norm && !existing.has(norm);
+            if (!norm || existing.has(norm)) {
+                return false;
+            }
+            if (plainTextRedundantWithAssistantRow_(line, lastRow)) {
+                return false;
+            }
+            return true;
         });
         if (fresh.length) {
             appendChatTranscriptAssistantLines_(fresh);
@@ -14764,6 +14800,81 @@ function chatTranscriptAlreadyHasAssistantText_(transcript, text) {
     return false;
 }
 
+/**
+ * @param {unknown[] | undefined} transcript
+ * @returns {{ role?: string, text?: string, rich?: Record<string, unknown>, at?: number } | null}
+ */
+function lastAssistantTranscriptRow_(transcript) {
+    const tr =
+        Array.isArray(transcript) && transcript.length
+            ? transcript
+            : (() => {
+                  const prev = readStoredClientContext();
+                  return prev.chat_transcript && Array.isArray(prev.chat_transcript)
+                      ? prev.chat_transcript
+                      : [];
+              })();
+    for (let i = tr.length - 1; i >= 0; i -= 1) {
+        const row = tr[i];
+        if (row && row.role === "assistant") {
+            return row;
+        }
+    }
+    return null;
+}
+
+/**
+ * @param {number} ms
+ * @param {unknown[] | undefined} [transcript]
+ */
+function assistantTranscriptCapturedWithinMs_(ms, transcript) {
+    const last = lastAssistantTranscriptRow_(transcript);
+    if (!last || typeof last.at !== "number" || !Number.isFinite(last.at)) {
+        return false;
+    }
+    return Date.now() - last.at < ms;
+}
+
+/**
+ * Plain line already represented by the last assistant row (text and/or CX `rich` chips).
+ *
+ * @param {string} plain
+ * @param {{ role?: string, text?: string, rich?: Record<string, unknown> } | null} row
+ */
+function plainTextRedundantWithAssistantRow_(plain, row) {
+    if (!row || row.role !== "assistant") {
+        return false;
+    }
+    const norm = normalizeChatTranscriptCompareText_(plain);
+    if (!norm) {
+        return false;
+    }
+    const lastText = normalizeChatTranscriptCompareText_(row.text || "");
+    if (
+        lastText
+        && (lastText === norm || lastText.includes(norm) || norm.includes(lastText))
+    ) {
+        return true;
+    }
+    const rich = row.rich;
+    if (rich && typeof rich === "object" && !Array.isArray(rich)) {
+        /** @type {string[]} */
+        const labels = [];
+        pushPlainTextLabelsFromTranscriptPayloadBody_(rich, labels);
+        for (let li = 0; li < labels.length; li += 1) {
+            const ln = normalizeChatTranscriptCompareText_(labels[li]);
+            if (ln && (ln === norm || norm.includes(ln) || ln.includes(norm))) {
+                return true;
+            }
+        }
+        const joined = normalizeChatTranscriptCompareText_(labels.join(" "));
+        if (joined && (joined === norm || norm.includes(joined) || joined.includes(norm))) {
+            return true;
+        }
+    }
+    return false;
+}
+
 /** CX labels that must not be stored as transcript lines. */
 const TRANSCRIPT_NOISE_LINE_SET = new Set([
     "HANDLER_PROMPT",
@@ -15224,7 +15335,7 @@ function appendChatTranscriptAssistantLines_(lines) {
                 last
                 && last.role === "assistant"
                 && normalizeChatTranscriptCompareText_(last.text) === normalizeChatTranscriptCompareText_(text);
-            if (sameAsLast) {
+            if (sameAsLast || plainTextRedundantWithAssistantRow_(text, last)) {
                 continue;
             }
             if (
@@ -15278,6 +15389,13 @@ function maybeRecordRenderedBotMarkdownForTranscript_(markdown) {
     if (plain.length < 3) {
         return;
     }
+    const lastRow = lastAssistantTranscriptRow_(undefined);
+    if (
+        plainTextRedundantWithAssistantRow_(plain, lastRow)
+        || assistantTranscriptCapturedWithinMs_(3500, undefined)
+    ) {
+        return;
+    }
     appendChatTranscriptAssistantLines_([plain]);
 }
 
@@ -15300,7 +15418,9 @@ function installRenderedBotTranscriptHook_(host) {
             // User lane uses `renderCustomText(t, false)`; user persona uses `(md, true)` but carries USER_PERSONA_TEXT_SENTINEL (filtered below).
             if (isBot !== false && typeof text === "string") {
                 maybeRecordRenderedBotMarkdownForTranscript_(text);
-                scheduleDomBotTranscriptCapture_(host);
+                if (!assistantTranscriptCapturedWithinMs_(4000, undefined)) {
+                    scheduleDomBotTranscriptCapture_(host);
+                }
             }
         } catch {
             /* ignore */
