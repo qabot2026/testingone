@@ -152,9 +152,9 @@ window.COMPANY_CHAT_UI_CONFIG = {
       },
 
       /**
-       * After the chat auto-starts (`FRESH`), if the visitor sends nothing for `idleMs`, the widget
-       * sends `dialogflowEvent` to CX (create the same custom event + end-conversation flow there).
-       * Timer resets only on user actions (typed text, chips, list picks) — bot replies do not reset it.
+       * After the visitor interacts once (message or chip), if they send nothing for `idleMs`, the widget
+       * sends `dialogflowEvent` to CX. No interaction at all (welcome only) does not trigger the event.
+       * Timer resets only on user actions — bot replies do not reset it.
        */
       idleEndConversation: {
         enabled: true,

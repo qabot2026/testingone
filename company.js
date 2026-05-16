@@ -24,6 +24,8 @@ let hasAutoStartedConversation = false;
 let idleEndConversationTimerId = 0;
 let idleEndConversationArmed = false;
 let idleEndConversationFired = false;
+/** True after the visitor sends at least one message or taps a chip/button/list item. */
+let idleEndConversationUserHasEngaged = false;
 let isChatWindowOpen = false;
 /** Agent replies while the chat panel is closed; shown on the launcher bubble until the user opens chat. */
 let bubbleUnreadCount = 0;
@@ -264,11 +266,12 @@ function resetIdleEndConversationState_() {
     clearIdleEndConversationTimer_();
     idleEndConversationArmed = false;
     idleEndConversationFired = false;
+    idleEndConversationUserHasEngaged = false;
 }
 
 function fireIdleEndConversationEvent_() {
     clearIdleEndConversationTimer_();
-    if (!isIdleEndConversationEnabled_() || idleEndConversationFired) {
+    if (!isIdleEndConversationEnabled_() || idleEndConversationFired || !idleEndConversationUserHasEngaged) {
         return;
     }
     const ms = activeDfMessenger;
@@ -289,7 +292,7 @@ function fireIdleEndConversationEvent_() {
 }
 
 function armIdleEndConversationTimer_(dfMessenger) {
-    if (!isIdleEndConversationEnabled_() || idleEndConversationFired) {
+    if (!isIdleEndConversationEnabled_() || idleEndConversationFired || !idleEndConversationUserHasEngaged) {
         return;
     }
     const ms = dfMessenger || activeDfMessenger;
@@ -312,6 +315,7 @@ function notifyUserActivityForIdleEnd_(dfMessenger) {
     if (!isIdleEndConversationEnabled_() || !hasAutoStartedConversation) {
         return;
     }
+    idleEndConversationUserHasEngaged = true;
     idleEndConversationFired = false;
     armIdleEndConversationTimer_(dfMessenger);
 }
@@ -9414,16 +9418,10 @@ function startConversationWithWelcomeEvent(dfMessenger) {
     try {
         const started = dfMessenger.sendRequest("event", AUTO_START_CHAT_EVENT_NAME);
         if (started && typeof started.then === "function") {
-            started
-                .then(() => {
-                    armIdleEndConversationTimer_(dfMessenger);
-                })
-                .catch(() => {
-                    hasAutoStartedConversation = false;
-                    resetIdleEndConversationState_();
-                });
-        } else {
-            armIdleEndConversationTimer_(dfMessenger);
+            started.catch(() => {
+                hasAutoStartedConversation = false;
+                resetIdleEndConversationState_();
+            });
         }
     } catch {
         hasAutoStartedConversation = false;
