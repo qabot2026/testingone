@@ -3528,8 +3528,18 @@ function transcriptTurnTextFromItem_(o, depth = 0) {
             }
         }
     }
+    if (rec.rich) {
+        const fromRich = transcriptTextFromStoredRich_(rec.rich);
+        if (fromRich) {
+            return fromRich;
+        }
+    }
     const pay = rec.payload;
     if (pay && typeof pay === "object") {
+        const fromPay = transcriptTextFromStoredRich_(pay);
+        if (fromPay) {
+            return fromPay;
+        }
         const nested = transcriptTurnTextFromItem_(/** @type {Record<string, unknown>} */ (pay), depth + 1);
         if (nested) {
             return nested;

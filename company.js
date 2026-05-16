@@ -13637,8 +13637,13 @@ function handleDfResponseReceived(event) {
     maybeIncrementBubbleUnreadFromResponse(event);
 
     let assistantLines = extractAssistantVisibleTextsFromDfResponse_(event);
+    const richPlainLines = extractAssistantPlainTextFromCxRichContent_(event);
+    if (richPlainLines.length) {
+        assistantLines = assistantLines.concat(richPlainLines);
+    }
     if (!assistantLines.length) {
         assistantLines = extractAssistantVisibleTextsDeepFallback_(event);
+        assistantLines = assistantLines.filter((line) => !isTranscriptNoiseLine_(line));
     }
     if (assistantLines.length) {
         appendChatTranscriptAssistantLines_(assistantLines);
@@ -14448,6 +14453,204 @@ function chatTranscriptAlreadyHasAssistantText_(transcript, text) {
         }
     }
     return false;
+}
+
+/** CX labels that must not be stored as transcript lines. */
+const TRANSCRIPT_NOISE_LINE_SET = new Set([
+    "HANDLER_PROMPT",
+    "Virtual Agent",
+    "Chips",
+    "chips",
+    "chip"
+]);
+
+/**
+ * @param {string} line
+ * @returns {boolean}
+ */
+function isTranscriptNoiseLine_(line) {
+    const t = typeof line === "string" ? line.trim() : "";
+    return !t || TRANSCRIPT_NOISE_LINE_SET.has(t);
+}
+
+/**
+ * @param {unknown} raw
+ * @returns {Record<string, unknown> | null}
+ */
+function unwrapTranscriptPayloadObject_(raw) {
+    if (!raw) {
+        return null;
+    }
+    if (typeof raw === "string") {
+        const t = raw.trim();
+        if (!t.startsWith("{")) {
+            return null;
+        }
+        try {
+            const o = JSON.parse(t);
+            return o && typeof o === "object" ? /** @type {Record<string, unknown>} */ (o) : null;
+        } catch {
+            return null;
+        }
+    }
+    if (typeof raw !== "object") {
+        return null;
+    }
+    /** @type {Record<string, unknown>} */
+    const rec = /** @type {Record<string, unknown>} */ (raw);
+    if (rec.fields && typeof rec.fields === "object") {
+        return unwrapTranscriptPayloadObject_(convertStructFieldsToObject(rec.fields));
+    }
+    if (rec.structValue && rec.structValue.fields) {
+        return unwrapTranscriptPayloadObject_(convertStructFieldsToObject(rec.structValue.fields));
+    }
+    return rec;
+}
+
+/**
+ * @param {unknown} message
+ * @param {Record<string, unknown>[]} out
+ * @param {WeakSet<object>} seen
+ */
+function collectTranscriptPayloadBodiesFromMessage_(message, out, seen) {
+    if (!message || typeof message !== "object") {
+        return;
+    }
+    /** @type {Record<string, unknown>} */
+    const m = /** @type {Record<string, unknown>} */ (message);
+    if (seen.has(m)) {
+        return;
+    }
+    seen.add(m);
+
+    const direct = unwrapTranscriptPayloadObject_(m.payload ?? m.customPayload);
+    if (direct) {
+        out.push(direct);
+    }
+
+    const fr = m.fulfillment_response || m.fulfillmentResponse;
+    if (fr && typeof fr === "object") {
+        const msgs = /** @type {{ messages?: unknown[] }} */ (fr).messages;
+        if (Array.isArray(msgs)) {
+            for (let i = 0; i < msgs.length; i += 1) {
+                const inner = msgs[i];
+                if (!inner || typeof inner !== "object") {
+                    continue;
+                }
+                const ip = /** @type {Record<string, unknown>} */ (inner).payload;
+                const body = unwrapTranscriptPayloadObject_(ip);
+                if (body) {
+                    out.push(body);
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Flatten CX `richContent` / action payloads to plain staff-transcript lines (no JSON storage).
+ *
+ * @param {Record<string, unknown>} body
+ * @param {string[]} labels
+ */
+function pushPlainTextLabelsFromTranscriptPayloadBody_(body, labels) {
+    if (!body || typeof body !== "object") {
+        return;
+    }
+    const msg = typeof body.message === "string" ? body.message.trim() : "";
+    if (msg && !isTranscriptNoiseLine_(msg)) {
+        labels.push(msg);
+    }
+    const rc = body.richContent;
+    if (Array.isArray(rc)) {
+        for (let ri = 0; ri < rc.length; ri += 1) {
+            const row = rc[ri];
+            if (!Array.isArray(row)) {
+                continue;
+            }
+            for (let ci = 0; ci < row.length; ci += 1) {
+                const item = row[ci];
+                if (!item || typeof item !== "object") {
+                    continue;
+                }
+                const type = String(/** @type {{ type?: unknown }} */ (item).type || "").toLowerCase();
+                if (type === "chips") {
+                    const opts = /** @type {{ options?: unknown[] }} */ (item).options;
+                    if (Array.isArray(opts)) {
+                        for (const opt of opts) {
+                            const t =
+                                typeof opt === "string"
+                                    ? opt.trim()
+                                    : opt && typeof opt === "object" && typeof /** @type {{ text?: unknown }} */ (opt).text === "string"
+                                      ? String(/** @type {{ text?: string }} */ (opt).text).trim()
+                                      : "";
+                            if (t && !isTranscriptNoiseLine_(t)) {
+                                labels.push(t);
+                            }
+                        }
+                    }
+                } else if (type === "info" || type === "accordion") {
+                    const title =
+                        typeof /** @type {{ title?: unknown }} */ (item).title === "string"
+                            ? String(/** @type {{ title?: string }} */ (item).title).trim()
+                            : "";
+                    const sub =
+                        typeof /** @type {{ subtitle?: unknown }} */ (item).subtitle === "string"
+                            ? String(/** @type {{ subtitle?: string }} */ (item).subtitle).trim()
+                            : "";
+                    if (title && !isTranscriptNoiseLine_(title)) {
+                        labels.push(sub ? `${title} — ${sub}` : title);
+                    } else if (sub && !isTranscriptNoiseLine_(sub)) {
+                        labels.push(sub);
+                    }
+                }
+            }
+        }
+    }
+    const opts = body.options;
+    if (Array.isArray(opts)) {
+        for (const opt of opts) {
+            if (!opt || typeof opt !== "object") {
+                continue;
+            }
+            const label =
+                typeof /** @type {{ label?: unknown }} */ (opt).label === "string"
+                    ? String(/** @type {{ label?: string }} */ (opt).label).trim()
+                    : typeof /** @type {{ text?: unknown }} */ (opt).text === "string"
+                      ? String(/** @type {{ text?: string }} */ (opt).text).trim()
+                      : "";
+            if (label && !isTranscriptNoiseLine_(label)) {
+                labels.push(label);
+            }
+        }
+    }
+}
+
+/**
+ * @param {Event & { detail?: { data?: { messages?: Array<unknown> }, messages?: Array<unknown> } }} event
+ * @returns {string[]}
+ */
+function extractAssistantPlainTextFromCxRichContent_(event) {
+    const d = event && event.detail;
+    const responseMessages = mergeCxResponseEnvelopeForGallery(event);
+    const messengerMessages = d && d.data && Array.isArray(d.data.messages) ? d.data.messages : [];
+    const topMessages = d && Array.isArray(d.messages) ? d.messages : [];
+    const seen = new WeakSet();
+    /** @type {Record<string, unknown>[]} */
+    const bodies = [];
+    for (const m of [...responseMessages, ...messengerMessages, ...topMessages]) {
+        collectTranscriptPayloadBodiesFromMessage_(m, bodies, seen);
+    }
+    /** @type {string[]} */
+    const labels = [];
+    for (let bi = 0; bi < bodies.length; bi += 1) {
+        pushPlainTextLabelsFromTranscriptPayloadBody_(bodies[bi], labels);
+    }
+    const unique = [...new Set(labels)];
+    if (!unique.length) {
+        return [];
+    }
+    return [unique.join("\n")];
 }
 
 function appendChatTranscriptAssistantLines_(lines) {
