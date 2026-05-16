@@ -13643,6 +13643,7 @@ function handleDfResponseReceived(event) {
     } catch {
         /* transcript capture must not break df-response handling */
     }
+    scheduleDomBotTranscriptCapture_(activeDfMessenger);
 
     scheduleDomTranslationRefresh();
 }
@@ -13709,6 +13710,131 @@ function ensureAssistantTranscriptCapturedForDfEvent_(event) {
     }
 
     appendChatTranscriptAssistantLines_(["(Bot response)"]);
+    scheduleDomBotTranscriptCapture_(activeDfMessenger);
+}
+
+let domBotTranscriptCaptureTimer = 0;
+
+/**
+ * Visible bot text from the Messenger DOM (fallback when CX JSON capture is empty).
+ *
+ * @param {HTMLElement | null | undefined} dfMessenger
+ * @returns {string[]}
+ */
+function scrapeVisibleBotTranscriptTextsFromMessenger_(dfMessenger) {
+    const list = findMessengerMessageListRoot(dfMessenger);
+    if (!list) {
+        return [];
+    }
+    /** @type {string[]} */
+    const out = [];
+    const seen = new Set();
+    /** @param {string} text */
+    const pushLine = (text) => {
+        const t = typeof text === "string" ? text.replace(/\s+/g, " ").trim() : "";
+        if (!t || t.length < 2 || isTranscriptNoiseLine_(t)) {
+            return;
+        }
+        const norm = normalizeChatTranscriptCompareText_(t);
+        if (!norm || seen.has(norm)) {
+            return;
+        }
+        seen.add(norm);
+        out.push(t);
+    };
+
+    let entryRows = [];
+    try {
+        entryRows = Array.from(list.querySelectorAll(".entry.bot"));
+    } catch {
+        entryRows = [];
+    }
+    for (let i = 0; i < entryRows.length; i += 1) {
+        const row = entryRows[i];
+        if (!(row instanceof HTMLElement) || !dfchatRowLooksLikeCxBotAssistantRow_(row)) {
+            continue;
+        }
+        const msg = row.querySelector(".message.bot-message");
+        if (!msg || !(msg instanceof HTMLElement)) {
+            continue;
+        }
+        let text = (msg.innerText || msg.textContent || "").trim();
+        text = text
+            .replace(/!\[[^\]]*\]\([^)]*\)/g, "")
+            .replace(/\*\*([^*]+)\*\*/g, "$1")
+            .replace(/\s+/g, " ")
+            .trim();
+        pushLine(text);
+    }
+
+    let mdBots = [];
+    try {
+        mdBots = Array.from(
+            list.querySelectorAll("df-markdown-message .message.bot-message.markdown, .message.bot-message.markdown")
+        );
+    } catch {
+        mdBots = [];
+    }
+    for (let j = 0; j < mdBots.length; j += 1) {
+        const msg = mdBots[j];
+        if (!(msg instanceof HTMLElement)) {
+            continue;
+        }
+        if (msg.querySelector?.(`img[src*='#${PERSONA_URL_MARKER_BOT_IMG}']`)) {
+            continue;
+        }
+        let text = (msg.innerText || msg.textContent || "").trim();
+        text = text
+            .replace(/!\[[^\]]*\]\([^)]*\)/g, "")
+            .replace(/\*\*([^*]+)\*\*/g, "$1")
+            .replace(/\s+/g, " ")
+            .trim();
+        pushLine(text);
+    }
+
+    return out;
+}
+
+/**
+ * @param {HTMLElement | null | undefined} dfMessenger
+ */
+function captureDomBotTranscriptLines_(dfMessenger) {
+    const lines = scrapeVisibleBotTranscriptTextsFromMessenger_(dfMessenger);
+    if (!lines.length) {
+        return;
+    }
+    try {
+        const prev = readStoredClientContext();
+        const tr =
+            prev.chat_transcript && Array.isArray(prev.chat_transcript)
+                ? prev.chat_transcript
+                : [];
+        const existing = new Set(
+            tr.filter((r) => r && r.role === "assistant").map((r) => normalizeChatTranscriptCompareText_(r.text || ""))
+        );
+        const fresh = lines.filter((line) => {
+            const norm = normalizeChatTranscriptCompareText_(line);
+            return norm && !existing.has(norm);
+        });
+        if (fresh.length) {
+            appendChatTranscriptAssistantLines_(fresh);
+        }
+    } catch {
+        /* ignore */
+    }
+}
+
+/**
+ * @param {HTMLElement | null | undefined} dfMessenger
+ */
+function scheduleDomBotTranscriptCapture_(dfMessenger) {
+    if (domBotTranscriptCaptureTimer) {
+        window.clearTimeout(domBotTranscriptCaptureTimer);
+    }
+    domBotTranscriptCaptureTimer = window.setTimeout(() => {
+        domBotTranscriptCaptureTimer = 0;
+        captureDomBotTranscriptLines_(dfMessenger || activeDfMessenger);
+    }, 500);
 }
 
 function attachPersonaHandlers(dfMessenger) {
@@ -15081,6 +15207,7 @@ function installRenderedBotTranscriptHook_(host) {
             // User lane uses `renderCustomText(t, false)`; user persona uses `(md, true)` but carries USER_PERSONA_TEXT_SENTINEL (filtered below).
             if (isBot !== false && typeof text === "string") {
                 maybeRecordRenderedBotMarkdownForTranscript_(text);
+                scheduleDomBotTranscriptCapture_(host);
             }
         } catch {
             /* ignore */

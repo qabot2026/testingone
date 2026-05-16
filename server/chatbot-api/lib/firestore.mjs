@@ -140,6 +140,28 @@ function normalizeTranscriptTextKey_(text) {
  * @param {Record<string, unknown>} o
  * @returns {"assistant" | "user"}
  */
+/**
+ * @param {unknown} raw
+ * @returns {unknown[]}
+ */
+function coerceChatTranscriptArray_(raw) {
+    if (Array.isArray(raw)) {
+        return raw;
+    }
+    if (typeof raw === "string") {
+        const s = raw.trim();
+        if (s.startsWith("[")) {
+            try {
+                const parsed = JSON.parse(s);
+                return Array.isArray(parsed) ? parsed : [];
+            } catch {
+                return [];
+            }
+        }
+    }
+    return [];
+}
+
 function normalizeTranscriptMergeRole_(o) {
     const raw =
         o.role
@@ -355,11 +377,15 @@ export async function upsertSessionChatTranscriptDoc(sessionId, clientContextPat
         && typeof snap.data().client_context === "object"
             ? /** @type {Record<string, unknown>} */ ({ .../** @type {Record<string, unknown>} */ (snap.data().client_context) })
             : {};
+    const patchCx = { ...clientContextPatch };
+    if (patchCx.chat_transcript != null) {
+        patchCx.chat_transcript = coerceChatTranscriptArray_(patchCx.chat_transcript);
+    }
     const merged = {
         ...prevCx,
-        ...clientContextPatch,
+        ...patchCx,
         client_session_id: sid,
-        chat_transcript: mergeChatTranscriptArrays_(prevCx.chat_transcript, clientContextPatch.chat_transcript)
+        chat_transcript: mergeChatTranscriptArrays_(prevCx.chat_transcript, patchCx.chat_transcript)
     };
     const prevSeq = prevCx.chat_transcript_seq;
     const patchSeq = clientContextPatch.chat_transcript_seq;
@@ -445,7 +471,10 @@ export async function patchLatestContactSubmissionClientContext(sessionId, clien
             ? /** @type {Record<string, unknown>} */ ({ .../** @type {Record<string, unknown>} */ (hit.data.client_context) })
             : {};
     const patchCx =
-        clientContextPatch && typeof clientContextPatch === "object" ? clientContextPatch : {};
+        clientContextPatch && typeof clientContextPatch === "object" ? { ...clientContextPatch } : {};
+    if (patchCx.chat_transcript != null) {
+        patchCx.chat_transcript = coerceChatTranscriptArray_(patchCx.chat_transcript);
+    }
 
     const merged = {
         ...prevCx,

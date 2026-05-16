@@ -1025,9 +1025,17 @@
               diag +=
                 "The server has stored assistant data — redeploy the API to the latest build and reload. ";
             } else {
-              diag += "Publish the latest company.js on the chat site and test with a new session. ";
+              diag += "Publish latest company.js (loader v98+) and start a new chat so bot lines sync. ";
             }
-            diag += "Source: " + escapeHtml(String(json.source || "")) + ".</div>";
+            if (stats.lead_chat_transcript) {
+              diag +=
+                " Lead storage: " + escapeHtml(JSON.stringify(stats.lead_chat_transcript)) + ".";
+            }
+            if (stats.session_chat_transcript) {
+              diag +=
+                " Session storage: " + escapeHtml(JSON.stringify(stats.session_chat_transcript)) + ".";
+            }
+            diag += " Source: " + escapeHtml(String(json.source || "")) + ".</div>";
             thread.innerHTML = diag;
           }
           var dayLine = document.createElement("div");

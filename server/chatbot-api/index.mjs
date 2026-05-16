@@ -3399,6 +3399,63 @@ function transcriptItemLooksLikeCxAssistantPayload_(rec) {
 }
 
 /**
+ * Widget / Firestore sometimes stores `chat_transcript` as a JSON string instead of an array.
+ *
+ * @param {unknown} raw
+ * @returns {unknown[]}
+ */
+function coerceChatTranscriptArray_(raw) {
+    if (Array.isArray(raw)) {
+        return raw;
+    }
+    if (typeof raw === "string") {
+        const s = raw.trim();
+        if (s.startsWith("[")) {
+            try {
+                const parsed = JSON.parse(s);
+                return Array.isArray(parsed) ? parsed : [];
+            } catch {
+                return [];
+            }
+        }
+    }
+    return [];
+}
+
+/**
+ * @param {Record<string, unknown>} cx
+ */
+function describeChatTranscriptStorage_(cx) {
+    if (!cx || typeof cx !== "object") {
+        return { kind: "missing" };
+    }
+    const raw = cx.chat_transcript;
+    if (Array.isArray(raw)) {
+        let assistantRows = 0;
+        for (let i = 0; i < raw.length; i += 1) {
+            const it = raw[i];
+            if (
+                it
+                && typeof it === "object"
+                && String(/** @type {{ role?: unknown }} */ (it).role || "")
+                    .trim()
+                    .toLowerCase() === "assistant"
+            ) {
+                assistantRows += 1;
+            }
+        }
+        return { kind: "array", length: raw.length, assistant_rows: assistantRows };
+    }
+    if (typeof raw === "string") {
+        return { kind: "string", length: raw.length };
+    }
+    if (raw == null) {
+        return { kind: "null" };
+    }
+    return { kind: typeof raw };
+}
+
+/**
  * @param {Record<string, unknown>} rec
  * @returns {"assistant" | "user"}
  */
@@ -4387,7 +4444,7 @@ function transcriptTurnsFromClientContext_(cx) {
     if (!cx || typeof cx !== "object") {
         return [];
     }
-    const rawChat = Array.isArray(cx.chat_transcript) ? /** @type {unknown[]} */ (cx.chat_transcript) : [];
+    const rawChat = coerceChatTranscriptArray_(cx.chat_transcript);
     let base = rawChat.length ? transcriptTurnsFromStoredChatArray_(rawChat) : [];
 
     const fromAssistantQueries = assistantTurnsFromAssistantQueries_(cx);
@@ -4841,12 +4898,16 @@ app.get(PATHNAME_CONVERSATION_TRANSCRIPT_JSON, async (req, res) => {
             const recoveryArrays = [];
             if (firestoreRec?.client_context) {
                 const rawCx = /** @type {Record<string, unknown>} */ (firestoreRec.client_context);
-                if (Array.isArray(rawCx.chat_transcript)) {
-                    recoveryArrays.push(/** @type {unknown[]} */ (rawCx.chat_transcript));
+                const coerced = coerceChatTranscriptArray_(rawCx.chat_transcript);
+                if (coerced.length) {
+                    recoveryArrays.push(coerced);
                 }
             }
-            if (liveCx && Array.isArray(liveCx.chat_transcript)) {
-                recoveryArrays.push(/** @type {unknown[]} */ (liveCx.chat_transcript));
+            if (liveCx) {
+                const coercedLive = coerceChatTranscriptArray_(liveCx.chat_transcript);
+                if (coercedLive.length) {
+                    recoveryArrays.push(coercedLive);
+                }
             }
             for (let ri = 0; ri < recoveryArrays.length; ri += 1) {
                 const recovered = transcriptTurnsLenientRecoveryFromRawChat_(recoveryArrays[ri]);
@@ -4863,7 +4924,7 @@ app.get(PATHNAME_CONVERSATION_TRANSCRIPT_JSON, async (req, res) => {
 
         if (!assistantTurnCount_(turns) && firestoreRec?.client_context) {
             const rawCx = /** @type {Record<string, unknown>} */ (firestoreRec.client_context);
-            const rawArr = Array.isArray(rawCx.chat_transcript) ? rawCx.chat_transcript : [];
+            const rawArr = coerceChatTranscriptArray_(rawCx.chat_transcript);
             const rawAssistants = rawArr.filter(
                 (it) =>
                     it
@@ -4884,13 +4945,12 @@ app.get(PATHNAME_CONVERSATION_TRANSCRIPT_JSON, async (req, res) => {
         const source = sourceParts.length ? sourceParts.join("+") : "none";
 
         const rawLeadArr =
-            firestoreRec?.client_context
-            && typeof firestoreRec.client_context === "object"
-            && Array.isArray(/** @type {Record<string, unknown>} */ (firestoreRec.client_context).chat_transcript)
-                ? /** @type {unknown[]} */ (/** @type {Record<string, unknown>} */ (firestoreRec.client_context).chat_transcript)
+            firestoreRec?.client_context && typeof firestoreRec.client_context === "object"
+                ? coerceChatTranscriptArray_(
+                      /** @type {Record<string, unknown>} */ (firestoreRec.client_context).chat_transcript
+                  )
                 : [];
-        const rawLiveArr =
-            liveCx && Array.isArray(liveCx.chat_transcript) ? /** @type {unknown[]} */ (liveCx.chat_transcript) : [];
+        const rawLiveArr = liveCx ? coerceChatTranscriptArray_(liveCx.chat_transcript) : [];
         const countRawAssistant = (arr) =>
             arr.filter(
                 (it) =>
@@ -4914,6 +4974,14 @@ app.get(PATHNAME_CONVERSATION_TRANSCRIPT_JSON, async (req, res) => {
                 user_turns: turns.filter((t) => t && t.role === "user").length,
                 stored_lead_assistant_rows: countRawAssistant(rawLeadArr),
                 stored_session_assistant_rows: countRawAssistant(rawLiveArr),
+                lead_chat_transcript: describeChatTranscriptStorage_(
+                    firestoreRec?.client_context && typeof firestoreRec.client_context === "object"
+                        ? /** @type {Record<string, unknown>} */ (firestoreRec.client_context)
+                        : {}
+                ),
+                session_chat_transcript: describeChatTranscriptStorage_(
+                    liveCx && typeof liveCx === "object" ? liveCx : {}
+                ),
                 assistant_queries_count: Array.isArray(
                     firestoreRec?.client_context
                     && typeof firestoreRec.client_context === "object"
