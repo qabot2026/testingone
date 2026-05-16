@@ -769,30 +769,6 @@ function conversationChannelBucket_(raw) {
 }
 
 /**
- * @param {unknown} raw
- * @returns {string}
- */
-function leadCityTrafficLabel_(raw) {
-    const s = sheetCellString_(raw).trim().replace(/\s+/g, " ");
-    if (!s || s.length > 120) {
-        return "";
-    }
-    if (/^https?:\/\//i.test(s)) {
-        return "";
-    }
-    return s;
-}
-
-/**
- * @param {string} label
- * @returns {string}
- */
-function leadCityTrafficBucket_(label) {
-    const t = typeof label === "string" ? label.trim() : "";
-    return t || "Unknown";
-}
-
-/**
  * Human-readable **Device** cell for Sheets and staff transcript summary (e.g. `Desktop/Mobile`).
  * @param {unknown} raw
  * @returns {string}
@@ -3020,7 +2996,6 @@ export async function fetchConversationLeadCaptureStats(opts = {}) {
     const mobileIdx = pickHeaderIndex_(headerMap, SHEET_H_MOBILE, 4);
     const emailIdx = pickHeaderIndex_(headerMap, SHEET_H_EMAIL, 5);
     const channelIdx = pickHeaderIndex_(headerMap, SHEET_H_CHANNEL, 6);
-    const cityIdx = pickHeaderIndex_(headerMap, SHEET_H_CITY, 13);
     const appointmentBookedIdx = pickAppointmentStatsColumnIdx_(headerMap, headersRaw, 15);
     const appointmentDateIdx = pickHeaderIndex_(headerMap, SHEET_H_APPOINTMENT_DATE, 16);
     const appointmentTimeIdx = pickHeaderIndex_(headerMap, SHEET_H_APPOINTMENT_TIME, 17);
@@ -3106,10 +3081,6 @@ export async function fetchConversationLeadCaptureStats(opts = {}) {
             channelHeader: sheetCellString_(headersRaw[channelIdx])
                 ? sheetCellString_(headersRaw[channelIdx])
                 : `Column_${channelIdx + 1}`,
-            cityIdx0: cityIdx,
-            cityHeader: sheetCellString_(headersRaw[cityIdx])
-                ? sheetCellString_(headersRaw[cityIdx])
-                : `Column_${cityIdx + 1}`,
             appointmentBookedHeader: sheetCellString_(headersRaw[appointmentBookedIdx])
                 ? sheetCellString_(headersRaw[appointmentBookedIdx])
                 : `Column_${appointmentBookedIdx + 1}`
@@ -3131,11 +3102,8 @@ export async function fetchConversationLeadCaptureStats(opts = {}) {
             channelOther: 0,
             onlyMobileByChannel: leadSegmentChannelTotalsEmpty_(),
             onlyEmailByChannel: leadSegmentChannelTotalsEmpty_(),
-            mobileAndEmailByChannel: leadSegmentChannelTotalsEmpty_(),
-            cityKnown: 0,
-            cityUnknown: 0
+            mobileAndEmailByChannel: leadSegmentChannelTotalsEmpty_()
         },
-        byCity: [],
         ratios: {
             onlyMobile: "0 / 0",
             onlyEmail: "0 / 0",
@@ -3155,7 +3123,6 @@ export async function fetchConversationLeadCaptureStats(opts = {}) {
         mobileIdx,
         emailIdx,
         channelIdx,
-        cityIdx,
         appointmentBookedIdx,
         appointmentDateIdx,
         appointmentTimeIdx,
@@ -3185,8 +3152,6 @@ export async function fetchConversationLeadCaptureStats(opts = {}) {
     let onlyMobileByCh = leadSegmentChannelTotalsEmpty_();
     let onlyEmailByCh = leadSegmentChannelTotalsEmpty_();
     let bothByCh = leadSegmentChannelTotalsEmpty_();
-    /** @type {Map<string, number>} */
-    const cityCounts = new Map();
 
     for (let ri = 0; ri < dataRows.length; ri += 1) {
         const cells = dataRows[ri] || [];
@@ -3214,8 +3179,6 @@ export async function fetchConversationLeadCaptureStats(opts = {}) {
         const hasMob = sheetCellHasLeadMobile_(cells[mobileIdx]);
         const hasEm = sheetCellHasLeadEmail_(cells[emailIdx]);
         const channelKey = conversationChannelBucket_(cells[channelIdx]);
-        const cityBucket = leadCityTrafficBucket_(leadCityTrafficLabel_(cells[cityIdx]));
-        cityCounts.set(cityBucket, (cityCounts.get(cityBucket) || 0) + 1);
         conversations += 1;
         if (hasMob && hasEm) {
             both += 1;
@@ -3261,13 +3224,6 @@ export async function fetchConversationLeadCaptureStats(opts = {}) {
     const pct = conversations ? Math.round((leadsCaptured * 10_000) / conversations) / 100 : null;
     const rpt = /** @type {(a: number) => string} */ (num) =>
         `${num} / ${conversations}`;
-    const cityUnknown = cityCounts.get("Unknown") || 0;
-    const cityKnown = Math.max(0, conversations - cityUnknown);
-    /** @type {{ city: string, count: number }[]} */
-    const byCity = [...cityCounts.entries()]
-        .map(([city, count]) => ({ city, count }))
-        .sort((a, b) => b.count - a.count || a.city.localeCompare(b.city))
-        .slice(0, 25);
     const out = baseEmpty();
     out.scan.dataRowsConsidered = dataRows.length;
     out.totals.conversations = conversations;
@@ -3287,9 +3243,6 @@ export async function fetchConversationLeadCaptureStats(opts = {}) {
     out.totals.onlyMobileByChannel = onlyMobileByCh;
     out.totals.onlyEmailByChannel = onlyEmailByCh;
     out.totals.mobileAndEmailByChannel = bothByCh;
-    out.totals.cityKnown = cityKnown;
-    out.totals.cityUnknown = cityUnknown;
-    out.byCity = byCity;
     out.ratios.onlyMobile = rpt(onlyMobile);
     out.ratios.onlyEmail = rpt(onlyEmail);
     out.ratios.mobileAndEmail = rpt(both);
@@ -3579,53 +3532,6 @@ function buildLeadDashboardSheetPayload_(payload) {
     L.channelTableEndRow = push([
         "Other / uncategorized",
         tot.channelOther || 0,
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        ""
-    ]);
-    const byCity = Array.isArray(payload.byCity) ? payload.byCity : [];
-    L.rowCitySection = push([
-        "Traffic by city",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        ""
-    ]);
-    L.cityTableHeaderRow = push([
-        "City",
-        "Conversations",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        ""
-    ]);
-    if (byCity.length) {
-        for (let ci = 0; ci < byCity.length; ci += 1) {
-            const row = byCity[ci];
-            const cityName = row && typeof row.city === "string" ? row.city : "Unknown";
-            const cityCount = row && typeof row.count === "number" ? row.count : 0;
-            push([cityName, cityCount, "", "", "", "", "", "", "", ""]);
-        }
-    } else {
-        push(["(no city data)", 0, "", "", "", "", "", "", "", ""]);
-    }
-    L.cityTableEndRow = push([
-        "Unknown / not captured",
-        tot.cityUnknown || 0,
         "",
         "",
         "",

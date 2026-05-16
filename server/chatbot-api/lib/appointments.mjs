@@ -2,6 +2,9 @@ import admin from "firebase-admin";
 import "firebase-admin/database";
 
 const APPOINTMENTS_ROOT = (process.env.FIREBASE_APPOINTMENTS_ROOT || "appointments").trim();
+const APPOINTMENTS_LEADS_ROOT = (
+    process.env.FIREBASE_APPOINTMENTS_LEADS_ROOT || "leads/appointments"
+).trim();
 
 /** @param {string} s */
 function base64UrlEncode_(s) {
@@ -23,7 +26,58 @@ function getDb_() {
 }
 
 /**
- * @param {{ doctorId: string, branchId: string, department: string, dateISO: string, slotLabel: string, userId?: string }} args
+ * @param {Record<string, unknown> | undefined} extras
+ */
+function appointmentLeadFieldsFromExtras_(extras) {
+    const o = extras && typeof extras === "object" ? extras : {};
+    const pick = (k) => {
+        const v = o[k];
+        return typeof v === "string" ? v.trim() : "";
+    };
+    const patientName = pick("patientName");
+    const patientMobile = pick("patientMobile");
+    const patientEmail = pick("patientEmail");
+    const sessionId = pick("sessionId");
+    const formId = pick("formId");
+    const source = pick("source");
+    /** @type {Record<string, string>} */
+    const out = {};
+    if (patientName) {
+        out.patientName = patientName;
+    }
+    if (patientMobile) {
+        out.patientMobile = patientMobile;
+    }
+    if (patientEmail) {
+        out.patientEmail = patientEmail;
+    }
+    if (sessionId) {
+        out.sessionId = sessionId;
+    }
+    if (formId) {
+        out.formId = formId;
+    }
+    if (source) {
+        out.source = source;
+    }
+    return out;
+}
+
+/**
+ * @param {{
+ *   doctorId: string,
+ *   branchId: string,
+ *   department: string,
+ *   dateISO: string,
+ *   slotLabel: string,
+ *   userId?: string,
+ *   patientName?: string,
+ *   patientMobile?: string,
+ *   patientEmail?: string,
+ *   sessionId?: string,
+ *   formId?: string,
+ *   source?: string
+ * }} args
  */
 export async function bookAppointment(args) {
     const doctorId = String(args.doctorId || "").trim();
@@ -32,6 +86,7 @@ export async function bookAppointment(args) {
     const dateISO = String(args.dateISO || "").trim();
     const slotLabel = String(args.slotLabel || "").trim();
     const userId = String(args.userId || "").trim();
+    const leadFields = appointmentLeadFieldsFromExtras_(/** @type {Record<string, unknown>} */ (args));
 
     if (!doctorId || !branchId || !department || !dateISO || !slotLabel) {
         throw new Error("Missing required fields: doctorId, branchId, department, dateISO, slotLabel.");
@@ -43,6 +98,8 @@ export async function bookAppointment(args) {
     const db = getDb_();
     const slotKey = base64UrlEncode_(slotLabel);
     const ref = db.ref(`${APPOINTMENTS_ROOT}/${doctorId}/${dateISO}/${slotKey}`);
+    const sessionId = leadFields.sessionId || "";
+    const effectiveUserId = userId || sessionId || null;
 
     const result = await ref.transaction((current) => {
         if (current) {
@@ -54,8 +111,9 @@ export async function bookAppointment(args) {
             department,
             dateISO,
             slotLabel,
-            userId: userId || null,
-            created_at_ms: Date.now()
+            userId: effectiveUserId,
+            created_at_ms: Date.now(),
+            ...leadFields
         };
     });
 
@@ -63,7 +121,41 @@ export async function bookAppointment(args) {
         throw new Error("Slot already booked.");
     }
 
-    return { ok: true, key: `${doctorId}__${dateISO}__${slotKey}` };
+    return { ok: true, key: `${doctorId}__${dateISO}__${slotKey}`, slotKey };
+}
+
+/**
+ * Full appointment lead row for staff dashboards (parallel to `leads/diagnostics`).
+ *
+ * @param {Record<string, unknown>} record
+ */
+export async function persistAppointmentLeadRecord(record) {
+    const sessionId =
+        typeof record.sessionId === "string"
+            ? record.sessionId.trim()
+            : typeof record.client_session_id === "string"
+              ? record.client_session_id.trim()
+              : "";
+    const mobileDigits =
+        typeof record.patientMobile === "string"
+            ? record.patientMobile.replace(/\D/g, "")
+            : typeof record.mobile === "string"
+              ? record.mobile.replace(/\D/g, "")
+              : "";
+    const key = sessionId || mobileDigits;
+    if (!key) {
+        return { ok: false, reason: "no_session_or_mobile" };
+    }
+
+    const db = getDb_();
+    const ref = db.ref(`${APPOINTMENTS_LEADS_ROOT}/${key}`);
+    const payload = {
+        ...record,
+        sessionId: sessionId || key,
+        updated_at_ms: Date.now()
+    };
+    await ref.set(payload);
+    return { ok: true, key };
 }
 
 /**
@@ -103,4 +195,3 @@ export async function listBookedSlots(args) {
     }
     return out;
 }
-

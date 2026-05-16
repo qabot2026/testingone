@@ -82,7 +82,11 @@ import {
     resolveSubmissionMobileDigits,
     scalarFormValue
 } from "./lib/contact-mobile.mjs";
-import { bookAppointment, listBookedSlots } from "./lib/appointments.mjs";
+import {
+    bookAppointment,
+    listBookedSlots,
+    persistAppointmentLeadRecord
+} from "./lib/appointments.mjs";
 import { listBranches, listDepartments, listDoctors } from "./lib/catalog-rtdb.mjs";
 import { upsertCatalogFromCsvFiles } from "./lib/catalog-csv-ingest.mjs";
 import {
@@ -359,6 +363,31 @@ function scheduleContactPostSuccessTail_(res, work) {
                 typeof p.appointmentTime === "string" ? p.appointmentTime.trim() : "";
             const bookedServerSide =
                 /^yes$/i.test(apBk) && Boolean(apDt && apTm) && visitorEmail;
+            const appointmentRtdb =
+                /^yes$/i.test(apBk)
+                && Boolean(apDt && apTm)
+                && (p.appointmentBookedServer === true || bookedServerSide);
+            if (appointmentRtdb) {
+                const fieldsReadyRtdb =
+                    p.fields && typeof p.fields === "object" && !Array.isArray(p.fields);
+                const fieldsRtdb = fieldsReadyRtdb
+                    ? /** @type {Record<string, string>} */ (p.fields)
+                    : {};
+                await persistAppointmentLeadToRtdbBestEffort_({
+                    sessionId:
+                        typeof p.clientSessionId === "string" ? p.clientSessionId.trim() : "",
+                    formId: typeof p.formId === "string" ? p.formId.trim() : "",
+                    patientName: nm,
+                    patientMobile: mob,
+                    patientEmail: visitorEmail,
+                    appointmentDate: apDt,
+                    appointmentTime: apTm,
+                    appointmentBooked: apBk,
+                    doctorId: normalizeStr_(fieldsRtdb.doctorId),
+                    branchId: normalizeStr_(fieldsRtdb.branchId),
+                    source: "contact-form"
+                });
+            }
             if (bookedServerSide) {
                 const fieldsReady =
                     p.fields
@@ -1395,7 +1424,34 @@ app.post("/api/book-appointment", express.json({ limit: "256kb" }), async (req, 
     const cityOrPlaceBook =
         typeof body.cityOrPlace === "string" ? body.cityOrPlace.trim() : "";
     try {
-        const out = await bookAppointment({ doctorId, branchId, department, dateISO, slotLabel, userId });
+        const out = await bookAppointment({
+            doctorId,
+            branchId,
+            department,
+            dateISO,
+            slotLabel,
+            userId,
+            patientName: contactName,
+            patientMobile: contactMobile,
+            patientEmail: contactEmail,
+            sessionId: userId,
+            source: "rest-book-appointment"
+        });
+        void persistAppointmentLeadToRtdbBestEffort_({
+            sessionId: userId,
+            patientName: contactName,
+            patientMobile: contactMobile,
+            patientEmail: contactEmail,
+            doctorId,
+            branchId,
+            department,
+            appointmentDate: dateISO,
+            appointmentTime: slotLabel,
+            appointmentBooked: "Yes",
+            doctorDisplay,
+            cityOrPlace: cityOrPlaceBook || branchId,
+            source: "rest-book-appointment"
+        });
         if (contactEmail) {
             void (async () => {
                 try {
@@ -2066,6 +2122,18 @@ app.post("/webhook", express.json({ limit: "512kb" }), async (req, res) => {
                 });
             }
 
+            const chatGuestEmailCx = normalizeStr_(
+                params.email
+                    || params.user_email
+                    || params.guest_email
+                    || params.person_email
+            );
+            const chatGuestNameCx = normalizeStr_(
+                params.person_name || params.name || params.customer_name || params.personname
+            );
+            const chatGuestMobileCx = normalizeStr_(
+                params.mobile || params.phone_number || params.phone || params.phonenumber
+            );
             try {
                 await bookAppointment({
                     doctorId: normalizeStr_(doc.DoctorId),
@@ -2073,7 +2141,12 @@ app.post("/webhook", express.json({ limit: "512kb" }), async (req, res) => {
                     department: normalizeStr_(doc.Specialization),
                     dateISO,
                     slotLabel: timeLabel,
-                    userId: ""
+                    userId: "",
+                    patientName: chatGuestNameCx,
+                    patientMobile: chatGuestMobileCx,
+                    patientEmail: chatGuestEmailCx,
+                    sessionId,
+                    source: "cx_webhook"
                 });
             } catch (e) {
                 const msg = e && e.message ? e.message : String(e);
@@ -2090,18 +2163,21 @@ app.post("/webhook", express.json({ limit: "512kb" }), async (req, res) => {
             const placeLabel = normalizeStr_(doc.City) || `branch ${resolvedBranch}`;
             const doctorDisplayCx =
                 normalizeStr_(doc.DisplayDoctorName || `Dr. ${doctorName}`);
-            const chatGuestEmail = normalizeStr_(
-                params.email
-                    || params.user_email
-                    || params.guest_email
-                    || params.person_email
-            );
-            const chatGuestName = normalizeStr_(
-                params.person_name || params.name || params.customer_name || params.personname
-            );
-            const chatGuestMobile = normalizeStr_(
-                params.mobile || params.phone_number || params.phone || params.phonenumber
-            );
+            void persistAppointmentLeadToRtdbBestEffort_({
+                sessionId,
+                patientName: chatGuestNameCx,
+                patientMobile: chatGuestMobileCx,
+                patientEmail: chatGuestEmailCx,
+                doctorId: normalizeStr_(doc.DoctorId),
+                branchId: normalizeStr_(doc.BranchId || resolvedBranch || ""),
+                department: normalizeStr_(doc.Specialization),
+                appointmentDate: dateISO,
+                appointmentTime: timeLabel,
+                appointmentBooked: "Yes",
+                doctorDisplay: doctorDisplayCx,
+                cityOrPlace: placeLabel,
+                source: "cx_webhook"
+            });
             void (async () => {
                 try {
                     const staffR = await maybeSendAppointmentChatbotStaffNotifyEmail({
@@ -2119,10 +2195,10 @@ app.post("/webhook", express.json({ limit: "512kb" }), async (req, res) => {
                             "skipped" in staffR ? staffR.reason : staffR.error || "?"
                         );
                     }
-                    if (chatGuestEmail) {
+                    if (chatGuestEmailCx) {
                         const cr = await maybeSendAppointmentClientAckEmail({
-                            toEmail: chatGuestEmail,
-                            recipientName: chatGuestName,
+                            toEmail: chatGuestEmailCx,
+                            recipientName: chatGuestNameCx,
                             doctorDisplay: doctorDisplayCx,
                             specialization: normalizeStr_(doc.Specialization),
                             branchId: normalizeStr_(doc.BranchId || resolvedBranch || ""),
@@ -2130,7 +2206,7 @@ app.post("/webhook", express.json({ limit: "512kb" }), async (req, res) => {
                             slotLabel: timeLabel,
                             cityOrPlace: placeLabel,
                             source: "dialogflow-cx-chatbot",
-                            mobile: chatGuestMobile
+                            mobile: chatGuestMobileCx
                         });
                         if (
                             (process.env.CONTACT_LEAD_EMAIL_DEBUG || "").trim() === "1"
@@ -2162,11 +2238,46 @@ app.post("/webhook", express.json({ limit: "512kb" }), async (req, res) => {
 });
 
 /**
+ * @param {Record<string, string>} fields
+ * @param {string} formId
+ * @param {string} [sessionId]
+ */
+function appointmentLeadExtrasFromContactFields_(fields, formId, sessionId) {
+    return {
+        patientName: normalizeStr_(fields.name),
+        patientMobile: normalizeStr_(fields.mobile),
+        patientEmail: normalizeStr_(fields.email),
+        sessionId: normalizeStr_(sessionId),
+        formId: normalizeStr_(formId),
+        source: "contact_form"
+    };
+}
+
+/**
+ * @param {Record<string, unknown>} payload
+ */
+async function persistAppointmentLeadToRtdbBestEffort_(payload) {
+    if (firebaseInitError) {
+        return;
+    }
+    try {
+        await persistAppointmentLeadRecord(payload);
+    } catch (e) {
+        const msg = e && e.message ? e.message : String(e);
+        console.error("[chatbot-api] appointment RTDB lead write failed:", msg);
+    }
+}
+
+/**
  * Reserve RTDB slot when submitting doctor/general appointment contact forms.
  * @param {string} formId
  * @param {Record<string, string>} fields
+ * @param {{ sessionId?: string }} [opts]
  */
-async function tryReserveAppointmentSlotFromContactForm_(formId, fields) {
+async function tryReserveAppointmentSlotFromContactForm_(formId, fields, opts) {
+    const sessionId =
+        opts && typeof opts.sessionId === "string" ? opts.sessionId.trim() : "";
+    const leadExtras = appointmentLeadExtrasFromContactFields_(fields, formId, sessionId);
     let fid = normalizeStr_(formId);
     /** Legacy typo id from older CX payloads / configs. */
     if (fid === "appintmentformdocot") {
@@ -2223,7 +2334,8 @@ async function tryReserveAppointmentSlotFromContactForm_(formId, fields) {
                 department: normalizeStr_(ga.department),
                 dateISO,
                 slotLabel,
-                userId: ""
+                userId: "",
+                ...leadExtras
             });
         } catch (e) {
             const msg = e && e.message ? e.message : String(e);
@@ -2298,7 +2410,8 @@ async function tryReserveAppointmentSlotFromContactForm_(formId, fields) {
             department: normalizeStr_(doc.Specialization || "General"),
             dateISO,
             slotLabel,
-            userId: ""
+            userId: "",
+            ...leadExtras
         });
     } catch (e) {
         const msg = e && e.message ? e.message : String(e);
@@ -2312,7 +2425,7 @@ async function tryReserveAppointmentSlotFromContactForm_(formId, fields) {
         }
         return { ok: false, status: 400, error: msg, block: true };
     }
-    return { ok: true, block: true };
+    return { ok: true, block: true, doctorId, dateISO, slotLabel };
 }
 
 app.post(
@@ -2369,10 +2482,16 @@ app.post(
             }
         }
 
+        const clientSessionId = typeof clientContext.client_session_id === "string"
+            ? clientContext.client_session_id.trim()
+            : "";
+
         /** True when this request successfully booked an appointment slot (server-side). */
         let appointmentBookedServer = false;
         try {
-            const rsv = await tryReserveAppointmentSlotFromContactForm_(formId, fields);
+            const rsv = await tryReserveAppointmentSlotFromContactForm_(formId, fields, {
+                sessionId: clientSessionId
+            });
             if (rsv && rsv.skip) {
                 /* not an appointment booking form */
             } else if (rsv && rsv.ok === false) {
@@ -2397,9 +2516,6 @@ app.post(
                 mobile = digitsFromContext;
             }
         }
-        const clientSessionId = typeof clientContext.client_session_id === "string"
-            ? clientContext.client_session_id.trim()
-            : "";
         const browserName = typeof clientContext.browser_name === "string"
             ? clientContext.browser_name.trim()
             : "";
@@ -2716,6 +2832,7 @@ app.post(
                 appointmentDate,
                 appointmentTime,
                 appointmentBooked,
+                appointmentBookedServer,
                 submittedAtIso,
                 fields,
                 ip
