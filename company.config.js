@@ -158,7 +158,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
        */
       idleEndConversation: {
         enabled: true,
-        idleMs: 120000,
+        idleMs: 60000,
         dialogflowEvent: "END_CONVERSATION_IDLE"
       },
 
