@@ -3887,6 +3887,17 @@ function transcriptTurnRichFromItem_(o) {
     if (!o || typeof o !== "object") {
         return null;
     }
+    const richJson = o.rich_json;
+    if (typeof richJson === "string" && richJson.trim()) {
+        try {
+            const parsed = JSON.parse(richJson);
+            if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+                return /** @type {Record<string, unknown>} */ (parsed);
+            }
+        } catch {
+            /* ignore */
+        }
+    }
     const direct = o.rich;
     if (direct && typeof direct === "object" && !Array.isArray(direct)) {
         return /** @type {Record<string, unknown>} */ (direct);

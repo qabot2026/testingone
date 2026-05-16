@@ -125,6 +125,166 @@ function maxChatTranscriptSeq_(arr) {
 }
 
 const CHAT_TRANSCRIPT_MERGE_CAP = 120;
+const FIRESTORE_SANITIZE_MAX_DEPTH = 14;
+const FIRESTORE_SANITIZE_STRING_MAX = 12000;
+const FIRESTORE_RICH_JSON_MAX = 49000;
+
+/**
+ * Firestore cannot store nested arrays (e.g. CX `richContent: [][]`). Coerce or drop invalid values.
+ *
+ * @param {unknown} value
+ * @param {number} depth
+ * @returns {unknown}
+ */
+function sanitizeValueForFirestore_(value, depth) {
+    if (depth > FIRESTORE_SANITIZE_MAX_DEPTH) {
+        return null;
+    }
+    if (value === undefined) {
+        return undefined;
+    }
+    if (value === null) {
+        return null;
+    }
+    if (typeof value === "boolean") {
+        return value;
+    }
+    if (typeof value === "number") {
+        return Number.isFinite(value) ? value : null;
+    }
+    if (typeof value === "string") {
+        return value.length > FIRESTORE_SANITIZE_STRING_MAX
+            ? value.slice(0, FIRESTORE_SANITIZE_STRING_MAX)
+            : value;
+    }
+    if (Array.isArray(value)) {
+        /** @type {unknown[]} */
+        const out = [];
+        for (let i = 0; i < value.length; i += 1) {
+            const el = value[i];
+            if (Array.isArray(el)) {
+                try {
+                    const s = JSON.stringify(el);
+                    out.push(
+                        s.length > FIRESTORE_SANITIZE_STRING_MAX
+                            ? s.slice(0, FIRESTORE_SANITIZE_STRING_MAX)
+                            : s
+                    );
+                } catch {
+                    /* skip nested array */
+                }
+                continue;
+            }
+            const cleaned = sanitizeValueForFirestore_(el, depth + 1);
+            if (cleaned !== undefined) {
+                out.push(cleaned);
+            }
+        }
+        return out;
+    }
+    if (typeof value === "object") {
+        /** @type {Record<string, unknown>} */
+        const out = {};
+        for (const [k, v] of Object.entries(/** @type {Record<string, unknown>} */ (value))) {
+            if (typeof k !== "string" || !k.trim() || k.length > 120) {
+                continue;
+            }
+            const cleaned = sanitizeValueForFirestore_(v, depth + 1);
+            if (cleaned !== undefined) {
+                out[k] = cleaned;
+            }
+        }
+        return out;
+    }
+    return String(value).slice(0, 500);
+}
+
+/**
+ * @param {unknown} turn
+ * @returns {Record<string, unknown> | null}
+ */
+function sanitizeChatTranscriptTurnForFirestore_(turn) {
+    if (!turn || typeof turn !== "object" || Array.isArray(turn)) {
+        return null;
+    }
+    const o = /** @type {Record<string, unknown>} */ (turn);
+    /** @type {Record<string, unknown>} */
+    const out = { role: normalizeTranscriptMergeRole_(o) };
+    const textRaw = typeof o.text === "string" ? o.text.trim() : "";
+    if (textRaw) {
+        out.text =
+            textRaw.length > FIRESTORE_SANITIZE_STRING_MAX
+                ? `${textRaw.slice(0, FIRESTORE_SANITIZE_STRING_MAX)}…`
+                : textRaw;
+    }
+    if (typeof o.at === "number" && Number.isFinite(o.at)) {
+        out.at = o.at;
+    }
+    const seqRaw = o.seq;
+    if (typeof seqRaw === "number" && Number.isFinite(seqRaw)) {
+        out.seq = seqRaw;
+    } else if (typeof seqRaw === "string" && Number.isFinite(Number(seqRaw.trim()))) {
+        out.seq = Number(seqRaw.trim());
+    }
+    if (o.rich != null) {
+        try {
+            const richJson = JSON.stringify(o.rich);
+            if (richJson) {
+                out.rich_json =
+                    richJson.length > FIRESTORE_RICH_JSON_MAX
+                        ? richJson.slice(0, FIRESTORE_RICH_JSON_MAX)
+                        : richJson;
+            }
+        } catch {
+            /* skip */
+        }
+    } else if (typeof o.rich_json === "string" && o.rich_json.trim()) {
+        const rj = o.rich_json.trim();
+        out.rich_json = rj.length > FIRESTORE_RICH_JSON_MAX ? rj.slice(0, FIRESTORE_RICH_JSON_MAX) : rj;
+    }
+    if (!out.text && !out.rich_json) {
+        if (out.role === "assistant") {
+            out.text = "(Bot message)";
+        } else {
+            return null;
+        }
+    }
+    return out;
+}
+
+/**
+ * @param {Record<string, unknown>} cx
+ * @returns {Record<string, unknown>}
+ */
+function sanitizeClientContextForFirestore_(cx) {
+    if (!cx || typeof cx !== "object" || Array.isArray(cx)) {
+        return {};
+    }
+    /** @type {Record<string, unknown>} */
+    const out = {};
+    for (const [k, v] of Object.entries(cx)) {
+        if (k === "chat_transcript") {
+            const arr = coerceChatTranscriptArray_(v);
+            /** @type {Record<string, unknown>[]} */
+            const rows = [];
+            for (let i = 0; i < arr.length; i += 1) {
+                const row = sanitizeChatTranscriptTurnForFirestore_(arr[i]);
+                if (row) {
+                    rows.push(row);
+                }
+            }
+            if (rows.length) {
+                out.chat_transcript = rows;
+            }
+            continue;
+        }
+        const cleaned = sanitizeValueForFirestore_(v, 0);
+        if (cleaned !== undefined) {
+            out[k] = cleaned;
+        }
+    }
+    return out;
+}
 
 /** @param {unknown} text */
 function normalizeTranscriptTextKey_(text) {
@@ -398,10 +558,11 @@ export async function upsertSessionChatTranscriptDoc(sessionId, clientContextPat
     if (Array.isArray(clientContextPatch.user_queries) && clientContextPatch.user_queries.length) {
         merged.user_queries = clientContextPatch.user_queries;
     }
+    const safeContext = sanitizeClientContextForFirestore_(merged);
     await ref.set(
         {
             client_session_id: sid,
-            client_context: merged,
+            client_context: safeContext,
             updated_at: admin.firestore.FieldValue.serverTimestamp()
         },
         { merge: true }
@@ -500,8 +661,9 @@ export async function patchLatestContactSubmissionClientContext(sessionId, clien
         merged.user_queries = patchCx.user_queries;
     }
 
+    const safeContext = sanitizeClientContextForFirestore_(merged);
     await hit.ref.update({
-        client_context: merged,
+        client_context: safeContext,
         transcript_synced_at: admin.firestore.FieldValue.serverTimestamp()
     });
     return true;
@@ -511,9 +673,18 @@ export async function persistToFirestore(record) {
     // Ensure Admin app exists before Firestore use.
     firebaseAdminInit();
     const db = getFirestoreDb();
+    const rec =
+        record && typeof record === "object"
+            ? /** @type {Record<string, unknown>} */ ({ .../** @type {Record<string, unknown>} */ (record) })
+            : {};
+    if (rec.client_context && typeof rec.client_context === "object") {
+        rec.client_context = sanitizeClientContextForFirestore_(
+            /** @type {Record<string, unknown>} */ (rec.client_context)
+        );
+    }
     try {
         await db.collection(COLLECTION).add({
-            ...record,
+            ...rec,
             /** server time for indexing */
             saved_at: admin.firestore.FieldValue.serverTimestamp()
         });
