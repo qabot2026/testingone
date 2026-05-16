@@ -334,9 +334,88 @@ export function resolveMobileForUpstream(fields, clientContext, serverResolvedMo
     return resolveContactMobile(fields, mergedBody, ctx);
 }
 
+const UUID_V4_TEXT_RE =
+    /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/i;
+
+/** @param {string} s */
+function looksLikeUuidString_(s) {
+    const t = String(s || "").trim();
+    return t.length > 0 && UUID_V4_TEXT_RE.test(t) && t.replace(/[^0-9a-f-]/gi, "").length >= 32;
+}
+
+/** @param {string} s */
+function stringLikelyContainsUuid_(s) {
+    return UUID_V4_TEXT_RE.test(String(s || ""));
+}
+
+/** @param {string} digits @param {Record<string, unknown>} [clientContext] */
+function rejectSessionDerivedMobileDigits_(digits, clientContext) {
+    const d = normalizeMobileDigits(digits);
+    if (!d) {
+        return "";
+    }
+    const sid =
+        clientContext
+        && typeof clientContext.client_session_id === "string"
+        && clientContext.client_session_id.trim()
+            ? clientContext.client_session_id.trim()
+            : "";
+    if (!sid) {
+        return d;
+    }
+    const sidDigits = sid.replace(/\D/g, "");
+    if (sidDigits.length >= 9 && sidDigits.includes(d)) {
+        return "";
+    }
+    return d;
+}
+
+const USER_QUERY_CONTEXT_KEYS = [
+    "user_queries",
+    "chat_queries",
+    "visitor_queries",
+    "dialog_queries",
+    "conversation_queries"
+];
+
+/**
+ * Prefer the latest user chat line when it is clearly a phone (form field may be missing on some clients).
+ *
+ * @param {Record<string, unknown>} ctx
+ */
+function pickMobileFromUserQueriesInContext_(ctx) {
+    if (!ctx || typeof ctx !== "object") {
+        return "";
+    }
+    for (let ki = 0; ki < USER_QUERY_CONTEXT_KEYS.length; ki += 1) {
+        const key = USER_QUERY_CONTEXT_KEYS[ki];
+        const arr = ctx[key];
+        if (!Array.isArray(arr)) {
+            continue;
+        }
+        for (let i = arr.length - 1; i >= 0; i -= 1) {
+            const line = scalarFormValue(arr[i]);
+            if (!line || looksLikeUuidString_(line) || stringLikelyContainsUuid_(line)) {
+                continue;
+            }
+            const digits = normalizeMobileDigits(line);
+            if (digits.length >= 9 && digits.length <= 15) {
+                return digits;
+            }
+        }
+    }
+    return "";
+}
+
 /** @param {string} s */
 function bestDigitRunFromString_(s) {
-    const str = String(s || "");
+    const str = String(s || "").trim();
+    if (!str || looksLikeUuidString_(str)) {
+        return "";
+    }
+    if (str.length > 48 && stringLikelyContainsUuid_(str)) {
+        return "";
+    }
     const runs = str.match(/\d+/g);
     if (!runs) {
         return "";
@@ -372,7 +451,14 @@ function longestDigitRunDeep_(val, depth) {
         return "";
     }
     if (typeof val === "string") {
-        return bestDigitRunFromString_(val.trim());
+        const t = val.trim();
+        if (!t || looksLikeUuidString_(t)) {
+            return "";
+        }
+        if (t.length > 48 && stringLikelyContainsUuid_(t)) {
+            return "";
+        }
+        return bestDigitRunFromString_(t);
     }
     if (typeof val === "number" && Number.isFinite(val)) {
         return bestDigitRunFromString_(String(val));
@@ -397,6 +483,9 @@ function longestDigitRunDeep_(val, depth) {
             // This prevents accidentally treating session ids / timestamps as "mobile".
             if (typeof k === "string") {
                 const nk = normalizedFormKey(k);
+                if (nk === "clientcontext" && typeof rv === "string") {
+                    continue;
+                }
                 if (
                     nk.includes("session") ||
                     nk.includes("clientsession") ||
@@ -429,15 +518,25 @@ function longestDigitRunDeep_(val, depth) {
  */
 export function resolveSubmissionMobileDigits(fields, body, clientContext) {
     const resolved = resolveContactMobile(fields, body, clientContext);
-    const direct = normalizeMobileDigits(resolved);
+    const direct = rejectSessionDerivedMobileDigits_(
+        normalizeMobileDigits(resolved),
+        clientContext
+    );
     if (direct) {
         return direct;
     }
     const ctx = clientContext && typeof clientContext === "object" ? clientContext : {};
     const bodyObj = body && typeof body === "object" ? body : {};
-    return (
+    const fromQueries = rejectSessionDerivedMobileDigits_(
+        pickMobileFromUserQueriesInContext_(ctx),
+        clientContext
+    );
+    if (fromQueries) {
+        return fromQueries;
+    }
+    const scanned =
         longestDigitRunDeep_(fields, 0) ||
         longestDigitRunDeep_(ctx, 0) ||
-        longestDigitRunDeep_(bodyObj, 0)
-    );
+        longestDigitRunDeep_(bodyObj, 0);
+    return rejectSessionDerivedMobileDigits_(scanned, clientContext);
 }
