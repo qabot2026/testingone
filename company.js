@@ -14386,6 +14386,8 @@ function extractAssistantVisibleTextsDeepFallback_(event) {
  */
 function normalizeChatTranscriptCompareText_(text) {
     return String(text || "")
+        .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, "")
+        .replace(/\uFE0F/g, "")
         .replace(/\s{2,}\n/g, " ")
         .replace(/\r\n/g, "\n")
         .replace(/\n+/g, " ")
@@ -14416,11 +14418,12 @@ function coalesceAssistantTranscriptLines_(lines) {
     if (parts.length === 1) {
         return parts;
     }
-    const joined = parts.join("  \n");
-    if (isWidgetFormThankYouSummaryLine_(joined)) {
-        return [joined];
+    const formJoined = parts.join("  \n");
+    if (isWidgetFormThankYouSummaryLine_(formJoined)) {
+        return [formJoined];
     }
-    return parts;
+    /** One assistant bubble per bot response (e.g. booking confirm + home-care line in the same CX turn). */
+    return [parts.join("\n\n")];
 }
 
 /** Widget form confirm bubble (`Name - … Thank you for sharing.`). */
@@ -14476,18 +14479,7 @@ function appendChatTranscriptAssistantLines_(lines) {
                 trimmed.length > MAX_CHAT_TRANSCRIPT_TEXT_CHARS
                     ? `${trimmed.slice(0, MAX_CHAT_TRANSCRIPT_TEXT_CHARS)}…`
                     : trimmed;
-            const last = transcript.length ? transcript[transcript.length - 1] : null;
-            const sameAsLast =
-                last
-                && last.role === "assistant"
-                && normalizeChatTranscriptCompareText_(last.text) === normalizeChatTranscriptCompareText_(text);
-            if (sameAsLast) {
-                continue;
-            }
-            if (
-                isWidgetFormThankYouSummaryLine_(text)
-                && chatTranscriptAlreadyHasAssistantText_(transcript, text)
-            ) {
+            if (chatTranscriptAlreadyHasAssistantText_(transcript, text)) {
                 continue;
             }
             seq += 1;
@@ -16045,14 +16037,7 @@ function cloneClientContextWithTranscriptAssistantTurn_(ctx, assistantPlain) {
         raw.length > MAX_CHAT_TRANSCRIPT_TEXT_CHARS
             ? `${raw.slice(0, MAX_CHAT_TRANSCRIPT_TEXT_CHARS)}…`
             : raw;
-    const last = transcript.length ? transcript[transcript.length - 1] : null;
-    const sameAsLast =
-        last
-        && last.role === "assistant"
-        && normalizeChatTranscriptCompareText_(last.text) === normalizeChatTranscriptCompareText_(text);
-    const duplicateForm =
-        isWidgetFormThankYouSummaryLine_(text) && chatTranscriptAlreadyHasAssistantText_(transcript, text);
-    if (!sameAsLast && !duplicateForm) {
+    if (!chatTranscriptAlreadyHasAssistantText_(transcript, text)) {
         seq += 1;
         transcript.push({ role: "assistant", text, at: Date.now(), seq });
     }
