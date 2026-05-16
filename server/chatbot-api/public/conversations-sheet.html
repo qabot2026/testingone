@@ -809,24 +809,39 @@
     .lead-stats-compact-line {
       display: flex;
       flex-wrap: wrap;
-      align-items: center;
-      gap: 6px 16px;
+      align-items: stretch;
+      gap: 10px;
       width: 100%;
     }
     .lead-stats-compact-line--kpis {
-      padding-bottom: 8px;
-      margin-bottom: 8px;
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      padding-bottom: 10px;
+      margin-bottom: 10px;
       border-bottom: 1px solid rgba(15, 23, 42, 0.07);
     }
     .lead-stats-compact-line--detail {
-      align-items: center;
-      gap: 10px 18px;
+      display: flex;
+      flex-wrap: nowrap;
+      align-items: stretch;
+      gap: 10px;
+      width: 100%;
     }
     .lead-inline-stat {
-      display: inline-flex;
+      display: flex;
+      flex-direction: row;
       align-items: baseline;
-      gap: 5px;
-      white-space: nowrap;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 6px 8px;
+      min-width: 0;
+      padding: 10px 12px;
+      border-radius: 8px;
+      border: 1px solid rgba(15, 23, 42, 0.07);
+      background: #ffffff;
+      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+      text-align: center;
     }
     .lead-inline-stat-label {
       font-size: 0.75rem;
@@ -834,7 +849,7 @@
       color: #64748b;
     }
     .lead-inline-stat-val {
-      font-size: 0.9375rem;
+      font-size: 1.0625rem;
       font-weight: 700;
       font-variant-numeric: tabular-nums;
       color: #0f172a;
@@ -843,11 +858,19 @@
       color: #0f766e;
     }
     .lead-compact-block {
-      display: inline-flex;
-      flex-wrap: wrap;
-      align-items: center;
-      gap: 6px 8px;
+      flex: 1;
       min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding: 10px 12px;
+      border-radius: 8px;
+      border: 1px solid rgba(15, 23, 42, 0.07);
+      background: rgba(255, 255, 255, 0.85);
+      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+    }
+    .lead-compact-block--channels {
+      flex: 1.15;
     }
     .lead-compact-heading {
       font-size: 0.6875rem;
@@ -855,44 +878,45 @@
       letter-spacing: 0.06em;
       text-transform: uppercase;
       color: #475569;
-      white-space: nowrap;
     }
     .lead-channel-rows {
-      display: inline-flex;
+      display: flex;
       flex-direction: column;
-      gap: 4px;
-      align-items: flex-start;
+      gap: 8px;
+      width: 100%;
+      flex: 1;
     }
     .lead-channel-row {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      gap: 6px;
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      width: 100%;
     }
     .channel-chip {
-      display: inline-flex;
+      display: flex;
       align-items: center;
-      gap: 4px;
-      padding: 2px 8px 2px 6px;
-      border-radius: 6px;
+      justify-content: center;
+      gap: 6px;
+      padding: 7px 10px;
+      border-radius: 7px;
       border: 1px solid rgba(15, 23, 42, 0.08);
       background: #ffffff;
-      font-size: 0.75rem;
+      font-size: 0.8125rem;
       line-height: 1.2;
-      white-space: nowrap;
+      min-width: 0;
     }
     .channel-chip-ic {
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      width: 16px;
-      height: 16px;
-      border-radius: 4px;
+      width: 22px;
+      height: 22px;
+      border-radius: 6px;
       flex-shrink: 0;
     }
     .channel-chip-ic svg {
-      width: 10px;
-      height: 10px;
+      width: 13px;
+      height: 13px;
       display: block;
     }
     .channel-chip--web .channel-chip-ic {
@@ -926,36 +950,39 @@
       color: #0f766e;
     }
     .lead-contact-row {
-      display: inline-flex;
-      flex-wrap: wrap;
-      align-items: center;
-      gap: 6px;
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+      width: 100%;
+      flex: 1;
+      align-content: start;
     }
     .contact-chip {
-      display: inline-flex;
-      align-items: baseline;
-      gap: 4px;
-      padding: 2px 8px;
-      border-radius: 6px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 2px;
+      padding: 7px 8px;
+      border-radius: 7px;
       border: 1px solid rgba(15, 23, 42, 0.08);
       background: #ffffff;
-      font-size: 0.75rem;
-      white-space: nowrap;
+      font-size: 0.8125rem;
+      text-align: center;
+      min-width: 0;
     }
     .contact-chip-lbl {
       font-weight: 600;
       color: #64748b;
     }
     .contact-chip strong {
+      font-size: 1rem;
       font-weight: 700;
       font-variant-numeric: tabular-nums;
       color: #0f172a;
     }
     .lead-compact-sep {
-      flex: 0 0 1px;
-      align-self: stretch;
-      min-height: 1.75rem;
-      background: rgba(15, 23, 42, 0.1);
+      display: none;
     }
     .lead-stats-metric-strip {
       display: none;
@@ -1285,12 +1312,17 @@
         padding: 9px 8px;
         min-height: 38px;
       }
+      .lead-stats-compact-line--kpis {
+        grid-template-columns: 1fr;
+      }
       .lead-stats-compact-line--detail {
         flex-direction: column;
-        align-items: flex-start;
       }
-      .lead-compact-sep {
-        display: none;
+      .lead-channel-row {
+        grid-template-columns: 1fr 1fr;
+      }
+      .lead-contact-row {
+        grid-template-columns: 1fr;
       }
       .lead-stats-chart-grid {
         grid-template-columns: 1fr;
@@ -3177,7 +3209,7 @@
           kpiInline("Appointments booked", escapeHtml(String(apt)), false) +
           "</div>" +
           '<div class="lead-stats-compact-line lead-stats-compact-line--detail">' +
-          '<div class="lead-compact-block" aria-label="Conversations by channel">' +
+          '<div class="lead-compact-block lead-compact-block--channels" aria-label="Conversations by channel">' +
           '<span class="lead-compact-heading">By channel</span>' +
           '<div class="lead-channel-rows" role="list">' +
           '<div class="lead-channel-row">' +
@@ -3188,8 +3220,7 @@
           channelChip("instagram", "Instagram", cinst, iconIg) +
           channelChip("facebook", "Facebook", cfb, iconFb) +
           "</div></div></div>" +
-          '<span class="lead-compact-sep" aria-hidden="true"></span>' +
-          '<div class="lead-compact-block" aria-label="Contact detail captured">' +
+          '<div class="lead-compact-block lead-compact-block--contact" aria-label="Contact detail captured">' +
           '<span class="lead-compact-heading">Contact captured</span>' +
           '<div class="lead-contact-row">' +
           contactChip("Mobile only", om) +
