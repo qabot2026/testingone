@@ -20,6 +20,10 @@ let activeContactFormId = null;
 let activeDfMessenger = null;
 let activeBubbleNode = null;
 let hasAutoStartedConversation = false;
+/** @type {number} */
+let idleEndConversationTimerId = 0;
+let idleEndConversationArmed = false;
+let idleEndConversationFired = false;
 let isChatWindowOpen = false;
 /** Agent replies while the chat panel is closed; shown on the launcher bubble until the user opens chat. */
 let bubbleUnreadCount = 0;
@@ -221,6 +225,95 @@ function getBlockChatWithoutMobileMessage_() {
     return t
         ? t.slice(0, 2000)
         : "You've reached the message limit without a mobile number. Please share your mobile number to continue.";
+}
+
+const IDLE_END_CONVERSATION_CONFIG = FEATURES_CONFIG.idleEndConversation && typeof FEATURES_CONFIG.idleEndConversation === "object"
+    ? FEATURES_CONFIG.idleEndConversation
+    : {};
+
+const IDLE_END_CONVERSATION_DEFAULT_MS = 120000;
+const IDLE_END_CONVERSATION_DEFAULT_EVENT = "END_CONVERSATION_IDLE";
+
+function isIdleEndConversationEnabled_() {
+    return isFeatureEnabledFromConfig(IDLE_END_CONVERSATION_CONFIG, true);
+}
+
+function getIdleEndConversationMs_() {
+    const n = IDLE_END_CONVERSATION_CONFIG.idleMs;
+    if (typeof n === "number" && Number.isFinite(n) && n >= 30000) {
+        return Math.min(3600000, Math.round(n));
+    }
+    return IDLE_END_CONVERSATION_DEFAULT_MS;
+}
+
+function getIdleEndConversationEventName_() {
+    const ev = typeof IDLE_END_CONVERSATION_CONFIG.dialogflowEvent === "string"
+        ? IDLE_END_CONVERSATION_CONFIG.dialogflowEvent.trim()
+        : "";
+    return ev || IDLE_END_CONVERSATION_DEFAULT_EVENT;
+}
+
+function clearIdleEndConversationTimer_() {
+    if (idleEndConversationTimerId) {
+        window.clearTimeout(idleEndConversationTimerId);
+        idleEndConversationTimerId = 0;
+    }
+}
+
+function resetIdleEndConversationState_() {
+    clearIdleEndConversationTimer_();
+    idleEndConversationArmed = false;
+    idleEndConversationFired = false;
+}
+
+function fireIdleEndConversationEvent_() {
+    clearIdleEndConversationTimer_();
+    if (!isIdleEndConversationEnabled_() || idleEndConversationFired) {
+        return;
+    }
+    const ms = activeDfMessenger;
+    const ev = getIdleEndConversationEventName_();
+    if (!ms || !ev || typeof ms.sendRequest !== "function") {
+        return;
+    }
+    idleEndConversationFired = true;
+    idleEndConversationArmed = false;
+    try {
+        const r = ms.sendRequest("event", ev);
+        if (r && typeof r.catch === "function") {
+            r.catch(() => {});
+        }
+    } catch {
+        /* ignore */
+    }
+}
+
+function armIdleEndConversationTimer_(dfMessenger) {
+    if (!isIdleEndConversationEnabled_() || idleEndConversationFired) {
+        return;
+    }
+    const ms = dfMessenger || activeDfMessenger;
+    if (!ms || !hasAutoStartedConversation) {
+        return;
+    }
+    idleEndConversationArmed = true;
+    clearIdleEndConversationTimer_();
+    const waitMs = getIdleEndConversationMs_();
+    idleEndConversationTimerId = window.setTimeout(() => {
+        idleEndConversationTimerId = 0;
+        if (activeDfMessenger !== ms || !hasAutoStartedConversation) {
+            return;
+        }
+        fireIdleEndConversationEvent_();
+    }, waitMs);
+}
+
+function notifyUserActivityForIdleEnd_(dfMessenger) {
+    if (!isIdleEndConversationEnabled_() || !hasAutoStartedConversation) {
+        return;
+    }
+    idleEndConversationFired = false;
+    armIdleEndConversationTimer_(dfMessenger);
 }
 
 function hasStoredMobileForChatBlockGate_() {
@@ -9318,9 +9411,24 @@ function startConversationWithWelcomeEvent(dfMessenger) {
     hasAutoStartedConversation = true;
     syncDfMessengerSessionParametersFromClientContext(dfMessenger);
 
-    dfMessenger.sendRequest("event", AUTO_START_CHAT_EVENT_NAME).catch(() => {
+    try {
+        const started = dfMessenger.sendRequest("event", AUTO_START_CHAT_EVENT_NAME);
+        if (started && typeof started.then === "function") {
+            started
+                .then(() => {
+                    armIdleEndConversationTimer_(dfMessenger);
+                })
+                .catch(() => {
+                    hasAutoStartedConversation = false;
+                    resetIdleEndConversationState_();
+                });
+        } else {
+            armIdleEndConversationTimer_(dfMessenger);
+        }
+    } catch {
         hasAutoStartedConversation = false;
-    });
+        resetIdleEndConversationState_();
+    }
 }
 
 function tryOpenChatByClick(dfMessenger) {
@@ -13998,6 +14106,7 @@ function attachPersonaHandlers(dfMessenger) {
     };
     ["df-chip-clicked", "df-button-clicked"].forEach((evtName) => {
         window.addEventListener(evtName, (event) => {
+            notifyUserActivityForIdleEnd_(activeDfMessenger);
             const phrase = dfMessengerRichChoiceDetailToPhrase_(event && event.detail);
             if (phrase) {
                 trackRichMessengerPhraseAndPersona(phrase);
@@ -14005,6 +14114,7 @@ function attachPersonaHandlers(dfMessenger) {
         }, true);
     });
     window.addEventListener("df-list-element-clicked", (event) => {
+        notifyUserActivityForIdleEnd_(activeDfMessenger);
         const phrase = dfMessengerRichChoiceDetailToPhrase_(event && event.detail);
         if (phrase) {
             trackRichMessengerPhraseAndPersona(phrase);
@@ -14086,6 +14196,7 @@ function trackChatUserQueryInSessionContext_(raw) {
                 : [];
         transcript.push({ role: "user", text: t, at: now, seq });
         const cappedTr = transcript.slice(-MAX_CHAT_TRANSCRIPT_TURNS);
+        notifyUserActivityForIdleEnd_(activeDfMessenger);
         persistClientContext({
             ...prev,
             user_queries: capped,
@@ -17881,6 +17992,7 @@ function restartChatSession() {
     }
 
     hasAutoStartedConversation = false;
+    resetIdleEndConversationState_();
     isMessengerLoaded = false;
     shouldAutoOpenChat = false;
     isChatWindowOpen = false;
