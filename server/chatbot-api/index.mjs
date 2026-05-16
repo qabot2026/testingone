@@ -50,6 +50,9 @@ import { firebaseAdminInit } from "./lib/firebase-admin-init.mjs";
 import {
     persistToFirestore,
     fetchLatestContactSubmissionForClientSession,
+    fetchSessionChatTranscriptContext,
+    patchLatestContactSubmissionClientContext,
+    upsertSessionChatTranscriptDoc,
     persistChatFeedbackRecord
 } from "./lib/firestore.mjs";
 import {
@@ -2438,7 +2441,6 @@ app.post(
             const sheetsT0Ms = Date.now();
             if (!SHEETS_DISABLED) {
                 try {
-                    const chatTranscriptJson = stringifyChatTranscriptForSheetPayload_(mergedClientContext);
                     sheetOutcome = await appendContactRowToSheet(
                         {
                             convDate: convSheetDate,
@@ -2458,8 +2460,7 @@ app.post(
                             appointmentBooked,
                             appointmentDate,
                             appointmentTime,
-                            userQueriesCsv,
-                            chatTranscriptJson
+                            userQueriesCsv
                         },
                         {
                             preferIncomingContact: true,
@@ -2664,8 +2665,6 @@ app.post(
             || (await resolveCityForRequest(req));
         const userQueriesCsv = normalizeUserQueriesCsvFromClientContext(mergedClientContext);
         const sourceUrl = resolveSourceUrlForSheet(mergedClientContext);
-        const chatTranscriptJson = stringifyChatTranscriptForSheetPayload_(mergedClientContext);
-
         try {
             const sheetOutcome = await appendContactRowToSheet(
                 {
@@ -2686,8 +2685,7 @@ app.post(
                     appointmentBooked: "No",
                     appointmentDate: "",
                     appointmentTime: "",
-                    userQueriesCsv,
-                    chatTranscriptJson
+                    userQueriesCsv
                 },
                 {
                     sheetExtrasSources: {
@@ -2809,8 +2807,9 @@ app.post(
         }
 
         const userQueriesCsv = normalizeUserQueriesCsvFromClientContext(mergedClientContext);
-        const chatTranscriptJsonForSync = stringifyChatTranscriptForSheetPayload_(mergedClientContext);
-        if (!userQueriesCsv && !chatTranscriptJsonForSync) {
+        const hasLiveChatTranscript =
+            Array.isArray(mergedClientContext.chat_transcript) && mergedClientContext.chat_transcript.length > 0;
+        if (!userQueriesCsv && !hasLiveChatTranscript) {
             return res.status(200).json({ ok: true, message: "Nothing to sync." });
         }
 
@@ -2848,38 +2847,59 @@ app.post(
             || (await resolveCityForRequest(req));
         const sourceUrl = resolveSourceUrlForSheet(mergedClientContext);
 
-        try {
-            const syncDetail = await upsertSessionQueriesInSheet({
-                convDate: convSheetDate,
-                convTime: convSheetTime,
-                formId,
-                name,
-                mobile,
-                email,
-                clientSessionId,
-                browserName,
-                deviceType,
-                channel,
-                fileLinks: "",
-                ip,
-                city,
-                sourceUrl,
-                appointmentBooked: "No",
-                appointmentDate: "",
-                appointmentTime: "",
-                userQueriesCsv,
-                chatTranscriptJson: chatTranscriptJsonForSync
-            });
-            return res.status(200).json({
-                ok: true,
-                message: "Queries synced.",
-                sheet_integration: { enabled: true, result: syncDetail }
-            });
-        } catch (se) {
-            const detail = se && se.message ? se.message : String(se);
-            console.error("[chatbot-api] session-sheet-sync", detail, se);
-            return res.status(500).json({ ok: false, error: detail });
+        /** @type {Record<string, unknown>} */
+        let syncDetail = { mode: "skipped_empty_queries" };
+        if (userQueriesCsv) {
+            try {
+                syncDetail = await upsertSessionQueriesInSheet({
+                    convDate: convSheetDate,
+                    convTime: convSheetTime,
+                    formId,
+                    name,
+                    mobile,
+                    email,
+                    clientSessionId,
+                    browserName,
+                    deviceType,
+                    channel,
+                    fileLinks: "",
+                    ip,
+                    city,
+                    sourceUrl,
+                    appointmentBooked: "No",
+                    appointmentDate: "",
+                    appointmentTime: "",
+                    userQueriesCsv
+                });
+            } catch (se) {
+                const detail = se && se.message ? se.message : String(se);
+                console.error("[chatbot-api] session-sheet-sync", detail, se);
+                return res.status(500).json({ ok: false, error: detail });
+            }
         }
+
+        let firestoreTranscriptPatched = false;
+        if (!FIRESTORE_DISABLED && hasLiveChatTranscript) {
+            try {
+                await upsertSessionChatTranscriptDoc(clientSessionId, mergedClientContext);
+                firestoreTranscriptPatched = await patchLatestContactSubmissionClientContext(
+                    clientSessionId,
+                    mergedClientContext
+                );
+            } catch (fe) {
+                const detail = fe && fe.message ? fe.message : String(fe);
+                console.warn("[chatbot-api] session-sheet-sync Firestore transcript patch:", detail.slice(0, 240));
+            }
+        }
+
+        return res.status(200).json({
+            ok: true,
+            message: userQueriesCsv ? "Queries synced." : "Transcript synced.",
+            sheet_integration: userQueriesCsv
+                ? { enabled: true, result: syncDetail }
+                : { enabled: true, skipped: "queries_only_in_firestore" },
+            firestore_transcript_patched: firestoreTranscriptPatched
+        });
     }
 );
 
@@ -3375,6 +3395,25 @@ function assistantTurnCount_(turns) {
         }
     }
     return n;
+}
+
+/** Prefer the source with more turns / higher `seq` (live widget vs frozen submit snapshot). */
+function transcriptSourceRichness_(turns) {
+    if (!Array.isArray(turns) || !turns.length) {
+        return 0;
+    }
+    let maxSeq = 0;
+    for (let i = 0; i < turns.length; i += 1) {
+        const t = turns[i];
+        if (!t || typeof t !== "object") {
+            continue;
+        }
+        const s = typeof t.seq === "number" && Number.isFinite(t.seq) ? t.seq : 0;
+        if (s > maxSeq) {
+            maxSeq = s;
+        }
+    }
+    return turns.length + maxSeq * 1000;
 }
 
 /**
@@ -4300,6 +4339,18 @@ app.get(PATHNAME_CONVERSATION_TRANSCRIPT_JSON, async (req, res) => {
                         form_id: rec.form_id
                     };
                 }
+                const liveCx = await fetchSessionChatTranscriptContext(session);
+                if (liveCx && typeof liveCx === "object") {
+                    const liveTurns = transcriptTurnsFromClientContext_(liveCx);
+                    if (liveTurns.length) {
+                        sourceParts.push("firebase_session_transcript");
+                        if (transcriptSourceRichness_(liveTurns) > transcriptSourceRichness_(fbTurns)) {
+                            fbTurns = mergeConversationTranscriptTurnSources_(liveTurns, fbTurns);
+                        } else {
+                            fbTurns = mergeConversationTranscriptTurnSources_(fbTurns, liveTurns);
+                        }
+                    }
+                }
             } catch (fe) {
                 const msg = fe && /** @type {{ message?: string }} */ (fe).message ? String(fe.message) : String(fe);
                 console.warn("[chatbot-api] conversation-transcript Firebase saved lead:", msg.slice(0, 240));
@@ -4328,12 +4379,19 @@ app.get(PATHNAME_CONVERSATION_TRANSCRIPT_JSON, async (req, res) => {
             sourceParts.push("sheet_chat_transcript_json");
         }
 
-        /** Union-merge: Firestore freezes at last submit while Sheet keeps syncing user + bot lines after submit. */
-        let turns = mergeConversationTranscriptTurnSources_(fbTurns, sheetChatTurns);
+        /** Union-merge: prefer the richer source first (Firestore is patched on session sync; Sheet JSON is optional legacy). */
+        let turns;
+        const fbRich = transcriptSourceRichness_(fbTurns);
+        const sheetRich = transcriptSourceRichness_(sheetChatTurns);
+        if (sheetRich > fbRich) {
+            turns = mergeConversationTranscriptTurnSources_(sheetChatTurns, fbTurns);
+            sourceParts.push("sheet_first_richer");
+        } else {
+            turns = mergeConversationTranscriptTurnSources_(fbTurns, sheetChatTurns);
+        }
         if (sheetChatTurns.length > 0) {
             const mergedAssistants = assistantTurnCount_(turns);
             const sheetAssistants = assistantTurnCount_(sheetChatTurns);
-            /** Sheet is live; if it still has more bot lines than the merge, rebuild with Sheet first so CX-shaped rows are not lost behind stale Firebase. */
             if (sheetAssistants > mergedAssistants) {
                 turns = mergeConversationTranscriptTurnSources_(sheetChatTurns, fbTurns);
                 sourceParts.push("sheet_first_assistant_rich");

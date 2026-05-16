@@ -82,6 +82,10 @@ const SHEETS_ROW_OPEN_LINK_COLUMN = (process.env.SHEETS_ROW_OPEN_LINK_COLUMN || 
  * When set / matched, session sync and contact-form writes store the widget `chat_transcript` JSON so staff transcripts include bot lines even if Firestore is empty or client_context drops them.
  */
 const SHEETS_CHAT_TRANSCRIPT_JSON_COLUMN = (process.env.SHEETS_CHAT_TRANSCRIPT_JSON_COLUMN || "").trim().toUpperCase();
+/** When not `1` / `true`, never write raw `chat_transcript` JSON to any Sheet cell (transcript uses Firestore sync). */
+const SHEETS_WRITE_CHAT_TRANSCRIPT_JSON =
+    process.env.SHEETS_WRITE_CHAT_TRANSCRIPT_JSON === "1"
+    || String(process.env.SHEETS_WRITE_CHAT_TRANSCRIPT_JSON || "").trim().toLowerCase() === "true";
 /**
  * Resolves HTTPS origin for staff transcript links. Set CONVERSATIONS_PUBLIC_BASE_URL, or rely on
  * Railway’s RAILWAY_PUBLIC_DOMAIN / RAILWAY_STATIC_URL when unset.
@@ -2098,6 +2102,9 @@ async function resolveChatTranscriptColumnLetter_(sheets, tab) {
  * @param {string} chatTranscriptJson
  */
 async function maybeWriteChatTranscriptJsonToSheetCell_(sheets, tab, rowNumber, chatTranscriptJson) {
+    if (!SHEETS_WRITE_CHAT_TRANSCRIPT_JSON) {
+        return false;
+    }
     const raw = typeof chatTranscriptJson === "string" ? chatTranscriptJson.trim() : "";
     if (!raw || !rowNumber || rowNumber < 1) {
         return false;
@@ -2727,7 +2734,7 @@ export async function upsertSessionQueriesInSheet(row) {
     const incomingQ = sanitizeUserQueriesCsvForSheet(incomingQRaw);
     const chatTranscriptJson =
         typeof row.chatTranscriptJson === "string" ? row.chatTranscriptJson.trim() : "";
-    if (!incomingQ && !chatTranscriptJson) {
+    if (!incomingQ) {
         return { mode: "skipped_empty_queries" };
     }
     const client = await getSheetsAuthClient();
@@ -2814,7 +2821,7 @@ export async function upsertSessionQueriesInSheet(row) {
         };
     }
 
-    if (!incomingQ && !chatTranscriptJson) {
+    if (!incomingQ) {
         return { mode: "skipped_no_session_row_for_transcript" };
     }
 

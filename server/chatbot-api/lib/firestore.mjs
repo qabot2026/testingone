@@ -9,6 +9,10 @@ import { getFirestore } from "firebase-admin/firestore";
 import { firebaseAdminInit } from "./firebase-admin-init.mjs";
 
 const COLLECTION = process.env.FIRESTORE_COLLECTION || "contact_submissions";
+/** Live widget transcript per session (not a lead row). Override with FIRESTORE_SESSION_TRANSCRIPT_COLLECTION. */
+const SESSION_TRANSCRIPT_COLLECTION = (
+    process.env.FIRESTORE_SESSION_TRANSCRIPT_COLLECTION || "session_chat_transcripts"
+).trim();
 /** Empty, `default`, or `(default)` → default DB. Any other value → named Firestore database (avoids NOT_FOUND if you did not use the default). */
 const FIRESTORE_DATABASE_ID = (process.env.FIRESTORE_DATABASE_ID || "").trim();
 
@@ -100,6 +104,229 @@ export async function persistChatFeedbackRecord(record) {
         ...record,
         saved_at: admin.firestore.FieldValue.serverTimestamp()
     });
+}
+
+/** @param {unknown[]} arr */
+function maxChatTranscriptSeq_(arr) {
+    if (!Array.isArray(arr)) {
+        return 0;
+    }
+    let max = 0;
+    for (const it of arr) {
+        if (!it || typeof it !== "object") {
+            continue;
+        }
+        const q = /** @type {{ seq?: unknown }} */ (it).seq;
+        if (typeof q === "number" && Number.isFinite(q)) {
+            max = Math.max(max, q);
+        }
+    }
+    return max;
+}
+
+/**
+ * Prefer the transcript array with more turns or a higher `seq` (live widget sync after form submit).
+ *
+ * @param {unknown} prev
+ * @param {unknown} next
+ * @returns {unknown[]}
+ */
+function pickRicherChatTranscript_(prev, next) {
+    const p = Array.isArray(prev) ? prev : [];
+    const n = Array.isArray(next) ? next : [];
+    if (!n.length) {
+        return p;
+    }
+    if (!p.length) {
+        return n;
+    }
+    const pSeq = maxChatTranscriptSeq_(p);
+    const nSeq = maxChatTranscriptSeq_(n);
+    if (nSeq > pSeq || n.length > p.length) {
+        return n;
+    }
+    return p;
+}
+
+/**
+ * @param {*} qs
+ * @returns {{ ref: import("firebase-admin/firestore").DocumentReference, data: FirestoreRecord, ms: number } | null}
+ */
+function newestDocFromQuerySnap_(qs) {
+    if (!qs || qs.empty) {
+        return null;
+    }
+    /** @type {{ ref: import("firebase-admin/firestore").DocumentReference, data: FirestoreRecord, ms: number } | null} */
+    let best = null;
+    for (const doc of qs.docs) {
+        const data = /** @type {FirestoreRecord} */ (doc.data());
+        let ms = 0;
+        const sa = /** @type {{ toMillis?: () => number }} */ (data.saved_at);
+        if (sa && typeof sa.toMillis === "function") {
+            ms = sa.toMillis();
+        }
+        const sub = data.submitted_at;
+        if (typeof sub === "string") {
+            const t = Date.parse(sub);
+            if (Number.isFinite(t)) {
+                ms = Math.max(ms, t);
+            }
+        }
+        if (!best || ms >= best.ms) {
+            best = { ref: doc.ref, data, ms };
+        }
+    }
+    return best;
+}
+
+/**
+ * Merge live widget `client_context` (especially `chat_transcript`) into the newest lead doc for a session.
+ * Used by session-sheet-sync so staff transcripts include bot lines after form submit without Sheet JSON.
+ *
+ * @param {string} sessionId
+ * @param {Record<string, unknown>} clientContextPatch
+ * @returns {Promise<boolean>}
+ */
+/**
+ * Live `chat_transcript` for a widget session (updated on session-sheet-sync; not shown as a lead).
+ *
+ * @param {string} sessionId
+ * @param {Record<string, unknown>} clientContextPatch
+ */
+export async function upsertSessionChatTranscriptDoc(sessionId, clientContextPatch) {
+    firebaseAdminInit();
+    const db = getFirestoreDb();
+    const sid = typeof sessionId === "string" ? sessionId.trim() : "";
+    if (!sid || !clientContextPatch || typeof clientContextPatch !== "object") {
+        return;
+    }
+    const ref = db.collection(SESSION_TRANSCRIPT_COLLECTION || "session_chat_transcripts").doc(sid);
+    const snap = await ref.get();
+    const prevCx =
+        snap.exists
+        && snap.data()
+        && typeof snap.data().client_context === "object"
+            ? /** @type {Record<string, unknown>} */ ({ .../** @type {Record<string, unknown>} */ (snap.data().client_context) })
+            : {};
+    const merged = {
+        ...prevCx,
+        ...clientContextPatch,
+        client_session_id: sid,
+        chat_transcript: pickRicherChatTranscript_(prevCx.chat_transcript, clientContextPatch.chat_transcript)
+    };
+    const prevSeq = prevCx.chat_transcript_seq;
+    const patchSeq = clientContextPatch.chat_transcript_seq;
+    if (typeof patchSeq === "number" && Number.isFinite(patchSeq)) {
+        merged.chat_transcript_seq =
+            typeof prevSeq === "number" && Number.isFinite(prevSeq) ? Math.max(prevSeq, patchSeq) : patchSeq;
+    }
+    if (Array.isArray(clientContextPatch.user_queries) && clientContextPatch.user_queries.length) {
+        merged.user_queries = clientContextPatch.user_queries;
+    }
+    await ref.set(
+        {
+            client_session_id: sid,
+            client_context: merged,
+            updated_at: admin.firestore.FieldValue.serverTimestamp()
+        },
+        { merge: true }
+    );
+}
+
+/**
+ * @param {string} sessionId
+ * @returns {Promise<Record<string, unknown> | null>}
+ */
+export async function fetchSessionChatTranscriptContext(sessionId) {
+    firebaseAdminInit();
+    const db = getFirestoreDb();
+    const sid = typeof sessionId === "string" ? sessionId.trim() : "";
+    if (!sid) {
+        return null;
+    }
+    try {
+        const snap = await db.collection(SESSION_TRANSCRIPT_COLLECTION || "session_chat_transcripts").doc(sid).get();
+        if (!snap.exists) {
+            return null;
+        }
+        const data = snap.data();
+        if (data && typeof data.client_context === "object") {
+            return /** @type {Record<string, unknown>} */ (data.client_context);
+        }
+    } catch {
+        return null;
+    }
+    return null;
+}
+
+export async function patchLatestContactSubmissionClientContext(sessionId, clientContextPatch) {
+    firebaseAdminInit();
+    const db = getFirestoreDb();
+    const sid = typeof sessionId === "string" ? sessionId.trim() : "";
+    if (!sid || !clientContextPatch || typeof clientContextPatch !== "object") {
+        return false;
+    }
+
+    /** @type {{ ref: import("firebase-admin/firestore").DocumentReference, data: FirestoreRecord, ms: number } | null} */
+    let hit = null;
+    try {
+        const snapTop = await db.collection(COLLECTION).where("client_session_id", "==", sid).limit(25).get();
+        hit = newestDocFromQuerySnap_(snapTop);
+    } catch {
+        /* fall through */
+    }
+    if (!hit) {
+        try {
+            const snapNest = await db
+                .collection(COLLECTION)
+                .where("client_context.client_session_id", "==", sid)
+                .limit(25)
+                .get();
+            hit = newestDocFromQuerySnap_(snapNest);
+        } catch {
+            return false;
+        }
+    }
+    if (!hit) {
+        return false;
+    }
+
+    const prevCx =
+        hit.data.client_context && typeof hit.data.client_context === "object"
+            ? /** @type {Record<string, unknown>} */ ({ .../** @type {Record<string, unknown>} */ (hit.data.client_context) })
+            : {};
+    const patchCx =
+        clientContextPatch && typeof clientContextPatch === "object" ? clientContextPatch : {};
+
+    const merged = {
+        ...prevCx,
+        ...patchCx,
+        client_session_id:
+            typeof patchCx.client_session_id === "string" && patchCx.client_session_id.trim()
+                ? patchCx.client_session_id.trim()
+                : typeof prevCx.client_session_id === "string"
+                  ? prevCx.client_session_id
+                  : sid,
+        chat_transcript: pickRicherChatTranscript_(prevCx.chat_transcript, patchCx.chat_transcript)
+    };
+    const prevSeq = prevCx.chat_transcript_seq;
+    const patchSeq = patchCx.chat_transcript_seq;
+    if (typeof patchSeq === "number" && Number.isFinite(patchSeq)) {
+        merged.chat_transcript_seq =
+            typeof prevSeq === "number" && Number.isFinite(prevSeq) ? Math.max(prevSeq, patchSeq) : patchSeq;
+    } else if (typeof prevSeq === "number" && Number.isFinite(prevSeq)) {
+        merged.chat_transcript_seq = prevSeq;
+    }
+
+    if (Array.isArray(patchCx.user_queries) && patchCx.user_queries.length) {
+        merged.user_queries = patchCx.user_queries;
+    }
+
+    await hit.ref.update({
+        client_context: merged,
+        transcript_synced_at: admin.firestore.FieldValue.serverTimestamp()
+    });
+    return true;
 }
 
 export async function persistToFirestore(record) {
