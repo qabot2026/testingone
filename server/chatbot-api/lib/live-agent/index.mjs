@@ -4,7 +4,7 @@
  * Static agent inbox:
  *   GET  /live-agent              → agent chat dashboard SPA
  *
- * Agent API (cookie session — see LIVE_AGENT_ALLOWED_EMAILS):
+ * Agent API (CONVERSATIONS_SHEET_VIEW_SECRET via X-Conversations-Sheet-Secret):
  *   GET  /api/live-agent/me
  *   GET  /api/live-agent/inbox?status=waiting|active|mine|all
  *   POST /api/live-agent/claim              { conversationId }
@@ -18,7 +18,7 @@
  *   GET  /api/live-agent/messages?clientSessionId=&since=
  *   POST /api/live-agent/visitor-message    { clientSessionId, text }
  *
- * Sign-in uses the same magic link as /dashboard (/api/dashboard/login/*).
+ * Agent auth: CONVERSATIONS_SHEET_VIEW_SECRET (header X-Conversations-Sheet-Secret).
  */
 
 import path from "node:path";
@@ -28,9 +28,10 @@ import { promises as fs } from "node:fs";
 import express from "express";
 
 import {
-    liveAgentAllowedEmails_,
+    conversationsViewSecret_,
     liveAgentAuthConfigured_,
     liveAgentAuthRequired_,
+    liveAgentSecretFromReq_,
     readLiveAgentSessionFromReq_,
     requireLiveAgentSession_
 } from "./auth.mjs";
@@ -84,7 +85,7 @@ function sendHealthJson_(res) {
         firestore_ready: liveAgentFirestoreReady_(),
         auth_required: liveAgentAuthRequired_(),
         auth_configured: liveAgentAuthConfigured_(),
-        allowed_emails_count: liveAgentAllowedEmails_().length
+        auth_mode: "conversations_sheet_secret"
     });
 }
 
@@ -121,15 +122,31 @@ export function mountLiveAgentRoutes(app) {
     router.get("/me", (req, res) => {
         setNoCache_(res);
         if (!liveAgentAuthRequired_()) {
-            res.json({ ok: true, email: trim_(process.env.LIVE_AGENT_DEV_EMAIL) || "dev@local" });
+            res.json({
+                ok: true,
+                agentId: trim_(process.env.LIVE_AGENT_DEV_AGENT_NAME) || "dev"
+            });
+            return;
+        }
+        if (!conversationsViewSecret_()) {
+            res.status(503).json({
+                ok: false,
+                error:
+                    "Server has no CONVERSATIONS_SHEET_VIEW_SECRET. Set it in Railway Variables (same as conversations inbox)."
+            });
             return;
         }
         const sess = readLiveAgentSessionFromReq_(req);
         if (!sess) {
-            res.status(401).json({ ok: false, error: "Unauthorized" });
+            const check = liveAgentSecretFromReq_(req);
+            const msg =
+                check.reason === "bad"
+                    ? "Unauthorized — secret does not match CONVERSATIONS_SHEET_VIEW_SECRET."
+                    : "Unauthorized — send header X-Conversations-Sheet-Secret matching CONVERSATIONS_SHEET_VIEW_SECRET.";
+            res.status(401).json({ ok: false, error: msg });
             return;
         }
-        res.json({ ok: true, email: sess.email });
+        res.json({ ok: true, agentId: sess.agentId });
     });
 
     router.get("/inbox", requireLiveAgentSession_(), async (req, res) => {
@@ -143,7 +160,7 @@ export function mountLiveAgentRoutes(app) {
             const limit = Number(req.query && req.query.limit);
             const conversations = await listInbox_({
                 status,
-                agentEmail: req.liveAgentSession.email,
+                agentEmail: req.liveAgentSession.agentId,
                 limit: Number.isFinite(limit) ? limit : 50
             });
             res.json({ ok: true, conversations });
@@ -163,7 +180,7 @@ export function mountLiveAgentRoutes(app) {
         try {
             const conversation = await claimConversation_({
                 conversationId,
-                agentEmail: req.liveAgentSession.email
+                agentEmail: req.liveAgentSession.agentId
             });
             res.json({ ok: true, conversation });
         } catch (err) {
@@ -207,7 +224,7 @@ export function mountLiveAgentRoutes(app) {
                 jsonError_(res, 404, "Conversation not found");
                 return;
             }
-            if (conv.status === "active" && conv.assignedAgentEmail !== req.liveAgentSession.email) {
+            if (conv.status === "active" && conv.assignedAgentEmail !== req.liveAgentSession.agentId) {
                 jsonError_(res, 403, "Assigned to another agent");
                 return;
             }
@@ -215,7 +232,7 @@ export function mountLiveAgentRoutes(app) {
                 conversationId,
                 role: "agent",
                 text,
-                senderEmail: req.liveAgentSession.email,
+                senderEmail: req.liveAgentSession.agentId,
                 bumpUnread: { agent: 0, visitor: 1 }
             });
             res.json({ ok: true, message });
@@ -236,7 +253,7 @@ export function mountLiveAgentRoutes(app) {
             const conversation = await closeConversation_({
                 conversationId,
                 closedBy: "agent",
-                agentEmail: req.liveAgentSession.email
+                agentEmail: req.liveAgentSession.agentId
             });
             res.json({ ok: true, conversation });
         } catch (err) {

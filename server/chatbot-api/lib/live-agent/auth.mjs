@@ -1,57 +1,13 @@
 /**
- * Live-agent dashboard auth — reuses the customization dashboard session cookie.
- * Allowlist: LIVE_AGENT_ALLOWED_EMAILS, else DASHBOARD_ALLOWED_EMAILS.
+ * Live-agent dashboard auth — same secret as /conversations-sheet.
+ * Header: X-Conversations-Sheet-Secret or Authorization: Bearer <secret>
+ * Env: CONVERSATIONS_SHEET_VIEW_SECRET
  */
 
 import crypto from "node:crypto";
 
-const COOKIE_NAME = "dashboard_session";
-const SESSION_VERSION = "v1";
-
 function trim_(v) {
     return typeof v === "string" ? v.trim() : "";
-}
-
-function allowedEmailsFromEnv_(key) {
-    const raw = trim_(process.env[key]);
-    if (!raw) return [];
-    return raw
-        .split(",")
-        .map((s) => s.trim().toLowerCase())
-        .filter(Boolean);
-}
-
-export function liveAgentAllowedEmails_() {
-    const dedicated = allowedEmailsFromEnv_("LIVE_AGENT_ALLOWED_EMAILS");
-    if (dedicated.length > 0) return dedicated;
-    return allowedEmailsFromEnv_("DASHBOARD_ALLOWED_EMAILS");
-}
-
-export function isLiveAgentEmailAllowed_(email) {
-    const e = trim_(email).toLowerCase();
-    if (!e || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) return false;
-    const list = liveAgentAllowedEmails_();
-    if (list.length === 0) return false;
-    return list.includes(e);
-}
-
-function sessionSecret_() {
-    const s = trim_(process.env.DASHBOARD_SESSION_SECRET);
-    return s.length >= 16 ? s : "";
-}
-
-function b64urlDecode_(s) {
-    const raw = String(s || "").replace(/-/g, "+").replace(/_/g, "/");
-    const pad = (4 - (raw.length % 4)) % 4;
-    return Buffer.from(raw + "=".repeat(pad), "base64");
-}
-
-function b64urlEncode_(buf) {
-    return Buffer.from(buf).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
-}
-
-function hmacSha256_(secret, data) {
-    return crypto.createHmac("sha256", secret).update(data).digest();
 }
 
 function timingSafeEqStr_(a, b) {
@@ -61,47 +17,44 @@ function timingSafeEqStr_(a, b) {
     return crypto.timingSafeEqual(ba, bb);
 }
 
-function verifyPayload_(token, secret) {
-    if (typeof token !== "string" || !token.includes(".")) return null;
-    const [body, sig] = token.split(".");
-    if (!body || !sig) return null;
-    const expectSig = b64urlEncode_(hmacSha256_(secret, body));
-    if (!timingSafeEqStr_(sig, expectSig)) return null;
-    let json;
-    try {
-        json = JSON.parse(b64urlDecode_(body).toString("utf8"));
-    } catch {
-        return null;
-    }
-    if (!json || typeof json !== "object") return null;
-    if (typeof json.exp === "number" && Date.now() > json.exp) return null;
-    return json;
+export function conversationsViewSecret_() {
+    return trim_(process.env.CONVERSATIONS_SHEET_VIEW_SECRET);
 }
 
-function parseCookies_(req) {
-    const out = {};
-    const raw = trim_(req.headers && req.headers.cookie);
-    if (!raw) return out;
-    for (const part of raw.split(";")) {
-        const idx = part.indexOf("=");
-        if (idx < 0) continue;
-        const k = part.slice(0, idx).trim();
-        const v = part.slice(idx + 1).trim();
-        if (k) out[k] = decodeURIComponent(v);
+/** @returns {{ want: string, got: string, ok: boolean, reason: "unset" | "missing" | "bad" | "ok" }} */
+export function liveAgentSecretFromReq_(req) {
+    const want = conversationsViewSecret_();
+    if (!want) {
+        return { want: "", got: "", ok: false, reason: "unset" };
     }
-    return out;
+    const auth = typeof req.headers.authorization === "string" ? req.headers.authorization.trim() : "";
+    let bearer = "";
+    if (/^Bearer\s+/i.test(auth)) {
+        bearer = auth.replace(/^Bearer\s+/i, "").trim();
+    }
+    const hdr =
+        (typeof req.headers["x-conversations-sheet-secret"] === "string"
+            ? req.headers["x-conversations-sheet-secret"].trim()
+            : "") || bearer;
+    const q = req.query && typeof req.query.secret === "string" ? req.query.secret.trim() : "";
+    const got = hdr || q;
+    if (!got) {
+        return { want, got: "", ok: false, reason: "missing" };
+    }
+    if (!timingSafeEqStr_(got, want)) {
+        return { want, got, ok: false, reason: "bad" };
+    }
+    return { want, got, ok: true, reason: "ok" };
 }
 
 export function readLiveAgentSessionFromReq_(req) {
-    const secret = sessionSecret_();
-    if (!secret) return null;
-    const cookies = parseCookies_(req);
-    const token = cookies[COOKIE_NAME];
-    if (!token) return null;
-    const data = verifyPayload_(token, secret);
-    if (!data || data.k !== "session") return null;
-    if (!isLiveAgentEmailAllowed_(data.email)) return null;
-    return { email: data.email };
+    const check = liveAgentSecretFromReq_(req);
+    if (!check.ok) return null;
+    const agentId =
+        trim_(req.headers["x-live-agent-name"]) ||
+        trim_(process.env.LIVE_AGENT_DEFAULT_AGENT_NAME) ||
+        "Agent";
+    return { agentId };
 }
 
 export function liveAgentAuthRequired_() {
@@ -113,13 +66,29 @@ export function liveAgentAuthRequired_() {
 export function requireLiveAgentSession_() {
     return (req, res, next) => {
         if (!liveAgentAuthRequired_()) {
-            req.liveAgentSession = { email: trim_(process.env.LIVE_AGENT_DEV_EMAIL) || "dev@local" };
+            req.liveAgentSession = {
+                agentId: trim_(process.env.LIVE_AGENT_DEV_AGENT_NAME) || "dev"
+            };
             next();
+            return;
+        }
+        const configured = conversationsViewSecret_();
+        if (!configured) {
+            res.status(503).json({
+                ok: false,
+                error:
+                    "Server has no CONVERSATIONS_SHEET_VIEW_SECRET. Set it in Railway Variables (same as conversations inbox)."
+            });
             return;
         }
         const sess = readLiveAgentSessionFromReq_(req);
         if (!sess) {
-            res.status(401).json({ ok: false, error: "Unauthorized" });
+            const check = liveAgentSecretFromReq_(req);
+            const msg =
+                check.reason === "bad"
+                    ? "Unauthorized — secret does not match CONVERSATIONS_SHEET_VIEW_SECRET."
+                    : "Unauthorized — send header X-Conversations-Sheet-Secret matching CONVERSATIONS_SHEET_VIEW_SECRET.";
+            res.status(401).json({ ok: false, error: msg });
             return;
         }
         req.liveAgentSession = sess;
@@ -128,5 +97,5 @@ export function requireLiveAgentSession_() {
 }
 
 export function liveAgentAuthConfigured_() {
-    return liveAgentAllowedEmails_().length > 0 && !!sessionSecret_();
+    return !!conversationsViewSecret_();
 }

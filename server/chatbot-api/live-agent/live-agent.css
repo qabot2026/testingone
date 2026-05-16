@@ -117,9 +117,19 @@ body {
   margin-top: 0.5rem;
 }
 
-.login-card .btn {
-  width: 100%;
+.login-actions {
+  display: flex;
+  gap: 0.5rem;
   margin-top: 1rem;
+}
+
+.login-actions .btn.primary {
+  flex: 1;
+}
+
+.login-card code {
+  font-size: 0.8rem;
+  color: var(--accent-hover);
 }
 
 .login-message {

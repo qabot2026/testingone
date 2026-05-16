@@ -9,19 +9,27 @@
 </head>
 <body>
 
-  <section id="loginView" class="login-view hidden" aria-label="Sign in">
+  <section id="loginView" class="login-view hidden" aria-label="Unlock inbox">
     <div class="login-card">
       <h1>Live agent inbox</h1>
-      <p class="muted">Sign in with your work email. Only allowlisted agents can access this page.</p>
+      <p class="muted">Enter the same viewer secret as the conversations sheet inbox.</p>
       <form id="loginForm">
         <label>
-          Email
-          <input id="loginEmail" type="email" autocomplete="email" required placeholder="you@company.com" />
+          Viewer secret
+          <input id="loginSecret" type="password" autocomplete="current-password" required
+            placeholder="CONVERSATIONS_SHEET_VIEW_SECRET" />
         </label>
-        <button type="submit" class="btn primary" id="loginSubmitBtn">Send sign-in link</button>
+        <label>
+          Your name <span class="muted small">(optional, for My chats)</span>
+          <input id="loginAgentName" type="text" autocomplete="nickname" placeholder="Agent" />
+        </label>
+        <div class="login-actions">
+          <button type="button" class="btn ghost" id="toggleSecretBtn">Show</button>
+          <button type="submit" class="btn primary" id="loginSubmitBtn">Open inbox</button>
+        </div>
+        <p id="loginMessage" class="login-message muted" role="status"></p>
+        <p class="muted small">Railway variable: <code>CONVERSATIONS_SHEET_VIEW_SECRET</code></p>
       </form>
-      <p id="loginMessage" class="login-message muted" role="status"></p>
-      <p class="muted small">Uses the same magic link as the UI dashboard. Check server logs if email is not configured.</p>
     </div>
   </section>
 
@@ -30,7 +38,7 @@
       <div class="top-bar-inner">
         <div class="brand">
           <h1>Live agent</h1>
-          <p class="muted" id="agentEmailLabel">—</p>
+          <p class="muted" id="agentLabel">—</p>
         </div>
         <div class="top-actions">
           <label class="filter-label">
@@ -43,7 +51,7 @@
             </select>
           </label>
           <button type="button" class="btn ghost" id="refreshInboxBtn">Refresh</button>
-          <button type="button" class="btn ghost" id="logoutBtn">Sign out</button>
+          <button type="button" class="btn ghost" id="logoutBtn">Lock</button>
         </div>
       </div>
     </header>

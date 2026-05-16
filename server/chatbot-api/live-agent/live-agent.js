@@ -2,16 +2,19 @@
     "use strict";
 
     const API = "/api/live-agent";
-    const DASHBOARD_API = "/api/dashboard";
+    const LS_SECRET = "live_agent_secret_v1";
+    const LS_NAME = "live_agent_name_v1";
 
     const $ = (id) => document.getElementById(id);
 
     const loginView = $("loginView");
     const appView = $("appView");
     const loginForm = $("loginForm");
-    const loginEmail = $("loginEmail");
+    const loginSecret = $("loginSecret");
+    const loginAgentName = $("loginAgentName");
     const loginMessage = $("loginMessage");
-    const agentEmailLabel = $("agentEmailLabel");
+    const toggleSecretBtn = $("toggleSecretBtn");
+    const agentLabel = $("agentLabel");
     const inboxFilter = $("inboxFilter");
     const refreshInboxBtn = $("refreshInboxBtn");
     const logoutBtn = $("logoutBtn");
@@ -28,11 +31,59 @@
     const composerInput = $("composerInput");
     const sendBtn = $("sendBtn");
 
-    let agentEmail = "";
+    let viewerSecret = "";
+    let agentId = "Agent";
     let selectedId = "";
-    let selectedConversation = null;
     let lastMessageIso = "";
     let pollTimer = null;
+
+    function loadStoredAuth_() {
+        try {
+            viewerSecret =
+                sessionStorage.getItem(LS_SECRET) || localStorage.getItem(LS_SECRET) || "";
+        } catch (_) {
+            viewerSecret = "";
+        }
+        try {
+            agentId = sessionStorage.getItem(LS_NAME) || localStorage.getItem(LS_NAME) || "Agent";
+        } catch (_) {
+            agentId = "Agent";
+        }
+        if (loginSecret && viewerSecret) loginSecret.value = viewerSecret;
+        if (loginAgentName && agentId) loginAgentName.value = agentId;
+    }
+
+    function persistAuth_(secret, name) {
+        viewerSecret = String(secret || "").trim();
+        agentId = String(name || "").trim() || "Agent";
+        try {
+            sessionStorage.setItem(LS_SECRET, viewerSecret);
+            localStorage.setItem(LS_SECRET, viewerSecret);
+            sessionStorage.setItem(LS_NAME, agentId);
+            localStorage.setItem(LS_NAME, agentId);
+        } catch (_) {
+            /* ignore */
+        }
+    }
+
+    function clearAuth_() {
+        viewerSecret = "";
+        try {
+            sessionStorage.removeItem(LS_SECRET);
+            localStorage.removeItem(LS_SECRET);
+        } catch (_) {
+            /* ignore */
+        }
+    }
+
+    function authHeaders_() {
+        const h = {
+            Accept: "application/json",
+            "X-Conversations-Sheet-Secret": viewerSecret,
+            "X-Live-Agent-Name": agentId
+        };
+        return h;
+    }
 
     function showLogin() {
         loginView.classList.remove("hidden");
@@ -43,7 +94,7 @@
     function showApp() {
         loginView.classList.add("hidden");
         appView.classList.remove("hidden");
-        agentEmailLabel.textContent = agentEmail || "Signed in";
+        agentLabel.textContent = agentId;
         loadInbox();
         startPolling();
     }
@@ -59,16 +110,14 @@
         stopPolling();
         pollTimer = setInterval(() => {
             loadInbox(true);
-            if (selectedId) {
-                loadMessages(selectedId, true);
-            }
+            if (selectedId) loadMessages(selectedId, true);
         }, 4000);
     }
 
     async function apiFetch(url, options) {
         const res = await fetch(url, {
             credentials: "same-origin",
-            headers: { Accept: "application/json", ...(options && options.headers) },
+            headers: { ...authHeaders_(), ...(options && options.headers) },
             ...options
         });
         const data = await res.json().catch(() => ({}));
@@ -81,15 +130,22 @@
     }
 
     async function checkSession() {
+        if (!viewerSecret) {
+            showLogin();
+            return false;
+        }
         try {
             const data = await apiFetch(`${API}/me`);
-            if (data.ok && data.email) {
-                agentEmail = data.email;
+            if (data.ok) {
+                agentId = data.agentId || agentId;
+                agentLabel.textContent = agentId;
                 showApp();
                 return true;
             }
         } catch (e) {
-            if (e.status !== 401) {
+            if (e.status === 401 || e.status === 403) {
+                clearAuth_();
+            } else if (e.status !== 401) {
                 console.warn("[live-agent]", e.message);
             }
         }
@@ -97,29 +153,34 @@
         return false;
     }
 
+    toggleSecretBtn.addEventListener("click", () => {
+        loginSecret.type = loginSecret.type === "password" ? "text" : "password";
+    });
+
     loginForm.addEventListener("submit", async (ev) => {
         ev.preventDefault();
-        loginMessage.textContent = "Sending…";
+        const secret = loginSecret.value.trim();
+        if (!secret) {
+            loginMessage.textContent = "Enter the viewer secret.";
+            return;
+        }
+        persistAuth_(secret, loginAgentName.value.trim());
+        loginMessage.textContent = "Checking…";
         try {
-            const data = await apiFetch(`${DASHBOARD_API}/login/request`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ email: loginEmail.value.trim() })
-            });
-            loginMessage.textContent = data.message || "If your email is allowed, a sign-in link was sent.";
+            const data = await apiFetch(`${API}/me`);
+            agentId = data.agentId || agentId;
+            loginMessage.textContent = "";
+            showApp();
         } catch (e) {
-            loginMessage.textContent = e.message || "Could not request sign-in link.";
+            clearAuth_();
+            loginMessage.textContent = e.message || "Secret rejected.";
         }
     });
 
-    logoutBtn.addEventListener("click", async () => {
-        try {
-            await apiFetch(`${DASHBOARD_API}/logout`, { method: "POST" });
-        } catch (_) {
-            /* ignore */
-        }
-        agentEmail = "";
+    logoutBtn.addEventListener("click", () => {
+        clearAuth_();
         selectedId = "";
+        if (loginSecret) loginSecret.value = "";
         showLogin();
     });
 
@@ -135,6 +196,14 @@
         }
     }
 
+    function escapeHtml(s) {
+        return String(s || "")
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;");
+    }
+
     function renderInbox(conversations) {
         inboxList.innerHTML = "";
         if (!conversations.length) {
@@ -145,7 +214,6 @@
         for (const c of conversations) {
             const li = document.createElement("li");
             li.className = "inbox-item" + (c.id === selectedId ? " selected" : "");
-            li.dataset.id = c.id;
             const title = c.visitorName || `Session ${c.id.slice(0, 8)}…`;
             const unread = c.unreadForAgent > 0 ? ` · ${c.unreadForAgent} new` : "";
             li.innerHTML =
@@ -157,14 +225,6 @@
         }
     }
 
-    function escapeHtml(s) {
-        return String(s || "")
-            .replace(/&/g, "&amp;")
-            .replace(/</g, "&lt;")
-            .replace(/>/g, "&gt;")
-            .replace(/"/g, "&quot;");
-    }
-
     async function loadInbox(quiet) {
         if (!quiet) inboxStatus.textContent = "Loading…";
         try {
@@ -173,12 +233,15 @@
             renderInbox(data.conversations || []);
         } catch (e) {
             inboxStatus.textContent = e.message || "Failed to load inbox";
+            if (e.status === 401) {
+                clearAuth_();
+                showLogin();
+            }
         }
     }
 
     function selectConversation(c) {
         selectedId = c.id;
-        selectedConversation = c;
         lastMessageIso = "";
         messageList.innerHTML = "";
         chatEmpty.classList.add("hidden");
@@ -189,8 +252,7 @@
         chatMeta.textContent = `${c.status} · bot ${c.botid || "default"} · ${c.id}`;
 
         const isWaiting = c.status === "waiting";
-        const isMine =
-            c.status === "active" && c.assignedAgentEmail && c.assignedAgentEmail === agentEmail;
+        const isMine = c.status === "active" && c.assignedAgentEmail === agentId;
         const canReply = isMine;
 
         claimBtn.hidden = !isWaiting;
@@ -205,10 +267,11 @@
     async function loadMessages(conversationId, quiet) {
         try {
             const q = lastMessageIso ? `?since=${encodeURIComponent(lastMessageIso)}` : "";
-            const data = await apiFetch(`${API}/conversations/${encodeURIComponent(conversationId)}/messages${q}`);
+            const data = await apiFetch(
+                `${API}/conversations/${encodeURIComponent(conversationId)}/messages${q}`
+            );
             const messages = data.messages || [];
             if (!messages.length && quiet) return;
-
             for (const m of messages) {
                 if (document.querySelector(`[data-msg-id="${m.id}"]`)) continue;
                 appendMessageEl(m);
@@ -257,7 +320,6 @@
                 method: "POST"
             });
             selectedId = "";
-            selectedConversation = null;
             chatActive.classList.add("hidden");
             chatEmpty.classList.remove("hidden");
             loadInbox();
@@ -281,9 +343,7 @@
                 }
             );
             appendMessageEl(data.message);
-            if (data.message && data.message.createdAt) {
-                lastMessageIso = data.message.createdAt;
-            }
+            if (data.message && data.message.createdAt) lastMessageIso = data.message.createdAt;
             composerInput.value = "";
             messageList.scrollTop = messageList.scrollHeight;
             loadInbox(true);
@@ -294,5 +354,6 @@
         }
     });
 
+    loadStoredAuth_();
     checkSession();
 })();
