@@ -13788,9 +13788,10 @@ function ensureAssistantTranscriptCapturedForDfEvent_(event) {
             ? prev.chat_transcript_seq
             : 0;
 
+    const dfTranscriptOpts = { dfEvent: event };
     const structuredTurns = extractAssistantTranscriptStructuredTurns_(event);
     if (structuredTurns.length) {
-        appendChatTranscriptAssistantEntries_(structuredTurns);
+        appendChatTranscriptAssistantEntries_(structuredTurns, dfTranscriptOpts);
         const afterStructured = readStoredClientContext();
         const seqAfterStructured =
             typeof afterStructured.chat_transcript_seq === "number"
@@ -13821,7 +13822,7 @@ function ensureAssistantTranscriptCapturedForDfEvent_(event) {
             (line) => !plainTextRedundantWithAssistantRow_(line, lastRow)
         );
         if (filtered.length) {
-            appendChatTranscriptAssistantLines_(filtered);
+            appendChatTranscriptAssistantLines_(filtered, dfTranscriptOpts);
         }
     }
 
@@ -13854,11 +13855,11 @@ function ensureAssistantTranscriptCapturedForDfEvent_(event) {
         }
     }
     if (forceLines.length) {
-        appendChatTranscriptAssistantLines_(forceLines);
+        appendChatTranscriptAssistantLines_(forceLines, dfTranscriptOpts);
         return;
     }
 
-    appendChatTranscriptAssistantLines_(["(Bot response)"]);
+    appendChatTranscriptAssistantLines_(["(Bot response)"], dfTranscriptOpts);
     scheduleDomBotTranscriptCapture_(activeDfMessenger);
 }
 
@@ -13973,7 +13974,7 @@ function captureDomBotTranscriptLines_(dfMessenger) {
             return true;
         });
         if (fresh.length) {
-            appendChatTranscriptAssistantLines_(fresh);
+            appendChatTranscriptAssistantLines_(fresh, { placement: "before_trailing_users" });
             scheduleSessionTranscriptFirestoreSync_();
         }
     } catch {
@@ -14891,7 +14892,7 @@ function appendSupplementalAssistantLinesFromDfEvent_(event) {
     const plainLines = assistantPlainTextLinesFromDfEvent_(event, richCtx);
     const extra = plainLines.filter((line) => !plainTextRedundantWithAssistantRow_(line, lastRow));
     if (extra.length) {
-        appendChatTranscriptAssistantLines_(extra);
+        appendChatTranscriptAssistantLines_(extra, { dfEvent: event });
     }
 }
 
@@ -15632,9 +15633,126 @@ function extractAssistantTranscriptStructuredTurns_(event) {
 }
 
 /**
- * @param {Array<{ text?: string, rich?: Record<string, unknown> }>} entries
+ * Inbound user text that triggered this Dialogflow turn (when present).
+ *
+ * @param {Event | null | undefined} event
+ * @returns {string}
  */
-function appendChatTranscriptAssistantEntries_(entries) {
+function extractInboundQueryTextFromDfEvent_(event) {
+    const d = event && event.detail;
+    const qr =
+        d && d.raw && d.raw.queryResult && typeof d.raw.queryResult === "object"
+            ? d.raw.queryResult
+            : d && d.data && d.data.queryResult && typeof d.data.queryResult === "object"
+              ? d.data.queryResult
+              : null;
+    if (!qr) {
+        return "";
+    }
+    const q = /** @type {{ queryText?: unknown, transcript?: unknown, text?: unknown }} */ (qr);
+    if (typeof q.queryText === "string" && q.queryText.trim()) {
+        return q.queryText.trim();
+    }
+    if (typeof q.transcript === "string" && q.transcript.trim()) {
+        return q.transcript.trim();
+    }
+    if (typeof q.text === "string" && q.text.trim()) {
+        return q.text.trim();
+    }
+    return "";
+}
+
+/**
+ * @param {unknown[] | undefined} transcript
+ * @returns {{ role?: string, text?: string, at?: number, seq?: number } | null}
+ */
+function lastTranscriptUserRow_(transcript) {
+    const tr = Array.isArray(transcript) ? transcript : [];
+    for (let i = tr.length - 1; i >= 0; i -= 1) {
+        const row = tr[i];
+        if (row && row.role === "user") {
+            return row;
+        }
+    }
+    return null;
+}
+
+/**
+ * Late bot capture (df-response after the visitor already replied) must insert before trailing user rows.
+ * Bot replies to the last user message append after that user.
+ *
+ * @param {unknown[]} transcript
+ * @param {{ placement?: string, dfEvent?: Event, dfQueryText?: string } | null | undefined} opts
+ * @returns {"append" | "before_trailing_users"}
+ */
+function resolveAssistantTranscriptPlacement_(transcript, opts) {
+    const explicit = opts && typeof opts.placement === "string" ? opts.placement.trim() : "";
+    if (explicit === "append" || explicit === "before_trailing_users") {
+        return explicit;
+    }
+    const tr = Array.isArray(transcript) ? transcript : [];
+    if (!tr.length || tr[tr.length - 1].role !== "user") {
+        return "append";
+    }
+    if (opts && opts.dfEvent) {
+        const qt =
+            opts.dfQueryText && typeof opts.dfQueryText === "string"
+                ? opts.dfQueryText.trim()
+                : extractInboundQueryTextFromDfEvent_(opts.dfEvent);
+        const lastUser = lastTranscriptUserRow_(tr);
+        if (lastUser && qt) {
+            const uN = normalizeChatTranscriptCompareText_(String(lastUser.text || ""));
+            const qN = normalizeChatTranscriptCompareText_(qt);
+            if (uN && qN && uN === qN) {
+                return "append";
+            }
+        }
+        return "before_trailing_users";
+    }
+    return "before_trailing_users";
+}
+
+/**
+ * @param {unknown[]} transcript
+ * @param {{ role: string, at: number, seq: number, text?: string, rich?: Record<string, unknown> }} row
+ * @param {"append" | "before_trailing_users"} placement
+ */
+function applyAssistantTranscriptPlacement_(transcript, row, placement) {
+    if (placement !== "before_trailing_users") {
+        transcript.push(row);
+        return;
+    }
+    let insertAt = transcript.length;
+    while (insertAt > 0 && transcript[insertAt - 1] && transcript[insertAt - 1].role === "user") {
+        insertAt -= 1;
+    }
+    if (insertAt >= transcript.length) {
+        transcript.push(row);
+        return;
+    }
+    const anchor = transcript[insertAt];
+    if (anchor && typeof anchor.seq === "number" && Number.isFinite(anchor.seq)) {
+        row.seq = anchor.seq;
+        for (let i = insertAt; i < transcript.length; i += 1) {
+            const t = transcript[i];
+            if (t && typeof t.seq === "number" && Number.isFinite(t.seq)) {
+                t.seq += 1;
+            }
+        }
+    }
+    if (anchor && typeof anchor.at === "number" && Number.isFinite(anchor.at)) {
+        row.at = anchor.at - 1;
+    } else if (typeof row.at === "number" && Number.isFinite(row.at)) {
+        row.at = row.at - 1;
+    }
+    transcript.splice(insertAt, 0, row);
+}
+
+/**
+ * @param {Array<{ text?: string, rich?: Record<string, unknown> }>} entries
+ * @param {{ placement?: string, dfEvent?: Event, dfQueryText?: string } | null | undefined} [opts]
+ */
+function appendChatTranscriptAssistantEntries_(entries, opts) {
     if (!entries || !entries.length) {
         return;
     }
@@ -15649,6 +15767,7 @@ function appendChatTranscriptAssistantEntries_(entries) {
             typeof prev.chat_transcript_seq === "number" && Number.isFinite(prev.chat_transcript_seq)
                 ? prev.chat_transcript_seq
                 : 0;
+        let placement = resolveAssistantTranscriptPlacement_(transcript, opts);
         for (let ei = 0; ei < entries.length; ei += 1) {
             const entry = entries[ei];
             if (!entry || typeof entry !== "object") {
@@ -15718,7 +15837,10 @@ function appendChatTranscriptAssistantEntries_(entries) {
             if (rich) {
                 row.rich = rich;
             }
-            transcript.push(row);
+            applyAssistantTranscriptPlacement_(transcript, row, placement);
+            if (placement === "before_trailing_users") {
+                placement = "append";
+            }
             if (text) {
                 trackAssistantQueryInSessionContext_(text);
             } else if (rich) {
@@ -15745,7 +15867,11 @@ function appendChatTranscriptAssistantEntries_(entries) {
     }
 }
 
-function appendChatTranscriptAssistantLines_(lines) {
+/**
+ * @param {string[]} lines
+ * @param {{ placement?: string, dfEvent?: Event, dfQueryText?: string } | null | undefined} [opts]
+ */
+function appendChatTranscriptAssistantLines_(lines, opts) {
     const batch = coalesceAssistantTranscriptLines_(dedupeAssistantTranscriptTextLines_(lines));
     if (!batch.length) {
         return;
@@ -15761,6 +15887,7 @@ function appendChatTranscriptAssistantLines_(lines) {
             typeof prev.chat_transcript_seq === "number" && Number.isFinite(prev.chat_transcript_seq)
                 ? prev.chat_transcript_seq
                 : 0;
+        let placement = resolveAssistantTranscriptPlacement_(transcript, opts);
         for (let i = 0; i < batch.length; i += 1) {
             const raw = batch[i];
             const trimmed = typeof raw === "string" ? raw.trim() : "";
@@ -15786,7 +15913,12 @@ function appendChatTranscriptAssistantLines_(lines) {
                 continue;
             }
             seq += 1;
-            transcript.push({ role: "assistant", text, at: now, seq });
+            /** @type {{ role: string, text: string, at: number, seq: number }} */
+            const row = { role: "assistant", text, at: now, seq };
+            applyAssistantTranscriptPlacement_(transcript, row, placement);
+            if (placement === "before_trailing_users") {
+                placement = "append";
+            }
             trackAssistantQueryInSessionContext_(text);
         }
         const capped = dedupeConsecutiveAssistantTranscriptRows_(
@@ -15845,7 +15977,7 @@ function maybeRecordRenderedBotMarkdownForTranscript_(markdown) {
     if (plainTextRedundantWithAssistantRow_(plain, lastRow)) {
         return;
     }
-    appendChatTranscriptAssistantLines_([plain]);
+    appendChatTranscriptAssistantLines_([plain], { placement: "before_trailing_users" });
 }
 
 /**
@@ -17401,10 +17533,10 @@ function renderContactFormSubmissionResponse(payload) {
                 ? prev.chat_transcript
                 : [];
         if (!chatTranscriptAlreadyHasAssistantText_(tr, responseText)) {
-            appendChatTranscriptAssistantLines_([responseText]);
+            appendChatTranscriptAssistantLines_([responseText], { placement: "append" });
         }
     } catch {
-        appendChatTranscriptAssistantLines_([responseText]);
+        appendChatTranscriptAssistantLines_([responseText], { placement: "append" });
     }
 }
 

@@ -4657,14 +4657,17 @@ function orderTranscriptTurnsForDisplay_(turns) {
     }
     const tagged = turns.map((t, i) => ({ t, i }));
     tagged.sort((a, b) => {
+        const seqA = typeof a.t.seq === "number" && Number.isFinite(a.t.seq) ? a.t.seq : NaN;
+        const seqB = typeof b.t.seq === "number" && Number.isFinite(b.t.seq) ? b.t.seq : NaN;
+        if (Number.isFinite(seqA) && Number.isFinite(seqB) && seqA !== seqB) {
+            return seqA - seqB;
+        }
         const atA = typeof a.t.at === "number" && Number.isFinite(a.t.at) ? a.t.at : Number.POSITIVE_INFINITY;
         const atB = typeof b.t.at === "number" && Number.isFinite(b.t.at) ? b.t.at : Number.POSITIVE_INFINITY;
         if (atA !== atB) {
             return atA - atB;
         }
-        const seqA = typeof a.t.seq === "number" && Number.isFinite(a.t.seq) ? a.t.seq : 0;
-        const seqB = typeof b.t.seq === "number" && Number.isFinite(b.t.seq) ? b.t.seq : 0;
-        if (seqA !== seqB) {
+        if (Number.isFinite(seqA) && Number.isFinite(seqB) && seqA !== seqB) {
             return seqA - seqB;
         }
         return a.i - b.i;
@@ -4836,7 +4839,7 @@ function transcriptTurnsFromClientContext_(cx) {
 
     const hadUserTurn = base.some((t) => t.role === "user");
     if (!hadUserTurn) {
-        return [...missingUsers, ...base];
+        return orderTranscriptTurnsForDisplay_(mergeConversationTranscriptTurnSources_(base, missingUsers));
     }
 
     /** Server-side form merge uses «Form submission…» assistant text (see mergeLeadFormAssistantIntoClientContextIfMissing_). */
@@ -4855,7 +4858,7 @@ function transcriptTurnsFromClientContext_(cx) {
         return [...base.slice(0, formAssistantIdx), ...missingUsers, ...base.slice(formAssistantIdx)];
     }
 
-    return [...base, ...missingUsers];
+    return orderTranscriptTurnsForDisplay_(mergeConversationTranscriptTurnSources_(base, missingUsers));
 }
 
 /** Max transcript items kept in sync with widget (`company.js` MAX_CHAT_TRANSCRIPT_TURNS). */
