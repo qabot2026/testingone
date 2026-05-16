@@ -3501,10 +3501,58 @@ function transcriptTurnTextFromItem_(o, depth = 0) {
 
 const CHAT_TRANSCRIPT_SHEET_CELL_MAX = 49000;
 
+/** @param {unknown} text */
+function normalizeSheetTranscriptSplashKey_(text) {
+    return String(text || "")
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, " ");
+}
+
+/**
+ * Drops leading assistant line(s) that are generic splash openers so the Sheet JSON starts at the real dialog.
+ * Built-in: "Welcome to Artemis event." Optional: exact match for `SHEETS_CHAT_TRANSCRIPT_STRIP_LEADING_ASSISTANT_TEXT`.
+ *
+ * @param {unknown[]} arr
+ */
+function stripLeadingAssistantSplashForSheet_(arr) {
+    if (!Array.isArray(arr) || !arr.length) {
+        return arr;
+    }
+    const splashNeedles = new Set(["welcome to artemis event", "welcome to artemis event."]);
+    const envExtra = normalizeSheetTranscriptSplashKey_(
+        process.env.SHEETS_CHAT_TRANSCRIPT_STRIP_LEADING_ASSISTANT_TEXT || ""
+    );
+    if (envExtra) {
+        splashNeedles.add(envExtra);
+    }
+    const out = arr.slice();
+    while (out.length) {
+        const first = out[0];
+        if (!first || typeof first !== "object") {
+            break;
+        }
+        const o = /** @type {Record<string, unknown>} */ (first);
+        if (String(o.role || "").toLowerCase() !== "assistant") {
+            break;
+        }
+        const key = normalizeSheetTranscriptSplashKey_(o.text);
+        if (!key || !splashNeedles.has(key)) {
+            break;
+        }
+        out.shift();
+    }
+    return out;
+}
+
 /** Serialize widget `chat_transcript` for optional Google Sheets column (see SHEETS_CHAT_TRANSCRIPT_JSON_COLUMN). */
 function stringifyChatTranscriptForSheetPayload_(clientContext) {
     const cx = clientContext && typeof clientContext === "object" ? clientContext : {};
-    const ct = cx.chat_transcript;
+    const ctRaw = cx.chat_transcript;
+    if (!Array.isArray(ctRaw) || !ctRaw.length) {
+        return "";
+    }
+    const ct = stripLeadingAssistantSplashForSheet_(ctRaw);
     if (!Array.isArray(ct) || !ct.length) {
         return "";
     }
