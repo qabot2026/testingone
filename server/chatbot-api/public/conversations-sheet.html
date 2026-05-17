@@ -1402,6 +1402,15 @@
       color: var(--muted);
       line-height: 1.45;
     }
+    .lead-stats-loading {
+      margin: 0;
+      padding: 12px 10px;
+      font-size: 0.8125rem;
+      font-weight: 600;
+      color: #475569;
+      text-align: center;
+      line-height: 1.45;
+    }
     .lead-stats-numeric-block[hidden] {
       display: none !important;
     }
@@ -1581,9 +1590,20 @@
               placeholder="CONVERSATIONS_SHEET_VIEW_SECRET from Railway &mdash; Enter to load"
             />
           </div>
-          <button type="button" id="toggleSecret">Show</button>
-          <button type="button" id="saveSecret">Save in tab</button>
-          <button type="button" class="primary" id="refreshBtn">Reload</button>
+          <button type="button" id="toggleSecret" title="Show or hide the secret text (does not load data)">
+            Show
+          </button>
+          <button type="button" id="saveSecret" title="Save secret in this browser and load data">
+            Save &amp; load
+          </button>
+          <button
+            type="button"
+            class="primary"
+            id="refreshBtn"
+            title="Load conversation table and dashboard metrics"
+          >
+            Reload
+          </button>
           <button type="button" id="syncSheet2Btn" title="Runs automatically after reload with current filters. Click to sync again.">
             Sync dashboard
           </button>
@@ -2916,15 +2936,27 @@
         }
       } catch (e) {}
 
-      document.getElementById("toggleSecret").addEventListener("click", function () {
-        secretEl.type = secretEl.type === "password" ? "text" : "password";
-      });
+      var toggleSecretBtn = document.getElementById("toggleSecret");
+      if (toggleSecretBtn) {
+        toggleSecretBtn.addEventListener("click", function () {
+          var showPlain = secretEl.type === "password";
+          secretEl.type = showPlain ? "text" : "password";
+          toggleSecretBtn.textContent = showPlain ? "Hide" : "Show";
+        });
+      }
 
       document.getElementById("saveSecret").addEventListener("click", function () {
         try {
+          var s = secretEl.value.trim();
+          if (!s) {
+            showErr("Enter viewer secret.");
+            return;
+          }
           persistViewerSecret_(secretEl.value.trim());
           authBox.open = false;
-          setStatus("Secret saved.");
+          showErr("");
+          setStatus("Secret saved — loading…");
+          load();
         } catch (e) {
           setStatus("Could not save secret.");
         }
@@ -3367,7 +3399,9 @@
         refreshBtn.disabled = true;
         var reloadLbl = refreshBtn.textContent;
         refreshBtn.textContent = "Loading…";
-        setStatus("Loading…");
+        setStatus("Loading conversations and dashboard…");
+        showLeadStatsLoading(true);
+        var statsPromise = loadLeadStats();
         var timedId = 0;
         try {
           var lim = parseInt(String(limitEl.value), 10) || 100;
@@ -3428,15 +3462,21 @@
           hadLoadedSheet = true;
           syncPagerUi(json);
           render(json);
-          void loadLeadStats();
+          try {
+            await statsPromise;
+          } catch (statsWaitErr) {
+            console.warn("[conversations-sheet] dashboard stats", statsWaitErr);
+          }
           void syncDashboardSheet({ interactive: false });
         } catch (e) {
           lastSuccessfulSheetJson = null;
-          if (e && e.name === "AbortError") showErr("Timed out.");
-          else showErr(String(e && e.message ? e.message : e));
+          if (e && e.name === "AbortError") {
+            showErr("Timed out loading conversations. Try a smaller date range or fewer rows.");
+          } else showErr(String(e && e.message ? e.message : e));
           setStatus("");
           if (pagerWrap) pagerWrap.hidden = true;
           if (leadStatsList) leadStatsList.hidden = true;
+          showLeadStatsErr("");
         } finally {
           if (timedId) window.clearTimeout(timedId);
           refreshBtn.disabled = false;
@@ -3452,6 +3492,21 @@
         } else {
           leadStatsErr.style.display = "none";
           leadStatsErr.textContent = "";
+        }
+      }
+
+      function showLeadStatsLoading(loading) {
+        if (!leadStatsList) return;
+        var dashHeadEl = document.getElementById("leadStatsDashHead");
+        var numBlockEl = document.getElementById("leadStatsNumericBlock");
+        if (loading) {
+          leadStatsList.hidden = false;
+          showLeadStatsErr("");
+          if (dashHeadEl) {
+            dashHeadEl.innerHTML =
+              '<p class="lead-stats-loading">Loading dashboard metrics…</p>';
+          }
+          if (numBlockEl) numBlockEl.innerHTML = "";
         }
       }
 
@@ -3659,7 +3714,6 @@
 
       async function loadLeadStats() {
         var secret = secretEl.value.trim();
-        showLeadStatsErr("");
         if (!secret || !leadStatsList) return;
         var fromV = dateFromEl && dateFromEl.value ? dateFromEl.value.trim() : "";
         var toV = dateToEl && dateToEl.value ? dateToEl.value.trim() : "";
@@ -3672,7 +3726,7 @@
           var ctrl = new AbortController();
           var tid = window.setTimeout(function () {
             ctrl.abort();
-          }, 120000);
+          }, 180000);
           var res = await fetch(url, {
             method: "GET",
             headers: { "X-Conversations-Sheet-Secret": secret },
@@ -3685,23 +3739,55 @@
           });
           window.clearTimeout(tid);
           if (!res.ok || !json || !json.ok) {
-            if (leadStatsList) leadStatsList.hidden = true;
-            showLeadStatsErr("");
+            var statsErr =
+              (json && json.error) ||
+              "Could not load dashboard metrics (HTTP " + res.status + ").";
+            showLeadStatsErr(statsErr);
+            if (leadStatsList) {
+              leadStatsList.hidden = false;
+              var dashHeadEl = document.getElementById("leadStatsDashHead");
+              var numBlockEl = document.getElementById("leadStatsNumericBlock");
+              if (dashHeadEl) dashHeadEl.innerHTML = "";
+              if (numBlockEl) {
+                numBlockEl.innerHTML =
+                  '<p class="lead-stats-fallback">Dashboard metrics unavailable. The conversation table may still load below.</p>';
+              }
+            }
             return;
           }
           try {
             renderLeadStats(json);
+            showLeadStatsErr("");
           } catch (rendErr) {
             console.error("[conversations-sheet] lead stats render", rendErr);
+            showLeadStatsErr("Could not display dashboard metrics. Try reloading the page.");
             if (leadStatsList) {
               leadStatsList.hidden = false;
-              leadStatsList.innerHTML =
-                '<p class="lead-stats-fallback">Could not draw the overview strip. The conversation table below is unchanged—try reloading the page.</p>';
+              var dashHeadEl = document.getElementById("leadStatsDashHead");
+              var numBlockEl = document.getElementById("leadStatsNumericBlock");
+              if (dashHeadEl) dashHeadEl.innerHTML = "";
+              if (numBlockEl) {
+                numBlockEl.innerHTML =
+                  '<p class="lead-stats-fallback">Could not draw the overview strip. The conversation table below is unchanged—try reloading the page.</p>';
+              }
             }
           }
         } catch (e) {
-          if (leadStatsList) leadStatsList.hidden = true;
-          showLeadStatsErr("");
+          var msg =
+            e && e.name === "AbortError"
+              ? "Dashboard metrics timed out (large sheet). Narrow the date range and tap Reload."
+              : String(e && e.message ? e.message : e);
+          showLeadStatsErr(msg);
+          if (leadStatsList) {
+            leadStatsList.hidden = false;
+            var dashHeadEl = document.getElementById("leadStatsDashHead");
+            var numBlockEl = document.getElementById("leadStatsNumericBlock");
+            if (dashHeadEl) dashHeadEl.innerHTML = "";
+            if (numBlockEl) {
+              numBlockEl.innerHTML =
+                '<p class="lead-stats-fallback">Dashboard metrics could not be loaded.</p>';
+            }
+          }
         }
       }
 
