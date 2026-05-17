@@ -1515,12 +1515,15 @@
     .lead-pie-callout-col {
       position: relative;
       z-index: 2;
-      display: flex;
-      flex-direction: column;
-      justify-content: space-evenly;
-      gap: 8px;
       min-height: 132px;
       pointer-events: none;
+      overflow: visible;
+    }
+    .lead-pie-callout-item {
+      position: absolute;
+      left: 0;
+      right: 0;
+      transform: translateY(-50%);
     }
     .lead-split-chart-canvas {
       position: relative;
@@ -1538,6 +1541,7 @@
       font-variant-numeric: tabular-nums;
       color: #0f172a;
       line-height: 1.2;
+      box-sizing: border-box;
     }
     .lead-pie-callout-col--left .lead-pie-callout-item {
       justify-content: flex-end;
@@ -2078,9 +2082,8 @@
             "</span>"
           );
         }
-        active.forEach(function (seg, idx) {
-          var col = idx % 2 === 0 ? rightEl : leftEl;
-          col.insertAdjacentHTML("beforeend", calloutHtml(seg));
+        active.forEach(function (seg) {
+          rightEl.insertAdjacentHTML("beforeend", calloutHtml(seg));
           if (legendEl) legendEl.insertAdjacentHTML("beforeend", legendHtml(seg));
         });
         leftEl.removeAttribute("aria-hidden");
@@ -2091,8 +2094,9 @@
       function syncPieLeadCalloutArrows(chart) {
         var layout = document.querySelector(".lead-split-chart-layout");
         var svg = document.getElementById("lcPieLeadArrows");
+        var leftCol = document.getElementById("lcPieLeadLabelLeft");
         var rightCol = document.getElementById("lcPieLeadLabelRight");
-        if (!layout || !svg || !chart || !chart.canvas) return;
+        if (!layout || !svg || !chart || !chart.canvas || !leftCol || !rightCol) return;
         var layoutRect = layout.getBoundingClientRect();
         var w = layoutRect.width;
         var h = layoutRect.height;
@@ -2105,36 +2109,63 @@
         if (!meta || !meta.data) return;
         var canvasRect = chart.canvas.getBoundingClientRect();
         var ns = "http://www.w3.org/2000/svg";
-        for (var i = 0; i < meta.data.length; i++) {
-          var arc = meta.data[i];
-          var raw = chart.data.datasets[0].data[i];
+        var items = layout.querySelectorAll(".lead-pie-callout-item");
+        var placed = [];
+        for (var ni = 0; ni < items.length; ni++) {
+          var item = items[ni];
+          var segIdx = parseInt(item.getAttribute("data-seg-idx"), 10);
+          if (!Number.isFinite(segIdx) || segIdx < 0 || segIdx >= meta.data.length) continue;
+          var arc = meta.data[segIdx];
+          var raw = chart.data.datasets[0].data[segIdx];
           var val = typeof raw === "number" ? raw : Number(raw);
           if (!Number.isFinite(val) || val <= 0 || !arc || arc.circumference <= 0.001) continue;
-          var item = layout.querySelector('.lead-pie-callout-item[data-seg-idx="' + i + '"]');
-          if (!item) continue;
-          var onRight = !!(rightCol && rightCol.contains(item));
-          var itemRect = item.getBoundingClientRect();
-          var y = itemRect.top - layoutRect.top + itemRect.height / 2;
+          var angle = (arc.startAngle + arc.endAngle) / 2;
+          var cos = Math.cos(angle);
+          var sin = Math.sin(angle);
           var arcCx = canvasRect.left - layoutRect.left + arc.x;
           var arcCy = canvasRect.top - layoutRect.top + arc.y;
           var rEdge = arc.outerRadius;
-          var dy = y - arcCy;
-          var maxDy = rEdge * 0.96;
-          if (dy > maxDy) dy = maxDy;
-          if (dy < -maxDy) dy = -maxDy;
-          var dx = Math.sqrt(Math.max(0, rEdge * rEdge - dy * dy));
-          var xPie = onRight ? arcCx + dx : arcCx - dx;
+          var ySlice = arcCy + sin * rEdge;
+          var xSlice = arcCx + cos * rEdge;
+          var onRight = cos >= 0;
+          var col = onRight ? rightCol : leftCol;
+          if (item.parentElement !== col) col.appendChild(item);
+          var colRect = col.getBoundingClientRect();
+          var topPx = ySlice - colRect.top;
+          var minGap = 14;
+          for (var p = 0; p < placed.length; p++) {
+            if (placed[p].col === col && Math.abs(placed[p].y - topPx) < minGap) {
+              topPx = placed[p].y + (topPx >= placed[p].y ? minGap : -minGap);
+            }
+          }
+          placed.push({ col: col, y: topPx });
+          item.style.top = topPx + "px";
+        }
+        for (var li = 0; li < items.length; li++) {
+          var item2 = items[li];
+          var segIdx2 = parseInt(item2.getAttribute("data-seg-idx"), 10);
+          if (!Number.isFinite(segIdx2) || segIdx2 < 0 || segIdx2 >= meta.data.length) continue;
+          var arc2 = meta.data[segIdx2];
+          if (!arc2 || arc2.circumference <= 0.001) continue;
+          var angle2 = (arc2.startAngle + arc2.endAngle) / 2;
+          var cos2 = Math.cos(angle2);
+          var sin2 = Math.sin(angle2);
+          var arcCx2 = canvasRect.left - layoutRect.left + arc2.x;
+          var arcCy2 = canvasRect.top - layoutRect.top + arc2.y;
+          var r2 = arc2.outerRadius;
+          var xSlice2 = arcCx2 + cos2 * r2;
+          var itemRect = item2.getBoundingClientRect();
+          var yLine = itemRect.top - layoutRect.top + itemRect.height / 2;
+          var onRight2 = cos2 >= 0;
           var gap = 3;
-          var xLabel = onRight
+          var xLabel = onRight2
             ? itemRect.left - layoutRect.left - gap
             : itemRect.right - layoutRect.left + gap;
-          if (onRight && xLabel <= xPie) continue;
-          if (!onRight && xLabel >= xPie) continue;
           var line = document.createElementNS(ns, "line");
-          line.setAttribute("x1", String(xPie));
-          line.setAttribute("y1", String(y));
+          line.setAttribute("x1", String(xSlice2));
+          line.setAttribute("y1", String(yLine));
           line.setAttribute("x2", String(xLabel));
-          line.setAttribute("y2", String(y));
+          line.setAttribute("y2", String(yLine));
           line.setAttribute("stroke", "rgba(100, 116, 139, 0.85)");
           line.setAttribute("stroke-width", "1");
           line.setAttribute("stroke-linecap", "round");
