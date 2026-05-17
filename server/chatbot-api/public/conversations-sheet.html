@@ -1494,6 +1494,9 @@
       font-weight: 700;
       color: #0f172a;
     }
+    .lead-chart-card--split {
+      overflow: hidden;
+    }
     .lead-split-chart-layout {
       position: relative;
       display: grid;
@@ -1502,13 +1505,15 @@
       gap: 2px 4px;
       flex: 1;
       min-height: 0;
+      overflow: hidden;
     }
     .lead-pie-callout-col {
       position: relative;
       z-index: 2;
       min-height: 132px;
+      height: 132px;
       pointer-events: none;
-      overflow: visible;
+      overflow: hidden;
     }
     .lead-pie-callout-item {
       position: absolute;
@@ -2092,11 +2097,11 @@
       }
 
       function syncPieLeadLabelPositions(chart) {
-        var layout = document.querySelector(".lead-split-chart-layout");
+        var layout =
+          chart && chart.canvas ? chart.canvas.closest(".lead-split-chart-layout") : null;
         var leftCol = document.getElementById("lcPieLeadLabelLeft");
         var rightCol = document.getElementById("lcPieLeadLabelRight");
         if (!layout || !chart || !chart.canvas || !leftCol || !rightCol) return;
-        var layoutRect = layout.getBoundingClientRect();
         var meta = chart.getDatasetMeta(0);
         if (!meta || !meta.data) return;
         var canvasRect = chart.canvas.getBoundingClientRect();
@@ -2113,18 +2118,20 @@
           var angle = (arc.startAngle + arc.endAngle) / 2;
           var cos = Math.cos(angle);
           var sin = Math.sin(angle);
-          var arcCx = canvasRect.left - layoutRect.left + arc.x;
-          var arcCy = canvasRect.top - layoutRect.top + arc.y;
-          var ySlice = arcCy + sin * arc.outerRadius;
           var onRight = cos >= 0;
           var col = onRight ? rightCol : leftCol;
           if (item.parentElement !== col) col.appendChild(item);
           var colRect = col.getBoundingClientRect();
-          var topPx = ySlice - colRect.top;
+          var colH = col.clientHeight || colRect.height || 132;
+          var pad = 12;
+          var arcCy = canvasRect.top - colRect.top + arc.y;
+          var topPx = arcCy + sin * arc.outerRadius;
+          topPx = Math.max(pad, Math.min(colH - pad, topPx));
           var minGap = 14;
           for (var p = 0; p < placed.length; p++) {
             if (placed[p].col === col && Math.abs(placed[p].y - topPx) < minGap) {
               topPx = placed[p].y + (topPx >= placed[p].y ? minGap : -minGap);
+              topPx = Math.max(pad, Math.min(colH - pad, topPx));
             }
           }
           placed.push({ col: col, y: topPx });
