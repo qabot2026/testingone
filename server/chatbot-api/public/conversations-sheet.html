@@ -3687,9 +3687,8 @@
         refreshBtn.disabled = true;
         var reloadLbl = refreshBtn.textContent;
         refreshBtn.textContent = "Loading…";
-        setStatus("Loading conversations and dashboard…");
+        setStatus("Loading conversations…");
         showLeadStatsLoading(true);
-        var statsPromise = loadLeadStats();
         var timedId = 0;
         try {
           var lim = parseInt(String(limitEl.value), 10) || 100;
@@ -3750,8 +3749,9 @@
           hadLoadedSheet = true;
           syncPagerUi(json);
           render(json);
+          setStatus(msgParts.join(" · ") + " · Loading dashboard metrics…");
           try {
-            await statsPromise;
+            await loadLeadStats();
           } catch (statsWaitErr) {
             console.warn("[conversations-sheet] dashboard stats", statsWaitErr);
           }

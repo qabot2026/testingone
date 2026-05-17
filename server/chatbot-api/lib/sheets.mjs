@@ -2055,6 +2055,39 @@ function conversationRowYmdInSheetTz_(epochMs) {
     }
 }
 
+/**
+ * Default staff dashboard window: today plus `daysBack` prior calendar days in sheet TZ (default 4 → 5 days).
+ * @param {number} [daysBack]
+ * @returns {{ from: string, to: string }}
+ */
+function conversationSheetDefaultDateRange_(daysBack = 4) {
+    const back = Math.max(0, Math.min(90, Number.parseInt(String(daysBack), 10) || 4));
+    const to = conversationRowYmdInSheetTz_(Date.now());
+    const parts = to.split("-").map((x) => Number.parseInt(String(x), 10));
+    if (parts.length !== 3 || parts.some((n) => !Number.isFinite(n))) {
+        return { from: to, to };
+    }
+    const dt = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2], 12, 0, 0));
+    dt.setUTCDate(dt.getUTCDate() - back);
+    return { from: conversationRowYmdInSheetTz_(dt.getTime()), to };
+}
+
+/** Max rows materialized when a date filter matches (avoids OOM on wide tabs). */
+function conversationSheetDateFilterMaxRows_() {
+    return Math.min(
+        50_000,
+        Math.max(
+            500,
+            Number.parseInt(
+                String(
+                    (process.env.CONVERSATIONS_SHEET_DATE_FILTER_MAX_ROWS || "").trim() || "12000"
+                ),
+                10
+            ) || 12_000
+        )
+    );
+}
+
 /** True when the cell is only a person name (no phone/email) — must not count as a lead. */
 function sheetCellLooksLikeNameOnly_(raw) {
     const s = sheetCellString_(raw).trim();
@@ -2102,16 +2135,68 @@ function sheetSingleColumnValuesList_(matrix) {
  * @param {number} lastRow1Based
  * @returns {Promise<unknown[]>}
  */
+const SHEET_COLUMN_FETCH_CHUNK_ROWS = 2000;
+
 async function fetchSheetSingleColumnValues_(sheets, tab, colIdx0, lastRow1Based) {
     if (lastRow1Based < 2 || colIdx0 < 0) {
         return [];
     }
     const letter = columnLetterFromIndex_(colIdx0);
-    const got = await sheets.spreadsheets.values.get({
-        spreadsheetId: SPREADSHEET_ID,
-        range: `${tab}!${letter}2:${letter}${lastRow1Based}`
-    });
-    return sheetSingleColumnValuesList_(got.data.values);
+    const dataRows = lastRow1Based - 1;
+    if (dataRows <= SHEET_COLUMN_FETCH_CHUNK_ROWS) {
+        const got = await sheets.spreadsheets.values.get({
+            spreadsheetId: SPREADSHEET_ID,
+            range: `${tab}!${letter}2:${letter}${lastRow1Based}`
+        });
+        return sheetSingleColumnValuesList_(got.data.values);
+    }
+    /** @type {unknown[]} */
+    const merged = [];
+    let startRow = 2;
+    while (startRow <= lastRow1Based) {
+        const endRow = Math.min(lastRow1Based, startRow + SHEET_COLUMN_FETCH_CHUNK_ROWS - 1);
+        const got = await sheets.spreadsheets.values.get({
+            spreadsheetId: SPREADSHEET_ID,
+            range: `${tab}!${letter}${startRow}:${letter}${endRow}`
+        });
+        merged.push(...sheetSingleColumnValuesList_(got.data.values));
+        startRow = endRow + 1;
+    }
+    return merged;
+}
+
+/**
+ * @param {import("googleapis").sheets_v4.Sheets} sheets
+ * @param {string} tab
+ * @param {number[]} row1BasedList
+ * @param {string} lastColLetter
+ * @returns {Promise<{ row1: number, cells: unknown[] }[]>}
+ */
+async function fetchSheetWideRowsBatch_(sheets, tab, row1BasedList, lastColLetter) {
+    if (!row1BasedList.length) {
+        return [];
+    }
+    const BATCH = 60;
+    /** @type {{ row1: number, cells: unknown[] }[]} */
+    const out = [];
+    for (let i = 0; i < row1BasedList.length; i += BATCH) {
+        const chunk = row1BasedList.slice(i, i + BATCH);
+        const ranges = chunk.map((r) => `${tab}!A${r}:${lastColLetter}${r}`);
+        const got = await sheets.spreadsheets.values.batchGet({
+            spreadsheetId: SPREADSHEET_ID,
+            ranges
+        });
+        const vrs = Array.isArray(got.data.valueRanges) ? got.data.valueRanges : [];
+        for (let j = 0; j < chunk.length; j += 1) {
+            const vr = vrs[j];
+            const cells =
+                vr && Array.isArray(vr.values) && vr.values[0]
+                    ? /** @type {unknown[]} */ (vr.values[0])
+                    : [];
+            out.push({ row1: chunk[j], cells });
+        }
+    }
+    return out;
 }
 
 /** Pad sparse Values API rows so column indexes match sheet columns (trailing empties omitted). */
@@ -3212,6 +3297,13 @@ export async function fetchConversationLeadCaptureStats(opts = {}) {
         fromStr = toStr;
         toStr = swap;
     }
+    let serverDefaultRange = false;
+    if (!fromStr && !toStr) {
+        const def = conversationSheetDefaultDateRange_(4);
+        fromStr = def.from;
+        toStr = def.to;
+        serverDefaultRange = true;
+    }
     const filterActive = !!(fromStr || toStr);
     let fromEff = "1900-01-01";
     let toEff = "9999-12-31";
@@ -3274,7 +3366,8 @@ export async function fetchConversationLeadCaptureStats(opts = {}) {
         dateFilter: {
             applied: filterActive,
             from: fromStr,
-            to: toStr
+            to: toStr,
+            serverDefaultRange
         },
         scan: {
             sheetLastRow1Based: nLast,
@@ -3368,26 +3461,22 @@ export async function fetchConversationLeadCaptureStats(opts = {}) {
             appointmentDatetimeIdx !== undefined && appointmentDatetimeIdx >= 0
                 ? appointmentDatetimeIdx
                 : -1;
-        const colResults = await Promise.all([
-            fetchSheetSingleColumnValues_(sheets, tab, dateIdx, nLast),
-            fetchSheetSingleColumnValues_(sheets, tab, mobileIdx, nLast),
-            fetchSheetSingleColumnValues_(sheets, tab, emailIdx, nLast),
-            fetchSheetSingleColumnValues_(sheets, tab, channelIdx, nLast),
-            fetchSheetSingleColumnValues_(sheets, tab, appointmentBookedIdx, nLast),
-            fetchSheetSingleColumnValues_(sheets, tab, appointmentDateIdx, nLast),
-            fetchSheetSingleColumnValues_(sheets, tab, appointmentTimeIdx, nLast),
+        dateColVals = await fetchSheetSingleColumnValues_(sheets, tab, dateIdx, nLast);
+        mobileColVals = await fetchSheetSingleColumnValues_(sheets, tab, mobileIdx, nLast);
+        emailColVals = await fetchSheetSingleColumnValues_(sheets, tab, emailIdx, nLast);
+        channelColVals = await fetchSheetSingleColumnValues_(sheets, tab, channelIdx, nLast);
+        const apptBookedCol = await fetchSheetSingleColumnValues_(
+            sheets,
+            tab,
+            appointmentBookedIdx,
+            nLast
+        );
+        const apptDateCol = await fetchSheetSingleColumnValues_(sheets, tab, appointmentDateIdx, nLast);
+        const apptTimeCol = await fetchSheetSingleColumnValues_(sheets, tab, appointmentTimeIdx, nLast);
+        const apptDtCol =
             apptDtIdx >= 0
-                ? fetchSheetSingleColumnValues_(sheets, tab, apptDtIdx, nLast)
-                : Promise.resolve([])
-        ]);
-        dateColVals = colResults[0];
-        mobileColVals = colResults[1];
-        emailColVals = colResults[2];
-        channelColVals = colResults[3];
-        const apptBookedCol = colResults[4];
-        const apptDateCol = colResults[5];
-        const apptTimeCol = colResults[6];
-        const apptDtCol = colResults[7];
+                ? await fetchSheetSingleColumnValues_(sheets, tab, apptDtIdx, nLast)
+                : [];
         const dataRowCount = Array.isArray(dateColVals) ? dateColVals.length : 0;
 
         let conversations = 0;
@@ -4973,6 +5062,13 @@ export async function fetchConversationSheetPreview(opts = {}) {
         previewFromIso = previewToIso;
         previewToIso = swap;
     }
+    let previewServerDefaultRange = false;
+    if (!previewFromIso && !previewToIso) {
+        const def = conversationSheetDefaultDateRange_(4);
+        previewFromIso = def.from;
+        previewToIso = def.to;
+        previewServerDefaultRange = true;
+    }
     const previewDateFilterActive = !!(previewFromIso || previewToIso);
     let previewFromEff = "1900-01-01";
     let previewToEff = "9999-12-31";
@@ -4984,11 +5080,12 @@ export async function fetchConversationSheetPreview(opts = {}) {
             previewToEff = previewToIso;
         }
     }
-    /** @type {{ applied: boolean, serverApplied?: boolean, from: string|null, to: string|null }} */
+    /** @type {{ applied: boolean, serverApplied?: boolean, serverDefaultRange?: boolean, from: string|null, to: string|null }} */
     const dateFilterEcho = previewDateFilterActive
         ? {
             applied: true,
             serverApplied: true,
+            serverDefaultRange: previewServerDefaultRange,
             from: previewFromIso,
             to: previewToIso
         }
@@ -5062,31 +5159,31 @@ export async function fetchConversationSheetPreview(opts = {}) {
     if (previewDateFilterActive) {
         const headerMap = await getHeaderIndexMap_(sheets, tab);
         const dateIdx = pickHeaderIndex_(headerMap, SHEET_H_CONV_DATE_CELL, 1);
-        const fullGot = await sheets.spreadsheets.values.get({
-            spreadsheetId: SPREADSHEET_ID,
-            range: `${tab}!A2:${previewRightLetter}${n}`
-        });
-        const dataRowsAll = Array.isArray(fullGot.data.values) ? fullGot.data.values : [];
-        /** @type {Record<string, string>[]} */
-        const matchedChrono = [];
-        for (let ri = 0; ri < dataRowsAll.length; ri += 1) {
-            const cells = dataRowsAll[ri] || [];
-            let rowHasAny = false;
-            for (let ci = 0; ci < cells.length; ci += 1) {
-                if (!isBlankSheetCell_(cells[ci])) {
-                    rowHasAny = true;
-                    break;
-                }
-            }
-            if (!rowHasAny) {
-                continue;
-            }
-            const dateMs = parseConversationDateCellWide_(cells[dateIdx]);
+        const dateColVals = await fetchSheetSingleColumnValues_(sheets, tab, dateIdx, n);
+        const matchMax = conversationSheetDateFilterMaxRows_();
+        /** @type {number[]} */
+        const matchedSheetRows = [];
+        for (let ri = 0; ri < dateColVals.length; ri += 1) {
+            const dateMs = parseConversationDateCellWide_(dateColVals[ri]);
             if (!Number.isFinite(dateMs)) {
                 continue;
             }
             const ymd = conversationRowYmdInSheetTz_(dateMs);
             if (!ymd || ymd < previewFromEff || ymd > previewToEff) {
+                continue;
+            }
+            matchedSheetRows.push(ri + 2);
+        }
+        const dateFilterCapped = matchedSheetRows.length > matchMax;
+        const rowsToFetch = dateFilterCapped
+            ? matchedSheetRows.slice(matchedSheetRows.length - matchMax)
+            : matchedSheetRows;
+        const wideRows = await fetchSheetWideRowsBatch_(sheets, tab, rowsToFetch, previewRightLetter);
+        /** @type {Record<string, string>[]} */
+        const matchedChrono = [];
+        for (let wi = 0; wi < wideRows.length; wi += 1) {
+            const cells = wideRows[wi].cells || [];
+            if (!sheetRowHasAnyCell_(padSheetRow_(cells, previewLastCol0 + 1))) {
                 continue;
             }
             /** @type {Record<string, string>} */
@@ -5099,7 +5196,7 @@ export async function fetchConversationSheetPreview(opts = {}) {
                 matchedChrono.push(o);
             }
         }
-        const totalFiltered = matchedChrono.length;
+        const totalFiltered = dateFilterCapped ? matchedSheetRows.length : matchedChrono.length;
         /** Newest spreadsheet rows last → reverse for paging like the non-filter viewer. */
         const newestFirst = matchedChrono.slice().reverse();
         const maxFilteredOffset = Math.max(0, totalFiltered - maxRows);
