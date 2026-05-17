@@ -1989,6 +1989,54 @@
         var chLabels = ["Web", "WhatsApp", "Instagram", "Facebook"];
         var chData = [cw, cwa, cinst, cfb];
         var chColors = [chBrandWebSky, chBrandWhatsappGreen, chBrandInstagramPink, chBrandFacebookBlue];
+        var chTotal = chData.reduce(function (sum, v) {
+          return sum + (typeof v === "number" && Number.isFinite(v) ? v : 0);
+        }, 0);
+        if (chTotal <= 0 && n > 0) chTotal = n;
+
+        function leadPctLabel(value, total) {
+          var num = typeof value === "number" ? value : Number(value);
+          if (!Number.isFinite(num) || num <= 0 || !total || total <= 0) return "";
+          var pct = (num / total) * 100;
+          var text = pct > 0 && pct < 1 ? pct.toFixed(1) : String(Math.round(pct));
+          return text + "%";
+        }
+
+        function doughnutLabelColor(ctx) {
+          var bg = ctx.dataset.backgroundColor;
+          var c = Array.isArray(bg) ? bg[ctx.dataIndex] : bg;
+          if (typeof c !== "string") return "#f8fafc";
+          var low = c.toLowerCase();
+          if (low === "#94a3b8" || low === "#fdba74") return "#0f172a";
+          return "#f8fafc";
+        }
+
+        var channelBarPctDl = {
+          datalabels: {
+            anchor: "end",
+            align: "top",
+            offset: 2,
+            color: "#0f172a",
+            font: { weight: "700", size: 10 },
+            formatter: function (v) {
+              return leadPctLabel(v, chTotal);
+            }
+          }
+        };
+
+        var leadCapturePctDl = {
+          datalabels: {
+            anchor: "center",
+            align: "center",
+            font: { weight: "700", size: 10 },
+            formatter: function (v) {
+              return leadPctLabel(v, leads);
+            },
+            color: doughnutLabelColor,
+            textStrokeColor: "rgba(15,23,42,0.25)",
+            textStrokeWidth: 2
+          }
+        };
 
         function svgDataUrl(svg) {
           return "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
@@ -2016,7 +2064,7 @@
             border: { display: false }
           }
         };
-        var channelBarLayout = { padding: { top: 6, right: 4, bottom: 32, left: 2 } };
+        var channelBarLayout = { padding: { top: 18, right: 4, bottom: 32, left: 2 } };
         function makeChannelBarIconPlugin(imgs) {
           return {
             id: "lcBarChannelIcons",
@@ -2088,7 +2136,7 @@
               layout: chartLayoutTight,
               responsive: true,
               maintainAspectRatio: false,
-              plugins: Object.assign({ legend: doughnutLegend }, doughnutDl)
+              plugins: Object.assign({ legend: doughnutLegend }, leadCapturePctDl)
             }
           })
         );
@@ -2146,7 +2194,7 @@
                 layout: channelBarLayout,
                 responsive: true,
                 maintainAspectRatio: false,
-                plugins: { legend: { display: false } },
+                plugins: Object.assign({ legend: { display: false } }, channelBarPctDl),
                 scales: channelBarAxes
               }
             })
