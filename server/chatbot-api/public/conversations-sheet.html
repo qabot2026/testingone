@@ -2929,15 +2929,15 @@
 
       try {
         var saved = sessionStorage.getItem(LS_KEY) || localStorage.getItem(LS_KEY);
-        if (saved) {
+        if (saved && secretEl) {
           secretEl.value = saved;
-          authBox.open = false;
+          if (authBox) authBox.open = false;
           persistViewerSecret_(saved);
         }
       } catch (e) {}
 
       var toggleSecretBtn = document.getElementById("toggleSecret");
-      if (toggleSecretBtn) {
+      if (toggleSecretBtn && secretEl) {
         toggleSecretBtn.addEventListener("click", function () {
           var showPlain = secretEl.type === "password";
           secretEl.type = showPlain ? "text" : "password";
@@ -2945,22 +2945,25 @@
         });
       }
 
-      document.getElementById("saveSecret").addEventListener("click", function () {
-        try {
-          var s = secretEl.value.trim();
-          if (!s) {
-            showErr("Enter viewer secret.");
-            return;
+      var saveSecretBtn = document.getElementById("saveSecret");
+      if (saveSecretBtn) {
+        saveSecretBtn.addEventListener("click", function () {
+          try {
+            var s = secretEl && secretEl.value ? secretEl.value.trim() : "";
+            if (!s) {
+              showErr("Enter viewer secret.");
+              return;
+            }
+            persistViewerSecret_(s);
+            if (authBox) authBox.open = false;
+            showErr("");
+            setStatus("Secret saved - loading...");
+            load();
+          } catch (e) {
+            setStatus("Could not save secret.");
           }
-          persistViewerSecret_(secretEl.value.trim());
-          authBox.open = false;
-          showErr("");
-          setStatus("Secret saved — loading…");
-          load();
-        } catch (e) {
-          setStatus("Could not save secret.");
-        }
-      });
+        });
+      }
 
       function rowMatchesFilter(row, q) {
         if (!q) return true;
@@ -3548,7 +3551,7 @@
         var leadCaptureDisp =
           n > 0 && pct != null && Number.isFinite(pct)
             ? '<span class="stat-frac">' + escapeHtml(String(pct)) + "%</span>"
-            : '<span class="stat-frac">—</span>";
+            : '<span class="stat-frac">-</span>';
         var iconWeb =
           '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>';
         var iconWa =
@@ -3885,12 +3888,13 @@
         });
       }
 
-      refreshBtn.addEventListener("click", load);
-      secretEl.addEventListener("keydown", function (ev) {
-        if (ev.key === "Enter") load();
-      });
-
-      if (secretEl.value.trim()) load();
+      if (refreshBtn) refreshBtn.addEventListener("click", load);
+      if (secretEl) {
+        secretEl.addEventListener("keydown", function (ev) {
+          if (ev.key === "Enter") load();
+        });
+        if (secretEl.value.trim()) load();
+      }
     })();
   </script>
 </body>
