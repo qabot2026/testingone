@@ -806,33 +806,89 @@
       flex-direction: column;
       gap: 0;
     }
-    .lead-stats-numeric-row {
-      display: flex;
-      flex-wrap: nowrap;
-      align-items: stretch;
-      gap: 20px;
+    .lead-stats-numeric-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr) minmax(0, 1.2fr);
+      gap: 12px 14px;
       width: 100%;
-      overflow-x: auto;
-      -webkit-overflow-scrolling: touch;
-      padding: 0;
-      margin: 0;
+      min-height: 138px;
+      align-items: stretch;
     }
-    .lead-stats-numeric-row > .lead-inline-stat,
-    .lead-stats-numeric-row > .channel-chip,
-    .lead-stats-numeric-row > .contact-chip {
+    .lead-stats-numeric-kpis {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+      min-width: 0;
+    }
+    .lead-stats-numeric-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      min-width: 0;
+      padding: 10px 12px;
+      border: 1px solid rgba(15, 23, 42, 0.1);
+      border-radius: 8px;
+      background: #ffffff;
+      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
+    }
+    .lead-numeric-section-title {
+      margin: 0;
+      font-size: 0.6875rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: #475569;
+      text-align: center;
+    }
+    .lead-channel-grid-2x2 {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      grid-template-rows: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      flex: 1;
+      min-height: 0;
+    }
+    .lead-stats-numeric-kpis .lead-inline-stat,
+    .lead-channel-grid-2x2 .channel-chip {
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
       text-align: center;
-      flex: 0 0 auto;
       gap: 6px;
-      min-width: 100px;
-      padding: 10px 14px;
+      min-width: 0;
+      min-height: 54px;
+      padding: 8px 10px;
       border: 1px solid rgba(15, 23, 42, 0.12);
       border-radius: 8px;
       background: #ffffff;
       box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
+    }
+    .lead-stats-numeric-contact .lead-stats-contact-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+      flex: 1;
+      min-width: 0;
+    }
+    .lead-stats-numeric-contact .lead-stat-mini {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      min-height: 54px;
+      padding: 8px 8px 6px;
+    }
+    .lead-stats-numeric-contact .lead-stat-mini-label,
+    .lead-stats-numeric-contact .lead-stat-mini-value {
+      width: 100%;
+      text-align: center;
+    }
+    .lead-stats-numeric-contact .lead-stat-mini-chans {
+      justify-content: center;
+      width: 100%;
+      margin-top: 6px;
+      padding-top: 6px;
     }
     .lead-stats-compact-line {
       display: flex;
@@ -1172,20 +1228,22 @@
       border-radius: 8px;
       padding: 8px 9px;
       min-width: 0;
-      border: 1px solid rgba(15, 23, 42, 0.06);
+      border: 1px solid rgba(15, 23, 42, 0.1);
       background: #ffffff;
+      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
     }
     .lead-stat-mini-label {
-      font-size: 0.6875rem;
+      font-size: 0.75rem;
       font-weight: 600;
-      color: #64748b;
+      color: #475569;
       line-height: 1.25;
     }
     .lead-stat-mini-value {
-      font-size: 1rem;
+      font-size: 1.125rem;
       font-weight: 700;
       color: #0f172a;
       margin-top: 2px;
+      font-variant-numeric: tabular-nums;
     }
     .lead-stat-mini-chans {
       display: flex;
@@ -1315,6 +1373,24 @@
       max-height: 140px;
     }
 
+    @media (max-width: 1100px) {
+      .lead-stats-numeric-layout {
+        grid-template-columns: 1fr 1fr;
+        grid-template-areas:
+          "kpis kpis"
+          "channels contact";
+      }
+      .lead-stats-numeric-kpis {
+        grid-area: kpis;
+      }
+      .lead-stats-numeric-channels {
+        grid-area: channels;
+      }
+      .lead-stats-numeric-contact {
+        grid-area: contact;
+      }
+    }
+
     @media (max-width: 640px) {
       .lead-stats {
         padding: 10px 12px 12px;
@@ -1333,9 +1409,18 @@
         padding: 9px 8px;
         min-height: 38px;
       }
-      .lead-stats-numeric-row {
-        flex-wrap: wrap;
-        row-gap: 14px;
+      .lead-stats-numeric-layout {
+        grid-template-columns: 1fr;
+        min-height: 0;
+      }
+      .lead-stats-numeric-layout {
+        grid-template-areas: none;
+      }
+      .lead-stats-numeric-kpis {
+        grid-template-columns: 1fr;
+      }
+      .lead-stats-numeric-contact .lead-stats-contact-grid {
+        grid-template-columns: 1fr;
       }
       .lead-stats-compact-line--kpis {
         grid-template-columns: 1fr;
@@ -3153,16 +3238,6 @@
             "</span></span>"
           );
         }
-        function contactChip(label, total) {
-          return (
-            '<span class="contact-chip">' +
-            '<span class="contact-chip-lbl">' +
-            escapeHtml(label) +
-            '</span><strong class="contact-chip-val">' +
-            escapeHtml(String(total)) +
-            "</strong></span>"
-          );
-        }
         function readContactSeg(obj) {
           if (!obj || typeof obj !== "object") {
             return { web: 0, whatsapp: 0, instagram: 0, facebook: 0, other: 0 };
@@ -3218,6 +3293,9 @@
             "</div>"
           );
         }
+        var omByCh = readContactSeg(tot.onlyMobileByChannel);
+        var oeByCh = readContactSeg(tot.onlyEmailByChannel);
+        var beByCh = readContactSeg(tot.mobileAndEmailByChannel);
         leadStatsList.hidden = false;
         leadStatsList.innerHTML =
           '<div class="lead-stats-dash-head">' +
@@ -3229,18 +3307,27 @@
           '<button type="button" class="lead-view-btn" data-mode="visual">Visual</button>' +
           "</div></div>" +
           '<div id="leadStatsNumericBlock" class="lead-stats-numeric-block">' +
-          '<div class="lead-stats-numeric-row" role="list" aria-label="Lead metrics">' +
+          '<' + 'div class="lead-stats-numeric-layout">' +
+          '<div class="lead-stats-numeric-kpis" role="list" aria-label="Summary metrics">' +
           kpiInline("Total conversations", escapeHtml(String(n)), true) +
           kpiInline("Lead capture rate", leadCaptureDisp, false) +
           kpiInline("Appointments booked", escapeHtml(String(apt)), false) +
+          "</div>" +
+          '<div class="lead-stats-numeric-panel lead-stats-numeric-channels" aria-label="Conversations by channel">' +
+          '<p class="lead-numeric-section-title">By channel</p>' +
+          '<div class="lead-channel-grid-2x2" role="list">' +
           channelChip("web", "Web", cw, iconWeb) +
           channelChip("whatsapp", "WhatsApp", cwa, iconWa) +
           channelChip("instagram", "Instagram", cinst, iconIg) +
           channelChip("facebook", "Facebook", cfb, iconFb) +
-          contactChip("Mobile only", om) +
-          contactChip("Email only", oe) +
-          contactChip("Mobile & email", be) +
-          "</div>" +
+          "</div></div>" +
+          '<div class="lead-stats-numeric-panel lead-stats-numeric-contact" aria-label="Contact captured">' +
+          '<p class="lead-numeric-section-title">Contact captured</p>' +
+          '<div class="lead-stats-contact-grid">' +
+          contactMini(escapeHtml("Mobile only"), om, omByCh) +
+          contactMini(escapeHtml("Email only"), oe, oeByCh) +
+          contactMini(escapeHtml("Mobile & email"), be, beByCh) +
+          "</div></div></div>" +
           '<div id="leadStatsVisualBlock" class="lead-stats-visual-block" hidden>' +
           '<div class="lead-stats-chart-grid">' +
           '<div class="lead-chart-card"><h4>Volume by channel</h4><p class="lead-chart-card-total">Total · ' +
