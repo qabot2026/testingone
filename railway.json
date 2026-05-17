@@ -2,10 +2,12 @@
   "$schema": "https://railway.com/railway.schema.json",
   "build": {
     "builder": "DOCKERFILE",
-    "dockerfilePath": "server/chatbot-api/Dockerfile",
-    "watchPatterns": ["server/chatbot-api/**", "railway.json"]
+    "rootDirectory": "server/chatbot-api",
+    "dockerfilePath": "Dockerfile",
+    "watchPatterns": ["**", "railway.json"]
   },
   "deploy": {
-    "healthcheckPath": "/health"
+    "healthcheckPath": "/health",
+    "startCommand": "node index.mjs"
   }
 }

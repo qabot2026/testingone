@@ -1,0 +1,10 @@
+# Repo-root context: keep Docker builds small (avoids OOM on Railway).
+node_modules
+**/.git
+**/__pycache__
+**/*.pyc
+**/.cursor
+**/.vscode
+**/npm-debug.log
+*.md
+!server/chatbot-api/**/*.md
