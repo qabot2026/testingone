@@ -2000,27 +2000,16 @@
           return text + "%";
         }
 
-        function formatLeadChartCount(n) {
-          var x = Math.trunc(n);
-          if (x >= 1000000) {
-            return (x / 1000000).toFixed(1).replace(/\.0$/, "") + "M";
-          }
-          if (x >= 10000) {
-            return Math.round(x / 1000) + "k";
-          }
-          if (x >= 1000) {
-            return (x / 1000).toFixed(1).replace(/\.0$/, "") + "k";
-          }
-          return String(x);
+        function formatLeadChartCountExact(n) {
+          return String(Math.trunc(n));
         }
 
-        function formatLeadChartCountFull(n) {
-          var x = Math.trunc(n);
-          try {
-            return x.toLocaleString();
-          } catch (ignore) {
-            return String(x);
-          }
+        function chartCountWithPctBrackets(num, total) {
+          if (!Number.isFinite(num) || num <= 0) return "";
+          var countStr = formatLeadChartCountExact(num);
+          if (!total || total <= 0) return countStr;
+          var pctPart = leadPctLabel(num, total);
+          return pctPart ? countStr + " (" + pctPart + ")" : countStr;
         }
 
         function chartSegmentValue_(ctx) {
@@ -2031,21 +2020,17 @@
           return Number.isFinite(parsed) ? Math.trunc(parsed) : 0;
         }
 
-        function chartCountPctLabel(ctx, total, useFullCount) {
+        function chartCountPctLabel(ctx, total) {
           var num = chartSegmentValue_(ctx);
           if (num <= 0 || !total || total <= 0) return "";
-          var countStr = useFullCount ? formatLeadChartCountFull(num) : formatLeadChartCount(num);
-          var pctPart = leadPctLabel(num, total);
-          return pctPart ? countStr + "\n" + pctPart : countStr;
+          return chartCountWithPctBrackets(num, total);
         }
 
         function chartLeadSplitLabel(ctx, splitTotal, convTotal) {
           var num = chartSegmentValue_(ctx);
           if (num <= 0) return "";
-          var countStr = formatLeadChartCountFull(num);
           var pctDenom = convTotal > 0 ? convTotal : splitTotal;
-          var pctPart = pctDenom > 0 ? leadPctLabel(num, pctDenom) : "";
-          return pctPart ? countStr + "\n" + pctPart : countStr;
+          return chartCountWithPctBrackets(num, pctDenom);
         }
 
         var channelBarPctDl = {
@@ -2061,7 +2046,7 @@
                 return chartSegmentValue_(ctx) > 0;
               },
               formatter: function (_v, ctx) {
-                return chartCountPctLabel(ctx, chTotal, true);
+                return chartCountPctLabel(ctx, chTotal);
               }
             },
             chartDlTextStroke
@@ -2113,7 +2098,7 @@
             border: { display: false }
           }
         };
-        var channelBarLayout = { padding: { top: 26, right: 4, bottom: 32, left: 2 } };
+        var channelBarLayout = { padding: { top: 22, right: 4, bottom: 32, left: 2 } };
         function makeChannelBarIconPlugin(imgs) {
           return {
             id: "lcBarChannelIcons",
@@ -2192,14 +2177,7 @@
                     callbacks: {
                       label: function (ctx) {
                         var num = chartSegmentValue_(ctx);
-                        var parts = [ctx.label + ": " + formatLeadChartCountFull(num)];
-                        if (leadSplitTotal > 0) {
-                          parts.push(leadPctLabel(num, leadSplitTotal) + " of leads");
-                        }
-                        if (n > 0) {
-                          parts.push(leadPctLabel(num, n) + " of conversations");
-                        }
-                        return parts;
+                        return ctx.label + ": " + chartCountWithPctBrackets(num, n);
                       }
                     }
                   }
