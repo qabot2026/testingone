@@ -5571,6 +5571,14 @@ app.get(PATHNAME_CONVERSATIONS_SHEET_JSON, async (req, res) => {
         return res.status(200).json({ ok: true, ...payload });
     } catch (e) {
         const msg = e && /** @type {{ message?: string }} */ (e).message ? String(e.message) : String(e);
+        const lowJson = msg.toLowerCase();
+        if (lowJson.includes("quota exceeded") || lowJson.includes("rate limit")) {
+            return res.status(503).json({
+                ok: false,
+                error:
+                    "Google Sheets read quota exceeded. Wait about one minute, then tap Reload once (avoid rapid refreshes)."
+            });
+        }
         console.error("[chatbot-api] conversations-sheet JSON:", msg);
         return res.status(500).json({ ok: false, error: msg.slice(0, 500) });
     }
@@ -5629,6 +5637,13 @@ app.get(PATHNAME_CONVERSATIONS_SHEET_STATS, async (req, res) => {
         const low = msg.toLowerCase();
         if (low.includes("invalid date parameter")) {
             return res.status(400).json({ ok: false, error: msg.slice(0, 400) });
+        }
+        if (low.includes("quota exceeded") || low.includes("rate limit")) {
+            return res.status(503).json({
+                ok: false,
+                error:
+                    "Google Sheets read quota exceeded. Wait about one minute, then tap Reload once (avoid rapid refreshes)."
+            });
         }
         console.error("[chatbot-api] conversations-sheet stats:", msg);
         return res.status(500).json({ ok: false, error: msg.slice(0, 500) });

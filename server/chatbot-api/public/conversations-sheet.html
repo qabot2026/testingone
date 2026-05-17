@@ -3720,7 +3720,10 @@
           });
           if (!res.ok || !json || !json.ok) {
             lastSuccessfulSheetJson = null;
-            showErr((json && json.error) || "HTTP " + res.status);
+            showErr(
+              (json && json.error) ||
+                (res.status === 503 ? "Google Sheets quota exceeded — wait one minute, then Reload once." : "HTTP " + res.status)
+            );
             setStatus("");
             if (pagerWrap) pagerWrap.hidden = true;
             if (leadStatsList) leadStatsList.hidden = true;
@@ -4033,9 +4036,14 @@
           if (!res.ok || !json || !json.ok) {
             var statsErr =
               (json && json.error) ||
-              (res.status === 502
-                ? "Dashboard metrics unavailable (server timed out or ran out of memory). Keep the 5-day date range, tap Reload, or set CONVERSATIONS_SHEET_SCAN_MAX_ROWS=5000 on Railway."
-                : "Could not load dashboard metrics (HTTP " + res.status + ").");
+              (res.status === 503 &&
+              json &&
+              json.error &&
+              String(json.error).toLowerCase().indexOf("quota") >= 0
+                ? json.error
+                : res.status === 502
+                  ? "Dashboard metrics unavailable (server timed out or ran out of memory). Keep the 5-day date range, tap Reload, or set CONVERSATIONS_SHEET_SCAN_MAX_ROWS=5000 on Railway."
+                  : "Could not load dashboard metrics (HTTP " + res.status + ").");
             showLeadStatsErr(statsErr);
             if (leadStatsList) {
               leadStatsList.hidden = false;
