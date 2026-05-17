@@ -844,6 +844,10 @@
       color: #475569;
       text-align: center;
     }
+    .lead-numeric-section-title .lead-numeric-section-total {
+      color: #0f172a;
+      font-variant-numeric: tabular-nums;
+    }
     .lead-stats-numeric-channels {
       max-width: 290px;
       width: 100%;
@@ -3434,7 +3438,8 @@
         var om = statNum(tot, "onlyMobile", 0);
         var oe = statNum(tot, "onlyEmail", 0);
         var be = statNum(tot, "mobileAndEmail", 0);
-        var leads = om + oe + be;
+        var leads = statNum(tot, "leadsCaptured", om + oe + be);
+        if (leads < om + oe + be) leads = om + oe + be;
         var apt =
           statNum(tot, "appointmentBooked", NaN);
         if (!Number.isFinite(apt)) apt = statNum(tot, "appointmentScheduled", 0);
@@ -3591,8 +3596,12 @@
           channelChip("instagram", "Instagram", cinst, iconIg) +
           channelChip("facebook", "Facebook", cfb, iconFb) +
           "</div></div>" +
-          '<div class="lead-stats-numeric-panel lead-stats-numeric-contact" aria-label="Contact captured">' +
-          '<p class="lead-numeric-section-title">Contact captured</p>' +
+          '<div class="lead-stats-numeric-panel lead-stats-numeric-contact" aria-label="Contact captured, total ' +
+          leads +
+          '">' +
+          '<p class="lead-numeric-section-title">Contact captured - <span class="lead-numeric-section-total">' +
+          escapeHtml(String(leads)) +
+          "</span></p>" +
           '<div class="lead-stats-contact-grid">' +
           contactMini(escapeHtml("Mobile only"), om, omByCh) +
           contactMini(escapeHtml("Email only"), oe, oeByCh) +
