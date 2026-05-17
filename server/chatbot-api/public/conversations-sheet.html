@@ -2091,6 +2091,7 @@
       function syncPieLeadCalloutArrows(chart) {
         var layout = document.querySelector(".lead-split-chart-layout");
         var svg = document.getElementById("lcPieLeadArrows");
+        var rightCol = document.getElementById("lcPieLeadLabelRight");
         if (!layout || !svg || !chart || !chart.canvas) return;
         var layoutRect = layout.getBoundingClientRect();
         var w = layoutRect.width;
@@ -2111,31 +2112,33 @@
           if (!Number.isFinite(val) || val <= 0 || !arc || arc.circumference <= 0.001) continue;
           var item = layout.querySelector('.lead-pie-callout-item[data-seg-idx="' + i + '"]');
           if (!item) continue;
-          var angle = (arc.startAngle + arc.endAngle) / 2;
-          var cos = Math.cos(angle);
-          var sin = Math.sin(angle);
+          var onRight = !!(rightCol && rightCol.contains(item));
+          var itemRect = item.getBoundingClientRect();
+          var y = itemRect.top - layoutRect.top + itemRect.height / 2;
           var arcCx = canvasRect.left - layoutRect.left + arc.x;
           var arcCy = canvasRect.top - layoutRect.top + arc.y;
           var rEdge = arc.outerRadius;
-          var x0 = arcCx + cos * rEdge;
-          var y0 = arcCy + sin * rEdge;
-          var x1 = arcCx + cos * (rEdge + 10);
-          var y1 = arcCy + sin * (rEdge + 10);
-          var itemRect = item.getBoundingClientRect();
-          var onRight = cos >= 0;
-          var x2 = onRight ? itemRect.left - layoutRect.left : itemRect.right - layoutRect.left;
-          var y2 = itemRect.top - layoutRect.top + itemRect.height / 2;
-          var path = document.createElementNS(ns, "path");
-          path.setAttribute(
-            "d",
-            "M" + x0 + " " + y0 + " L" + x1 + " " + y1 + " L" + x2 + " " + y2
-          );
-          path.setAttribute("fill", "none");
-          path.setAttribute("stroke", "rgba(100, 116, 139, 0.9)");
-          path.setAttribute("stroke-width", "1");
-          path.setAttribute("stroke-linecap", "round");
-          path.setAttribute("stroke-linejoin", "round");
-          svg.appendChild(path);
+          var dy = y - arcCy;
+          var maxDy = rEdge * 0.96;
+          if (dy > maxDy) dy = maxDy;
+          if (dy < -maxDy) dy = -maxDy;
+          var dx = Math.sqrt(Math.max(0, rEdge * rEdge - dy * dy));
+          var xPie = onRight ? arcCx + dx : arcCx - dx;
+          var gap = 3;
+          var xLabel = onRight
+            ? itemRect.left - layoutRect.left - gap
+            : itemRect.right - layoutRect.left + gap;
+          if (onRight && xLabel <= xPie) continue;
+          if (!onRight && xLabel >= xPie) continue;
+          var line = document.createElementNS(ns, "line");
+          line.setAttribute("x1", String(xPie));
+          line.setAttribute("y1", String(y));
+          line.setAttribute("x2", String(xLabel));
+          line.setAttribute("y2", String(y));
+          line.setAttribute("stroke", "rgba(100, 116, 139, 0.85)");
+          line.setAttribute("stroke-width", "1");
+          line.setAttribute("stroke-linecap", "round");
+          svg.appendChild(line);
         }
       }
 
