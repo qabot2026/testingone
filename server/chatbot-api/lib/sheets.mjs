@@ -1084,6 +1084,105 @@ function lastDataRow1BasedFromAB_(abRows) {
     return 0;
 }
 
+/** Upper bound for `CONVERSATIONS_SHEET_SCAN_MAX_ROWS` (chunk size for A:B scans). */
+const CONVERSATIONS_SHEET_SCAN_ROW_ABS_MAX = 100_000;
+
+/** Rows per A:B fetch when locating the last populated row (default 15000; was 8000). */
+function conversationSheetScanHardCap_() {
+    return Math.min(
+        CONVERSATIONS_SHEET_SCAN_ROW_ABS_MAX,
+        Math.max(
+            250,
+            Number.parseInt(
+                String((process.env.CONVERSATIONS_SHEET_SCAN_MAX_ROWS || "").trim() || "15000"),
+                10
+            ) || 15000
+        )
+    );
+}
+
+/**
+ * @param {import("googleapis").sheets_v4.Sheets} sheets
+ * @param {string} tab
+ * @returns {Promise<number>}
+ */
+async function conversationSheetGridRowCount_(sheets, tab) {
+    try {
+        const meta = await sheets.spreadsheets.get({
+            spreadsheetId: SPREADSHEET_ID,
+            fields: "sheets.properties(title,gridProperties(rowCount))"
+        });
+        const sh = Array.isArray(meta.data.sheets) ? meta.data.sheets : [];
+        const tabKey = normalizedSheetTabKey_(tab);
+        for (let si = 0; si < sh.length; si += 1) {
+            const p = sh[si] && sh[si].properties;
+            const st = p && typeof p.title === "string" ? p.title.trim() : "";
+            if (st && normalizedSheetTabKey_(st) === tabKey) {
+                const gr =
+                    p && p.gridProperties && typeof p.gridProperties.rowCount === "number"
+                        ? p.gridProperties.rowCount
+                        : 0;
+                if (Number.isFinite(gr) && gr > 0) {
+                    return Math.trunc(gr);
+                }
+                break;
+            }
+        }
+    } catch {
+        /* ignore */
+    }
+    return 0;
+}
+
+/**
+ * Last 1-based row with data in columns A or B. Scans upward in chunks when the tab exceeds `chunkRows`.
+ *
+ * @param {import("googleapis").sheets_v4.Sheets} sheets
+ * @param {string} tab
+ * @param {number} chunkRows
+ * @param {number} [gridRows]
+ * @returns {Promise<number>}
+ */
+async function conversationSheetLastDataRow1Based_(sheets, tab, chunkRows, gridRows = 0) {
+    const cap = Math.max(250, chunkRows);
+    const grid = Number.isFinite(gridRows) && gridRows > 0 ? Math.trunc(gridRows) : 0;
+    const upper = grid > 0 ? grid : cap;
+
+    if (upper <= cap) {
+        const colABGot = await sheets.spreadsheets.values.get({
+            spreadsheetId: SPREADSHEET_ID,
+            range: `${tab}!A1:B${upper}`
+        });
+        const colVals = Array.isArray(colABGot.data.values) ? colABGot.data.values : [];
+        return lastDataRow1BasedFromAB_(colVals);
+    }
+
+    let end = upper;
+    while (end >= 1) {
+        const start = Math.max(1, end - cap + 1);
+        const colABGot = await sheets.spreadsheets.values.get({
+            spreadsheetId: SPREADSHEET_ID,
+            range: `${tab}!A${start}:B${end}`
+        });
+        const colVals = Array.isArray(colABGot.data.values) ? colABGot.data.values : [];
+        const rel = lastDataRow1BasedFromAB_(colVals);
+        if (rel > 0) {
+            return start + rel - 1;
+        }
+        if (start <= 1) {
+            break;
+        }
+        end = start - 1;
+    }
+
+    const headGot = await sheets.spreadsheets.values.get({
+        spreadsheetId: SPREADSHEET_ID,
+        range: `${tab}!A1:B${cap}`
+    });
+    const headVals = Array.isArray(headGot.data.values) ? headGot.data.values : [];
+    return lastDataRow1BasedFromAB_(headVals);
+}
+
 /** Coerce outbound row cells to plain strings — API payloads must not contain `undefined` (can break inserts). */
 function sheetOutboundCell_(v) {
     if (v == null) {
@@ -3001,50 +3100,10 @@ export async function fetchConversationLeadCaptureStats(opts = {}) {
     const appointmentTimeIdx = pickHeaderIndex_(headerMap, SHEET_H_APPOINTMENT_TIME, 17);
     const appointmentDatetimeIdx = firstHeaderIdxFromAliases_(headerMap, SHEET_H_APPOINTMENT_DATETIME);
 
-    const hardCap = Math.min(
-        15_000,
-        Math.max(
-            250,
-            Number.parseInt(
-                String((process.env.CONVERSATIONS_SHEET_SCAN_MAX_ROWS || "").trim() || "8000"),
-                10
-            ) || 8000
-        )
-    );
-
-    /** @type {number} */
-    let capRow = hardCap;
-    try {
-        const meta = await sheets.spreadsheets.get({
-            spreadsheetId: SPREADSHEET_ID,
-            fields: "sheets.properties(title,gridProperties(rowCount))"
-        });
-        const sh = Array.isArray(meta.data.sheets) ? meta.data.sheets : [];
-        const tabKey = normalizedSheetTabKey_(tab);
-        for (let si = 0; si < sh.length; si += 1) {
-            const p = sh[si] && sh[si].properties;
-            const st = p && typeof p.title === "string" ? p.title.trim() : "";
-            if (st && normalizedSheetTabKey_(st) === tabKey) {
-                const gr = p && p.gridProperties && typeof p.gridProperties.rowCount === "number"
-                    ? p.gridProperties.rowCount
-                    : 0;
-                if (Number.isFinite(gr) && gr > 0) {
-                    capRow = Math.min(hardCap, gr);
-                }
-                break;
-            }
-        }
-    } catch {
-        /* fallback hardCap */
-    }
-
-    const colABGot = await sheets.spreadsheets.values.get({
-        spreadsheetId: SPREADSHEET_ID,
-        range: `${tab}!A1:B${capRow}`
-    });
-    const colVals = Array.isArray(colABGot.data.values) ? colABGot.data.values : [];
+    const hardCap = conversationSheetScanHardCap_();
+    const gridRows = await conversationSheetGridRowCount_(sheets, tab);
     /** 1-based last row with column A or B populated (conv. date in B when chat cell A is still blank). */
-    const nLast = lastDataRow1BasedFromAB_(colVals);
+    const nLast = await conversationSheetLastDataRow1Based_(sheets, tab, hardCap, gridRows);
     const tz = conversationDateTimeZoneForIntl_();
     const timezoneNote =
         tz === undefined ? "server default (SHEETS_CONV_DATETIME_TZ empty)" : `IANA TZ: ${tz}`;
@@ -3059,7 +3118,8 @@ export async function fetchConversationLeadCaptureStats(opts = {}) {
             to: toStr
         },
         scan: {
-            sheetLastRow1Based: nLast || colVals.length,
+            sheetLastRow1Based: nLast,
+            sheetGridRowCount: gridRows > 0 ? gridRows : null,
             dataRowsConsidered: 0,
             scanHardCapEnv: hardCap
         },
@@ -4660,57 +4720,15 @@ export async function fetchConversationSheetPreview(opts = {}) {
         headers.push(key);
     }
 
-    /** Avoid `A:A` (entire column) — huge sheets stall until timeout. */
-    const hardCap = Math.min(
-        15_000,
-        Math.max(
-            250,
-            Number.parseInt(
-                String((process.env.CONVERSATIONS_SHEET_SCAN_MAX_ROWS || "").trim() || "8000"),
-                10
-            ) || 8000
-        )
-    );
-
-    /** @type {number} */
-    let capRow = hardCap;
-    try {
-        const meta = await sheets.spreadsheets.get({
-            spreadsheetId: SPREADSHEET_ID,
-            fields: "sheets.properties(title,gridProperties(rowCount))"
-        });
-        const sh = Array.isArray(meta.data.sheets) ? meta.data.sheets : [];
-        const tabKey = normalizedSheetTabKey_(tab);
-        for (let si = 0; si < sh.length; si += 1) {
-            const p = sh[si] && sh[si].properties;
-            const st = p && typeof p.title === "string" ? p.title.trim() : "";
-            if (st && normalizedSheetTabKey_(st) === tabKey) {
-                const gr = p && p.gridProperties && typeof p.gridProperties.rowCount === "number"
-                    ? p.gridProperties.rowCount
-                    : 0;
-                if (Number.isFinite(gr) && gr > 0) {
-                    capRow = Math.min(hardCap, gr);
-                }
-                break;
-            }
-        }
-    } catch {
-        /* fall back hardCap */
-    }
-
-    const colABGot = await sheets.spreadsheets.values.get({
-        spreadsheetId: SPREADSHEET_ID,
-        range: `${tab}!A1:B${capRow}`
-    });
-    /** @type {unknown[][]} */
-    const colVals = Array.isArray(colABGot.data.values) ? colABGot.data.values : [];
-    /** 1-based last row with column A or B populated (fallback: length if full block used). */
-    const n = lastDataRow1BasedFromAB_(colVals);
+    const hardCap = conversationSheetScanHardCap_();
+    const gridRows = await conversationSheetGridRowCount_(sheets, tab);
+    /** 1-based last row with column A or B populated. */
+    const n = await conversationSheetLastDataRow1Based_(sheets, tab, hardCap, gridRows);
     if (n <= 1) {
         return {
             tab,
             title,
-            rowCount: n || colVals.length,
+            rowCount: n,
             headers,
             conversations: [],
             offset: 0,
@@ -4936,50 +4954,9 @@ export async function fetchConversationSheetExport(opts = {}) {
         headers.push(key);
     }
 
-    const hardCap = Math.min(
-        15_000,
-        Math.max(
-            250,
-            Number.parseInt(
-                String((process.env.CONVERSATIONS_SHEET_SCAN_MAX_ROWS || "").trim() || "8000"),
-                10
-            ) || 8000
-        )
-    );
-
-    /** @type {number} */
-    let capRow = hardCap;
-    try {
-        const meta = await sheets.spreadsheets.get({
-            spreadsheetId: SPREADSHEET_ID,
-            fields: "sheets.properties(title,gridProperties(rowCount))"
-        });
-        const sh = Array.isArray(meta.data.sheets) ? meta.data.sheets : [];
-        const tabKey = normalizedSheetTabKey_(tab);
-        for (let si = 0; si < sh.length; si += 1) {
-            const p = sh[si] && sh[si].properties;
-            const st = p && typeof p.title === "string" ? p.title.trim() : "";
-            if (st && normalizedSheetTabKey_(st) === tabKey) {
-                const gr =
-                    p && p.gridProperties && typeof p.gridProperties.rowCount === "number"
-                        ? p.gridProperties.rowCount
-                        : 0;
-                if (Number.isFinite(gr) && gr > 0) {
-                    capRow = Math.min(hardCap, gr);
-                }
-                break;
-            }
-        }
-    } catch {
-        /* fall back hardCap */
-    }
-
-    const colABGot = await sheets.spreadsheets.values.get({
-        spreadsheetId: SPREADSHEET_ID,
-        range: `${tab}!A1:B${capRow}`
-    });
-    const colVals = Array.isArray(colABGot.data.values) ? colABGot.data.values : [];
-    const nRows = lastDataRow1BasedFromAB_(colVals);
+    const hardCap = conversationSheetScanHardCap_();
+    const gridRows = await conversationSheetGridRowCount_(sheets, tab);
+    const nRows = await conversationSheetLastDataRow1Based_(sheets, tab, hardCap, gridRows);
     if (nRows <= 1) {
         return {
             tab,
