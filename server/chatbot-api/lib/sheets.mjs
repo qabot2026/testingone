@@ -2330,6 +2330,104 @@ function conversationSheetDateFilterMaxRows_() {
     );
 }
 
+/** Max conversation rows returned in one JSON payload (`all=1` viewer). */
+function conversationSheetViewAllMaxRows_() {
+    return Math.min(
+        10_000,
+        Math.max(
+            100,
+            Number.parseInt(
+                String(
+                    (process.env.CONVERSATIONS_SHEET_VIEW_ALL_MAX_ROWS || "").trim() || "2000"
+                ),
+                10
+            ) || 2000
+        )
+    );
+}
+
+/**
+ * @param {ReturnType<typeof leadCaptureStatsAccumulatorEmpty_>} acc
+ * @param {{
+ *   tab: string,
+ *   title: string,
+ *   timezoneNote: string,
+ *   dateFilter: object,
+ *   nLast: number,
+ *   gridRows: number,
+ *   hardCap: number,
+ *   dateIdx: number,
+ *   mobileIdx: number,
+ *   emailIdx: number,
+ *   channelIdx: number,
+ *   appointmentBookedIdx: number,
+ *   headersRaw: unknown[]
+ * }} ctx
+ */
+function leadCaptureStatsPayloadForViewer_(acc, ctx) {
+    const shell = {
+        tab: ctx.tab,
+        title: ctx.title,
+        timezoneNote: ctx.timezoneNote,
+        dateFilter: { ...ctx.dateFilter, serverApplied: true },
+        scan: {
+            sheetLastRow1Based: ctx.nLast,
+            sheetGridRowCount: ctx.gridRows > 0 ? ctx.gridRows : null,
+            dataRowsConsidered: 0,
+            scanHardCapEnv: ctx.hardCap
+        },
+        columns: {
+            dateIdx0: ctx.dateIdx,
+            mobileIdx0: ctx.mobileIdx,
+            emailIdx0: ctx.emailIdx,
+            channelIdx0: ctx.channelIdx,
+            appointmentBookedIdx0: ctx.appointmentBookedIdx,
+            dateHeader: sheetCellString_(ctx.headersRaw[ctx.dateIdx])
+                ? sheetCellString_(ctx.headersRaw[ctx.dateIdx])
+                : `Column_${ctx.dateIdx + 1}`,
+            mobileHeader: sheetCellString_(ctx.headersRaw[ctx.mobileIdx])
+                ? sheetCellString_(ctx.headersRaw[ctx.mobileIdx])
+                : `Column_${ctx.mobileIdx + 1}`,
+            emailHeader: sheetCellString_(ctx.headersRaw[ctx.emailIdx])
+                ? sheetCellString_(ctx.headersRaw[ctx.emailIdx])
+                : `Column_${ctx.emailIdx + 1}`,
+            channelHeader: sheetCellString_(ctx.headersRaw[ctx.channelIdx])
+                ? sheetCellString_(ctx.headersRaw[ctx.channelIdx])
+                : `Column_${ctx.channelIdx + 1}`,
+            appointmentBookedHeader: sheetCellString_(ctx.headersRaw[ctx.appointmentBookedIdx])
+                ? sheetCellString_(ctx.headersRaw[ctx.appointmentBookedIdx])
+                : `Column_${ctx.appointmentBookedIdx + 1}`
+        },
+        totals: {
+            conversations: 0,
+            onlyMobile: 0,
+            onlyEmail: 0,
+            mobileAndEmail: 0,
+            neither: 0,
+            rowsSkippedNoParsableDate: 0,
+            leadsCaptured: 0,
+            appointmentScheduled: 0,
+            appointmentBooked: 0,
+            channelWeb: 0,
+            channelWhatsapp: 0,
+            channelInstagram: 0,
+            channelFacebook: 0,
+            channelOther: 0,
+            onlyMobileByChannel: leadSegmentChannelTotalsEmpty_(),
+            onlyEmailByChannel: leadSegmentChannelTotalsEmpty_(),
+            mobileAndEmailByChannel: leadSegmentChannelTotalsEmpty_()
+        },
+        ratios: {
+            onlyMobile: "0 / 0",
+            onlyEmail: "0 / 0",
+            mobileAndEmail: "0 / 0",
+            leads: "0 / 0",
+            leadCapturePct: null
+        }
+    };
+    return leadCaptureStatsPayloadFromAccumulator_(acc, shell);
+}
+
 /** True when the cell is only a person name (no phone/email) — must not count as a lead. */
 function sheetCellLooksLikeNameOnly_(raw) {
     const s = sheetCellString_(raw).trim();
@@ -5127,6 +5225,8 @@ export async function writeLeadCaptureDashboardToSheet2(opts = {}) {
  */
 export async function fetchConversationSheetPreview(opts = {}) {
     const allInRange = opts.allInRange !== false && opts.allInRange !== "0";
+    const includeStats = opts.includeStats === true || opts.includeStats === "1";
+    const skipTable = opts.skipTable === true || opts.skipTable === "1";
     if (!SPREADSHEET_ID) {
         throw new Error("SHEETS_SPREADSHEET_ID is not set.");
     }
@@ -5251,35 +5351,103 @@ export async function fetchConversationSheetPreview(opts = {}) {
     if (previewDateFilterActive) {
         const headerMap = await getHeaderIndexMap_(sheets, tab);
         const dateIdx = pickHeaderIndex_(headerMap, SHEET_H_CONV_DATE_CELL, 1);
+        const mobileIdx = pickHeaderIndex_(headerMap, SHEET_H_MOBILE, 4);
+        const emailIdx = pickHeaderIndex_(headerMap, SHEET_H_EMAIL, 5);
+        const channelIdx = pickHeaderIndex_(headerMap, SHEET_H_CHANNEL, 6);
+        const appointmentBookedIdx = pickAppointmentStatsColumnIdx_(headerMap, headersRaw, 15);
+        const appointmentDateIdx = pickHeaderIndex_(headerMap, SHEET_H_APPOINTMENT_DATE, 16);
+        const appointmentTimeIdx = pickHeaderIndex_(headerMap, SHEET_H_APPOINTMENT_TIME, 17);
+        const appointmentDatetimeIdx = firstHeaderIdxFromAliases_(
+            headerMap,
+            SHEET_H_APPOINTMENT_DATETIME
+        );
+        const apptDtIdx =
+            appointmentDatetimeIdx !== undefined && appointmentDatetimeIdx >= 0
+                ? appointmentDatetimeIdx
+                : -1;
+        const tz = conversationDateTimeZoneForIntl_();
+        const timezoneNote =
+            tz === undefined ? "server default (SHEETS_CONV_DATETIME_TZ empty)" : `IANA TZ: ${tz}`;
         const dataRowsAll = await getConversationSheetDataBlock_(sheets, tab, previewLastCol0, n);
-        const matchMax = conversationSheetDateFilterMaxRows_();
+        const viewMax = conversationSheetViewAllMaxRows_();
+        const acc = includeStats ? leadCaptureStatsAccumulatorEmpty_() : null;
+        const statCol = {
+            mobileIdx,
+            emailIdx,
+            channelIdx,
+            appointmentBookedIdx,
+            appointmentDateIdx,
+            appointmentTimeIdx,
+            apptDtIdx
+        };
         /** @type {Record<string, string>[]} */
         const matchedChrono = [];
+        let totalInRange = 0;
         for (let ri = 0; ri < dataRowsAll.length; ri += 1) {
+            if (acc) {
+                acc.dataRowsConsidered += 1;
+            }
             const cells = padSheetRow_(dataRowsAll[ri] || [], previewLastCol0 + 1);
             if (!sheetRowHasAnyCell_(cells)) {
                 continue;
             }
             const dateMs = parseConversationDateCellWide_(cells[dateIdx]);
             if (!Number.isFinite(dateMs)) {
+                if (acc) {
+                    acc.skippedNoDate += 1;
+                }
                 continue;
             }
             const ymd = conversationRowYmdInSheetTz_(dateMs);
             if (!ymd || ymd < previewFromEff || ymd > previewToEff) {
                 continue;
             }
-            /** @type {Record<string, string>} */
-            const o = {};
-            for (let c = 0; c < headers.length; c += 1) {
-                const h = headers[c];
-                o[h] = sheetCellString_(cells[c]);
+            totalInRange += 1;
+            if (acc) {
+                leadCaptureStatsAccumulateRow_(acc, cells, statCol);
             }
-            if (Object.values(o).some((v) => v && v.trim())) {
-                matchedChrono.push(o);
+            if (!skipTable && matchedChrono.length < viewMax) {
+                /** @type {Record<string, string>} */
+                const o = {};
+                for (let c = 0; c < headers.length; c += 1) {
+                    const h = headers[c];
+                    o[h] = sheetCellString_(cells[c]);
+                }
+                if (Object.values(o).some((v) => v && v.trim())) {
+                    matchedChrono.push(o);
+                }
             }
         }
-        const totalFiltered = matchedChrono.length;
-        const rowsTruncated = totalFiltered > matchMax;
+        const totalFiltered = totalInRange;
+        const rowsReturned = skipTable ? 0 : matchedChrono.length;
+        const rowsTruncated = totalFiltered > rowsReturned;
+        /** @type {Record<string, unknown>|null} */
+        let leadStats = null;
+        if (includeStats && acc) {
+            leadStats = leadCaptureStatsPayloadForViewer_(acc, {
+                tab,
+                title,
+                timezoneNote,
+                dateFilter: dateFilterEcho,
+                nLast: n,
+                gridRows: scanMeta.gridRows,
+                hardCap: scanMeta.hardCap,
+                dateIdx,
+                mobileIdx,
+                emailIdx,
+                channelIdx,
+                appointmentBookedIdx,
+                headersRaw
+            });
+            const statsCacheKey = `${tab}|${previewFromIso || ""}|${previewToIso || ""}|${
+                previewServerDefaultRange ? "d" : ""
+            }`;
+            conversationLeadStatsCache_ = {
+                key: statsCacheKey,
+                at: Date.now(),
+                payload: leadStats
+            };
+        }
         /** Newest spreadsheet rows last → reverse for staff viewer. */
         const newestFirst = matchedChrono.slice().reverse();
         let sliceRows;
@@ -5289,21 +5457,21 @@ export async function fetchConversationSheetPreview(opts = {}) {
         if (allInRange) {
             sliceRows = newestFirst;
             offset = 0;
-            effectiveLimit = totalFiltered;
+            effectiveLimit = rowsReturned;
         } else {
-            const maxFilteredOffset = Math.max(0, totalFiltered - maxRows);
+            const maxFilteredOffset = Math.max(0, rowsReturned - maxRows);
             if (offset > maxFilteredOffset) {
                 offset = maxFilteredOffset;
             }
             sliceRows = newestFirst.slice(offset, offset + maxRows);
             hasNewerFiltered = offset > 0;
-            hasOlderFiltered = offset + sliceRows.length < totalFiltered;
+            hasOlderFiltered = offset + sliceRows.length < rowsReturned;
         }
         return {
             tab,
             title,
             rowCount: n,
-            headers,
+            headers: skipTable ? [] : headers,
             conversations: sliceRows,
             offset,
             limit: effectiveLimit,
@@ -5312,6 +5480,8 @@ export async function fetchConversationSheetPreview(opts = {}) {
             totalDataRows: totalFiltered,
             allInRange,
             rowsTruncated,
+            rowsReturned,
+            leadStats,
             dateFilter: dateFilterEcho
         };
     }

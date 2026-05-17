@@ -5564,31 +5564,33 @@ app.get(PATHNAME_CONVERSATIONS_SHEET_JSON, async (req, res) => {
             req.query && typeof req.query.from === "string" ? req.query.from.trim() : "";
         const rawTo = req.query && typeof req.query.to === "string" ? req.query.to.trim() : "";
         const allInRange = req.query.all !== "0" && req.query.all !== "false";
-        const includeStats = req.query.includeStats !== "0" && req.query.includeStats !== "false";
+        const includeStats =
+            req.query.includeStats === "1"
+            || req.query.includeStats === "true"
+            || (req.query.includeStats !== "0" && req.query.includeStats !== "false" && req.query.skipTable !== "1");
+        const skipTable = req.query.skipTable === "1" || req.query.skipTable === "true";
         const previewOpts =
             rawFrom || rawTo
                 ? {
                       maxRows,
                       offset,
                       allInRange,
+                      includeStats,
+                      skipTable,
                       ...(rawFrom ? { from: rawFrom } : {}),
                       ...(rawTo ? { to: rawTo } : {})
                   }
-                : { maxRows, offset, allInRange };
+                : { maxRows, offset, allInRange, includeStats, skipTable };
+        const t0 = Date.now();
         const payload = await fetchConversationSheetPreview(previewOpts);
-        if (includeStats) {
-            const statsOpts =
-                rawFrom || rawTo ? { from: rawFrom || undefined, to: rawTo || undefined } : {};
-            try {
-                payload.leadStats = await fetchConversationLeadCaptureStats(statsOpts);
-            } catch (statsErr) {
-                const statsMsg =
-                    statsErr && /** @type {{ message?: string }} */ (statsErr).message
-                        ? String(statsErr.message)
-                        : String(statsErr);
-                payload.leadStatsError = statsMsg.slice(0, 400);
-                console.error("[chatbot-api] conversations-sheet leadStats:", statsMsg);
-            }
+        const ms = Date.now() - t0;
+        if (ms > 8000) {
+            console.warn("[chatbot-api] conversations-sheet preview slow", {
+                ms,
+                skipTable,
+                includeStats,
+                rows: Array.isArray(payload.conversations) ? payload.conversations.length : 0
+            });
         }
         return res.status(200).json({ ok: true, ...payload });
     } catch (e) {

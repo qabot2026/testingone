@@ -3954,28 +3954,70 @@
         refreshBtn.disabled = true;
         var reloadLbl = refreshBtn.textContent;
         refreshBtn.textContent = "Loading…";
-        setStatus("Loading conversations…");
-        showLeadStatsLoading(true);
         sheetOffset = 0;
+        var fromV = dateFromEl && dateFromEl.value ? dateFromEl.value.trim() : "";
+        var toV = dateToEl && dateToEl.value ? dateToEl.value.trim() : "";
+        var baseQ = [];
+        if (fromV) baseQ.push("from=" + encodeURIComponent(fromV));
+        if (toV) baseQ.push("to=" + encodeURIComponent(toV));
+        var fetchOpts = {
+          method: "GET",
+          headers: { "X-Conversations-Sheet-Secret": secret },
+          cache: "no-store",
+          credentials: "same-origin"
+        };
+
+        showLeadStatsLoading(true);
+        setStatus("Loading dashboard metrics…");
+
+        try {
+          var statsCtrl = new AbortController();
+          var statsTid = window.setTimeout(function () {
+            statsCtrl.abort();
+          }, 90000);
+          var statsUrl =
+            apiBase() + "/api/conversations-sheet?skipTable=1&includeStats=1&" + baseQ.join("&");
+          var statsRes = await fetch(statsUrl, Object.assign({}, fetchOpts, { signal: statsCtrl.signal }));
+          window.clearTimeout(statsTid);
+          var statsJson = await statsRes.json().catch(function () {
+            return null;
+          });
+          if (statsRes.ok && statsJson && statsJson.ok && statsJson.leadStats) {
+            try {
+              renderLeadStats({ ok: true, ...statsJson.leadStats });
+              showLeadStatsErr("");
+            } catch (rendErr) {
+              console.error("[conversations-sheet] lead stats render", rendErr);
+              showLeadStatsErr("Could not display dashboard metrics.");
+            }
+          } else if (statsJson && statsJson.leadStatsError) {
+            showLeadStatsErr(String(statsJson.leadStatsError));
+          } else if (!statsRes.ok) {
+            showLeadStatsErr(
+              (statsJson && statsJson.error) ||
+                (statsRes.status === 502
+                  ? "Dashboard metrics timed out. Table may still load below."
+                  : "Dashboard metrics HTTP " + statsRes.status)
+            );
+          }
+        } catch (statsErr) {
+          if (statsErr && statsErr.name !== "AbortError") {
+            showLeadStatsErr(String(statsErr.message || statsErr));
+          } else {
+            showLeadStatsErr("Dashboard metrics timed out. Table may still load below.");
+          }
+        }
+
+        setStatus("Loading conversations…");
         var timedId = 0;
         try {
-          var fromV = dateFromEl && dateFromEl.value ? dateFromEl.value.trim() : "";
-          var toV = dateToEl && dateToEl.value ? dateToEl.value.trim() : "";
-          var dq = ["all=1", "includeStats=1"];
-          if (fromV) dq.push("from=" + encodeURIComponent(fromV));
-          if (toV) dq.push("to=" + encodeURIComponent(toV));
+          var dq = ["all=1", "includeStats=0"].concat(baseQ);
           var url = apiBase() + "/api/conversations-sheet?" + dq.join("&");
           var ctrl = new AbortController();
           timedId = window.setTimeout(function () {
             ctrl.abort();
           }, 120000);
-          var res = await fetch(url, {
-            method: "GET",
-            headers: { "X-Conversations-Sheet-Secret": secret },
-            cache: "no-store",
-            credentials: "same-origin",
-            signal: ctrl.signal
-          });
+          var res = await fetch(url, Object.assign({}, fetchOpts, { signal: ctrl.signal }));
           var json = await res.json().catch(function () {
             return null;
           });
@@ -3983,7 +4025,11 @@
             lastSuccessfulSheetJson = null;
             showErr(
               (json && json.error) ||
-                (res.status === 503 ? "Google Sheets quota exceeded — wait one minute, then Reload once." : "HTTP " + res.status)
+                (res.status === 502
+                  ? "Conversation list timed out or server ran out of memory. Try a shorter date range."
+                  : res.status === 503
+                    ? "Google Sheets quota exceeded — wait one minute, then Reload once."
+                    : "HTTP " + res.status)
             );
             setStatus("");
             if (pagerWrap) pagerWrap.hidden = true;
@@ -3998,15 +4044,23 @@
               : 0;
           var msgParts = [];
           if (json.allInRange) {
-            msgParts.push(
-              "Showing all " +
-                loaded +
-                " conversation" +
-                (loaded === 1 ? "" : "s") +
-                " in the selected date range"
-            );
-            if (json.rowsTruncated) {
-              msgParts.push("row cap reached — raise CONVERSATIONS_SHEET_DATE_FILTER_MAX_ROWS on Railway");
+            if (json.rowsTruncated && totalListed > loaded) {
+              msgParts.push(
+                "Showing " +
+                  loaded +
+                  " of " +
+                  totalListed +
+                  " conversations in the selected date range"
+              );
+              msgParts.push("raise CONVERSATIONS_SHEET_VIEW_ALL_MAX_ROWS on Railway to load more rows");
+            } else {
+              msgParts.push(
+                "Showing all " +
+                  loaded +
+                  " conversation" +
+                  (loaded === 1 ? "" : "s") +
+                  " in the selected date range"
+              );
             }
           } else {
             msgParts.push(
@@ -4026,33 +4080,6 @@
           hadLoadedSheet = true;
           syncPagerUi(json);
           render(json);
-          if (json.leadStats) {
-            try {
-              renderLeadStats({ ok: true, ...json.leadStats });
-              showLeadStatsErr("");
-            } catch (rendErr) {
-              console.error("[conversations-sheet] lead stats render", rendErr);
-              showLeadStatsErr("Could not display dashboard metrics. Try reloading the page.");
-            }
-          } else if (json.leadStatsError) {
-            showLeadStatsErr(String(json.leadStatsError));
-            if (leadStatsList) {
-              leadStatsList.hidden = false;
-              var dashHeadEl = document.getElementById("leadStatsDashHead");
-              var numBlockEl = document.getElementById("leadStatsNumericBlock");
-              if (dashHeadEl) dashHeadEl.innerHTML = "";
-              if (numBlockEl) {
-                numBlockEl.innerHTML =
-                  '<p class="lead-stats-fallback">Dashboard metrics unavailable. The conversation table may still load below.</p>';
-              }
-            }
-          } else {
-            try {
-              await loadLeadStats();
-            } catch (statsWaitErr) {
-              console.warn("[conversations-sheet] dashboard stats", statsWaitErr);
-            }
-          }
           void syncDashboardSheet({ interactive: false });
         } catch (e) {
           lastSuccessfulSheetJson = null;
