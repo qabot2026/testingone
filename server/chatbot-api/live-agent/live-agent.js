@@ -21,6 +21,7 @@
     const refreshInboxBtn = $("refreshInboxBtn");
     const logoutBtn = $("logoutBtn");
     const inboxStatus = $("inboxStatus");
+    const clearTestQueueBtn = $("clearTestQueueBtn");
     const inboxList = $("inboxList");
     const chatEmpty = $("chatEmpty");
     const chatActive = $("chatActive");
@@ -115,12 +116,14 @@
     }
 
     function showLogin() {
+        document.body.classList.remove("live-agent-locked");
         loginView.classList.remove("hidden");
         appView.classList.add("hidden");
         stopPolling();
     }
 
     function showApp() {
+        document.body.classList.add("live-agent-locked");
         loginView.classList.add("hidden");
         appView.classList.remove("hidden");
         agentLabel.textContent = agentId;
@@ -247,9 +250,11 @@
         return false;
     }
 
-    toggleSecretBtn.addEventListener("click", () => {
-        loginSecret.type = loginSecret.type === "password" ? "text" : "password";
-    });
+    if (toggleSecretBtn && loginSecret) {
+        toggleSecretBtn.addEventListener("click", () => {
+            loginSecret.type = loginSecret.type === "password" ? "text" : "password";
+        });
+    }
 
     loginForm.addEventListener("submit", async (ev) => {
         ev.preventDefault();
@@ -292,6 +297,11 @@
 
     refreshInboxBtn.addEventListener("click", () => loadInbox());
     inboxFilter.addEventListener("change", () => loadInbox());
+    if (clearTestQueueBtn) {
+        clearTestQueueBtn.addEventListener("click", () => {
+            clearTestQueue_().catch((e) => alert(e.message || "Clear failed"));
+        });
+    }
 
     function formatTime(iso) {
         if (!iso) return "";
@@ -310,9 +320,80 @@
             .replace(/"/g, "&quot;");
     }
 
+    function shortSessionId_(id) {
+        const s = String(id || "");
+        if (s.length <= 14) return s;
+        return s.slice(0, 12) + "…";
+    }
+
+    function isTestConversation_(c) {
+        const id = String((c && c.id) || "");
+        return /^test[-_]/i.test(id);
+    }
+
+    function updateClearTestBtn_(conversations) {
+        if (!clearTestQueueBtn) return;
+        const n = (conversations || []).filter(
+            (c) => isTestConversation_(c) && (c.status === "waiting" || c.status === "active")
+        ).length;
+        clearTestQueueBtn.hidden = n < 1;
+        clearTestQueueBtn.textContent = n > 1 ? "Clear " + n + " test chats" : "Clear test chats";
+    }
+
+    async function dismissConversation_(conversationId) {
+        await apiFetch(`${API}/conversations/${encodeURIComponent(conversationId)}/close`, {
+            method: "POST"
+        });
+        if (selectedId === conversationId) {
+            selectedId = "";
+            selectedConv = null;
+            chatActive.classList.add("hidden");
+            chatEmpty.classList.remove("hidden");
+            contextEmpty.classList.remove("hidden");
+            contextBody.classList.add("hidden");
+        }
+        await loadInbox(true);
+    }
+
+    async function clearTestQueue_() {
+        const data = await apiFetch(
+            `${API}/inbox?status=${encodeURIComponent(inboxFilter.value || "waiting")}&limit=80`
+        );
+        const tests = (data.conversations || []).filter(
+            (c) => isTestConversation_(c) && (c.status === "waiting" || c.status === "active")
+        );
+        if (!tests.length) {
+            inboxStatus.textContent = "No test chats to clear (session id must start with test-).";
+            return;
+        }
+        if (
+            !confirm(
+                "Close " +
+                    tests.length +
+                    " test chat(s)? Each console test creates a new session — use the same id to avoid duplicates."
+            )
+        ) {
+            return;
+        }
+        clearTestQueueBtn.disabled = true;
+        try {
+            for (const c of tests) {
+                try {
+                    await dismissConversation_(c.id);
+                } catch (e) {
+                    console.warn("[live-agent] dismiss", c.id, e.message);
+                }
+            }
+        } finally {
+            clearTestQueueBtn.disabled = false;
+            loadInbox();
+        }
+    }
+
     function renderInbox(conversations) {
         inboxList.innerHTML = "";
         updateNotifyPill_(conversations);
+        updateClearTestBtn_(conversations);
         if (!conversations.length) {
             inboxStatus.textContent = "No conversations in this queue.";
             return;
@@ -322,10 +403,12 @@
             const li = document.createElement("li");
             li.className = "inbox-item" + (c.id === selectedId ? " selected" : "");
             if (c.unreadForAgent > 0) li.classList.add("has-unread");
-            const title = c.visitorName || "Session " + c.id.slice(0, 8) + "…";
+            const title = c.visitorName || "Visitor";
             const unread = c.unreadForAgent > 0 ? " · " + c.unreadForAgent + " new" : "";
             const mode = c.humanMode || c.status;
-            li.innerHTML =
+            const main = document.createElement("div");
+            main.className = "inbox-item-main";
+            main.innerHTML =
                 '<p class="inbox-item-title">' +
                 escapeHtml(title) +
                 ' <span class="badge ' +
@@ -337,11 +420,33 @@
                 escapeHtml(c.lastMessagePreview || "—") +
                 "</p>" +
                 '<p class="inbox-item-meta">' +
+                escapeHtml(shortSessionId_(c.id)) +
+                " · " +
                 escapeHtml(mode) +
                 " · " +
                 escapeHtml(c.assignedAgentEmail || "Unassigned") +
                 escapeHtml(unread) +
                 "</p>";
+            li.appendChild(main);
+            if (c.status === "waiting" || c.status === "active") {
+                const actions = document.createElement("div");
+                actions.className = "inbox-item-actions";
+                const dismissBtn = document.createElement("button");
+                dismissBtn.type = "button";
+                dismissBtn.className = "btn ghost small inbox-dismiss";
+                dismissBtn.textContent = "Dismiss";
+                dismissBtn.addEventListener("click", (ev) => {
+                    ev.stopPropagation();
+                    dismissBtn.disabled = true;
+                    dismissConversation_(c.id).catch((e) => {
+                        alert(e.message || "Could not dismiss");
+                    }).finally(() => {
+                        dismissBtn.disabled = false;
+                    });
+                });
+                actions.appendChild(dismissBtn);
+                li.appendChild(actions);
+            }
             li.addEventListener("click", () => selectConversation(c));
             inboxList.appendChild(li);
         }
@@ -624,9 +729,17 @@
         } catch (e) {
             alert(e.message || "Send failed");
         } finally {
-            sendBtn.disabled = false;
+            if (sendBtn) sendBtn.disabled = !canReplyActive_();
         }
     });
+
+    function canReplyActive_() {
+        if (!selectedConv) return false;
+        return (
+            selectedConv.status === "active" &&
+            agentIdsMatch_(selectedConv.assignedAgentEmail, agentId)
+        );
+    }
 
     loadStoredAuth_();
     checkSession();

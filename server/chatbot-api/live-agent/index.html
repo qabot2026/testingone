@@ -61,7 +61,12 @@
     <div class="workspace">
       <aside class="inbox-pane" aria-label="Request queue">
         <p class="pane-title">Requests</p>
-        <p id="inboxStatus" class="inbox-status muted">Loading…</p>
+        <div class="inbox-toolbar">
+          <p id="inboxStatus" class="inbox-status muted">Loading…</p>
+          <button type="button" class="btn ghost small" id="clearTestQueueBtn" hidden title="Close waiting chats whose session id starts with test-">
+            Clear test chats
+          </button>
+        </div>
         <ul id="inboxList" class="inbox-list"></ul>
       </aside>
 
@@ -87,8 +92,8 @@
 
           <div id="messageList" class="message-list" role="log" aria-live="polite"></div>
 
-          <form id="composerForm" class="composer">
-            <textarea id="composerInput" rows="2" placeholder="Type a reply to the visitor…" required></textarea>
+          <form id="composerForm" class="composer" novalidate>
+            <textarea id="composerInput" rows="2" placeholder="Type a reply to the visitor…" autocomplete="off"></textarea>
             <button type="submit" class="btn primary" id="sendBtn">Send</button>
           </form>
         </div>
@@ -96,6 +101,7 @@
 
       <aside class="context-pane" id="contextPane" aria-label="Visitor details">
         <p class="pane-title">Visitor</p>
+        <div class="context-scroll">
         <div id="contextEmpty" class="context-empty muted">
           <p>Select a conversation to see contact details and controls.</p>
         </div>
@@ -129,6 +135,7 @@
             <h3>Links</h3>
             <p><a id="transcriptLink" href="#" target="_blank" rel="noopener noreferrer">Open full transcript</a></p>
           </section>
+        </div>
         </div>
       </aside>
     </div>
