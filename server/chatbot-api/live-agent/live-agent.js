@@ -150,10 +150,14 @@
     }
 
     async function apiFetch(url, options) {
+        const opts = options || {};
         const res = await fetch(url, {
             credentials: "same-origin",
-            headers: { ...authHeaders_(), ...(options && options.headers) },
-            ...options
+            ...opts,
+            headers: {
+                ...authHeaders_(),
+                ...(opts.headers || {})
+            }
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) {
