@@ -1503,15 +1503,6 @@
       flex: 1;
       min-height: 0;
     }
-    .lead-pie-callout-arrows {
-      position: absolute;
-      inset: 0;
-      width: 100%;
-      height: 100%;
-      pointer-events: none;
-      z-index: 1;
-      overflow: visible;
-    }
     .lead-pie-callout-col {
       position: relative;
       z-index: 2;
@@ -1797,7 +1788,6 @@
                 >
               </p>
               <div class="lead-split-chart-layout">
-                <svg class="lead-pie-callout-arrows" id="lcPieLeadArrows" aria-hidden="true"></svg>
                 <div class="lead-pie-callout-col lead-pie-callout-col--left" id="lcPieLeadLabelLeft" aria-hidden="true"></div>
                 <div class="chart-canvas-wrap lead-split-chart-canvas"
                   ><canvas id="lcPieLead" aria-label="Lead capture split"></canvas
@@ -1905,13 +1895,13 @@
         });
         leadChartInstances = [];
         window._leadChartMountId = (window._leadChartMountId || 0) + 1;
-        ["lcPieLeadLabelLeft", "lcPieLeadLabelRight", "lcPieLeadLegend", "lcPieLeadArrows"].forEach(
+        ["lcPieLeadLabelLeft", "lcPieLeadLabelRight", "lcPieLeadLegend"].forEach(
           function (id) {
             var el = document.getElementById(id);
             if (el) el.innerHTML = "";
           }
         );
-        window._lcPieLeadChartForArrows = null;
+        window._lcPieLeadChartForLabels = null;
       }
 
       function showLeadChartNotice(msg) {
@@ -2042,7 +2032,16 @@
         return String(Math.trunc(n));
       }
 
-      function renderPieLeadSideLabels(om, oe, be, pal) {
+      function chartLeadSplitLabelText(num, splitTotal) {
+        var n = Math.trunc(num);
+        if (!(n > 0)) return "";
+        if (!splitTotal || splitTotal <= 0) return formatLeadChartCountExact(n);
+        var pct = (n / splitTotal) * 100;
+        var pctText = pct > 0 && pct < 1 ? pct.toFixed(1) : String(Math.round(pct));
+        return formatLeadChartCountExact(n) + " (" + pctText + "%)";
+      }
+
+      function renderPieLeadSideLabels(om, oe, be, pal, splitTotal) {
         var leftEl = document.getElementById("lcPieLeadLabelLeft");
         var rightEl = document.getElementById("lcPieLeadLabelRight");
         var legendEl = document.getElementById("lcPieLeadLegend");
@@ -2070,7 +2069,7 @@
             '"><span class="lead-pie-callout-swatch" style="background:' +
             seg.color +
             '"></span><span class="lead-pie-callout-val">' +
-            escapeHtml(formatLeadChartCountExact(seg.val)) +
+            escapeHtml(chartLeadSplitLabelText(seg.val, splitTotal)) +
             "</span></div>"
           );
         }
@@ -2092,24 +2091,15 @@
         if (legendEl && active.length) legendEl.removeAttribute("aria-hidden");
       }
 
-      function syncPieLeadCalloutArrows(chart) {
+      function syncPieLeadLabelPositions(chart) {
         var layout = document.querySelector(".lead-split-chart-layout");
-        var svg = document.getElementById("lcPieLeadArrows");
         var leftCol = document.getElementById("lcPieLeadLabelLeft");
         var rightCol = document.getElementById("lcPieLeadLabelRight");
-        if (!layout || !svg || !chart || !chart.canvas || !leftCol || !rightCol) return;
+        if (!layout || !chart || !chart.canvas || !leftCol || !rightCol) return;
         var layoutRect = layout.getBoundingClientRect();
-        var w = layoutRect.width;
-        var h = layoutRect.height;
-        if (!(w > 0) || !(h > 0)) return;
-        svg.setAttribute("width", String(w));
-        svg.setAttribute("height", String(h));
-        svg.setAttribute("viewBox", "0 0 " + w + " " + h);
-        svg.innerHTML = "";
         var meta = chart.getDatasetMeta(0);
         if (!meta || !meta.data) return;
         var canvasRect = chart.canvas.getBoundingClientRect();
-        var ns = "http://www.w3.org/2000/svg";
         var items = layout.querySelectorAll(".lead-pie-callout-item");
         var placed = [];
         for (var ni = 0; ni < items.length; ni++) {
@@ -2125,9 +2115,7 @@
           var sin = Math.sin(angle);
           var arcCx = canvasRect.left - layoutRect.left + arc.x;
           var arcCy = canvasRect.top - layoutRect.top + arc.y;
-          var rEdge = arc.outerRadius;
-          var ySlice = arcCy + sin * rEdge;
-          var xSlice = arcCx + cos * rEdge;
+          var ySlice = arcCy + sin * arc.outerRadius;
           var onRight = cos >= 0;
           var col = onRight ? rightCol : leftCol;
           if (item.parentElement !== col) col.appendChild(item);
@@ -2142,53 +2130,23 @@
           placed.push({ col: col, y: topPx });
           item.style.top = topPx + "px";
         }
-        for (var li = 0; li < items.length; li++) {
-          var item2 = items[li];
-          var segIdx2 = parseInt(item2.getAttribute("data-seg-idx"), 10);
-          if (!Number.isFinite(segIdx2) || segIdx2 < 0 || segIdx2 >= meta.data.length) continue;
-          var arc2 = meta.data[segIdx2];
-          if (!arc2 || arc2.circumference <= 0.001) continue;
-          var angle2 = (arc2.startAngle + arc2.endAngle) / 2;
-          var cos2 = Math.cos(angle2);
-          var sin2 = Math.sin(angle2);
-          var arcCx2 = canvasRect.left - layoutRect.left + arc2.x;
-          var arcCy2 = canvasRect.top - layoutRect.top + arc2.y;
-          var r2 = arc2.outerRadius;
-          var ySlice2 = arcCy2 + sin2 * r2;
-          var xSlice2 = arcCx2 + cos2 * r2;
-          var itemRect = item2.getBoundingClientRect();
-          var onRight2 = cos2 >= 0;
-          var gap = 3;
-          var xLabel = onRight2
-            ? itemRect.left - layoutRect.left - gap
-            : itemRect.right - layoutRect.left + gap;
-          var line = document.createElementNS(ns, "line");
-          line.setAttribute("x1", String(xSlice2));
-          line.setAttribute("y1", String(ySlice2));
-          line.setAttribute("x2", String(xLabel));
-          line.setAttribute("y2", String(ySlice2));
-          line.setAttribute("stroke", "rgba(100, 116, 139, 0.85)");
-          line.setAttribute("stroke-width", "1");
-          line.setAttribute("stroke-linecap", "round");
-          svg.appendChild(line);
-        }
       }
 
-      function schedulePieLeadCalloutArrows(chart) {
+      function schedulePieLeadLabelPositions(chart) {
         if (!chart) return;
-        window._lcPieLeadChartForArrows = chart;
+        window._lcPieLeadChartForLabels = chart;
         requestAnimationFrame(function () {
           requestAnimationFrame(function () {
-            syncPieLeadCalloutArrows(chart);
+            syncPieLeadLabelPositions(chart);
           });
         });
       }
 
-      if (!window._lcPieArrowResizeBound) {
-        window._lcPieArrowResizeBound = true;
+      if (!window._lcPieLabelResizeBound) {
+        window._lcPieLabelResizeBound = true;
         window.addEventListener("resize", function () {
-          var ch = window._lcPieLeadChartForArrows;
-          if (ch) schedulePieLeadCalloutArrows(ch);
+          var ch = window._lcPieLeadChartForLabels;
+          if (ch) schedulePieLeadLabelPositions(ch);
         });
       }
 
@@ -2505,7 +2463,7 @@
               maintainAspectRatio: false,
               animation: {
                 onComplete: function () {
-                  schedulePieLeadCalloutArrows(this.chart);
+                  schedulePieLeadLabelPositions(this.chart);
                 }
               },
               plugins: {
@@ -2528,8 +2486,8 @@
             }
           });
           leadChartInstances.push(pieLeadChart);
-          renderPieLeadSideLabels(om, oe, be, pal);
-          schedulePieLeadCalloutArrows(pieLeadChart);
+          renderPieLeadSideLabels(om, oe, be, pal, leadSplitTotal);
+          schedulePieLeadLabelPositions(pieLeadChart);
           updateLeadChartTotals(chartMetrics);
 
         leadChartInstances.push(
@@ -4220,6 +4178,7 @@
       }
 
       if (refreshBtn) refreshBtn.addEventListener("click", load);
+      if (dateFromEl && dateToEl) applyDefaultDateRange5Days();
       if (secretEl) {
         secretEl.addEventListener("keydown", function (ev) {
           if (ev.key === "Enter") load();
