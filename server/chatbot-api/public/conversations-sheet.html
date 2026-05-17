@@ -811,7 +811,7 @@
       grid-template-columns: auto minmax(258px, 290px) minmax(0, 1fr);
       gap: 12px 14px;
       width: 100%;
-      min-height: 148px;
+      min-height: 200px;
       align-items: stretch;
     }
     .lead-stats-numeric-kpis {
@@ -3489,10 +3489,11 @@
         var rat = payload.ratios || {};
         var pctRaw = rat.leadCapturePct;
         var pct = typeof pctRaw === "number" && Number.isFinite(pctRaw) ? pctRaw : Number(pctRaw);
+        var leadCaptureCountDisp = escapeHtml(String(leads));
         var leadCaptureDisp =
           n > 0 && pct != null && Number.isFinite(pct)
             ? '<span class="stat-frac">' + escapeHtml(String(pct)) + "%</span>"
-            : '<span class="stat-frac">—</span>';
+            : '<span class="stat-frac">—</span>";
         var iconWeb =
           '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>';
         var iconWa =
@@ -3624,6 +3625,7 @@
           '<div class="lead-stats-numeric-layout">' +
           '<div class="lead-stats-numeric-kpis" role="list" aria-label="Summary metrics">' +
           kpiInline("Total conversations", escapeHtml(String(n)), true) +
+          kpiInline("Lead Capture Count", leadCaptureCountDisp, false) +
           kpiInline("Lead capture rate", leadCaptureDisp, false) +
           kpiInline("Appointments booked", escapeHtml(String(apt)), false) +
           "</div>" +
