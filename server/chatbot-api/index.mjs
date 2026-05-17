@@ -3635,37 +3635,53 @@ app.get("/contact-form-sheets-health", async (_req, res) => {
 const RECEPTION_SCHEDULE_HTML = path.join(__dirname_api, "public", "reception-schedule.html");
 const CONVERSATIONS_SHEET_HTML = path.join(__dirname_api, "public", "conversations-sheet.html");
 const CONVERSATION_TRANSCRIPT_HTML = path.join(__dirname_api, "public", "conversation-transcript.html");
-app.get("/reception-schedule", (_req, res) => {
-    res.sendFile(RECEPTION_SCHEDULE_HTML, (err) => {
-        if (err) {
-            console.error("[chatbot-api] reception-schedule:", err.message);
-            res.status(404).type("text/plain; charset=utf-8").send("Staff UI missing: add public/reception-schedule.html and redeploy.");
+
+/** sendFile callback: client abort (EPIPE) can fire after headers are already sent. */
+function sendStaffHtmlPage_(res, filePath, routeLabel, missingBody) {
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+    res.setHeader("Pragma", "no-cache");
+    res.sendFile(filePath, (err) => {
+        if (!err) return;
+        const code = typeof err.code === "string" ? err.code : "";
+        const msg = err.message || String(err);
+        if (res.headersSent) {
+            if (code !== "EPIPE" && code !== "ECONNRESET" && !/aborted|destroyed/i.test(msg)) {
+                console.warn(`[chatbot-api] ${routeLabel}: response interrupted —`, msg);
+            }
+            return;
         }
+        console.error(`[chatbot-api] ${routeLabel}:`, msg);
+        res.status(404).type("text/plain; charset=utf-8").send(missingBody);
     });
+}
+
+app.get("/reception-schedule", (_req, res) => {
+    sendStaffHtmlPage_(
+        res,
+        RECEPTION_SCHEDULE_HTML,
+        "reception-schedule",
+        "Staff UI missing: add public/reception-schedule.html and redeploy."
+    );
 });
 
 /** Staff: visual inbox of chat leads from Google Sheet (protect with CONVERSATIONS_SHEET_VIEW_SECRET). */
 app.get("/conversations-sheet", (_req, res) => {
-    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
-    res.setHeader("Pragma", "no-cache");
-    res.sendFile(CONVERSATIONS_SHEET_HTML, (err) => {
-        if (err) {
-            console.error("[chatbot-api] conversations-sheet:", err.message);
-            res.status(404).type("text/plain; charset=utf-8").send("Staff UI missing: add public/conversations-sheet.html and redeploy.");
-        }
-    });
+    sendStaffHtmlPage_(
+        res,
+        CONVERSATIONS_SHEET_HTML,
+        "conversations-sheet",
+        "Staff UI missing: add public/conversations-sheet.html and redeploy."
+    );
 });
 
 /** Staff: one session’s transcript UI (`?session=`). Sheet “Chat transcript” → same URL via SHEETS_ROW_OPEN_LINK_COLUMN + CONVERSATIONS_PUBLIC_BASE_URL. Auth: CONVERSATIONS_SHEET_VIEW_SECRET (see GET /api/conversation-transcript). */
 app.get("/conversation-transcript", (_req, res) => {
-    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
-    res.setHeader("Pragma", "no-cache");
-    res.sendFile(CONVERSATION_TRANSCRIPT_HTML, (err) => {
-        if (err) {
-            console.error("[chatbot-api] conversation-transcript:", err.message);
-            res.status(404).type("text/plain; charset=utf-8").send("Staff UI missing: add public/conversation-transcript.html and redeploy.");
-        }
-    });
+    sendStaffHtmlPage_(
+        res,
+        CONVERSATION_TRANSCRIPT_HTML,
+        "conversation-transcript",
+        "Staff UI missing: add public/conversation-transcript.html and redeploy."
+    );
 });
 
 const PATHNAME_CONVERSATIONS_SHEET_JSON = "/api/conversations-sheet";
