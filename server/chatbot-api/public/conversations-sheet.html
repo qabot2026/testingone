@@ -575,6 +575,17 @@
     .sheet-pager-bar[hidden] {
       display: none !important;
     }
+    .sheet-table-toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 10px 16px;
+      margin-bottom: 8px;
+    }
+    .sheet-table-toolbar .tool {
+      flex: 0 0 auto;
+    }
     .pager-compact {
       display: flex;
       flex-wrap: wrap;
@@ -2034,15 +2045,6 @@
           </div>
         </div>
       </div>
-      <div id="limitToolWrap" class="tool" hidden title="All rows in the selected date range load automatically">
-        <label class="mini" for="limit">Load rows</label>
-        <select id="limit">
-          <option value="50">50</option>
-          <option value="100" selected>100</option>
-          <option value="200">200</option>
-          <option value="300">300</option>
-        </select>
-      </div>
       <div class="presets tool" style="min-width: 220px;">
         <span class="mini" style="width:100%; margin-bottom:2px;">Quick range</span>
         <button type="button" class="preset" data-preset="all">Any</button>
@@ -2097,6 +2099,18 @@
       </div>
       <div id="leadStatsErr" class="err" style="display: none; margin-top: 8px;"></div>
     </section>
+
+    <div class="sheet-table-toolbar" id="sheetTableToolbar">
+      <div id="limitToolWrap" class="tool" title="Rows per page within the selected date range">
+        <label class="mini" for="limit">Rows per page</label>
+        <select id="limit">
+          <option value="50">50</option>
+          <option value="100" selected>100</option>
+          <option value="200">200</option>
+          <option value="300">300</option>
+        </select>
+      </div>
+    </div>
 
     <div id="sheetWrap" class="sheet-wrap-shell">
       <p class="sheet-mobile-scroll-hint" aria-hidden="true">Swipe left on the table to see more columns</p>
@@ -3356,7 +3370,7 @@
         return guessed || null;
       }
 
-      /** UI dates vs last server echo — only skip client filter when they still match. */
+      /** Date bounds for client-side Contains filter; server date filter is authoritative when applied. */
       function effectiveDateFilterBounds_(payload) {
         var pl = payload != null ? payload : lastPayload;
         var uiFrom = dateFromEl && dateFromEl.value ? dateFromEl.value.trim() : "";
@@ -3364,9 +3378,7 @@
         if (pl && pl.dateFilter && pl.dateFilter.serverApplied) {
           var sf = pl.dateFilter.from ? String(pl.dateFilter.from).trim() : "";
           var st = pl.dateFilter.to ? String(pl.dateFilter.to).trim() : "";
-          if (uiFrom === sf && uiTo === st) {
-            return { from: sf, to: st, trustServerRows: true };
-          }
+          return { from: sf, to: st, trustServerRows: true };
         }
         return { from: uiFrom, to: uiTo, trustServerRows: false };
       }
@@ -3604,6 +3616,7 @@
             if (authBox) authBox.open = false;
             showErr("");
             setStatus("Secret saved - loading...");
+            sheetOffset = 0;
             load();
           } catch (e) {
             setStatus("Could not save secret.");
@@ -3677,7 +3690,6 @@
         convDateReloadTimer = window.setTimeout(function () {
           convDateReloadTimer = 0;
           sheetOffset = 0;
-          if (lastPayload) render(lastPayload);
           if (secretEl.value.trim()) load();
         }, 140);
       }
@@ -3737,9 +3749,20 @@
           filtered.push(row);
         }
 
+        var totalInRange =
+          data && typeof data.totalDataRows === "number" && Number.isFinite(data.totalDataRows)
+            ? Math.max(0, Math.trunc(data.totalDataRows))
+            : filtered.length;
+        var pageNote =
+          totalInRange > filtered.length
+            ? " · page " + filtered.length + " of " + totalInRange
+            : "";
         rowPill.textContent =
-          filtered.length + " row" + (filtered.length === 1 ? "" : "s") +
-          (dateFromEl.value || dateToEl.value ? " · date-filtered" : "");
+          totalInRange +
+          " row" +
+          (totalInRange === 1 ? "" : "s") +
+          (dateFromEl.value || dateToEl.value ? " · date-filtered" : "") +
+          pageNote;
 
         if (!filtered.length) {
           selectedRowSig = null;
@@ -3878,23 +3901,19 @@
           !pagerCurPage
         )
           return;
-        if (!json || json.allInRange || json.totalDataRows == null || json.limit == null) {
+        if (!json || json.totalDataRows == null || json.limit == null) {
           pagerWrap.hidden = true;
           return;
         }
         var total = Number(json.totalDataRows) || 0;
         var lim = Number(json.limit) || parseInt(String(limitEl.value), 10) || 100;
         var off = Number(json.offset) || 0;
-        if (total < 1) {
+        if (total < 1 || lim < 1) {
           pagerWrap.hidden = true;
           return;
         }
         var totalPages = Math.max(1, Math.ceil(total / lim));
         var curPage = Math.min(totalPages, Math.max(1, Math.floor(off / lim) + 1));
-        if (totalPages <= 1 && !json.hasOlder && !json.hasNewer) {
-          pagerWrap.hidden = true;
-          return;
-        }
         pagerWrap.hidden = false;
         pagerCurPage.textContent = String(curPage);
         pagerLast.textContent = String(totalPages);
@@ -4068,13 +4087,20 @@
         refreshBtn.textContent = "Loading…";
         setStatus("Loading conversations…");
         showLeadStatsLoading(true);
-        sheetOffset = 0;
         var timedId = 0;
         var ctrl = null;
         try {
           var fromV = dateFromEl && dateFromEl.value ? dateFromEl.value.trim() : "";
           var toV = dateToEl && dateToEl.value ? dateToEl.value.trim() : "";
-          var dq = ["all=1", "includeStats=1"];
+          var lim = parseInt(String(limitEl && limitEl.value ? limitEl.value : "100"), 10);
+          if (!Number.isFinite(lim) || lim < 5) lim = 100;
+          if (lim > 500) lim = 500;
+          var dq = [
+            "includeStats=1",
+            "all=0",
+            "limit=" + encodeURIComponent(String(lim)),
+            "offset=" + encodeURIComponent(String(sheetOffset))
+          ];
           if (fromV) dq.push("from=" + encodeURIComponent(fromV));
           if (toV) dq.push("to=" + encodeURIComponent(toV));
           var url = apiBase() + "/api/conversations-sheet?" + dq.join("&");
@@ -4116,37 +4142,38 @@
             typeof json.totalDataRows === "number" && Number.isFinite(json.totalDataRows)
               ? Math.max(0, Math.trunc(json.totalDataRows))
               : 0;
+          var limShown = Number(json.limit) || lim;
+          var offShown = Number(json.offset) || sheetOffset;
+          var curPage =
+            totalListed > 0 && limShown > 0
+              ? Math.min(
+                  Math.max(1, Math.ceil(totalListed / limShown)),
+                  Math.max(1, Math.floor(offShown / limShown) + 1)
+                )
+              : 1;
+          var totalPages =
+            totalListed > 0 && limShown > 0 ? Math.max(1, Math.ceil(totalListed / limShown)) : 1;
           var msgParts = [];
-          if (json.allInRange) {
+          var rangeLbl = formatDateFilterLabel_(json.dateFilter);
+          if (rangeLbl) msgParts.push("Date range " + rangeLbl);
+          msgParts.push(
+            "Page " +
+              curPage +
+              " of " +
+              totalPages +
+              " · " +
+              loaded +
+              " row" +
+              (loaded === 1 ? "" : "s") +
+              " on this page"
+          );
+          if (totalListed > 0) {
+            msgParts.push(totalListed + " in range");
+          }
+          if (json.rowsTruncated) {
             msgParts.push(
-              "Showing " +
-                loaded +
-                " conversation" +
-                (loaded === 1 ? "" : "s") +
-                " in the selected date range"
+              "scan capped — narrow dates or raise CONVERSATIONS_SHEET_VIEW_RETURN_MAX_ROWS on Railway"
             );
-            if (totalListed > loaded) {
-              msgParts.push(totalListed + " matched — narrow dates to see all in the table");
-            }
-            if (json.rowsTruncated) {
-              msgParts.push(
-                "table capped at " +
-                  loaded +
-                  " newest rows (set CONVERSATIONS_SHEET_VIEW_RETURN_MAX_ROWS on Railway to raise)"
-              );
-            }
-          } else {
-            msgParts.push(
-              "Showing " +
-                loaded +
-                " conversation" +
-                (loaded === 1 ? "" : "s") +
-                " on this page"
-            );
-            if (totalListed > 0) {
-              msgParts.push(totalListed + " in this list");
-              if (totalListed > loaded) msgParts.push("more available via paging");
-            }
           }
           setStatus(msgParts.join(" · ") + ".");
           sheetOffset = Number(json.offset) || 0;
@@ -4617,11 +4644,19 @@
         });
       }
 
-      if (refreshBtn) refreshBtn.addEventListener("click", load);
+      if (refreshBtn) {
+        refreshBtn.addEventListener("click", function () {
+          sheetOffset = 0;
+          load();
+        });
+      }
       if (dateFromEl && dateToEl) applyDefaultDateRange5Days();
       if (secretEl) {
         secretEl.addEventListener("keydown", function (ev) {
-          if (ev.key === "Enter") load();
+          if (ev.key === "Enter") {
+            sheetOffset = 0;
+            load();
+          }
         });
         if (secretEl.value.trim()) load();
       }
