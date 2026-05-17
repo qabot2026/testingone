@@ -505,6 +505,13 @@
       font-weight: 500;
     }
 
+    .topbar-actions {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+    }
+
     .pill {
       font-size: 11px;
       padding: 5px 12px;
@@ -515,6 +522,16 @@
       color: var(--brand-strong);
       border: 1px solid rgba(13, 148, 136, 0.22);
       align-self: center;
+    }
+
+    a.pill-link {
+      text-decoration: none;
+      transition: background 0.15s, color 0.15s;
+    }
+
+    a.pill-link:hover {
+      background: var(--brand);
+      color: #fff;
     }
 
     .hint-foot {
@@ -1965,7 +1982,12 @@
           columns stay in the original capture order.</span
         >
       </div>
-      <span class="pill" id="rowPill">&nbsp;</span>
+      <div class="topbar-actions">
+        <a class="pill pill-link" href="/live-agent" id="liveAgentNavLink" title="Human agent inbox (same viewer secret)"
+          >Live chat inbox</a
+        >
+        <span class="pill" id="rowPill">&nbsp;</span>
+      </div>
     </header>
 
     <details class="auth" open id="authBox">
@@ -4695,6 +4717,13 @@
               downloadReportBtn.disabled = false;
               downloadReportBtn.textContent = prev;
             });
+        });
+      }
+
+      var liveAgentNavLink = document.getElementById("liveAgentNavLink");
+      if (liveAgentNavLink) {
+        liveAgentNavLink.addEventListener("click", function () {
+          persistViewerSecret_(secretEl.value.trim());
         });
       }
 

@@ -48,9 +48,23 @@ function tsToIso_(v) {
 
 function serializeConversation_(id, data) {
     const d = data || {};
+    const status = typeof d.status === "string" ? d.status : "waiting";
+    let humanMode = typeof d.humanMode === "string" ? d.humanMode : "";
+    if (!humanMode) {
+        if (status === "waiting") humanMode = "waiting";
+        else if (status === "active") humanMode = "human";
+        else if (status === "closed") humanMode = "ai";
+        else humanMode = "ai";
+    }
+    let aiEnabled = d.aiEnabled;
+    if (typeof aiEnabled !== "boolean") {
+        aiEnabled = status !== "waiting" && status !== "active";
+    }
     return {
         id,
-        status: typeof d.status === "string" ? d.status : "waiting",
+        status,
+        humanMode,
+        aiEnabled,
         botid: typeof d.botid === "string" ? d.botid : "default",
         visitorName: typeof d.visitorName === "string" ? d.visitorName : "",
         assignedAgentEmail: typeof d.assignedAgentEmail === "string" ? d.assignedAgentEmail : "",
@@ -101,6 +115,8 @@ export async function requestHumanAgent_({ conversationId, botid, visitorName, i
             if (cur.status === "closed") {
                 tx.set(ref, {
                     status: "waiting",
+                    humanMode: "waiting",
+                    aiEnabled: false,
                     botid: botIdOrDefault_(botid),
                     visitorName: trim_(visitorName) || cur.visitorName || "",
                     assignedAgentEmail: "",
@@ -119,6 +135,8 @@ export async function requestHumanAgent_({ conversationId, botid, visitorName, i
         }
         tx.set(ref, {
             status: "waiting",
+            humanMode: "waiting",
+            aiEnabled: false,
             botid: botIdOrDefault_(botid),
             visitorName: trim_(visitorName),
             assignedAgentEmail: "",
@@ -204,6 +222,8 @@ export async function claimConversation_({ conversationId, agentEmail }) {
         }
         tx.update(ref, {
             status: "active",
+            humanMode: "human",
+            aiEnabled: false,
             assignedAgentEmail: email,
             claimedAt: cur.claimedAt || now,
             unreadForAgent: 0
@@ -239,6 +259,8 @@ export async function closeConversation_({ conversationId, closedBy, agentEmail 
         }
         tx.update(ref, {
             status: "closed",
+            humanMode: "ai",
+            aiEnabled: true,
             closedAt: now,
             closedBy: trim_(closedBy) || "agent"
         });
@@ -324,6 +346,44 @@ export async function listMessages_({ conversationId, sinceIso, limit, markReadF
     }
 
     return messages;
+}
+
+/**
+ * Agent toggles AI vs human handling for the visitor widget (poll via /status).
+ * @param {{ conversationId: string, aiEnabled?: boolean, humanMode?: string }} opts
+ */
+export async function updateConversationMode_({ conversationId, aiEnabled, humanMode }) {
+    const id = safeConversationId_(conversationId);
+    const db = firestoreDb_();
+    const ref = db.collection(conversationsCollection_()).doc(id);
+    const snap = await ref.get();
+    if (!snap.exists) {
+        throw new Error("Conversation not found");
+    }
+    const cur = snap.data() || {};
+    if (cur.status === "closed") {
+        throw new Error("Conversation is closed");
+    }
+    /** @type {Record<string, unknown>} */
+    const patch = {};
+    if (typeof aiEnabled === "boolean") {
+        patch.aiEnabled = aiEnabled;
+    }
+    const hm = trim_(humanMode).toLowerCase();
+    if (hm === "ai" || hm === "human" || hm === "waiting") {
+        patch.humanMode = hm;
+        if (hm === "ai") {
+            patch.aiEnabled = true;
+        } else if (hm === "human" || hm === "waiting") {
+            patch.aiEnabled = false;
+        }
+    }
+    if (!Object.keys(patch).length) {
+        throw new Error("Nothing to update");
+    }
+    await ref.update(patch);
+    const next = await ref.get();
+    return serializeConversation_(id, next.data());
 }
 
 export function logStoreError_(err, context) {

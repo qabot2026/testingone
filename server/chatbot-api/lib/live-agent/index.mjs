@@ -35,6 +35,7 @@ import {
     readLiveAgentSessionFromReq_,
     requireLiveAgentSession_
 } from "./auth.mjs";
+import { getVisitorContext_ } from "./context.mjs";
 import {
     appendMessage_,
     claimConversation_,
@@ -44,7 +45,8 @@ import {
     listMessages_,
     liveAgentFirestoreReady_,
     logStoreError_,
-    requestHumanAgent_
+    requestHumanAgent_,
+    updateConversationMode_
 } from "./store.mjs";
 
 const LOG_TAG = "[live-agent]";
@@ -262,6 +264,47 @@ export function mountLiveAgentRoutes(app) {
         }
     });
 
+    router.get("/conversations/:id/context", requireLiveAgentSession_(), async (req, res) => {
+        setNoCache_(res);
+        const conversationId = safeClientSessionId_(req.params && req.params.id);
+        if (!conversationId) {
+            jsonError_(res, 400, "Invalid conversation id");
+            return;
+        }
+        try {
+            const conversation = await getConversation_(conversationId);
+            const visitor = await getVisitorContext_(conversationId);
+            res.json({ ok: true, conversation, visitor });
+        } catch (err) {
+            logStoreError_(err, "context");
+            jsonError_(res, 500, err.message || "Context failed");
+        }
+    });
+
+    router.post("/conversations/:id/mode", requireLiveAgentSession_(), async (req, res) => {
+        setNoCache_(res);
+        const conversationId = safeClientSessionId_(req.params && req.params.id);
+        if (!conversationId) {
+            jsonError_(res, 400, "Invalid conversation id");
+            return;
+        }
+        const body = req.body && typeof req.body === "object" ? req.body : {};
+        const aiEnabled =
+            typeof body.aiEnabled === "boolean" ? body.aiEnabled : undefined;
+        const humanMode = trim_(body.humanMode);
+        try {
+            const conversation = await updateConversationMode_({
+                conversationId,
+                aiEnabled,
+                humanMode: humanMode || undefined
+            });
+            res.json({ ok: true, conversation });
+        } catch (err) {
+            logStoreError_(err, "mode");
+            jsonError_(res, 400, err.message || "Mode update failed");
+        }
+    });
+
     app.use("/api/live-agent", router);
 
     // --- Visitor / widget endpoints ------------------------------------------
@@ -312,7 +355,9 @@ export function mountLiveAgentRoutes(app) {
             res.json({
                 ok: true,
                 conversation,
-                humanActive: !!(conversation && (conversation.status === "waiting" || conversation.status === "active"))
+                humanActive: !!(conversation && (conversation.status === "waiting" || conversation.status === "active")),
+                aiEnabled: conversation ? conversation.aiEnabled !== false : true,
+                humanMode: conversation && conversation.humanMode ? conversation.humanMode : "ai"
             });
         } catch (err) {
             logStoreError_(err, "status");

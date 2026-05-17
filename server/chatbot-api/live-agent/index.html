@@ -4,15 +4,15 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="robots" content="noindex, nofollow" />
-  <title>Live agent inbox</title>
+  <title>Live chat — agent inbox</title>
   <link rel="stylesheet" href="/live-agent/live-agent.css" />
 </head>
 <body>
 
   <section id="loginView" class="login-view hidden" aria-label="Unlock inbox">
     <div class="login-card">
-      <h1>Live agent inbox</h1>
-      <p class="muted">Enter the same viewer secret as the conversations sheet inbox.</p>
+      <h1>Live chat inbox</h1>
+      <p class="muted">Same viewer secret as the conversation leads page. Any agent can open the queue and claim a chat.</p>
       <form id="loginForm">
         <label>
           Viewer secret
@@ -20,7 +20,7 @@
             placeholder="CONVERSATIONS_SHEET_VIEW_SECRET" />
         </label>
         <label>
-          Your name <span class="muted small">(optional, for My chats)</span>
+          Your name <span class="muted small">(shown when you claim a chat)</span>
           <input id="loginAgentName" type="text" autocomplete="nickname" placeholder="Agent" />
         </label>
         <div class="login-actions">
@@ -28,7 +28,7 @@
           <button type="submit" class="btn primary" id="loginSubmitBtn">Open inbox</button>
         </div>
         <p id="loginMessage" class="login-message muted" role="status"></p>
-        <p class="muted small">Railway variable: <code>CONVERSATIONS_SHEET_VIEW_SECRET</code></p>
+        <p class="muted small">Railway: <code>CONVERSATIONS_SHEET_VIEW_SECRET</code> · Firestore required for queue</p>
       </form>
     </div>
   </section>
@@ -37,34 +37,38 @@
     <header class="top-bar">
       <div class="top-bar-inner">
         <div class="brand">
-          <h1>Live agent</h1>
+          <h1>Live chat</h1>
           <p class="muted" id="agentLabel">—</p>
         </div>
         <div class="top-actions">
+          <span id="notifyPill" class="notify-pill hidden" title="Unread in queue">0 new</span>
           <label class="filter-label">
             Queue
             <select id="inboxFilter">
-              <option value="waiting">Waiting</option>
+              <option value="waiting" selected>Waiting for agent</option>
+              <option value="all">Open (waiting + active)</option>
               <option value="mine">My chats</option>
               <option value="active">All active</option>
-              <option value="all">Open (waiting + active)</option>
             </select>
           </label>
           <button type="button" class="btn ghost" id="refreshInboxBtn">Refresh</button>
+          <a class="btn ghost nav-link" href="/conversations-sheet" id="leadsLink">Conversation leads</a>
           <button type="button" class="btn ghost" id="logoutBtn">Lock</button>
         </div>
       </div>
     </header>
 
     <div class="workspace">
-      <aside class="inbox-pane" aria-label="Conversation list">
+      <aside class="inbox-pane" aria-label="Request queue">
+        <p class="pane-title">Requests</p>
         <p id="inboxStatus" class="inbox-status muted">Loading…</p>
         <ul id="inboxList" class="inbox-list"></ul>
       </aside>
 
       <main class="chat-pane" aria-label="Active conversation">
         <div id="chatEmpty" class="chat-empty">
-          <p>Select a conversation from the queue, or claim a waiting chat.</p>
+          <p>Select a request on the left, then <strong>Claim chat</strong> to reply as a human agent.</p>
+          <p class="muted small">Visitors appear here when they ask for a human in the widget.</p>
         </div>
 
         <div id="chatActive" class="chat-active hidden">
@@ -82,11 +86,49 @@
           <div id="messageList" class="message-list" role="log" aria-live="polite"></div>
 
           <form id="composerForm" class="composer">
-            <textarea id="composerInput" rows="2" placeholder="Type a reply…" required></textarea>
+            <textarea id="composerInput" rows="2" placeholder="Type a reply to the visitor…" required></textarea>
             <button type="submit" class="btn primary" id="sendBtn">Send</button>
           </form>
         </div>
       </main>
+
+      <aside class="context-pane" id="contextPane" aria-label="Visitor details">
+        <p class="pane-title">Visitor</p>
+        <div id="contextEmpty" class="context-empty muted">
+          <p>Select a conversation to see contact details and controls.</p>
+        </div>
+        <div id="contextBody" class="context-body hidden">
+          <section class="context-block">
+            <h3>Chat mode</h3>
+            <p class="muted small">Widget reads these flags when polling <code>/api/live-agent/status</code>.</p>
+            <div class="mode-toggles" role="group" aria-label="AI vs human">
+              <button type="button" class="mode-btn" id="modeHumanBtn" data-mode="human">Human</button>
+              <button type="button" class="mode-btn" id="modeAiBtn" data-mode="ai">AI</button>
+            </div>
+            <p id="modeStatusLine" class="mode-status muted">—</p>
+            <label class="toggle-row">
+              <input type="checkbox" id="aiEnabledToggle" />
+              <span>AI auto-reply enabled for visitor</span>
+            </label>
+          </section>
+
+          <section class="context-block">
+            <h3>Contact</h3>
+            <dl class="detail-dl" id="contactDl"></dl>
+          </section>
+
+          <section class="context-block">
+            <h3>Documents captured</h3>
+            <ul id="documentsList" class="documents-list"></ul>
+            <p id="documentsEmpty" class="muted small hidden">No files on record for this session yet.</p>
+          </section>
+
+          <section class="context-block">
+            <h3>Links</h3>
+            <p><a id="transcriptLink" href="#" target="_blank" rel="noopener noreferrer">Open full transcript</a></p>
+          </section>
+        </div>
+      </aside>
     </div>
   </section>
 
