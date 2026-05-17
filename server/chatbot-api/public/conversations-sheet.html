@@ -1407,6 +1407,20 @@
     .lead-stats-visual-block[hidden] {
       display: none !important;
     }
+    .lead-stats-chart-notice {
+      margin: 8px 0 0;
+      padding: 10px 12px;
+      border-radius: 8px;
+      border: 1px solid rgba(15, 23, 42, 0.08);
+      background: #fff7ed;
+      color: #9a3412;
+      font-size: 0.8125rem;
+      font-weight: 600;
+      line-height: 1.4;
+    }
+    .lead-stats-chart-notice[hidden] {
+      display: none !important;
+    }
     .lead-stats-visual-block > .lead-stats-section-h {
       margin: 0 0 4px;
     }
@@ -1531,14 +1545,6 @@
       }
     }
   </style>
-  <script
-    src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"
-    crossorigin="anonymous"
-  ></script>
-  <script
-    src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"
-    crossorigin="anonymous"
-  ></script>
 </head>
 <body>
   <div class="app">
@@ -1642,7 +1648,33 @@
     <div id="errBox" class="err" style="display: none;"></div>
 
     <section class="lead-stats" id="leadStatsWrap" aria-label="Lead performance overview">
-      <div id="leadStatsList" class="lead-stats-list" hidden aria-live="polite"></div>
+      <div id="leadStatsList" class="lead-stats-list" hidden aria-live="polite">
+        <div id="leadStatsDashHead" class="lead-stats-dash-head-slot"></div>
+        <div id="leadStatsNumericBlock" class="lead-stats-numeric-block"></div>
+        <div id="leadStatsVisualBlock" class="lead-stats-visual-block" hidden>
+          <div class="lead-stats-chart-grid">
+            <div class="lead-chart-card">
+              <h4>Volume by channel</h4>
+              <p class="lead-chart-card-total">
+                Total · <span id="lcChartTotalConv">0</span>
+              </p>
+              <div class="chart-canvas-wrap"><canvas id="lcBarChannel" aria-label="Volume by channel"></canvas></div>
+            </div>
+            <div class="lead-chart-card">
+              <h4>Lead capture split</h4>
+              <p class="lead-chart-card-total">
+                Leads Captured · <span id="lcChartTotalLeads">0</span>
+              </p>
+              <div class="chart-canvas-wrap"><canvas id="lcPieLead" aria-label="Lead capture split"></canvas></div>
+            </div>
+            <div class="lead-chart-card">
+              <h4>Pipeline</h4>
+              <div class="chart-canvas-wrap"><canvas id="lcBarFunnel" aria-label="Pipeline funnel"></canvas></div>
+            </div>
+          </div>
+          <p id="leadStatsChartNotice" class="lead-stats-chart-notice" hidden role="status"></p>
+        </div>
+      </div>
       <div id="leadStatsErr" class="err" style="display: none; margin-top: 8px;"></div>
     </section>
 
@@ -1671,6 +1703,14 @@
     </div>
   </div>
 
+  <script
+    src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"
+    crossorigin="anonymous"
+  ></script>
+  <script
+    src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"
+    crossorigin="anonymous"
+  ></script>
   <div id="copyToast" class="copy-toast" role="status" aria-live="polite" aria-atomic="true" hidden></div>
 
   <script>
@@ -1725,7 +1765,65 @@
           } catch (ignore) {}
         });
         leadChartInstances = [];
-        window._leadChartMountGen = (window._leadChartMountGen || 0) + 1;
+        window._leadChartMountId = (window._leadChartMountId || 0) + 1;
+      }
+
+      function showLeadChartNotice(msg) {
+        var el = document.getElementById("leadStatsChartNotice");
+        if (!el) return;
+        if (!msg) {
+          el.hidden = true;
+          el.textContent = "";
+          return;
+        }
+        el.textContent = msg;
+        el.hidden = false;
+      }
+
+      function whenChartLibraryReady(cb) {
+        if (typeof Chart !== "undefined") {
+          cb(true);
+          return;
+        }
+        var tries = 0;
+        var timer = window.setInterval(function () {
+          tries++;
+          if (typeof Chart !== "undefined") {
+            window.clearInterval(timer);
+            cb(true);
+            return;
+          }
+          if (tries >= 50) {
+            window.clearInterval(timer);
+            showLeadChartNotice(
+              "Chart library did not load. Check your network or ad blocker, then reload."
+            );
+            cb(false);
+          }
+        }, 100);
+      }
+
+      function scheduleLeadChartMount(payload) {
+        whenChartLibraryReady(function (ok) {
+          if (!ok || !payload) return;
+          requestAnimationFrame(function () {
+            requestAnimationFrame(function () {
+              try {
+                mountLeadStatsCharts(payload);
+              } catch (chartErr) {
+                console.error("[conversations-sheet] lead charts", chartErr);
+                showLeadChartNotice("Could not draw charts. Try reloading the page.");
+              }
+            });
+          });
+        });
+      }
+
+      function updateLeadChartTotals(conversations, leadsCaptured) {
+        var convEl = document.getElementById("lcChartTotalConv");
+        var leadsEl = document.getElementById("lcChartTotalLeads");
+        if (convEl) convEl.textContent = String(conversations);
+        if (leadsEl) leadsEl.textContent = String(leadsCaptured);
       }
 
       /**
@@ -1746,25 +1844,28 @@
           b.classList.toggle("is-active", b.getAttribute("data-mode") === mode);
         });
         if (mode === "numeric") {
-          if (numBlock) numBlock.hidden = false;
-          if (block) block.hidden = true;
+          if (numBlock) {
+            numBlock.hidden = false;
+            numBlock.removeAttribute("hidden");
+          }
+          if (block) {
+            block.hidden = true;
+            block.setAttribute("hidden", "");
+          }
+          showLeadChartNotice("");
           destroyLeadCharts();
           return;
         }
-        if (numBlock) numBlock.hidden = true;
-        if (block) block.hidden = false;
-        var p = payload || lastLeadStatsPayload;
-        if (p && block) {
-          requestAnimationFrame(function () {
-            requestAnimationFrame(function () {
-              try {
-                mountLeadStatsCharts(p);
-              } catch (chartErr) {
-                console.error("[conversations-sheet] lead charts", chartErr);
-              }
-            });
-          });
+        if (numBlock) {
+          numBlock.hidden = true;
+          numBlock.setAttribute("hidden", "");
         }
+        if (block) {
+          block.hidden = false;
+          block.removeAttribute("hidden");
+        }
+        var p = payload || lastLeadStatsPayload;
+        if (p && block) scheduleLeadChartMount(p);
       }
 
       if (leadStatsList && !leadStatsList._leadViewToggleBound) {
@@ -1787,10 +1888,16 @@
        */
       function mountLeadStatsCharts(payload) {
         destroyLeadCharts();
+        var mountId = window._leadChartMountId;
         if (typeof Chart === "undefined") return;
+        showLeadChartNotice("");
         if (typeof ChartDataLabels !== "undefined" && !window._leadChartDataLabelsReg) {
-          Chart.register(ChartDataLabels);
-          window._leadChartDataLabelsReg = true;
+          try {
+            Chart.register(ChartDataLabels);
+            window._leadChartDataLabelsReg = true;
+          } catch (regErr) {
+            console.warn("[conversations-sheet] chart datalabels plugin", regErr);
+          }
         }
         var barDl = {
           datalabels: {
@@ -1873,7 +1980,11 @@
         var leadPieEl = document.getElementById("lcPieLead");
         var funnelEl = document.getElementById("lcBarFunnel");
 
-        if (!chBarEl || !leadPieEl || !funnelEl) return;
+        if (!chBarEl || !leadPieEl || !funnelEl) {
+          showLeadChartNotice("Chart area is missing from the page. Reload and try again.");
+          return;
+        }
+        if (mountId !== window._leadChartMountId) return;
 
         var chLabels = ["Web", "WhatsApp", "Instagram", "Facebook"];
         var chData = [cw, cwa, cinst, cfb];
@@ -1955,11 +2066,12 @@
             })(li);
           }
         }
-        if (!window._leadChartMountGen) window._leadChartMountGen = 0;
-        var myGen = window._leadChartMountGen;
+        function chartMountAlive() {
+          return mountId === window._leadChartMountId;
+        }
 
         function pushRestLeadCharts() {
-          if (myGen !== window._leadChartMountGen) return;
+          if (!chartMountAlive()) return;
           leadChartInstances.push(
           new Chart(leadPieEl, {
             type: "doughnut",
@@ -2013,7 +2125,7 @@
 
         pushRestLeadCharts();
         loadChannelIconsThen(function (chImgs) {
-          if (myGen !== window._leadChartMountGen) return;
+          if (!chartMountAlive()) return;
           if (!document.getElementById("lcBarChannel")) return;
           leadChartInstances.push(
             new Chart(chBarEl, {
@@ -3399,8 +3511,11 @@
         var omByCh = readContactSeg(tot.onlyMobileByChannel);
         var oeByCh = readContactSeg(tot.onlyEmailByChannel);
         var beByCh = readContactSeg(tot.mobileAndEmailByChannel);
+        var dashHeadEl = document.getElementById("leadStatsDashHead");
+        var numBlockEl = document.getElementById("leadStatsNumericBlock");
+        if (!dashHeadEl || !numBlockEl) return;
         leadStatsList.hidden = false;
-        leadStatsList.innerHTML =
+        dashHeadEl.innerHTML =
           '<div class="lead-stats-dash-head">' +
           '<div class="lead-stats-dash-head-main">' +
           '<p class="lead-stats-dash-title">Performance overview</p>' +
@@ -3408,9 +3523,9 @@
           '</div><div class="lead-stats-view-toggle" role="group" aria-label="Dashboard view">' +
           '<button type="button" class="lead-view-btn" data-mode="numeric">Numeric</button>' +
           '<button type="button" class="lead-view-btn" data-mode="visual">Visual</button>' +
-          "</div></div>" +
-          '<div id="leadStatsNumericBlock" class="lead-stats-numeric-block">' +
-          '<' + 'div class="lead-stats-numeric-layout">' +
+          "</div></div>";
+        numBlockEl.innerHTML =
+          '<div class="lead-stats-numeric-layout">' +
           '<div class="lead-stats-numeric-kpis" role="list" aria-label="Summary metrics">' +
           kpiInline("Total conversations", escapeHtml(String(n)), true) +
           kpiInline("Lead capture rate", leadCaptureDisp, false) +
@@ -3430,17 +3545,8 @@
           contactMini(escapeHtml("Mobile only"), om, omByCh) +
           contactMini(escapeHtml("Email only"), oe, oeByCh) +
           contactMini(escapeHtml("Mobile & email"), be, beByCh) +
-          "</div></div></div></div>" +
-          '<div id="leadStatsVisualBlock" class="lead-stats-visual-block" hidden>' +
-          '<div class="lead-stats-chart-grid">' +
-          '<div class="lead-chart-card"><h4>Volume by channel</h4><p class="lead-chart-card-total">Total · ' +
-          escapeHtml(String(n)) +
-          '</p><div class="chart-canvas-wrap"><canvas id="lcBarChannel"></canvas></div></div>' +
-          '<div class="lead-chart-card"><h4>Lead capture split</h4><p class="lead-chart-card-total">Leads Captured · ' +
-          escapeHtml(String(leads)) +
-          '</p><div class="chart-canvas-wrap"><canvas id="lcPieLead"></canvas></div></div>' +
-          '<div class="lead-chart-card"><h4>Pipeline</h4><div class="chart-canvas-wrap"><canvas id="lcBarFunnel"></canvas></div></div>' +
-          "</div></div>";
+          "</div></div></div>";
+        updateLeadChartTotals(n, leads);
         lastLeadStatsPayload = payload;
         var viewMode = "numeric";
         try {
