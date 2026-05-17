@@ -980,7 +980,14 @@
       text-align: center;
     }
     .lead-inline-stat-val--accent {
-      color: #0f766e;
+      color: #0f172a;
+    }
+    .lead-stats-list .lead-inline-stat-val,
+    .lead-stats-list .channel-chip-val,
+    .lead-stats-list .lead-stat-mini-value,
+    .lead-stats-list .stat-frac,
+    .lead-stats-list .lead-chart-card-total {
+      color: #0f172a;
     }
     .lead-compact-block {
       flex: 1;
@@ -1075,7 +1082,7 @@
       font-weight: 700;
       line-height: 1.1;
       font-variant-numeric: tabular-nums;
-      color: #0f766e;
+      color: #0f172a;
       text-align: center;
     }
     .lead-channel-grid-2x2 .channel-chip-ic {
@@ -1748,11 +1755,15 @@
         if (block) block.hidden = false;
         var p = payload || lastLeadStatsPayload;
         if (p && block) {
-          try {
-            mountLeadStatsCharts(p);
-          } catch (chartErr) {
-            console.error("[conversations-sheet] lead charts", chartErr);
-          }
+          requestAnimationFrame(function () {
+            requestAnimationFrame(function () {
+              try {
+                mountLeadStatsCharts(p);
+              } catch (chartErr) {
+                console.error("[conversations-sheet] lead charts", chartErr);
+              }
+            });
+          });
         }
       }
 
@@ -1918,63 +1929,38 @@
         function loadChannelIconsThen(next) {
           var imgs = [];
           var pending = channelIconSvgSrcs.length;
-          if (pending === 0) {
+          var finished = false;
+          function done() {
+            if (finished) return;
+            finished = true;
             next(imgs);
+          }
+          if (pending === 0) {
+            done();
             return;
           }
+          window.setTimeout(done, 2000);
           for (var li = 0; li < channelIconSvgSrcs.length; li++) {
             (function (idx) {
               var im = new Image();
               im.onload = function () {
-                if (--pending === 0) next(imgs);
+                imgs[idx] = im;
+                if (--pending === 0) done();
               };
               im.onerror = function () {
                 imgs[idx] = null;
-                if (--pending === 0) next(imgs);
+                if (--pending === 0) done();
               };
               im.src = channelIconSvgSrcs[idx];
-              imgs[idx] = im;
             })(li);
           }
         }
         if (!window._leadChartMountGen) window._leadChartMountGen = 0;
         var myGen = window._leadChartMountGen;
 
-        loadChannelIconsThen(function (chImgs) {
-          if (myGen !== window._leadChartMountGen) return;
-          if (!document.getElementById("lcBarChannel")) return;
-          leadChartInstances.push(
-            new Chart(chBarEl, {
-              type: "bar",
-              data: {
-                labels: chLabels,
-                datasets: [
-                  {
-                    label: "Conversations",
-                    data: chData,
-                    backgroundColor: chColors,
-                    maxBarThickness: 36
-                  }
-                ]
-              },
-              plugins: [makeChannelBarIconPlugin(chImgs)],
-              options: {
-                layout: channelBarLayout,
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: { legend: { display: false } },
-                scales: channelBarAxes
-              }
-            })
-          );
-
-          pushRestLeadCharts();
-        });
-
         function pushRestLeadCharts() {
           if (myGen !== window._leadChartMountGen) return;
-
-        leadChartInstances.push(
+          leadChartInstances.push(
           new Chart(leadPieEl, {
             type: "doughnut",
             data: {
@@ -2018,8 +2004,45 @@
             }
           })
         );
-
+        leadChartInstances.forEach(function (ch) {
+          try {
+            ch.resize();
+          } catch (ignore) {}
+        });
         }
+
+        pushRestLeadCharts();
+        loadChannelIconsThen(function (chImgs) {
+          if (myGen !== window._leadChartMountGen) return;
+          if (!document.getElementById("lcBarChannel")) return;
+          leadChartInstances.push(
+            new Chart(chBarEl, {
+              type: "bar",
+              data: {
+                labels: chLabels,
+                datasets: [
+                  {
+                    label: "Conversations",
+                    data: chData,
+                    backgroundColor: chColors,
+                    maxBarThickness: 36
+                  }
+                ]
+              },
+              plugins: [makeChannelBarIconPlugin(chImgs)],
+              options: {
+                layout: channelBarLayout,
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: channelBarAxes
+              }
+            })
+          );
+          try {
+            leadChartInstances[leadChartInstances.length - 1].resize();
+          } catch (ignore) {}
+        });
       }
 
       function apiBase() {
@@ -3407,7 +3430,7 @@
           contactMini(escapeHtml("Mobile only"), om, omByCh) +
           contactMini(escapeHtml("Email only"), oe, oeByCh) +
           contactMini(escapeHtml("Mobile & email"), be, beByCh) +
-          "</div></div></div>" +
+          "</div></div></div></div>" +
           '<div id="leadStatsVisualBlock" class="lead-stats-visual-block" hidden>' +
           '<div class="lead-stats-chart-grid">' +
           '<div class="lead-chart-card"><h4>Volume by channel</h4><p class="lead-chart-card-total">Total · ' +
