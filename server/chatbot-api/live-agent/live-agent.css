@@ -367,6 +367,12 @@ body {
   color: var(--muted);
 }
 
+.claim-hint {
+  margin: 0;
+  padding: 0.35rem 1.25rem 0;
+  color: var(--accent-hover);
+}
+
 .composer {
   display: flex;
   gap: 0.5rem;

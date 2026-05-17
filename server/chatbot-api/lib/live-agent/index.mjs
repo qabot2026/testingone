@@ -226,7 +226,9 @@ export function mountLiveAgentRoutes(app) {
                 jsonError_(res, 404, "Conversation not found");
                 return;
             }
-            if (conv.status === "active" && conv.assignedAgentEmail !== req.liveAgentSession.agentId) {
+            const assignee = trim_(conv.assignedAgentEmail).toLowerCase();
+            const me = trim_(req.liveAgentSession.agentId).toLowerCase();
+            if (conv.status === "active" && assignee && assignee !== me) {
                 jsonError_(res, 403, "Assigned to another agent");
                 return;
             }

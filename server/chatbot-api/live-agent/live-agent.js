@@ -28,6 +28,7 @@
     const chatMeta = $("chatMeta");
     const claimBtn = $("claimBtn");
     const closeChatBtn = $("closeChatBtn");
+    const claimHint = $("claimHint");
     const messageList = $("messageList");
     const composerForm = $("composerForm");
     const composerInput = $("composerInput");
@@ -65,17 +66,26 @@
             viewerSecret = "";
         }
         try {
-            agentId = sessionStorage.getItem(LS_NAME) || localStorage.getItem(LS_NAME) || "Agent";
+            agentId = normalizeAgentId_(sessionStorage.getItem(LS_NAME) || localStorage.getItem(LS_NAME));
         } catch (_) {
-            agentId = "Agent";
+            agentId = "agent";
         }
         if (loginSecret && viewerSecret) loginSecret.value = viewerSecret;
         if (loginAgentName && agentId) loginAgentName.value = agentId;
     }
 
+    function normalizeAgentId_(name) {
+        const s = String(name || "").trim();
+        return (s || "Agent").toLowerCase();
+    }
+
+    function agentIdsMatch_(assigned, mine) {
+        return normalizeAgentId_(assigned) === normalizeAgentId_(mine);
+    }
+
     function persistAuth_(secret, name) {
         viewerSecret = String(secret || "").trim();
-        agentId = String(name || "").trim() || "Agent";
+        agentId = normalizeAgentId_(name);
         try {
             sessionStorage.setItem(LS_SECRET, viewerSecret);
             localStorage.setItem(LS_SECRET, viewerSecret);
@@ -221,7 +231,7 @@
         try {
             const data = await apiFetch(`${API}/me`);
             if (data.ok) {
-                agentId = data.agentId || agentId;
+                agentId = normalizeAgentId_(data.agentId || agentId);
                 agentLabel.textContent = agentId;
                 showApp();
                 return true;
@@ -252,7 +262,7 @@
         loginMessage.textContent = "Checking…";
         try {
             const data = await apiFetch(`${API}/me`);
-            agentId = data.agentId || agentId;
+            agentId = normalizeAgentId_(data.agentId || agentId);
             loginMessage.textContent = "";
             showApp();
         } catch (e) {
@@ -494,13 +504,30 @@
             (c.botid || "default");
 
         const isWaiting = c.status === "waiting";
-        const isMine = c.status === "active" && c.assignedAgentEmail === agentId;
+        const isActive = c.status === "active";
+        const isMine = isActive && agentIdsMatch_(c.assignedAgentEmail, agentId);
+        const takenByOther =
+            isActive && c.assignedAgentEmail && !agentIdsMatch_(c.assignedAgentEmail, agentId);
         const canReply = isMine;
 
         claimBtn.hidden = !isWaiting;
-        closeChatBtn.hidden = c.status !== "active";
-        composerForm.classList.toggle("hidden", !canReply);
+        closeChatBtn.hidden = !isActive;
+        if (claimHint) {
+            claimHint.hidden = !isWaiting;
+            claimHint.textContent = isWaiting
+                ? "Click Claim chat above — then you can type a reply below."
+                : "";
+        }
+        composerForm.classList.remove("hidden");
         composerInput.disabled = !canReply;
+        composerInput.placeholder = canReply
+            ? "Type a reply to the visitor…"
+            : isWaiting
+              ? "Claim this chat first to reply…"
+              : takenByOther
+                ? "Assigned to " + (c.assignedAgentEmail || "another agent") + " — use another queue filter or ask them to close it."
+                : "Select a chat to reply…";
+        sendBtn.disabled = !canReply;
 
         renderContextPanel(c, null);
         loadContext(c.id);
