@@ -205,6 +205,8 @@ def row_nonempty(values: tuple) -> bool:
 
 
 def has_lead_mobile(raw) -> bool:
+    if has_lead_email(raw):
+        return False
     digits = re.sub(r"\D", "", cell_str(raw))
     return len(digits) >= 7
 

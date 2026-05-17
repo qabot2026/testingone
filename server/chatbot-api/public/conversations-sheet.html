@@ -1900,40 +1900,21 @@
           }
         }
         var barDl = {
-          datalabels: {
-            anchor: "end",
-            align: "top",
-            offset: 0,
-            color: "#0f172a",
-            font: { weight: "700", size: 10 },
-            formatter: function (v) {
-              var n = typeof v === "number" ? v : Number(v);
-              if (!Number.isFinite(n) || n === 0) return "";
-              return String(Math.trunc(n));
-            }
-          }
-        };
-        var doughnutDl = {
-          datalabels: {
-            anchor: "center",
-            align: "center",
-            font: { weight: "700", size: 10 },
-            formatter: function (v) {
-              var n = typeof v === "number" ? v : Number(v);
-              if (!Number.isFinite(n) || n === 0) return "";
-              return String(Math.trunc(n));
+          datalabels: Object.assign(
+            {
+              anchor: "end",
+              align: "top",
+              offset: 0,
+              color: "#0f172a",
+              font: { weight: "700", size: 10 },
+              formatter: function (v) {
+                var n = typeof v === "number" ? v : Number(v);
+                if (!Number.isFinite(n) || n === 0) return "";
+                return String(Math.trunc(n));
+              }
             },
-            color: function (ctx) {
-              var bg = ctx.dataset.backgroundColor;
-              var c = Array.isArray(bg) ? bg[ctx.dataIndex] : bg;
-              if (typeof c !== "string") return "#f8fafc";
-              var low = c.toLowerCase();
-              if (low === "#94a3b8" || low === "#fdba74") return "#0f172a";
-              return "#f8fafc";
-            },
-            textStrokeColor: "rgba(15,23,42,0.25)",
-            textStrokeWidth: 2
-          }
+            { textStrokeColor: "rgba(255,255,255,0.9)", textStrokeWidth: 2 }
+          )
         };
         var chartLayoutTight = { padding: { top: 2, right: 2, bottom: 0, left: 0 } };
         var barAxes = {
@@ -1994,6 +1975,12 @@
         }, 0);
         if (chTotal <= 0 && n > 0) chTotal = n;
 
+        var chartDlTextColor = "#0f172a";
+        var chartDlTextStroke = {
+          textStrokeColor: "rgba(255,255,255,0.9)",
+          textStrokeWidth: 2
+        };
+
         function leadPctLabel(value, total) {
           var num = typeof value === "number" ? value : Number(value);
           if (!Number.isFinite(num) || num <= 0 || !total || total <= 0) return "";
@@ -2002,40 +1989,57 @@
           return text + "%";
         }
 
-        function doughnutLabelColor(ctx) {
-          var bg = ctx.dataset.backgroundColor;
-          var c = Array.isArray(bg) ? bg[ctx.dataIndex] : bg;
-          if (typeof c !== "string") return "#f8fafc";
-          var low = c.toLowerCase();
-          if (low === "#94a3b8" || low === "#fdba74") return "#0f172a";
-          return "#f8fafc";
+        function formatLeadChartCount(n) {
+          var x = Math.trunc(n);
+          if (x >= 1000000) {
+            return (x / 1000000).toFixed(1).replace(/\.0$/, "") + "M";
+          }
+          if (x >= 10000) {
+            return Math.round(x / 1000) + "k";
+          }
+          if (x >= 1000) {
+            return (x / 1000).toFixed(1).replace(/\.0$/, "") + "k";
+          }
+          return String(x);
+        }
+
+        function leadCountAndPctLabel(value, total) {
+          var num = typeof value === "number" ? value : Number(value);
+          if (!Number.isFinite(num) || num <= 0) return "";
+          var pctPart = leadPctLabel(value, total);
+          if (!pctPart) return formatLeadChartCount(num);
+          return formatLeadChartCount(num) + "\n" + pctPart;
         }
 
         var channelBarPctDl = {
-          datalabels: {
-            anchor: "end",
-            align: "top",
-            offset: 2,
-            color: "#0f172a",
-            font: { weight: "700", size: 10 },
-            formatter: function (v) {
-              return leadPctLabel(v, chTotal);
-            }
-          }
+          datalabels: Object.assign(
+            {
+              anchor: "end",
+              align: "top",
+              offset: 2,
+              color: chartDlTextColor,
+              font: { weight: "700", size: 9 },
+              formatter: function (v) {
+                return leadCountAndPctLabel(v, chTotal);
+              }
+            },
+            chartDlTextStroke
+          )
         };
 
         var leadCapturePctDl = {
-          datalabels: {
-            anchor: "center",
-            align: "center",
-            font: { weight: "700", size: 10 },
-            formatter: function (v) {
-              return leadPctLabel(v, leads);
+          datalabels: Object.assign(
+            {
+              anchor: "center",
+              align: "center",
+              color: chartDlTextColor,
+              font: { weight: "700", size: 9 },
+              formatter: function (v) {
+                return leadCountAndPctLabel(v, leads);
+              }
             },
-            color: doughnutLabelColor,
-            textStrokeColor: "rgba(15,23,42,0.25)",
-            textStrokeWidth: 2
-          }
+            chartDlTextStroke
+          )
         };
 
         function svgDataUrl(svg) {
@@ -2064,7 +2068,7 @@
             border: { display: false }
           }
         };
-        var channelBarLayout = { padding: { top: 18, right: 4, bottom: 32, left: 2 } };
+        var channelBarLayout = { padding: { top: 26, right: 4, bottom: 32, left: 2 } };
         function makeChannelBarIconPlugin(imgs) {
           return {
             id: "lcBarChannelIcons",

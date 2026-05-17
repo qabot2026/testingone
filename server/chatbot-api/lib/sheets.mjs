@@ -989,7 +989,18 @@ function mobileDigitsOnly(s) {
  *
  * @param {unknown} rawCell
  */
+function sheetCellLooksLikeLeadEmail_(raw) {
+    const t = sheetCellString_(raw).trim();
+    if (!t || !t.includes("@")) {
+        return false;
+    }
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+/.test(t);
+}
+
 function mobileKeyFromCell_(rawCell) {
+    if (sheetCellLooksLikeLeadEmail_(rawCell)) {
+        return "";
+    }
     const s0 = sheetCellString_(rawCell);
     if (!s0) {
         return "";
@@ -1031,6 +1042,9 @@ function mobileKeyFromRow_(r, mobileColIdx) {
     // Fallback: scan all cells for any phone-like value.
     let best = "";
     for (let i = 0; i < r.length; i += 1) {
+        if (sheetCellLooksLikeLeadEmail_(r[i])) {
+            continue;
+        }
         const k = mobileKeyFromCell_(r[i]);
         if (k.length > best.length) {
             best = k;
@@ -1764,11 +1778,18 @@ const SHEET_H_EMAIL = [
     "email_address",
     "emailaddress",
     "useremail",
+    "user_email",
     "contactemail",
     "contact_email",
     "email_id",
     "e_mail_address",
-    "mail_id"
+    "mail_id",
+    "customeremail",
+    "customer_email",
+    "leademail",
+    "lead_email",
+    "clientemail",
+    "client_email"
 ];
 const SHEET_H_CHANNEL = [
     "channel",
@@ -2096,13 +2117,29 @@ function leadStatsCellAt_(colVals, dataRowCount, ri, cells, idx0) {
     return cells[idx0];
 }
 
-/** @param {unknown[]} cells @param {number} mobileIdx */
-function sheetRowHasLeadMobile_(cells, mobileIdx) {
+/** @param {unknown[]} cells @param {number} mobileIdx @param {number} [emailIdx] */
+function sheetRowHasLeadMobile_(cells, mobileIdx, emailIdx) {
     if (sheetCellHasLeadMobile_(cells[mobileIdx])) {
         return true;
     }
     const key = mobileKeyFromRow_(cells, mobileIdx);
-    return mobileDigitsOnly(key).length >= 7;
+    if (mobileDigitsOnly(key).length >= 7) {
+        return true;
+    }
+    const emIdx =
+        typeof emailIdx === "number" && Number.isFinite(emailIdx) ? emailIdx : -1;
+    for (let i = 0; i < cells.length; i += 1) {
+        if (i === mobileIdx || i === emIdx) {
+            continue;
+        }
+        if (sheetCellLooksLikeLeadEmail_(cells[i])) {
+            continue;
+        }
+        if (sheetCellHasLeadMobile_(cells[i])) {
+            return true;
+        }
+    }
+    return false;
 }
 
 /** @param {unknown[]} cells @param {number} emailIdx */
@@ -2122,11 +2159,7 @@ function sheetRowHasLeadEmail_(cells, emailIdx) {
 }
 
 function sheetCellHasLeadEmail_(raw) {
-    const t = sheetCellString_(raw).trim();
-    if (!t || !t.includes("@")) {
-        return false;
-    }
-    return /^[^\s@]+@[^\s@]+\.[^\s@]+/.test(t);
+    return sheetCellLooksLikeLeadEmail_(raw);
 }
 
 function rowNumberFromUpdatedRange_(updatedRange) {
@@ -3331,13 +3364,16 @@ export async function fetchConversationLeadCaptureStats(opts = {}) {
         const mobCell = leadStatsCellAt_(mobileColVals, dataRows.length, ri, cells, mobileIdx);
         const emCell = leadStatsCellAt_(emailColVals, dataRows.length, ri, cells, emailIdx);
         const chCell = leadStatsCellAt_(channelColVals, dataRows.length, ri, cells, channelIdx);
-        let hasMob = sheetCellHasLeadMobile_(mobCell);
-        if (!hasMob) {
-            hasMob = sheetRowHasLeadMobile_(cells, mobileIdx);
-        }
         let hasEm = sheetCellHasLeadEmail_(emCell);
         if (!hasEm) {
             hasEm = sheetRowHasLeadEmail_(cells, emailIdx);
+        }
+        let hasMob = sheetCellHasLeadMobile_(mobCell);
+        if (!hasMob) {
+            hasMob = sheetRowHasLeadMobile_(cells, mobileIdx, emailIdx);
+        }
+        if (hasMob && hasEm && sheetCellLooksLikeLeadEmail_(mobCell)) {
+            hasMob = false;
         }
         const channelKey = conversationChannelBucket_(chCell);
         conversations += 1;
