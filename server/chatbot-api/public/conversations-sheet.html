@@ -819,7 +819,7 @@
       flex-direction: column;
       align-items: stretch;
       gap: 8px;
-      width: 113px;
+      width: max-content;
       max-width: 100%;
       min-width: 0;
       flex-shrink: 0;
@@ -958,10 +958,8 @@
       font-weight: 600;
       line-height: 1.25;
       color: #475569;
-      white-space: normal;
+      white-space: nowrap;
       text-align: center;
-      overflow-wrap: anywhere;
-      word-break: break-word;
     }
     .lead-inline-stat-label {
       width: 100%;
@@ -1457,7 +1455,8 @@
       .lead-stats-numeric-kpis {
         grid-area: kpis;
         flex-direction: column;
-        width: 113px;
+        width: max-content;
+        max-width: 100%;
         justify-self: start;
       }
       .lead-stats-numeric-channels {
@@ -1496,7 +1495,8 @@
         grid-template-areas: none;
       }
       .lead-stats-numeric-kpis {
-        width: min(108px, 100%);
+        width: max-content;
+        max-width: 100%;
         justify-self: center;
       }
       .lead-stats-numeric-contact .lead-stats-contact-grid {
