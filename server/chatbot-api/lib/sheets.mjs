@@ -1108,9 +1108,9 @@ function conversationSheetScanHardCap_() {
         Math.max(
             250,
             Number.parseInt(
-                String((process.env.CONVERSATIONS_SHEET_SCAN_MAX_ROWS || "").trim() || "15000"),
+                String((process.env.CONVERSATIONS_SHEET_SCAN_MAX_ROWS || "").trim() || "8000"),
                 10
-            ) || 15000
+            ) || 8000
         )
     );
 }
@@ -2137,6 +2137,28 @@ function leadStatsCellAt_(colVals, dataRowCount, ri, cells, idx0) {
         return colVals[ri];
     }
     return cells[idx0];
+}
+
+/** Build a padded row from per-column Values API arrays (date-filtered stats; avoids full-sheet load). */
+function leadStatsCellsFromColumns_(ri, padWidth, /** @type {Record<number, unknown[]>} */ idxToCol) {
+    const cells = padSheetRow_([], padWidth);
+    for (const key of Object.keys(idxToCol)) {
+        const idx = Number(key);
+        const vals = idxToCol[idx];
+        if (Array.isArray(vals) && ri < vals.length) {
+            cells[idx] = vals[ri];
+        }
+    }
+    return cells;
+}
+
+function sheetRowHasAnyCell_(cells) {
+    for (let ci = 0; ci < cells.length; ci += 1) {
+        if (!isBlankSheetCell_(cells[ci])) {
+            return true;
+        }
+    }
+    return false;
 }
 
 /** @param {unknown[]} cells @param {number} mobileIdx @param {number} [emailIdx] */
@@ -3328,19 +3350,177 @@ export async function fetchConversationLeadCaptureStats(opts = {}) {
     );
     const lastColIdx = Math.min(175, lastColBound);
     const colLetter = columnLetterFromIndex_(lastColIdx);
-    const [dataGot, mobileColVals, emailColVals, channelColVals, dateColVals] = await Promise.all([
-        sheets.spreadsheets.values.get({
-            spreadsheetId: SPREADSHEET_ID,
-            range: `${tab}!A2:${colLetter}${nLast}`
-        }),
-        fetchSheetSingleColumnValues_(sheets, tab, mobileIdx, nLast),
-        fetchSheetSingleColumnValues_(sheets, tab, emailIdx, nLast),
-        fetchSheetSingleColumnValues_(sheets, tab, channelIdx, nLast),
-        filterActive
-            ? fetchSheetSingleColumnValues_(sheets, tab, dateIdx, nLast)
-            : Promise.resolve([])
-    ]);
-    const dataRows = Array.isArray(dataGot.data.values) ? dataGot.data.values : [];
+    const padWidth = lastColIdx + 1;
+
+    /** @type {unknown[][]} */
+    let dataRows = [];
+    /** @type {unknown[]} */
+    let dateColVals = [];
+    /** @type {unknown[]} */
+    let mobileColVals = [];
+    /** @type {unknown[]} */
+    let emailColVals = [];
+    /** @type {unknown[]} */
+    let channelColVals = [];
+
+    if (filterActive) {
+        const apptDtIdx =
+            appointmentDatetimeIdx !== undefined && appointmentDatetimeIdx >= 0
+                ? appointmentDatetimeIdx
+                : -1;
+        const colResults = await Promise.all([
+            fetchSheetSingleColumnValues_(sheets, tab, dateIdx, nLast),
+            fetchSheetSingleColumnValues_(sheets, tab, mobileIdx, nLast),
+            fetchSheetSingleColumnValues_(sheets, tab, emailIdx, nLast),
+            fetchSheetSingleColumnValues_(sheets, tab, channelIdx, nLast),
+            fetchSheetSingleColumnValues_(sheets, tab, appointmentBookedIdx, nLast),
+            fetchSheetSingleColumnValues_(sheets, tab, appointmentDateIdx, nLast),
+            fetchSheetSingleColumnValues_(sheets, tab, appointmentTimeIdx, nLast),
+            apptDtIdx >= 0
+                ? fetchSheetSingleColumnValues_(sheets, tab, apptDtIdx, nLast)
+                : Promise.resolve([])
+        ]);
+        dateColVals = colResults[0];
+        mobileColVals = colResults[1];
+        emailColVals = colResults[2];
+        channelColVals = colResults[3];
+        const apptBookedCol = colResults[4];
+        const apptDateCol = colResults[5];
+        const apptTimeCol = colResults[6];
+        const apptDtCol = colResults[7];
+        const dataRowCount = Array.isArray(dateColVals) ? dateColVals.length : 0;
+
+        let conversations = 0;
+        let onlyMobile = 0;
+        let onlyEmail = 0;
+        let both = 0;
+        let neither = 0;
+        let skippedNoDate = 0;
+        let appointmentScheduled = 0;
+        let channelWeb = 0;
+        let channelWhatsapp = 0;
+        let channelInstagram = 0;
+        let channelFacebook = 0;
+        let channelOther = 0;
+        let onlyMobileByCh = leadSegmentChannelTotalsEmpty_();
+        let onlyEmailByCh = leadSegmentChannelTotalsEmpty_();
+        let bothByCh = leadSegmentChannelTotalsEmpty_();
+
+        const colMap = {
+            [dateIdx]: dateColVals,
+            [mobileIdx]: mobileColVals,
+            [emailIdx]: emailColVals,
+            [channelIdx]: channelColVals,
+            [appointmentBookedIdx]: apptBookedCol,
+            [appointmentDateIdx]: apptDateCol,
+            [appointmentTimeIdx]: apptTimeCol
+        };
+        if (apptDtIdx >= 0) {
+            colMap[apptDtIdx] = apptDtCol;
+        }
+
+        for (let ri = 0; ri < dataRowCount; ri += 1) {
+            const dateRaw = dateColVals[ri];
+            const dateMs = parseConversationDateCellWide_(dateRaw);
+            if (!Number.isFinite(dateMs)) {
+                skippedNoDate += 1;
+                continue;
+            }
+            const ymd = conversationRowYmdInSheetTz_(dateMs);
+            if (!ymd || ymd < fromEff || ymd > toEff) {
+                continue;
+            }
+            const cells = leadStatsCellsFromColumns_(ri, padWidth, colMap);
+            if (!sheetRowHasAnyCell_(cells)) {
+                continue;
+            }
+            const mobCell = cells[mobileIdx];
+            const emCell = cells[emailIdx];
+            const chCell = cells[channelIdx];
+            const hasEm = sheetCellHasLeadEmail_(emCell);
+            const hasMob = sheetCellHasLeadMobile_(mobCell);
+            const channelKey = conversationChannelBucket_(chCell);
+            conversations += 1;
+            if (hasMob && hasEm) {
+                both += 1;
+                leadSegmentChannelAdd_(bothByCh, channelKey);
+            } else if (hasMob) {
+                onlyMobile += 1;
+                leadSegmentChannelAdd_(onlyMobileByCh, channelKey);
+            } else if (hasEm) {
+                onlyEmail += 1;
+                leadSegmentChannelAdd_(onlyEmailByCh, channelKey);
+            } else {
+                neither += 1;
+            }
+            let apptCounted = sheetAppointmentCellCountsScheduled_(cells[appointmentBookedIdx]);
+            if (!apptCounted) {
+                apptCounted = sheetRowAppointmentSlotCellsLikelyFilled_(
+                    cells[appointmentDateIdx],
+                    cells[appointmentTimeIdx]
+                );
+            }
+            if (!apptCounted && apptDtIdx >= 0) {
+                apptCounted = sheetCellLooksLikeAppointmentDateTimeCombined_(cells[apptDtIdx]);
+            }
+            if (apptCounted) {
+                appointmentScheduled += 1;
+            }
+            switch (channelKey) {
+                case "web":
+                    channelWeb += 1;
+                    break;
+                case "whatsapp":
+                    channelWhatsapp += 1;
+                    break;
+                case "instagram":
+                    channelInstagram += 1;
+                    break;
+                case "facebook":
+                    channelFacebook += 1;
+                    break;
+                default:
+                    channelOther += 1;
+            }
+        }
+
+        const leadsCaptured = onlyMobile + onlyEmail + both;
+        const pct = conversations ? Math.round((leadsCaptured * 10_000) / conversations) / 100 : null;
+        const rpt = /** @type {(a: number) => string} */ (num) =>
+            `${num} / ${conversations}`;
+        const out = baseEmpty();
+        out.dateFilter.serverApplied = true;
+        out.scan.dataRowsConsidered = dataRowCount;
+        out.totals.conversations = conversations;
+        out.totals.onlyMobile = onlyMobile;
+        out.totals.onlyEmail = onlyEmail;
+        out.totals.mobileAndEmail = both;
+        out.totals.neither = neither;
+        out.totals.rowsSkippedNoParsableDate = skippedNoDate;
+        out.totals.leadsCaptured = leadsCaptured;
+        out.totals.appointmentScheduled = appointmentScheduled;
+        out.totals.appointmentBooked = appointmentScheduled;
+        out.totals.channelWeb = channelWeb;
+        out.totals.channelWhatsapp = channelWhatsapp;
+        out.totals.channelInstagram = channelInstagram;
+        out.totals.channelFacebook = channelFacebook;
+        out.totals.channelOther = channelOther;
+        out.totals.onlyMobileByChannel = onlyMobileByCh;
+        out.totals.onlyEmailByChannel = onlyEmailByCh;
+        out.totals.mobileAndEmailByChannel = bothByCh;
+        out.ratios.onlyMobile = rpt(onlyMobile);
+        out.ratios.onlyEmail = rpt(onlyEmail);
+        out.ratios.mobileAndEmail = rpt(both);
+        out.ratios.leads = rpt(leadsCaptured);
+        out.ratios.leadCapturePct = pct;
+        return out;
+    }
+
+    const dataGot = await sheets.spreadsheets.values.get({
+        spreadsheetId: SPREADSHEET_ID,
+        range: `${tab}!A2:${colLetter}${nLast}`
+    });
+    dataRows = Array.isArray(dataGot.data.values) ? dataGot.data.values : [];
 
     let conversations = 0;
     let onlyMobile = 0;
@@ -3358,34 +3538,14 @@ export async function fetchConversationLeadCaptureStats(opts = {}) {
     let onlyEmailByCh = leadSegmentChannelTotalsEmpty_();
     let bothByCh = leadSegmentChannelTotalsEmpty_();
 
-    const padWidth = lastColIdx + 1;
     for (let ri = 0; ri < dataRows.length; ri += 1) {
         const cells = padSheetRow_(dataRows[ri] || [], padWidth);
-        let rowHasAny = false;
-        for (let ci = 0; ci < cells.length; ci += 1) {
-            if (!isBlankSheetCell_(cells[ci])) {
-                rowHasAny = true;
-                break;
-            }
-        }
-        if (!rowHasAny) {
+        if (!sheetRowHasAnyCell_(cells)) {
             continue;
         }
-        if (filterActive) {
-            const dateRaw = leadStatsCellAt_(dateColVals, dataRows.length, ri, cells, dateIdx);
-            const dateMs = parseConversationDateCellWide_(dateRaw);
-            if (!Number.isFinite(dateMs)) {
-                skippedNoDate += 1;
-                continue;
-            }
-            const ymd = conversationRowYmdInSheetTz_(dateMs);
-            if (!ymd || ymd < fromEff || ymd > toEff) {
-                continue;
-            }
-        }
-        const mobCell = leadStatsCellAt_(mobileColVals, dataRows.length, ri, cells, mobileIdx);
-        const emCell = leadStatsCellAt_(emailColVals, dataRows.length, ri, cells, emailIdx);
-        const chCell = leadStatsCellAt_(channelColVals, dataRows.length, ri, cells, channelIdx);
+        const mobCell = cells[mobileIdx];
+        const emCell = cells[emailIdx];
+        const chCell = cells[channelIdx];
         /** Lead = valid mobile and/or email in those columns only (name-only rows are not leads). */
         const hasEm = sheetCellHasLeadEmail_(emCell);
         const hasMob = sheetCellHasLeadMobile_(mobCell);

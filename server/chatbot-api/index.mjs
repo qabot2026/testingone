@@ -5595,9 +5595,18 @@ app.get(PATHNAME_CONVERSATIONS_SHEET_STATS, async (req, res) => {
         const q = req.query || {};
         const from = typeof q.from === "string" ? q.from.trim() : "";
         const to = typeof q.to === "string" ? q.to.trim() : "";
-        const payload = await fetchConversationLeadCaptureStats(
-            from || to ? { from: from || undefined, to: to || undefined } : {}
-        );
+        const statsOpts =
+            from || to ? { from: from || undefined, to: to || undefined } : {};
+        const t0 = Date.now();
+        const payload = await fetchConversationLeadCaptureStats(statsOpts);
+        const ms = Date.now() - t0;
+        if (ms > 5000) {
+            console.warn("[chatbot-api] conversations-sheet stats slow", {
+                ms,
+                from: from || null,
+                to: to || null
+            });
+        }
         return res.status(200).json({ ok: true, ...payload });
     } catch (e) {
         const msg = e && /** @type {{ message?: string }} */ (e).message ? String(e.message) : String(e);
