@@ -1469,6 +1469,11 @@
       min-height: 120px;
       max-height: 140px;
     }
+    .lead-chart-card--split .chart-canvas-wrap {
+      height: 132px;
+      min-height: 132px;
+      max-height: 150px;
+    }
 
     @media (max-width: 1100px) {
       .lead-stats-numeric-layout {
@@ -1664,7 +1669,7 @@
               </p>
               <div class="chart-canvas-wrap"><canvas id="lcBarChannel" aria-label="Volume by channel"></canvas></div>
             </div>
-            <div class="lead-chart-card">
+            <div class="lead-chart-card lead-chart-card--split">
               <h4>Lead capture split</h4>
               <p class="lead-chart-card-total">
                 Leads Captured · <span id="lcChartTotalLeads">0</span>
@@ -1943,7 +1948,9 @@
         var om = statNum(tot, "onlyMobile", 0);
         var oe = statNum(tot, "onlyEmail", 0);
         var be = statNum(tot, "mobileAndEmail", 0);
-        var leads = om + oe + be;
+        var leadSplitTotal = om + oe + be;
+        var leads = statNum(tot, "leadsCaptured", leadSplitTotal);
+        if (leads < leadSplitTotal) leads = leadSplitTotal;
         var apt = statNum(tot, "appointmentBooked", NaN);
         if (!Number.isFinite(apt)) apt = statNum(tot, "appointmentScheduled", 0);
         var cw = statNum(tot, "channelWeb", 0);
@@ -2007,12 +2014,38 @@
           return String(x);
         }
 
-        function leadCountAndPctLabel(value, total) {
-          var num = typeof value === "number" ? value : Number(value);
-          if (!Number.isFinite(num) || num <= 0) return "";
-          var pctPart = leadPctLabel(value, total);
-          if (!pctPart) return formatLeadChartCount(num);
-          return formatLeadChartCount(num) + "\n" + pctPart;
+        function formatLeadChartCountFull(n) {
+          var x = Math.trunc(n);
+          try {
+            return x.toLocaleString();
+          } catch (ignore) {
+            return String(x);
+          }
+        }
+
+        function chartSegmentValue_(ctx) {
+          if (!ctx || !ctx.dataset || !ctx.dataset.data) return 0;
+          var raw = ctx.dataset.data[ctx.dataIndex];
+          if (typeof raw === "number" && Number.isFinite(raw)) return Math.trunc(raw);
+          var parsed = Number(raw);
+          return Number.isFinite(parsed) ? Math.trunc(parsed) : 0;
+        }
+
+        function chartCountPctLabel(ctx, total, useFullCount) {
+          var num = chartSegmentValue_(ctx);
+          if (num <= 0 || !total || total <= 0) return "";
+          var countStr = useFullCount ? formatLeadChartCountFull(num) : formatLeadChartCount(num);
+          var pctPart = leadPctLabel(num, total);
+          return pctPart ? countStr + "\n" + pctPart : countStr;
+        }
+
+        function chartLeadSplitLabel(ctx, splitTotal, convTotal) {
+          var num = chartSegmentValue_(ctx);
+          if (num <= 0) return "";
+          var countStr = formatLeadChartCountFull(num);
+          var pctDenom = convTotal > 0 ? convTotal : splitTotal;
+          var pctPart = pctDenom > 0 ? leadPctLabel(num, pctDenom) : "";
+          return pctPart ? countStr + "\n" + pctPart : countStr;
         }
 
         var channelBarPctDl = {
@@ -2023,8 +2056,12 @@
               offset: 2,
               color: chartDlTextColor,
               font: { weight: "700", size: 9 },
-              formatter: function (v) {
-                return leadCountAndPctLabel(v, chTotal);
+              clip: false,
+              display: function (ctx) {
+                return chartSegmentValue_(ctx) > 0;
+              },
+              formatter: function (_v, ctx) {
+                return chartCountPctLabel(ctx, chTotal, true);
               }
             },
             chartDlTextStroke
@@ -2037,9 +2074,13 @@
               anchor: "center",
               align: "center",
               color: chartDlTextColor,
-              font: { weight: "700", size: 9 },
-              formatter: function (v) {
-                return leadCountAndPctLabel(v, leads);
+              font: { weight: "700", size: 8 },
+              clip: false,
+              display: function (ctx) {
+                return chartSegmentValue_(ctx) > 0;
+              },
+              formatter: function (_v, ctx) {
+                return chartLeadSplitLabel(ctx, leadSplitTotal, n);
               }
             },
             chartDlTextStroke
@@ -2141,10 +2182,30 @@
               ]
             },
             options: {
-              layout: chartLayoutTight,
+              layout: { padding: { top: 4, right: 4, bottom: 4, left: 4 } },
               responsive: true,
               maintainAspectRatio: false,
-              plugins: Object.assign({ legend: doughnutLegend }, leadCapturePctDl)
+              plugins: Object.assign(
+                {
+                  legend: doughnutLegend,
+                  tooltip: {
+                    callbacks: {
+                      label: function (ctx) {
+                        var num = chartSegmentValue_(ctx);
+                        var parts = [ctx.label + ": " + formatLeadChartCountFull(num)];
+                        if (leadSplitTotal > 0) {
+                          parts.push(leadPctLabel(num, leadSplitTotal) + " of leads");
+                        }
+                        if (n > 0) {
+                          parts.push(leadPctLabel(num, n) + " of conversations");
+                        }
+                        return parts;
+                      }
+                    }
+                  }
+                },
+                leadCapturePctDl
+              )
             }
           })
         );
