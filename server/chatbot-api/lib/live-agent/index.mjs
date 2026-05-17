@@ -38,6 +38,7 @@ import {
 import { getVisitorContext_ } from "./context.mjs";
 import {
     appendMessage_,
+    bulkCloseTestConversations_,
     claimConversation_,
     closeConversation_,
     getConversation_,
@@ -169,6 +170,27 @@ export function mountLiveAgentRoutes(app) {
         } catch (err) {
             logStoreError_(err, "inbox");
             jsonError_(res, 500, err.message || "Inbox failed");
+        }
+    });
+
+    router.post("/bulk-close-tests", requireLiveAgentSession_(), async (req, res) => {
+        setNoCache_(res);
+        if (!liveAgentFirestoreReady_()) {
+            jsonError_(res, 503, "Firestore not configured (FIREBASE_SERVICE_ACCOUNT_JSON).");
+            return;
+        }
+        const idPrefix = trim_(req.body && req.body.idPrefix) || "test-";
+        const limit = Number(req.body && req.body.limit);
+        try {
+            const result = await bulkCloseTestConversations_({
+                idPrefix,
+                agentEmail: req.liveAgentSession.agentId,
+                maxClose: Number.isFinite(limit) ? limit : 150
+            });
+            res.json({ ok: true, ...result });
+        } catch (err) {
+            logStoreError_(err, "bulk-close-tests");
+            jsonError_(res, 400, err.message || "Bulk close failed");
         }
     });
 

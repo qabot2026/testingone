@@ -242,6 +242,34 @@ export async function claimConversation_({ conversationId, agentEmail }) {
     return serializeConversation_(id, snap.data());
 }
 
+/**
+ * Close many open chats whose id starts with idPrefix (e.g. test-). Caps work per call.
+ */
+export async function bulkCloseTestConversations_({ idPrefix, agentEmail, maxClose }) {
+    const prefix = trim_(idPrefix).toLowerCase();
+    if (!prefix) throw new Error("idPrefix required");
+    const cap = Math.min(Math.max(Number(maxClose) || 100, 1), 200);
+    const rows = await listInbox_({ status: "all", agentEmail: "", limit: 200 });
+    const targets = rows.filter((r) => {
+        const id = String(r.id || "").toLowerCase();
+        return id.startsWith(prefix) && (r.status === "waiting" || r.status === "active");
+    });
+    let closed = 0;
+    for (const r of targets.slice(0, cap)) {
+        try {
+            await closeConversation_({
+                conversationId: r.id,
+                agentEmail: agentEmail || "",
+                closedBy: "bulk-clear"
+            });
+            closed += 1;
+        } catch (err) {
+            console.warn(LOG_TAG, "bulk close skip", r.id, err.message);
+        }
+    }
+    return { closed, matched: targets.length, capped: targets.length > cap };
+}
+
 export async function closeConversation_({ conversationId, closedBy, agentEmail }) {
     const id = safeConversationId_(conversationId);
     const db = firestoreDb_();

@@ -52,8 +52,11 @@
     let selectedConv = null;
     let lastMessageIso = "";
     let pollTimer = null;
+    let inboxInFlight = false;
+    let messagesInFlight = false;
     let lastWaitingCount = 0;
     let notificationsOk = false;
+    const POLL_INTERVAL_MS = 8000;
 
     function loadStoredAuth_() {
         try {
@@ -142,12 +145,20 @@
     function startPolling() {
         stopPolling();
         pollTimer = setInterval(() => {
+            if (document.hidden) return;
             loadInbox(true);
             if (selectedId) {
                 loadMessages(selectedId, true);
             }
-        }, 3000);
+        }, POLL_INTERVAL_MS);
     }
+
+    document.addEventListener("visibilitychange", () => {
+        if (!document.hidden && appView && !appView.classList.contains("hidden")) {
+            loadInbox(true);
+            if (selectedId) loadMessages(selectedId, true);
+        }
+    });
 
     async function apiFetch(url, options) {
         const opts = options || {};
@@ -344,7 +355,8 @@
         clearTestQueueBtn.textContent = n > 1 ? "Clear " + n + " test chats" : "Clear test chats";
     }
 
-    async function dismissConversation_(conversationId) {
+    async function dismissConversation_(conversationId, opts) {
+        const reloadInbox = !opts || opts.reloadInbox !== false;
         await apiFetch(`${API}/conversations/${encodeURIComponent(conversationId)}/close`, {
             method: "POST"
         });
@@ -356,13 +368,11 @@
             contextEmpty.classList.remove("hidden");
             contextBody.classList.add("hidden");
         }
-        await loadInbox(true);
+        if (reloadInbox) await loadInbox(true);
     }
 
     async function clearTestQueue_() {
-        const data = await apiFetch(
-            `${API}/inbox?status=${encodeURIComponent(inboxFilter.value || "waiting")}&limit=80`
-        );
+        const data = await apiFetch(`${API}/inbox?status=all&limit=80`);
         const tests = (data.conversations || []).filter(
             (c) => isTestConversation_(c) && (c.status === "waiting" || c.status === "active")
         );
@@ -370,27 +380,37 @@
             inboxStatus.textContent = "No test chats to clear (session id must start with test-).";
             return;
         }
+        const n = tests.length;
         if (
             !confirm(
-                "Close " +
-                    tests.length +
-                    " test chat(s)? Each console test creates a new session — use the same id to avoid duplicates."
+                "Close up to " +
+                    n +
+                    " test chat(s) in one go? Use clientSessionId \"test-my-demo\" in console tests to avoid creating hundreds of rows."
             )
         ) {
             return;
         }
         clearTestQueueBtn.disabled = true;
+        inboxStatus.textContent = "Closing test chats…";
         try {
-            for (const c of tests) {
-                try {
-                    await dismissConversation_(c.id);
-                } catch (e) {
-                    console.warn("[live-agent] dismiss", c.id, e.message);
-                }
+            const result = await apiFetch(`${API}/bulk-close-tests`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ idPrefix: "test-", limit: 200 })
+            });
+            inboxStatus.textContent =
+                "Closed " + (result.closed || 0) + " test chat(s)." + (result.capped ? " Run again if more remain." : "");
+            if (selectedId && isTestConversation_({ id: selectedId })) {
+                selectedId = "";
+                selectedConv = null;
+                chatActive.classList.add("hidden");
+                chatEmpty.classList.remove("hidden");
             }
+            await loadInbox();
+        } catch (e) {
+            inboxStatus.textContent = e.message || "Clear failed";
         } finally {
             clearTestQueueBtn.disabled = false;
-            loadInbox();
         }
     }
 
@@ -457,6 +477,8 @@
     }
 
     async function loadInbox(quiet) {
+        if (inboxInFlight) return;
+        inboxInFlight = true;
         if (!quiet) inboxStatus.textContent = "Loading…";
         try {
             const status = inboxFilter.value || "waiting";
@@ -473,6 +495,8 @@
                 clearAuth_();
                 showLogin();
             }
+        } finally {
+            inboxInFlight = false;
         }
     }
 
@@ -577,7 +601,6 @@
             selectedConv = data.conversation;
             renderContextPanel(data.conversation, null);
             loadContext(selectedId);
-            loadInbox(true);
         } catch (e) {
             alert(e.message || "Could not update mode");
         }
@@ -640,11 +663,12 @@
 
         renderContextPanel(c, null);
         loadContext(c.id);
-        loadInbox(true);
         loadMessages(c.id);
     }
 
     async function loadMessages(conversationId, quiet) {
+        if (messagesInFlight) return;
+        messagesInFlight = true;
         try {
             const q = lastMessageIso ? "?since=" + encodeURIComponent(lastMessageIso) : "";
             const data = await apiFetch(
@@ -665,6 +689,8 @@
                 p.textContent = e.message || "Could not load messages";
                 messageList.appendChild(p);
             }
+        } finally {
+            messagesInFlight = false;
         }
     }
 
