@@ -2055,8 +2055,30 @@ function conversationRowYmdInSheetTz_(epochMs) {
     }
 }
 
-/** Lead stats: plausible mobile if enough digits (captures WhatsApp variants). */
+/** True when the cell is only a person name (no phone/email) — must not count as a lead. */
+function sheetCellLooksLikeNameOnly_(raw) {
+    const s = sheetCellString_(raw).trim();
+    if (!s || s.includes("@")) {
+        return false;
+    }
+    if (mobileDigitsOnly(s).length >= 7) {
+        return false;
+    }
+    if (!/[a-zA-Z]/.test(s)) {
+        return false;
+    }
+    return /^[a-zA-Z\s.'-]+$/.test(s);
+}
+
+/** Lead stats: mobile column only — needs real digits; name-only text is not a lead. */
 function sheetCellHasLeadMobile_(raw) {
+    if (sheetCellLooksLikeLeadEmail_(raw) || sheetCellLooksLikeNameOnly_(raw)) {
+        return false;
+    }
+    const s = sheetCellString_(raw).trim();
+    if (!s || !/\d/.test(s)) {
+        return false;
+    }
     const key = mobileKeyFromCell_(raw);
     return mobileDigitsOnly(key).length >= 7;
 }
@@ -3364,17 +3386,9 @@ export async function fetchConversationLeadCaptureStats(opts = {}) {
         const mobCell = leadStatsCellAt_(mobileColVals, dataRows.length, ri, cells, mobileIdx);
         const emCell = leadStatsCellAt_(emailColVals, dataRows.length, ri, cells, emailIdx);
         const chCell = leadStatsCellAt_(channelColVals, dataRows.length, ri, cells, channelIdx);
-        let hasEm = sheetCellHasLeadEmail_(emCell);
-        if (!hasEm) {
-            hasEm = sheetRowHasLeadEmail_(cells, emailIdx);
-        }
-        let hasMob = sheetCellHasLeadMobile_(mobCell);
-        if (!hasMob) {
-            hasMob = sheetRowHasLeadMobile_(cells, mobileIdx, emailIdx);
-        }
-        if (hasMob && hasEm && sheetCellLooksLikeLeadEmail_(mobCell)) {
-            hasMob = false;
-        }
+        /** Lead = valid mobile and/or email in those columns only (name-only rows are not leads). */
+        const hasEm = sheetCellHasLeadEmail_(emCell);
+        const hasMob = sheetCellHasLeadMobile_(mobCell);
         const channelKey = conversationChannelBucket_(chCell);
         conversations += 1;
         if (hasMob && hasEm) {

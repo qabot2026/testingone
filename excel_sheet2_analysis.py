@@ -204,10 +204,24 @@ def row_nonempty(values: tuple) -> bool:
     return False
 
 
-def has_lead_mobile(raw) -> bool:
-    if has_lead_email(raw):
+def looks_like_name_only(raw) -> bool:
+    t = cell_str(raw).strip()
+    if not t or "@" in t:
         return False
-    digits = re.sub(r"\D", "", cell_str(raw))
+    if len(re.sub(r"\D", "", t)) >= 7:
+        return False
+    if not re.search(r"[a-zA-Z]", t):
+        return False
+    return bool(re.match(r"^[a-zA-Z\s.'-]+$", t))
+
+
+def has_lead_mobile(raw) -> bool:
+    if has_lead_email(raw) or looks_like_name_only(raw):
+        return False
+    t = cell_str(raw).strip()
+    if not t or not re.search(r"\d", t):
+        return False
+    digits = re.sub(r"\D", "", t)
     return len(digits) >= 7
 
 
