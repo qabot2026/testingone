@@ -714,7 +714,7 @@
 
     .lead-stats {
       margin-bottom: 12px;
-      padding: 14px 16px 16px;
+      padding: 10px 14px 12px;
       border-radius: var(--radius);
       border: 1px solid rgba(15, 23, 42, 0.08);
       background: linear-gradient(165deg, #ffffff 0%, #f8fafc 55%, #f1f5f9 100%);
@@ -740,8 +740,8 @@
       justify-content: space-between;
       gap: 10px;
       flex-wrap: wrap;
-      margin-bottom: 12px;
-      padding-bottom: 10px;
+      margin-bottom: 8px;
+      padding-bottom: 8px;
       border-bottom: 1px solid rgba(15, 23, 42, 0.07);
     }
     .lead-stats-dash-head-main {
@@ -806,6 +806,17 @@
       flex-direction: column;
       gap: 0;
     }
+    .lead-stats-numeric-row {
+      display: flex;
+      flex-wrap: nowrap;
+      align-items: flex-start;
+      gap: 20px;
+      width: 100%;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      padding: 0;
+      margin: 0;
+    }
     .lead-stats-compact-line {
       display: flex;
       flex-wrap: wrap;
@@ -830,27 +841,31 @@
     }
     .lead-inline-stat {
       display: flex;
-      flex-direction: row;
-      align-items: baseline;
-      justify-content: center;
-      flex-wrap: wrap;
-      gap: 6px 8px;
+      flex-direction: column;
+      align-items: flex-start;
+      justify-content: flex-start;
+      flex: 0 0 auto;
+      gap: 2px;
       min-width: 0;
-      padding: 10px 12px;
-      border-radius: 8px;
-      border: 1px solid rgba(15, 23, 42, 0.07);
-      background: #ffffff;
-      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
-      text-align: center;
+      padding: 0;
+      margin: 0;
+      border: none;
+      border-radius: 0;
+      background: transparent;
+      box-shadow: none;
+      text-align: left;
     }
     .lead-inline-stat-label {
-      font-size: 0.75rem;
+      font-size: 0.6875rem;
       font-weight: 600;
+      line-height: 1.25;
       color: #64748b;
+      white-space: nowrap;
     }
     .lead-inline-stat-val {
-      font-size: 1.0625rem;
+      font-size: 1.125rem;
       font-weight: 700;
+      line-height: 1.15;
       font-variant-numeric: tabular-nums;
       color: #0f172a;
     }
@@ -894,16 +909,24 @@
     }
     .channel-chip {
       display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 6px;
-      padding: 7px 10px;
-      border-radius: 7px;
-      border: 1px solid rgba(15, 23, 42, 0.08);
-      background: #ffffff;
+      flex-direction: column;
+      align-items: flex-start;
+      justify-content: flex-start;
+      flex: 0 0 auto;
+      gap: 2px;
+      padding: 0;
+      margin: 0;
+      border: none;
+      border-radius: 0;
+      background: transparent;
       font-size: 0.8125rem;
       line-height: 1.2;
       min-width: 0;
+    }
+    .channel-chip-head {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
     }
     .channel-chip-ic {
       display: inline-flex;
@@ -945,7 +968,9 @@
       color: #334155;
     }
     .channel-chip-val {
+      font-size: 1.125rem;
       font-weight: 700;
+      line-height: 1.15;
       font-variant-numeric: tabular-nums;
       color: #0f766e;
     }
@@ -960,24 +985,30 @@
     .contact-chip {
       display: flex;
       flex-direction: column;
-      align-items: center;
-      justify-content: center;
+      align-items: flex-start;
+      justify-content: flex-start;
+      flex: 0 0 auto;
       gap: 2px;
-      padding: 7px 8px;
-      border-radius: 7px;
-      border: 1px solid rgba(15, 23, 42, 0.08);
-      background: #ffffff;
+      padding: 0;
+      margin: 0;
+      border: none;
+      border-radius: 0;
+      background: transparent;
       font-size: 0.8125rem;
-      text-align: center;
+      text-align: left;
       min-width: 0;
     }
     .contact-chip-lbl {
+      font-size: 0.6875rem;
       font-weight: 600;
+      line-height: 1.25;
       color: #64748b;
+      white-space: nowrap;
     }
-    .contact-chip strong {
-      font-size: 1rem;
+    .contact-chip-val {
+      font-size: 1.125rem;
       font-weight: 700;
+      line-height: 1.15;
       font-variant-numeric: tabular-nums;
       color: #0f172a;
     }
@@ -1311,6 +1342,10 @@
         text-align: center;
         padding: 9px 8px;
         min-height: 38px;
+      }
+      .lead-stats-numeric-row {
+        flex-wrap: wrap;
+        row-gap: 14px;
       }
       .lead-stats-compact-line--kpis {
         grid-template-columns: 1fr;
@@ -3103,12 +3138,13 @@
             '<span class="channel-chip channel-chip--' +
             mod +
             '" role="listitem">' +
+            '<span class="channel-chip-head">' +
             '<span class="channel-chip-ic" aria-hidden="true">' +
             svg +
             "</span>" +
             '<span class="channel-chip-label">' +
             escapeHtml(label) +
-            "</span>" +
+            "</span></span>" +
             '<span class="channel-chip-val">' +
             escapeHtml(String(count)) +
             "</span></span>"
@@ -3132,7 +3168,7 @@
             '<span class="contact-chip">' +
             '<span class="contact-chip-lbl">' +
             escapeHtml(label) +
-            "</span> <strong>" +
+            '</span><strong class="contact-chip-val">' +
             escapeHtml(String(total)) +
             "</strong></span>"
           );
@@ -3203,30 +3239,18 @@
           '<button type="button" class="lead-view-btn" data-mode="visual">Visual</button>' +
           "</div></div>" +
           '<div id="leadStatsNumericBlock" class="lead-stats-numeric-block">' +
-          '<div class="lead-stats-compact-line lead-stats-compact-line--kpis">' +
+          '<div class="lead-stats-numeric-row" role="list" aria-label="Lead metrics">' +
           kpiInline("Total conversations", escapeHtml(String(n)), true) +
           kpiInline("Lead capture rate", leadCaptureDisp, false) +
           kpiInline("Appointments booked", escapeHtml(String(apt)), false) +
-          "</div>" +
-          '<div class="lead-stats-compact-line lead-stats-compact-line--detail">' +
-          '<div class="lead-compact-block lead-compact-block--channels" aria-label="Conversations by channel">' +
-          '<span class="lead-compact-heading">By channel</span>' +
-          '<div class="lead-channel-rows" role="list">' +
-          '<div class="lead-channel-row">' +
           channelChip("web", "Web", cw, iconWeb) +
           channelChip("whatsapp", "WhatsApp", cwa, iconWa) +
-          "</div>" +
-          '<div class="lead-channel-row">' +
           channelChip("instagram", "Instagram", cinst, iconIg) +
           channelChip("facebook", "Facebook", cfb, iconFb) +
-          "</div></div></div>" +
-          '<div class="lead-compact-block lead-compact-block--contact" aria-label="Contact detail captured">' +
-          '<span class="lead-compact-heading">Contact captured</span>' +
-          '<div class="lead-contact-row">' +
           contactChip("Mobile only", om) +
           contactChip("Email only", oe) +
           contactChip("Mobile & email", be) +
-          "</div></div></div>" +
+          "</div>" +
           '<div id="leadStatsVisualBlock" class="lead-stats-visual-block" hidden>' +
           '<div class="lead-stats-chart-grid">' +
           '<div class="lead-chart-card"><h4>Volume by channel</h4><p class="lead-chart-card-total">Total · ' +
