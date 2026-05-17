@@ -3298,6 +3298,15 @@
         return false;
       }
 
+      /** Last 4 days + today (5 calendar days, inclusive). */
+      function applyDefaultDateRange5Days() {
+        var now = new Date();
+        var today = toYmdLocal(now);
+        var fromD = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 4);
+        dateFromEl.value = toYmdLocal(fromD);
+        dateToEl.value = today;
+      }
+
       function applyPresets(which) {
         var now = new Date();
         function ymdOff(days) {
@@ -3311,6 +3320,8 @@
         } else if (which === "today") {
           dateFromEl.value = today;
           dateToEl.value = today;
+        } else if (which === "5") {
+          applyDefaultDateRange5Days();
         } else if (which === "7") {
           dateFromEl.value = ymdOff(6);
           dateToEl.value = today;
