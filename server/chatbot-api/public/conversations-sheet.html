@@ -3654,14 +3654,6 @@
               else console.warn("[conversations-sheet] dashboard sync:", failMsg);
               return false;
             }
-            var okLine =
-              "Dashboard refreshed · " + (o.j.rowsWritten || "?") + " rows updated.";
-            if (interactive) {
-              setStatus(okLine);
-            } else if (statusLine) {
-              var cur = statusLine.textContent || "";
-              setStatus(cur ? cur + " · " + okLine : okLine);
-            }
             return true;
           })
           .catch(function (e) {
