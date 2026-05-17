@@ -5563,11 +5563,33 @@ app.get(PATHNAME_CONVERSATIONS_SHEET_JSON, async (req, res) => {
         const rawFrom =
             req.query && typeof req.query.from === "string" ? req.query.from.trim() : "";
         const rawTo = req.query && typeof req.query.to === "string" ? req.query.to.trim() : "";
+        const allInRange = req.query.all !== "0" && req.query.all !== "false";
+        const includeStats = req.query.includeStats !== "0" && req.query.includeStats !== "false";
         const previewOpts =
             rawFrom || rawTo
-                ? { maxRows, offset, ...(rawFrom ? { from: rawFrom } : {}), ...(rawTo ? { to: rawTo } : {}) }
-                : { maxRows, offset };
+                ? {
+                      maxRows,
+                      offset,
+                      allInRange,
+                      ...(rawFrom ? { from: rawFrom } : {}),
+                      ...(rawTo ? { to: rawTo } : {})
+                  }
+                : { maxRows, offset, allInRange };
         const payload = await fetchConversationSheetPreview(previewOpts);
+        if (includeStats) {
+            const statsOpts =
+                rawFrom || rawTo ? { from: rawFrom || undefined, to: rawTo || undefined } : {};
+            try {
+                payload.leadStats = await fetchConversationLeadCaptureStats(statsOpts);
+            } catch (statsErr) {
+                const statsMsg =
+                    statsErr && /** @type {{ message?: string }} */ (statsErr).message
+                        ? String(statsErr.message)
+                        : String(statsErr);
+                payload.leadStatsError = statsMsg.slice(0, 400);
+                console.error("[chatbot-api] conversations-sheet leadStats:", statsMsg);
+            }
+        }
         return res.status(200).json({ ok: true, ...payload });
     } catch (e) {
         const msg = e && /** @type {{ message?: string }} */ (e).message ? String(e.message) : String(e);

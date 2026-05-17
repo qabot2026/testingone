@@ -871,6 +871,131 @@ function leadSegmentChannelAdd_(acc, ch) {
     }
 }
 
+/** Mutable tallies while scanning sheet rows once for viewer + dashboard stats. */
+function leadCaptureStatsAccumulatorEmpty_() {
+    return {
+        dataRowsConsidered: 0,
+        skippedNoDate: 0,
+        conversations: 0,
+        onlyMobile: 0,
+        onlyEmail: 0,
+        mobileAndEmail: 0,
+        neither: 0,
+        appointmentScheduled: 0,
+        channelWeb: 0,
+        channelWhatsapp: 0,
+        channelInstagram: 0,
+        channelFacebook: 0,
+        channelOther: 0,
+        onlyMobileByChannel: leadSegmentChannelTotalsEmpty_(),
+        onlyEmailByChannel: leadSegmentChannelTotalsEmpty_(),
+        mobileAndEmailByChannel: leadSegmentChannelTotalsEmpty_()
+    };
+}
+
+/**
+ * @param {ReturnType<typeof leadCaptureStatsAccumulatorEmpty_>} acc
+ * @param {unknown[]} cells
+ * @param {{
+ *   mobileIdx: number,
+ *   emailIdx: number,
+ *   channelIdx: number,
+ *   appointmentBookedIdx: number,
+ *   appointmentDateIdx: number,
+ *   appointmentTimeIdx: number,
+ *   apptDtIdx: number
+ * }} col
+ */
+function leadCaptureStatsAccumulateRow_(acc, cells, col) {
+    if (!sheetRowHasAnyCell_(cells)) {
+        return;
+    }
+    const mobCell = cells[col.mobileIdx];
+    const emCell = cells[col.emailIdx];
+    const chCell = cells[col.channelIdx];
+    const hasEm = sheetCellHasLeadEmail_(emCell);
+    const hasMob = sheetCellHasLeadMobile_(mobCell);
+    const channelKey = conversationChannelBucket_(chCell);
+    acc.conversations += 1;
+    if (hasMob && hasEm) {
+        acc.mobileAndEmail += 1;
+        leadSegmentChannelAdd_(acc.mobileAndEmailByChannel, channelKey);
+    } else if (hasMob) {
+        acc.onlyMobile += 1;
+        leadSegmentChannelAdd_(acc.onlyMobileByChannel, channelKey);
+    } else if (hasEm) {
+        acc.onlyEmail += 1;
+        leadSegmentChannelAdd_(acc.onlyEmailByChannel, channelKey);
+    } else {
+        acc.neither += 1;
+    }
+    let apptCounted = sheetAppointmentCellCountsScheduled_(cells[col.appointmentBookedIdx]);
+    if (!apptCounted) {
+        apptCounted = sheetRowAppointmentSlotCellsLikelyFilled_(
+            cells[col.appointmentDateIdx],
+            cells[col.appointmentTimeIdx]
+        );
+    }
+    if (!apptCounted && col.apptDtIdx >= 0) {
+        apptCounted = sheetCellLooksLikeAppointmentDateTimeCombined_(cells[col.apptDtIdx]);
+    }
+    if (apptCounted) {
+        acc.appointmentScheduled += 1;
+    }
+    switch (channelKey) {
+        case "web":
+            acc.channelWeb += 1;
+            break;
+        case "whatsapp":
+            acc.channelWhatsapp += 1;
+            break;
+        case "instagram":
+            acc.channelInstagram += 1;
+            break;
+        case "facebook":
+            acc.channelFacebook += 1;
+            break;
+        default:
+            acc.channelOther += 1;
+    }
+}
+
+/**
+ * @param {ReturnType<typeof leadCaptureStatsAccumulatorEmpty_>} acc
+ * @param {ReturnType<typeof leadCaptureStatsAccumulatorEmpty_>} baseEmpty
+ */
+function leadCaptureStatsPayloadFromAccumulator_(acc, baseEmpty) {
+    const out = baseEmpty;
+    const conversations = acc.conversations;
+    const leadsCaptured = acc.onlyMobile + acc.onlyEmail + acc.mobileAndEmail;
+    const pct = conversations ? Math.round((leadsCaptured * 10_000) / conversations) / 100 : null;
+    const rpt = /** @type {(a: number) => string} */ (num) => `${num} / ${conversations}`;
+    out.scan.dataRowsConsidered = acc.dataRowsConsidered;
+    out.totals.conversations = conversations;
+    out.totals.onlyMobile = acc.onlyMobile;
+    out.totals.onlyEmail = acc.onlyEmail;
+    out.totals.mobileAndEmail = acc.mobileAndEmail;
+    out.totals.neither = acc.neither;
+    out.totals.rowsSkippedNoParsableDate = acc.skippedNoDate;
+    out.totals.leadsCaptured = leadsCaptured;
+    out.totals.appointmentScheduled = acc.appointmentScheduled;
+    out.totals.appointmentBooked = acc.appointmentScheduled;
+    out.totals.channelWeb = acc.channelWeb;
+    out.totals.channelWhatsapp = acc.channelWhatsapp;
+    out.totals.channelInstagram = acc.channelInstagram;
+    out.totals.channelFacebook = acc.channelFacebook;
+    out.totals.channelOther = acc.channelOther;
+    out.totals.onlyMobileByChannel = acc.onlyMobileByChannel;
+    out.totals.onlyEmailByChannel = acc.onlyEmailByChannel;
+    out.totals.mobileAndEmailByChannel = acc.mobileAndEmailByChannel;
+    out.ratios.onlyMobile = rpt(acc.onlyMobile);
+    out.ratios.onlyEmail = rpt(acc.onlyEmail);
+    out.ratios.mobileAndEmail = rpt(acc.mobileAndEmail);
+    out.ratios.leads = rpt(leadsCaptured);
+    out.ratios.leadCapturePct = pct;
+    return out;
+}
+
 /**
  * Detect "Repeated" column position by header row.
  * Falls back to the default schema (column H) if not found.
@@ -2197,10 +2322,10 @@ function conversationSheetDateFilterMaxRows_() {
             500,
             Number.parseInt(
                 String(
-                    (process.env.CONVERSATIONS_SHEET_DATE_FILTER_MAX_ROWS || "").trim() || "12000"
+                    (process.env.CONVERSATIONS_SHEET_DATE_FILTER_MAX_ROWS || "").trim() || "50000"
                 ),
                 10
-            ) || 12_000
+            ) || 50_000
         )
     );
 }
@@ -3548,117 +3673,32 @@ export async function fetchConversationLeadCaptureStats(opts = {}) {
                 ? appointmentDatetimeIdx
                 : -1;
         const blockRows = await getConversationSheetDataBlock_(sheets, tab, lastColIdx, nLast);
-        const dataRowCount = blockRows.length;
-
-        let conversations = 0;
-        let onlyMobile = 0;
-        let onlyEmail = 0;
-        let both = 0;
-        let neither = 0;
-        let skippedNoDate = 0;
-        let appointmentScheduled = 0;
-        let channelWeb = 0;
-        let channelWhatsapp = 0;
-        let channelInstagram = 0;
-        let channelFacebook = 0;
-        let channelOther = 0;
-        let onlyMobileByCh = leadSegmentChannelTotalsEmpty_();
-        let onlyEmailByCh = leadSegmentChannelTotalsEmpty_();
-        let bothByCh = leadSegmentChannelTotalsEmpty_();
-
-        for (let ri = 0; ri < dataRowCount; ri += 1) {
+        const acc = leadCaptureStatsAccumulatorEmpty_();
+        const statCol = {
+            mobileIdx,
+            emailIdx,
+            channelIdx,
+            appointmentBookedIdx,
+            appointmentDateIdx,
+            appointmentTimeIdx,
+            apptDtIdx
+        };
+        for (let ri = 0; ri < blockRows.length; ri += 1) {
+            acc.dataRowsConsidered += 1;
             const cells = padSheetRow_(blockRows[ri] || [], padWidth);
             const dateMs = parseConversationDateCellWide_(cells[dateIdx]);
             if (!Number.isFinite(dateMs)) {
-                skippedNoDate += 1;
+                acc.skippedNoDate += 1;
                 continue;
             }
             const ymd = conversationRowYmdInSheetTz_(dateMs);
             if (!ymd || ymd < fromEff || ymd > toEff) {
                 continue;
             }
-            if (!sheetRowHasAnyCell_(cells)) {
-                continue;
-            }
-            const mobCell = cells[mobileIdx];
-            const emCell = cells[emailIdx];
-            const chCell = cells[channelIdx];
-            const hasEm = sheetCellHasLeadEmail_(emCell);
-            const hasMob = sheetCellHasLeadMobile_(mobCell);
-            const channelKey = conversationChannelBucket_(chCell);
-            conversations += 1;
-            if (hasMob && hasEm) {
-                both += 1;
-                leadSegmentChannelAdd_(bothByCh, channelKey);
-            } else if (hasMob) {
-                onlyMobile += 1;
-                leadSegmentChannelAdd_(onlyMobileByCh, channelKey);
-            } else if (hasEm) {
-                onlyEmail += 1;
-                leadSegmentChannelAdd_(onlyEmailByCh, channelKey);
-            } else {
-                neither += 1;
-            }
-            let apptCounted = sheetAppointmentCellCountsScheduled_(cells[appointmentBookedIdx]);
-            if (!apptCounted) {
-                apptCounted = sheetRowAppointmentSlotCellsLikelyFilled_(
-                    cells[appointmentDateIdx],
-                    cells[appointmentTimeIdx]
-                );
-            }
-            if (!apptCounted && apptDtIdx >= 0) {
-                apptCounted = sheetCellLooksLikeAppointmentDateTimeCombined_(cells[apptDtIdx]);
-            }
-            if (apptCounted) {
-                appointmentScheduled += 1;
-            }
-            switch (channelKey) {
-                case "web":
-                    channelWeb += 1;
-                    break;
-                case "whatsapp":
-                    channelWhatsapp += 1;
-                    break;
-                case "instagram":
-                    channelInstagram += 1;
-                    break;
-                case "facebook":
-                    channelFacebook += 1;
-                    break;
-                default:
-                    channelOther += 1;
-            }
+            leadCaptureStatsAccumulateRow_(acc, cells, statCol);
         }
-
-        const leadsCaptured = onlyMobile + onlyEmail + both;
-        const pct = conversations ? Math.round((leadsCaptured * 10_000) / conversations) / 100 : null;
-        const rpt = /** @type {(a: number) => string} */ (num) =>
-            `${num} / ${conversations}`;
-        const out = baseEmpty();
+        const out = leadCaptureStatsPayloadFromAccumulator_(acc, baseEmpty());
         out.dateFilter.serverApplied = true;
-        out.scan.dataRowsConsidered = dataRowCount;
-        out.totals.conversations = conversations;
-        out.totals.onlyMobile = onlyMobile;
-        out.totals.onlyEmail = onlyEmail;
-        out.totals.mobileAndEmail = both;
-        out.totals.neither = neither;
-        out.totals.rowsSkippedNoParsableDate = skippedNoDate;
-        out.totals.leadsCaptured = leadsCaptured;
-        out.totals.appointmentScheduled = appointmentScheduled;
-        out.totals.appointmentBooked = appointmentScheduled;
-        out.totals.channelWeb = channelWeb;
-        out.totals.channelWhatsapp = channelWhatsapp;
-        out.totals.channelInstagram = channelInstagram;
-        out.totals.channelFacebook = channelFacebook;
-        out.totals.channelOther = channelOther;
-        out.totals.onlyMobileByChannel = onlyMobileByCh;
-        out.totals.onlyEmailByChannel = onlyEmailByCh;
-        out.totals.mobileAndEmailByChannel = bothByCh;
-        out.ratios.onlyMobile = rpt(onlyMobile);
-        out.ratios.onlyEmail = rpt(onlyEmail);
-        out.ratios.mobileAndEmail = rpt(both);
-        out.ratios.leads = rpt(leadsCaptured);
-        out.ratios.leadCapturePct = pct;
         conversationLeadStatsCache_ = { key: statsCacheKey, at: Date.now(), payload: out };
         return out;
     }
@@ -5082,10 +5122,11 @@ export async function writeLeadCaptureDashboardToSheet2(opts = {}) {
  * Staff viewer: header row + up to `maxRows` most recent data rows (sheet append adds at bottom).
  * Bounded A:B scan for last row (never `A:A`) so large tabs do not stall the API.
  *
- * @param {{ maxRows?: number, offset?: number, from?: string, to?: string }} [opts]
- * @returns {Promise<{ tab: string, title: string, rowCount: number, headers: string[], conversations: Record<string, string>[], offset: number, limit: number, hasOlder: boolean, hasNewer: boolean, totalDataRows: number, dateFilter: { applied: boolean, serverApplied?: boolean, from: string|null, to: string|null } }>}
+ * @param {{ maxRows?: number, offset?: number, from?: string, to?: string, allInRange?: boolean }} [opts]
+ * @returns {Promise<{ tab: string, title: string, rowCount: number, headers: string[], conversations: Record<string, string>[], offset: number, limit: number, hasOlder: boolean, hasNewer: boolean, totalDataRows: number, allInRange?: boolean, rowsTruncated?: boolean, dateFilter: { applied: boolean, serverApplied?: boolean, from: string|null, to: string|null } }>}
  */
 export async function fetchConversationSheetPreview(opts = {}) {
+    const allInRange = opts.allInRange !== false && opts.allInRange !== "0";
     if (!SPREADSHEET_ID) {
         throw new Error("SHEETS_SPREADSHEET_ID is not set.");
     }
@@ -5238,19 +5279,26 @@ export async function fetchConversationSheetPreview(opts = {}) {
             }
         }
         const totalFiltered = matchedChrono.length;
-        const dateFilterCapped = totalFiltered > matchMax;
-        if (dateFilterCapped) {
-            matchedChrono.splice(0, matchedChrono.length - matchMax);
-        }
-        /** Newest spreadsheet rows last → reverse for paging like the non-filter viewer. */
+        const rowsTruncated = totalFiltered > matchMax;
+        /** Newest spreadsheet rows last → reverse for staff viewer. */
         const newestFirst = matchedChrono.slice().reverse();
-        const maxFilteredOffset = Math.max(0, totalFiltered - maxRows);
-        if (offset > maxFilteredOffset) {
-            offset = maxFilteredOffset;
+        let sliceRows;
+        let hasNewerFiltered = false;
+        let hasOlderFiltered = false;
+        let effectiveLimit = maxRows;
+        if (allInRange) {
+            sliceRows = newestFirst;
+            offset = 0;
+            effectiveLimit = totalFiltered;
+        } else {
+            const maxFilteredOffset = Math.max(0, totalFiltered - maxRows);
+            if (offset > maxFilteredOffset) {
+                offset = maxFilteredOffset;
+            }
+            sliceRows = newestFirst.slice(offset, offset + maxRows);
+            hasNewerFiltered = offset > 0;
+            hasOlderFiltered = offset + sliceRows.length < totalFiltered;
         }
-        const sliceRows = newestFirst.slice(offset, offset + maxRows);
-        const hasNewerFiltered = offset > 0;
-        const hasOlderFiltered = offset + sliceRows.length < totalFiltered;
         return {
             tab,
             title,
@@ -5258,10 +5306,12 @@ export async function fetchConversationSheetPreview(opts = {}) {
             headers,
             conversations: sliceRows,
             offset,
-            limit: maxRows,
+            limit: effectiveLimit,
             hasOlder: hasOlderFiltered,
             hasNewer: hasNewerFiltered,
             totalDataRows: totalFiltered,
+            allInRange,
+            rowsTruncated,
             dateFilter: dateFilterEcho
         };
     }
