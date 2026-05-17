@@ -3278,16 +3278,47 @@
         return guessed || null;
       }
 
-      function inDateRange(ymd, payload) {
+      /** UI dates vs last server echo — only skip client filter when they still match. */
+      function effectiveDateFilterBounds_(payload) {
         var pl = payload != null ? payload : lastPayload;
-        if (pl && pl.dateFilter && pl.dateFilter.serverApplied) return true;
-        var from = dateFromEl.value;
-        var to = dateToEl.value;
-        if (!from && !to) return true;
+        var uiFrom = dateFromEl && dateFromEl.value ? dateFromEl.value.trim() : "";
+        var uiTo = dateToEl && dateToEl.value ? dateToEl.value.trim() : "";
+        if (pl && pl.dateFilter && pl.dateFilter.serverApplied) {
+          var sf = pl.dateFilter.from ? String(pl.dateFilter.from).trim() : "";
+          var st = pl.dateFilter.to ? String(pl.dateFilter.to).trim() : "";
+          if (uiFrom === sf && uiTo === st) {
+            return { from: sf, to: st, trustServerRows: true };
+          }
+        }
+        return { from: uiFrom, to: uiTo, trustServerRows: false };
+      }
+
+      function inDateRange(ymd, payload) {
+        var bounds = effectiveDateFilterBounds_(payload);
+        if (bounds.trustServerRows) return true;
+        if (!bounds.from && !bounds.to) return true;
         if (!ymd) return false;
-        if (from && ymd < from) return false;
-        if (to && ymd > to) return false;
+        if (bounds.from && ymd < bounds.from) return false;
+        if (bounds.to && ymd > bounds.to) return false;
         return true;
+      }
+
+      function syncDateInputsFromPayload_(json) {
+        if (!json || !json.dateFilter || !dateFromEl || !dateToEl) return;
+        var df = json.dateFilter;
+        if (!df.applied && !df.from && !df.to) return;
+        dateFromEl.value = df.from ? String(df.from) : "";
+        dateToEl.value = df.to ? String(df.to) : "";
+      }
+
+      function formatDateFilterLabel_(df) {
+        if (!df || !df.applied) return "";
+        var from = df.from ? String(df.from) : "";
+        var to = df.to ? String(df.to) : "";
+        if (from && to) return from + " – " + to;
+        if (from) return "from " + from;
+        if (to) return "through " + to;
+        return "";
       }
 
       function flattenCellText(text) {
@@ -3560,13 +3591,16 @@
       var convDateReloadTimer = 0;
       /** @type {Record<string, unknown>|null} */
       var lastSuccessfulSheetJson = null;
+      /** @type {AbortController|null} */
+      var sheetLoadAbortCtrl = null;
 
       function scheduleReloadForDateFilter() {
         if (convDateReloadTimer) window.clearTimeout(convDateReloadTimer);
         convDateReloadTimer = window.setTimeout(function () {
           convDateReloadTimer = 0;
           sheetOffset = 0;
-          if (hadLoadedSheet && secretEl.value.trim()) load();
+          if (lastPayload) render(lastPayload);
+          if (secretEl.value.trim()) load();
         }, 140);
       }
 
@@ -3958,6 +3992,7 @@
         showLeadStatsLoading(true);
         sheetOffset = 0;
         var timedId = 0;
+        var ctrl = null;
         try {
           var fromV = dateFromEl && dateFromEl.value ? dateFromEl.value.trim() : "";
           var toV = dateToEl && dateToEl.value ? dateToEl.value.trim() : "";
@@ -3965,7 +4000,13 @@
           if (fromV) dq.push("from=" + encodeURIComponent(fromV));
           if (toV) dq.push("to=" + encodeURIComponent(toV));
           var url = apiBase() + "/api/conversations-sheet?" + dq.join("&");
-          var ctrl = new AbortController();
+          if (sheetLoadAbortCtrl) {
+            try {
+              sheetLoadAbortCtrl.abort();
+            } catch (ignoreAbort) {}
+          }
+          ctrl = new AbortController();
+          sheetLoadAbortCtrl = ctrl;
           timedId = window.setTimeout(function () {
             ctrl.abort();
           }, 120000);
@@ -3991,6 +4032,7 @@
             return;
           }
           lastSuccessfulSheetJson = json;
+          syncDateInputsFromPayload_(json);
           var loaded = (json.conversations || []).length;
           var totalListed =
             typeof json.totalDataRows === "number" && Number.isFinite(json.totalDataRows)
@@ -4062,6 +4104,9 @@
           }
           void syncDashboardSheet({ interactive: false });
         } catch (e) {
+          if (e && e.name === "AbortError" && sheetLoadAbortCtrl) {
+            return;
+          }
           lastSuccessfulSheetJson = null;
           if (e && e.name === "AbortError") {
             showErr("Timed out loading conversations. Try a smaller date range or fewer rows.");
@@ -4072,6 +4117,7 @@
           showLeadStatsErr("");
         } finally {
           if (timedId) window.clearTimeout(timedId);
+          if (sheetLoadAbortCtrl === ctrl) sheetLoadAbortCtrl = null;
           refreshBtn.disabled = false;
           refreshBtn.textContent = reloadLbl;
         }
@@ -4268,7 +4314,11 @@
           '<div class="lead-stats-dash-head">' +
           '<div class="lead-stats-dash-head-main">' +
           '<p class="lead-stats-dash-title">Performance overview</p>' +
-          '<p class="lead-stats-dash-sub">Same filters as the table below</p>' +
+          '<p class="lead-stats-dash-sub">' +
+          (formatDateFilterLabel_(payload.dateFilter)
+            ? "Period: " + escapeHtml(formatDateFilterLabel_(payload.dateFilter))
+            : "Same filters as the table below") +
+          "</p>" +
           '</div><div class="lead-stats-view-toggle" role="group" aria-label="Dashboard view">' +
           '<button type="button" class="lead-view-btn" data-mode="numeric">Numeric</button>' +
           '<button type="button" class="lead-view-btn" data-mode="visual">Visual</button>' +

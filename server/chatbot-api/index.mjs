@@ -5565,17 +5565,14 @@ app.get(PATHNAME_CONVERSATIONS_SHEET_JSON, async (req, res) => {
         const rawTo = req.query && typeof req.query.to === "string" ? req.query.to.trim() : "";
         const allInRange = req.query.all !== "0" && req.query.all !== "false";
         const includeStats = req.query.includeStats !== "0" && req.query.includeStats !== "false";
-        const previewOpts =
-            rawFrom || rawTo
-                ? {
-                      maxRows,
-                      offset,
-                      allInRange,
-                      includeStats,
-                      ...(rawFrom ? { from: rawFrom } : {}),
-                      ...(rawTo ? { to: rawTo } : {})
-                  }
-                : { maxRows, offset, allInRange, includeStats };
+        const previewOpts = {
+            maxRows,
+            offset,
+            allInRange,
+            includeStats,
+            from: rawFrom,
+            to: rawTo
+        };
         const payload = await fetchConversationSheetPreview(previewOpts);
         return res.status(200).json({ ok: true, ...payload });
     } catch (e) {
