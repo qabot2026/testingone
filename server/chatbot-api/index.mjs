@@ -3690,6 +3690,38 @@ const PATHNAME_CONVERSATIONS_SHEET_SYNC_DASHBOARD = "/api/conversations-sheet-sy
 const PATHNAME_CONVERSATIONS_SHEET_EXPORT = "/api/conversations-sheet-export";
 const PATHNAME_CONVERSATION_TRANSCRIPT_JSON = "/api/conversation-transcript";
 
+const CONVERSATIONS_VIEWER_READ_QUOTA_MSG =
+    "Read quota exceeded. Wait about one minute, then tap Reload once (avoid rapid refreshes).";
+
+/** @param {unknown} msg */
+function isConversationsSheetReadQuotaError_(msg) {
+    const low = String(msg || "").toLowerCase();
+    return (
+        low.includes("quota exceeded")
+        || low.includes("rate limit")
+        || low.includes("resource_exhausted")
+    );
+}
+
+/** User-facing API errors for the conversations viewer (no upstream product names). @param {unknown} msg */
+function sanitizeConversationsViewerApiError_(msg) {
+    const raw = String(msg || "").trim();
+    if (!raw) {
+        return "Request failed.";
+    }
+    if (isConversationsSheetReadQuotaError_(raw)) {
+        return CONVERSATIONS_VIEWER_READ_QUOTA_MSG;
+    }
+    const stripped = raw
+        .replace(/google sheets?\s*(api\s*)?/gi, "")
+        .replace(/\s{2,}/g, " ")
+        .trim();
+    if (isConversationsSheetReadQuotaError_(stripped)) {
+        return CONVERSATIONS_VIEWER_READ_QUOTA_MSG;
+    }
+    return (stripped || raw).slice(0, 500);
+}
+
 function conversationsSheetSecretFromReq_(req) {
     const want = (process.env.CONVERSATIONS_SHEET_VIEW_SECRET || "").trim();
     if (!want) {
@@ -5577,16 +5609,14 @@ app.get(PATHNAME_CONVERSATIONS_SHEET_JSON, async (req, res) => {
         return res.status(200).json({ ok: true, ...payload });
     } catch (e) {
         const msg = e && /** @type {{ message?: string }} */ (e).message ? String(e.message) : String(e);
-        const lowJson = msg.toLowerCase();
-        if (lowJson.includes("quota exceeded") || lowJson.includes("rate limit")) {
+        if (isConversationsSheetReadQuotaError_(msg)) {
             return res.status(503).json({
                 ok: false,
-                error:
-                    "Google Sheets read quota exceeded. Wait about one minute, then tap Reload once (avoid rapid refreshes)."
+                error: CONVERSATIONS_VIEWER_READ_QUOTA_MSG
             });
         }
         console.error("[chatbot-api] conversations-sheet JSON:", msg);
-        return res.status(500).json({ ok: false, error: msg.slice(0, 500) });
+        return res.status(500).json({ ok: false, error: sanitizeConversationsViewerApiError_(msg) });
     }
 });
 
@@ -5644,15 +5674,14 @@ app.get(PATHNAME_CONVERSATIONS_SHEET_STATS, async (req, res) => {
         if (low.includes("invalid date parameter")) {
             return res.status(400).json({ ok: false, error: msg.slice(0, 400) });
         }
-        if (low.includes("quota exceeded") || low.includes("rate limit")) {
+        if (isConversationsSheetReadQuotaError_(msg)) {
             return res.status(503).json({
                 ok: false,
-                error:
-                    "Google Sheets read quota exceeded. Wait about one minute, then tap Reload once (avoid rapid refreshes)."
+                error: CONVERSATIONS_VIEWER_READ_QUOTA_MSG
             });
         }
         console.error("[chatbot-api] conversations-sheet stats:", msg);
-        return res.status(500).json({ ok: false, error: msg.slice(0, 500) });
+        return res.status(500).json({ ok: false, error: sanitizeConversationsViewerApiError_(msg) });
     }
 });
 
@@ -5783,8 +5812,14 @@ app.get(PATHNAME_CONVERSATIONS_SHEET_EXPORT, async (req, res) => {
         if (low.includes("invalid date parameter")) {
             return res.status(400).json({ ok: false, error: msg.slice(0, 400) });
         }
+        if (isConversationsSheetReadQuotaError_(msg)) {
+            return res.status(503).json({
+                ok: false,
+                error: CONVERSATIONS_VIEWER_READ_QUOTA_MSG
+            });
+        }
         console.error("[chatbot-api] conversations-sheet export:", msg);
-        return res.status(500).json({ ok: false, error: msg.slice(0, 500) });
+        return res.status(500).json({ ok: false, error: sanitizeConversationsViewerApiError_(msg) });
     }
 });
 
@@ -5833,8 +5868,14 @@ async function handleConversationsSheetSyncDashboard_(req, res) {
         if (low.includes("invalid date parameter")) {
             return res.status(400).json({ ok: false, error: msg.slice(0, 400) });
         }
+        if (isConversationsSheetReadQuotaError_(msg)) {
+            return res.status(503).json({
+                ok: false,
+                error: CONVERSATIONS_VIEWER_READ_QUOTA_MSG
+            });
+        }
         console.error("[chatbot-api] conversations-sheet sync dashboard:", msg);
-        return res.status(500).json({ ok: false, error: msg.slice(0, 500) });
+        return res.status(500).json({ ok: false, error: sanitizeConversationsViewerApiError_(msg) });
     }
 }
 

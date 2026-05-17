@@ -2288,6 +2288,21 @@
         return Math.round((leadsCaptured * 10000) / conversations) / 100;
       }
 
+      /** All-channel conversation volume (same basis as the channel bar chart). */
+      function channelConversationTotal_(tot) {
+        return (
+          leadStatNum(tot, "channelWeb", 0) +
+          leadStatNum(tot, "channelWhatsapp", 0) +
+          leadStatNum(tot, "channelInstagram", 0) +
+          leadStatNum(tot, "channelFacebook", 0) +
+          leadStatNum(tot, "channelOther", 0)
+        );
+      }
+
+      /**
+       * Leads captured vs total conversations in range (all channels).
+       * Denominator prefers channel totals so capture rate cannot show 100% when only leads are known.
+       */
       function resolveLeadCaptureMetrics(tot, rat) {
         var om = leadStatNum(tot, "onlyMobile", 0);
         var oe = leadStatNum(tot, "onlyEmail", 0);
@@ -2296,20 +2311,24 @@
         var leads = leadStatNum(tot, "leadsCaptured", split);
         if (leads < split) leads = split;
         var neither = leadStatNum(tot, "neither", 0);
-        var convTotal = leadStatNum(tot, "conversations", 0);
-        if (convTotal <= 0) convTotal = leads + neither;
-        if (neither > 0) convTotal = Math.max(convTotal, leads + neither);
+        var convFromField = leadStatNum(tot, "conversations", 0);
+        var convFromChannels = channelConversationTotal_(tot);
+        var convFromLeadRows = leads + neither;
+        var convTotal = Math.max(convFromField, convFromChannels, convFromLeadRows);
+        if (convTotal <= 0 && convFromChannels > 0) convTotal = convFromChannels;
+        if (convTotal <= 0 && convFromField > 0) convTotal = convFromField;
+        if (convTotal <= 0 && convFromLeadRows > 0) convTotal = convFromLeadRows;
         var pair = parseRatioSlash(rat && rat.leads);
-        if (pair) {
-          if (pair.num > 0) leads = pair.num;
-          if (pair.den > 0) convTotal = Math.max(convTotal, pair.den);
-        }
+        if (pair && pair.den > 0) convTotal = Math.max(convTotal, pair.den);
         var pct = leadCapturePctOfConversations(convTotal, leads);
         var pctApi = rat && rat.leadCapturePct;
-        if (typeof pctApi === "number" && Number.isFinite(pctApi) && convTotal > 0) {
-          var recomputed = leadCapturePctOfConversations(convTotal, leads);
-          if (recomputed == null || Math.abs(recomputed - pctApi) < 2) pct = pctApi;
-          else pct = recomputed;
+        if (
+          pct == null &&
+          typeof pctApi === "number" &&
+          Number.isFinite(pctApi) &&
+          convTotal > 0
+        ) {
+          pct = pctApi;
         }
         return { leads: leads, convTotal: convTotal, pct: pct };
       }
@@ -2318,9 +2337,9 @@
         if (typeof pct !== "number" || !Number.isFinite(pct)) return "-";
         var text =
           pct > 0 && pct < 1
-            ? pct.toFixed(1)
+            ? pct.toFixed(2)
             : pct % 1 !== 0
-              ? pct.toFixed(1)
+              ? pct.toFixed(2)
               : String(Math.round(pct));
         return text + "%";
       }
@@ -2634,7 +2653,8 @@
         var chTotal = chData.reduce(function (sum, v) {
           return sum + (typeof v === "number" && Number.isFinite(v) ? v : 0);
         }, 0);
-        if (chTotal <= 0 && n > 0) chTotal = n;
+        if (n > chTotal) chTotal = n;
+        else if (chTotal <= 0 && n > 0) chTotal = n;
 
         var chartDlTextColor = "#0f172a";
         var chartDlTextStroke = {
@@ -3401,13 +3421,20 @@
         dateToEl.value = df.to ? String(df.to) : "";
       }
 
+      function isoYmdToDisplayDdMmYyyy_(iso) {
+        var s = String(iso || "").trim();
+        var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+        if (!m) return s;
+        return m[3] + "/" + m[2] + "/" + m[1];
+      }
+
       function formatDateFilterLabel_(df) {
         if (!df || !df.applied) return "";
         var from = df.from ? String(df.from) : "";
         var to = df.to ? String(df.to) : "";
-        if (from && to) return from + " – " + to;
-        if (from) return "from " + from;
-        if (to) return "through " + to;
+        if (from && to) return isoYmdToDisplayDdMmYyyy_(from) + " – " + isoYmdToDisplayDdMmYyyy_(to);
+        if (from) return "from " + isoYmdToDisplayDdMmYyyy_(from);
+        if (to) return "through " + isoYmdToDisplayDdMmYyyy_(to);
         return "";
       }
 
@@ -3555,6 +3582,35 @@
         var frag = document.createDocumentFragment();
         frag.appendChild(wrap);
         return frag;
+      }
+
+      var VIEWER_READ_QUOTA_MSG =
+        "Read quota exceeded. Wait about one minute, then tap Reload once (avoid rapid refreshes).";
+
+      function friendlyViewerError_(msg, status) {
+        var s = String(msg == null ? "" : msg).trim();
+        var low = s.toLowerCase();
+        if (
+          low.indexOf("quota exceeded") >= 0 ||
+          low.indexOf("rate limit") >= 0 ||
+          low.indexOf("resource_exhausted") >= 0 ||
+          (low.indexOf("quota") >= 0 && low.indexOf("exceed") >= 0)
+        ) {
+          return VIEWER_READ_QUOTA_MSG;
+        }
+        if (low.indexOf("google sheet") >= 0) {
+          s = s.replace(/google sheets?\s*(api\s*)?/gi, "").replace(/\s{2,}/g, " ").trim();
+          if (
+            s.toLowerCase().indexOf("quota") >= 0 &&
+            s.toLowerCase().indexOf("exceed") >= 0
+          ) {
+            return VIEWER_READ_QUOTA_MSG;
+          }
+        }
+        if (s) return s;
+        if (status === 503) return VIEWER_READ_QUOTA_MSG;
+        if (status) return "Request failed (HTTP " + status + ").";
+        return "Request failed.";
       }
 
       function showErr(msg) {
@@ -4052,7 +4108,7 @@
           .then(function (o) {
             if (!o.res.ok || !o.j || !o.j.ok) {
               var failMsg = (o.j && o.j.error) || "Sync failed.";
-              if (interactive) showErr(failMsg);
+              if (interactive) showErr(friendlyViewerError_(failMsg, o.res.status));
               else console.warn("[conversations-sheet] dashboard sync:", failMsg);
               return false;
             }
@@ -4126,10 +4182,7 @@
           });
           if (!res.ok || !json || !json.ok) {
             lastSuccessfulSheetJson = null;
-            showErr(
-              (json && json.error) ||
-                (res.status === 503 ? "Google Sheets quota exceeded — wait one minute, then Reload once." : "HTTP " + res.status)
-            );
+            showErr(friendlyViewerError_(json && json.error, res.status));
             setStatus("");
             if (pagerWrap) pagerWrap.hidden = true;
             if (leadStatsList) leadStatsList.hidden = true;
@@ -4492,15 +4545,11 @@
           window.clearTimeout(tid);
           if (!res.ok || !json || !json.ok) {
             var statsErr =
-              (json && json.error) ||
-              (res.status === 503 &&
-              json &&
-              json.error &&
-              String(json.error).toLowerCase().indexOf("quota") >= 0
-                ? json.error
+              json && json.error
+                ? friendlyViewerError_(json.error, res.status)
                 : res.status === 502
                   ? "Dashboard metrics unavailable (server timed out or ran out of memory). Keep the 5-day date range, tap Reload, or set CONVERSATIONS_SHEET_SCAN_MAX_ROWS=5000 on Railway."
-                  : "Could not load dashboard metrics (HTTP " + res.status + ").");
+                  : friendlyViewerError_("", res.status);
             showLeadStatsErr(statsErr);
             if (leadStatsList) {
               leadStatsList.hidden = false;
@@ -4587,7 +4636,12 @@
               var ct = (res.headers.get("content-type") || "").toLowerCase();
               if (!res.ok) {
                 return res.json().then(function (j) {
-                  showErr((j && j.error) || "Download failed (HTTP " + res.status + ").");
+                  showErr(
+                    friendlyViewerError_(
+                      (j && j.error) || "Download failed.",
+                      res.status
+                    )
+                  );
                 });
               }
               if (

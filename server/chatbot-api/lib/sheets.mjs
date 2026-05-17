@@ -175,30 +175,64 @@ function conversationSheetBaseDate_(d) {
     return d instanceof Date && !Number.isNaN(d.getTime()) ? d : new Date();
 }
 
+const SHEET_DD_MM_YYYY_NUMBER_FORMAT = { type: "DATE", pattern: "dd/mm/yyyy" };
+
+/** Google Sheets serial (days since 1899-12-30) for calendar Y-M-D. */
+function googleSheetsSerialFromIsoYmd_(iso) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || "").trim());
+    if (!m) {
+        return null;
+    }
+    const y = Number(m[1]);
+    const mo = Number(m[2]);
+    const d = Number(m[3]);
+    if (!isoCalendarDayOk_(y, mo, d)) {
+        return null;
+    }
+    const epoch = Date.UTC(1899, 11, 30, 0, 0, 0);
+    return (Date.UTC(y, mo - 1, d, 12, 0, 0) - epoch) / 86400000;
+}
+
+/** @param {number} epochMs */
+function googleSheetsSerialFromEpochMs_(epochMs) {
+    if (!Number.isFinite(epochMs)) {
+        return null;
+    }
+    const ymd = conversationRowYmdInSheetTz_(epochMs);
+    return ymd ? googleSheetsSerialFromIsoYmd_(ymd) : null;
+}
+
 /**
- * Conversation **date only** for Sheets column B when column A is the Conv. link (same TZ as combined stamp).
+ * Conversation **date only** for Sheets (numeric cell + dd/mm/yyyy display format).
  * @param {Date} [d]
- * @returns {string}
+ * @returns {number|string}
  */
 export function formatConversationDateForSheet(d = new Date()) {
     const dt = conversationSheetBaseDate_(d);
-    const tz = conversationDateTimeZoneForIntl_();
-    try {
-        const opts = /** @type {Intl.DateTimeFormatOptions} */ ({
-            dateStyle: "medium",
-            hour12: true
-        });
-        if (tz) {
-            opts.timeZone = tz;
-        }
-        return new Intl.DateTimeFormat("en-IN", opts).format(dt);
-    } catch {
-        try {
-            return dt.toLocaleDateString("en-US", { hour12: true });
-        } catch {
-            return dt.toISOString().slice(0, 10);
-        }
+    const ser = googleSheetsSerialFromEpochMs_(dt.getTime());
+    return ser != null ? ser : "";
+}
+
+/** @param {unknown} raw */
+function sheetConvDateCellValue_(raw) {
+    if (typeof raw === "number" && Number.isFinite(raw) && raw > 0) {
+        return raw;
     }
+    if (raw instanceof Date && !Number.isNaN(raw.getTime())) {
+        const ser = googleSheetsSerialFromEpochMs_(raw.getTime());
+        return ser != null ? ser : "";
+    }
+    const ms = parseConversationDateCellWide_(raw);
+    if (Number.isFinite(ms)) {
+        const ser = googleSheetsSerialFromEpochMs_(ms);
+        return ser != null ? ser : "";
+    }
+    return "";
+}
+
+/** @param {unknown} raw */
+function sheetAppointmentDateCellValue_(raw) {
+    return sheetConvDateCellValue_(raw);
 }
 
 /**
@@ -274,8 +308,11 @@ function appendRangeSchemaWidth_(raw) {
  * @param {{ iso?: string, convDate?: string, convTime?: string }} row
  */
 function conversationPartsFromIncomingRow_(row) {
-    const dd = typeof row.convDate === "string" ? row.convDate.trim() : "";
     const tt = typeof row.convTime === "string" ? row.convTime.trim() : "";
+    if (typeof row.convDate === "number" && Number.isFinite(row.convDate)) {
+        return { convDate: row.convDate, convTime: tt };
+    }
+    const dd = typeof row.convDate === "string" ? row.convDate.trim() : "";
     if (dd && tt) {
         return { convDate: dd, convTime: tt };
     }
@@ -1339,7 +1376,43 @@ function sheetOutboundCell_(v) {
     return String(v);
 }
 
-/** Force Conv. Date / Conv. Time to stay plain text in Sheets (avoids serial 46158 / 0.96… on USER_ENTERED). */
+/** Tabs where Conv. Date + Appointment date columns already have dd/mm/yyyy number format. */
+const sheetDateColumnsFormatApplied_ = new Set();
+
+/**
+ * Apply dd/mm/yyyy display format to conversation + appointment date columns (numeric cells).
+ * @param {import("googleapis").sheets_v4.Sheets} sheets
+ * @param {string} tab
+ */
+async function ensureSheetDateColumnsFormat_(sheets, tab) {
+    const key = normalizedSheetTabKey_(tab);
+    if (sheetDateColumnsFormatApplied_.has(key)) {
+        return;
+    }
+    const sheetId = await getSheetIdForTitle_(sheets, tab);
+    const dateColIdxs = [1, 16];
+    /** @type {import("googleapis").sheets_v4.Schema$Request[]} */
+    const requests = dateColIdxs.map((colIdx) => ({
+        repeatCell: {
+            range: {
+                sheetId,
+                startRowIndex: 1,
+                endRowIndex: 200000,
+                startColumnIndex: colIdx,
+                endColumnIndex: colIdx + 1
+            },
+            cell: { userEnteredFormat: { numberFormat: SHEET_DD_MM_YYYY_NUMBER_FORMAT } },
+            fields: "userEnteredFormat.numberFormat"
+        }
+    }));
+    await sheets.spreadsheets.batchUpdate({
+        spreadsheetId: SPREADSHEET_ID,
+        requestBody: { requests }
+    });
+    sheetDateColumnsFormatApplied_.add(key);
+}
+
+/** Force Conv. Time to stay plain text in Sheets (time-only column). */
 function sheetConvDateOrTimeCell_(v) {
     const s = sheetOutboundCell_(v);
     if (!s) {
@@ -1755,7 +1828,12 @@ async function updateExistingSessionRow_(sheets, tab, rowNumber, incoming, optio
     if (appointmentBookedPatch !== null) {
         data.push({ range: `${tab}!${colL(15)}${rowNumber}`, values: [[appointmentBookedPatch]] });
     }
-    if (appointmentDate) data.push({ range: `${tab}!${colL(16)}${rowNumber}`, values: [[appointmentDate]] });
+    if (appointmentDate) {
+        const apptDateCell = sheetAppointmentDateCellValue_(appointmentDate);
+        if (apptDateCell !== "") {
+            data.push({ range: `${tab}!${colL(16)}${rowNumber}`, values: [[apptDateCell]] });
+        }
+    }
     if (appointmentTime) data.push({ range: `${tab}!${colL(17)}${rowNumber}`, values: [[appointmentTime]] });
     if (fileLinks) data.push({ range: `${tab}!${colL(18)}${rowNumber}`, values: [[fileLinks]] });
     if (userQueriesCsv) {
@@ -2985,7 +3063,7 @@ async function buildStandardLeadRowUpdates_(sheets, tab, rowNumber, lead) {
             "date"
         ],
         1,
-        sheetConvDateOrTimeCell_(lead.convDate)
+        sheetConvDateCellValue_(lead.convDate)
     );
     put(
         [
@@ -3272,7 +3350,7 @@ export async function appendContactRowToSheet(row, opts) {
     // Append A–S directly (Conv. link, Date, Time, then lead fields …).
     const values = [[
         colAFormula || "",
-        sheetConvDateOrTimeCell_(convParts.convDate),
+        sheetConvDateCellValue_(convParts.convDate),
         sheetConvDateOrTimeCell_(convParts.convTime),
         sheetOutboundCell_(row.name),
         sheetOutboundCell_(row.mobile),
@@ -3287,7 +3365,7 @@ export async function appendContactRowToSheet(row, opts) {
         sheetOutboundCell_(city),
         sheetOutboundCell_(ip),
         sheetOutboundCell_(appointmentBooked),
-        sheetOutboundCell_(appointmentDate),
+        sheetAppointmentDateCellValue_(appointmentDate),
         sheetOutboundCell_(appointmentTime),
         sheetOutboundCell_(fileLinks)
     ]];
@@ -3321,6 +3399,16 @@ export async function appendContactRowToSheet(row, opts) {
     const appendedRowNum = rowNumberFromUpdatedRange_(googleAppend.updatedRange);
     if (appendedRowNum && !colAFormula && sid0) {
         await maybeWriteLeadConvLinkColumnA_(sheets, tabResolved, appendedRowNum, sid0);
+    }
+    try {
+        await ensureSheetDateColumnsFormat_(sheets, tabResolved);
+    } catch (fmtColErr) {
+        console.warn(
+            "[chatbot-api] Sheets date column format:",
+            fmtColErr && /** @type {{ message?: string }} */ (fmtColErr).message
+                ? String(/** @type {{ message?: string }} */ (fmtColErr).message).slice(0, 200)
+                : fmtColErr
+        );
     }
     try {
         if (appendedRowNum) {
@@ -4302,11 +4390,17 @@ function buildLeadDashboardSheetPayload_(payload) {
     ]);
     if (payload.dateFilter && payload.dateFilter.applied) {
         push([]);
-        push([
+        const fromSerial = payload.dateFilter.from
+            ? googleSheetsSerialFromIsoYmd_(payload.dateFilter.from)
+            : null;
+        const toSerial = payload.dateFilter.to
+            ? googleSheetsSerialFromIsoYmd_(payload.dateFilter.to)
+            : null;
+        L.rowDateFilter = push([
             "Date filter (inclusive)",
-            `${payload.dateFilter.from || "—"} … ${payload.dateFilter.to || "—"}`,
-            "",
-            "",
+            fromSerial != null ? fromSerial : "",
+            "to",
+            toSerial != null ? toSerial : "",
             "",
             "",
             "",
@@ -4456,7 +4550,8 @@ function buildLeadDashboardSheetPayload_(payload) {
             coverageDataEnd: L.coverageDataEnd,
             rowChartBandLabel: L.rowChartBandLabel,
             chartSlotStart: L.chartSlotStart,
-            chartSlotEnd: L.chartSlotEnd
+            chartSlotEnd: L.chartSlotEnd,
+            rowDateFilter: L.rowDateFilter
         }
     };
 }
@@ -5142,6 +5237,25 @@ async function applyLeadDashboardChartsAndFormatting_(sheets, sheetId, layout, r
             verticalAlignment: "MIDDLE",
             textFormat: { foregroundColor: muted, fontSize: 10 }
         });
+    }
+
+    if (layout.rowDateFilter != null && layout.rowDateFilter >= 0) {
+        const dfRow = layout.rowDateFilter;
+        for (const colIdx of [1, 3]) {
+            requests.push({
+                repeatCell: {
+                    range: {
+                        sheetId,
+                        startRowIndex: dfRow,
+                        endRowIndex: dfRow + 1,
+                        startColumnIndex: colIdx,
+                        endColumnIndex: colIdx + 1
+                    },
+                    cell: { userEnteredFormat: { numberFormat: SHEET_DD_MM_YYYY_NUMBER_FORMAT } },
+                    fields: "userEnteredFormat.numberFormat"
+                }
+            });
+        }
     }
 
     await sheets.spreadsheets.batchUpdate({
