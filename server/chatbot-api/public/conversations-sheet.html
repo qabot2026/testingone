@@ -1478,10 +1478,90 @@
       min-height: 120px;
       max-height: 140px;
     }
-    .lead-chart-card--split .chart-canvas-wrap {
-      height: 172px;
-      min-height: 172px;
-      max-height: 196px;
+    .lead-chart-card-total--split {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      gap: 4px 14px;
+      margin-bottom: 10px;
+    }
+    .lead-chart-card-capture-rate {
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: #64748b;
+    }
+    .lead-chart-card-capture-rate #lcChartLeadCapturePct {
+      font-weight: 700;
+      color: #0f172a;
+    }
+    .lead-split-chart-layout {
+      display: grid;
+      grid-template-columns: minmax(58px, 0.85fr) minmax(0, 2.3fr) minmax(58px, 0.85fr);
+      align-items: stretch;
+      gap: 2px 4px;
+      flex: 1;
+      min-height: 0;
+    }
+    .lead-split-chart-canvas {
+      height: 132px;
+      min-height: 132px;
+      max-height: 148px;
+    }
+    .lead-pie-callout-col {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-evenly;
+      gap: 8px;
+      min-height: 132px;
+      pointer-events: none;
+    }
+    .lead-pie-callout-item {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 0.6875rem;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      color: #0f172a;
+      line-height: 1.2;
+    }
+    .lead-pie-callout-col--left .lead-pie-callout-item {
+      justify-content: flex-end;
+      text-align: right;
+    }
+    .lead-pie-callout-swatch {
+      flex-shrink: 0;
+      width: 7px;
+      height: 7px;
+      border-radius: 2px;
+    }
+    .lead-split-legend {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 4px 10px;
+      margin-top: 8px;
+      padding-top: 2px;
+    }
+    .lead-split-legend-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 0.625rem;
+      font-weight: 500;
+      color: #64748b;
+      line-height: 1.2;
+    }
+    .lead-split-legend-swatch {
+      width: 7px;
+      height: 7px;
+      border-radius: 2px;
+      flex-shrink: 0;
+    }
+    .lead-chart-card--split .chart-canvas-wrap.lead-split-chart-canvas {
+      height: 132px;
+      min-height: 132px;
+      max-height: 148px;
     }
 
     @media (max-width: 1100px) {
@@ -1691,11 +1771,20 @@
             </div>
             <div class="lead-chart-card lead-chart-card--split">
               <h4>Lead capture split</h4>
-              <p class="lead-chart-card-total">
-                Leads Captured · <span id="lcChartTotalLeads">0</span>
-                (<span id="lcChartLeadCapturePct">-</span>)
+              <p class="lead-chart-card-total lead-chart-card-total--split">
+                <span>Leads Captured · <span id="lcChartTotalLeads">0</span></span>
+                <span class="lead-chart-card-capture-rate"
+                  >Lead capture rate <span id="lcChartLeadCapturePct">-</span></span
+                >
               </p>
-              <div class="chart-canvas-wrap"><canvas id="lcPieLead" aria-label="Lead capture split"></canvas></div>
+              <div class="lead-split-chart-layout">
+                <div class="lead-pie-callout-col lead-pie-callout-col--left" id="lcPieLeadLabelLeft" aria-hidden="true"></div>
+                <div class="chart-canvas-wrap lead-split-chart-canvas"
+                  ><canvas id="lcPieLead" aria-label="Lead capture split"></canvas
+                ></div>
+                <div class="lead-pie-callout-col lead-pie-callout-col--right" id="lcPieLeadLabelRight" aria-hidden="true"></div>
+              </div>
+              <div class="lead-split-legend" id="lcPieLeadLegend" aria-hidden="true"></div>
             </div>
             <div class="lead-chart-card">
               <h4>Pipeline</h4>
@@ -1796,6 +1885,10 @@
         });
         leadChartInstances = [];
         window._leadChartMountId = (window._leadChartMountId || 0) + 1;
+        ["lcPieLeadLabelLeft", "lcPieLeadLabelRight", "lcPieLeadLegend"].forEach(function (id) {
+          var el = document.getElementById(id);
+          if (el) el.innerHTML = "";
+        });
       }
 
       function showLeadChartNotice(msg) {
@@ -1849,6 +1942,22 @@
         });
       }
 
+      function leadStatNum(o, key, fb) {
+        if (!o || typeof o !== "object") return fb;
+        var v = o[key];
+        if (typeof v === "number" && Number.isFinite(v)) return Math.trunc(v);
+        var n = Number(v);
+        if (Number.isFinite(n)) return Math.trunc(n);
+        return fb;
+      }
+
+      function parseRatioSlash(s) {
+        if (typeof s !== "string") return null;
+        var m = s.trim().match(/^(\d+)\s*\/\s*(\d+)$/);
+        if (!m) return null;
+        return { num: parseInt(m[1], 10), den: parseInt(m[2], 10) };
+      }
+
       function leadCapturePctOfConversations(conversations, leadsCaptured) {
         if (
           !(conversations > 0) ||
@@ -1858,6 +1967,32 @@
           return null;
         }
         return Math.round((leadsCaptured * 10000) / conversations) / 100;
+      }
+
+      function resolveLeadCaptureMetrics(tot, rat) {
+        var om = leadStatNum(tot, "onlyMobile", 0);
+        var oe = leadStatNum(tot, "onlyEmail", 0);
+        var be = leadStatNum(tot, "mobileAndEmail", 0);
+        var split = om + oe + be;
+        var leads = leadStatNum(tot, "leadsCaptured", split);
+        if (leads < split) leads = split;
+        var neither = leadStatNum(tot, "neither", 0);
+        var convTotal = leadStatNum(tot, "conversations", 0);
+        if (convTotal <= 0) convTotal = leads + neither;
+        if (neither > 0) convTotal = Math.max(convTotal, leads + neither);
+        var pair = parseRatioSlash(rat && rat.leads);
+        if (pair) {
+          if (pair.num > 0) leads = pair.num;
+          if (pair.den > 0) convTotal = Math.max(convTotal, pair.den);
+        }
+        var pct = leadCapturePctOfConversations(convTotal, leads);
+        var pctApi = rat && rat.leadCapturePct;
+        if (typeof pctApi === "number" && Number.isFinite(pctApi) && convTotal > 0) {
+          var recomputed = leadCapturePctOfConversations(convTotal, leads);
+          if (recomputed == null || Math.abs(recomputed - pctApi) < 2) pct = pctApi;
+          else pct = recomputed;
+        }
+        return { leads: leads, convTotal: convTotal, pct: pct };
       }
 
       function formatLeadCapturePctText(pct) {
@@ -1871,17 +2006,66 @@
         return text + "%";
       }
 
-      function updateLeadChartTotals(conversations, leadsCaptured) {
+      function updateLeadChartTotals(metrics) {
         var convEl = document.getElementById("lcChartTotalConv");
         var leadsEl = document.getElementById("lcChartTotalLeads");
         var pctEl = document.getElementById("lcChartLeadCapturePct");
-        if (convEl) convEl.textContent = String(conversations);
-        if (leadsEl) leadsEl.textContent = String(leadsCaptured);
-        if (pctEl) {
-          pctEl.textContent = formatLeadCapturePctText(
-            leadCapturePctOfConversations(conversations, leadsCaptured)
+        if (convEl) convEl.textContent = String(metrics.convTotal);
+        if (leadsEl) leadsEl.textContent = String(metrics.leads);
+        if (pctEl) pctEl.textContent = formatLeadCapturePctText(metrics.pct);
+      }
+
+      function formatLeadChartCountExact(n) {
+        return String(Math.trunc(n));
+      }
+
+      function renderPieLeadSideLabels(om, oe, be, pal) {
+        var leftEl = document.getElementById("lcPieLeadLabelLeft");
+        var rightEl = document.getElementById("lcPieLeadLabelRight");
+        var legendEl = document.getElementById("lcPieLeadLegend");
+        if (!leftEl || !rightEl) return;
+        leftEl.innerHTML = "";
+        rightEl.innerHTML = "";
+        if (legendEl) legendEl.innerHTML = "";
+        var segments = [
+          { name: "Mobile only", val: om, color: pal.teal },
+          { name: "Email only", val: oe, color: pal.sky },
+          { name: "Mobile & email", val: be, color: pal.indigo }
+        ];
+        var active = segments.filter(function (s) {
+          return s.val > 0;
+        });
+        active.sort(function (a, b) {
+          return b.val - a.val;
+        });
+        function calloutHtml(seg) {
+          return (
+            '<div class="lead-pie-callout-item" title="' +
+            escapeHtml(seg.name) +
+            '"><span class="lead-pie-callout-swatch" style="background:' +
+            seg.color +
+            '"></span><span class="lead-pie-callout-val">' +
+            escapeHtml(formatLeadChartCountExact(seg.val)) +
+            "</span></div>"
           );
         }
+        function legendHtml(seg) {
+          return (
+            '<span class="lead-split-legend-item"><span class="lead-split-legend-swatch" style="background:' +
+            seg.color +
+            '"></span>' +
+            escapeHtml(seg.name) +
+            "</span>"
+          );
+        }
+        active.forEach(function (seg, idx) {
+          var col = idx % 2 === 0 ? rightEl : leftEl;
+          col.insertAdjacentHTML("beforeend", calloutHtml(seg));
+          if (legendEl) legendEl.insertAdjacentHTML("beforeend", legendHtml(seg));
+        });
+        leftEl.removeAttribute("aria-hidden");
+        rightEl.removeAttribute("aria-hidden");
+        if (legendEl && active.length) legendEl.removeAttribute("aria-hidden");
       }
 
       /**
@@ -1993,13 +2177,13 @@
           if (Number.isFinite(n)) return Math.trunc(n);
           return fb;
         }
-        var n = statNum(tot, "conversations", 0);
+        var chartMetrics = resolveLeadCaptureMetrics(tot, payload.ratios || {});
+        var n = chartMetrics.convTotal;
         var om = statNum(tot, "onlyMobile", 0);
         var oe = statNum(tot, "onlyEmail", 0);
         var be = statNum(tot, "mobileAndEmail", 0);
         var leadSplitTotal = om + oe + be;
-        var leads = statNum(tot, "leadsCaptured", leadSplitTotal);
-        if (leads < leadSplitTotal) leads = leadSplitTotal;
+        var leads = chartMetrics.leads;
         var apt = statNum(tot, "appointmentBooked", NaN);
         if (!Number.isFinite(apt)) apt = statNum(tot, "appointmentScheduled", 0);
         var cw = statNum(tot, "channelWeb", 0);
@@ -2073,118 +2257,6 @@
           var num = chartSegmentValue_(ctx);
           if (num <= 0 || !total || total <= 0) return "";
           return chartCountWithPctBrackets(num, total);
-        }
-
-        function spreadPieOutsideLabels(items, gap) {
-          function spread(group) {
-            if (group.length < 2) return;
-            group.sort(function (a, b) {
-              return a.boxY - b.boxY;
-            });
-            for (var j = 1; j < group.length; j++) {
-              var prev = group[j - 1];
-              var cur = group[j];
-              var minY = prev.boxY + prev.boxH + gap;
-              if (cur.boxY < minY) cur.boxY = minY;
-            }
-            for (var k = group.length - 2; k >= 0; k--) {
-              var next = group[k + 1];
-              var cur2 = group[k];
-              var maxY = next.boxY - gap - cur2.boxH;
-              if (cur2.boxY > maxY) cur2.boxY = maxY;
-            }
-          }
-          spread(items.filter(function (it) {
-            return it.onRight;
-          }));
-          spread(items.filter(function (it) {
-            return !it.onRight;
-          }));
-        }
-
-        /** Callout lines + labels outside the doughnut (no numbers inside slices). */
-        function makePieLeadOutsidePlugin(splitTotal) {
-          return {
-            id: "lcPieLeadOutside",
-            afterDatasetsDraw: function (chart) {
-              if (chart.canvas.id !== "lcPieLead") return;
-              var meta = chart.getDatasetMeta(0);
-              if (!meta || !meta.data || !meta.data.length) return;
-              var ds = chart.data.datasets[0];
-              var ctx = chart.ctx;
-              var fontSize = 9;
-              var padX = 5;
-              var padY = 3;
-              var labelGap = 5;
-              ctx.save();
-              ctx.font = "700 " + fontSize + "px system-ui, Segoe UI, sans-serif";
-              var items = [];
-              for (var i = 0; i < meta.data.length; i++) {
-                var arc = meta.data[i];
-                var val = chartSegmentValue_({ dataset: ds, dataIndex: i });
-                if (!val || !arc || arc.circumference <= 0.001) continue;
-                var label = chartCountWithPctBrackets(val, splitTotal);
-                if (!label) continue;
-                var angle = (arc.startAngle + arc.endAngle) / 2;
-                var cos = Math.cos(angle);
-                var sin = Math.sin(angle);
-                var cx = arc.x;
-                var cy = arc.y;
-                var rEdge = arc.outerRadius;
-                var elbowR = rEdge + 12;
-                var ex = cx + cos * elbowR;
-                var ey = cy + sin * elbowR;
-                var textW = ctx.measureText(label).width;
-                var boxH = fontSize + padY * 2;
-                var boxW = textW + padX * 2;
-                var onRight = cos >= 0;
-                var boxEdgeX = onRight ? ex + 14 : ex - 14;
-                var boxX = onRight ? boxEdgeX : boxEdgeX - boxW;
-                var boxY = ey - boxH / 2;
-                var ax = cx + cos * rEdge;
-                var ay = cy + sin * rEdge;
-                items.push({
-                  label: label,
-                  onRight: onRight,
-                  ax: ax,
-                  ay: ay,
-                  ex: ex,
-                  ey: ey,
-                  boxEdgeX: boxEdgeX,
-                  boxX: boxX,
-                  boxY: boxY,
-                  boxW: boxW,
-                  boxH: boxH
-                });
-              }
-              spreadPieOutsideLabels(items, labelGap);
-              ctx.lineCap = "round";
-              ctx.lineJoin = "round";
-              ctx.strokeStyle = "rgba(100, 116, 139, 0.9)";
-              ctx.lineWidth = 1;
-              for (var li = 0; li < items.length; li++) {
-                var it = items[li];
-                var midY = it.boxY + it.boxH / 2;
-                ctx.beginPath();
-                ctx.moveTo(it.ax, it.ay);
-                ctx.lineTo(it.ex, it.ey);
-                ctx.lineTo(it.boxEdgeX, midY);
-                ctx.stroke();
-                ctx.fillStyle = "rgba(255, 255, 255, 0.94)";
-                ctx.strokeStyle = "rgba(148, 163, 184, 0.55)";
-                ctx.lineWidth = 1;
-                ctx.beginPath();
-                ctx.rect(it.boxX, it.boxY, it.boxW, it.boxH);
-                ctx.fill();
-                ctx.stroke();
-                ctx.fillStyle = chartDlTextColor;
-                ctx.textBaseline = "middle";
-                ctx.textAlign = "left";
-                ctx.fillText(it.label, it.boxX + padX, midY);
-              }
-              ctx.restore();
-            }
-          };
         }
 
         var channelBarPctDl = {
@@ -2292,7 +2364,6 @@
           leadChartInstances.push(
           new Chart(leadPieEl, {
             type: "doughnut",
-            plugins: [makePieLeadOutsidePlugin(leadSplitTotal)],
             data: {
               labels: ["Mobile only", "Email only", "Mobile & email"],
               datasets: [
@@ -2305,11 +2376,12 @@
               ]
             },
             options: {
-              layout: { padding: { top: 28, right: 52, bottom: 28, left: 52 } },
+              layout: { padding: { top: 4, right: 4, bottom: 4, left: 4 } },
+              cutout: "58%",
               responsive: true,
               maintainAspectRatio: false,
               plugins: {
-                legend: doughnutLegend,
+                legend: { display: false },
                 datalabels: { display: false },
                 tooltip: {
                   callbacks: {
@@ -2328,6 +2400,8 @@
             }
           })
         );
+          renderPieLeadSideLabels(om, oe, be, pal);
+          updateLeadChartTotals(chartMetrics);
 
         leadChartInstances.push(
           new Chart(funnelEl, {
@@ -3665,7 +3739,11 @@
         var cwa = statNum(tot, "channelWhatsapp", 0);
         var cinst = statNum(tot, "channelInstagram", 0);
         var cfb = statNum(tot, "channelFacebook", 0);
-        var leadCapturePctVal = leadCapturePctOfConversations(n, leads);
+        var rat = payload.ratios || {};
+        var leadMetrics = resolveLeadCaptureMetrics(tot, rat);
+        var leadCapturePctVal = leadMetrics.pct;
+        leads = leadMetrics.leads;
+        n = leadMetrics.convTotal;
         var leadCaptureCountDisp = escapeHtml(String(leads));
         var leadCaptureDisp =
           leadCapturePctVal != null
@@ -3827,7 +3905,7 @@
           contactMini(escapeHtml("Email only"), oe, oeByCh) +
           contactMini(escapeHtml("Mobile & email"), be, beByCh) +
           "</div></div></div>";
-        updateLeadChartTotals(n, leads);
+        updateLeadChartTotals(leadMetrics);
         lastLeadStatsPayload = payload;
         var viewMode = "numeric";
         try {
