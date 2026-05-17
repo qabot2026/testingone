@@ -37,7 +37,6 @@ MOBILE_ALIASES = [
     "cellphone",
     "contactnumber",
     "contactphone",
-    "whatsapp",
     "whatsappnumber",
     "yourmobile",
     "usermobile",
@@ -64,6 +63,8 @@ EMAIL_ALIASES = [
 CHANNEL_ALIASES = [
     "channel",
     "channels",
+    "whatsapp",
+    "whatsappchannel",
     "chatsource",
     "sourcechannel",
     "communicationchannel",

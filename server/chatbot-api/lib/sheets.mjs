@@ -1747,7 +1747,6 @@ const SHEET_H_MOBILE = [
     "cellphone",
     "contactnumber",
     "contactphone",
-    "whatsapp",
     "whatsappnumber",
     "yourmobile",
     "usermobile",
@@ -1774,6 +1773,8 @@ const SHEET_H_EMAIL = [
 const SHEET_H_CHANNEL = [
     "channel",
     "channels",
+    "whatsapp",
+    "whatsappchannel",
     "chatsource",
     "sourcechannel",
     "communicationchannel",
@@ -2035,8 +2036,89 @@ function conversationRowYmdInSheetTz_(epochMs) {
 
 /** Lead stats: plausible mobile if enough digits (captures WhatsApp variants). */
 function sheetCellHasLeadMobile_(raw) {
-    const digits = sheetCellString_(raw).replace(/\D/g, "");
-    return digits.length >= 7;
+    const key = mobileKeyFromCell_(raw);
+    return mobileDigitsOnly(key).length >= 7;
+}
+
+/**
+ * One value per sheet data row from a single-column `values.get` (row 2..n).
+ * @param {unknown} matrix
+ * @returns {unknown[]}
+ */
+function sheetSingleColumnValuesList_(matrix) {
+    if (!Array.isArray(matrix)) {
+        return [];
+    }
+    return matrix.map((row) => (Array.isArray(row) ? row[0] : undefined));
+}
+
+/**
+ * @param {import("googleapis").sheets_v4.Sheets} sheets
+ * @param {string} tab
+ * @param {number} colIdx0
+ * @param {number} lastRow1Based
+ * @returns {Promise<unknown[]>}
+ */
+async function fetchSheetSingleColumnValues_(sheets, tab, colIdx0, lastRow1Based) {
+    if (lastRow1Based < 2 || colIdx0 < 0) {
+        return [];
+    }
+    const letter = columnLetterFromIndex_(colIdx0);
+    const got = await sheets.spreadsheets.values.get({
+        spreadsheetId: SPREADSHEET_ID,
+        range: `${tab}!${letter}2:${letter}${lastRow1Based}`
+    });
+    return sheetSingleColumnValuesList_(got.data.values);
+}
+
+/** Pad sparse Values API rows so column indexes match sheet columns (trailing empties omitted). */
+function padSheetRow_(cells, minCols) {
+    const row = Array.isArray(cells) ? cells.slice() : [];
+    const n = typeof minCols === "number" && minCols > 0 ? minCols : 0;
+    while (row.length < n) {
+        row.push("");
+    }
+    return row;
+}
+
+/**
+ * Prefer dedicated column fetch (aligned with data row count); fall back to padded wide row.
+ * @param {unknown[]} colVals
+ * @param {number} dataRowCount
+ * @param {number} ri
+ * @param {unknown[]} cells padded wide row
+ * @param {number} idx0
+ */
+function leadStatsCellAt_(colVals, dataRowCount, ri, cells, idx0) {
+    if (Array.isArray(colVals) && colVals.length === dataRowCount && ri < colVals.length) {
+        return colVals[ri];
+    }
+    return cells[idx0];
+}
+
+/** @param {unknown[]} cells @param {number} mobileIdx */
+function sheetRowHasLeadMobile_(cells, mobileIdx) {
+    if (sheetCellHasLeadMobile_(cells[mobileIdx])) {
+        return true;
+    }
+    const key = mobileKeyFromRow_(cells, mobileIdx);
+    return mobileDigitsOnly(key).length >= 7;
+}
+
+/** @param {unknown[]} cells @param {number} emailIdx */
+function sheetRowHasLeadEmail_(cells, emailIdx) {
+    if (sheetCellHasLeadEmail_(cells[emailIdx])) {
+        return true;
+    }
+    for (let i = 0; i < cells.length; i += 1) {
+        if (i === emailIdx) {
+            continue;
+        }
+        if (sheetCellHasLeadEmail_(cells[i])) {
+            return true;
+        }
+    }
+    return false;
 }
 
 function sheetCellHasLeadEmail_(raw) {
@@ -3191,10 +3273,18 @@ export async function fetchConversationLeadCaptureStats(opts = {}) {
     );
     const lastColIdx = Math.min(175, lastColBound);
     const colLetter = columnLetterFromIndex_(lastColIdx);
-    const dataGot = await sheets.spreadsheets.values.get({
-        spreadsheetId: SPREADSHEET_ID,
-        range: `${tab}!A2:${colLetter}${nLast}`
-    });
+    const [dataGot, mobileColVals, emailColVals, channelColVals, dateColVals] = await Promise.all([
+        sheets.spreadsheets.values.get({
+            spreadsheetId: SPREADSHEET_ID,
+            range: `${tab}!A2:${colLetter}${nLast}`
+        }),
+        fetchSheetSingleColumnValues_(sheets, tab, mobileIdx, nLast),
+        fetchSheetSingleColumnValues_(sheets, tab, emailIdx, nLast),
+        fetchSheetSingleColumnValues_(sheets, tab, channelIdx, nLast),
+        filterActive
+            ? fetchSheetSingleColumnValues_(sheets, tab, dateIdx, nLast)
+            : Promise.resolve([])
+    ]);
     const dataRows = Array.isArray(dataGot.data.values) ? dataGot.data.values : [];
 
     let conversations = 0;
@@ -3213,8 +3303,9 @@ export async function fetchConversationLeadCaptureStats(opts = {}) {
     let onlyEmailByCh = leadSegmentChannelTotalsEmpty_();
     let bothByCh = leadSegmentChannelTotalsEmpty_();
 
+    const padWidth = lastColIdx + 1;
     for (let ri = 0; ri < dataRows.length; ri += 1) {
-        const cells = dataRows[ri] || [];
+        const cells = padSheetRow_(dataRows[ri] || [], padWidth);
         let rowHasAny = false;
         for (let ci = 0; ci < cells.length; ci += 1) {
             if (!isBlankSheetCell_(cells[ci])) {
@@ -3226,7 +3317,8 @@ export async function fetchConversationLeadCaptureStats(opts = {}) {
             continue;
         }
         if (filterActive) {
-            const dateMs = parseConversationDateCellWide_(cells[dateIdx]);
+            const dateRaw = leadStatsCellAt_(dateColVals, dataRows.length, ri, cells, dateIdx);
+            const dateMs = parseConversationDateCellWide_(dateRaw);
             if (!Number.isFinite(dateMs)) {
                 skippedNoDate += 1;
                 continue;
@@ -3236,9 +3328,18 @@ export async function fetchConversationLeadCaptureStats(opts = {}) {
                 continue;
             }
         }
-        const hasMob = sheetCellHasLeadMobile_(cells[mobileIdx]);
-        const hasEm = sheetCellHasLeadEmail_(cells[emailIdx]);
-        const channelKey = conversationChannelBucket_(cells[channelIdx]);
+        const mobCell = leadStatsCellAt_(mobileColVals, dataRows.length, ri, cells, mobileIdx);
+        const emCell = leadStatsCellAt_(emailColVals, dataRows.length, ri, cells, emailIdx);
+        const chCell = leadStatsCellAt_(channelColVals, dataRows.length, ri, cells, channelIdx);
+        let hasMob = sheetCellHasLeadMobile_(mobCell);
+        if (!hasMob) {
+            hasMob = sheetRowHasLeadMobile_(cells, mobileIdx);
+        }
+        let hasEm = sheetCellHasLeadEmail_(emCell);
+        if (!hasEm) {
+            hasEm = sheetRowHasLeadEmail_(cells, emailIdx);
+        }
+        const channelKey = conversationChannelBucket_(chCell);
         conversations += 1;
         if (hasMob && hasEm) {
             both += 1;
