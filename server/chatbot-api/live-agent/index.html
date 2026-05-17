@@ -84,18 +84,40 @@
             </div>
             <div class="chat-head-actions">
               <button type="button" class="btn primary small" id="claimBtn" hidden>Claim chat</button>
-              <button type="button" class="btn danger small" id="closeChatBtn" hidden>End chat</button>
             </div>
           </header>
 
           <p id="claimHint" class="claim-hint muted small hidden" role="status"></p>
 
+          <div class="chat-body">
           <div id="messageList" class="message-list" role="log" aria-live="polite"></div>
 
           <form id="composerForm" class="composer" novalidate>
-            <textarea id="composerInput" rows="2" placeholder="Type a reply to the visitor…" autocomplete="off"></textarea>
+            <textarea id="composerInput" rows="4" placeholder="Type a reply to the visitor…" autocomplete="off"></textarea>
             <button type="submit" class="btn primary" id="sendBtn">Send</button>
           </form>
+
+          <div id="chatActionsBar" class="chat-actions-bar hidden" aria-label="Chat controls">
+            <p id="chatModeStatus" class="chat-mode-status muted small">—</p>
+            <div class="chat-actions-primary">
+              <button type="button" class="btn primary" id="enableChatbotBtn" title="Let the AI bot reply to this visitor again">
+                Enable chatbot
+              </button>
+              <button type="button" class="btn" id="takeHumanBtn" title="You reply; AI auto-reply off">
+                Human takeover
+              </button>
+              <button type="button" class="btn danger" id="endChatFooterBtn" title="End this live chat">
+                End chat
+              </button>
+            </div>
+            <div class="chat-actions-secondary">
+              <button type="button" class="btn ghost small" id="refreshChatBtn">Refresh messages</button>
+              <button type="button" class="btn ghost small" id="copySessionBtn">Copy session ID</button>
+              <a class="btn ghost small" id="transcriptFooterBtn" href="#" target="_blank" rel="noopener noreferrer">Open transcript</a>
+              <button type="button" class="btn ghost small" id="dismissFooterBtn" title="Remove from queue">Dismiss request</button>
+            </div>
+          </div>
+          </div>
         </div>
       </main>
 
@@ -107,17 +129,9 @@
         </div>
         <div id="contextBody" class="context-body hidden">
           <section class="context-block">
-            <h3>Chat mode</h3>
-            <p class="muted small">Widget reads these flags when polling <code>/api/live-agent/status</code>.</p>
-            <div class="mode-toggles" role="group" aria-label="AI vs human">
-              <button type="button" class="mode-btn" id="modeHumanBtn" data-mode="human">Human</button>
-              <button type="button" class="mode-btn" id="modeAiBtn" data-mode="ai">AI</button>
-            </div>
+            <h3>Chat controls</h3>
+            <p class="muted small">Use the buttons at the <strong>bottom of the chat panel</strong> (Enable chatbot, Human takeover, End chat).</p>
             <p id="modeStatusLine" class="mode-status muted">—</p>
-            <label class="toggle-row">
-              <input type="checkbox" id="aiEnabledToggle" />
-              <span>AI auto-reply enabled for visitor</span>
-            </label>
           </section>
 
           <section class="context-block">

@@ -203,7 +203,7 @@ body.live-agent-locked {
 
 .workspace {
   display: grid;
-  grid-template-columns: minmax(220px, 280px) minmax(0, 1fr) minmax(260px, 300px);
+  grid-template-columns: minmax(200px, 22vw) minmax(0, 1fr) minmax(200px, 24vw);
   flex: 1;
   min-height: 0;
   overflow: hidden;
@@ -211,7 +211,7 @@ body.live-agent-locked {
 
 @media (max-width: 960px) {
   .workspace {
-    grid-template-columns: minmax(200px, 240px) minmax(0, 1fr);
+    grid-template-columns: minmax(180px, 200px) minmax(0, 1fr);
   }
   .context-pane {
     display: none;
@@ -351,6 +351,14 @@ body.live-agent-locked {
   flex-direction: column;
   flex: 1;
   min-height: 0;
+  height: 100%;
+}
+
+.chat-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
 }
 
 .chat-head {
@@ -443,14 +451,54 @@ body.live-agent-locked {
 .composer textarea {
   flex: 1;
   resize: vertical;
-  min-height: 2.5rem;
-  max-height: 8rem;
+  min-height: 5rem;
+  max-height: 12rem;
   padding: 0.55rem 0.65rem;
   border-radius: 8px;
   border: 1px solid var(--border);
   background: var(--bg);
   color: var(--text);
   font-family: inherit;
+  font-size: 0.95rem;
+}
+
+.chat-actions-bar {
+  flex-shrink: 0;
+  padding: 0.85rem 1.25rem 1rem;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.chat-mode-status {
+  margin: 0 0 0.6rem;
+}
+
+.chat-actions-primary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.55rem;
+}
+
+.chat-actions-primary .btn {
+  min-height: 2.5rem;
+  padding: 0.55rem 1rem;
+  font-weight: 600;
+}
+
+.chat-actions-primary .btn.primary {
+  flex: 1 1 10rem;
+  max-width: 100%;
+}
+
+#enableChatbotBtn.active-mode {
+  box-shadow: 0 0 0 2px var(--accent-hover);
+}
+
+.chat-actions-secondary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
 }
 
 .pane-title {
@@ -587,7 +635,7 @@ body.live-agent-locked {
 @media (max-width: 768px) {
   .workspace {
     grid-template-columns: 1fr;
-    grid-template-rows: minmax(0, 38vh) minmax(0, 1fr);
+    grid-template-rows: minmax(0, 30vh) minmax(0, 1fr);
   }
   .context-pane {
     display: none;

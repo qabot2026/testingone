@@ -28,18 +28,23 @@
     const chatTitle = $("chatTitle");
     const chatMeta = $("chatMeta");
     const claimBtn = $("claimBtn");
-    const closeChatBtn = $("closeChatBtn");
     const claimHint = $("claimHint");
     const messageList = $("messageList");
     const composerForm = $("composerForm");
     const composerInput = $("composerInput");
     const sendBtn = $("sendBtn");
+    const chatActionsBar = $("chatActionsBar");
+    const chatModeStatus = $("chatModeStatus");
+    const enableChatbotBtn = $("enableChatbotBtn");
+    const takeHumanBtn = $("takeHumanBtn");
+    const endChatFooterBtn = $("endChatFooterBtn");
+    const refreshChatBtn = $("refreshChatBtn");
+    const copySessionBtn = $("copySessionBtn");
+    const transcriptFooterBtn = $("transcriptFooterBtn");
+    const dismissFooterBtn = $("dismissFooterBtn");
     const contextEmpty = $("contextEmpty");
     const contextBody = $("contextBody");
-    const modeHumanBtn = $("modeHumanBtn");
-    const modeAiBtn = $("modeAiBtn");
     const modeStatusLine = $("modeStatusLine");
-    const aiEnabledToggle = $("aiEnabledToggle");
     const contactDl = $("contactDl");
     const documentsList = $("documentsList");
     const documentsEmpty = $("documentsEmpty");
@@ -504,6 +509,7 @@
         if (!selectedId) {
             contextEmpty.classList.remove("hidden");
             contextBody.classList.add("hidden");
+            if (chatActionsBar) chatActionsBar.classList.add("hidden");
             return;
         }
         contextEmpty.classList.add("hidden");
@@ -511,17 +517,14 @@
 
         const aiOn = conv && conv.aiEnabled !== false;
         const hm = (conv && conv.humanMode) || "ai";
-        if (aiEnabledToggle) aiEnabledToggle.checked = aiOn;
-        if (modeHumanBtn) modeHumanBtn.classList.toggle("active", hm === "human" || hm === "waiting");
-        if (modeAiBtn) modeAiBtn.classList.toggle("active", hm === "ai");
-        if (modeStatusLine) {
-            modeStatusLine.textContent =
-                hm === "waiting"
-                    ? "Visitor is waiting for a human agent."
-                    : hm === "human"
-                      ? "Human agent chat — AI replies are off."
-                      : "AI mode — bot can auto-reply.";
-        }
+        const modeText =
+            hm === "waiting"
+                ? "Visitor is waiting for a human agent."
+                : hm === "human"
+                  ? "Human agent chat — AI replies are off."
+                  : "AI mode — bot can auto-reply.";
+        if (modeStatusLine) modeStatusLine.textContent = modeText;
+        renderChatActionsBar_(conv, modeText);
 
         const v = visitor || {};
         if (contactDl) {
@@ -569,8 +572,56 @@
         }
 
         if (transcriptLink) {
-            const url = v.transcriptUrl || "/conversation-transcript?session=" + encodeURIComponent(selectedId);
+            const url = transcriptUrlForSession_(selectedId, v);
             transcriptLink.href = url;
+            if (transcriptFooterBtn) transcriptFooterBtn.href = url;
+        }
+    }
+
+    function transcriptUrlForSession_(sessionId, visitor) {
+        const v = visitor || {};
+        return v.transcriptUrl || "/conversation-transcript?session=" + encodeURIComponent(sessionId || "");
+    }
+
+    function renderChatActionsBar_(conv, modeText) {
+        if (!chatActionsBar) return;
+        if (!selectedId || !conv) {
+            chatActionsBar.classList.add("hidden");
+            return;
+        }
+        chatActionsBar.classList.remove("hidden");
+        const hm = (conv && conv.humanMode) || conv.status || "ai";
+        const aiOn = conv && conv.aiEnabled !== false;
+        const st = conv.status || "";
+        const statusLine =
+            modeText ||
+            (hm === "waiting"
+                ? "Visitor is waiting for a human agent."
+                : hm === "human"
+                  ? "Human agent chat — AI replies are off."
+                  : "AI mode — bot can auto-reply.");
+        if (chatModeStatus) {
+            chatModeStatus.textContent =
+                statusLine +
+                (aiOn ? " · Chatbot on" : " · Chatbot off") +
+                " · " +
+                st;
+        }
+        if (enableChatbotBtn) {
+            enableChatbotBtn.classList.toggle("active-mode", hm === "ai" && aiOn);
+            enableChatbotBtn.disabled = hm === "ai" && aiOn;
+        }
+        if (takeHumanBtn) {
+            takeHumanBtn.disabled = (hm === "human" || hm === "waiting") && !aiOn;
+        }
+        if (endChatFooterBtn) {
+            endChatFooterBtn.hidden = st !== "active" && st !== "waiting";
+        }
+        if (dismissFooterBtn) {
+            dismissFooterBtn.hidden = st !== "waiting" && st !== "active";
+        }
+        if (transcriptFooterBtn && selectedId) {
+            transcriptFooterBtn.href = transcriptUrlForSession_(selectedId, null);
         }
     }
 
@@ -606,15 +657,43 @@
         }
     }
 
-    if (modeHumanBtn) {
-        modeHumanBtn.addEventListener("click", () => setMode_({ humanMode: "human", aiEnabled: false }));
+    if (enableChatbotBtn) {
+        enableChatbotBtn.addEventListener("click", () =>
+            setMode_({ humanMode: "ai", aiEnabled: true })
+        );
     }
-    if (modeAiBtn) {
-        modeAiBtn.addEventListener("click", () => setMode_({ humanMode: "ai", aiEnabled: true }));
+    if (takeHumanBtn) {
+        takeHumanBtn.addEventListener("click", () =>
+            setMode_({ humanMode: "human", aiEnabled: false })
+        );
     }
-    if (aiEnabledToggle) {
-        aiEnabledToggle.addEventListener("change", () => {
-            setMode_({ aiEnabled: aiEnabledToggle.checked });
+    if (refreshChatBtn) {
+        refreshChatBtn.addEventListener("click", () => {
+            if (!selectedId) return;
+            lastMessageIso = "";
+            messageList.innerHTML = "";
+            loadMessages(selectedId);
+        });
+    }
+    if (copySessionBtn) {
+        copySessionBtn.addEventListener("click", async () => {
+            if (!selectedId) return;
+            try {
+                await navigator.clipboard.writeText(selectedId);
+                copySessionBtn.textContent = "Copied!";
+                setTimeout(() => {
+                    copySessionBtn.textContent = "Copy session ID";
+                }, 2000);
+            } catch (_) {
+                alert("Session ID: " + selectedId);
+            }
+        });
+    }
+    if (dismissFooterBtn) {
+        dismissFooterBtn.addEventListener("click", () => {
+            if (!selectedId) return;
+            if (!confirm("Dismiss this request from the queue?")) return;
+            dismissConversation_(selectedId).catch((e) => alert(e.message || "Dismiss failed"));
         });
     }
 
@@ -643,7 +722,6 @@
         const canReply = isMine;
 
         claimBtn.hidden = !isWaiting;
-        closeChatBtn.hidden = !isActive;
         if (claimHint) {
             claimHint.hidden = !isWaiting;
             claimHint.textContent = isWaiting
@@ -662,6 +740,7 @@
         sendBtn.disabled = !canReply;
 
         renderContextPanel(c, null);
+        renderChatActionsBar_(c);
         loadContext(c.id);
         loadMessages(c.id);
     }
@@ -719,7 +798,7 @@
         }
     });
 
-    closeChatBtn.addEventListener("click", async () => {
+    async function endChat_() {
         if (!selectedId || !confirm("End this chat for the visitor? They can request a human again later.")) return;
         try {
             await apiFetch(`${API}/conversations/${encodeURIComponent(selectedId)}/close`, {
@@ -731,11 +810,16 @@
             chatEmpty.classList.remove("hidden");
             contextEmpty.classList.remove("hidden");
             contextBody.classList.add("hidden");
+            if (chatActionsBar) chatActionsBar.classList.add("hidden");
             loadInbox();
         } catch (e) {
             alert(e.message || "Could not close chat");
         }
-    });
+    }
+
+    if (endChatFooterBtn) {
+        endChatFooterBtn.addEventListener("click", () => endChat_());
+    }
 
     composerForm.addEventListener("submit", async (ev) => {
         ev.preventDefault();
