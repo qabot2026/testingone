@@ -540,8 +540,19 @@
       max-height: calc(100dvh - 280px);
       min-height: 200px;
       flex: 1 1 auto;
+      width: 100%;
+      max-width: 100%;
+      -webkit-overflow-scrolling: touch;
+      overscroll-behavior-x: contain;
       scrollbar-width: thin;
       scrollbar-color: rgba(13, 148, 136, 0.45) #f1f5f9;
+    }
+    table.sheet.sheet--scroll-all-cols thead th.col-sticky,
+    table.sheet.sheet--scroll-all-cols tbody td.col-sticky {
+      position: static;
+      left: auto !important;
+      z-index: auto;
+      box-shadow: none;
     }
     .sheet-scroll-pane::-webkit-scrollbar {
       width: 9px;
@@ -1801,6 +1812,58 @@
         flex: 1 1 100%;
       }
     }
+
+    @media (max-width: 767px) {
+      .sheet-wrap-shell {
+        border-radius: var(--radius-sm);
+      }
+      .sheet-scroll-pane {
+        max-height: calc(100dvh - 240px);
+      }
+      table.sheet {
+        min-width: max(100%, 520px);
+        font-size: 11px;
+      }
+      table.sheet thead th {
+        font-size: 9.5px;
+        padding: 6px 6px;
+      }
+      table.sheet tbody td {
+        min-width: 96px;
+        max-width: 200px;
+        padding: 4px 8px;
+      }
+      table.sheet tbody td.col-sticky {
+        min-width: 0;
+        max-width: none;
+        width: auto !important;
+      }
+      table.sheet thead th.col-sticky {
+        width: auto !important;
+        min-width: 0;
+        max-width: none;
+      }
+      table.sheet thead th.col-sticky,
+      table.sheet tbody td.col-sticky {
+        position: static;
+        left: auto !important;
+        z-index: auto;
+      }
+      .sheet-mobile-scroll-hint {
+        display: block;
+        margin: 0;
+        padding: 8px 12px;
+        font-size: 10.5px;
+        font-weight: 600;
+        color: var(--muted);
+        text-align: center;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.35);
+        background: #f8fafc;
+      }
+    }
+    .sheet-mobile-scroll-hint {
+      display: none;
+    }
   </style>
 </head>
 <body>
@@ -1958,6 +2021,7 @@
     </section>
 
     <div id="sheetWrap" class="sheet-wrap-shell">
+      <p class="sheet-mobile-scroll-hint" aria-hidden="true">Swipe left on the table to see more columns</p>
       <div id="sheetScroll" class="sheet-scroll-pane">
         <div id="convList">
           <div class="empty">Paste your secret and tap Reload (saved secrets load automatically).</div>
@@ -2796,6 +2860,15 @@
       /** Pinned: conv date/time, name, mobile, email (match header); widths in character units */
       var STICKY_WIDTH_CH = { date: 12, time: 12, name: 16, mobile: 15, email: 25 };
 
+      /** On phones, sticky pins are wider than the screen and hide horizontally scrolled cells. */
+      function shouldPinLeadColumns_() {
+        try {
+          return window.matchMedia("(min-width: 768px)").matches;
+        } catch (ignore) {
+          return true;
+        }
+      }
+
       function stickyLeadColumnRole(headerTitle) {
         var nk = normKey(headerTitle);
         if (!nk) return null;
@@ -2826,6 +2899,9 @@
 
       /** First matching column each role, left→right → cumulative sticky left offsets */
       function buildStickyMeta(headers) {
+        if (!shouldPinLeadColumns_()) {
+          return {};
+        }
         var picked = {};
         var plan = [];
         for (var i = 0; i < headers.length; i++) {
@@ -3571,6 +3647,9 @@
 
         var tbl = document.createElement("table");
         tbl.className = "sheet";
+        if (!shouldPinLeadColumns_()) {
+          tbl.classList.add("sheet--scroll-all-cols");
+        }
         var stickyMeta = buildStickyMeta(headers);
         var thead = document.createElement("thead");
         var trh = document.createElement("tr");
@@ -3650,6 +3729,15 @@
         });
         convList._sheetStickyRo.observe(sheetScroll);
       })();
+
+      var sheetLayoutResizeId = 0;
+      window.addEventListener("resize", function () {
+        if (!lastPayload) return;
+        window.clearTimeout(sheetLayoutResizeId);
+        sheetLayoutResizeId = window.setTimeout(function () {
+          render(lastPayload);
+        }, 200);
+      });
       function wireFilter() {
         filterEl.addEventListener("input", function () {
           if (lastPayload) render(lastPayload);
