@@ -1495,6 +1495,7 @@
       color: #0f172a;
     }
     .lead-split-chart-layout {
+      position: relative;
       display: grid;
       grid-template-columns: minmax(58px, 0.85fr) minmax(0, 2.3fr) minmax(58px, 0.85fr);
       align-items: stretch;
@@ -1502,18 +1503,31 @@
       flex: 1;
       min-height: 0;
     }
-    .lead-split-chart-canvas {
-      height: 132px;
-      min-height: 132px;
-      max-height: 148px;
+    .lead-pie-callout-arrows {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 1;
+      overflow: visible;
     }
     .lead-pie-callout-col {
+      position: relative;
+      z-index: 2;
       display: flex;
       flex-direction: column;
       justify-content: space-evenly;
       gap: 8px;
       min-height: 132px;
       pointer-events: none;
+    }
+    .lead-split-chart-canvas {
+      position: relative;
+      z-index: 0;
+      height: 132px;
+      min-height: 132px;
+      max-height: 148px;
     }
     .lead-pie-callout-item {
       display: flex;
@@ -1778,6 +1792,7 @@
                 >
               </p>
               <div class="lead-split-chart-layout">
+                <svg class="lead-pie-callout-arrows" id="lcPieLeadArrows" aria-hidden="true"></svg>
                 <div class="lead-pie-callout-col lead-pie-callout-col--left" id="lcPieLeadLabelLeft" aria-hidden="true"></div>
                 <div class="chart-canvas-wrap lead-split-chart-canvas"
                   ><canvas id="lcPieLead" aria-label="Lead capture split"></canvas
@@ -1885,10 +1900,13 @@
         });
         leadChartInstances = [];
         window._leadChartMountId = (window._leadChartMountId || 0) + 1;
-        ["lcPieLeadLabelLeft", "lcPieLeadLabelRight", "lcPieLeadLegend"].forEach(function (id) {
-          var el = document.getElementById(id);
-          if (el) el.innerHTML = "";
-        });
+        ["lcPieLeadLabelLeft", "lcPieLeadLabelRight", "lcPieLeadLegend", "lcPieLeadArrows"].forEach(
+          function (id) {
+            var el = document.getElementById(id);
+            if (el) el.innerHTML = "";
+          }
+        );
+        window._lcPieLeadChartForArrows = null;
       }
 
       function showLeadChartNotice(msg) {
@@ -2028,9 +2046,9 @@
         rightEl.innerHTML = "";
         if (legendEl) legendEl.innerHTML = "";
         var segments = [
-          { name: "Mobile only", val: om, color: pal.teal },
-          { name: "Email only", val: oe, color: pal.sky },
-          { name: "Mobile & email", val: be, color: pal.indigo }
+          { name: "Mobile only", val: om, color: pal.teal, idx: 0 },
+          { name: "Email only", val: oe, color: pal.sky, idx: 1 },
+          { name: "Mobile & email", val: be, color: pal.indigo, idx: 2 }
         ];
         var active = segments.filter(function (s) {
           return s.val > 0;
@@ -2040,7 +2058,9 @@
         });
         function calloutHtml(seg) {
           return (
-            '<div class="lead-pie-callout-item" title="' +
+            '<div class="lead-pie-callout-item" data-seg-idx="' +
+            seg.idx +
+            '" title="' +
             escapeHtml(seg.name) +
             '"><span class="lead-pie-callout-swatch" style="background:' +
             seg.color +
@@ -2066,6 +2086,75 @@
         leftEl.removeAttribute("aria-hidden");
         rightEl.removeAttribute("aria-hidden");
         if (legendEl && active.length) legendEl.removeAttribute("aria-hidden");
+      }
+
+      function syncPieLeadCalloutArrows(chart) {
+        var layout = document.querySelector(".lead-split-chart-layout");
+        var svg = document.getElementById("lcPieLeadArrows");
+        if (!layout || !svg || !chart || !chart.canvas) return;
+        var layoutRect = layout.getBoundingClientRect();
+        var w = layoutRect.width;
+        var h = layoutRect.height;
+        if (!(w > 0) || !(h > 0)) return;
+        svg.setAttribute("width", String(w));
+        svg.setAttribute("height", String(h));
+        svg.setAttribute("viewBox", "0 0 " + w + " " + h);
+        svg.innerHTML = "";
+        var meta = chart.getDatasetMeta(0);
+        if (!meta || !meta.data) return;
+        var canvasRect = chart.canvas.getBoundingClientRect();
+        var ns = "http://www.w3.org/2000/svg";
+        for (var i = 0; i < meta.data.length; i++) {
+          var arc = meta.data[i];
+          var raw = chart.data.datasets[0].data[i];
+          var val = typeof raw === "number" ? raw : Number(raw);
+          if (!Number.isFinite(val) || val <= 0 || !arc || arc.circumference <= 0.001) continue;
+          var item = layout.querySelector('.lead-pie-callout-item[data-seg-idx="' + i + '"]');
+          if (!item) continue;
+          var angle = (arc.startAngle + arc.endAngle) / 2;
+          var cos = Math.cos(angle);
+          var sin = Math.sin(angle);
+          var arcCx = canvasRect.left - layoutRect.left + arc.x;
+          var arcCy = canvasRect.top - layoutRect.top + arc.y;
+          var rEdge = arc.outerRadius;
+          var x0 = arcCx + cos * rEdge;
+          var y0 = arcCy + sin * rEdge;
+          var x1 = arcCx + cos * (rEdge + 10);
+          var y1 = arcCy + sin * (rEdge + 10);
+          var itemRect = item.getBoundingClientRect();
+          var onRight = cos >= 0;
+          var x2 = onRight ? itemRect.left - layoutRect.left : itemRect.right - layoutRect.left;
+          var y2 = itemRect.top - layoutRect.top + itemRect.height / 2;
+          var path = document.createElementNS(ns, "path");
+          path.setAttribute(
+            "d",
+            "M" + x0 + " " + y0 + " L" + x1 + " " + y1 + " L" + x2 + " " + y2
+          );
+          path.setAttribute("fill", "none");
+          path.setAttribute("stroke", "rgba(100, 116, 139, 0.9)");
+          path.setAttribute("stroke-width", "1");
+          path.setAttribute("stroke-linecap", "round");
+          path.setAttribute("stroke-linejoin", "round");
+          svg.appendChild(path);
+        }
+      }
+
+      function schedulePieLeadCalloutArrows(chart) {
+        if (!chart) return;
+        window._lcPieLeadChartForArrows = chart;
+        requestAnimationFrame(function () {
+          requestAnimationFrame(function () {
+            syncPieLeadCalloutArrows(chart);
+          });
+        });
+      }
+
+      if (!window._lcPieArrowResizeBound) {
+        window._lcPieArrowResizeBound = true;
+        window.addEventListener("resize", function () {
+          var ch = window._lcPieLeadChartForArrows;
+          if (ch) schedulePieLeadCalloutArrows(ch);
+        });
       }
 
       /**
@@ -2361,8 +2450,7 @@
 
         function pushRestLeadCharts() {
           if (!chartMountAlive()) return;
-          leadChartInstances.push(
-          new Chart(leadPieEl, {
+          var pieLeadChart = new Chart(leadPieEl, {
             type: "doughnut",
             data: {
               labels: ["Mobile only", "Email only", "Mobile & email"],
@@ -2380,6 +2468,11 @@
               cutout: "58%",
               responsive: true,
               maintainAspectRatio: false,
+              animation: {
+                onComplete: function () {
+                  schedulePieLeadCalloutArrows(this.chart);
+                }
+              },
               plugins: {
                 legend: { display: false },
                 datalabels: { display: false },
@@ -2398,9 +2491,10 @@
                 }
               }
             }
-          })
-        );
+          });
+          leadChartInstances.push(pieLeadChart);
           renderPieLeadSideLabels(om, oe, be, pal);
+          schedulePieLeadCalloutArrows(pieLeadChart);
           updateLeadChartTotals(chartMetrics);
 
         leadChartInstances.push(
