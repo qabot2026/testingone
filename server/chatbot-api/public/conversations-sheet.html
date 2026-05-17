@@ -2153,9 +2153,9 @@
           var arcCx2 = canvasRect.left - layoutRect.left + arc2.x;
           var arcCy2 = canvasRect.top - layoutRect.top + arc2.y;
           var r2 = arc2.outerRadius;
+          var ySlice2 = arcCy2 + sin2 * r2;
           var xSlice2 = arcCx2 + cos2 * r2;
           var itemRect = item2.getBoundingClientRect();
-          var yLine = itemRect.top - layoutRect.top + itemRect.height / 2;
           var onRight2 = cos2 >= 0;
           var gap = 3;
           var xLabel = onRight2
@@ -2163,9 +2163,9 @@
             : itemRect.right - layoutRect.left + gap;
           var line = document.createElementNS(ns, "line");
           line.setAttribute("x1", String(xSlice2));
-          line.setAttribute("y1", String(yLine));
+          line.setAttribute("y1", String(ySlice2));
           line.setAttribute("x2", String(xLabel));
-          line.setAttribute("y2", String(yLine));
+          line.setAttribute("y2", String(ySlice2));
           line.setAttribute("stroke", "rgba(100, 116, 139, 0.85)");
           line.setAttribute("stroke-width", "1");
           line.setAttribute("stroke-linecap", "round");
