@@ -809,13 +809,30 @@
     .lead-stats-numeric-row {
       display: flex;
       flex-wrap: nowrap;
-      align-items: flex-start;
+      align-items: stretch;
       gap: 20px;
       width: 100%;
       overflow-x: auto;
       -webkit-overflow-scrolling: touch;
       padding: 0;
       margin: 0;
+    }
+    .lead-stats-numeric-row > .lead-inline-stat,
+    .lead-stats-numeric-row > .channel-chip,
+    .lead-stats-numeric-row > .contact-chip {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      flex: 0 0 auto;
+      gap: 6px;
+      min-width: 100px;
+      padding: 10px 14px;
+      border: 1px solid rgba(15, 23, 42, 0.12);
+      border-radius: 8px;
+      background: #ffffff;
+      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
     }
     .lead-stats-compact-line {
       display: flex;
@@ -839,35 +856,23 @@
       gap: 10px;
       width: 100%;
     }
-    .lead-inline-stat {
-      display: flex;
-      flex-direction: column;
-      align-items: flex-start;
-      justify-content: flex-start;
-      flex: 0 0 auto;
-      gap: 2px;
-      min-width: 0;
-      padding: 0;
-      margin: 0;
-      border: none;
-      border-radius: 0;
-      background: transparent;
-      box-shadow: none;
-      text-align: left;
-    }
     .lead-inline-stat-label {
-      font-size: 0.6875rem;
+      width: 100%;
+      font-size: 0.8125rem;
       font-weight: 600;
-      line-height: 1.25;
-      color: #64748b;
+      line-height: 1.3;
+      color: #475569;
       white-space: nowrap;
+      text-align: center;
     }
     .lead-inline-stat-val {
-      font-size: 1.125rem;
+      width: 100%;
+      font-size: 1.3125rem;
       font-weight: 700;
       line-height: 1.15;
       font-variant-numeric: tabular-nums;
       color: #0f172a;
+      text-align: center;
     }
     .lead-inline-stat-val--accent {
       color: #0f766e;
@@ -908,25 +913,15 @@
       width: 100%;
     }
     .channel-chip {
-      display: flex;
-      flex-direction: column;
-      align-items: flex-start;
-      justify-content: flex-start;
-      flex: 0 0 auto;
-      gap: 2px;
-      padding: 0;
-      margin: 0;
-      border: none;
-      border-radius: 0;
-      background: transparent;
       font-size: 0.8125rem;
       line-height: 1.2;
-      min-width: 0;
     }
     .channel-chip-head {
       display: inline-flex;
       align-items: center;
+      justify-content: center;
       gap: 5px;
+      width: 100%;
     }
     .channel-chip-ic {
       display: inline-flex;
@@ -964,15 +959,19 @@
       color: #1877f2;
     }
     .channel-chip-label {
+      font-size: 0.8125rem;
       font-weight: 600;
-      color: #334155;
+      line-height: 1.3;
+      color: #475569;
     }
     .channel-chip-val {
-      font-size: 1.125rem;
+      width: 100%;
+      font-size: 1.3125rem;
       font-weight: 700;
       line-height: 1.15;
       font-variant-numeric: tabular-nums;
       color: #0f766e;
+      text-align: center;
     }
     .lead-contact-row {
       display: grid;
@@ -983,34 +982,25 @@
       align-content: start;
     }
     .contact-chip {
-      display: flex;
-      flex-direction: column;
-      align-items: flex-start;
-      justify-content: flex-start;
-      flex: 0 0 auto;
-      gap: 2px;
-      padding: 0;
-      margin: 0;
-      border: none;
-      border-radius: 0;
-      background: transparent;
       font-size: 0.8125rem;
-      text-align: left;
-      min-width: 0;
     }
     .contact-chip-lbl {
-      font-size: 0.6875rem;
+      width: 100%;
+      font-size: 0.8125rem;
       font-weight: 600;
-      line-height: 1.25;
-      color: #64748b;
+      line-height: 1.3;
+      color: #475569;
       white-space: nowrap;
+      text-align: center;
     }
     .contact-chip-val {
-      font-size: 1.125rem;
+      width: 100%;
+      font-size: 1.3125rem;
       font-weight: 700;
       line-height: 1.15;
       font-variant-numeric: tabular-nums;
       color: #0f172a;
+      text-align: center;
     }
     .lead-compact-sep {
       display: none;
