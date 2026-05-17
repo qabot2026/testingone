@@ -270,6 +270,54 @@ export async function bulkCloseTestConversations_({ idPrefix, agentEmail, maxClo
     return { closed, matched: targets.length, capped: targets.length > cap };
 }
 
+/** Put a closed conversation back in the agent queue (waiting). */
+export async function reopenConversationForAgent_({ conversationId }) {
+    const id = safeConversationId_(conversationId);
+    const db = firestoreDb_();
+    const ref = db.collection(conversationsCollection_()).doc(id);
+    const now = admin.firestore.FieldValue.serverTimestamp();
+
+    await db.runTransaction(async (tx) => {
+        const snap = await tx.get(ref);
+        if (!snap.exists) throw new Error("Conversation not found");
+        const cur = snap.data() || {};
+        if (cur.status === "waiting" || cur.status === "active") {
+            return;
+        }
+        if (cur.status !== "closed") {
+            throw new Error("Conversation cannot be reopened");
+        }
+        tx.set(
+            ref,
+            {
+                status: "waiting",
+                humanMode: "waiting",
+                aiEnabled: false,
+                assignedAgentEmail: "",
+                claimedAt: null,
+                closedAt: null,
+                closedBy: "",
+                requestedAt: now,
+                lastMessageAt: now,
+                unreadForAgent: 1,
+                unreadForVisitor: 0
+            },
+            { merge: true }
+        );
+    });
+
+    await appendMessage_({
+        conversationId: id,
+        role: "system",
+        text: "Chat reopened — waiting for an agent.",
+        senderEmail: "",
+        bumpUnread: { agent: 1, visitor: 0 }
+    });
+
+    const snap = await ref.get();
+    return serializeConversation_(id, snap.data());
+}
+
 export async function closeConversation_({ conversationId, closedBy, agentEmail }) {
     const id = safeConversationId_(conversationId);
     const db = firestoreDb_();

@@ -40,6 +40,7 @@ import {
     appendMessage_,
     bulkCloseTestConversations_,
     claimConversation_,
+    reopenConversationForAgent_,
     closeConversation_,
     getConversation_,
     listInbox_,
@@ -265,6 +266,26 @@ export function mountLiveAgentRoutes(app) {
         } catch (err) {
             logStoreError_(err, "agent send");
             jsonError_(res, 400, err.message || "Send failed");
+        }
+    });
+
+    router.post("/conversations/:id/reopen", requireLiveAgentSession_(), async (req, res) => {
+        setNoCache_(res);
+        const conversationId = safeClientSessionId_(req.params && req.params.id);
+        if (!conversationId) {
+            jsonError_(res, 400, "Invalid conversation id");
+            return;
+        }
+        if (!liveAgentFirestoreReady_()) {
+            jsonError_(res, 503, "Firestore not configured (FIREBASE_SERVICE_ACCOUNT_JSON).");
+            return;
+        }
+        try {
+            const conversation = await reopenConversationForAgent_({ conversationId });
+            res.json({ ok: true, conversation });
+        } catch (err) {
+            logStoreError_(err, "reopen");
+            jsonError_(res, 400, err.message || "Reopen failed");
         }
     });
 

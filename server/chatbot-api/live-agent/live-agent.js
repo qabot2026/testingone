@@ -29,6 +29,8 @@
     const chatMeta = $("chatMeta");
     const claimBtn = $("claimBtn");
     const claimHint = $("claimHint");
+    const chatClosedBanner = $("chatClosedBanner");
+    const reopenChatBtn = $("reopenChatBtn");
     const messageList = $("messageList");
     const composerForm = $("composerForm");
     const composerInput = $("composerInput");
@@ -427,8 +429,9 @@
             inboxStatus.textContent = "No conversations in this queue.";
             return;
         }
-        inboxStatus.textContent = conversations.length + " request(s)";
-        for (const c of conversations) {
+        const open = conversations.filter((c) => c.status !== "closed");
+        inboxStatus.textContent = open.length + " request(s)";
+        for (const c of open) {
             const li = document.createElement("li");
             li.className = "inbox-item" + (c.id === selectedId ? " selected" : "");
             if (c.unreadForAgent > 0) li.classList.add("has-unread");
@@ -697,7 +700,101 @@
         });
     }
 
-    function selectConversation(c) {
+    function isStaleEndedSystemMsg_(m, conv) {
+        if (!m || m.role !== "system" || !conv || conv.status === "closed") return false;
+        const t = String(m.text || "").toLowerCase();
+        return t.includes("chat has ended") || t.includes("ended.");
+    }
+
+    function applyConversationUi_(c) {
+        const conv = c || selectedConv;
+        if (!conv || !selectedId) return;
+
+        const title = conv.visitorName || "Session " + conv.id.slice(0, 12);
+        chatTitle.textContent = title;
+        const statusLabel = conv.status === "closed" ? "closed" : conv.humanMode || conv.status;
+        chatMeta.textContent =
+            statusLabel +
+            " · " +
+            (conv.aiEnabled === false ? "AI off" : "AI on") +
+            " · bot " +
+            (conv.botid || "default");
+
+        const isClosed = conv.status === "closed";
+        const isWaiting = conv.status === "waiting";
+        const isActive = conv.status === "active";
+        const isMine = isActive && agentIdsMatch_(conv.assignedAgentEmail, agentId);
+        const takenByOther =
+            isActive && conv.assignedAgentEmail && !agentIdsMatch_(conv.assignedAgentEmail, agentId);
+        const canReply = isMine;
+
+        if (chatClosedBanner) chatClosedBanner.classList.toggle("hidden", !isClosed);
+        if (claimBtn) claimBtn.hidden = !isWaiting || isClosed;
+        if (claimHint) {
+            claimHint.hidden = !isWaiting || isClosed;
+            claimHint.textContent = isWaiting
+                ? "Click Claim chat above — then you can type a reply below."
+                : "";
+        }
+        if (composerForm) composerForm.classList.toggle("hidden", isClosed);
+        if (chatActionsBar) chatActionsBar.classList.toggle("hidden", isClosed);
+        if (composerInput) {
+            composerInput.disabled = isClosed || !canReply;
+            composerInput.placeholder = isClosed
+                ? "Reopen this chat to reply…"
+                : canReply
+                  ? "Type a reply to the visitor…"
+                  : isWaiting
+                    ? "Claim this chat first to reply…"
+                    : takenByOther
+                      ? "Assigned to " +
+                        (conv.assignedAgentEmail || "another agent") +
+                        " — use another queue filter or ask them to close it."
+                      : "Select a chat to reply…";
+        }
+        if (sendBtn) sendBtn.disabled = isClosed || !canReply;
+
+        renderContextPanel(conv, null);
+        renderChatActionsBar_(conv);
+    }
+
+    async function refreshSelectedConversation_() {
+        if (!selectedId) return null;
+        try {
+            const data = await apiFetch(
+                `${API}/conversations/${encodeURIComponent(selectedId)}/context`
+            );
+            if (data.conversation) selectedConv = data.conversation;
+            return data;
+        } catch (e) {
+            console.warn("[live-agent] refresh conversation", e.message);
+            return null;
+        }
+    }
+
+    async function reopenSelectedChat_() {
+        if (!selectedId) return;
+        if (reopenChatBtn) reopenChatBtn.disabled = true;
+        try {
+            const data = await apiFetch(
+                `${API}/conversations/${encodeURIComponent(selectedId)}/reopen`,
+                { method: "POST" }
+            );
+            selectedConv = data.conversation;
+            lastMessageIso = "";
+            messageList.innerHTML = "";
+            applyConversationUi_(selectedConv);
+            loadContext(selectedId);
+            loadMessages(selectedId);
+            loadInbox(true);
+        } catch (e) {
+            alert(e.message || "Could not reopen chat");
+        } finally {
+            if (reopenChatBtn) reopenChatBtn.disabled = false;
+        }
+    }
+
+    async function selectConversation(c) {
         selectedId = c.id;
         selectedConv = c;
         lastMessageIso = "";
@@ -705,43 +802,17 @@
         chatEmpty.classList.add("hidden");
         chatActive.classList.remove("hidden");
 
-        const title = c.visitorName || "Session " + c.id.slice(0, 12);
-        chatTitle.textContent = title;
-        chatMeta.textContent =
-            (c.humanMode || c.status) +
-            " · " +
-            (c.aiEnabled === false ? "AI off" : "AI on") +
-            " · bot " +
-            (c.botid || "default");
+        applyConversationUi_(c);
 
-        const isWaiting = c.status === "waiting";
-        const isActive = c.status === "active";
-        const isMine = isActive && agentIdsMatch_(c.assignedAgentEmail, agentId);
-        const takenByOther =
-            isActive && c.assignedAgentEmail && !agentIdsMatch_(c.assignedAgentEmail, agentId);
-        const canReply = isMine;
-
-        claimBtn.hidden = !isWaiting;
-        if (claimHint) {
-            claimHint.hidden = !isWaiting;
-            claimHint.textContent = isWaiting
-                ? "Click Claim chat above — then you can type a reply below."
-                : "";
+        const refreshed = await refreshSelectedConversation_();
+        if (refreshed && refreshed.conversation) {
+            applyConversationUi_(refreshed.conversation);
         }
-        composerForm.classList.remove("hidden");
-        composerInput.disabled = !canReply;
-        composerInput.placeholder = canReply
-            ? "Type a reply to the visitor…"
-            : isWaiting
-              ? "Claim this chat first to reply…"
-              : takenByOther
-                ? "Assigned to " + (c.assignedAgentEmail || "another agent") + " — use another queue filter or ask them to close it."
-                : "Select a chat to reply…";
-        sendBtn.disabled = !canReply;
-
-        renderContextPanel(c, null);
-        renderChatActionsBar_(c);
-        loadContext(c.id);
+        if (refreshed && refreshed.visitor) {
+            renderContextPanel(selectedConv, refreshed.visitor);
+        } else {
+            loadContext(c.id);
+        }
         loadMessages(c.id);
     }
 
@@ -757,6 +828,7 @@
             if (!messages.length && quiet) return;
             for (const m of messages) {
                 if (document.querySelector('[data-msg-id="' + m.id + '"]')) continue;
+                if (isStaleEndedSystemMsg_(m, selectedConv)) continue;
                 appendMessageEl(m);
                 if (m.createdAt) lastMessageIso = m.createdAt;
             }
@@ -781,6 +853,10 @@
         messageList.appendChild(div);
     }
 
+    if (reopenChatBtn) {
+        reopenChatBtn.addEventListener("click", () => reopenSelectedChat_());
+    }
+
     claimBtn.addEventListener("click", async () => {
         if (!selectedId) return;
         claimBtn.disabled = true;
@@ -790,9 +866,24 @@
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ conversationId: selectedId })
             });
-            selectConversation(data.conversation);
+            await selectConversation(data.conversation);
         } catch (e) {
-            alert(e.message || "Could not claim chat");
+            const msg = e.message || "Could not claim chat";
+            if (/closed/i.test(msg) && confirm(msg + "\n\nReopen this chat and claim it?")) {
+                await reopenSelectedChat_();
+                try {
+                    const data = await apiFetch(`${API}/claim`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ conversationId: selectedId })
+                    });
+                    await selectConversation(data.conversation);
+                } catch (e2) {
+                    alert(e2.message || "Could not claim after reopen");
+                }
+            } else {
+                alert(msg);
+            }
         } finally {
             claimBtn.disabled = false;
         }

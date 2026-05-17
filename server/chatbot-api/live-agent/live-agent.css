@@ -439,6 +439,25 @@ body.live-agent-locked {
   color: var(--accent-hover);
 }
 
+.chat-closed-banner {
+  flex-shrink: 0;
+  margin: 0 1.25rem;
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  border: 1px solid #b45309;
+  background: #422006;
+  color: #fde68a;
+}
+
+.chat-closed-banner p {
+  margin: 0 0 0.6rem;
+  font-size: 0.9rem;
+}
+
+.chat-closed-banner.hidden {
+  display: none !important;
+}
+
 .composer {
   flex-shrink: 0;
   display: flex;
