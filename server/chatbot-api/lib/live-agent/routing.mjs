@@ -41,19 +41,26 @@ export async function applyInitialRoundRobin_(conversationId, departmentId) {
     const settings = await getLiveAgentSettings_();
     const deptId = resolveDepartmentId_(departmentId, settings);
     const dept = await getDepartment_(deptId);
-    const { assigneeEmail, roundIndex, departmentName } = await pickRoundRobinAssignee_(deptId);
     const now = admin.firestore.FieldValue.serverTimestamp();
-    await conversationRef_(conversationId).set(
-        {
-            departmentId: deptId,
-            departmentName: dept?.name || departmentName || "General",
-            currentAssigneeEmail: assigneeEmail,
-            assigneeRoundIndex: roundIndex,
-            assigneeAssignedAt: now,
-            visitorSessionActive: true
-        },
-        { merge: true }
-    );
+    const patch = {
+        departmentId: deptId,
+        departmentName: dept?.name || "General",
+        visitorSessionActive: true
+    };
+
+    if (settings.routing.algorithm === "round_robin") {
+        const { assigneeEmail, roundIndex, departmentName } = await pickRoundRobinAssignee_(deptId);
+        patch.departmentName = dept?.name || departmentName || "General";
+        patch.currentAssigneeEmail = assigneeEmail;
+        patch.assigneeRoundIndex = roundIndex;
+        patch.assigneeAssignedAt = now;
+    } else {
+        patch.currentAssigneeEmail = "";
+        patch.assigneeRoundIndex = 0;
+        patch.assigneeAssignedAt = now;
+    }
+
+    await conversationRef_(conversationId).set(patch, { merge: true });
     return getConversation_(conversationId);
 }
 
@@ -63,6 +70,7 @@ export async function applyInitialRoundRobin_(conversationId, departmentId) {
 export async function maybeEscalateWaitingConversation_(conversation) {
     if (!conversation || conversation.status !== "waiting") return conversation;
     const settings = await getLiveAgentSettings_();
+    if (settings.routing.algorithm !== "round_robin") return conversation;
     const waitMs = (settings.claimWaitSeconds || 30) * 1000;
     const assignedAt = conversation.assigneeAssignedAt
         ? new Date(conversation.assigneeAssignedAt).getTime()

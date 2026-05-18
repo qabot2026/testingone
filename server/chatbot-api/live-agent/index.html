@@ -41,14 +41,27 @@
           <p class="muted" id="agentLabel">—</p>
         </div>
         <div class="top-actions">
+          <label class="filter-label agent-status-label" title="Your availability">
+            Status
+            <select id="myAgentStatus">
+              <option value="online" selected>Online</option>
+              <option value="away">Away</option>
+              <option value="offline">Offline</option>
+            </select>
+          </label>
           <span id="notifyPill" class="notify-pill hidden" title="Chats waiting for an agent">0 waiting</span>
           <label class="filter-label">
             Queue
             <select id="inboxFilter">
-              <option value="all" selected>Open (waiting + active)</option>
-              <option value="waiting">Waiting for agent</option>
-              <option value="mine">My queue</option>
-              <option value="active">All active</option>
+              <option value="all" data-tab="tabAllChats" selected>All chats</option>
+              <option value="assigned" data-tab="tabAllAssigned">All assigned</option>
+              <option value="unassigned" data-tab="tabUnassigned">Unassigned</option>
+              <option value="waiting" data-tab="tabAllChats">Waiting for agent</option>
+              <option value="mine" data-tab="tabAllChats">My queue</option>
+              <option value="active" data-tab="tabAgentChats">All active</option>
+              <option value="ai" data-tab="tabAiChats">AI chats</option>
+              <option value="agent" data-tab="tabAgentChats">Agent chats</option>
+              <option value="closed" data-tab="tabCompleted">Completed</option>
             </select>
           </label>
           <button type="button" class="btn ghost" id="refreshInboxBtn">Refresh</button>
@@ -62,6 +75,15 @@
     <div class="workspace">
       <aside class="inbox-pane" aria-label="Request queue">
         <p class="pane-title">Visitor requests</p>
+
+        <section class="agents-panel" aria-label="Agent status">
+          <div class="agents-panel-head">
+            <h3>Agents</h3>
+            <button type="button" class="btn ghost small" id="refreshAgentsBtn">Refresh</button>
+          </div>
+          <p id="agentsPanelStatus" class="muted small">Loading…</p>
+          <ul id="agentsList" class="agents-list"></ul>
+        </section>
 
         <p class="inbox-hint muted small">Visitors who ask for a human on the chatbot appear below. Select one, then press <strong>Accept chat</strong>.</p>
         <p id="inboxStatus" class="inbox-status muted">Loading…</p>

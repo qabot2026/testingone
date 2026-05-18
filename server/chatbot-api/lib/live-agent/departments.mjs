@@ -80,28 +80,169 @@ export async function ensureGeneralDepartment_() {
     return serializeDepartment_(GENERAL_ID, data);
 }
 
+function bool_(v, fallback) {
+    if (v === true || v === false) return v;
+    if (v === "true" || v === 1 || v === "1") return true;
+    if (v === "false" || v === 0 || v === "0") return false;
+    return fallback;
+}
+
+function clampInt_(v, min, max, fallback) {
+    const n = Number(v);
+    if (!Number.isFinite(n)) return fallback;
+    return Math.min(Math.max(Math.round(n), min), max);
+}
+
+function pickEnum_(v, allowed, fallback) {
+    const s = trim_(v).toLowerCase();
+    return allowed.includes(s) ? s : fallback;
+}
+
+function serializeLiveAgentSettings_(d) {
+    const raw = d || {};
+    const accessRaw = raw.access && typeof raw.access === "object" ? raw.access : {};
+    const reportingRaw = raw.reporting && typeof raw.reporting === "object" ? raw.reporting : {};
+    return {
+        claimWaitSeconds: clampInt_(raw.claimWaitSeconds, 5, 300, 30),
+        endConvWaitMinutes: clampInt_(raw.endConvWaitMinutes, 1, 120, 3),
+        defaultDepartmentId: trim_(raw.defaultDepartmentId) || GENERAL_ID,
+        general: {
+            muteServiceDesk: bool_(raw.muteServiceDesk, false),
+            showAgentNameInChat: bool_(raw.showAgentNameInChat, true),
+            enableAgentChatFeedback: bool_(raw.enableAgentChatFeedback, false),
+            disableUserTextTranslation: bool_(raw.disableUserTextTranslation, false),
+            sortChatsByLastMessage: bool_(raw.sortChatsByLastMessage, true),
+            notificationSound: pickEnum_(raw.notificationSound, ["default", "chime", "none"], "default")
+        },
+        routing: {
+            algorithm: pickEnum_(raw.routingAlgorithm, ["round_robin", "online_parallel"], "online_parallel"),
+            maxConcurrentChats: clampInt_(raw.maxConcurrentChats, 1, 20, 2),
+            agentInactivityMinutes: clampInt_(raw.agentInactivityMinutes, 1, 480, 15),
+            exitAgentOnInactive: bool_(raw.exitAgentOnInactive, false)
+        },
+        access: {
+            tabAllChats: bool_(accessRaw.tabAllChats ?? raw.tabAllChats, true),
+            tabAllAssigned: bool_(accessRaw.tabAllAssigned ?? raw.tabAllAssigned, true),
+            tabUnassigned: bool_(accessRaw.tabUnassigned ?? raw.tabUnassigned, true),
+            tabAiChats: bool_(accessRaw.tabAiChats ?? raw.tabAiChats, false),
+            tabAgentChats: bool_(accessRaw.tabAgentChats ?? raw.tabAgentChats, true),
+            tabCompleted: bool_(accessRaw.tabCompleted ?? raw.tabCompleted, true),
+            uploadFile: bool_(accessRaw.uploadFile ?? raw.uploadFile, true),
+            viewContact: pickEnum_(accessRaw.viewContact ?? raw.viewContact, ["all", "assigned", "none"], "all")
+        },
+        reporting: {
+            dailyRecipients:
+                typeof reportingRaw.dailyRecipients === "string"
+                    ? reportingRaw.dailyRecipients
+                    : typeof raw.dailyReportRecipients === "string"
+                      ? raw.dailyReportRecipients
+                      : "",
+            weeklyMonthlyEnabled: bool_(
+                reportingRaw.weeklyMonthlyEnabled ?? raw.weeklyMonthlyReports,
+                false
+            )
+        },
+        updatedAt: raw.updatedAt && raw.updatedAt.toDate ? raw.updatedAt.toDate().toISOString() : null
+    };
+}
+
 export async function getLiveAgentSettings_() {
     await ensureGeneralDepartment_();
     const snap = await settingsRef_().get();
-    const d = snap.exists ? snap.data() || {} : {};
-    return {
-        claimWaitSeconds: Math.min(Math.max(Number(d.claimWaitSeconds) || 30, 5), 300),
-        defaultDepartmentId: trim_(d.defaultDepartmentId) || GENERAL_ID,
-        updatedAt: d.updatedAt && d.updatedAt.toDate ? d.updatedAt.toDate().toISOString() : null
-    };
+    return serializeLiveAgentSettings_(snap.exists ? snap.data() : {});
 }
 
 export async function saveLiveAgentSettings_(patch) {
     const cur = await getLiveAgentSettings_();
+    const p = patch && typeof patch === "object" ? patch : {};
+    const g = p.general && typeof p.general === "object" ? p.general : {};
+    const r = p.routing && typeof p.routing === "object" ? p.routing : {};
+    const a = p.access && typeof p.access === "object" ? p.access : {};
+    const rep = p.reporting && typeof p.reporting === "object" ? p.reporting : {};
+
     const next = {
         claimWaitSeconds:
-            patch && patch.claimWaitSeconds !== undefined
-                ? Math.min(Math.max(Number(patch.claimWaitSeconds) || 30, 5), 300)
+            p.claimWaitSeconds !== undefined
+                ? clampInt_(p.claimWaitSeconds, 5, 300, cur.claimWaitSeconds)
                 : cur.claimWaitSeconds,
+        endConvWaitMinutes:
+            p.endConvWaitMinutes !== undefined
+                ? clampInt_(p.endConvWaitMinutes, 1, 120, cur.endConvWaitMinutes)
+                : cur.endConvWaitMinutes,
         defaultDepartmentId:
-            patch && patch.defaultDepartmentId !== undefined
-                ? trim_(patch.defaultDepartmentId) || GENERAL_ID
+            p.defaultDepartmentId !== undefined
+                ? trim_(p.defaultDepartmentId) || GENERAL_ID
                 : cur.defaultDepartmentId,
+        muteServiceDesk:
+            g.muteServiceDesk !== undefined ? bool_(g.muteServiceDesk, cur.general.muteServiceDesk) : cur.general.muteServiceDesk,
+        showAgentNameInChat:
+            g.showAgentNameInChat !== undefined
+                ? bool_(g.showAgentNameInChat, cur.general.showAgentNameInChat)
+                : cur.general.showAgentNameInChat,
+        enableAgentChatFeedback:
+            g.enableAgentChatFeedback !== undefined
+                ? bool_(g.enableAgentChatFeedback, cur.general.enableAgentChatFeedback)
+                : cur.general.enableAgentChatFeedback,
+        disableUserTextTranslation:
+            g.disableUserTextTranslation !== undefined
+                ? bool_(g.disableUserTextTranslation, cur.general.disableUserTextTranslation)
+                : cur.general.disableUserTextTranslation,
+        sortChatsByLastMessage:
+            g.sortChatsByLastMessage !== undefined
+                ? bool_(g.sortChatsByLastMessage, cur.general.sortChatsByLastMessage)
+                : cur.general.sortChatsByLastMessage,
+        notificationSound:
+            g.notificationSound !== undefined
+                ? pickEnum_(g.notificationSound, ["default", "chime", "none"], cur.general.notificationSound)
+                : cur.general.notificationSound,
+        routingAlgorithm:
+            r.algorithm !== undefined
+                ? pickEnum_(r.algorithm, ["round_robin", "online_parallel"], cur.routing.algorithm)
+                : cur.routing.algorithm,
+        maxConcurrentChats:
+            r.maxConcurrentChats !== undefined
+                ? clampInt_(r.maxConcurrentChats, 1, 20, cur.routing.maxConcurrentChats)
+                : cur.routing.maxConcurrentChats,
+        agentInactivityMinutes:
+            r.agentInactivityMinutes !== undefined
+                ? clampInt_(r.agentInactivityMinutes, 1, 480, cur.routing.agentInactivityMinutes)
+                : cur.routing.agentInactivityMinutes,
+        exitAgentOnInactive:
+            r.exitAgentOnInactive !== undefined
+                ? bool_(r.exitAgentOnInactive, cur.routing.exitAgentOnInactive)
+                : cur.routing.exitAgentOnInactive,
+        access: {
+            tabAllChats:
+                a.tabAllChats !== undefined ? bool_(a.tabAllChats, cur.access.tabAllChats) : cur.access.tabAllChats,
+            tabAllAssigned:
+                a.tabAllAssigned !== undefined
+                    ? bool_(a.tabAllAssigned, cur.access.tabAllAssigned)
+                    : cur.access.tabAllAssigned,
+            tabUnassigned:
+                a.tabUnassigned !== undefined ? bool_(a.tabUnassigned, cur.access.tabUnassigned) : cur.access.tabUnassigned,
+            tabAiChats:
+                a.tabAiChats !== undefined ? bool_(a.tabAiChats, cur.access.tabAiChats) : cur.access.tabAiChats,
+            tabAgentChats:
+                a.tabAgentChats !== undefined ? bool_(a.tabAgentChats, cur.access.tabAgentChats) : cur.access.tabAgentChats,
+            tabCompleted:
+                a.tabCompleted !== undefined ? bool_(a.tabCompleted, cur.access.tabCompleted) : cur.access.tabCompleted,
+            uploadFile:
+                a.uploadFile !== undefined ? bool_(a.uploadFile, cur.access.uploadFile) : cur.access.uploadFile,
+            viewContact:
+                a.viewContact !== undefined
+                    ? pickEnum_(a.viewContact, ["all", "assigned", "none"], cur.access.viewContact)
+                    : cur.access.viewContact
+        },
+        reporting: {
+            dailyRecipients:
+                rep.dailyRecipients !== undefined
+                    ? String(rep.dailyRecipients || "")
+                    : cur.reporting.dailyRecipients,
+            weeklyMonthlyEnabled:
+                rep.weeklyMonthlyEnabled !== undefined
+                    ? bool_(rep.weeklyMonthlyEnabled, cur.reporting.weeklyMonthlyEnabled)
+                    : cur.reporting.weeklyMonthlyEnabled
+        },
         updatedAt: admin.firestore.FieldValue.serverTimestamp()
     };
     await settingsRef_().set(next, { merge: true });

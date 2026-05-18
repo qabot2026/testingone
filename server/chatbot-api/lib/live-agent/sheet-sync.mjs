@@ -17,6 +17,7 @@ function liveAgentSheetLine_(conv) {
         "Dept: " + (conv.departmentName || conv.departmentId || "General"),
         "Queue: " + (conv.currentAssigneeEmail || "unassigned"),
         "Agent: " + (conv.assignedAgentEmail || "—"),
+        conv.acceptedByEmail ? "Accepted: " + conv.acceptedByEmail : "",
         conv.visitorSessionActive === false ? "Visitor: ended" : "Visitor: active"
     ];
     return parts.join(" | ");

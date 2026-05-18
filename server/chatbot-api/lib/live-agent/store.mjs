@@ -85,7 +85,15 @@ function serializeConversation_(id, data) {
         unreadForVisitor: typeof d.unreadForVisitor === "number" ? d.unreadForVisitor : 0,
         requestedAt: tsToIso_(d.requestedAt),
         claimedAt: tsToIso_(d.claimedAt),
+        acceptedAt: tsToIso_(d.acceptedAt || d.claimedAt),
+        acceptedByEmail:
+            typeof d.acceptedByEmail === "string"
+                ? d.acceptedByEmail
+                : typeof d.assignedAgentEmail === "string"
+                  ? d.assignedAgentEmail
+                  : "",
         closedAt: tsToIso_(d.closedAt),
+        closedByEmail: typeof d.closedByEmail === "string" ? d.closedByEmail : "",
         lastMessageAt: tsToIso_(d.lastMessageAt)
     };
 }
@@ -256,8 +264,44 @@ export async function listInbox_({ status, agentEmail, limit }) {
         );
     } else if (st === "closed") {
         rows = rows.filter((r) => r.status === "closed");
+    } else if (st === "assigned") {
+        rows = rows.filter(
+            (r) =>
+                r.status !== "closed" &&
+                (trim_(r.assignedAgentEmail) || trim_(r.currentAssigneeEmail))
+        );
+    } else if (st === "unassigned") {
+        rows = rows.filter(
+            (r) => r.status === "waiting" && !trim_(r.currentAssigneeEmail) && !trim_(r.assignedAgentEmail)
+        );
+    } else if (st === "ai") {
+        rows = rows.filter(
+            (r) =>
+                r.status !== "closed" &&
+                r.aiEnabled !== false &&
+                (r.humanMode || "ai") !== "human" &&
+                r.status !== "active"
+        );
+    } else if (st === "agent" || st === "agent_chats") {
+        rows = rows.filter(
+            (r) =>
+                r.status !== "closed" &&
+                (r.humanMode === "human" || (r.status === "active" && trim_(r.assignedAgentEmail)))
+        );
     } else {
         rows = rows.filter((r) => r.status !== "closed");
+    }
+
+    const { getLiveAgentSettings_ } = await import("./departments.mjs");
+    const deskSettings = await getLiveAgentSettings_();
+    if (deskSettings.general.sortChatsByLastMessage) {
+        rows.sort((a, b) =>
+            String(b.lastMessageAt || b.requestedAt || "").localeCompare(
+                String(a.lastMessageAt || a.requestedAt || "")
+            )
+        );
+    } else if (st !== "waiting") {
+        rows.sort((a, b) => String(b.requestedAt || "").localeCompare(String(a.requestedAt || "")));
     }
 
     const { processWaitingEscalations_ } = await import("./routing.mjs");
@@ -265,11 +309,38 @@ export async function listInbox_({ status, agentEmail, limit }) {
     return rows.slice(0, lim);
 }
 
+export async function countActiveConversationsForAgent_(agentEmail) {
+    const email = trim_(agentEmail).toLowerCase();
+    if (!email) return 0;
+    const db = firestoreDb_();
+    const col = db.collection(conversationsCollection_());
+    let snap;
+    try {
+        snap = await col.where("status", "==", "active").limit(80).get();
+    } catch (_) {
+        snap = await col.limit(120).get();
+    }
+    return snap.docs.filter((doc) => {
+        const d = doc.data() || {};
+        return d.status === "active" && trim_(d.assignedAgentEmail).toLowerCase() === email;
+    }).length;
+}
+
 /** Accept (claim) a waiting chat for the logged-in agent. */
 export async function claimConversation_({ conversationId, agentEmail }) {
     const id = safeConversationId_(conversationId);
     const email = trim_(agentEmail).toLowerCase();
     if (!email) throw new Error("Agent email required");
+
+    const { getLiveAgentSettings_ } = await import("./departments.mjs");
+    const settings = await getLiveAgentSettings_();
+    const max = settings.routing.maxConcurrentChats || 2;
+    const activeCount = await countActiveConversationsForAgent_(email);
+    if (activeCount >= max) {
+        throw new Error(
+            "You already have " + activeCount + " active chat(s). Maximum allowed is " + max + "."
+        );
+    }
 
     const db = firestoreDb_();
     const ref = db.collection(conversationsCollection_()).doc(id);
@@ -290,6 +361,8 @@ export async function claimConversation_({ conversationId, agentEmail }) {
             assignedAgentEmail: email,
             currentAssigneeEmail: email,
             claimedAt: cur.claimedAt || now,
+            acceptedAt: cur.acceptedAt || now,
+            acceptedByEmail: email,
             unreadForAgent: 0,
             visitorSessionActive: true
         });
@@ -305,6 +378,19 @@ export async function claimConversation_({ conversationId, agentEmail }) {
 
     const snap = await ref.get();
     const out = serializeConversation_(id, snap.data());
+    try {
+        const { bumpAgentStats_, touchAgentPresence_ } = await import("./agents.mjs");
+        await bumpAgentStats_({
+            agentEmail: email,
+            kind: "accept",
+            conversationId: id,
+            visitorName: out.visitorName,
+            departmentName: out.departmentName
+        });
+        await touchAgentPresence_({ agentEmail: email });
+    } catch (err) {
+        console.warn(LOG_TAG, "agent stats on accept:", err.message || err);
+    }
     try {
         const { syncLiveAgentToSheet_ } = await import("./sheet-sync.mjs");
         await syncLiveAgentToSheet_(id);
@@ -345,7 +431,7 @@ export async function bulkCloseTestConversations_({ idPrefix, agentEmail, maxClo
 }
 
 /** Put a closed conversation back in the agent queue (waiting). */
-export async function reopenConversationForAgent_({ conversationId }) {
+export async function reopenConversationForAgent_({ conversationId, agentEmail }) {
     const id = safeConversationId_(conversationId);
     const db = firestoreDb_();
     const ref = db.collection(conversationsCollection_()).doc(id);
@@ -392,6 +478,21 @@ export async function reopenConversationForAgent_({ conversationId }) {
     const { syncLiveAgentToSheet_ } = await import("./sheet-sync.mjs");
     await applyInitialRoundRobin_(id, null);
     const out = await getConversation_(id);
+    const who = trim_(agentEmail).toLowerCase();
+    if (who) {
+        try {
+            const { bumpAgentStats_ } = await import("./agents.mjs");
+            await bumpAgentStats_({
+                agentEmail: who,
+                kind: "reopen",
+                conversationId: id,
+                visitorName: out?.visitorName,
+                departmentName: out?.departmentName
+            });
+        } catch (err) {
+            console.warn(LOG_TAG, "agent stats on reopen:", err.message || err);
+        }
+    }
     try {
         await syncLiveAgentToSheet_(id);
     } catch (_) {
@@ -421,6 +522,7 @@ export async function closeConversation_({ conversationId, closedBy, agentEmail 
             aiEnabled: true,
             closedAt: now,
             closedBy: trim_(closedBy) || "agent",
+            closedByEmail: trim_(agentEmail).toLowerCase(),
             visitorSessionActive: false,
             currentAssigneeEmail: "",
             unreadForAgent: 0
@@ -437,6 +539,21 @@ export async function closeConversation_({ conversationId, closedBy, agentEmail 
 
     const snap = await ref.get();
     const out = serializeConversation_(id, snap.data());
+    const closer = trim_(agentEmail).toLowerCase();
+    if (closer) {
+        try {
+            const { bumpAgentStats_ } = await import("./agents.mjs");
+            await bumpAgentStats_({
+                agentEmail: closer,
+                kind: "close",
+                conversationId: id,
+                visitorName: out.visitorName,
+                departmentName: out.departmentName
+            });
+        } catch (err) {
+            console.warn(LOG_TAG, "agent stats on close:", err.message || err);
+        }
+    }
     try {
         const { syncLiveAgentToSheet_ } = await import("./sheet-sync.mjs");
         await syncLiveAgentToSheet_(id);

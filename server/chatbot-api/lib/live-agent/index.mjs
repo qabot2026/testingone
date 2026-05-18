@@ -60,6 +60,12 @@ import {
     updateDepartment_
 } from "./departments.mjs";
 import { cacheVisitorRequest_, getCachedVisitorRequest_ } from "./request-dedupe.mjs";
+import {
+    getAgentByEmail_,
+    listAgentActivity_,
+    listAgentsOverview_,
+    touchAgentPresence_
+} from "./agents.mjs";
 
 const LOG_TAG = "[live-agent]";
 
@@ -308,6 +314,59 @@ export function mountLiveAgentRoutes(app) {
         }
     });
 
+    router.post("/presence", requireLiveAgentSession_(), async (req, res) => {
+        setNoCache_(res);
+        try {
+            const agent = await touchAgentPresence_({
+                agentEmail: req.liveAgentSession.agentId,
+                status: req.body && req.body.status
+            });
+            res.json({ ok: true, agent });
+        } catch (err) {
+            jsonError_(res, 400, err.message || "Presence update failed");
+        }
+    });
+
+    router.get("/agents", requireLiveAgentSession_(), async (_req, res) => {
+        setNoCache_(res);
+        try {
+            const agents = await listAgentsOverview_();
+            res.json({ ok: true, agents });
+        } catch (err) {
+            jsonError_(res, 500, err.message || "Agents list failed");
+        }
+    });
+
+    router.get("/agents/:email", requireLiveAgentSession_(), async (req, res) => {
+        setNoCache_(res);
+        const email = trim_(req.params && req.params.email);
+        if (!email) {
+            jsonError_(res, 400, "Agent email required");
+            return;
+        }
+        try {
+            const data = await getAgentByEmail_(email);
+            res.json({ ok: true, ...data });
+        } catch (err) {
+            jsonError_(res, 400, err.message || "Agent lookup failed");
+        }
+    });
+
+    router.get("/activity", requireLiveAgentSession_(), async (req, res) => {
+        setNoCache_(res);
+        try {
+            const limit = Number(req.query && req.query.limit);
+            const agentEmail = trim_(req.query && req.query.agentEmail);
+            const activity = await listAgentActivity_({
+                agentEmail: agentEmail || undefined,
+                limit: Number.isFinite(limit) ? limit : 50
+            });
+            res.json({ ok: true, activity });
+        } catch (err) {
+            jsonError_(res, 500, err.message || "Activity list failed");
+        }
+    });
+
     router.get("/conversations/:id/messages", requireLiveAgentSession_(), async (req, res) => {
         setNoCache_(res);
         const conversationId = safeClientSessionId_(req.params && req.params.id);
@@ -375,7 +434,10 @@ export function mountLiveAgentRoutes(app) {
             return;
         }
         try {
-            const conversation = await reopenConversationForAgent_({ conversationId });
+            const conversation = await reopenConversationForAgent_({
+                conversationId,
+                agentEmail: req.liveAgentSession.agentId
+            });
             res.json({ ok: true, conversation });
         } catch (err) {
             logStoreError_(err, "reopen");

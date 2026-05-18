@@ -33,7 +33,7 @@
       <div class="top-bar-inner">
         <div class="brand">
           <h1>Live Agent Settings</h1>
-          <p class="muted">Departments, agent emails, round-robin timing</p>
+          <p class="muted">General, routing, access control, reporting, departments</p>
         </div>
         <div class="top-actions">
           <a class="btn ghost nav-link" href="/live-agent">Service desk</a>
@@ -44,17 +44,142 @@
     </header>
 
     <main class="settings-main">
-      <section class="settings-card">
-        <h2>Queue timing</h2>
-        <p class="muted small">If an agent does not accept within this time, the request moves to the next agent in the department (round-robin).</p>
-        <form id="settingsForm" class="settings-form">
+      <form id="deskConfigForm" class="settings-form">
+        <section class="settings-card">
+          <h2>General configuration</h2>
+          <div class="toggle-grid">
+            <label class="toggle-row">
+              <input type="checkbox" id="muteServiceDesk" />
+              <span>Mute service desk</span>
+            </label>
+            <label class="toggle-row">
+              <input type="checkbox" id="showAgentNameInChat" checked />
+              <span>Show agent name in chat</span>
+            </label>
+            <label class="toggle-row">
+              <input type="checkbox" id="enableAgentChatFeedback" />
+              <span>Enable agent chat feedback</span>
+            </label>
+            <label class="toggle-row">
+              <input type="checkbox" id="disableUserTextTranslation" />
+              <span>Disable user text translation</span>
+            </label>
+            <label class="toggle-row">
+              <input type="checkbox" id="sortChatsByLastMessage" checked />
+              <span>Sort chats by last message</span>
+            </label>
+          </div>
           <label>
-            Waiting period (seconds)
-            <input id="claimWaitSeconds" type="number" min="5" max="300" step="1" value="30" />
+            Notification sound
+            <select id="notificationSound">
+              <option value="default" selected>Default</option>
+              <option value="chime">Chime</option>
+              <option value="none">None</option>
+            </select>
           </label>
-          <button type="submit" class="btn primary">Save settings</button>
-          <p id="settingsStatus" class="muted small" role="status"></p>
-        </form>
+        </section>
+
+        <section class="settings-card">
+          <h2>Routing &amp; limits</h2>
+          <label>
+            Agent routing algorithm
+            <select id="routingAlgorithm">
+              <option value="online_parallel" selected>Online parallel</option>
+              <option value="round_robin">Round robin (timed handoff)</option>
+            </select>
+          </label>
+          <p class="muted small">Round robin assigns one agent at a time; if they do not accept within the wait period, the chat moves to the next agent. Online parallel shows the chat to all agents until someone accepts.</p>
+          <div class="settings-row-2">
+            <label>
+              Max concurrent windows
+              <input id="maxConcurrentChats" type="number" min="1" max="20" step="1" value="2" />
+            </label>
+            <label>
+              Agent inactivity time (minutes)
+              <input id="agentInactivityMinutes" type="number" min="1" max="480" step="1" value="15" />
+            </label>
+          </div>
+          <label class="toggle-row">
+            <input type="checkbox" id="exitAgentOnInactive" />
+            <span>Exit agent on inactive</span>
+          </label>
+          <div class="settings-row-2">
+            <label>
+              Round-robin accept wait (seconds)
+              <input id="claimWaitSeconds" type="number" min="5" max="300" step="1" value="30" />
+            </label>
+            <label>
+              End conv. wait time (minutes)
+              <input id="endConvWaitMinutes" type="number" min="1" max="120" step="1" value="3" />
+            </label>
+          </div>
+        </section>
+
+        <section class="settings-card">
+          <h2>Access control</h2>
+          <p class="muted small">Controls which queue tabs agents see on the service desk.</p>
+          <div class="toggle-grid">
+            <label class="toggle-row"><input type="checkbox" id="tabAllChats" checked /><span>All chats tab access</span></label>
+            <label class="toggle-row"><input type="checkbox" id="tabAllAssigned" checked /><span>All assigned tab access</span></label>
+            <label class="toggle-row"><input type="checkbox" id="tabUnassigned" checked /><span>Unassigned tab access</span></label>
+            <label class="toggle-row"><input type="checkbox" id="tabAiChats" /><span>AI chats tab access</span></label>
+            <label class="toggle-row"><input type="checkbox" id="tabAgentChats" checked /><span>Agent chats tab access</span></label>
+            <label class="toggle-row"><input type="checkbox" id="tabCompleted" checked /><span>All completed chats tab access</span></label>
+            <label class="toggle-row"><input type="checkbox" id="uploadFile" checked /><span>Upload file access</span></label>
+          </div>
+          <label>
+            View contact access
+            <select id="viewContact">
+              <option value="all" selected>All</option>
+              <option value="assigned">Assigned chats only</option>
+              <option value="none">None</option>
+            </select>
+          </label>
+        </section>
+
+        <section class="settings-card">
+          <h2>Reporting</h2>
+          <label>
+            Daily agent report recipients
+            <input id="dailyRecipients" type="text" placeholder="Emails separated by commas…" autocomplete="off" />
+          </label>
+          <label class="toggle-row">
+            <input type="checkbox" id="weeklyMonthlyEnabled" />
+            <span>Weekly / monthly agent reports</span>
+          </label>
+          <p class="muted small">Report emails are stored for scheduled jobs; delivery requires server cron or an external scheduler.</p>
+        </section>
+
+        <div class="settings-save-bar">
+          <button type="submit" class="btn primary">Save configuration</button>
+          <p id="deskConfigStatus" class="muted small" role="status"></p>
+        </div>
+      </form>
+
+      <section class="settings-card" id="agentsSection">
+        <div class="agents-panel-head">
+          <h2>Agent status &amp; activity</h2>
+          <button type="button" class="btn ghost small" id="refreshAgentsOverviewBtn">Refresh</button>
+        </div>
+        <p class="muted small">Tracked by agent email (same as service desk login). Status updates when agents open the desk and send heartbeats.</p>
+        <p id="agentsOverviewStatus" class="muted small" role="status"></p>
+        <div class="agents-table-wrap">
+          <table class="agents-table" id="agentsOverviewTable">
+            <thead>
+              <tr>
+                <th>Email</th>
+                <th>Status</th>
+                <th>Active</th>
+                <th>Accepted</th>
+                <th>Closed</th>
+                <th>Last accept</th>
+              </tr>
+            </thead>
+            <tbody id="agentsOverviewBody"></tbody>
+          </table>
+        </div>
+        <h3 class="settings-subhead">Recent activity</h3>
+        <ul id="agentsActivityList" class="agents-activity-list"></ul>
       </section>
 
       <section class="settings-card">
@@ -74,7 +199,7 @@
           <p id="deptFormStatus" class="muted small" role="status"></p>
         </form>
 
-        <motion id="deptList" class="dept-list"></div>
+        <div id="deptList" class="dept-list"></div>
       </section>
     </main>
   </section>

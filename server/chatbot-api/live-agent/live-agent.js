@@ -52,6 +52,10 @@
     const documentsEmpty = $("documentsEmpty");
     const transcriptLink = $("transcriptLink");
     const leadsLink = $("leadsLink");
+    const myAgentStatus = $("myAgentStatus");
+    const agentsList = $("agentsList");
+    const refreshAgentsBtn = $("refreshAgentsBtn");
+    const agentsPanelStatus = $("agentsPanelStatus");
 
     let viewerSecret = "";
     let agentId = "Agent";
@@ -63,7 +67,10 @@
     let messagesInFlight = false;
     let lastWaitingCount = 0;
     let notificationsOk = false;
+    let deskSettings = null;
     const POLL_INTERVAL_MS = 8000;
+    const PRESENCE_INTERVAL_MS = 45000;
+    let presenceTimer = null;
 
     function loadStoredAuth_() {
         try {
@@ -131,6 +138,7 @@
         loginView.classList.remove("hidden");
         appView.classList.add("hidden");
         stopPolling();
+        stopPresence_();
     }
 
     async function checkLiveAgentBackend_() {
@@ -155,11 +163,13 @@
         appView.classList.remove("hidden");
         agentLabel.textContent = agentId;
         requestNotificationPermission_();
-        checkLiveAgentBackend_().then((ok) => {
-            if (ok) {
-                loadInbox();
-            }
+        loadDeskSettings_().then(() => {
+            checkLiveAgentBackend_().then((ok) => {
+                if (ok) loadInbox();
+            });
         });
+        startPresence_();
+        loadAgentsPanel_();
         startPolling();
     }
 
@@ -168,6 +178,111 @@
             clearInterval(pollTimer);
             pollTimer = null;
         }
+    }
+
+    function stopPresence_() {
+        if (presenceTimer) {
+            clearInterval(presenceTimer);
+            presenceTimer = null;
+        }
+    }
+
+    async function postPresence_(status) {
+        if (!viewerSecret || !agentId || !agentId.includes("@")) return;
+        try {
+            const body = status ? { status } : {};
+            const data = await apiFetch(`${API}/presence`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(body)
+            });
+            if (data.agent && myAgentStatus && status) {
+                const eff = data.agent.effectiveStatus || data.agent.status;
+                if (eff && myAgentStatus.value !== eff && eff !== "offline") {
+                    myAgentStatus.value = data.agent.status || eff;
+                }
+            }
+        } catch (_) {
+            /* ignore */
+        }
+    }
+
+    function startPresence_() {
+        stopPresence_();
+        if (!agentId || !agentId.includes("@")) return;
+        const st = myAgentStatus ? myAgentStatus.value || "online" : "online";
+        postPresence_(st);
+        presenceTimer = setInterval(() => {
+            if (document.hidden) return;
+            const cur = myAgentStatus ? myAgentStatus.value || "online" : "online";
+            postPresence_(cur);
+        }, PRESENCE_INTERVAL_MS);
+    }
+
+    function agentStatusLabel_(s) {
+        const x = String(s || "offline").toLowerCase();
+        if (x === "online") return "Online";
+        if (x === "away") return "Away";
+        return "Offline";
+    }
+
+    async function loadAgentsPanel_() {
+        if (!agentsList) return;
+        if (agentsPanelStatus) agentsPanelStatus.textContent = "Loading…";
+        try {
+            const data = await apiFetch(`${API}/agents`);
+            renderAgentsList_(data.agents || []);
+            if (agentsPanelStatus) {
+                agentsPanelStatus.textContent = (data.agents || []).length
+                    ? ""
+                    : "Add agent emails in Settings → Departments.";
+            }
+        } catch (e) {
+            if (agentsPanelStatus) agentsPanelStatus.textContent = e.message || "Could not load agents";
+        }
+    }
+
+    function renderAgentsList_(agents) {
+        if (!agentsList) return;
+        agentsList.innerHTML = "";
+        for (const a of agents || []) {
+            const li = document.createElement("li");
+            li.className = "agents-list-item status-" + escapeHtml(a.effectiveStatus || "offline");
+            const stats =
+                (a.activeChats || 0) +
+                " active · " +
+                (a.totalAccepted || 0) +
+                " accepted";
+            li.innerHTML =
+                '<span class="agents-list-email">' +
+                escapeHtml(a.email) +
+                '</span><span class="agents-list-badge">' +
+                escapeHtml(agentStatusLabel_(a.effectiveStatus)) +
+                '</span><span class="agents-list-meta muted small">' +
+                escapeHtml(stats) +
+                "</span>";
+            li.title =
+                a.lastAcceptedAt
+                    ? "Last accept: " + formatTime(a.lastAcceptedAt)
+                    : "No accepts yet";
+            agentsList.appendChild(li);
+        }
+    }
+
+    function buildInboxSubtitle_(c) {
+        if (!c) return "";
+        const parts = [];
+        if (c.departmentName || c.departmentId) {
+            parts.push(c.departmentName || c.departmentId);
+        }
+        if (c.currentAssigneeEmail) {
+            parts.push("Queue: " + c.currentAssigneeEmail);
+        }
+        if (c.acceptedByEmail && c.status === "active") {
+            parts.push("Accepted: " + c.acceptedByEmail);
+            if (c.acceptedAt) parts.push(formatTime(c.acceptedAt));
+        }
+        return parts.join(" · ") || "—";
     }
 
     function startPolling() {
@@ -219,8 +334,34 @@
         }
     }
 
+    function deskGeneral_() {
+        return (deskSettings && deskSettings.general) || {};
+    }
+
+    function deskAccess_() {
+        return (deskSettings && deskSettings.access) || {};
+    }
+
+    function playNotificationSound_() {
+        const sound = deskGeneral_().notificationSound || "default";
+        if (sound === "none" || deskGeneral_().muteServiceDesk) return;
+        try {
+            const ctx = new (window.AudioContext || window.webkitAudioContext)();
+            const o = ctx.createOscillator();
+            const g = ctx.createGain();
+            o.connect(g);
+            g.connect(ctx.destination);
+            o.frequency.value = sound === "chime" ? 660 : 880;
+            g.gain.value = sound === "chime" ? 0.05 : 0.04;
+            o.start();
+            o.stop(ctx.currentTime + (sound === "chime" ? 0.2 : 0.12));
+        } catch (_) {
+            /* ignore */
+        }
+    }
+
     function notifyNewRequests_(count) {
-        if (count <= 0) return;
+        if (count <= 0 || deskGeneral_().muteServiceDesk) return;
         document.title = count + " waiting · Live chat";
         if (notificationsOk) {
             try {
@@ -232,19 +373,7 @@
                 /* ignore */
             }
         }
-        try {
-            const ctx = new (window.AudioContext || window.webkitAudioContext)();
-            const o = ctx.createOscillator();
-            const g = ctx.createGain();
-            o.connect(g);
-            g.connect(ctx.destination);
-            o.frequency.value = 880;
-            g.gain.value = 0.04;
-            o.start();
-            o.stop(ctx.currentTime + 0.12);
-        } catch (_) {
-            /* ignore */
-        }
+        playNotificationSound_();
     }
 
     function formatUnreadCount_(n) {
@@ -253,8 +382,39 @@
         return x > 99 ? "99+" : String(x);
     }
 
+    function applyInboxFilterOptions_() {
+        if (!inboxFilter) return;
+        const access = deskAccess_();
+        const saved = inboxFilter.value;
+        for (const opt of inboxFilter.options) {
+            const key = opt.getAttribute("data-tab");
+            if (!key) continue;
+            opt.hidden = access[key] === false;
+        }
+        const visible = Array.from(inboxFilter.options).filter((o) => !o.hidden);
+        if (!visible.length) return;
+        if (!visible.some((o) => o.value === saved)) {
+            inboxFilter.value = visible[0].value;
+        }
+    }
+
+    async function loadDeskSettings_() {
+        try {
+            const data = await apiFetch(`${API}/settings`);
+            deskSettings = data.settings || null;
+            applyInboxFilterOptions_();
+        } catch (_) {
+            deskSettings = null;
+        }
+    }
+
     function updateNotifyPill_(conversations) {
         if (!notifyPill) return;
+        if (deskGeneral_().muteServiceDesk) {
+            notifyPill.classList.add("hidden");
+            document.title = "Live chat — agent inbox";
+            return;
+        }
         let waiting = 0;
         let unreadChats = 0;
         for (const c of conversations || []) {
@@ -331,11 +491,13 @@
     });
 
     logoutBtn.addEventListener("click", () => {
-        clearAuth_();
-        selectedId = "";
-        selectedConv = null;
-        if (loginSecret) loginSecret.value = "";
-        showLogin();
+        postPresence_("offline").finally(() => {
+            clearAuth_();
+            selectedId = "";
+            selectedConv = null;
+            if (loginSecret) loginSecret.value = "";
+            showLogin();
+        });
     });
 
     if (leadsLink) {
@@ -350,6 +512,13 @@
     }
 
     refreshInboxBtn.addEventListener("click", () => loadInbox());
+    if (refreshAgentsBtn) refreshAgentsBtn.addEventListener("click", () => loadAgentsPanel_());
+    if (myAgentStatus) {
+        myAgentStatus.addEventListener("change", () => {
+            postPresence_(myAgentStatus.value);
+            loadAgentsPanel_();
+        });
+    }
     inboxFilter.addEventListener("change", () => loadInbox());
     if (clearTestQueueBtn) {
         clearTestQueueBtn.addEventListener("click", () => {
@@ -463,13 +632,17 @@
     function renderInbox(conversations) {
         inboxList.innerHTML = "";
         const seenIds = new Set();
+        const queue = inboxFilter ? inboxFilter.value || "all" : "all";
+        const showClosed = queue === "closed";
         const open = (conversations || []).filter((c) => {
-            if (c.status === "closed" || !c.id) return false;
+            if (!c.id) return false;
+            if (showClosed) return c.status === "closed";
+            if (c.status === "closed") return false;
             if (seenIds.has(c.id)) return false;
             seenIds.add(c.id);
             return true;
         });
-        updateNotifyPill_(open);
+        if (!showClosed) updateNotifyPill_(open);
         updateClearTestBtn_(open);
         if (!open.length) {
             inboxStatus.textContent = "No conversations in this queue.";
@@ -590,7 +763,18 @@
         renderChatActionsBar_(conv, modeText);
 
         const v = visitor || {};
+        const viewContact = deskAccess_().viewContact || "all";
+        const assignedToMe =
+            conv &&
+            conv.status === "active" &&
+            agentIdsMatch_(conv.assignedAgentEmail, agentId);
+        const hideContact =
+            viewContact === "none" || (viewContact === "assigned" && !assignedToMe);
         if (contactDl) {
+            if (hideContact) {
+                contactDl.innerHTML =
+                    '<dt>Contact</dt><dd><span class="muted">Hidden by settings</span></dd>';
+            } else {
             const rows = [
                 ["Name", v.name],
                 ["Email", v.email],
@@ -608,6 +792,7 @@
                         "</dd>"
                 )
                 .join("");
+            }
         }
 
         if (documentsList && documentsEmpty) {
@@ -773,12 +958,22 @@
         const title = conv.visitorName || "Session " + conv.id.slice(0, 12);
         chatTitle.textContent = title;
         const statusLabel = conv.status === "closed" ? "closed" : conv.humanMode || conv.status;
-        chatMeta.textContent =
+        let meta =
             statusLabel +
             " · " +
             (conv.aiEnabled === false ? "AI off" : "AI on") +
             " · bot " +
             (conv.botid || "default");
+        if (conv.acceptedByEmail) {
+            meta += " · Accepted by " + conv.acceptedByEmail;
+            if (conv.acceptedAt) meta += " at " + formatTime(conv.acceptedAt);
+        } else if (conv.assignedAgentEmail && conv.status === "active") {
+            meta += " · Agent " + conv.assignedAgentEmail;
+        }
+        if (conv.closedByEmail && conv.status === "closed") {
+            meta += " · Closed by " + conv.closedByEmail;
+        }
+        chatMeta.textContent = meta;
 
         const isClosed = conv.status === "closed";
         const isWaiting = conv.status === "waiting";
@@ -909,7 +1104,19 @@
         const div = document.createElement("div");
         div.className = "msg " + (m.role || "visitor");
         div.dataset.msgId = m.id;
-        div.innerHTML = escapeHtml(m.text) + "<time>" + escapeHtml(formatTime(m.createdAt)) + "</time>";
+        let body = escapeHtml(m.text || "");
+        if (
+            (m.role === "agent" || m.role === "staff") &&
+            deskGeneral_().showAgentNameInChat !== false &&
+            m.senderEmail
+        ) {
+            body =
+                '<span class="msg-agent-name">' +
+                escapeHtml(m.senderEmail) +
+                "</span> " +
+                body;
+        }
+        div.innerHTML = body + "<time>" + escapeHtml(formatTime(m.createdAt)) + "</time>";
         messageList.appendChild(div);
     }
 
@@ -927,6 +1134,7 @@
                 body: JSON.stringify({ conversationId: selectedId })
             });
             await selectConversation(data.conversation);
+            loadAgentsPanel_();
         } catch (e) {
             const msg = e.message || "Could not accept chat";
             if (/closed/i.test(msg) && confirm(msg + "\n\nReopen this chat and accept it?")) {

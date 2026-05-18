@@ -236,6 +236,90 @@ body.live-agent-locked {
   line-height: 1.45;
 }
 
+.agents-panel {
+  flex-shrink: 0;
+  margin: 0 1rem 0.75rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.agents-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.35rem;
+  margin-bottom: 0.35rem;
+}
+
+.agents-panel-head h3 {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.agents-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 140px;
+  overflow: auto;
+}
+
+.agents-list-item {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-rows: auto auto;
+  gap: 0.1rem 0.5rem;
+  padding: 0.35rem 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.78rem;
+}
+
+.agents-list-item:last-child {
+  border-bottom: none;
+}
+
+.agents-list-email {
+  grid-column: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agents-list-badge {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: center;
+  font-size: 0.7rem;
+  padding: 0.1rem 0.35rem;
+  border-radius: 999px;
+  text-transform: capitalize;
+}
+
+.agents-list-item.status-online .agents-list-badge {
+  background: rgba(34, 197, 94, 0.25);
+  color: #86efac;
+}
+
+.agents-list-item.status-away .agents-list-badge {
+  background: rgba(234, 179, 8, 0.2);
+  color: #fde047;
+}
+
+.agents-list-item.status-offline .agents-list-badge {
+  background: rgba(100, 116, 139, 0.3);
+  color: #94a3b8;
+}
+
+.agents-list-meta {
+  grid-column: 1;
+}
+
+.agent-status-label select {
+  min-width: 5.5rem;
+}
+
 .practice-panel {
   flex-shrink: 0;
   margin: 0 1rem 0.75rem;
@@ -483,6 +567,14 @@ body.live-agent-locked {
   color: #fde68a;
   font-size: 0.8rem;
   text-align: center;
+}
+
+.msg-agent-name {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 600;
+  opacity: 0.85;
+  margin-bottom: 0.15rem;
 }
 
 .msg time {
