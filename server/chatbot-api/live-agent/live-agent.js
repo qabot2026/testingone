@@ -62,6 +62,8 @@
     let selectedId = "";
     let selectedConv = null;
     let lastMessageIso = "";
+    /** Tracks unread on the open chat so a bump forces a full message resync. */
+    let lastSelectedUnreadAgent = 0;
     let pollTimer = null;
     let inboxInFlight = false;
     let messagesInFlight = false;
@@ -771,6 +773,12 @@
             if (selectedId) {
                 const hit = list.find((c) => c.id === selectedId);
                 if (hit) {
+                    const unreadNow = hit.unreadForAgent || 0;
+                    if (unreadNow > lastSelectedUnreadAgent) {
+                        lastMessageIso = "";
+                        loadMessages(selectedId, true);
+                    }
+                    lastSelectedUnreadAgent = unreadNow;
                     selectedConv = hit;
                 } else if (quiet) {
                     refreshSelectedConversation_();
@@ -1108,6 +1116,7 @@
         selectedId = c.id;
         selectedConv = c;
         lastMessageIso = "";
+        lastSelectedUnreadAgent = c.unreadForAgent || 0;
         messageList.innerHTML = "";
         chatEmpty.classList.add("hidden");
         chatActive.classList.remove("hidden");

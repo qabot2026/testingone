@@ -687,7 +687,7 @@ export async function listMessages_({ conversationId, sinceIso, limit, markReadF
         if (useSince) {
             messages = messages.filter((m) => {
                 const t = m.createdAt ? new Date(m.createdAt).getTime() : 0;
-                return t > sinceMs;
+                return t >= sinceMs;
             });
         }
     }

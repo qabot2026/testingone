@@ -4801,6 +4801,46 @@ function tryResolveSupportedLanguageFromUserFlowPhrase(text) {
 /**
  * Clears the messenger composer — `preventDefault` on consumed flow phrases leaves text in the box otherwise.
  */
+/** @param {HTMLElement | null | undefined} dfMessenger */
+function readMessengerComposerText_(dfMessenger) {
+    const ms = dfMessenger || activeDfMessenger;
+    if (!ms) {
+        return "";
+    }
+    try {
+        const roots = collectSearchRoots(ms);
+        for (let ri = 0; ri < roots.length; ri += 1) {
+            const root = roots[ri];
+            if (!root || typeof root.querySelectorAll !== "function") {
+                continue;
+            }
+            const hosts = root.querySelectorAll("df-messenger-user-input");
+            for (let hi = 0; hi < hosts.length; hi += 1) {
+                const h = hosts[hi];
+                const sr = h && h.shadowRoot;
+                if (!sr) {
+                    continue;
+                }
+                const ta = sr.querySelector("textarea");
+                if (ta && typeof ta.value === "string" && ta.value.trim()) {
+                    return ta.value.trim();
+                }
+                const inp = sr.querySelector("input[type=\"text\"], input[type=\"search\"], input:not([type])");
+                if (inp && typeof inp.value === "string" && inp.value.trim()) {
+                    return inp.value.trim();
+                }
+                const editable = sr.querySelector("[contenteditable=\"true\"]");
+                if (editable && typeof editable.textContent === "string" && editable.textContent.trim()) {
+                    return editable.textContent.trim();
+                }
+            }
+        }
+    } catch {
+        /* ignore */
+    }
+    return "";
+}
+
 function clearMessengerComposerText(dfMessenger) {
     const ms = dfMessenger || activeDfMessenger;
     if (!ms) {
@@ -4923,11 +4963,10 @@ function sendUserTextViaDfMessenger(dfMessenger, text, shouldRenderCustomTextNow
     if (consumeLanguageSwitchFromUserFlowPhrase(t, null, dfMessenger)) {
         return;
     }
-    if (liveAgentHandoffIsActive_()) {
-        if (!liveAgentAllowDialogflowForUserText_()) {
-            liveAgentSendVisitorMessage_(dfMessenger, t, shouldRenderCustomTextNow);
-            return;
-        }
+    if (liveAgentTryRouteVisitorText_(t, dfMessenger, { renderBubble: shouldRenderCustomTextNow })) {
+        return;
+    }
+    if (liveAgentHandoffIsActive_() && liveAgentAllowDialogflowForUserText_()) {
         liveAgentMirrorVisitorToQueue_(t);
     }
     const hadM0 = hasStoredMobileForChatBlockGate_();
@@ -13847,6 +13886,8 @@ function setLiveAgentHandoffActive_(on) {
         stopLiveAgentPoll_();
         liveAgentMessagesSinceIso = "";
         liveAgentSeenMessageIds_.clear();
+        liveAgentLastVisitorSendKey_ = "";
+        liveAgentLastVisitorSendAt_ = 0;
     }
 }
 
@@ -13899,15 +13940,14 @@ function liveAgentVisitorSendDedupeKey_(text) {
 }
 
 /**
- * Block df-messenger → Dialogflow; POST to live-agent inbox only.
- * Only call from `df-request-sent` (reliable query text). Do not use on `df-user-input-entered`
- * — preventDefault there can cancel request-sent with an empty query so nothing reaches the agent.
- * @param {Event | null | undefined} event
- * @param {string} queryText
- * @returns {boolean}
+ * POST visitor text to the live-agent API (not Dialogflow). Dedupes rapid double-fires.
+ * @param {string} text
+ * @param {HTMLElement | null | undefined} dfMessenger
+ * @param {{ renderBubble?: boolean }} [opts]
+ * @returns {boolean} true when routed to agent inbox
  */
-function tryInterceptOutboundForLiveAgentHumanChat_(event, queryText) {
-    const t = typeof queryText === "string" ? queryText.trim() : "";
+function liveAgentTryRouteVisitorText_(text, dfMessenger, opts) {
+    const t = (text || "").trim();
     if (!t || !liveAgentHandoffIsActive_() || liveAgentAllowDialogflowForUserText_()) {
         return false;
     }
@@ -13916,20 +13956,32 @@ function tryInterceptOutboundForLiveAgentHumanChat_(event, queryText) {
     if (
         dedupeKey &&
         dedupeKey === liveAgentLastVisitorSendKey_ &&
-        now - liveAgentLastVisitorSendAt_ < 800
+        now - liveAgentLastVisitorSendAt_ < 2500
     ) {
-        try {
-            if (event && typeof event.preventDefault === "function") {
-                event.preventDefault();
-            }
-        } catch {
-            /* ignore */
-        }
         return true;
     }
     if (dedupeKey) {
         liveAgentLastVisitorSendKey_ = dedupeKey;
         liveAgentLastVisitorSendAt_ = now;
+    }
+    const renderBubble = !opts || opts.renderBubble !== false;
+    void liveAgentSendVisitorMessage_(dfMessenger || activeDfMessenger, t, renderBubble);
+    return true;
+}
+
+/**
+ * Block df-messenger → Dialogflow on `df-request-sent`; inbox send usually already ran on `df-user-input-entered`.
+ * @param {Event | null | undefined} event
+ * @param {string} queryText
+ * @returns {boolean}
+ */
+function tryInterceptOutboundForLiveAgentHumanChat_(event, queryText) {
+    let t = typeof queryText === "string" ? queryText.trim() : "";
+    if (!t) {
+        t = readMessengerComposerText_(activeDfMessenger);
+    }
+    if (!liveAgentTryRouteVisitorText_(t, activeDfMessenger, { renderBubble: true })) {
+        return false;
     }
     try {
         if (event && typeof event.preventDefault === "function") {
@@ -13939,8 +13991,6 @@ function tryInterceptOutboundForLiveAgentHumanChat_(event, queryText) {
         /* ignore */
     }
     dfchatPendingTypedUtteranceForGate_ = "";
-    const ms = activeDfMessenger;
-    void liveAgentSendVisitorMessage_(ms, t, true);
     return true;
 }
 
@@ -14740,8 +14790,15 @@ function attachPersonaHandlers(dfMessenger) {
             if (tryPreventChatSendForMissingMobileGate_(event, typedTrim)) {
                 return;
             }
-            trackChatUserQueryInSessionContext_(typedTrim);
             const ms = activeDfMessenger;
+            let routeText = typedTrim;
+            if (!routeText) {
+                routeText = readMessengerComposerText_(ms);
+            }
+            if (routeText) {
+                liveAgentTryRouteVisitorText_(routeText, ms, { renderBubble: false });
+            }
+            trackChatUserQueryInSessionContext_(typedTrim || routeText);
             if (ms && typeof ms.renderCustomText === "function") {
                 renderUserPersona(ms);
             }
@@ -14759,7 +14816,10 @@ function attachPersonaHandlers(dfMessenger) {
                     ? dfchatPendingTypedUtteranceForGate_.trim()
                     : "";
             dfchatPendingTypedUtteranceForGate_ = "";
-            const effectiveQuery = fromReq || pendingSnap;
+            let effectiveQuery = fromReq || pendingSnap;
+            if (!effectiveQuery && liveAgentHandoffIsActive_() && !liveAgentAllowDialogflowForUserText_()) {
+                effectiveQuery = readMessengerComposerText_(activeDfMessenger);
+            }
 
             if (consumeContactOnlyThanksSuppressForQuery_(event, effectiveQuery)) {
                 return;
@@ -14825,8 +14885,7 @@ function attachPersonaHandlers(dfMessenger) {
             return;
         }
         const ms = activeDfMessenger;
-        if (liveAgentHandoffIsActive_() && !liveAgentAllowDialogflowForUserText_()) {
-            void liveAgentSendVisitorMessage_(ms, q, true);
+        if (liveAgentTryRouteVisitorText_(q, ms, { renderBubble: true })) {
             scheduleClearDfMessengerComposerInput_();
             return;
         }
