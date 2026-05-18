@@ -106,6 +106,10 @@ let liveAgentHandoffActive = false;
 let liveAgentHumanChatActive = false;
 /** Last queue status from poll (waiting | active | closed). */
 let liveAgentCachedConvStatus = "";
+/** From poll: human | waiting | ai — when ai, visitor gets Dialogflow again. */
+let liveAgentCachedHumanMode = "";
+/** From poll / conversation: false = agent-only (no bot replies). */
+let liveAgentCachedAiEnabled = true;
 let liveAgentPollTimerId = 0;
 let liveAgentMessagesSinceIso = "";
 /** @type {Set<string>} */
