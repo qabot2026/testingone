@@ -410,7 +410,8 @@ export async function closeConversation_({ conversationId, closedBy, agentEmail 
             closedAt: now,
             closedBy: trim_(closedBy) || "agent",
             visitorSessionActive: false,
-            currentAssigneeEmail: ""
+            currentAssigneeEmail: "",
+            unreadForAgent: 0
         });
     });
 
@@ -465,10 +466,14 @@ export async function appendMessage_({
         const agentBump = bumpUnread && bumpUnread.agent ? bumpUnread.agent : 0;
         const visitorBump = bumpUnread && bumpUnread.visitor ? bumpUnread.visitor : 0;
 
+        const nextUnreadAgent =
+            agentBump > 0
+                ? Math.min((cur.unreadForAgent || 0) + agentBump, 99)
+                : cur.unreadForAgent || 0;
         tx.update(convRef, {
             lastMessageAt: now,
             lastMessagePreview: body.slice(0, 240),
-            unreadForAgent: (cur.unreadForAgent || 0) + agentBump,
+            unreadForAgent: nextUnreadAgent,
             unreadForVisitor: (cur.unreadForVisitor || 0) + visitorBump
         });
     });

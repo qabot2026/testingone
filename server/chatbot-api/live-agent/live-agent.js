@@ -227,21 +227,32 @@
         }
     }
 
+    function formatUnreadCount_(n) {
+        const x = Number(n) || 0;
+        if (x <= 0) return "";
+        return x > 99 ? "99+" : String(x);
+    }
+
     function updateNotifyPill_(conversations) {
         if (!notifyPill) return;
         let waiting = 0;
-        let unread = 0;
+        let unreadChats = 0;
         for (const c of conversations || []) {
             if (c.status === "waiting") waiting += 1;
-            unread += c.unreadForAgent > 0 ? c.unreadForAgent : 0;
+            if ((c.unreadForAgent || 0) > 0) unreadChats += 1;
         }
         if (lastWaitingCount > 0 && waiting > lastWaitingCount) {
             notifyNewRequests_(waiting - lastWaitingCount);
         }
         lastWaitingCount = waiting;
-        const n = waiting + unread;
-        if (n > 0) {
-            notifyPill.textContent = n + " new";
+        let label = "";
+        if (waiting > 0) {
+            label = waiting + (waiting === 1 ? " waiting" : " waiting");
+        } else if (unreadChats > 0) {
+            label = unreadChats + (unreadChats === 1 ? " unread chat" : " unread chats");
+        }
+        if (label) {
+            notifyPill.textContent = label;
             notifyPill.classList.remove("hidden");
         } else {
             notifyPill.classList.add("hidden");
@@ -401,13 +412,20 @@
         clearTestQueueBtn.disabled = true;
         inboxStatus.textContent = "Closing test chats…";
         try {
-            const result = await apiFetch(`${API}/bulk-close-tests`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ idPrefix: "test-", limit: 200 })
-            });
+            let totalClosed = 0;
+            let capped = false;
+            for (let pass = 0; pass < 10; pass += 1) {
+                const result = await apiFetch(`${API}/bulk-close-tests`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ idPrefix: "test-", limit: 200 })
+                });
+                totalClosed += result.closed || 0;
+                capped = Boolean(result.capped);
+                if (!result.closed || !capped) break;
+            }
             inboxStatus.textContent =
-                "Closed " + (result.closed || 0) + " test chat(s)." + (result.capped ? " Run again if more remain." : "");
+                "Closed " + totalClosed + " test chat(s)." + (capped ? " Run again if more remain." : "");
             if (selectedId && isTestConversation_({ id: selectedId })) {
                 selectedId = "";
                 selectedConv = null;
@@ -447,7 +465,8 @@
                 li.classList.add("assigned-to-me");
             }
             const title = c.visitorName || "Visitor";
-            const unread = c.unreadForAgent > 0 ? " · " + c.unreadForAgent + " new" : "";
+            const unreadN = formatUnreadCount_(c.unreadForAgent);
+            const unread = unreadN ? " · " + unreadN + " unread" : "";
             const mode = c.humanMode || c.status;
             const main = document.createElement("div");
             main.className = "inbox-item-main";
