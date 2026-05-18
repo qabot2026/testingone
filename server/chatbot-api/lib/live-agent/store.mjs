@@ -666,16 +666,31 @@ export async function listMessages_({ conversationId, sinceIso, limit, markReadF
     const convRef = db.collection(conversationsCollection_()).doc(id);
     const lim = Math.min(Math.max(limit || 100, 1), 200);
 
-    let q = convRef.collection("messages").orderBy("createdAt", "asc");
-    if (sinceIso) {
-        const since = new Date(sinceIso);
-        if (!Number.isNaN(since.getTime())) {
-            q = convRef.collection("messages").where("createdAt", ">", since).orderBy("createdAt", "asc");
+    let messages = [];
+    const sinceMs = sinceIso ? new Date(sinceIso).getTime() : NaN;
+    const useSince = Number.isFinite(sinceMs);
+
+    try {
+        let q = convRef.collection("messages").orderBy("createdAt", "asc");
+        if (useSince) {
+            q = convRef
+                .collection("messages")
+                .where("createdAt", ">", new Date(sinceMs))
+                .orderBy("createdAt", "asc");
+        }
+        const snap = await q.limit(lim).get();
+        messages = snap.docs.map((doc) => serializeMessage_(doc.id, doc.data()));
+    } catch (queryErr) {
+        console.warn(LOG_TAG, "messages query fallback:", queryErr.message || queryErr);
+        const snap = await convRef.collection("messages").orderBy("createdAt", "asc").limit(lim).get();
+        messages = snap.docs.map((doc) => serializeMessage_(doc.id, doc.data()));
+        if (useSince) {
+            messages = messages.filter((m) => {
+                const t = m.createdAt ? new Date(m.createdAt).getTime() : 0;
+                return t > sinceMs;
+            });
         }
     }
-
-    const snap = await q.limit(lim).get();
-    const messages = snap.docs.map((doc) => serializeMessage_(doc.id, doc.data()));
 
     if (markReadFor === "agent") {
         await convRef.update({ unreadForAgent: 0 });
