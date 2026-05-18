@@ -395,9 +395,9 @@
     /** Column width caps (width: auto) — ch columns narrowed; email/mobile less narrow than before */
     table.sheet thead th.col-w-email,
     table.sheet tbody td.col-w-email {
-      width: calc(25ch + 20px);
-      min-width: calc(25ch + 20px);
-      max-width: calc(25ch + 20px);
+      width: calc(25ch + 30px) !important;
+      min-width: calc(25ch + 30px) !important;
+      max-width: calc(25ch + 30px) !important;
       box-sizing: border-box;
     }
     table.sheet thead th.col-w-mobile,
@@ -3060,7 +3060,7 @@
       var SHEET_COL_CH_REDUCE_PX = {
         date: 5,
         time: 10,
-        email: -20,
+        email: -30,
         mobile: 5,
         appdate: 10,
         apptime: 14
