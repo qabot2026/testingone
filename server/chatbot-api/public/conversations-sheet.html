@@ -675,6 +675,21 @@
       flex: 0 1 auto;
       min-width: 0;
     }
+    .sheet-col-filter-slot + .sheet-col-filter-slot {
+      margin-left: 6px;
+      padding-left: 12px;
+      border-left: 1px solid rgba(100, 116, 139, 0.45);
+    }
+    .sheet-col-filter-num {
+      flex: 0 0 auto;
+      font-size: 10px;
+      font-weight: 800;
+      color: var(--brand-strong);
+      line-height: 1;
+      padding: 2px 5px;
+      border-radius: 4px;
+      background: rgba(15, 118, 110, 0.1);
+    }
     .sheet-col-filter-slot select {
       width: auto;
       min-width: 0;
@@ -2090,7 +2105,7 @@
       <div class="brand-block">
         <h1>Conversation leads</h1>
         <span class="sub"
-          >Browse conversations from every channel in one place. Search any column, filter by date, page through results &mdash;
+          >Browse conversations from every channel in one place. Filter by column values or date, page through results &mdash;
           columns stay in the original capture order.</span
         >
       </div>
@@ -2148,10 +2163,6 @@
     </details>
 
     <div class="tools">
-      <div class="tool grow">
-        <label class="mini" for="filter">Contains (any column)</label>
-        <input id="filter" type="text" placeholder="Filter rowsâ€¦" autocomplete="off" />
-      </div>
       <div class="tool date-fields-row">
         <div class="date-field-modern-wrap">
           <label class="mini" for="dateFrom">From date</label>
@@ -2197,6 +2208,7 @@
       <div class="sheet-column-filters" id="sheetColumnFilters" aria-label="Filter table by column values">
         <span class="sheet-column-filters__label">Table filters</span>
         <div class="sheet-col-filter-slot" data-slot="0">
+          <span class="sheet-col-filter-num" aria-hidden="true">1</span>
           <select class="col-filter-col" data-slot="0" title="Filter 1 column" aria-label="Filter 1 column">
             <option value="">Column</option>
           </select>
@@ -2205,6 +2217,7 @@
           </select>
         </div>
         <div class="sheet-col-filter-slot" data-slot="1">
+          <span class="sheet-col-filter-num" aria-hidden="true">2</span>
           <select class="col-filter-col" data-slot="1" title="Filter 2 column" aria-label="Filter 2 column">
             <option value="">Column</option>
           </select>
@@ -2213,6 +2226,7 @@
           </select>
         </div>
         <div class="sheet-col-filter-slot" data-slot="2">
+          <span class="sheet-col-filter-num" aria-hidden="true">3</span>
           <select class="col-filter-col" data-slot="2" title="Filter 3 column" aria-label="Filter 3 column">
             <option value="">Column</option>
           </select>
@@ -2326,7 +2340,6 @@
           localStorage.setItem(LS_KEY, s);
         } catch (ignore) {}
       }
-      var filterEl = document.getElementById("filter");
       var sheetColumnFiltersEl = document.getElementById("sheetColumnFilters");
       var colFilterClearBtn = document.getElementById("colFilterClear");
       var COLUMN_FILTER_SLOT_COUNT = 3;
@@ -4034,16 +4047,6 @@
         });
       }
 
-      function rowMatchesFilter(row, q) {
-        if (!q) return true;
-        var low = q.toLowerCase();
-        var keys = Object.keys(row);
-        for (var i = 0; i < keys.length; i++) {
-          if (String(row[keys[i]] || "").toLowerCase().indexOf(low) >= 0) return true;
-        }
-        return false;
-      }
-
       var lastColFilterHeadersKey_ = "";
 
       function getColumnFilterSlots_() {
@@ -4276,7 +4279,6 @@
 
       function render(data) {
         lastPayload = data;
-        var q = filterEl.value.trim();
         var headers = data.headers && data.headers.length ? data.headers : [];
         var rawRows = data.conversations || [];
         convList.innerHTML = "";
@@ -4300,7 +4302,6 @@
         var filtered = [];
         for (var r = 0; r < rows.length; r++) {
           var row = rows[r];
-          if (!rowMatchesFilter(row, q)) continue;
           if (!rowMatchesColumnFilter_(row)) continue;
           var ymd = rowDayYmd(row);
           if (!inDateRange(ymd, data)) {
@@ -4328,10 +4329,8 @@
           selectedRowSig = null;
           var emp = document.createElement("div");
           emp.className = "empty";
-          var hasText = !!q;
           var hasDr = !!(dateFromEl.value || dateToEl.value);
           var why = [];
-          if (hasText) why.push("Contains filter");
           if (hasDr) why.push("date filters");
           if (columnFilterActive_()) {
             why.push("column filter");
@@ -4441,9 +4440,6 @@
         }, 200);
       });
       function wireFilter() {
-        filterEl.addEventListener("input", function () {
-          if (lastPayload) render(lastPayload);
-        });
         if (sheetColumnFiltersEl) {
           sheetColumnFiltersEl.addEventListener("change", function (ev) {
             var t = ev.target;
