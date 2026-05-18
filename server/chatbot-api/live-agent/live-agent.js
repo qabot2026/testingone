@@ -352,6 +352,29 @@
         return (deskSettings && deskSettings.access) || {};
     }
 
+    function resolveAgentDisplayName_(email) {
+        const e = String(email || "")
+            .trim()
+            .toLowerCase();
+        if (!e) return "Agent";
+        const profiles = deskGeneral_().agentProfiles || [];
+        for (let i = 0; i < profiles.length; i += 1) {
+            const p = profiles[i];
+            if (p && String(p.email || "").toLowerCase() === e && String(p.name || "").trim()) {
+                return String(p.name).trim();
+            }
+        }
+        return "Agent";
+    }
+
+    function agentLabelForMessage_(m) {
+        const stored =
+            m && typeof m.senderDisplayName === "string" ? m.senderDisplayName.trim() : "";
+        if (stored) return stored;
+        if (m && m.senderEmail) return resolveAgentDisplayName_(m.senderEmail);
+        return "Agent";
+    }
+
     function playNotificationSound_() {
         const sound = deskGeneral_().notificationSound || "default";
         if (sound === "none" || deskGeneral_().muteServiceDesk) return;
@@ -1004,10 +1027,10 @@
             " · bot " +
             (conv.botid || "default");
         if (conv.acceptedByEmail) {
-            meta += " · Accepted by " + conv.acceptedByEmail;
+            meta += " · Accepted by " + resolveAgentDisplayName_(conv.acceptedByEmail);
             if (conv.acceptedAt) meta += " at " + formatTime(conv.acceptedAt);
         } else if (conv.assignedAgentEmail && conv.status === "active") {
-            meta += " · Agent " + conv.assignedAgentEmail;
+            meta += " · Agent " + resolveAgentDisplayName_(conv.assignedAgentEmail);
         }
         if (conv.closedByEmail && conv.status === "closed") {
             meta += " · Closed by " + conv.closedByEmail;
@@ -1145,14 +1168,10 @@
         div.className = "msg " + (m.role || "visitor");
         div.dataset.msgId = m.id;
         let body = escapeHtml(m.text || "");
-        if (
-            (m.role === "agent" || m.role === "staff") &&
-            deskGeneral_().showAgentNameInChat !== false &&
-            m.senderEmail
-        ) {
+        if ((m.role === "agent" || m.role === "staff") && deskGeneral_().showAgentNameInChat !== false) {
             body =
                 '<span class="msg-agent-name">' +
-                escapeHtml(m.senderEmail) +
+                escapeHtml(agentLabelForMessage_(m)) +
                 "</span> " +
                 body;
         }

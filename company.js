@@ -14348,10 +14348,14 @@ async function liveAgentPollTick_(dfMessenger) {
                 continue;
             }
             const isAgent = role === "agent" || role === "staff";
-            const prefix =
-                isAgent && m.senderEmail
-                    ? String(m.senderEmail).trim().split("@")[0] + ": "
-                    : "";
+            let prefix = "";
+            if (isAgent) {
+                const displayName =
+                    typeof m.senderDisplayName === "string" && m.senderDisplayName.trim()
+                        ? m.senderDisplayName.trim()
+                        : "Agent";
+                prefix = displayName + ": ";
+            }
             ms.renderCustomText(prefix + text, true);
             renderBotPersona(ms, Date.now());
         }

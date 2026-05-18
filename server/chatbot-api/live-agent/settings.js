@@ -7,6 +7,8 @@
     const $ = (id) => document.getElementById(id);
 
     let viewerSecret = "";
+    /** @type {Record<string, unknown> | null} */
+    let lastDeskSettings = null;
 
     function authHeaders_() {
         return {
@@ -69,7 +71,8 @@
                 enableAgentChatFeedback: $("enableAgentChatFeedback").checked,
                 disableUserTextTranslation: $("disableUserTextTranslation").checked,
                 sortChatsByLastMessage: $("sortChatsByLastMessage").checked,
-                notificationSound: $("notificationSound").value || "default"
+                notificationSound: $("notificationSound").value || "default",
+                agentProfiles: readAgentProfilesFromDom_()
             },
             routing: {
                 algorithm: $("routingAlgorithm").value || "online_parallel",
@@ -96,6 +99,7 @@
 
     function applyDeskSettings_(s) {
         const settings = s || {};
+        lastDeskSettings = settings;
         const g = settings.general || {};
         const r = settings.routing || {};
         const a = settings.access || {};
@@ -123,6 +127,75 @@
         setVal_("viewContact", a.viewContact || "all");
         setVal_("dailyRecipients", rep.dailyRecipients || "");
         setChecked_("weeklyMonthlyEnabled", rep.weeklyMonthlyEnabled);
+        renderAgentProfiles_((g.agentProfiles || []));
+    }
+
+    function readAgentProfilesFromDom_() {
+        const body = $("agentProfilesBody");
+        if (!body) return [];
+        const rows = body.querySelectorAll("tr[data-agent-profile-row]");
+        const out = [];
+        for (const tr of rows) {
+            const emailEl = tr.querySelector("[data-profile-email]");
+            const nameEl = tr.querySelector("[data-profile-name]");
+            const email = emailEl && emailEl.value ? emailEl.value.trim().toLowerCase() : "";
+            const name = nameEl && nameEl.value ? nameEl.value.trim() : "";
+            if (email && email.includes("@") && name) {
+                out.push({ email, name });
+            }
+        }
+        return out;
+    }
+
+    function renderAgentProfiles_(profiles) {
+        const body = $("agentProfilesBody");
+        if (!body) return;
+        body.innerHTML = "";
+        const list = Array.isArray(profiles) ? profiles : [];
+        if (!list.length) {
+            addAgentProfileRow_("", "");
+        } else {
+            for (const p of list) {
+                addAgentProfileRow_(p.email || "", p.name || "");
+            }
+        }
+    }
+
+    function addAgentProfileRow_(email, name) {
+        const body = $("agentProfilesBody");
+        if (!body) return;
+        const tr = document.createElement("tr");
+        tr.dataset.agentProfileRow = "1";
+        const tdEmail = document.createElement("td");
+        const emailInput = document.createElement("input");
+        emailInput.type = "email";
+        emailInput.className = "profile-email";
+        emailInput.dataset.profileEmail = "1";
+        emailInput.placeholder = "agent@company.com";
+        emailInput.autocomplete = "off";
+        emailInput.value = email || "";
+        tdEmail.appendChild(emailInput);
+        const tdName = document.createElement("td");
+        const nameInput = document.createElement("input");
+        nameInput.type = "text";
+        nameInput.className = "profile-name";
+        nameInput.dataset.profileName = "1";
+        nameInput.placeholder = "Display name";
+        nameInput.autocomplete = "off";
+        nameInput.value = name || "";
+        tdName.appendChild(nameInput);
+        const tdAct = document.createElement("td");
+        const rm = document.createElement("button");
+        rm.type = "button";
+        rm.className = "btn ghost small profile-remove";
+        rm.title = "Remove";
+        rm.textContent = "Remove";
+        rm.addEventListener("click", () => tr.remove());
+        tdAct.appendChild(rm);
+        tr.appendChild(tdEmail);
+        tr.appendChild(tdName);
+        tr.appendChild(tdAct);
+        body.appendChild(tr);
     }
 
     function formatTime_(iso) {
@@ -166,12 +239,24 @@
                 apiFetch(`${API}/activity?limit=40`)
             ]);
             body.innerHTML = "";
+            const profiles =
+                (lastDeskSettings &&
+                    lastDeskSettings.general &&
+                    lastDeskSettings.general.agentProfiles) ||
+                [];
+            const profileMap = new Map(
+                profiles.map((p) => [String(p.email || "").toLowerCase(), String(p.name || "").trim()])
+            );
             for (const a of agentsRes.agents || []) {
                 const tr = document.createElement("tr");
+                const display =
+                    profileMap.get(String(a.email || "").toLowerCase()) || "—";
                 tr.innerHTML =
                     "<td>" +
+                    escapeHtml_(display) +
+                    '<br /><span class="muted small">' +
                     escapeHtml_(a.email) +
-                    "</td><td><span class=\"agent-pill status-" +
+                    "</span></td><td><span class=\"agent-pill status-" +
                     escapeHtml_(a.effectiveStatus || "offline") +
                     "\">" +
                     escapeHtml_(a.effectiveStatus || "offline") +
@@ -368,6 +453,10 @@
 
     if ($("refreshAgentsOverviewBtn")) {
         $("refreshAgentsOverviewBtn").addEventListener("click", () => loadAgentsOverview_());
+    }
+
+    if ($("addAgentProfileBtn")) {
+        $("addAgentProfileBtn").addEventListener("click", () => addAgentProfileRow_("", ""));
     }
 
     loadSecret();

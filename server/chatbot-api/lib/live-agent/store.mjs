@@ -110,8 +110,36 @@ function serializeMessage_(id, data) {
         role: typeof d.role === "string" ? d.role : "visitor",
         text: typeof d.text === "string" ? d.text : "",
         senderEmail: typeof d.senderEmail === "string" ? d.senderEmail : "",
+        senderDisplayName:
+            typeof d.senderDisplayName === "string" ? trim_(d.senderDisplayName) : "",
         createdAt: tsToIso_(d.createdAt)
     };
+}
+
+export function clearInboxSettingsCache_() {
+    inboxSettingsCache_ = null;
+    inboxSettingsCacheAt_ = 0;
+}
+
+async function enrichMessagesWithAgentNames_(messages) {
+    if (!messages.length) {
+        return messages;
+    }
+    const { resolveAgentDisplayName_ } = await import("./departments.mjs");
+    const settings = await inboxDeskSettings_(true);
+    return messages.map((m) => {
+        const role = trim_(m.role).toLowerCase();
+        if (role !== "agent" && role !== "staff") {
+            return m;
+        }
+        if (m.senderDisplayName) {
+            return m;
+        }
+        return {
+            ...m,
+            senderDisplayName: resolveAgentDisplayName_(m.senderEmail, settings)
+        };
+    });
 }
 
 export function liveAgentFirestoreReady_() {
@@ -617,6 +645,13 @@ export async function appendMessage_({
     const convRef = db.collection(conversationsCollection_()).doc(id);
     const msgRef = convRef.collection("messages").doc();
     const now = admin.firestore.FieldValue.serverTimestamp();
+    const roleNormEarly = trim_(role).toLowerCase();
+    let senderDisplayName = "";
+    if (roleNormEarly === "agent" || roleNormEarly === "staff") {
+        const { resolveAgentDisplayName_ } = await import("./departments.mjs");
+        const settings = await inboxDeskSettings_(true);
+        senderDisplayName = resolveAgentDisplayName_(senderEmail, settings);
+    }
 
     await db.runTransaction(async (tx) => {
         const snap = await tx.get(convRef);
@@ -640,12 +675,17 @@ export async function appendMessage_({
             }
         }
 
-        tx.set(msgRef, {
+        /** @type {Record<string, unknown>} */
+        const msgData = {
             role: role || "visitor",
             text: body,
             senderEmail: trim_(senderEmail),
             createdAt: now
-        });
+        };
+        if (senderDisplayName) {
+            msgData.senderDisplayName = senderDisplayName;
+        }
+        tx.set(msgRef, msgData);
 
         const agentBump = bumpUnread && bumpUnread.agent ? bumpUnread.agent : 0;
         const visitorBump = bumpUnread && bumpUnread.visitor ? bumpUnread.visitor : 0;
@@ -731,7 +771,7 @@ export async function listMessages_({ conversationId, sinceIso, limit, markReadF
         await convRef.update({ unreadForVisitor: 0 });
     }
 
-    return messages;
+    return enrichMessagesWithAgentNames_(messages);
 }
 
 /**

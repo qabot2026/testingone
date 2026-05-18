@@ -98,6 +98,48 @@ function pickEnum_(v, allowed, fallback) {
     return allowed.includes(s) ? s : fallback;
 }
 
+/** @param {unknown} raw */
+export function normalizeAgentProfiles_(raw) {
+    const out = [];
+    const seen = new Set();
+    const arr = Array.isArray(raw) ? raw : [];
+    for (let i = 0; i < arr.length; i += 1) {
+        const row = arr[i];
+        if (!row || typeof row !== "object") {
+            continue;
+        }
+        const o = /** @type {Record<string, unknown>} */ (row);
+        const email = normalizeEmail_(o.email || o.agentEmail);
+        const name = trim_(o.name || o.displayName);
+        if (!email || !email.includes("@") || !name || seen.has(email)) {
+            continue;
+        }
+        seen.add(email);
+        out.push({ email, name: name.slice(0, 80) });
+    }
+    out.sort((a, b) => a.name.localeCompare(b.name));
+    return out;
+}
+
+/** Display name for visitors and agents (never returns an email). */
+export function resolveAgentDisplayName_(email, settings) {
+    const e = normalizeEmail_(email);
+    if (!e) {
+        return "Agent";
+    }
+    const profiles =
+        settings && settings.general && Array.isArray(settings.general.agentProfiles)
+            ? settings.general.agentProfiles
+            : [];
+    for (let i = 0; i < profiles.length; i += 1) {
+        const p = profiles[i];
+        if (p && normalizeEmail_(p.email) === e && trim_(p.name)) {
+            return trim_(p.name);
+        }
+    }
+    return "Agent";
+}
+
 function serializeLiveAgentSettings_(d) {
     const raw = d || {};
     const accessRaw = raw.access && typeof raw.access === "object" ? raw.access : {};
@@ -112,7 +154,8 @@ function serializeLiveAgentSettings_(d) {
             enableAgentChatFeedback: bool_(raw.enableAgentChatFeedback, false),
             disableUserTextTranslation: bool_(raw.disableUserTextTranslation, false),
             sortChatsByLastMessage: bool_(raw.sortChatsByLastMessage, true),
-            notificationSound: pickEnum_(raw.notificationSound, ["default", "chime", "none"], "default")
+            notificationSound: pickEnum_(raw.notificationSound, ["default", "chime", "none"], "default"),
+            agentProfiles: normalizeAgentProfiles_(raw.agentProfiles)
         },
         routing: {
             algorithm: pickEnum_(raw.routingAlgorithm, ["round_robin", "online_parallel"], "online_parallel"),
@@ -195,6 +238,10 @@ export async function saveLiveAgentSettings_(patch) {
             g.notificationSound !== undefined
                 ? pickEnum_(g.notificationSound, ["default", "chime", "none"], cur.general.notificationSound)
                 : cur.general.notificationSound,
+        agentProfiles:
+            g.agentProfiles !== undefined
+                ? normalizeAgentProfiles_(g.agentProfiles)
+                : cur.general.agentProfiles,
         routingAlgorithm:
             r.algorithm !== undefined
                 ? pickEnum_(r.algorithm, ["round_robin", "online_parallel"], cur.routing.algorithm)
@@ -246,6 +293,12 @@ export async function saveLiveAgentSettings_(patch) {
         updatedAt: admin.firestore.FieldValue.serverTimestamp()
     };
     await settingsRef_().set(next, { merge: true });
+    try {
+        const { clearInboxSettingsCache_ } = await import("./store.mjs");
+        clearInboxSettingsCache_();
+    } catch (_) {
+        /* ignore */
+    }
     return getLiveAgentSettings_();
 }
 

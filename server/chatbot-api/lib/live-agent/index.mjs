@@ -600,11 +600,23 @@ export function mountLiveAgentRoutes(app) {
                 conversation.status === "active" &&
                 (conversation.humanMode === "human" || conversation.aiEnabled === false)
             );
+            let assignedAgentDisplayName = "";
+            if (conversation && conversation.assignedAgentEmail) {
+                const { getLiveAgentSettings_, resolveAgentDisplayName_ } = await import(
+                    "./departments.mjs"
+                );
+                const settings = await getLiveAgentSettings_();
+                assignedAgentDisplayName = resolveAgentDisplayName_(
+                    conversation.assignedAgentEmail,
+                    settings
+                );
+            }
             res.json({
                 ok: true,
                 conversation,
                 humanActive,
                 agentConnected,
+                assignedAgentDisplayName,
                 aiEnabled: conversation ? conversation.aiEnabled !== false : true,
                 humanMode: conversation && conversation.humanMode ? conversation.humanMode : "ai"
             });

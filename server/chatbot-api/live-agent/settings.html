@@ -54,7 +54,7 @@
             </label>
             <label class="toggle-row">
               <input type="checkbox" id="showAgentNameInChat" checked />
-              <span>Show agent name in chat</span>
+              <span>Show agent display name in service desk chat</span>
             </label>
             <label class="toggle-row">
               <input type="checkbox" id="enableAgentChatFeedback" />
@@ -138,6 +138,24 @@
         </section>
 
         <section class="settings-card">
+          <h2>Agent display names</h2>
+          <p class="muted small">Map each agent work email to the name visitors see in the website chat. Emails are not shown to visitors.</p>
+          <div class="agent-profiles-table-wrap">
+            <table class="agents-table agent-profiles-table">
+              <thead>
+                <tr>
+                  <th>Work email</th>
+                  <th>Display name</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="agentProfilesBody"></tbody>
+            </table>
+          </div>
+          <button type="button" class="btn ghost small" id="addAgentProfileBtn">Add agent</button>
+        </section>
+
+        <section class="settings-card">
           <h2>Reporting</h2>
           <label>
             Daily agent report recipients
@@ -167,7 +185,7 @@
           <table class="agents-table" id="agentsOverviewTable">
             <thead>
               <tr>
-                <th>Email</th>
+                <th>Agent</th>
                 <th>Status</th>
                 <th>Active</th>
                 <th>Accepted</th>
