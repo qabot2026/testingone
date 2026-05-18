@@ -98,6 +98,14 @@ const CONTACT_FORM_SESSION_SHEET_SYNC_ENDPOINT = "/contact-form-session-sheet-sy
 const VISITOR_CITY_ENDPOINT = "/api/visitor-city";
 /** Firestore-only live bot+user transcript (optional sync secrets; no Sheets required). */
 const SESSION_TRANSCRIPT_SYNC_ENDPOINT = "/api/session-transcript-sync";
+/** Dialogflow custom payload `action` → hand off to human agent inbox (`/live-agent`). */
+const LIVE_AGENT_REQUEST_ACTION = "request_live_agent";
+const LIVE_AGENT_POLL_INTERVAL_MS = 4000;
+let liveAgentHandoffActive = false;
+let liveAgentPollTimerId = 0;
+let liveAgentMessagesSinceIso = "";
+/** @type {Set<string>} */
+const liveAgentSeenMessageIds_ = new Set();
 /** POST JSON: visitor CSAT / helpful → Firestore `chat_feedback` (optional CHAT_FEEDBACK_SECRET). */
 const CHAT_FEEDBACK_ENDPOINT = "/chat-feedback";
 /** Caps how long the Submit button waits for the API before aborting (Sheets/Firestore latency). */
@@ -4909,6 +4917,10 @@ function sendUserTextViaDfMessenger(dfMessenger, text, shouldRenderCustomTextNow
         return;
     }
     if (consumeLanguageSwitchFromUserFlowPhrase(t, null, dfMessenger)) {
+        return;
+    }
+    if (liveAgentHandoffIsActive_()) {
+        liveAgentSendVisitorMessage_(dfMessenger, t, shouldRenderCustomTextNow);
         return;
     }
     const hadM0 = hasStoredMobileForChatBlockGate_();
@@ -13728,6 +13740,317 @@ function tryRenderThanksAfterMergeSuppressDf_(event, raw, before) {
     return true;
 }
 
+function liveAgentWidgetEnabled_() {
+    const cfg =
+        COMMON_CONFIG.liveAgent && typeof COMMON_CONFIG.liveAgent === "object"
+            ? COMMON_CONFIG.liveAgent
+            : {};
+    if (cfg.enabled === false) {
+        return false;
+    }
+    return Boolean(getApiEndpoint("/api/live-agent/health"));
+}
+
+function liveAgentSessionId_() {
+    const ctx = getClientContext();
+    return typeof ctx.client_session_id === "string" ? ctx.client_session_id.trim() : "";
+}
+
+function liveAgentVisitorDisplayName_() {
+    const ctx = getClientContext();
+    const name = dfParameterScalarToString(ctx.name || ctx.visitor_name || "").trim();
+    if (name) {
+        return name;
+    }
+    const mobile = dfParameterScalarToString(ctx.mobile || "").trim();
+    if (mobile) {
+        return "Visitor " + mobile.slice(-4);
+    }
+    return "Visitor";
+}
+
+function stopLiveAgentPoll_() {
+    if (liveAgentPollTimerId) {
+        window.clearInterval(liveAgentPollTimerId);
+        liveAgentPollTimerId = 0;
+    }
+}
+
+function setLiveAgentHandoffActive_(on) {
+    liveAgentHandoffActive = Boolean(on);
+    if (!liveAgentHandoffActive) {
+        stopLiveAgentPoll_();
+        liveAgentMessagesSinceIso = "";
+        liveAgentSeenMessageIds_.clear();
+    }
+}
+
+function liveAgentHandoffIsActive_() {
+    return liveAgentHandoffActive === true;
+}
+
+/**
+ * @param {Event} event
+ * @returns {Array<unknown>}
+ */
+function collectEventMessagesForPayloadScan_(event) {
+    const responseMessages =
+        event && event.detail && event.detail.raw && event.detail.raw.queryResult
+        && Array.isArray(event.detail.raw.queryResult.responseMessages)
+            ? event.detail.raw.queryResult.responseMessages
+            : [];
+    const messengerMessages =
+        event && event.detail && event.detail.data && Array.isArray(event.detail.data.messages)
+            ? event.detail.data.messages
+            : [];
+    return [...responseMessages, ...messengerMessages];
+}
+
+/**
+ * @param {Event} event
+ * @returns {{ departmentId: string, waitingMessage: string, initialMessage: string } | null}
+ */
+function extractLiveAgentHandoffFromEvent_(event) {
+    let departmentId = "";
+    let waitingMessage = "";
+    let initialMessage = "";
+    let requested = false;
+    for (const message of collectEventMessagesForPayloadScan_(event)) {
+        const payload = extractPayload(message);
+        if (!payload) {
+            continue;
+        }
+        const act = typeof payload.action === "string" ? payload.action.trim().toLowerCase() : "";
+        if (
+            act === LIVE_AGENT_REQUEST_ACTION
+            || act === "live_agent"
+            || act === "handoff_live_agent"
+        ) {
+            requested = true;
+            if (payload.department_id != null && String(payload.department_id).trim()) {
+                departmentId = String(payload.department_id).trim();
+            }
+            if (payload.departmentId != null && String(payload.departmentId).trim()) {
+                departmentId = String(payload.departmentId).trim();
+            }
+            if (payload.initial_message != null && String(payload.initial_message).trim()) {
+                initialMessage = String(payload.initial_message).trim();
+            }
+            if (payload.initialMessage != null && String(payload.initialMessage).trim()) {
+                initialMessage = String(payload.initialMessage).trim();
+            }
+            if (payload.message != null && String(payload.message).trim()) {
+                waitingMessage = String(payload.message).trim();
+            }
+        }
+    }
+    const qr = event && event.detail && event.detail.raw && event.detail.raw.queryResult;
+    const params = qr && qr.parameters && typeof qr.parameters === "object" ? qr.parameters : {};
+    if (
+        params.request_live_agent === true
+        || params.live_agent === true
+        || params.request_live_agent === "true"
+    ) {
+        requested = true;
+    }
+    const qText = qr && typeof qr.queryText === "string" ? qr.queryText.trim() : "";
+    if (requested && !initialMessage && qText) {
+        initialMessage = qText;
+    }
+    if (!requested) {
+        return null;
+    }
+    return { departmentId, waitingMessage, initialMessage };
+}
+
+/**
+ * @param {{ departmentId?: string, waitingMessage?: string, initialMessage?: string }} spec
+ * @returns {Promise<boolean>}
+ */
+async function requestLiveAgentHandoff_(spec) {
+    if (!liveAgentWidgetEnabled_()) {
+        return false;
+    }
+    const sid = liveAgentSessionId_();
+    const endpoint = getApiEndpoint("/api/live-agent/request");
+    if (!endpoint || !sid) {
+        return false;
+    }
+    const s = spec && typeof spec === "object" ? spec : {};
+    try {
+        const res = await fetch(endpoint, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                clientSessionId: sid,
+                visitorName: liveAgentVisitorDisplayName_(),
+                initialMessage: typeof s.initialMessage === "string" ? s.initialMessage.trim() : "",
+                departmentId: typeof s.departmentId === "string" ? s.departmentId.trim() : "",
+                botid: "default"
+            })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+            return false;
+        }
+        setLiveAgentHandoffActive_(true);
+        liveAgentMessagesSinceIso = "";
+        liveAgentSeenMessageIds_.clear();
+        const ms = activeDfMessenger;
+        if (ms && typeof ms.renderCustomText === "function") {
+            const waitLine =
+                typeof s.waitingMessage === "string" && s.waitingMessage.trim()
+                    ? s.waitingMessage.trim()
+                    : "Connecting you with an agent. Please wait…";
+            ms.renderCustomText(waitLine, true);
+            renderBotPersona(ms, Date.now());
+        }
+        startLiveAgentPoll_(ms);
+        return Boolean(data && data.ok);
+    } catch {
+        return false;
+    }
+}
+
+/**
+ * @param {Event} event
+ */
+function tryRequestLiveAgentFromBotResponse_(event) {
+    if (!liveAgentWidgetEnabled_()) {
+        return;
+    }
+    const spec = extractLiveAgentHandoffFromEvent_(event);
+    if (!spec) {
+        return;
+    }
+    requestLiveAgentHandoff_(spec);
+}
+
+/**
+ * @param {HTMLElement | null | undefined} dfMessenger
+ * @returns {Promise<void>}
+ */
+async function liveAgentPollTick_(dfMessenger) {
+    if (!liveAgentHandoffIsActive_()) {
+        return;
+    }
+    const sid = liveAgentSessionId_();
+    if (!sid) {
+        return;
+    }
+    const statusUrl = getApiEndpoint(
+        "/api/live-agent/status?clientSessionId=" + encodeURIComponent(sid)
+    );
+    if (!statusUrl) {
+        return;
+    }
+    try {
+        const stRes = await fetch(statusUrl);
+        const stData = await stRes.json().catch(() => ({}));
+        if (!stRes.ok) {
+            return;
+        }
+        const humanActive = Boolean(stData.humanActive);
+        const conv = stData.conversation;
+        if (conv && conv.status === "closed") {
+            setLiveAgentHandoffActive_(false);
+            return;
+        }
+        if (!humanActive && stData.aiEnabled !== false) {
+            setLiveAgentHandoffActive_(false);
+            return;
+        }
+        let msgUrl =
+            "/api/live-agent/messages?clientSessionId=" + encodeURIComponent(sid);
+        if (liveAgentMessagesSinceIso) {
+            msgUrl += "&since=" + encodeURIComponent(liveAgentMessagesSinceIso);
+        }
+        const msgEndpoint = getApiEndpoint(msgUrl);
+        if (!msgEndpoint) {
+            return;
+        }
+        const mRes = await fetch(msgEndpoint);
+        const mData = await mRes.json().catch(() => ({}));
+        if (!mRes.ok) {
+            return;
+        }
+        const messages = Array.isArray(mData.messages) ? mData.messages : [];
+        const ms = dfMessenger || activeDfMessenger;
+        for (let i = 0; i < messages.length; i += 1) {
+            const m = messages[i];
+            if (!m || !m.id || liveAgentSeenMessageIds_.has(m.id)) {
+                continue;
+            }
+            liveAgentSeenMessageIds_.add(m.id);
+            if (m.createdAt) {
+                liveAgentMessagesSinceIso = m.createdAt;
+            }
+            const role = typeof m.role === "string" ? m.role.toLowerCase() : "";
+            if (role === "visitor") {
+                continue;
+            }
+            const text = typeof m.text === "string" ? m.text.trim() : "";
+            if (!text || !ms || typeof ms.renderCustomText !== "function") {
+                continue;
+            }
+            ms.renderCustomText(text, true);
+            renderBotPersona(ms, Date.now());
+        }
+    } catch {
+        /* ignore */
+    }
+}
+
+/**
+ * @param {HTMLElement | null | undefined} dfMessenger
+ */
+function startLiveAgentPoll_(dfMessenger) {
+    stopLiveAgentPoll_();
+    const ms = dfMessenger || activeDfMessenger;
+    const tick = () => {
+        liveAgentPollTick_(ms);
+    };
+    liveAgentPollTimerId = window.setInterval(tick, LIVE_AGENT_POLL_INTERVAL_MS);
+    tick();
+}
+
+/**
+ * @param {HTMLElement | null | undefined} dfMessenger
+ * @param {string} text
+ * @param {boolean | undefined} shouldRenderCustomTextNow
+ */
+async function liveAgentSendVisitorMessage_(dfMessenger, text, shouldRenderCustomTextNow) {
+    const t = (text || "").trim();
+    if (!t) {
+        return;
+    }
+    const sid = liveAgentSessionId_();
+    const endpoint = getApiEndpoint("/api/live-agent/visitor-message");
+    if (!endpoint || !sid) {
+        return;
+    }
+    const renderCustom =
+        typeof shouldRenderCustomTextNow === "boolean" ? shouldRenderCustomTextNow : true;
+    const ms = dfMessenger || activeDfMessenger;
+    if (renderCustom && ms && typeof ms.renderCustomText === "function") {
+        ms.renderCustomText(t, false);
+        if (typeof ms.renderUserPersona === "function") {
+            renderUserPersona(ms);
+        }
+    }
+    trackChatUserQueryInSessionContext_(t);
+    scheduleClearDfMessengerComposerInput_();
+    try {
+        await fetch(endpoint, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ clientSessionId: sid, text: t })
+        });
+    } catch {
+        /* ignore */
+    }
+}
+
 function handleDfResponseReceived(event) {
     const messages = event.detail && event.detail.data && Array.isArray(event.detail.data.messages)
         ? event.detail.data.messages
@@ -13807,6 +14130,8 @@ function handleDfResponseReceived(event) {
     if (contactFormOpenPending) {
         scheduleContactFormOpen();
     }
+
+    tryRequestLiveAgentFromBotResponse_(event);
 
     maybeIncrementBubbleUnreadFromResponse(event);
 
@@ -18202,6 +18527,7 @@ function isUsableFooterHost(host) {
 }
 
 function restartChatSession() {
+    setLiveAgentHandoffActive_(false);
     try {
         clearOpenGalleryUrlDedupeState();
     } catch {

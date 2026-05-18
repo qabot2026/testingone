@@ -63,30 +63,18 @@
       <aside class="inbox-pane" aria-label="Request queue">
         <p class="pane-title">Visitor requests</p>
 
-        <div class="practice-panel" aria-label="Practice mode">
-          <p class="practice-title">How to try it</p>
-          <ol class="practice-steps">
-            <li>Press <strong>Add practice visitor</strong></li>
-            <li>Click <strong>Test User</strong> in the list</li>
-            <li>Press <strong>Accept chat</strong> and reply</li>
-          </ol>
-          <button type="button" class="btn primary practice-btn" id="testVisitorBtn">
-            Add practice visitor
-          </button>
-          <p id="practiceStatus" class="practice-status" role="status" aria-live="polite"></p>
-          <button type="button" class="btn ghost small" id="clearTestQueueBtn" hidden>
-            Clear old practice chats
-          </button>
-        </div>
-
+        <p class="inbox-hint muted small">Visitors who ask for a human on the chatbot appear below. Select one, then press <strong>Accept chat</strong>.</p>
         <p id="inboxStatus" class="inbox-status muted">Loading…</p>
+        <button type="button" class="btn ghost small" id="clearTestQueueBtn" hidden>
+          Clear old test chats
+        </button>
         <ul id="inboxList" class="inbox-list"></ul>
       </aside>
 
       <main class="chat-pane" aria-label="Active conversation">
         <div id="chatEmpty" class="chat-empty">
-          <p class="chat-empty-lead">Pick a visitor on the left, then press <strong>Accept chat</strong>.</p>
-          <p class="muted small">Use <strong>Add practice visitor</strong> on the left to try without the website chat widget.</p>
+          <p class="chat-empty-lead">Select a visitor on the left, then press <strong>Accept chat</strong> to reply.</p>
+          <p class="muted small">Visitors appear here after they request a human agent from the website or mobile chat.</p>
         </div>
 
         <div id="chatActive" class="chat-active hidden">

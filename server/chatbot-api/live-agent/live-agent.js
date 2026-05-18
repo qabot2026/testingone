@@ -22,8 +22,6 @@
     const logoutBtn = $("logoutBtn");
     const inboxStatus = $("inboxStatus");
     const clearTestQueueBtn = $("clearTestQueueBtn");
-    const testVisitorBtn = $("testVisitorBtn");
-    const practiceStatus = $("practiceStatus");
     const inboxList = $("inboxList");
     const chatEmpty = $("chatEmpty");
     const chatActive = $("chatActive");
@@ -336,86 +334,6 @@
     if (clearTestQueueBtn) {
         clearTestQueueBtn.addEventListener("click", () => {
             clearTestQueue_().catch((e) => alert(e.message || "Clear failed"));
-        });
-    }
-
-    let testVisitorInFlight = null;
-    const TEST_VISITOR_SESSION = "test-my-demo";
-
-    async function sendTestVisitorRequest_() {
-        if (testVisitorInFlight) {
-            return testVisitorInFlight;
-        }
-        testVisitorInFlight = (async () => {
-            const res = await fetch(API + "/request", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    clientSessionId: TEST_VISITOR_SESSION,
-                    visitorName: "Test User",
-                    initialMessage: "Need a human"
-                })
-            });
-            const data = await res.json().catch(() => ({}));
-            if (!res.ok) {
-                throw new Error((data && data.error) || res.statusText || "Test request failed");
-            }
-            await loadInbox(true);
-            return data;
-        })();
-        try {
-            return await testVisitorInFlight;
-        } finally {
-            window.setTimeout(() => {
-                testVisitorInFlight = null;
-            }, 4000);
-        }
-    }
-
-    function setPracticeStatus_(text, kind) {
-        if (!practiceStatus) return;
-        practiceStatus.textContent = text || "";
-        practiceStatus.classList.remove("ok", "warn", "err");
-        if (kind) practiceStatus.classList.add(kind);
-    }
-
-    async function selectPracticeChatInList_() {
-        const data = await apiFetch(`${API}/inbox?status=all&limit=80`);
-        const hit = (data.conversations || []).find((c) => c.id === TEST_VISITOR_SESSION);
-        if (hit) {
-            await selectConversation(hit);
-            const row = inboxList.querySelector(".inbox-item.selected");
-            if (row) row.scrollIntoView({ block: "nearest" });
-        }
-    }
-
-    if (testVisitorBtn) {
-        testVisitorBtn.addEventListener("click", () => {
-            testVisitorBtn.disabled = true;
-            setPracticeStatus_("Adding practice visitor…", "");
-            sendTestVisitorRequest_()
-                .then(async (data) => {
-                    if (data && data.deduped) {
-                        setPracticeStatus_("Please wait a few seconds, then try again.", "warn");
-                        return;
-                    }
-                    if (data && data.alreadyActive) {
-                        setPracticeStatus_("Test User is already waiting. Opening that chat…", "ok");
-                    } else {
-                        setPracticeStatus_("Done! Opening Test User — press Accept chat.", "ok");
-                    }
-                    try {
-                        await selectPracticeChatInList_();
-                    } catch (_) {
-                        setPracticeStatus_("Added. Click Test User in the list below.", "ok");
-                    }
-                })
-                .catch((e) => {
-                    setPracticeStatus_(e.message || "Could not add practice visitor", "err");
-                })
-                .finally(() => {
-                    testVisitorBtn.disabled = false;
-                });
         });
     }
 

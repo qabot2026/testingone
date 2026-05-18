@@ -231,6 +231,11 @@ body.live-agent-locked {
   flex-shrink: 0;
 }
 
+.inbox-hint {
+  margin: 0 1rem 0.5rem;
+  line-height: 1.45;
+}
+
 .practice-panel {
   flex-shrink: 0;
   margin: 0 1rem 0.75rem;
