@@ -203,7 +203,7 @@ body.live-agent-locked {
 
 .workspace {
   display: grid;
-  grid-template-columns: minmax(200px, 22vw) minmax(0, 1fr) minmax(200px, 24vw);
+  grid-template-columns: minmax(200px, 20vw) minmax(0, 2fr) minmax(220px, 18vw);
   flex: 1;
   min-height: 0;
   overflow: hidden;
@@ -309,6 +309,17 @@ body.live-agent-locked {
   color: var(--muted);
 }
 
+.inbox-item-sub {
+  margin: 0.25rem 0 0;
+  font-size: 0.72rem;
+  line-height: 1.35;
+  color: var(--accent-hover);
+}
+
+.inbox-item.assigned-to-me {
+  border-left: 3px solid #22c55e;
+}
+
 .badge {
   display: inline-block;
   padding: 0.1rem 0.4rem;
@@ -331,6 +342,7 @@ body.live-agent-locked {
 .chat-pane {
   display: flex;
   flex-direction: column;
+  flex: 1;
   min-height: 0;
   overflow: hidden;
   background: var(--bg);
@@ -352,6 +364,14 @@ body.live-agent-locked {
   flex: 1;
   min-height: 0;
   height: 100%;
+}
+
+.chat-main {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .chat-body {

@@ -39,6 +39,7 @@ import { getVisitorContext_ } from "./context.mjs";
 import {
     appendMessage_,
     bulkCloseTestConversations_,
+    acceptConversation_,
     claimConversation_,
     reopenConversationForAgent_,
     closeConversation_,
@@ -50,6 +51,14 @@ import {
     requestHumanAgent_,
     updateConversationMode_
 } from "./store.mjs";
+import {
+    createDepartment_,
+    deleteDepartment_,
+    getLiveAgentSettings_,
+    listDepartments_,
+    saveLiveAgentSettings_,
+    updateDepartment_
+} from "./departments.mjs";
 
 const LOG_TAG = "[live-agent]";
 
@@ -103,12 +112,21 @@ function sendLiveAgentIndex_(res, next) {
         .catch(() => next());
 }
 
+function sendLiveAgentSettings_(res, next) {
+    const indexPath = path.join(STATIC_DIR, "settings.html");
+    fs.access(indexPath)
+        .then(() => res.sendFile(indexPath))
+        .catch(() => next());
+}
+
 export function mountLiveAgentRoutes(app) {
     app.get("/live-agent/health", (_req, res) => sendHealthJson_(res));
     app.get("/api/live-agent/health", (_req, res) => sendHealthJson_(res));
 
     app.get("/live-agent", (_req, res, next) => sendLiveAgentIndex_(res, next));
     app.get("/live-agent/", (_req, res, next) => sendLiveAgentIndex_(res, next));
+    app.get("/live-agent/console", (_req, res, next) => sendLiveAgentIndex_(res, next));
+    app.get("/live-agent/settings", (_req, res, next) => sendLiveAgentSettings_(res, next));
 
     app.use("/live-agent", express.static(STATIC_DIR, {
         index: ["index.html"],
@@ -195,7 +213,7 @@ export function mountLiveAgentRoutes(app) {
         }
     });
 
-    router.post("/claim", requireLiveAgentSession_(), async (req, res) => {
+    async function handleAccept_(req, res) {
         setNoCache_(res);
         const conversationId = safeClientSessionId_(req.body && req.body.conversationId);
         if (!conversationId) {
@@ -203,14 +221,89 @@ export function mountLiveAgentRoutes(app) {
             return;
         }
         try {
-            const conversation = await claimConversation_({
+            const conversation = await acceptConversation_({
                 conversationId,
                 agentEmail: req.liveAgentSession.agentId
             });
             res.json({ ok: true, conversation });
         } catch (err) {
-            logStoreError_(err, "claim");
-            jsonError_(res, 400, err.message || "Claim failed");
+            logStoreError_(err, "accept");
+            jsonError_(res, 400, err.message || "Accept failed");
+        }
+    }
+
+    router.post("/accept", requireLiveAgentSession_(), handleAccept_);
+    router.post("/claim", requireLiveAgentSession_(), handleAccept_);
+
+    router.get("/settings", requireLiveAgentSession_(), async (_req, res) => {
+        setNoCache_(res);
+        try {
+            const settings = await getLiveAgentSettings_();
+            const departments = await listDepartments_();
+            res.json({ ok: true, settings, departments });
+        } catch (err) {
+            logStoreError_(err, "settings get");
+            jsonError_(res, 500, err.message || "Settings failed");
+        }
+    });
+
+    router.put("/settings", requireLiveAgentSession_(), async (req, res) => {
+        setNoCache_(res);
+        try {
+            const settings = await saveLiveAgentSettings_(req.body || {});
+            res.json({ ok: true, settings });
+        } catch (err) {
+            logStoreError_(err, "settings put");
+            jsonError_(res, 400, err.message || "Settings save failed");
+        }
+    });
+
+    router.get("/departments", requireLiveAgentSession_(), async (_req, res) => {
+        setNoCache_(res);
+        try {
+            const departments = await listDepartments_();
+            res.json({ ok: true, departments });
+        } catch (err) {
+            jsonError_(res, 500, err.message || "Departments failed");
+        }
+    });
+
+    router.post("/departments", requireLiveAgentSession_(), async (req, res) => {
+        setNoCache_(res);
+        try {
+            const department = await createDepartment_({
+                name: req.body && req.body.name,
+                agentEmails: req.body && req.body.agentEmails
+            });
+            res.json({ ok: true, department });
+        } catch (err) {
+            jsonError_(res, 400, err.message || "Create department failed");
+        }
+    });
+
+    router.put("/departments/:id", requireLiveAgentSession_(), async (req, res) => {
+        setNoCache_(res);
+        const id = trim_(req.params && req.params.id);
+        try {
+            const department = await updateDepartment_({
+                departmentId: id,
+                name: req.body && req.body.name,
+                agentEmails: req.body && req.body.agentEmails
+            });
+            res.json({ ok: true, department });
+        } catch (err) {
+            jsonError_(res, 400, err.message || "Update department failed");
+        }
+    });
+
+    router.delete("/departments/:id", requireLiveAgentSession_(), async (req, res) => {
+        setNoCache_(res);
+        const id = trim_(req.params && req.params.id);
+        try {
+            const result = await deleteDepartment_(id);
+            res.json({ ok: true, ...result });
+        } catch (err) {
+            jsonError_(res, 400, err.message || "Delete department failed");
         }
     });
 
@@ -378,7 +471,8 @@ export function mountLiveAgentRoutes(app) {
                 conversationId: clientSessionId,
                 botid: req.body && req.body.botid,
                 visitorName: req.body && req.body.visitorName,
-                initialMessage: req.body && req.body.initialMessage
+                initialMessage: req.body && req.body.initialMessage,
+                departmentId: req.body && req.body.departmentId
             });
             res.json({ ok: true, ...result });
         } catch (err) {

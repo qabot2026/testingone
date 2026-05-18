@@ -51,9 +51,10 @@ export function readLiveAgentSessionFromReq_(req) {
     const check = liveAgentSecretFromReq_(req);
     if (!check.ok) return null;
     const agentId = (
+        trim_(req.headers["x-live-agent-email"]) ||
         trim_(req.headers["x-live-agent-name"]) ||
         trim_(process.env.LIVE_AGENT_DEFAULT_AGENT_NAME) ||
-        "Agent"
+        "agent@example.com"
     ).toLowerCase();
     return { agentId };
 }

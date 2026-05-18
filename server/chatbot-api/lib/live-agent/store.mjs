@@ -68,6 +68,12 @@ function serializeConversation_(id, data) {
         botid: typeof d.botid === "string" ? d.botid : "default",
         visitorName: typeof d.visitorName === "string" ? d.visitorName : "",
         assignedAgentEmail: typeof d.assignedAgentEmail === "string" ? d.assignedAgentEmail : "",
+        departmentId: typeof d.departmentId === "string" ? d.departmentId : "general",
+        departmentName: typeof d.departmentName === "string" ? d.departmentName : "General Department",
+        currentAssigneeEmail: typeof d.currentAssigneeEmail === "string" ? d.currentAssigneeEmail : "",
+        assigneeRoundIndex: typeof d.assigneeRoundIndex === "number" ? d.assigneeRoundIndex : 0,
+        assigneeAssignedAt: tsToIso_(d.assigneeAssignedAt),
+        visitorSessionActive: d.visitorSessionActive !== false,
         lastMessagePreview: typeof d.lastMessagePreview === "string" ? d.lastMessagePreview : "",
         unreadForAgent: typeof d.unreadForAgent === "number" ? d.unreadForAgent : 0,
         unreadForVisitor: typeof d.unreadForVisitor === "number" ? d.unreadForVisitor : 0,
@@ -101,7 +107,13 @@ export function liveAgentFirestoreReady_() {
 /**
  * Visitor requests a human agent (idempotent while waiting/active).
  */
-export async function requestHumanAgent_({ conversationId, botid, visitorName, initialMessage }) {
+export async function requestHumanAgent_({
+    conversationId,
+    botid,
+    visitorName,
+    initialMessage,
+    departmentId
+}) {
     const id = safeConversationId_(conversationId);
     const db = firestoreDb_();
     const ref = db.collection(conversationsCollection_()).doc(id);
@@ -120,6 +132,8 @@ export async function requestHumanAgent_({ conversationId, botid, visitorName, i
                     botid: botIdOrDefault_(botid),
                     visitorName: trim_(visitorName) || cur.visitorName || "",
                     assignedAgentEmail: "",
+                    departmentId: trim_(departmentId) || cur.departmentId || "general",
+                    currentAssigneeEmail: "",
                     requestedAt: now,
                     claimedAt: null,
                     closedAt: null,
@@ -127,7 +141,8 @@ export async function requestHumanAgent_({ conversationId, botid, visitorName, i
                     lastMessageAt: now,
                     lastMessagePreview: "",
                     unreadForAgent: 0,
-                    unreadForVisitor: 0
+                    unreadForVisitor: 0,
+                    visitorSessionActive: true
                 }, { merge: true });
                 created = true;
             }
@@ -140,6 +155,8 @@ export async function requestHumanAgent_({ conversationId, botid, visitorName, i
             botid: botIdOrDefault_(botid),
             visitorName: trim_(visitorName),
             assignedAgentEmail: "",
+            departmentId: trim_(departmentId) || "general",
+            currentAssigneeEmail: "",
             requestedAt: now,
             claimedAt: null,
             closedAt: null,
@@ -147,7 +164,8 @@ export async function requestHumanAgent_({ conversationId, botid, visitorName, i
             lastMessageAt: now,
             lastMessagePreview: "",
             unreadForAgent: 0,
-            unreadForVisitor: 0
+            unreadForVisitor: 0,
+            visitorSessionActive: true
         });
         created = true;
     });
@@ -163,8 +181,21 @@ export async function requestHumanAgent_({ conversationId, botid, visitorName, i
         });
     }
 
-    const snap = await ref.get();
-    return { conversation: serializeConversation_(id, snap.data()), reopened: created };
+    const { applyInitialRoundRobin_ } = await import("./routing.mjs");
+    const { syncLiveAgentToSheet_ } = await import("./sheet-sync.mjs");
+    let conversation;
+    if (created) {
+        conversation = await applyInitialRoundRobin_(id, departmentId);
+    } else {
+        const snap = await ref.get();
+        conversation = serializeConversation_(id, snap.data());
+    }
+    try {
+        await syncLiveAgentToSheet_(id);
+    } catch (_) {
+        /* non-fatal */
+    }
+    return { conversation, reopened: created };
 }
 
 export async function getConversation_(conversationId) {
@@ -193,16 +224,23 @@ export async function listInbox_({ status, agentEmail, limit }) {
     } else if (st === "active") {
         rows = rows.filter((r) => r.status === "active");
     } else if (st === "mine" && email) {
-        rows = rows.filter((r) => r.status === "active" && r.assignedAgentEmail === email);
+        rows = rows.filter(
+            (r) =>
+                (r.status === "active" && r.assignedAgentEmail === email) ||
+                (r.status === "waiting" && r.currentAssigneeEmail === email)
+        );
     } else if (st === "closed") {
         rows = rows.filter((r) => r.status === "closed");
     } else {
         rows = rows.filter((r) => r.status !== "closed");
     }
 
+    const { processWaitingEscalations_ } = await import("./routing.mjs");
+    rows = await processWaitingEscalations_(rows);
     return rows.slice(0, lim);
 }
 
+/** Accept (claim) a waiting chat for the logged-in agent. */
 export async function claimConversation_({ conversationId, agentEmail }) {
     const id = safeConversationId_(conversationId);
     const email = trim_(agentEmail).toLowerCase();
@@ -225,22 +263,33 @@ export async function claimConversation_({ conversationId, agentEmail }) {
             humanMode: "human",
             aiEnabled: false,
             assignedAgentEmail: email,
+            currentAssigneeEmail: email,
             claimedAt: cur.claimedAt || now,
-            unreadForAgent: 0
+            unreadForAgent: 0,
+            visitorSessionActive: true
         });
     });
 
     await appendMessage_({
         conversationId: id,
         role: "system",
-        text: `Agent ${email} joined the chat.`,
+        text: `Agent ${email} accepted the chat.`,
         senderEmail: email,
         bumpUnread: { agent: 0, visitor: 1 }
     });
 
     const snap = await ref.get();
-    return serializeConversation_(id, snap.data());
+    const out = serializeConversation_(id, snap.data());
+    try {
+        const { syncLiveAgentToSheet_ } = await import("./sheet-sync.mjs");
+        await syncLiveAgentToSheet_(id);
+    } catch (_) {
+        /* non-fatal */
+    }
+    return out;
 }
+
+export const acceptConversation_ = claimConversation_;
 
 /**
  * Close many open chats whose id starts with idPrefix (e.g. test-). Caps work per call.
@@ -314,8 +363,16 @@ export async function reopenConversationForAgent_({ conversationId }) {
         bumpUnread: { agent: 1, visitor: 0 }
     });
 
-    const snap = await ref.get();
-    return serializeConversation_(id, snap.data());
+    const { applyInitialRoundRobin_ } = await import("./routing.mjs");
+    const { syncLiveAgentToSheet_ } = await import("./sheet-sync.mjs");
+    await applyInitialRoundRobin_(id, null);
+    const out = await getConversation_(id);
+    try {
+        await syncLiveAgentToSheet_(id);
+    } catch (_) {
+        /* non-fatal */
+    }
+    return out;
 }
 
 export async function closeConversation_({ conversationId, closedBy, agentEmail }) {
@@ -338,7 +395,9 @@ export async function closeConversation_({ conversationId, closedBy, agentEmail 
             humanMode: "ai",
             aiEnabled: true,
             closedAt: now,
-            closedBy: trim_(closedBy) || "agent"
+            closedBy: trim_(closedBy) || "agent",
+            visitorSessionActive: false,
+            currentAssigneeEmail: ""
         });
     });
 
@@ -351,7 +410,14 @@ export async function closeConversation_({ conversationId, closedBy, agentEmail 
     });
 
     const snap = await ref.get();
-    return serializeConversation_(id, snap.data());
+    const out = serializeConversation_(id, snap.data());
+    try {
+        const { syncLiveAgentToSheet_ } = await import("./sheet-sync.mjs");
+        await syncLiveAgentToSheet_(id);
+    } catch (_) {
+        /* non-fatal */
+    }
+    return out;
 }
 
 export async function appendMessage_({

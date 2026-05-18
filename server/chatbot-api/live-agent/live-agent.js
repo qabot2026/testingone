@@ -121,6 +121,7 @@
         return {
             Accept: "application/json",
             "X-Conversations-Sheet-Secret": viewerSecret,
+            "X-Live-Agent-Email": agentId,
             "X-Live-Agent-Name": agentId
         };
     }
@@ -423,18 +424,22 @@
 
     function renderInbox(conversations) {
         inboxList.innerHTML = "";
-        updateNotifyPill_(conversations);
-        updateClearTestBtn_(conversations);
-        if (!conversations.length) {
+        const open = (conversations || []).filter((c) => c.status !== "closed");
+        updateNotifyPill_(open);
+        updateClearTestBtn_(open);
+        if (!open.length) {
             inboxStatus.textContent = "No conversations in this queue.";
             return;
         }
-        const open = conversations.filter((c) => c.status !== "closed");
         inboxStatus.textContent = open.length + " request(s)";
         for (const c of open) {
             const li = document.createElement("li");
             li.className = "inbox-item" + (c.id === selectedId ? " selected" : "");
             if (c.unreadForAgent > 0) li.classList.add("has-unread");
+            const assignee = (c.currentAssigneeEmail || "").toLowerCase();
+            if (assignee && assignee === agentId && c.status === "waiting") {
+                li.classList.add("assigned-to-me");
+            }
             const title = c.visitorName || "Visitor";
             const unread = c.unreadForAgent > 0 ? " · " + c.unreadForAgent + " new" : "";
             const mode = c.humanMode || c.status;
@@ -454,10 +459,11 @@
                 '<p class="inbox-item-meta">' +
                 escapeHtml(shortSessionId_(c.id)) +
                 " · " +
-                escapeHtml(mode) +
-                " · " +
-                escapeHtml(c.assignedAgentEmail || "Unassigned") +
+                escapeHtml(c.status) +
                 escapeHtml(unread) +
+                "</p>" +
+                '<p class="inbox-item-sub">' +
+                escapeHtml(buildInboxSubtitle_(c)) +
                 "</p>";
             li.appendChild(main);
             if (c.status === "waiting" || c.status === "active") {
@@ -526,7 +532,16 @@
                 : hm === "human"
                   ? "Human agent chat — AI replies are off."
                   : "AI mode — bot can auto-reply.";
-        if (modeStatusLine) modeStatusLine.textContent = modeText;
+        const routeLine =
+            "Dept: " +
+            (conv.departmentName || conv.departmentId || "General") +
+            " · " +
+            (conv.currentAssigneeEmail
+                ? "Queue: " + conv.currentAssigneeEmail
+                : "Queue: unassigned") +
+            " · " +
+            modeText;
+        if (modeStatusLine) modeStatusLine.textContent = routeLine;
         renderChatActionsBar_(conv, modeText);
 
         const v = visitor || {};
@@ -733,7 +748,7 @@
         if (claimHint) {
             claimHint.hidden = !isWaiting || isClosed;
             claimHint.textContent = isWaiting
-                ? "Click Claim chat above — then you can type a reply below."
+                ? "Click Accept chat above — then you can type a reply below."
                 : "";
         }
         if (composerForm) composerForm.classList.toggle("hidden", isClosed);
@@ -745,7 +760,7 @@
                 : canReply
                   ? "Type a reply to the visitor…"
                   : isWaiting
-                    ? "Claim this chat first to reply…"
+                    ? "Accept this chat first to reply…"
                     : takenByOther
                       ? "Assigned to " +
                         (conv.assignedAgentEmail || "another agent") +
@@ -861,25 +876,25 @@
         if (!selectedId) return;
         claimBtn.disabled = true;
         try {
-            const data = await apiFetch(`${API}/claim`, {
+            const data = await apiFetch(`${API}/accept`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ conversationId: selectedId })
             });
             await selectConversation(data.conversation);
         } catch (e) {
-            const msg = e.message || "Could not claim chat";
-            if (/closed/i.test(msg) && confirm(msg + "\n\nReopen this chat and claim it?")) {
+            const msg = e.message || "Could not accept chat";
+            if (/closed/i.test(msg) && confirm(msg + "\n\nReopen this chat and accept it?")) {
                 await reopenSelectedChat_();
                 try {
-                    const data = await apiFetch(`${API}/claim`, {
+                    const data = await apiFetch(`${API}/accept`, {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({ conversationId: selectedId })
                     });
                     await selectConversation(data.conversation);
                 } catch (e2) {
-                    alert(e2.message || "Could not claim after reopen");
+                    alert(e2.message || "Could not accept after reopen");
                 }
             } else {
                 alert(msg);

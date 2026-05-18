@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>Live Agent Settings</title>
+  <link rel="stylesheet" href="/live-agent/live-agent.css" />
+  <link rel="stylesheet" href="/live-agent/settings.css" />
+</head>
+<body>
+
+  <section id="loginView" class="login-view hidden" aria-label="Unlock settings">
+    <div class="login-card">
+      <h1>Live Agent Settings</h1>
+      <p class="muted">Same viewer secret as the service desk.</p>
+      <form id="loginForm">
+        <label>
+          Viewer secret
+          <input id="loginSecret" type="password" autocomplete="current-password" required />
+        </label>
+        <div class="login-actions">
+          <button type="button" class="btn ghost" id="toggleSecretBtn">Show</button>
+          <button type="submit" class="btn primary">Open settings</button>
+        </div>
+        <p id="loginMessage" class="login-message muted" role="status"></p>
+      </form>
+    </div>
+  </section>
+
+  <section id="appView" class="settings-app hidden" aria-label="Live agent settings">
+    <header class="top-bar">
+      <div class="top-bar-inner">
+        <div class="brand">
+          <h1>Live Agent Settings</h1>
+          <p class="muted">Departments, agent emails, round-robin timing</p>
+        </div>
+        <div class="top-actions">
+          <a class="btn ghost nav-link" href="/live-agent">Service desk</a>
+          <a class="btn ghost nav-link" href="/conversations-sheet">Conversation leads</a>
+          <button type="button" class="btn ghost" id="logoutBtn">Lock</button>
+        </div>
+      </div>
+    </header>
+
+    <main class="settings-main">
+      <section class="settings-card">
+        <h2>Queue timing</h2>
+        <p class="muted small">If an agent does not accept within this time, the request moves to the next agent in the department (round-robin).</p>
+        <form id="settingsForm" class="settings-form">
+          <label>
+            Waiting period (seconds)
+            <input id="claimWaitSeconds" type="number" min="5" max="300" step="1" value="30" />
+          </label>
+          <button type="submit" class="btn primary">Save settings</button>
+          <p id="settingsStatus" class="muted small" role="status"></p>
+        </form>
+      </section>
+
+      <section class="settings-card">
+        <h2>Departments</h2>
+        <p class="muted small"><strong>General Department</strong> is the default when no department is specified. Add agent emails (one per line) for round-robin.</p>
+
+        <form id="deptForm" class="settings-form dept-form">
+          <label>
+            New department name
+            <input id="deptName" type="text" placeholder="e.g. Sales" />
+          </label>
+          <label>
+            Agent emails (one per line)
+            <textarea id="deptEmails" rows="4" placeholder="agent1@company.com&#10;agent2@company.com"></textarea>
+          </label>
+          <button type="submit" class="btn primary">Create department</button>
+          <p id="deptFormStatus" class="muted small" role="status"></p>
+        </form>
+
+        <motion id="deptList" class="dept-list"></div>
+      </section>
+    </main>
+  </section>
+
+  <script src="/live-agent/settings.js" defer></script>
+</body>
+</html>
