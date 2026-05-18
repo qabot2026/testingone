@@ -613,16 +613,35 @@ export async function closeConversation_({ conversationId, closedBy, agentEmail 
     const db = firestoreDb_();
     const ref = db.collection(conversationsCollection_()).doc(id);
     const now = admin.firestore.FieldValue.serverTimestamp();
+    const endText = "This chat has ended. You can request a human agent again if needed.";
+
+    const pre = await ref.get();
+    if (!pre.exists) {
+        throw new Error("Conversation not found");
+    }
+    if ((pre.data() || {}).status === "closed") {
+        return serializeConversation_(id, pre.data());
+    }
 
     await db.runTransaction(async (tx) => {
         const snap = await tx.get(ref);
         if (!snap.exists) throw new Error("Conversation not found");
         const cur = snap.data() || {};
+        if (cur.status === "closed") {
+            return;
+        }
         if (cur.status === "active" && cur.assignedAgentEmail && agentEmail) {
             if (cur.assignedAgentEmail !== agentEmail.toLowerCase()) {
                 throw new Error("Only the assigned agent can close this chat");
             }
         }
+        const msgRef = ref.collection("messages").doc();
+        tx.set(msgRef, {
+            role: "system",
+            text: endText,
+            senderEmail: trim_(agentEmail),
+            createdAt: now
+        });
         tx.update(ref, {
             status: "closed",
             humanMode: "ai",
@@ -632,41 +651,38 @@ export async function closeConversation_({ conversationId, closedBy, agentEmail 
             closedByEmail: trim_(agentEmail).toLowerCase(),
             visitorSessionActive: false,
             currentAssigneeEmail: "",
-            unreadForAgent: 0
+            unreadForAgent: 0,
+            lastMessageAt: now,
+            lastMessagePreview: endText.slice(0, 240),
+            unreadForVisitor: (cur.unreadForVisitor || 0) + 1
         });
-    });
-
-    await appendMessage_({
-        conversationId: id,
-        role: "system",
-        text: "This chat has ended. You can request a human agent again if needed.",
-        senderEmail: agentEmail || "",
-        bumpUnread: { agent: 0, visitor: 1 }
     });
 
     const snap = await ref.get();
     const out = serializeConversation_(id, snap.data());
     const closer = trim_(agentEmail).toLowerCase();
-    if (closer) {
-        try {
-            const { bumpAgentStats_ } = await import("./agents.mjs");
-            await bumpAgentStats_({
-                agentEmail: closer,
-                kind: "close",
-                conversationId: id,
-                visitorName: out.visitorName,
-                departmentName: out.departmentName
-            });
-        } catch (err) {
-            console.warn(LOG_TAG, "agent stats on close:", err.message || err);
+    void (async () => {
+        if (closer) {
+            try {
+                const { bumpAgentStats_ } = await import("./agents.mjs");
+                await bumpAgentStats_({
+                    agentEmail: closer,
+                    kind: "close",
+                    conversationId: id,
+                    visitorName: out.visitorName,
+                    departmentName: out.departmentName
+                });
+            } catch (err) {
+                console.warn(LOG_TAG, "agent stats on close:", err.message || err);
+            }
         }
-    }
-    try {
-        const { syncLiveAgentToSheet_ } = await import("./sheet-sync.mjs");
-        await syncLiveAgentToSheet_(id);
-    } catch (_) {
-        /* non-fatal */
-    }
+        try {
+            const { syncLiveAgentToSheet_ } = await import("./sheet-sync.mjs");
+            await syncLiveAgentToSheet_(id);
+        } catch (_) {
+            /* non-fatal */
+        }
+    })();
     return out;
 }
 

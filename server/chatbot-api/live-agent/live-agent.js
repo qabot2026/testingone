@@ -74,6 +74,8 @@
     let lastWaitingCount = 0;
     let notificationsOk = false;
     let deskSettings = null;
+    /** Last inbox payload — used for instant dismiss without waiting on refetch. */
+    let lastInboxConversations_ = [];
     const INBOX_POLL_INTERVAL_MS = 22000;
     const CHAT_POLL_INTERVAL_MS = 2000;
     const PRESENCE_INTERVAL_MS = 180000;
@@ -629,20 +631,47 @@
         clearTestQueueBtn.textContent = n > 1 ? "Clear " + n + " test chats" : "Clear test chats";
     }
 
-    async function dismissConversation_(conversationId, opts) {
-        const reloadInbox = !opts || opts.reloadInbox !== false;
-        await apiFetch(`${API}/conversations/${encodeURIComponent(conversationId)}/close`, {
-            method: "POST"
-        });
-        if (selectedId === conversationId) {
-            selectedId = "";
-            selectedConv = null;
-            chatActive.classList.add("hidden");
-            chatEmpty.classList.remove("hidden");
-            contextEmpty.classList.remove("hidden");
-            contextBody.classList.add("hidden");
+    function clearSelectedChatUi_() {
+        selectedId = "";
+        selectedConv = null;
+        selectedVisitorContext = null;
+        chatActive.classList.add("hidden");
+        chatEmpty.classList.remove("hidden");
+        contextEmpty.classList.remove("hidden");
+        contextBody.classList.add("hidden");
+        if (chatActionsBar) {
+            chatActionsBar.classList.add("hidden");
         }
-        if (reloadInbox) await loadInbox(true);
+    }
+
+    function removeConversationFromInboxUi_(conversationId) {
+        lastInboxConversations_ = lastInboxConversations_.filter((c) => c.id !== conversationId);
+        renderInbox(lastInboxConversations_);
+    }
+
+    async function dismissConversation_(conversationId) {
+        const id = conversationId;
+        removeConversationFromInboxUi_(id);
+        if (selectedId === id) {
+            clearSelectedChatUi_();
+        }
+        try {
+            await apiFetch(`${API}/conversations/${encodeURIComponent(id)}/close`, {
+                method: "POST"
+            });
+            if (inboxStatus) {
+                const n = lastInboxConversations_.length;
+                inboxStatus.textContent = n ? n + " request(s)" : "No conversations in this queue.";
+            }
+        } catch (e) {
+            const msg = e.message || "Dismiss failed";
+            if (!/closed/i.test(msg)) {
+                if (inboxStatus) {
+                    inboxStatus.textContent = msg;
+                }
+                await loadInbox(true);
+            }
+        }
     }
 
     async function clearTestQueue_() {
@@ -759,12 +788,7 @@
                 dismissBtn.textContent = "Dismiss";
                 dismissBtn.addEventListener("click", (ev) => {
                     ev.stopPropagation();
-                    dismissBtn.disabled = true;
-                    dismissConversation_(c.id).catch((e) => {
-                        alert(e.message || "Could not dismiss");
-                    }).finally(() => {
-                        dismissBtn.disabled = false;
-                    });
+                    void dismissConversation_(c.id);
                 });
                 actions.appendChild(dismissBtn);
                 li.appendChild(actions);
@@ -785,6 +809,7 @@
                 `${API}/inbox?status=${encodeURIComponent(status)}&limit=50${light}`
             );
             const list = data.conversations || [];
+            lastInboxConversations_ = list;
             renderInbox(list);
             if (selectedId) {
                 const hit = list.find((c) => c.id === selectedId);
@@ -1071,8 +1096,7 @@
     if (dismissFooterBtn) {
         dismissFooterBtn.addEventListener("click", () => {
             if (!selectedId) return;
-            if (!confirm("Dismiss this request from the queue?")) return;
-            dismissConversation_(selectedId).catch((e) => alert(e.message || "Dismiss failed"));
+            void dismissConversation_(selectedId);
         });
     }
 
