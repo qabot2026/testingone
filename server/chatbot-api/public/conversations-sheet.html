@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en-GB">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -846,6 +846,7 @@
       margin-bottom: 6px;
     }
     .date-field-modern {
+      position: relative;
       display: flex;
       align-items: center;
       gap: 8px;
@@ -869,9 +870,9 @@
       height: 18px;
       color: var(--brand-strong);
       opacity: 0.88;
-      pointer-events: none;
+      cursor: pointer;
     }
-    .date-field-modern input[type="date"] {
+    .date-field-modern input.date-filter-ddmm {
       flex: 1 1 auto;
       min-width: 0;
       border: none;
@@ -884,27 +885,23 @@
       letter-spacing: -0.01em;
       color: var(--text);
       box-shadow: none;
-      accent-color: var(--brand);
     }
-    .date-field-modern input[type="date"]:hover {
-      background: transparent;
-      border-color: transparent;
-    }
-    .date-field-modern input[type="date"]:focus {
+    .date-field-modern input.date-filter-ddmm:hover,
+    .date-field-modern input.date-filter-ddmm:focus {
       outline: none;
       border: none;
       box-shadow: none;
       background: transparent;
     }
-    .date-field-modern input[type="date"]::-webkit-calendar-picker-indicator {
-      cursor: pointer;
-      opacity: 0.75;
-      border-radius: 6px;
-      padding: 4px;
-    }
-    .date-field-modern input[type="date"]::-webkit-calendar-picker-indicator:hover {
-      opacity: 1;
-      background: var(--brand-soft);
+    .date-field-modern input.date-filter-native {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      opacity: 0;
+      pointer-events: none;
+      padding: 0;
+      margin: 0;
+      border: 0;
     }
 
     .lead-stats {
@@ -2202,10 +2199,15 @@
             </svg>
             <input
               id="dateFrom"
-              type="date"
-              title="Inclusive start (ISO yyyy-mm-dd). Uses conversation date column for server filtering."
+              type="text"
+              class="date-filter-ddmm"
+              inputmode="numeric"
+              placeholder="DD/MM/YYYY"
+              title="From date (DD/MM/YYYY). Uses conversation date column for server filtering."
               autocomplete="off"
+              spellcheck="false"
             />
+            <input type="date" class="date-filter-native" tabindex="-1" aria-hidden="true" />
           </div>
         </div>
         <div class="date-field-modern-wrap">
@@ -2215,7 +2217,17 @@
               <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
               <path d="M16 2v4M8 2v4M3 10h18" />
             </svg>
-            <input id="dateTo" type="date" title="Inclusive end date (full calendar days)." autocomplete="off" />
+            <input
+              id="dateTo"
+              type="text"
+              class="date-filter-ddmm"
+              inputmode="numeric"
+              placeholder="DD/MM/YYYY"
+              title="To date (DD/MM/YYYY). Inclusive end (full calendar days)."
+              autocomplete="off"
+              spellcheck="false"
+            />
+            <input type="date" class="date-filter-native" tabindex="-1" aria-hidden="true" />
           </div>
         </div>
         </div>
@@ -3788,8 +3800,8 @@
       /** Date bounds for client-side Contains filter; server date filter is authoritative when applied. */
       function effectiveDateFilterBounds_(payload) {
         var pl = payload != null ? payload : lastPayload;
-        var uiFrom = dateFromEl && dateFromEl.value ? dateFromEl.value.trim() : "";
-        var uiTo = dateToEl && dateToEl.value ? dateToEl.value.trim() : "";
+        var uiFrom = getDateFilterYmd_(dateFromEl);
+        var uiTo = getDateFilterYmd_(dateToEl);
         if (pl && pl.dateFilter && pl.dateFilter.serverApplied) {
           var sf = pl.dateFilter.from ? String(pl.dateFilter.from).trim() : "";
           var st = pl.dateFilter.to ? String(pl.dateFilter.to).trim() : "";
@@ -3812,8 +3824,8 @@
         if (!json || !json.dateFilter || !dateFromEl || !dateToEl) return;
         var df = json.dateFilter;
         if (!df.applied && !df.from && !df.to) return;
-        dateFromEl.value = df.from ? String(df.from) : "";
-        dateToEl.value = df.to ? String(df.to) : "";
+        setDateFilterYmd_(dateFromEl, df.from ? String(df.from) : "");
+        setDateFilterYmd_(dateToEl, df.to ? String(df.to) : "");
       }
 
       function isoYmdToDisplayDdMmYyyy_(iso) {
@@ -3821,6 +3833,86 @@
         var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
         if (!m) return s;
         return m[3] + "/" + m[2] + "/" + m[1];
+      }
+
+      function parseDdMmYyyyToYmd_(raw) {
+        return parseDateColumnToYmd(raw);
+      }
+
+      function getDateFilterYmd_(el) {
+        if (!el) return "";
+        var stored = String(el.dataset.ymd || "").trim();
+        if (/^\d{4}-\d{2}-\d{2}$/.test(stored)) return stored;
+        var parsed = parseDdMmYyyyToYmd_(el.value);
+        if (parsed) {
+          el.dataset.ymd = parsed;
+          return parsed;
+        }
+        var raw = String(el.value || "").trim();
+        if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+          el.dataset.ymd = raw;
+          return raw;
+        }
+        return "";
+      }
+
+      function setDateFilterYmd_(el, ymd) {
+        if (!el) return;
+        var iso = String(ymd || "").trim();
+        var wrap = el.closest(".date-field-modern");
+        var native = wrap && wrap.querySelector(".date-filter-native");
+        if (iso && /^\d{4}-\d{2}-\d{2}$/.test(iso)) {
+          el.dataset.ymd = iso;
+          el.value = isoYmdToDisplayDdMmYyyy_(iso);
+          if (native) native.value = iso;
+        } else {
+          el.dataset.ymd = "";
+          el.value = "";
+          if (native) native.value = "";
+        }
+      }
+
+      function normalizeDateFilterInput_(el) {
+        if (!el) return;
+        var raw = String(el.value || "").trim();
+        if (!raw) {
+          setDateFilterYmd_(el, "");
+          return;
+        }
+        var ymd = parseDdMmYyyyToYmd_(raw);
+        if (!ymd && /^\d{4}-\d{2}-\d{2}$/.test(raw)) ymd = raw;
+        if (ymd) setDateFilterYmd_(el, ymd);
+      }
+
+      function bindDateFilterPicker_(textEl) {
+        if (!textEl) return;
+        var wrap = textEl.closest(".date-field-modern");
+        if (!wrap) return;
+        var native = wrap.querySelector(".date-filter-native");
+        var icon = wrap.querySelector(".date-cal-ic");
+        if (!native) return;
+        function openPicker() {
+          var ymd = getDateFilterYmd_(textEl);
+          native.value = ymd || "";
+          if (typeof native.showPicker === "function") native.showPicker();
+          else native.click();
+        }
+        if (icon) {
+          icon.setAttribute("role", "button");
+          icon.setAttribute("tabindex", "0");
+          icon.setAttribute("aria-label", "Open calendar");
+          icon.addEventListener("click", openPicker);
+          icon.addEventListener("keydown", function (ev) {
+            if (ev.key === "Enter" || ev.key === " ") {
+              ev.preventDefault();
+              openPicker();
+            }
+          });
+        }
+        native.addEventListener("change", function () {
+          setDateFilterYmd_(textEl, native.value || "");
+          scheduleReloadForDateFilter();
+        });
       }
 
       function formatDateFilterLabel_(df) {
@@ -4240,25 +4332,25 @@
         var now = new Date();
         var today = toYmdLocal(now);
         var fromD = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 4);
-        dateFromEl.value = toYmdLocal(fromD);
-        dateToEl.value = today;
+        setDateFilterYmd_(dateFromEl, toYmdLocal(fromD));
+        setDateFilterYmd_(dateToEl, today);
       }
 
       function applyPresets(which) {
         var now = new Date();
         var today = toYmdLocal(now);
         if (which === "clear") {
-          dateFromEl.value = "";
-          dateToEl.value = "";
+          setDateFilterYmd_(dateFromEl, "");
+          setDateFilterYmd_(dateToEl, "");
         } else if (which === "today") {
-          dateFromEl.value = today;
-          dateToEl.value = today;
+          setDateFilterYmd_(dateFromEl, today);
+          setDateFilterYmd_(dateToEl, today);
         } else if (which === "week") {
-          dateFromEl.value = toYmdLocal(startOfWeekLocal_(now));
-          dateToEl.value = today;
+          setDateFilterYmd_(dateFromEl, toYmdLocal(startOfWeekLocal_(now)));
+          setDateFilterYmd_(dateToEl, today);
         } else if (which === "month") {
-          dateFromEl.value = toYmdLocal(startOfMonthLocal_(now));
-          dateToEl.value = today;
+          setDateFilterYmd_(dateFromEl, toYmdLocal(startOfMonthLocal_(now)));
+          setDateFilterYmd_(dateToEl, today);
         }
         sheetOffset = 0;
         if (secretEl.value.trim()) load();
@@ -4356,14 +4448,14 @@
           totalInRange +
           " row" +
           (totalInRange === 1 ? "" : "s") +
-          (dateFromEl.value || dateToEl.value ? " Â· date-filtered" : "") +
+          (getDateFilterYmd_(dateFromEl) || getDateFilterYmd_(dateToEl) ? " · date-filtered" : "") +
           pageNote;
 
         if (!filtered.length) {
           selectedRowSig = null;
           var emp = document.createElement("div");
           emp.className = "empty";
-          var hasDr = !!(dateFromEl.value || dateToEl.value);
+          var hasDr = !!(getDateFilterYmd_(dateFromEl) || getDateFilterYmd_(dateToEl));
           var why = [];
           if (hasDr) why.push("date filters");
           if (columnFilterActive_()) {
@@ -4488,12 +4580,16 @@
         if (colFilterClearBtn) {
           colFilterClearBtn.addEventListener("click", clearColumnFilter_);
         }
-        dateFromEl.addEventListener("change", scheduleReloadForDateFilter);
+        bindDateFilterPicker_(dateFromEl);
+        bindDateFilterPicker_(dateToEl);
+        function onDateFilterBlur(ev) {
+          normalizeDateFilterInput_(ev.target);
+          scheduleReloadForDateFilter();
+        }
         dateFromEl.addEventListener("input", scheduleReloadForDateFilter);
-        dateFromEl.addEventListener("blur", scheduleReloadForDateFilter);
-        dateToEl.addEventListener("change", scheduleReloadForDateFilter);
+        dateFromEl.addEventListener("blur", onDateFilterBlur);
         dateToEl.addEventListener("input", scheduleReloadForDateFilter);
-        dateToEl.addEventListener("blur", scheduleReloadForDateFilter);
+        dateToEl.addEventListener("blur", onDateFilterBlur);
         limitEl.addEventListener("change", function () {
           sheetOffset = 0;
           if (hadLoadedSheet && secretEl.value.trim()) load();
@@ -4634,8 +4730,8 @@
           return Promise.resolve(false);
         }
         dashboardSheetSyncBusy = true;
-        var fromV = dateFromEl && dateFromEl.value ? dateFromEl.value.trim() : "";
-        var toV = dateToEl && dateToEl.value ? dateToEl.value.trim() : "";
+        var fromV = getDateFilterYmd_(dateFromEl);
+        var toV = getDateFilterYmd_(dateToEl);
         var qp = [];
         if (fromV) qp.push("from=" + encodeURIComponent(fromV));
         if (toV) qp.push("to=" + encodeURIComponent(toV));
@@ -4701,8 +4797,8 @@
         var timedId = 0;
         var ctrl = null;
         try {
-          var fromV = dateFromEl && dateFromEl.value ? dateFromEl.value.trim() : "";
-          var toV = dateToEl && dateToEl.value ? dateToEl.value.trim() : "";
+        var fromV = getDateFilterYmd_(dateFromEl);
+        var toV = getDateFilterYmd_(dateToEl);
           var lim = parseInt(String(limitEl && limitEl.value ? limitEl.value : "100"), 10);
           if (!Number.isFinite(lim) || lim < 5) lim = 100;
           if (lim > 500) lim = 500;
@@ -5076,8 +5172,8 @@
       async function loadLeadStats() {
         var secret = secretEl.value.trim();
         if (!secret || !leadStatsList) return;
-        var fromV = dateFromEl && dateFromEl.value ? dateFromEl.value.trim() : "";
-        var toV = dateToEl && dateToEl.value ? dateToEl.value.trim() : "";
+        var fromV = getDateFilterYmd_(dateFromEl);
+        var toV = getDateFilterYmd_(dateToEl);
         var qp = [];
         if (fromV) qp.push("from=" + encodeURIComponent(fromV));
         if (toV) qp.push("to=" + encodeURIComponent(toV));
@@ -5170,8 +5266,8 @@
             showErr("Enter viewer secret.");
             return;
           }
-          var fromV = dateFromEl && dateFromEl.value ? dateFromEl.value.trim() : "";
-          var toV = dateToEl && dateToEl.value ? dateToEl.value.trim() : "";
+        var fromV = getDateFilterYmd_(dateFromEl);
+        var toV = getDateFilterYmd_(dateToEl);
           var qp = [];
           if (fromV) qp.push("from=" + encodeURIComponent(fromV));
           if (toV) qp.push("to=" + encodeURIComponent(toV));
