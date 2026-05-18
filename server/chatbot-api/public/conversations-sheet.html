@@ -389,6 +389,37 @@
       padding-left: 6px;
       padding-right: 6px;
     }
+    /** Narrow columns (matches sheet headers: Email, Mobile, Source URL, City, Document) */
+    table.sheet thead th.col-w-email,
+    table.sheet tbody td.col-w-email {
+      width: calc(25ch - 10px);
+      min-width: calc(25ch - 10px);
+      max-width: calc(25ch - 10px);
+    }
+    table.sheet thead th.col-w-mobile,
+    table.sheet tbody td.col-w-mobile {
+      width: calc(15ch - 10px);
+      min-width: calc(15ch - 10px);
+      max-width: calc(15ch - 10px);
+    }
+    table.sheet thead th.col-w-city,
+    table.sheet tbody td.col-w-city {
+      width: calc(12ch - 10px);
+      min-width: calc(12ch - 10px);
+      max-width: calc(12ch - 10px);
+    }
+    table.sheet thead th.col-w-sourceurl,
+    table.sheet tbody td.col-w-sourceurl {
+      min-width: 178px;
+      max-width: 320px;
+      width: 320px;
+    }
+    table.sheet thead th.col-w-document,
+    table.sheet tbody td.col-w-document {
+      min-width: 56px;
+      max-width: 170px;
+      width: 170px;
+    }
     tbody tr:nth-child(odd) td {
       background: var(--row-odd);
     }
@@ -2994,6 +3025,116 @@
       /** Pinned: conv date/time, name, mobile, email (match header); widths in character units */
       var STICKY_WIDTH_CH = { date: 12, time: 12, name: 16, mobile: 15, email: 25 };
 
+      /**
+       * Table-only column width reductions (px).
+       * Sheet column order: Conv. Link, Conv. Date, Conv. Time, Name, Mobile, Email, Channel,
+       * User Queries, Repeated User, Source URL, SessionI ID, Device, Browser, City, IP Address,
+       * App. Booked, App. Date, App. Time, Document
+       */
+      var SHEET_COL_WIDTH_REDUCE_PX = {
+        email: 10,
+        mobile: 10,
+        sourceurl: 50,
+        city: 10,
+        document: 200
+      };
+      var SHEET_COL_BODY_MIN_PX = 228;
+      var SHEET_COL_BODY_MAX_PX = 370;
+
+      function normSheetHeaderKey_(headerTitle) {
+        var nk = normKey(headerTitle);
+        if (nk === "sessioniid") return "sessionid";
+        return nk;
+      }
+
+      function sheetColWidthRole_(headerTitle) {
+        var nk = normSheetHeaderKey_(headerTitle);
+        if (!nk) return null;
+        if (nk === "email" || nk === "emailaddress" || nk === "mail") return "email";
+        if (
+          nk === "mobile" ||
+          nk === "mobileno" ||
+          nk === "phonenumber" ||
+          nk === "phone" ||
+          nk === "cell" ||
+          nk === "contactnumber"
+        ) {
+          return "mobile";
+        }
+        if (nk === "sourceurl" || nk === "pageurl" || nk === "referrerurl" || nk === "landingurl") {
+          return "sourceurl";
+        }
+        if (nk === "city") return "city";
+        if (nk === "document" || nk === "documents" || nk === "filelinks" || nk === "uploads") {
+          return "document";
+        }
+        return null;
+      }
+
+      function widthMinusPx_(cssLen, px) {
+        var s = String(cssLen == null ? "" : cssLen).trim();
+        if (!s || !px) return s;
+        if (/ch$/i.test(s) || s.indexOf("ch ") >= 0) {
+          return "calc(" + s + " - " + px + "px)";
+        }
+        if (/px$/i.test(s)) {
+          var n = parseFloat(s);
+          if (Number.isFinite(n)) {
+            return Math.max(32, n - px) + "px";
+          }
+        }
+        return "calc(" + s + " - " + px + "px)";
+      }
+
+      function applySheetColumnWidthPx_(el, role, cut) {
+        var baseMin = SHEET_COL_BODY_MIN_PX;
+        var baseMax = SHEET_COL_BODY_MAX_PX;
+        var floorMin = role === "document" ? 56 : 80;
+        var floorMax = role === "document" ? 96 : 120;
+        var minPx = Math.max(floorMin, baseMin - cut);
+        var maxPx = Math.max(floorMax, baseMax - cut);
+        el.style.boxSizing = "border-box";
+        el.style.minWidth = minPx + "px";
+        el.style.maxWidth = maxPx + "px";
+        el.style.width = maxPx + "px";
+      }
+
+      /** Narrow specific sheet columns (table only); call after sticky/fixed/header width decorators */
+      function applySheetColumnWidthTweak(el, headerTitle) {
+        var role = sheetColWidthRole_(headerTitle);
+        if (!role) return;
+        var cut = SHEET_COL_WIDTH_REDUCE_PX[role];
+        if (!cut) return;
+        el.classList.add("col-w-" + role);
+
+        if (role === "sourceurl" || role === "document") {
+          applySheetColumnWidthPx_(el, role, cut);
+          return;
+        }
+
+        var w = el.style.width;
+        var mn = el.style.minWidth;
+        var mx = el.style.maxWidth;
+
+        if (w && (w.indexOf("ch") >= 0 || w.indexOf("calc(") === 0)) {
+          el.style.width = widthMinusPx_(w, cut);
+          el.style.minWidth = widthMinusPx_(mn || w, cut);
+          el.style.maxWidth = widthMinusPx_(mx || w, cut);
+          return;
+        }
+        if (mn && mn.indexOf("ch") >= 0) {
+          el.style.minWidth = widthMinusPx_(mn, cut);
+          if (mx && mx.indexOf("ch") >= 0) {
+            el.style.maxWidth = widthMinusPx_(mx, cut);
+          } else if (mx) {
+            el.style.maxWidth = widthMinusPx_(mx, cut);
+          }
+          return;
+        }
+
+        applySheetColumnWidthPx_(el, role, cut);
+      }
+
       /** On phones, sticky pins are wider than the screen and hide horizontally scrolled cells. */
       function shouldPinLeadColumns_() {
         try {
@@ -3004,7 +3145,7 @@
       }
 
       function stickyLeadColumnRole(headerTitle) {
-        var nk = normKey(headerTitle);
+        var nk = normSheetHeaderKey_(headerTitle);
         if (!nk) return null;
         if (nk === "email" || nk === "emailaddress" || nk === "mail") return "email";
         if (
@@ -3026,8 +3167,9 @@
           nk === "conversationsdate" ||
           nk === "datetime" ||
           nk === "timestamp"
-        )
+        ) {
           return "date";
+        }
         return null;
       }
 
@@ -3873,6 +4015,7 @@
           th._clipboardValue = cellClipboardString(headers[hi]);
           if (stickyMeta[hi]) decorateStickyCell(th, stickyMeta[hi], true, headers[hi]);
           else decorateHeaderWidth(th, headers[hi]);
+          applySheetColumnWidthTweak(th, headers[hi]);
           trh.appendChild(th);
         }
         thead.appendChild(trh);
@@ -3907,6 +4050,7 @@
               var fwcTd = fixedWidthChFromHeader(headers[ci]);
               if (fwcTd != null) decorateFixedWidthCh(td, fwcTd);
             }
+            applySheetColumnWidthTweak(td, headers[ci]);
             tr.appendChild(td);
           }
           tbody.appendChild(tr);
