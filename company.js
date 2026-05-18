@@ -13962,6 +13962,25 @@ function liveAgentIsBoilerplateHandoffPhrase_(text) {
     return /^(request|speak|talk|connect|need|want|get)\s+(to\s+)?(a\s+)?(human\s+)?agent$/.test(n);
 }
 
+/**
+ * POST visitor text to agent inbox (human chat, waiting queue, or AI co-pilot transcript).
+ * @param {string} text
+ * @returns {boolean}
+ */
+function liveAgentShouldPostVisitorToAgent_(text) {
+    const t = (text || "").trim();
+    if (!t || liveAgentIsBoilerplateHandoffPhrase_(t) || !liveAgentHandoffIsActive_()) {
+        return false;
+    }
+    if (!liveAgentAllowDialogflowForUserText_()) {
+        return true;
+    }
+    if (liveAgentCachedConvStatus === "waiting") {
+        return true;
+    }
+    return liveAgentCoPilotAiEnabled_();
+}
+
 /** Dialogflow when waiting in queue, or when agent turned chatbot back on (co-pilot). */
 function liveAgentAllowDialogflowForUserText_() {
     if (!liveAgentHandoffIsActive_()) {
@@ -14052,12 +14071,7 @@ function liveAgentVisitorSendDedupeKey_(text) {
  */
 function liveAgentTryRouteVisitorText_(text, dfMessenger, opts) {
     const t = (text || "").trim();
-    if (
-        !t ||
-        liveAgentIsBoilerplateHandoffPhrase_(t) ||
-        !liveAgentHandoffIsActive_() ||
-        liveAgentAllowDialogflowForUserText_()
-    ) {
+    if (!liveAgentShouldPostVisitorToAgent_(t)) {
         return false;
     }
     const dedupeKey = liveAgentVisitorSendDedupeKey_(t);
@@ -14065,7 +14079,7 @@ function liveAgentTryRouteVisitorText_(text, dfMessenger, opts) {
     if (
         dedupeKey &&
         dedupeKey === liveAgentLastVisitorSendKey_ &&
-        now - liveAgentLastVisitorSendAt_ < 2500
+        now - liveAgentLastVisitorSendAt_ < 1500
     ) {
         return true;
     }
@@ -14495,12 +14509,7 @@ function attachLiveAgentComposerBridge_(dfMessenger) {
                                 return;
                             }
                             const text = typeof ta.value === "string" ? ta.value.trim() : "";
-                            if (
-                                !text ||
-                                liveAgentIsBoilerplateHandoffPhrase_(text) ||
-                                !liveAgentHandoffIsActive_() ||
-                                liveAgentAllowDialogflowForUserText_()
-                            ) {
+                            if (!liveAgentShouldPostVisitorToAgent_(text)) {
                                 return;
                             }
                             window.setTimeout(() => {
@@ -14997,7 +15006,7 @@ function attachPersonaHandlers(dfMessenger) {
                 return;
             }
             const ms = activeDfMessenger;
-            if (typedTrim) {
+            if (typedTrim && liveAgentShouldPostVisitorToAgent_(typedTrim)) {
                 liveAgentTryRouteVisitorText_(typedTrim, ms, { renderBubble: false });
             }
             trackChatUserQueryInSessionContext_(typedTrim);
@@ -15056,7 +15065,11 @@ function attachPersonaHandlers(dfMessenger) {
                 return;
             }
 
-            if (liveAgentHandoffIsActive_() && liveAgentAllowDialogflowForUserText_() && effectiveQuery) {
+            if (
+                liveAgentHandoffIsActive_() &&
+                effectiveQuery &&
+                liveAgentCachedConvStatus === "waiting"
+            ) {
                 liveAgentMirrorVisitorToQueue_(effectiveQuery);
             }
 

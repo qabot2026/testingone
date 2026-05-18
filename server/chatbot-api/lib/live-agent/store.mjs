@@ -705,7 +705,7 @@ export async function appendMessage_({
                         : cur.lastMessageAt instanceof Date
                           ? cur.lastMessageAt.getTime()
                           : 0;
-                if (prevAt && Date.now() - prevAt < 4000) {
+                if (prevAt && Date.now() - prevAt < 1200) {
                     throw new Error("Duplicate visitor message");
                 }
             }
@@ -754,7 +754,10 @@ export async function appendMessage_({
                 }
             }
         } else if (roleNorm === "visitor") {
-            if (cur.status === "active") {
+            const curHm = trim_(cur.humanMode).toLowerCase();
+            const aiCopilotActive =
+                cur.status === "active" && curHm === "ai" && cur.aiEnabled !== false;
+            if (cur.status === "active" && !aiCopilotActive) {
                 convPatch.humanMode = "human";
                 convPatch.aiEnabled = false;
             } else if (cur.status === "waiting") {

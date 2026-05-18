@@ -61,16 +61,20 @@
     let agentId = "Agent";
     let selectedId = "";
     let selectedConv = null;
+    /** @type {Record<string, unknown> | null} */
+    let selectedVisitorContext = null;
     let lastMessageIso = "";
     /** Tracks unread on the open chat so a bump forces a full message resync. */
     let lastSelectedUnreadAgent = 0;
     let pollTimer = null;
+    let inboxPollTimer = null;
     let inboxInFlight = false;
     let messagesInFlight = false;
     let lastWaitingCount = 0;
     let notificationsOk = false;
     let deskSettings = null;
-    const POLL_INTERVAL_MS = 20000;
+    const INBOX_POLL_INTERVAL_MS = 28000;
+    const CHAT_POLL_INTERVAL_MS = 6000;
     const PRESENCE_INTERVAL_MS = 180000;
     let agentsPanelLoaded = false;
     let presenceTimer = null;
@@ -177,13 +181,6 @@
         });
         startPresence_();
         startPolling();
-    }
-
-    function stopPolling() {
-        if (pollTimer) {
-            clearInterval(pollTimer);
-            pollTimer = null;
-        }
     }
 
     function stopPresence_() {
@@ -297,13 +294,32 @@
         stopPolling();
         const tick = () => {
             if (document.hidden) return;
-            loadInbox(true);
-            if (selectedId && selectedConv && selectedConv.status === "active") {
+            if (
+                selectedId &&
+                selectedConv &&
+                (selectedConv.status === "active" || selectedConv.status === "waiting")
+            ) {
                 loadMessages(selectedId, true);
             }
         };
+        loadInbox(true);
         tick();
-        pollTimer = setInterval(tick, POLL_INTERVAL_MS);
+        pollTimer = setInterval(tick, CHAT_POLL_INTERVAL_MS);
+        inboxPollTimer = setInterval(() => {
+            if (document.hidden) return;
+            loadInbox(true);
+        }, INBOX_POLL_INTERVAL_MS);
+    }
+
+    function stopPolling() {
+        if (pollTimer) {
+            clearInterval(pollTimer);
+            pollTimer = null;
+        }
+        if (inboxPollTimer) {
+            clearInterval(inboxPollTimer);
+            inboxPollTimer = null;
+        }
     }
 
     document.addEventListener("visibilitychange", () => {
@@ -941,6 +957,7 @@
                 `${API}/conversations/${encodeURIComponent(conversationId)}/context`
             );
             selectedConv = data.conversation || selectedConv;
+            selectedVisitorContext = data.visitor || selectedVisitorContext;
             renderContextPanel(data.conversation, data.visitor);
         } catch (e) {
             renderContextPanel(selectedConv, null);
@@ -951,8 +968,14 @@
     async function setMode_(patch) {
         if (!selectedId) return;
         const busy = [enableChatbotBtn, takeHumanBtn].filter(Boolean);
+        const prevLabels = busy.map((b) => b.textContent);
         busy.forEach((b) => {
             b.disabled = true;
+            if (patch.humanMode === "ai") {
+                b.textContent = b.id === "enableChatbotBtn" ? "Enabling…" : b.textContent;
+            } else if (patch.humanMode === "human") {
+                b.textContent = b.id === "takeHumanBtn" ? "Taking over…" : b.textContent;
+            }
         });
         try {
             const data = await apiFetch(
@@ -967,16 +990,19 @@
                 throw new Error("Mode update failed — no conversation returned");
             }
             selectedConv = data.conversation;
-            applyConversationUi_(data.conversation);
+            applyConversationUi_(data.conversation, { skipContextReload: true });
             renderChatActionsBar_(data.conversation);
-            await loadContext(selectedId);
+            void loadMessages(selectedId, true);
         } catch (e) {
             alert(e.message || "Could not update mode");
             if (selectedConv) {
-                applyConversationUi_(selectedConv);
+                applyConversationUi_(selectedConv, { skipContextReload: true });
                 renderChatActionsBar_(selectedConv);
             }
         } finally {
+            busy.forEach((b, i) => {
+                if (prevLabels[i]) b.textContent = prevLabels[i];
+            });
             if (selectedConv) {
                 renderChatActionsBar_(selectedConv);
             }
@@ -1029,8 +1055,9 @@
         return t.includes("chat has ended") || t.includes("ended.");
     }
 
-    function applyConversationUi_(c) {
+    function applyConversationUi_(c, opts) {
         const conv = c || selectedConv;
+        const skipContextReload = opts && opts.skipContextReload === true;
         if (!conv || !selectedId) return;
 
         const title = conv.visitorName || "Session " + conv.id.slice(0, 12);
@@ -1087,8 +1114,29 @@
         }
         if (sendBtn) sendBtn.disabled = isClosed || !canReply;
 
-        renderContextPanel(conv, null);
-        renderChatActionsBar_(conv);
+        if (!skipContextReload) {
+            renderContextPanel(conv, selectedVisitorContext);
+        } else {
+            renderChatActionsBar_(conv);
+            if (modeStatusLine) {
+                const hm = (conv && conv.humanMode) || "ai";
+                const modeText =
+                    hm === "waiting"
+                        ? "Visitor is waiting for a human agent."
+                        : hm === "human"
+                          ? "Human agent chat — AI replies are off."
+                          : "AI mode — bot can auto-reply.";
+                const routeLine =
+                    "Dept: " +
+                    (conv.departmentName || conv.departmentId || "General") +
+                    " · " +
+                    modeText;
+                modeStatusLine.textContent = routeLine;
+            }
+        }
+        if (!skipContextReload) {
+            renderChatActionsBar_(conv);
+        }
     }
 
     async function refreshSelectedConversation_() {
@@ -1141,8 +1189,9 @@
         return {
             ...r,
             status: "active",
-            humanMode: "human",
-            aiEnabled: false,
+            humanMode: picked.humanMode || r.humanMode || "human",
+            aiEnabled:
+                typeof picked.aiEnabled === "boolean" ? picked.aiEnabled : r.aiEnabled,
             assignedAgentEmail: picked.assignedAgentEmail || r.assignedAgentEmail,
             acceptedByEmail: picked.acceptedByEmail || r.acceptedByEmail,
             acceptedAt: picked.acceptedAt || r.acceptedAt
@@ -1170,6 +1219,7 @@
             selectedConv = merged;
             applyConversationUi_(merged);
             if (refreshed && refreshed.visitor) {
+                selectedVisitorContext = refreshed.visitor;
                 renderContextPanel(selectedConv, refreshed.visitor);
             } else {
                 loadContext(c.id);
