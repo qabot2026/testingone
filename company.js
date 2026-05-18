@@ -4984,9 +4984,6 @@ function sendUserTextViaDfMessenger(dfMessenger, text, shouldRenderCustomTextNow
     if (liveAgentTryRouteVisitorText_(t, dfMessenger, { renderBubble: shouldRenderCustomTextNow })) {
         return;
     }
-    if (liveAgentHandoffIsActive_() && liveAgentAllowDialogflowForUserText_()) {
-        liveAgentMirrorVisitorToQueue_(t);
-    }
     const hadM0 = hasStoredMobileForChatBlockGate_();
     const prev0 = readStoredClientContext();
     const hadE0 = !!(dfParameterScalarToString(prev0 && prev0.email != null ? prev0.email : "").trim());
