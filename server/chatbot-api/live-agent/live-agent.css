@@ -258,6 +258,16 @@ body.live-agent-locked {
   font-size: 0.9rem;
 }
 
+.agents-panel-actions {
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.agents-panel-body.hidden {
+  display: none;
+}
+
 .agents-list {
   list-style: none;
   margin: 0;

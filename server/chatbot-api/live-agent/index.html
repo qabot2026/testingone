@@ -79,10 +79,15 @@
         <section class="agents-panel" aria-label="Agent status">
           <div class="agents-panel-head">
             <h3>Agents</h3>
-            <button type="button" class="btn ghost small" id="refreshAgentsBtn">Refresh</button>
+            <div class="agents-panel-actions">
+              <button type="button" class="btn ghost small" id="toggleAgentsPanelBtn">Show agents</button>
+              <button type="button" class="btn ghost small" id="refreshAgentsBtn" hidden>Refresh</button>
+            </div>
           </div>
-          <p id="agentsPanelStatus" class="muted small">Loading…</p>
-          <ul id="agentsList" class="agents-list"></ul>
+          <div id="agentsPanelBody" class="agents-panel-body hidden">
+            <p id="agentsPanelStatus" class="muted small"></p>
+            <ul id="agentsList" class="agents-list"></ul>
+          </div>
         </section>
 
         <p class="inbox-hint muted small">Visitors who ask for a human on the chatbot appear below. Select one, then press <strong>Accept chat</strong>.</p>

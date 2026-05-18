@@ -68,8 +68,9 @@
     let lastWaitingCount = 0;
     let notificationsOk = false;
     let deskSettings = null;
-    const POLL_INTERVAL_MS = 8000;
-    const PRESENCE_INTERVAL_MS = 45000;
+    const POLL_INTERVAL_MS = 15000;
+    const PRESENCE_INTERVAL_MS = 120000;
+    let agentsPanelLoaded = false;
     let presenceTimer = null;
 
     function loadStoredAuth_() {
@@ -173,7 +174,6 @@
             });
         });
         startPresence_();
-        loadAgentsPanel_();
         startPolling();
     }
 
@@ -230,12 +230,14 @@
         return "Offline";
     }
 
-    async function loadAgentsPanel_() {
+    async function loadAgentsPanel_(force) {
         if (!agentsList) return;
+        if (!force && agentsPanelLoaded) return;
         if (agentsPanelStatus) agentsPanelStatus.textContent = "Loading…";
         try {
             const data = await apiFetch(`${API}/agents`);
             renderAgentsList_(data.agents || []);
+            agentsPanelLoaded = true;
             if (agentsPanelStatus) {
                 agentsPanelStatus.textContent = (data.agents || []).length
                     ? ""
@@ -294,7 +296,7 @@
         pollTimer = setInterval(() => {
             if (document.hidden) return;
             loadInbox(true);
-            if (selectedId) {
+            if (selectedId && selectedConv && selectedConv.status === "active") {
                 loadMessages(selectedId, true);
             }
         }, POLL_INTERVAL_MS);
@@ -521,7 +523,19 @@
     }
 
     refreshInboxBtn.addEventListener("click", () => loadInbox());
-    if (refreshAgentsBtn) refreshAgentsBtn.addEventListener("click", () => loadAgentsPanel_());
+    if (refreshAgentsBtn) {
+        refreshAgentsBtn.addEventListener("click", () => loadAgentsPanel_(true));
+    }
+    const toggleAgentsPanelBtn = $("toggleAgentsPanelBtn");
+    const agentsPanelBody = $("agentsPanelBody");
+    if (toggleAgentsPanelBtn && agentsPanelBody) {
+        toggleAgentsPanelBtn.addEventListener("click", () => {
+            const hidden = agentsPanelBody.classList.toggle("hidden");
+            toggleAgentsPanelBtn.textContent = hidden ? "Show agents" : "Hide agents";
+            if (refreshAgentsBtn) refreshAgentsBtn.hidden = hidden;
+            if (!hidden) loadAgentsPanel_(true);
+        });
+    }
     if (myAgentStatus) {
         myAgentStatus.addEventListener("change", () => {
             postPresence_(myAgentStatus.value);
@@ -723,12 +737,19 @@
         if (!quiet) inboxStatus.textContent = "Loading…";
         try {
             const status = inboxFilter.value || "waiting";
-            const data = await apiFetch(`${API}/inbox?status=${encodeURIComponent(status)}&limit=80`);
+            const light = quiet ? "&light=1" : "";
+            const data = await apiFetch(
+                `${API}/inbox?status=${encodeURIComponent(status)}&limit=50${light}`
+            );
             const list = data.conversations || [];
             renderInbox(list);
             if (selectedId) {
                 const hit = list.find((c) => c.id === selectedId);
-                if (hit) selectedConv = hit;
+                if (hit) {
+                    selectedConv = hit;
+                } else if (quiet) {
+                    refreshSelectedConversation_();
+                }
             }
         } catch (e) {
             inboxStatus.textContent = e.message || "Failed to load inbox";
@@ -1143,7 +1164,7 @@
                 body: JSON.stringify({ conversationId: selectedId })
             });
             await selectConversation(data.conversation);
-            loadAgentsPanel_();
+            if (sendBtn) sendBtn.disabled = false;
             if (claimHint) {
                 claimHint.classList.remove("claim-hint-error");
                 claimHint.textContent = "";
@@ -1209,7 +1230,21 @@
         ev.preventDefault();
         const text = composerInput.value.trim();
         if (!text || !selectedId) return;
+        if (!agentId.includes("@")) {
+            alert("Sign in with your work email to send messages.");
+            return;
+        }
         sendBtn.disabled = true;
+        const optimisticId = "opt-" + Date.now();
+        appendMessageEl({
+            id: optimisticId,
+            role: "agent",
+            text,
+            senderEmail: agentId,
+            createdAt: new Date().toISOString()
+        });
+        composerInput.value = "";
+        messageList.scrollTop = messageList.scrollHeight;
         try {
             const data = await apiFetch(
                 `${API}/conversations/${encodeURIComponent(selectedId)}/messages`,
@@ -1219,12 +1254,22 @@
                     body: JSON.stringify({ text })
                 }
             );
-            appendMessageEl(data.message);
-            if (data.message && data.message.createdAt) lastMessageIso = data.message.createdAt;
-            composerInput.value = "";
+            const opt = messageList.querySelector('[data-msg-id="' + optimisticId + '"]');
+            if (opt) opt.remove();
+            if (data.message) {
+                appendMessageEl(data.message);
+                if (data.message.createdAt) lastMessageIso = data.message.createdAt;
+            }
+            if (data.conversation) {
+                selectedConv = data.conversation;
+                applyConversationUi_(data.conversation);
+            }
             messageList.scrollTop = messageList.scrollHeight;
             loadInbox(true);
         } catch (e) {
+            const opt = messageList.querySelector('[data-msg-id="' + optimisticId + '"]');
+            if (opt) opt.remove();
+            composerInput.value = text;
             alert(e.message || "Send failed");
         } finally {
             if (sendBtn) sendBtn.disabled = !canReplyActive_();
@@ -1232,11 +1277,13 @@
     });
 
     function canReplyActive_() {
-        if (!selectedConv) return false;
-        return (
-            selectedConv.status === "active" &&
-            agentIdsMatch_(selectedConv.assignedAgentEmail, agentId)
-        );
+        if (!selectedConv || !selectedId) return false;
+        if (selectedConv.status === "closed") return false;
+        if (selectedConv.status === "waiting") return true;
+        if (selectedConv.status !== "active") return false;
+        const assignee = (selectedConv.assignedAgentEmail || "").trim();
+        if (!assignee) return true;
+        return agentIdsMatch_(assignee, agentId);
     }
 
     loadStoredAuth_();

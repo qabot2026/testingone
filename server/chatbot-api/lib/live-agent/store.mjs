@@ -238,7 +238,7 @@ export async function getConversation_(conversationId) {
     return serializeConversation_(id, snap.data());
 }
 
-export async function listInbox_({ status, agentEmail, limit }) {
+export async function listInbox_({ status, agentEmail, limit, skipEscalation }) {
     const db = firestoreDb_();
     const col = db.collection(conversationsCollection_());
     const lim = Math.min(Math.max(limit || 50, 1), 100);
@@ -309,8 +309,10 @@ export async function listInbox_({ status, agentEmail, limit }) {
         rows.sort((a, b) => String(b.requestedAt || "").localeCompare(String(a.requestedAt || "")));
     }
 
-    const { processWaitingEscalations_ } = await import("./routing.mjs");
-    rows = await processWaitingEscalations_(rows);
+    if (!skipEscalation) {
+        const { processWaitingEscalations_ } = await import("./routing.mjs");
+        rows = await processWaitingEscalations_(rows);
+    }
     return rows.slice(0, lim);
 }
 
@@ -618,12 +620,37 @@ export async function appendMessage_({
             agentBump > 0
                 ? Math.min((cur.unreadForAgent || 0) + agentBump, 99)
                 : cur.unreadForAgent || 0;
-        tx.update(convRef, {
+        const roleNorm = trim_(role).toLowerCase();
+        /** @type {Record<string, unknown>} */
+        const convPatch = {
             lastMessageAt: now,
             lastMessagePreview: body.slice(0, 240),
             unreadForAgent: nextUnreadAgent,
             unreadForVisitor: (cur.unreadForVisitor || 0) + visitorBump
-        });
+        };
+        if (roleNorm === "agent" || roleNorm === "staff") {
+            const agentEmail = trim_(senderEmail).toLowerCase();
+            convPatch.status = "active";
+            convPatch.humanMode = "human";
+            convPatch.aiEnabled = false;
+            convPatch.visitorSessionActive = true;
+            if (agentEmail) {
+                if (!trim_(cur.assignedAgentEmail)) {
+                    convPatch.assignedAgentEmail = agentEmail;
+                    convPatch.currentAssigneeEmail = agentEmail;
+                }
+                if (!cur.acceptedAt) {
+                    convPatch.acceptedAt = now;
+                    convPatch.acceptedByEmail = agentEmail;
+                }
+            }
+        } else if (roleNorm === "visitor" && (cur.status === "waiting" || cur.status === "active")) {
+            convPatch.aiEnabled = false;
+            if (cur.status === "active") {
+                convPatch.humanMode = "human";
+            }
+        }
+        tx.update(convRef, convPatch);
     });
 
     const snap = await msgRef.get();

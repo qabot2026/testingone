@@ -100,7 +100,7 @@ const VISITOR_CITY_ENDPOINT = "/api/visitor-city";
 const SESSION_TRANSCRIPT_SYNC_ENDPOINT = "/api/session-transcript-sync";
 /** Dialogflow custom payload `action` → hand off to human agent inbox (`/live-agent`). */
 const LIVE_AGENT_REQUEST_ACTION = "request_live_agent";
-const LIVE_AGENT_POLL_INTERVAL_MS = 4000;
+const LIVE_AGENT_POLL_INTERVAL_MS = 6000;
 let liveAgentHandoffActive = false;
 let liveAgentPollTimerId = 0;
 let liveAgentMessagesSinceIso = "";
@@ -13794,9 +13794,23 @@ function liveAgentPayloadActionMatches_(act) {
     );
 }
 
+function normalizeLiveAgentSessionId_(raw) {
+    let s = typeof raw === "string" ? raw.trim() : "";
+    if (!s) {
+        return "";
+    }
+    if (!/^[A-Za-z0-9._-]+$/.test(s)) {
+        s = s.replace(/[^A-Za-z0-9._-]+/g, "_").replace(/_+/g, "_").replace(/^_|_$/g, "");
+    }
+    if (!s || s.length > 128) {
+        return s ? s.slice(0, 128) : "";
+    }
+    return s;
+}
+
 function liveAgentSessionId_() {
     const ctx = getClientContext();
-    return typeof ctx.client_session_id === "string" ? ctx.client_session_id.trim() : "";
+    return normalizeLiveAgentSessionId_(ctx.client_session_id);
 }
 
 function liveAgentVisitorDisplayName_() {
@@ -14045,7 +14059,12 @@ async function liveAgentPollTick_(dfMessenger) {
             setLiveAgentHandoffActive_(false);
             return;
         }
-        if (!humanActive && stData.aiEnabled !== false) {
+        const keepHandoff =
+            humanActive ||
+            (conv && (conv.status === "waiting" || conv.status === "active")) ||
+            (conv && conv.aiEnabled === false) ||
+            (conv && (conv.humanMode === "human" || conv.humanMode === "waiting"));
+        if (!keepHandoff && stData.aiEnabled !== false) {
             setLiveAgentHandoffActive_(false);
             return;
         }

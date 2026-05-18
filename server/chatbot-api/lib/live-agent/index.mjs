@@ -188,10 +188,14 @@ export function mountLiveAgentRoutes(app) {
         try {
             const status = trim_(req.query && req.query.status) || "all";
             const limit = Number(req.query && req.query.limit);
+            const light =
+                trim_(req.query && req.query.light) === "1" ||
+                trim_(req.query && req.query.light).toLowerCase() === "true";
             const conversations = await listInbox_({
                 status,
                 agentEmail: req.liveAgentSession.agentId,
-                limit: Number.isFinite(limit) ? limit : 80
+                limit: Number.isFinite(limit) ? limit : 80,
+                skipEscalation: light
             });
             res.json({ ok: true, conversations, status, count: conversations.length });
         } catch (err) {
@@ -393,20 +397,40 @@ export function mountLiveAgentRoutes(app) {
 
     router.post("/conversations/:id/messages", requireLiveAgentSession_(), async (req, res) => {
         setNoCache_(res);
-        const conversationId = safeClientSessionId_(req.params && req.params.id);
+        let conversationId = "";
+        try {
+            conversationId = resolveConversationId_(req.params && req.params.id);
+        } catch (idErr) {
+            jsonError_(res, 400, idErr.message || "Invalid conversation id");
+            return;
+        }
         const text = trim_(req.body && req.body.text);
-        if (!conversationId || !text) {
-            jsonError_(res, 400, "conversation id and text required");
+        if (!text) {
+            jsonError_(res, 400, "text required");
+            return;
+        }
+        const me = trim_(req.liveAgentSession.agentId).toLowerCase();
+        if (!me.includes("@")) {
+            jsonError_(res, 400, "Sign in with your work email to send messages");
             return;
         }
         try {
-            const conv = await getConversation_(conversationId);
+            let conv = await getConversation_(conversationId);
             if (!conv) {
                 jsonError_(res, 404, "Conversation not found");
                 return;
             }
+            if (conv.status === "closed") {
+                jsonError_(res, 400, "Conversation is closed — reopen it first");
+                return;
+            }
+            if (conv.status === "waiting") {
+                conv = await acceptConversation_({
+                    conversationId,
+                    agentEmail: me
+                });
+            }
             const assignee = trim_(conv.assignedAgentEmail).toLowerCase();
-            const me = trim_(req.liveAgentSession.agentId).toLowerCase();
             if (conv.status === "active" && assignee && assignee !== me) {
                 jsonError_(res, 403, "Assigned to another agent");
                 return;
@@ -415,10 +439,11 @@ export function mountLiveAgentRoutes(app) {
                 conversationId,
                 role: "agent",
                 text,
-                senderEmail: req.liveAgentSession.agentId,
+                senderEmail: me,
                 bumpUnread: { agent: 0, visitor: 1 }
             });
-            res.json({ ok: true, message });
+            const conversation = await getConversation_(conversationId);
+            res.json({ ok: true, message, conversation });
         } catch (err) {
             logStoreError_(err, "agent send");
             jsonError_(res, 400, err.message || "Send failed");
@@ -557,17 +582,27 @@ export function mountLiveAgentRoutes(app) {
     publicRouter.get("/status", async (req, res) => {
         setPublicCors_(res);
         setNoCache_(res);
-        const clientSessionId = safeClientSessionId_(req.query && req.query.clientSessionId);
-        if (!clientSessionId) {
-            jsonError_(res, 400, "clientSessionId required");
+        let clientSessionId = "";
+        try {
+            clientSessionId = resolveConversationId_(req.query && req.query.clientSessionId);
+        } catch (idErr) {
+            jsonError_(res, 400, idErr.message || "clientSessionId required");
             return;
         }
         try {
             const conversation = await getConversation_(clientSessionId);
+            const humanActive = !!(
+                conversation &&
+                (conversation.status === "waiting" ||
+                    conversation.status === "active" ||
+                    conversation.humanMode === "human" ||
+                    conversation.humanMode === "waiting" ||
+                    conversation.aiEnabled === false)
+            );
             res.json({
                 ok: true,
                 conversation,
-                humanActive: !!(conversation && (conversation.status === "waiting" || conversation.status === "active")),
+                humanActive,
                 aiEnabled: conversation ? conversation.aiEnabled !== false : true,
                 humanMode: conversation && conversation.humanMode ? conversation.humanMode : "ai"
             });
@@ -580,9 +615,11 @@ export function mountLiveAgentRoutes(app) {
     publicRouter.get("/messages", async (req, res) => {
         setPublicCors_(res);
         setNoCache_(res);
-        const clientSessionId = safeClientSessionId_(req.query && req.query.clientSessionId);
-        if (!clientSessionId) {
-            jsonError_(res, 400, "clientSessionId required");
+        let clientSessionId = "";
+        try {
+            clientSessionId = resolveConversationId_(req.query && req.query.clientSessionId);
+        } catch (idErr) {
+            jsonError_(res, 400, idErr.message || "clientSessionId required");
             return;
         }
         try {
@@ -602,10 +639,16 @@ export function mountLiveAgentRoutes(app) {
     publicRouter.post("/visitor-message", async (req, res) => {
         setPublicCors_(res);
         setNoCache_(res);
-        const clientSessionId = safeClientSessionId_(req.body && req.body.clientSessionId);
+        let clientSessionId = "";
+        try {
+            clientSessionId = resolveConversationId_(req.body && req.body.clientSessionId);
+        } catch (idErr) {
+            jsonError_(res, 400, idErr.message || "clientSessionId required");
+            return;
+        }
         const text = trim_(req.body && req.body.text);
-        if (!clientSessionId || !text) {
-            jsonError_(res, 400, "clientSessionId and text required");
+        if (!text) {
+            jsonError_(res, 400, "text required");
             return;
         }
         try {
