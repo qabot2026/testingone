@@ -125,20 +125,27 @@ async function enrichMessagesWithAgentNames_(messages) {
     if (!messages.length) {
         return messages;
     }
-    const { resolveAgentDisplayName_ } = await import("./departments.mjs");
-    const settings = await inboxDeskSettings_(true);
+    const {
+        resolveAgentDisplayName_,
+        formatSystemMessageTextForVisitor_,
+        getLiveAgentSettings_
+    } = await import("./departments.mjs");
+    const settings = await getLiveAgentSettings_();
     return messages.map((m) => {
         const role = trim_(m.role).toLowerCase();
-        if (role !== "agent" && role !== "staff") {
-            return m;
+        if (role === "agent" || role === "staff") {
+            return {
+                ...m,
+                senderDisplayName: resolveAgentDisplayName_(m.senderEmail, settings)
+            };
         }
-        if (m.senderDisplayName) {
-            return m;
+        if (role === "system") {
+            return {
+                ...m,
+                text: formatSystemMessageTextForVisitor_(m.text, settings)
+            };
         }
-        return {
-            ...m,
-            senderDisplayName: resolveAgentDisplayName_(m.senderEmail, settings)
-        };
+        return m;
     });
 }
 
@@ -433,10 +440,15 @@ export async function claimConversation_({ conversationId, agentEmail }) {
 
     void (async () => {
         try {
+            const { resolveAgentDisplayName_, getLiveAgentSettings_ } = await import(
+                "./departments.mjs"
+            );
+            const settings = await getLiveAgentSettings_();
+            const agentName = resolveAgentDisplayName_(email, settings);
             await appendMessage_({
                 conversationId: id,
                 role: "system",
-                text: `Agent ${email} accepted the chat.`,
+                text: agentName + " joined the chat.",
                 senderEmail: email,
                 bumpUnread: { agent: 0, visitor: 1 }
             });
@@ -648,8 +660,8 @@ export async function appendMessage_({
     const roleNormEarly = trim_(role).toLowerCase();
     let senderDisplayName = "";
     if (roleNormEarly === "agent" || roleNormEarly === "staff") {
-        const { resolveAgentDisplayName_ } = await import("./departments.mjs");
-        const settings = await inboxDeskSettings_(true);
+        const { resolveAgentDisplayName_, getLiveAgentSettings_ } = await import("./departments.mjs");
+        const settings = await getLiveAgentSettings_();
         senderDisplayName = resolveAgentDisplayName_(senderEmail, settings);
     }
 

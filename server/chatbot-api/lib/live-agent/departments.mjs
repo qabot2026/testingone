@@ -140,6 +140,30 @@ export function resolveAgentDisplayName_(email, settings) {
     return "Agent";
 }
 
+/** Visitor-safe system line (no email addresses). */
+export function formatSystemMessageTextForVisitor_(text, settings) {
+    let t = trim_(text);
+    if (!t) {
+        return t;
+    }
+    const acceptLegacy = t.match(/^Agent\s+(\S+@\S+)\s+accepted the chat\.?$/i);
+    if (acceptLegacy) {
+        const name = resolveAgentDisplayName_(acceptLegacy[1], settings);
+        return name + " joined the chat.";
+    }
+    const acceptShort = t.match(/^(\S+@\S+)\s+accepted the chat\.?$/i);
+    if (acceptShort) {
+        const name = resolveAgentDisplayName_(acceptShort[1], settings);
+        return name + " joined the chat.";
+    }
+    if (/ended|closed/i.test(t)) {
+        return t.replace(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/gi, () => "Agent");
+    }
+    return t.replace(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/gi, (email) =>
+        resolveAgentDisplayName_(email, settings)
+    );
+}
+
 function serializeLiveAgentSettings_(d) {
     const raw = d || {};
     const accessRaw = raw.access && typeof raw.access === "object" ? raw.access : {};

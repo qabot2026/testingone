@@ -13964,6 +13964,54 @@ let liveAgentLastVisitorSendKey_ = "";
 /** @type {number} */
 let liveAgentLastVisitorSendAt_ = 0;
 let liveAgentComposerBridgeAttached = false;
+/** @type {Record<string, string>} */
+let liveAgentAgentProfileMap_ = {};
+
+function liveAgentCacheAgentProfiles_(profiles) {
+    if (!Array.isArray(profiles)) {
+        return;
+    }
+    for (let i = 0; i < profiles.length; i += 1) {
+        const p = profiles[i];
+        if (!p || typeof p !== "object") {
+            continue;
+        }
+        const email = typeof p.email === "string" ? p.email.trim().toLowerCase() : "";
+        const name = typeof p.name === "string" ? p.name.trim() : "";
+        if (email && email.includes("@") && name) {
+            liveAgentAgentProfileMap_[email] = name;
+        }
+    }
+}
+
+function liveAgentDisplayNameForEmail_(email) {
+    const e = typeof email === "string" ? email.trim().toLowerCase() : "";
+    if (!e) {
+        return "Agent";
+    }
+    if (liveAgentAgentProfileMap_[e]) {
+        return liveAgentAgentProfileMap_[e];
+    }
+    return "Agent";
+}
+
+function liveAgentVisitorLineText_(m) {
+    const role = typeof m.role === "string" ? m.role.toLowerCase() : "";
+    let text = typeof m.text === "string" ? m.text.trim() : "";
+    if (!text) {
+        return "";
+    }
+    if (role === "system") {
+        const legacy = text.match(/^Agent\s+(\S+@\S+)\s+accepted the chat\.?$/i);
+        if (legacy) {
+            return liveAgentDisplayNameForEmail_(legacy[1]) + " joined the chat.";
+        }
+        return text.replace(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/gi, (em) =>
+            liveAgentDisplayNameForEmail_(em)
+        );
+    }
+    return text;
+}
 
 function liveAgentVisitorSendDedupeKey_(text) {
     return (text || "").trim() + "|" + liveAgentSessionId_();
@@ -14277,6 +14325,9 @@ async function liveAgentPollTick_(dfMessenger) {
         const status = conv && conv.status ? String(conv.status) : "";
         const humanMode = conv && conv.humanMode ? String(conv.humanMode) : "";
         liveAgentCachedConvStatus = status;
+        if (Array.isArray(stData.agentProfiles)) {
+            liveAgentCacheAgentProfiles_(stData.agentProfiles);
+        }
 
         if (status === "closed") {
             liveAgentCachedConvStatus = "";
@@ -14328,6 +14379,9 @@ async function liveAgentPollTick_(dfMessenger) {
         if (!mRes.ok) {
             return;
         }
+        if (Array.isArray(mData.agentProfiles)) {
+            liveAgentCacheAgentProfiles_(mData.agentProfiles);
+        }
         const messages = Array.isArray(mData.messages) ? mData.messages : [];
         const ms = dfMessenger || activeDfMessenger;
         for (let i = 0; i < messages.length; i += 1) {
@@ -14343,7 +14397,7 @@ async function liveAgentPollTick_(dfMessenger) {
             if (role === "visitor") {
                 continue;
             }
-            const text = typeof m.text === "string" ? m.text.trim() : "";
+            const text = liveAgentVisitorLineText_(m);
             if (!text || !ms || typeof ms.renderCustomText !== "function") {
                 continue;
             }
@@ -14353,7 +14407,7 @@ async function liveAgentPollTick_(dfMessenger) {
                 const displayName =
                     typeof m.senderDisplayName === "string" && m.senderDisplayName.trim()
                         ? m.senderDisplayName.trim()
-                        : "Agent";
+                        : liveAgentDisplayNameForEmail_(m.senderEmail);
                 prefix = displayName + ": ";
             }
             ms.renderCustomText(prefix + text, true);

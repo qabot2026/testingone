@@ -600,23 +600,28 @@ export function mountLiveAgentRoutes(app) {
                 conversation.status === "active" &&
                 (conversation.humanMode === "human" || conversation.aiEnabled === false)
             );
+            const { getLiveAgentSettings_, resolveAgentDisplayName_ } = await import(
+                "./departments.mjs"
+            );
+            const settings = await getLiveAgentSettings_();
             let assignedAgentDisplayName = "";
             if (conversation && conversation.assignedAgentEmail) {
-                const { getLiveAgentSettings_, resolveAgentDisplayName_ } = await import(
-                    "./departments.mjs"
-                );
-                const settings = await getLiveAgentSettings_();
                 assignedAgentDisplayName = resolveAgentDisplayName_(
                     conversation.assignedAgentEmail,
                     settings
                 );
             }
+            const agentProfiles =
+                settings && settings.general && settings.general.agentProfiles
+                    ? settings.general.agentProfiles
+                    : [];
             res.json({
                 ok: true,
                 conversation,
                 humanActive,
                 agentConnected,
                 assignedAgentDisplayName,
+                agentProfiles,
                 aiEnabled: conversation ? conversation.aiEnabled !== false : true,
                 humanMode: conversation && conversation.humanMode ? conversation.humanMode : "ai"
             });
@@ -643,7 +648,13 @@ export function mountLiveAgentRoutes(app) {
                 sinceIso: since || undefined,
                 markReadFor: "visitor"
             });
-            res.json({ ok: true, messages });
+            const { getLiveAgentSettings_ } = await import("./departments.mjs");
+            const settings = await getLiveAgentSettings_();
+            const agentProfiles =
+                settings && settings.general && settings.general.agentProfiles
+                    ? settings.general.agentProfiles
+                    : [];
+            res.json({ ok: true, messages, agentProfiles });
         } catch (err) {
             logStoreError_(err, "visitor messages");
             jsonError_(res, 500, err.message || "Failed to load messages");
