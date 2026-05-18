@@ -405,6 +405,18 @@
       min-width: 0;
       max-width: calc(15ch - 5px);
     }
+    table.sheet thead th.col-w-date,
+    table.sheet tbody td.col-w-date {
+      width: auto;
+      min-width: 0;
+      max-width: calc(12ch - 5px);
+    }
+    table.sheet thead th.col-w-time,
+    table.sheet tbody td.col-w-time {
+      width: auto;
+      min-width: 0;
+      max-width: calc(12ch - 10px);
+    }
     table.sheet thead th.col-w-appdate,
     table.sheet tbody td.col-w-appdate {
       width: auto;
@@ -3045,6 +3057,8 @@
        * Reduce: Source URL, App. Date, App. Time, Document.
        */
       var SHEET_COL_CH_REDUCE_PX = {
+        date: 5,
+        time: 10,
         email: 0,
         mobile: 5,
         appdate: 10,
@@ -3065,6 +3079,17 @@
       function sheetColWidthRole_(headerTitle) {
         var nk = normSheetHeaderKey_(headerTitle);
         if (!nk) return null;
+        if (
+          nk === "convdate" ||
+          nk === "conversationdate" ||
+          nk === "conversationsdate" ||
+          nk === "convdateonly"
+        ) {
+          return "date";
+        }
+        if (nk === "convtime" || nk === "conversationtime" || nk === "conversiontime") {
+          return "time";
+        }
         if (nk === "email" || nk === "emailaddress" || nk === "mail") return "email";
         if (
           nk === "mobile" ||
@@ -3161,7 +3186,7 @@
           applySheetColumnTruncatePreviewCap_(el);
           return;
         }
-        if (role === "email" || role === "mobile") {
+        if (role === "date" || role === "time" || role === "email" || role === "mobile") {
           var chCut = SHEET_COL_CH_REDUCE_PX[role];
           if (chCut == null) return;
           applySheetColumnChCap_(el, STICKY_WIDTH_CH[role], chCut);
@@ -3296,8 +3321,14 @@
         el.style.boxSizing = "border-box";
         el.style.zIndex = String(isHeader ? 75 + sm.ord : 35 + sm.ord);
         var cut = 0;
-        if (sm.role === "email" || sm.role === "mobile") {
-          cut = SHEET_COL_CH_REDUCE_PX[sm.role] || 0;
+        if (
+          sm.role === "date" ||
+          sm.role === "time" ||
+          sm.role === "email" ||
+          sm.role === "mobile"
+        ) {
+          var roleCut = SHEET_COL_CH_REDUCE_PX[sm.role];
+          cut = roleCut == null ? 0 : roleCut;
         }
         if (cut > 0) {
           var cap = "calc(" + sm.wch + "ch - " + cut + "px)";
