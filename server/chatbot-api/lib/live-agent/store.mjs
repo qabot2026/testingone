@@ -148,7 +148,7 @@ export async function requestHumanAgent_({
                 tx.set(ref, {
                     status: "waiting",
                     humanMode: "waiting",
-                    aiEnabled: false,
+                    aiEnabled: true,
                     botid: botIdOrDefault_(botid),
                     visitorName: trim_(visitorName) || cur.visitorName || "",
                     assignedAgentEmail: "",
@@ -179,7 +179,7 @@ export async function requestHumanAgent_({
         tx.set(ref, {
             status: "waiting",
             humanMode: "waiting",
-            aiEnabled: false,
+            aiEnabled: true,
             botid: botIdOrDefault_(botid),
             visitorName: trim_(visitorName),
             assignedAgentEmail: "",
@@ -473,7 +473,7 @@ export async function reopenConversationForAgent_({ conversationId, agentEmail }
             {
                 status: "waiting",
                 humanMode: "waiting",
-                aiEnabled: false,
+                aiEnabled: true,
                 assignedAgentEmail: "",
                 claimedAt: null,
                 closedAt: null,
@@ -644,10 +644,13 @@ export async function appendMessage_({
                     convPatch.acceptedByEmail = agentEmail;
                 }
             }
-        } else if (roleNorm === "visitor" && (cur.status === "waiting" || cur.status === "active")) {
-            convPatch.aiEnabled = false;
+        } else if (roleNorm === "visitor") {
             if (cur.status === "active") {
                 convPatch.humanMode = "human";
+                convPatch.aiEnabled = false;
+            } else if (cur.status === "waiting") {
+                convPatch.aiEnabled = true;
+                convPatch.humanMode = "waiting";
             }
         }
         tx.update(convRef, convPatch);

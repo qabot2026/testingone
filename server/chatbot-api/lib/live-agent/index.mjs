@@ -593,16 +593,18 @@ export function mountLiveAgentRoutes(app) {
             const conversation = await getConversation_(clientSessionId);
             const humanActive = !!(
                 conversation &&
-                (conversation.status === "waiting" ||
-                    conversation.status === "active" ||
-                    conversation.humanMode === "human" ||
-                    conversation.humanMode === "waiting" ||
-                    conversation.aiEnabled === false)
+                (conversation.status === "waiting" || conversation.status === "active")
+            );
+            const agentConnected = !!(
+                conversation &&
+                conversation.status === "active" &&
+                (conversation.humanMode === "human" || conversation.aiEnabled === false)
             );
             res.json({
                 ok: true,
                 conversation,
                 humanActive,
+                agentConnected,
                 aiEnabled: conversation ? conversation.aiEnabled !== false : true,
                 humanMode: conversation && conversation.humanMode ? conversation.humanMode : "ai"
             });

@@ -102,6 +102,8 @@ const SESSION_TRANSCRIPT_SYNC_ENDPOINT = "/api/session-transcript-sync";
 const LIVE_AGENT_REQUEST_ACTION = "request_live_agent";
 const LIVE_AGENT_POLL_INTERVAL_MS = 6000;
 let liveAgentHandoffActive = false;
+/** True only after an agent has accepted (active human chat) — visitor text goes to agent inbox, not Dialogflow. */
+let liveAgentHumanChatActive = false;
 let liveAgentPollTimerId = 0;
 let liveAgentMessagesSinceIso = "";
 /** @type {Set<string>} */
@@ -4919,9 +4921,12 @@ function sendUserTextViaDfMessenger(dfMessenger, text, shouldRenderCustomTextNow
     if (consumeLanguageSwitchFromUserFlowPhrase(t, null, dfMessenger)) {
         return;
     }
-    if (liveAgentHandoffIsActive_()) {
+    if (liveAgentHandoffIsActive_() && liveAgentHumanChatActive_()) {
         liveAgentSendVisitorMessage_(dfMessenger, t, shouldRenderCustomTextNow);
         return;
+    }
+    if (liveAgentHandoffIsActive_() && !liveAgentHumanChatActive_()) {
+        liveAgentMirrorVisitorToQueue_(t);
     }
     const hadM0 = hasStoredMobileForChatBlockGate_();
     const prev0 = readStoredClientContext();
@@ -13836,6 +13841,7 @@ function stopLiveAgentPoll_() {
 function setLiveAgentHandoffActive_(on) {
     liveAgentHandoffActive = Boolean(on);
     if (!liveAgentHandoffActive) {
+        liveAgentHumanChatActive = false;
         stopLiveAgentPoll_();
         liveAgentMessagesSinceIso = "";
         liveAgentSeenMessageIds_.clear();
@@ -13844,6 +13850,48 @@ function setLiveAgentHandoffActive_(on) {
 
 function liveAgentHandoffIsActive_() {
     return liveAgentHandoffActive === true;
+}
+
+function liveAgentHumanChatActive_() {
+    return liveAgentHumanChatActive === true;
+}
+
+function setLiveAgentHumanChatActive_(on) {
+    liveAgentHumanChatActive = Boolean(on);
+}
+
+/**
+ * Remove live-agent flags from session so Dialogflow and server sync resume normal AI flow.
+ */
+function clearLiveAgentRequestedInSession_() {
+    try {
+        const ctx = getClientContext();
+        /** @type {Record<string, unknown>} */
+        const sp =
+            ctx.session_params && typeof ctx.session_params === "object" && !Array.isArray(ctx.session_params)
+                ? { .../** @type {Record<string, unknown>} */ (ctx.session_params) }
+                : {};
+        delete sp.request_live_agent;
+        delete sp.live_agent;
+        delete sp.request_human_agent;
+        delete sp.human_agent;
+        delete sp.handoff_live_agent;
+        persistClientContext({
+            ...ctx,
+            session_params: sp,
+            live_agent_requested: false,
+            live_agent_initial_message: ""
+        });
+        if (activeDfMessenger) {
+            syncDfMessengerSessionParametersFromClientContext(activeDfMessenger);
+        }
+        scheduleSessionQueriesSheetSync_();
+        scheduleSessionTranscriptFirestoreSync_();
+    } catch (e) {
+        if (typeof console !== "undefined" && console.warn) {
+            console.warn("[live-agent] Could not clear session handoff flags:", e);
+        }
+    }
 }
 
 
@@ -13968,6 +14016,7 @@ async function requestLiveAgentHandoff_(spec) {
         }
         console.info("[live-agent] Visitor queued for agent", sid);
         setLiveAgentHandoffActive_(true);
+        setLiveAgentHumanChatActive_(false);
         liveAgentMessagesSinceIso = "";
         liveAgentSeenMessageIds_.clear();
         const ms = activeDfMessenger;
@@ -14053,18 +14102,37 @@ async function liveAgentPollTick_(dfMessenger) {
         if (!stRes.ok) {
             return;
         }
-        const humanActive = Boolean(stData.humanActive);
         const conv = stData.conversation;
-        if (conv && conv.status === "closed") {
+        const status = conv && conv.status ? String(conv.status) : "";
+        const humanMode = conv && conv.humanMode ? String(conv.humanMode) : "";
+
+        if (status === "closed") {
+            setLiveAgentHumanChatActive_(false);
+            clearLiveAgentRequestedInSession_();
             setLiveAgentHandoffActive_(false);
+            const ms0 = dfMessenger || activeDfMessenger;
+            if (ms0 && typeof ms0.renderCustomText === "function") {
+                ms0.renderCustomText(
+                    "This chat with the agent has ended. You can continue with the assistant or ask for an agent again.",
+                    true
+                );
+                renderBotPersona(ms0, Date.now());
+            }
             return;
         }
-        const keepHandoff =
-            humanActive ||
-            (conv && (conv.status === "waiting" || conv.status === "active")) ||
-            (conv && conv.aiEnabled === false) ||
-            (conv && (conv.humanMode === "human" || conv.humanMode === "waiting"));
-        if (!keepHandoff && stData.aiEnabled !== false) {
+
+        const agentAccepted =
+            status === "active" &&
+            (humanMode === "human" || conv.aiEnabled === false);
+        setLiveAgentHumanChatActive_(agentAccepted);
+
+        const keepPoll =
+            status === "waiting" ||
+            status === "active" ||
+            Boolean(stData.humanActive);
+        if (!keepPoll) {
+            setLiveAgentHumanChatActive_(false);
+            clearLiveAgentRequestedInSession_();
             setLiveAgentHandoffActive_(false);
             return;
         }
@@ -14127,6 +14195,31 @@ function startLiveAgentPoll_(dfMessenger) {
  * @param {string} text
  * @param {boolean | undefined} shouldRenderCustomTextNow
  */
+/**
+ * While waiting for an agent, copy visitor text to the agent queue without blocking Dialogflow.
+ * @param {string} text
+ */
+function liveAgentMirrorVisitorToQueue_(text) {
+    const t = (text || "").trim();
+    if (!t) {
+        return;
+    }
+    const sid = liveAgentSessionId_();
+    const endpoint = getApiEndpoint("/api/live-agent/visitor-message");
+    if (!endpoint || !sid) {
+        return;
+    }
+    try {
+        void fetch(endpoint, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ clientSessionId: sid, text: t })
+        });
+    } catch {
+        /* ignore */
+    }
+}
+
 async function liveAgentSendVisitorMessage_(dfMessenger, text, shouldRenderCustomTextNow) {
     const t = (text || "").trim();
     if (!t) {
@@ -18635,6 +18728,8 @@ function isUsableFooterHost(host) {
 }
 
 function restartChatSession() {
+    setLiveAgentHumanChatActive_(false);
+    clearLiveAgentRequestedInSession_();
     setLiveAgentHandoffActive_(false);
     try {
         clearOpenGalleryUrlDedupeState();
