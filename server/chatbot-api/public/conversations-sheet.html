@@ -392,24 +392,30 @@
       padding-left: 6px;
       padding-right: 6px;
     }
-    /** Narrow columns — caps only (width: auto), never wider than sheet defaults (228–370px) */
+    /** Column width caps (width: auto) — ch columns narrowed; email/mobile less narrow than before */
     table.sheet thead th.col-w-email,
     table.sheet tbody td.col-w-email {
       width: auto;
       min-width: 0;
-      max-width: calc(25ch - 20px);
+      max-width: calc(25ch - 10px);
     }
     table.sheet thead th.col-w-mobile,
     table.sheet tbody td.col-w-mobile {
       width: auto;
       min-width: 0;
-      max-width: calc(15ch - 20px);
+      max-width: calc(15ch - 10px);
     }
-    table.sheet thead th.col-w-ipaddress,
-    table.sheet tbody td.col-w-ipaddress {
+    table.sheet thead th.col-w-appdate,
+    table.sheet tbody td.col-w-appdate {
       width: auto;
       min-width: 0;
-      max-width: calc(16ch - 20px);
+      max-width: calc(12ch - 10px);
+    }
+    table.sheet thead th.col-w-apptime,
+    table.sheet tbody td.col-w-apptime {
+      width: auto;
+      min-width: 0;
+      max-width: calc(12ch - 14px);
     }
     table.sheet thead th.col-w-sourceurl,
     table.sheet tbody td.col-w-sourceurl {
@@ -421,7 +427,7 @@
     table.sheet tbody td.col-w-document {
       width: auto;
       min-width: 0;
-      max-width: 320px;
+      max-width: 270px;
     }
     tbody tr:nth-child(odd) td {
       background: var(--row-odd);
@@ -3029,18 +3035,21 @@
       var STICKY_WIDTH_CH = { date: 12, time: 12, name: 16, mobile: 15, email: 25 };
 
       /**
-       * Table-only column width reductions (px).
-       * Sheet column order: Conv. Link, Conv. Date, Conv. Time, Name, Mobile, Email, Channel,
-       * User Queries, Repeated User, Source URL, SessionI ID, Device, Browser, City, IP Address,
-       * App. Booked, App. Date, App. Time, Document
+       * Table-only column width tweaks (px off default / fixed ch).
+       * Increase: Email, Mobile (+10px vs prior −20px caps → −10px from base ch).
+       * Reduce: Source URL, App. Date, App. Time, Document.
        */
-      var SHEET_COL_WIDTH_REDUCE_PX = {
-        email: 20,
-        mobile: 20,
-        sourceurl: 100,
-        ipaddress: 20,
-        document: 50
+      var SHEET_COL_CH_REDUCE_PX = {
+        email: 10,
+        mobile: 10,
+        appdate: 10,
+        apptime: 14
       };
+      var SHEET_COL_PX_REDUCE = {
+        sourceurl: 100,
+        document: 100
+      };
+      var SHEET_COL_FIXED_CH = { appdate: 12, apptime: 12 };
       var SHEET_COL_BODY_MIN_PX = 228;
       var SHEET_COL_BODY_MAX_PX = 370;
 
@@ -3067,28 +3076,16 @@
         if (nk === "sourceurl" || nk === "pageurl" || nk === "referrerurl" || nk === "landingurl") {
           return "sourceurl";
         }
-        if (nk === "ipaddress" || nk === "ipadress" || nk === "clientip") {
-          return "ipaddress";
+        if (nk === "appdate" || nk === "appointmentdate") {
+          return "appdate";
+        }
+        if (nk === "apptime" || nk === "appointmenttime") {
+          return "apptime";
         }
         if (nk === "document" || nk === "documents" || nk === "filelinks" || nk === "uploads") {
           return "document";
         }
         return null;
-      }
-
-      function widthMinusPx_(cssLen, px) {
-        var s = String(cssLen == null ? "" : cssLen).trim();
-        if (!s || !px) return s;
-        if (/ch$/i.test(s) || s.indexOf("ch ") >= 0) {
-          return "calc(" + s + " - " + px + "px)";
-        }
-        if (/px$/i.test(s)) {
-          var n = parseFloat(s);
-          if (Number.isFinite(n)) {
-            return Math.max(32, n - px) + "px";
-          }
-        }
-        return "calc(" + s + " - " + px + "px)";
       }
 
       function applySheetColumnChCap_(el, ch, cutPx) {
@@ -3112,22 +3109,24 @@
       function applySheetColumnWidthTweak(el, headerTitle) {
         var role = sheetColWidthRole_(headerTitle);
         if (!role) return;
-        var cut = SHEET_COL_WIDTH_REDUCE_PX[role];
-        if (!cut) return;
         el.classList.add("col-w-" + role);
 
         if (role === "email" || role === "mobile") {
-          applySheetColumnChCap_(el, STICKY_WIDTH_CH[role], cut);
+          var chCut = SHEET_COL_CH_REDUCE_PX[role];
+          if (chCut == null) return;
+          applySheetColumnChCap_(el, STICKY_WIDTH_CH[role], chCut);
           return;
         }
-        if (role === "ipaddress") {
-          applySheetColumnChCap_(el, 16, cut);
+        if (role === "appdate" || role === "apptime") {
+          var fixedCh = SHEET_COL_FIXED_CH[role];
+          var appCut = SHEET_COL_CH_REDUCE_PX[role];
+          if (fixedCh == null || appCut == null) return;
+          applySheetColumnChCap_(el, fixedCh, appCut);
           return;
         }
-        if (role === "sourceurl" || role === "document") {
-          applySheetColumnWidthPxCap_(el, cut);
-          return;
-        }
+        var pxCut = SHEET_COL_PX_REDUCE[role];
+        if (pxCut == null) return;
+        applySheetColumnWidthPxCap_(el, pxCut);
       }
 
       /** On phones, sticky pins are wider than the screen and hide horizontally scrolled cells. */
@@ -3251,7 +3250,7 @@
         el.style.zIndex = String(isHeader ? 75 + sm.ord : 35 + sm.ord);
         var cut = 0;
         if (sm.role === "email" || sm.role === "mobile") {
-          cut = SHEET_COL_WIDTH_REDUCE_PX[sm.role] || 0;
+          cut = SHEET_COL_CH_REDUCE_PX[sm.role] || 0;
         }
         if (cut > 0) {
           var cap = "calc(" + sm.wch + "ch - " + cut + "px)";
