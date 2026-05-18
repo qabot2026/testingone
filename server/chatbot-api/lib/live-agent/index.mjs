@@ -49,6 +49,7 @@ import {
     liveAgentFirestoreReady_,
     logStoreError_,
     requestHumanAgent_,
+    resolveConversationId_,
     updateConversationMode_
 } from "./store.mjs";
 import {
@@ -87,11 +88,11 @@ function setPublicCors_(res) {
 }
 
 function safeClientSessionId_(raw) {
-    const s = trim_(raw);
-    if (!s || s.length > 128 || !/^[A-Za-z0-9._-]+$/.test(s)) {
+    try {
+        return resolveConversationId_(raw);
+    } catch {
         return "";
     }
-    return s;
 }
 
 function jsonError_(res, status, message) {
@@ -222,9 +223,11 @@ export function mountLiveAgentRoutes(app) {
 
     async function handleAccept_(req, res) {
         setNoCache_(res);
-        const conversationId = safeClientSessionId_(req.body && req.body.conversationId);
-        if (!conversationId) {
-            jsonError_(res, 400, "conversationId required");
+        let conversationId = "";
+        try {
+            conversationId = resolveConversationId_(req.body && req.body.conversationId);
+        } catch (idErr) {
+            jsonError_(res, 400, idErr.message || "Invalid conversation id");
             return;
         }
         try {

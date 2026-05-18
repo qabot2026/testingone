@@ -473,11 +473,16 @@
     loginForm.addEventListener("submit", async (ev) => {
         ev.preventDefault();
         const secret = loginSecret.value.trim();
+        const email = (loginAgentName && loginAgentName.value.trim()) || "";
         if (!secret) {
             loginMessage.textContent = "Enter the viewer secret.";
             return;
         }
-        persistAuth_(secret, loginAgentName.value.trim());
+        if (!email.includes("@")) {
+            loginMessage.textContent = "Enter your work email (e.g. you@company.com). Accept chat will not work without it.";
+            return;
+        }
+        persistAuth_(secret, email);
         loginMessage.textContent = "Checking…";
         try {
             const data = await apiFetch(`${API}/me`);
@@ -1137,6 +1142,11 @@
             loadAgentsPanel_();
         } catch (e) {
             const msg = e.message || "Could not accept chat";
+            if (claimHint) {
+                claimHint.hidden = false;
+                claimHint.textContent = msg;
+                claimHint.classList.add("claim-hint-error");
+            }
             if (/closed/i.test(msg) && confirm(msg + "\n\nReopen this chat and accept it?")) {
                 await reopenSelectedChat_();
                 try {
@@ -1146,12 +1156,19 @@
                         body: JSON.stringify({ conversationId: selectedId })
                     });
                     await selectConversation(data.conversation);
+                    loadAgentsPanel_();
+                    if (claimHint) claimHint.classList.remove("claim-hint-error");
                 } catch (e2) {
-                    alert(e2.message || "Could not accept after reopen");
+                    const m2 = e2.message || "Could not accept after reopen";
+                    if (claimHint) claimHint.textContent = m2;
+                    alert(m2);
                 }
+            } else if (/already have|maximum allowed/i.test(msg)) {
+                alert(msg + "\n\nClose an active chat or raise Max concurrent windows in Live Agent Settings.");
             } else {
                 alert(msg);
             }
+            loadInbox(true);
         } finally {
             claimBtn.disabled = false;
         }

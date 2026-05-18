@@ -128,7 +128,9 @@ export async function recordAgentActivity_({
 
 export async function touchAgentPresence_({ agentEmail, status }) {
     const email = normalizeEmail_(agentEmail);
-    if (!email) throw new Error("Agent email required");
+    if (!email || !email.includes("@")) {
+        throw new Error("Valid agent email required");
+    }
     const ref = agentsCol_().doc(agentDocId_(email));
     const snap = await ref.get();
     const prev = snap.exists ? snap.data() || {} : {};
@@ -157,8 +159,14 @@ export async function touchAgentPresence_({ agentEmail, status }) {
 
 export async function bumpAgentStats_({ agentEmail, kind, conversationId, visitorName, departmentName }) {
     const email = normalizeEmail_(agentEmail);
-    if (!email) return;
-    const ref = agentsCol_().doc(agentDocId_(email));
+    if (!email || !email.includes("@")) return;
+    let docId;
+    try {
+        docId = agentDocId_(email);
+    } catch (_) {
+        return;
+    }
+    const ref = agentsCol_().doc(docId);
     const now = admin.firestore.FieldValue.serverTimestamp();
     const patch = { email, updatedAt: now, lastSeenAt: now };
     if (kind === "accept") {

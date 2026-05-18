@@ -39,6 +39,11 @@ function safeConversationId_(id) {
     return s;
 }
 
+/** Same id normalization as Firestore writes (use on all agent API routes). */
+export function resolveConversationId_(raw) {
+    return safeConversationId_(raw);
+}
+
 function botIdOrDefault_(v) {
     const s = trim_(v) || "default";
     if (!/^[A-Za-z0-9._-]{1,64}$/.test(s)) return "default";
@@ -331,6 +336,11 @@ export async function claimConversation_({ conversationId, agentEmail }) {
     const id = safeConversationId_(conversationId);
     const email = trim_(agentEmail).toLowerCase();
     if (!email) throw new Error("Agent email required");
+    if (!email.includes("@")) {
+        throw new Error(
+            "Use your work email on the login screen (e.g. you@company.com) to accept chats."
+        );
+    }
 
     const { getLiveAgentSettings_ } = await import("./departments.mjs");
     const settings = await getLiveAgentSettings_();
@@ -350,9 +360,14 @@ export async function claimConversation_({ conversationId, agentEmail }) {
         const snap = await tx.get(ref);
         if (!snap.exists) throw new Error("Conversation not found");
         const cur = snap.data() || {};
-        if (cur.status === "closed") throw new Error("Conversation is closed");
-        if (cur.status === "active" && cur.assignedAgentEmail && cur.assignedAgentEmail !== email) {
+        const st = typeof cur.status === "string" ? cur.status : "waiting";
+        if (st === "closed") throw new Error("Conversation is closed");
+        const assigned = trim_(cur.assignedAgentEmail).toLowerCase();
+        if (st === "active" && assigned && assigned !== email) {
             throw new Error("Already assigned to another agent");
+        }
+        if (st !== "waiting" && st !== "active") {
+            throw new Error("Conversation is not available to accept");
         }
         tx.update(ref, {
             status: "active",
@@ -368,13 +383,17 @@ export async function claimConversation_({ conversationId, agentEmail }) {
         });
     });
 
-    await appendMessage_({
-        conversationId: id,
-        role: "system",
-        text: `Agent ${email} accepted the chat.`,
-        senderEmail: email,
-        bumpUnread: { agent: 0, visitor: 1 }
-    });
+    try {
+        await appendMessage_({
+            conversationId: id,
+            role: "system",
+            text: `Agent ${email} accepted the chat.`,
+            senderEmail: email,
+            bumpUnread: { agent: 0, visitor: 1 }
+        });
+    } catch (msgErr) {
+        console.warn(LOG_TAG, "accept system message:", msgErr.message || msgErr);
+    }
 
     const snap = await ref.get();
     const out = serializeConversation_(id, snap.data());
