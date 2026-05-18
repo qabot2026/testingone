@@ -5994,6 +5994,13 @@ app.get("/", (_req, res) => {
     );
 });
 
+process.on("unhandledRejection", (reason) => {
+    console.error("[chatbot-api] unhandledRejection:", reason);
+});
+process.on("uncaughtException", (err) => {
+    console.error("[chatbot-api] uncaughtException:", err && err.stack ? err.stack : err);
+});
+
 // Bind 0.0.0.0 so PaaS (Railway, Docker) healthchecks can reach the process.
 app.listen(PORT, "0.0.0.0", () => {
     logContactLeadEmailBoot();

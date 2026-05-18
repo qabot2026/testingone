@@ -138,10 +138,9 @@ async function enrichMessagesWithAgentNames_(messages) {
     try {
         const {
             resolveAgentDisplayName_,
-            formatSystemMessageTextForVisitor_,
-            getLiveAgentSettings_
+            formatSystemMessageTextForVisitor_
         } = await import("./departments.mjs");
-        const settings = await getLiveAgentSettings_();
+        const settings = await cachedLiveAgentSettings_();
         return messages.map((m) => {
             const role = trim_(m.role).toLowerCase();
             if (role === "agent" || role === "staff") {
@@ -303,6 +302,11 @@ async function inboxDeskSettings_(skipEscalation) {
         inboxSettingsCacheAt_ = now;
     }
     return deskSettings;
+}
+
+/** Cached settings for hot paths (every message / poll) — avoids extra Firestore reads. */
+async function cachedLiveAgentSettings_() {
+    return inboxDeskSettings_(true);
 }
 
 export async function listInbox_({ status, agentEmail, limit, skipEscalation }) {
@@ -684,8 +688,8 @@ export async function appendMessage_({
     const roleNormEarly = trim_(role).toLowerCase();
     let senderDisplayName = "";
     if (roleNormEarly === "agent" || roleNormEarly === "staff") {
-        const { resolveAgentDisplayName_, getLiveAgentSettings_ } = await import("./departments.mjs");
-        const settings = await getLiveAgentSettings_();
+        const { resolveAgentDisplayName_ } = await import("./departments.mjs");
+        const settings = await cachedLiveAgentSettings_();
         senderDisplayName = resolveAgentDisplayName_(senderEmail, settings);
     }
 
