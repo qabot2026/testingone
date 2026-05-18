@@ -1359,6 +1359,35 @@ async function conversationSheetLastDataRow1Based_(sheets, tab, chunkRows, gridR
     return lastDataRow1BasedFromAB_(headVals);
 }
 
+/**
+ * Last N populated rows from A:Z without loading the whole tab (prevents Railway 502/OOM on large sheets).
+ *
+ * @param {import("googleapis").sheets_v4.Sheets} sheets
+ * @param {string} tab
+ * @param {number} lookback max rows to return
+ * @returns {Promise<{ rows: unknown[][], firstSheetRow1Based: number }>}
+ */
+async function fetchSheetAzTail_(sheets, tab, lookback) {
+    const lb = Math.max(1, lookback);
+    const gridRows = await conversationSheetGridRowCount_(sheets, tab);
+    const lastRow = await conversationSheetLastDataRow1Based_(
+        sheets,
+        tab,
+        conversationSheetScanHardCap_(),
+        gridRows
+    );
+    if (!lastRow) {
+        return { rows: [], firstSheetRow1Based: 1 };
+    }
+    const startRow = Math.max(1, lastRow - lb + 1);
+    const got = await sheets.spreadsheets.values.get({
+        spreadsheetId: SPREADSHEET_ID,
+        range: `${tab}!A${startRow}:Z${lastRow}`
+    });
+    const rows = Array.isArray(got.data.values) ? got.data.values : [];
+    return { rows, firstSheetRow1Based: startRow };
+}
+
 /** Coerce outbound row cells to plain strings — API payloads must not contain `undefined` (can break inserts). */
 function sheetOutboundCell_(v) {
     if (v == null) {
@@ -1459,14 +1488,17 @@ function buildDedupeKey(row) {
  * @param {string} incomingDigits
  * @param {number} mobileColIdx
  * @param {number} excludeSheetRow1Based skip this sheet row when counting (session-dedupe update target row)
+ * @param {number} [firstSheetRow1Based] sheet row number for `rows[0]` (default 1 = full-tab fetch)
  */
-function countOtherRowsWithSameMobile_(rows, incomingDigits, mobileColIdx, excludeSheetRow1Based) {
+function countOtherRowsWithSameMobile_(rows, incomingDigits, mobileColIdx, excludeSheetRow1Based, firstSheetRow1Based = 1) {
     if (!incomingDigits || !rows.length) {
         return 0;
     }
+    const rowBase = Math.max(1, firstSheetRow1Based);
+    const startI = rowBase === 1 ? HEADER_SKIP_ROWS_0 : 0;
     let n = 0;
-    for (let i = HEADER_SKIP_ROWS_0; i < rows.length; i += 1) {
-        const sheetRow = i + 1;
+    for (let i = startI; i < rows.length; i += 1) {
+        const sheetRow = rowBase + i;
         if (excludeSheetRow1Based && sheetRow === excludeSheetRow1Based) {
             continue;
         }
@@ -1489,14 +1521,17 @@ function countOtherRowsWithSameMobile_(rows, incomingDigits, mobileColIdx, exclu
 
 /**
  * @param {unknown[][]} colRows cells from `${Col}:${Col}` get
+ * @param {number} [firstSheetRow1Based] sheet row for `colRows[0]` (default 1)
  */
-function countColumnMatchesExcludingRow_(colRows, incomingDigits, excludeSheetRow1Based) {
+function countColumnMatchesExcludingRow_(colRows, incomingDigits, excludeSheetRow1Based, firstSheetRow1Based = 1) {
     if (!incomingDigits || !colRows.length) {
         return 0;
     }
+    const rowBase = Math.max(1, firstSheetRow1Based);
+    const startI = rowBase === 1 ? HEADER_SKIP_ROWS_0 : 0;
     let n = 0;
-    for (let i = HEADER_SKIP_ROWS_0; i < colRows.length; i += 1) {
-        const sheetRow = i + 1;
+    for (let i = startI; i < colRows.length; i += 1) {
+        const sheetRow = rowBase + i;
         if (excludeSheetRow1Based && sheetRow === excludeSheetRow1Based) {
             continue;
         }
@@ -1522,18 +1557,14 @@ async function scanSheetTailForDedupeAndRepeat_(sheets, row) {
     const key = buildDedupeKey(row);
     const tab = tabNameFromRange(RANGE);
     const mobileCol = await getMobileColumnInfo_(sheets, tab);
-    const res = await sheets.spreadsheets.values.get({
-        spreadsheetId: SPREADSHEET_ID,
-        // Use a wide range so dedupe works even if your sheet has more columns than expected
-        // or the session id column was moved.
-        range: `${tab}!A:Z`
-    });
-    const rows = Array.isArray(res.data.values) ? res.data.values : [];
-    if (!rows.length) {
+    const { rows: tail, firstSheetRow1Based: tailOffset } = await fetchSheetAzTail_(
+        sheets,
+        tab,
+        DEDUP_LOOKBACK_ROWS
+    );
+    if (!tail.length) {
         return { duplicate: false, matchedRowNumber: 0, repeatedAcrossSessions: false };
     }
-    const tail = rows.slice(Math.max(0, rows.length - DEDUP_LOOKBACK_ROWS));
-    const tailOffset = rows.length - tail.length; // 0-based offset into full sheet rows
     const incomingSid = typeof row.clientSessionId === "string" ? row.clientSessionId.trim() : "";
     let incomingMobileDigits = mobileKeyFromCell_(row.mobile);
     if (!incomingMobileDigits && row && typeof row === "object") {
@@ -1552,7 +1583,7 @@ async function scanSheetTailForDedupeAndRepeat_(sheets, row) {
             sheetCellString_(r[STANDARD_SESSION_COLUMN_INDEX0_PRIMARY])
             || sheetCellString_(r[STANDARD_SESSION_COLUMN_INDEX0_PRE_TRANSCRIPT])
             || sheetCellString_(r[STANDARD_SESSION_COLUMN_INDEX0_LEGACY]);
-        const rowNumber = tailOffset + i + 1; // 1-based row number in the sheet
+        const rowNumber = tailOffset + i; // 1-based sheet row (`tailOffset` = first row in this slice)
 
         // If we have a session id, enforce "only once per session".
         if (key && incomingSid && existingSid && existingSid === incomingSid) {
@@ -1578,23 +1609,26 @@ async function scanSheetTailForDedupeAndRepeat_(sheets, row) {
     let otherMatches = 0;
     if (incomingMobileDigits) {
         otherMatches = countOtherRowsWithSameMobile_(
-            /** @type {unknown[][]} */ (rows),
+            /** @type {unknown[][]} */ (tail),
             incomingMobileDigits,
             mobileCol.mobileColIdx,
-            excludeForRepeat
+            excludeForRepeat,
+            tailOffset
         );
     }
     if (incomingMobileDigits && otherMatches === 0) {
         try {
+            const lastRow = tailOffset + tail.length - 1;
             const col = await sheets.spreadsheets.values.get({
                 spreadsheetId: SPREADSHEET_ID,
-                range: `${tab}!${mobileCol.mobileColLetter}:${mobileCol.mobileColLetter}`
+                range: `${tab}!${mobileCol.mobileColLetter}${tailOffset}:${mobileCol.mobileColLetter}${lastRow}`
             });
             const colRows = Array.isArray(col.data.values) ? col.data.values : [];
             otherMatches = countColumnMatchesExcludingRow_(
                 /** @type {unknown[][]} */ (colRows),
                 incomingMobileDigits,
-                excludeForRepeat
+                excludeForRepeat,
+                tailOffset
             );
         } catch {
             /* ignore */
@@ -3492,16 +3526,14 @@ async function findSessionRowNumberBySessionId_(sheets, tab, sessionId) {
     if (!sid) {
         return 0;
     }
-    const res = await sheets.spreadsheets.values.get({
-        spreadsheetId: SPREADSHEET_ID,
-        range: `${tab}!A:Z`
-    });
-    const rows = Array.isArray(res.data.values) ? res.data.values : [];
-    if (!rows.length) {
+    const { rows: tail, firstSheetRow1Based: tailOffset } = await fetchSheetAzTail_(
+        sheets,
+        tab,
+        DEDUP_LOOKBACK_ROWS
+    );
+    if (!tail.length) {
         return 0;
     }
-    const tail = rows.slice(Math.max(0, rows.length - DEDUP_LOOKBACK_ROWS));
-    const tailOffset = rows.length - tail.length;
     for (let i = tail.length - 1; i >= 0; i--) {
         const r = tail[i] || [];
         const existingSid =
@@ -3509,13 +3541,13 @@ async function findSessionRowNumberBySessionId_(sheets, tab, sessionId) {
             || sheetCellString_(r[STANDARD_SESSION_COLUMN_INDEX0_PRE_TRANSCRIPT])
             || sheetCellString_(r[STANDARD_SESSION_COLUMN_INDEX0_LEGACY]);
         if (existingSid === sid) {
-            return tailOffset + i + 1;
+            return tailOffset + i;
         }
         if (Array.isArray(r)) {
             for (let c = 0; c < r.length; c++) {
                 const cell = sheetCellString_(r[c]);
                 if (cell && cell === sid) {
-                    return tailOffset + i + 1;
+                    return tailOffset + i;
                 }
             }
         }
