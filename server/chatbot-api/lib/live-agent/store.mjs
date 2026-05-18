@@ -121,32 +121,47 @@ export function clearInboxSettingsCache_() {
     inboxSettingsCacheAt_ = 0;
 }
 
+/** Call after settings are saved so accept/inbox read fresh agent profiles. */
+export async function refreshDeskSettingsCache_() {
+    clearInboxSettingsCache_();
+    try {
+        return await inboxDeskSettings_(false);
+    } catch {
+        return null;
+    }
+}
+
 async function enrichMessagesWithAgentNames_(messages) {
     if (!messages.length) {
         return messages;
     }
-    const {
-        resolveAgentDisplayName_,
-        formatSystemMessageTextForVisitor_,
-        getLiveAgentSettings_
-    } = await import("./departments.mjs");
-    const settings = await getLiveAgentSettings_();
-    return messages.map((m) => {
-        const role = trim_(m.role).toLowerCase();
-        if (role === "agent" || role === "staff") {
-            return {
-                ...m,
-                senderDisplayName: resolveAgentDisplayName_(m.senderEmail, settings)
-            };
-        }
-        if (role === "system") {
-            return {
-                ...m,
-                text: formatSystemMessageTextForVisitor_(m.text, settings)
-            };
-        }
-        return m;
-    });
+    try {
+        const {
+            resolveAgentDisplayName_,
+            formatSystemMessageTextForVisitor_,
+            getLiveAgentSettings_
+        } = await import("./departments.mjs");
+        const settings = await getLiveAgentSettings_();
+        return messages.map((m) => {
+            const role = trim_(m.role).toLowerCase();
+            if (role === "agent" || role === "staff") {
+                return {
+                    ...m,
+                    senderDisplayName: resolveAgentDisplayName_(m.senderEmail, settings)
+                };
+            }
+            if (role === "system") {
+                return {
+                    ...m,
+                    text: formatSystemMessageTextForVisitor_(m.text, settings)
+                };
+            }
+            return m;
+        });
+    } catch (err) {
+        console.warn(LOG_TAG, "enrich agent names:", err.message || err);
+        return messages;
+    }
 }
 
 export function liveAgentFirestoreReady_() {
@@ -395,8 +410,18 @@ export async function claimConversation_({ conversationId, agentEmail }) {
         );
     }
 
-    const settings = await inboxDeskSettings_(true);
-    const max = settings.routing.maxConcurrentChats || 2;
+    clearInboxSettingsCache_();
+    let max = 2;
+    try {
+        const { getLiveAgentSettings_ } = await import("./departments.mjs");
+        const settings = await getLiveAgentSettings_();
+        max =
+            settings && settings.routing && settings.routing.maxConcurrentChats
+                ? settings.routing.maxConcurrentChats
+                : 2;
+    } catch (settingsErr) {
+        console.warn(LOG_TAG, "accept settings load:", settingsErr.message || settingsErr);
+    }
     const activeCount = await countActiveConversationsForAgent_(email);
     if (activeCount >= max) {
         throw new Error(
@@ -435,26 +460,25 @@ export async function claimConversation_({ conversationId, agentEmail }) {
         });
     });
 
+    try {
+        const { resolveAgentDisplayName_, getLiveAgentSettings_ } = await import("./departments.mjs");
+        const settings = await getLiveAgentSettings_();
+        const agentName = resolveAgentDisplayName_(email, settings);
+        await appendMessage_({
+            conversationId: id,
+            role: "system",
+            text: agentName + " joined the chat.",
+            senderEmail: email,
+            bumpUnread: { agent: 0, visitor: 1 }
+        });
+    } catch (msgErr) {
+        console.warn(LOG_TAG, "accept system message:", msgErr.message || msgErr);
+    }
+
     const snap = await ref.get();
     const out = serializeConversation_(id, snap.data());
 
     void (async () => {
-        try {
-            const { resolveAgentDisplayName_, getLiveAgentSettings_ } = await import(
-                "./departments.mjs"
-            );
-            const settings = await getLiveAgentSettings_();
-            const agentName = resolveAgentDisplayName_(email, settings);
-            await appendMessage_({
-                conversationId: id,
-                role: "system",
-                text: agentName + " joined the chat.",
-                senderEmail: email,
-                bumpUnread: { agent: 0, visitor: 1 }
-            });
-        } catch (msgErr) {
-            console.warn(LOG_TAG, "accept system message:", msgErr.message || msgErr);
-        }
         try {
             const { bumpAgentStats_, touchAgentPresence_ } = await import("./agents.mjs");
             await bumpAgentStats_({

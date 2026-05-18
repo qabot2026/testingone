@@ -265,6 +265,12 @@ export function mountLiveAgentRoutes(app) {
         setNoCache_(res);
         try {
             const settings = await saveLiveAgentSettings_(req.body || {});
+            try {
+                const { refreshDeskSettingsCache_ } = await import("./store.mjs");
+                await refreshDeskSettingsCache_();
+            } catch (_) {
+                /* ignore */
+            }
             res.json({ ok: true, settings });
         } catch (err) {
             logStoreError_(err, "settings put");

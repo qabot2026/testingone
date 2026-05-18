@@ -1111,7 +1111,33 @@
         }
     }
 
-    async function selectConversation(c) {
+    function mergeConversationAfterRefresh_(picked, refreshed) {
+        if (!refreshed || !refreshed.conversation) {
+            return picked;
+        }
+        const r = refreshed.conversation;
+        if (!picked || picked.status !== "active") {
+            return r;
+        }
+        if (r.status === "active") {
+            return r;
+        }
+        return {
+            ...r,
+            status: "active",
+            humanMode: "human",
+            aiEnabled: false,
+            assignedAgentEmail: picked.assignedAgentEmail || r.assignedAgentEmail,
+            acceptedByEmail: picked.acceptedByEmail || r.acceptedByEmail,
+            acceptedAt: picked.acceptedAt || r.acceptedAt
+        };
+    }
+
+    async function selectConversation(c, opts) {
+        if (!c || !c.id) {
+            throw new Error("Invalid conversation");
+        }
+        const skipRefresh = opts && opts.skipRefresh === true;
         selectedId = c.id;
         selectedConv = c;
         lastMessageIso = "";
@@ -1122,12 +1148,16 @@
 
         applyConversationUi_(c);
 
-        const refreshed = await refreshSelectedConversation_();
-        if (refreshed && refreshed.conversation) {
-            applyConversationUi_(refreshed.conversation);
-        }
-        if (refreshed && refreshed.visitor) {
-            renderContextPanel(selectedConv, refreshed.visitor);
+        if (!skipRefresh) {
+            const refreshed = await refreshSelectedConversation_();
+            const merged = mergeConversationAfterRefresh_(c, refreshed);
+            selectedConv = merged;
+            applyConversationUi_(merged);
+            if (refreshed && refreshed.visitor) {
+                renderContextPanel(selectedConv, refreshed.visitor);
+            } else {
+                loadContext(c.id);
+            }
         } else {
             loadContext(c.id);
         }
@@ -1192,7 +1222,11 @@
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ conversationId: selectedId })
             });
-            await selectConversation(data.conversation);
+            if (!data || !data.conversation || !data.conversation.id) {
+                throw new Error("Accept failed — no conversation returned from server");
+            }
+            await selectConversation(data.conversation, { skipRefresh: true });
+            loadInbox(true);
             if (sendBtn) sendBtn.disabled = false;
             if (claimHint) {
                 claimHint.classList.remove("claim-hint-error");

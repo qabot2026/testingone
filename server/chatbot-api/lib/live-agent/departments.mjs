@@ -317,12 +317,6 @@ export async function saveLiveAgentSettings_(patch) {
         updatedAt: admin.firestore.FieldValue.serverTimestamp()
     };
     await settingsRef_().set(next, { merge: true });
-    try {
-        const { clearInboxSettingsCache_ } = await import("./store.mjs");
-        clearInboxSettingsCache_();
-    } catch (_) {
-        /* ignore */
-    }
     return getLiveAgentSettings_();
 }
 
