@@ -13889,6 +13889,8 @@ function setLiveAgentHandoffActive_(on) {
         liveAgentHumanChatActive = false;
         stopLiveAgentPoll_();
         liveAgentMessagesSinceIso = "";
+        liveAgentCachedHumanMode = "";
+        liveAgentCachedAiEnabled = true;
         liveAgentSeenMessageIds_.clear();
         liveAgentLastVisitorSendKey_ = "";
         liveAgentLastVisitorSendAt_ = 0;
@@ -13903,9 +13905,26 @@ function liveAgentHumanChatActive_() {
     return liveAgentHumanChatActive === true;
 }
 
-/** Visitor messages go to agent when handoff is on and chat is active (flag or last known status). */
-function liveAgentVisitorToAgentInbox_() {
+/** Agent re-enabled chatbot on an active chat (visitor gets Dialogflow again; not while waiting in queue). */
+function liveAgentCoPilotAiEnabled_() {
     if (!liveAgentHandoffIsActive_()) {
+        return false;
+    }
+    if (liveAgentCachedConvStatus !== "active") {
+        return false;
+    }
+    if (liveAgentCachedHumanMode === "ai") {
+        return true;
+    }
+    return liveAgentCachedAiEnabled === true;
+}
+
+/** Visitor messages go to agent inbox only during active human chat (not waiting, not AI co-pilot). */
+function liveAgentVisitorToAgentInbox_() {
+    if (!liveAgentHandoffIsActive_() || liveAgentCoPilotAiEnabled_()) {
+        return false;
+    }
+    if (liveAgentCachedConvStatus === "waiting") {
         return false;
     }
     if (liveAgentHumanChatActive_()) {
@@ -13943,9 +13962,12 @@ function liveAgentIsBoilerplateHandoffPhrase_(text) {
     return /^(request|speak|talk|connect|need|want|get)\s+(to\s+)?(a\s+)?(human\s+)?agent$/.test(n);
 }
 
-/** Dialogflow may reply only while visitor is waiting in queue — not during active agent chat. */
+/** Dialogflow when waiting in queue, or when agent turned chatbot back on (co-pilot). */
 function liveAgentAllowDialogflowForUserText_() {
     if (!liveAgentHandoffIsActive_()) {
+        return true;
+    }
+    if (liveAgentCoPilotAiEnabled_()) {
         return true;
     }
     if (liveAgentHumanChatActive_()) {
@@ -14328,7 +14350,13 @@ async function liveAgentPollTick_(dfMessenger) {
         const conv = stData.conversation;
         const status = conv && conv.status ? String(conv.status) : "";
         const humanMode = conv && conv.humanMode ? String(conv.humanMode) : "";
+        const aiEnabled =
+            conv && typeof conv.aiEnabled === "boolean"
+                ? conv.aiEnabled
+                : stData.aiEnabled !== false;
         liveAgentCachedConvStatus = status;
+        liveAgentCachedHumanMode = humanMode;
+        liveAgentCachedAiEnabled = aiEnabled;
         if (Array.isArray(stData.agentProfiles)) {
             liveAgentCacheAgentProfiles_(stData.agentProfiles);
         }
@@ -14349,10 +14377,13 @@ async function liveAgentPollTick_(dfMessenger) {
             return;
         }
 
+        const copilotAi =
+            status === "active" && (humanMode === "ai" || aiEnabled === true);
         const agentAccepted =
-            status === "active" ||
-            Boolean(stData.agentConnected) ||
-            (status === "active" && !!(conv && conv.assignedAgentEmail));
+            !copilotAi &&
+            (status === "active" ||
+                Boolean(stData.agentConnected) ||
+                !!(conv && conv.assignedAgentEmail));
         const wasHuman = liveAgentHumanChatActive_();
         setLiveAgentHumanChatActive_(agentAccepted);
         if (agentAccepted && !wasHuman) {
@@ -14519,8 +14550,14 @@ function liveAgentApplyConversationFromApi_(data) {
     }
     const status = String(conv.status);
     liveAgentCachedConvStatus = status;
+    if (conv.humanMode) {
+        liveAgentCachedHumanMode = String(conv.humanMode);
+    }
+    if (typeof conv.aiEnabled === "boolean") {
+        liveAgentCachedAiEnabled = conv.aiEnabled;
+    }
     if (status === "active") {
-        setLiveAgentHumanChatActive_(true);
+        setLiveAgentHumanChatActive_(!liveAgentCoPilotAiEnabled_());
     } else if (status === "waiting") {
         setLiveAgentHumanChatActive_(false);
     }

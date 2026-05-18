@@ -518,9 +518,11 @@ export function mountLiveAgentRoutes(app) {
 
     router.post("/conversations/:id/mode", requireLiveAgentSession_(), async (req, res) => {
         setNoCache_(res);
-        const conversationId = safeClientSessionId_(req.params && req.params.id);
-        if (!conversationId) {
-            jsonError_(res, 400, "Invalid conversation id");
+        let conversationId = "";
+        try {
+            conversationId = resolveConversationId_(req.params && req.params.id);
+        } catch (idErr) {
+            jsonError_(res, 400, idErr.message || "Invalid conversation id");
             return;
         }
         const body = req.body && typeof req.body === "object" ? req.body : {};

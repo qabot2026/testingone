@@ -950,6 +950,10 @@
 
     async function setMode_(patch) {
         if (!selectedId) return;
+        const busy = [enableChatbotBtn, takeHumanBtn].filter(Boolean);
+        busy.forEach((b) => {
+            b.disabled = true;
+        });
         try {
             const data = await apiFetch(
                 `${API}/conversations/${encodeURIComponent(selectedId)}/mode`,
@@ -959,11 +963,23 @@
                     body: JSON.stringify(patch)
                 }
             );
+            if (!data || !data.conversation) {
+                throw new Error("Mode update failed — no conversation returned");
+            }
             selectedConv = data.conversation;
-            renderContextPanel(data.conversation, null);
-            loadContext(selectedId);
+            applyConversationUi_(data.conversation);
+            renderChatActionsBar_(data.conversation);
+            await loadContext(selectedId);
         } catch (e) {
             alert(e.message || "Could not update mode");
+            if (selectedConv) {
+                applyConversationUi_(selectedConv);
+                renderChatActionsBar_(selectedConv);
+            }
+        } finally {
+            if (selectedConv) {
+                renderChatActionsBar_(selectedConv);
+            }
         }
     }
 
