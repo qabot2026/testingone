@@ -389,9 +389,11 @@ export function mountLiveAgentRoutes(app) {
         }
         try {
             const since = trim_(req.query && req.query.since);
+            const limitRaw = Number(req.query && req.query.limit);
             const messages = await listMessages_({
                 conversationId,
                 sinceIso: since || undefined,
+                limit: Number.isFinite(limitRaw) ? limitRaw : undefined,
                 markReadFor: "agent"
             });
             res.json({ ok: true, messages });
@@ -651,9 +653,11 @@ export function mountLiveAgentRoutes(app) {
         }
         try {
             const since = trim_(req.query && req.query.since);
+            const limitRaw = Number(req.query && req.query.limit);
             const messages = await listMessages_({
                 conversationId: clientSessionId,
                 sinceIso: since || undefined,
+                limit: Number.isFinite(limitRaw) ? limitRaw : undefined,
                 markReadFor: "visitor"
             });
             const { getLiveAgentSettings_ } = await import("./departments.mjs");

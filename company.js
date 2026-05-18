@@ -114,6 +114,20 @@ let liveAgentPollTimerId = 0;
 let liveAgentMessagesSinceIso = "";
 /** @type {Set<string>} */
 const liveAgentSeenMessageIds_ = new Set();
+
+function liveAgentRememberSeenMessageId_(id) {
+    if (!id) {
+        return;
+    }
+    liveAgentSeenMessageIds_.add(id);
+    if (liveAgentSeenMessageIds_.size > 400) {
+        const keep = [...liveAgentSeenMessageIds_].slice(-200);
+        liveAgentSeenMessageIds_.clear();
+        for (let i = 0; i < keep.length; i += 1) {
+            liveAgentSeenMessageIds_.add(keep[i]);
+        }
+    }
+}
 /** POST JSON: visitor CSAT / helpful → Firestore `chat_feedback` (optional CHAT_FEEDBACK_SECRET). */
 const CHAT_FEEDBACK_ENDPOINT = "/chat-feedback";
 /** Caps how long the Submit button waits for the API before aborting (Sheets/Firestore latency). */
@@ -14068,19 +14082,6 @@ function liveAgentTryRouteVisitorText_(text, dfMessenger, opts) {
     if (!liveAgentShouldPostVisitorToAgent_(t)) {
         return false;
     }
-    const dedupeKey = liveAgentVisitorSendDedupeKey_(t);
-    const now = Date.now();
-    if (
-        dedupeKey &&
-        dedupeKey === liveAgentLastVisitorSendKey_ &&
-        now - liveAgentLastVisitorSendAt_ < 800
-    ) {
-        return true;
-    }
-    if (dedupeKey) {
-        liveAgentLastVisitorSendKey_ = dedupeKey;
-        liveAgentLastVisitorSendAt_ = now;
-    }
     const renderBubble = !opts || opts.renderBubble !== false;
     void liveAgentSendVisitorMessage_(dfMessenger || activeDfMessenger, t, renderBubble);
     return true;
@@ -14416,12 +14417,9 @@ async function liveAgentPollTick_(dfMessenger) {
             setLiveAgentHandoffActive_(false);
             return;
         }
-        let msgUrl =
-            "/api/live-agent/messages?clientSessionId=" + encodeURIComponent(sid);
-        if (liveAgentMessagesSinceIso) {
-            msgUrl += "&since=" + encodeURIComponent(liveAgentMessagesSinceIso);
-        }
-        const msgEndpoint = getApiEndpoint(msgUrl);
+        const msgEndpoint = getApiEndpoint(
+            "/api/live-agent/messages?clientSessionId=" + encodeURIComponent(sid) + "&limit=80"
+        );
         if (!msgEndpoint) {
             return;
         }
@@ -14440,10 +14438,7 @@ async function liveAgentPollTick_(dfMessenger) {
             if (!m || !m.id || liveAgentSeenMessageIds_.has(m.id)) {
                 continue;
             }
-            liveAgentSeenMessageIds_.add(m.id);
-            if (m.createdAt) {
-                liveAgentMessagesSinceIso = m.createdAt;
-            }
+            liveAgentRememberSeenMessageId_(m.id);
             const role = typeof m.role === "string" ? m.role.toLowerCase() : "";
             if (role === "visitor") {
                 continue;

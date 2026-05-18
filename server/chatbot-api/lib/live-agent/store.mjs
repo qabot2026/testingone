@@ -696,20 +696,6 @@ export async function appendMessage_({
         if (cur.status === "closed") throw new Error("Conversation is closed");
 
         const roleNorm = trim_(role).toLowerCase();
-        if (roleNorm === "visitor") {
-            const prevPreview = trim_(cur.lastMessagePreview);
-            if (prevPreview === body && cur.lastMessageAt) {
-                const prevAt =
-                    typeof cur.lastMessageAt.toDate === "function"
-                        ? cur.lastMessageAt.toDate().getTime()
-                        : cur.lastMessageAt instanceof Date
-                          ? cur.lastMessageAt.getTime()
-                          : 0;
-                if (prevAt && Date.now() - prevAt < 1200) {
-                    throw new Error("Duplicate visitor message");
-                }
-            }
-        }
 
         /** @type {Record<string, unknown>} */
         const msgData = {
@@ -781,32 +767,38 @@ export async function listMessages_({ conversationId, sinceIso, limit, markReadF
     const id = safeConversationId_(conversationId);
     const db = firestoreDb_();
     const convRef = db.collection(conversationsCollection_()).doc(id);
-    const lim = Math.min(Math.max(limit || 100, 1), 200);
+    const lim = Math.min(Math.max(limit || 80, 1), 200);
 
     let messages = [];
     const sinceMs = sinceIso ? new Date(sinceIso).getTime() : NaN;
     const useSince = Number.isFinite(sinceMs);
+    /** Overlap so equal-timestamp / index fallback never drops the tail of the thread. */
+    const sinceCutoff = useSince ? sinceMs - 3000 : 0;
 
     try {
-        let q = convRef.collection("messages").orderBy("createdAt", "asc");
-        if (useSince) {
-            q = convRef
-                .collection("messages")
-                .where("createdAt", ">", new Date(sinceMs))
-                .orderBy("createdAt", "asc");
-        }
-        const snap = await q.limit(lim).get();
-        messages = snap.docs.map((doc) => serializeMessage_(doc.id, doc.data()));
+        const snap = await convRef
+            .collection("messages")
+            .orderBy("createdAt", "desc")
+            .limit(lim)
+            .get();
+        messages = snap.docs.map((doc) => serializeMessage_(doc.id, doc.data())).reverse();
     } catch (queryErr) {
-        console.warn(LOG_TAG, "messages query fallback:", queryErr.message || queryErr);
-        const snap = await convRef.collection("messages").orderBy("createdAt", "asc").limit(lim).get();
-        messages = snap.docs.map((doc) => serializeMessage_(doc.id, doc.data()));
-        if (useSince) {
-            messages = messages.filter((m) => {
-                const t = m.createdAt ? new Date(m.createdAt).getTime() : 0;
-                return t >= sinceMs;
+        console.warn(LOG_TAG, "messages list fallback:", queryErr.message || queryErr);
+        const snap = await convRef.collection("messages").limit(lim).get();
+        messages = snap.docs
+            .map((doc) => serializeMessage_(doc.id, doc.data()))
+            .sort((a, b) => {
+                const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+                const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+                return ta - tb;
             });
-        }
+    }
+
+    if (useSince) {
+        messages = messages.filter((m) => {
+            const t = m.createdAt ? new Date(m.createdAt).getTime() : 0;
+            return !t || t > sinceCutoff;
+        });
     }
 
     if (markReadFor === "agent") {

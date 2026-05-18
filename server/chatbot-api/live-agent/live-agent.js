@@ -71,6 +71,7 @@
     let inboxInFlight = false;
     let messagesInFlight = false;
     let messagesPollPending = false;
+    let messagePollsSinceFullSync = 0;
     let lastWaitingCount = 0;
     let notificationsOk = false;
     let deskSettings = null;
@@ -1247,24 +1248,44 @@
         loadMessages(c.id);
     }
 
-    async function loadMessages(conversationId, quiet) {
+    async function loadMessages(conversationId, quiet, forceFull) {
         if (messagesInFlight) {
             messagesPollPending = true;
             return;
         }
         messagesInFlight = true;
+        const useFull = forceFull === true || messagePollsSinceFullSync >= 12;
+        if (useFull) {
+            messagePollsSinceFullSync = 0;
+        } else {
+            messagePollsSinceFullSync += 1;
+        }
         try {
-            const q = lastMessageIso ? "?since=" + encodeURIComponent(lastMessageIso) : "";
+            const q =
+                !useFull && lastMessageIso
+                    ? "?since=" + encodeURIComponent(lastMessageIso) + "&limit=80"
+                    : "?limit=80";
             const data = await apiFetch(
                 `${API}/conversations/${encodeURIComponent(conversationId)}/messages${q}`
             );
             const messages = data.messages || [];
             if (!messages.length && quiet) return;
+            let maxIso = lastMessageIso;
             for (const m of messages) {
-                if (document.querySelector('[data-msg-id="' + m.id + '"]')) continue;
+                if (document.querySelector('[data-msg-id="' + m.id + '"]')) {
+                    if (m.createdAt && (!maxIso || m.createdAt > maxIso)) {
+                        maxIso = m.createdAt;
+                    }
+                    continue;
+                }
                 if (isStaleEndedSystemMsg_(m, selectedConv)) continue;
                 appendMessageEl(m);
-                if (m.createdAt) lastMessageIso = m.createdAt;
+                if (m.createdAt && (!maxIso || m.createdAt > maxIso)) {
+                    maxIso = m.createdAt;
+                }
+            }
+            if (maxIso) {
+                lastMessageIso = maxIso;
             }
             messageList.scrollTop = messageList.scrollHeight;
         } catch (e) {
@@ -1276,6 +1297,10 @@
             }
         } finally {
             messagesInFlight = false;
+            if (messagesPollPending) {
+                messagesPollPending = false;
+                void loadMessages(conversationId, true);
+            }
         }
     }
 
