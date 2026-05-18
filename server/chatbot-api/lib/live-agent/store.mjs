@@ -238,6 +238,23 @@ export async function getConversation_(conversationId) {
     return serializeConversation_(id, snap.data());
 }
 
+let inboxSettingsCache_ = null;
+let inboxSettingsCacheAt_ = 0;
+
+async function inboxDeskSettings_(skipEscalation) {
+    const now = Date.now();
+    if (skipEscalation && inboxSettingsCache_ && now - inboxSettingsCacheAt_ < 90000) {
+        return inboxSettingsCache_;
+    }
+    const { getLiveAgentSettings_ } = await import("./departments.mjs");
+    const deskSettings = await getLiveAgentSettings_();
+    if (skipEscalation) {
+        inboxSettingsCache_ = deskSettings;
+        inboxSettingsCacheAt_ = now;
+    }
+    return deskSettings;
+}
+
 export async function listInbox_({ status, agentEmail, limit, skipEscalation }) {
     const db = firestoreDb_();
     const col = db.collection(conversationsCollection_());
@@ -246,7 +263,7 @@ export async function listInbox_({ status, agentEmail, limit, skipEscalation }) 
     const email = trim_(agentEmail).toLowerCase();
 
     // Single-field orderBy avoids composite Firestore indexes for MVP.
-    const fetchN = Math.min(lim * 4, 200);
+    const fetchN = skipEscalation ? Math.min(lim * 2, 80) : Math.min(lim * 4, 200);
     let snap;
     try {
         snap = await col.orderBy("lastMessageAt", "desc").limit(fetchN).get();
@@ -297,8 +314,7 @@ export async function listInbox_({ status, agentEmail, limit, skipEscalation }) 
         rows = rows.filter((r) => r.status !== "closed");
     }
 
-    const { getLiveAgentSettings_ } = await import("./departments.mjs");
-    const deskSettings = await getLiveAgentSettings_();
+    const deskSettings = await inboxDeskSettings_(Boolean(skipEscalation));
     if (deskSettings.general.sortChatsByLastMessage) {
         rows.sort((a, b) =>
             String(b.lastMessageAt || b.requestedAt || "").localeCompare(
@@ -344,8 +360,7 @@ export async function claimConversation_({ conversationId, agentEmail }) {
         );
     }
 
-    const { getLiveAgentSettings_ } = await import("./departments.mjs");
-    const settings = await getLiveAgentSettings_();
+    const settings = await inboxDeskSettings_(true);
     const max = settings.routing.maxConcurrentChats || 2;
     const activeCount = await countActiveConversationsForAgent_(email);
     if (activeCount >= max) {
@@ -385,39 +400,42 @@ export async function claimConversation_({ conversationId, agentEmail }) {
         });
     });
 
-    try {
-        await appendMessage_({
-            conversationId: id,
-            role: "system",
-            text: `Agent ${email} accepted the chat.`,
-            senderEmail: email,
-            bumpUnread: { agent: 0, visitor: 1 }
-        });
-    } catch (msgErr) {
-        console.warn(LOG_TAG, "accept system message:", msgErr.message || msgErr);
-    }
-
     const snap = await ref.get();
     const out = serializeConversation_(id, snap.data());
-    try {
-        const { bumpAgentStats_, touchAgentPresence_ } = await import("./agents.mjs");
-        await bumpAgentStats_({
-            agentEmail: email,
-            kind: "accept",
-            conversationId: id,
-            visitorName: out.visitorName,
-            departmentName: out.departmentName
-        });
-        await touchAgentPresence_({ agentEmail: email });
-    } catch (err) {
-        console.warn(LOG_TAG, "agent stats on accept:", err.message || err);
-    }
-    try {
-        const { syncLiveAgentToSheet_ } = await import("./sheet-sync.mjs");
-        await syncLiveAgentToSheet_(id);
-    } catch (_) {
-        /* non-fatal */
-    }
+
+    void (async () => {
+        try {
+            await appendMessage_({
+                conversationId: id,
+                role: "system",
+                text: `Agent ${email} accepted the chat.`,
+                senderEmail: email,
+                bumpUnread: { agent: 0, visitor: 1 }
+            });
+        } catch (msgErr) {
+            console.warn(LOG_TAG, "accept system message:", msgErr.message || msgErr);
+        }
+        try {
+            const { bumpAgentStats_, touchAgentPresence_ } = await import("./agents.mjs");
+            await bumpAgentStats_({
+                agentEmail: email,
+                kind: "accept",
+                conversationId: id,
+                visitorName: out.visitorName,
+                departmentName: out.departmentName
+            });
+            await touchAgentPresence_({ agentEmail: email });
+        } catch (err) {
+            console.warn(LOG_TAG, "agent stats on accept:", err.message || err);
+        }
+        try {
+            const { syncLiveAgentToSheet_ } = await import("./sheet-sync.mjs");
+            await syncLiveAgentToSheet_(id);
+        } catch (_) {
+            /* non-fatal */
+        }
+    })();
+
     return out;
 }
 
@@ -606,6 +624,22 @@ export async function appendMessage_({
         const cur = snap.data() || {};
         if (cur.status === "closed") throw new Error("Conversation is closed");
 
+        const roleNorm = trim_(role).toLowerCase();
+        if (roleNorm === "visitor") {
+            const prevPreview = trim_(cur.lastMessagePreview);
+            if (prevPreview === body && cur.lastMessageAt) {
+                const prevAt =
+                    typeof cur.lastMessageAt.toDate === "function"
+                        ? cur.lastMessageAt.toDate().getTime()
+                        : cur.lastMessageAt instanceof Date
+                          ? cur.lastMessageAt.getTime()
+                          : 0;
+                if (prevAt && Date.now() - prevAt < 4000) {
+                    throw new Error("Duplicate visitor message");
+                }
+            }
+        }
+
         tx.set(msgRef, {
             role: role || "visitor",
             text: body,
@@ -620,7 +654,6 @@ export async function appendMessage_({
             agentBump > 0
                 ? Math.min((cur.unreadForAgent || 0) + agentBump, 99)
                 : cur.unreadForAgent || 0;
-        const roleNorm = trim_(role).toLowerCase();
         /** @type {Record<string, unknown>} */
         const convPatch = {
             lastMessageAt: now,

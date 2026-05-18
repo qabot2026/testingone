@@ -87,8 +87,19 @@ export async function maybeQueueLiveAgentFromClientContext_(clientContext) {
     }
 
     const visitorName = scalar_(ctx.name) || scalar_(ctx.visitor_name) || "Visitor";
-    const initialMessage =
+    let initialMessage =
         scalar_(ctx.live_agent_initial_message) || lastUserQueryLine_(ctx) || "";
+    const imNorm = initialMessage.toLowerCase().replace(/\s+/g, " ").trim();
+    const handoffOnly =
+        !imNorm ||
+        imNorm === "human agent" ||
+        imNorm === "live agent" ||
+        imNorm === "request live agent" ||
+        imNorm === "request human agent" ||
+        imNorm === "speak to agent";
+    if (handoffOnly) {
+        initialMessage = "";
+    }
     const departmentId = scalar_(sp.department_id) || scalar_(sp.departmentId) || "";
 
     try {

@@ -70,12 +70,10 @@
     let lastWaitingCount = 0;
     let notificationsOk = false;
     let deskSettings = null;
-    const POLL_INTERVAL_MS = 12000;
-    const POLL_MESSAGES_ACTIVE_MS = 4000;
-    const PRESENCE_INTERVAL_MS = 120000;
+    const POLL_INTERVAL_MS = 20000;
+    const PRESENCE_INTERVAL_MS = 180000;
     let agentsPanelLoaded = false;
     let presenceTimer = null;
-    let messagePollTimer = null;
 
     function loadStoredAuth_() {
         try {
@@ -185,10 +183,6 @@
         if (pollTimer) {
             clearInterval(pollTimer);
             pollTimer = null;
-        }
-        if (messagePollTimer) {
-            clearInterval(messagePollTimer);
-            messagePollTimer = null;
         }
     }
 
@@ -304,29 +298,12 @@
         const tick = () => {
             if (document.hidden) return;
             loadInbox(true);
-            if (
-                selectedId &&
-                selectedConv &&
-                (selectedConv.status === "waiting" || selectedConv.status === "active")
-            ) {
+            if (selectedId && selectedConv && selectedConv.status === "active") {
                 loadMessages(selectedId, true);
             }
         };
         tick();
         pollTimer = setInterval(tick, POLL_INTERVAL_MS);
-        if (messagePollTimer) {
-            clearInterval(messagePollTimer);
-        }
-        messagePollTimer = setInterval(() => {
-            if (document.hidden) return;
-            if (
-                selectedId &&
-                selectedConv &&
-                selectedConv.status === "active"
-            ) {
-                loadMessages(selectedId, true);
-            }
-        }, POLL_MESSAGES_ACTIVE_MS);
     }
 
     document.addEventListener("visibilitychange", () => {
@@ -566,7 +543,6 @@
     if (myAgentStatus) {
         myAgentStatus.addEventListener("change", () => {
             postPresence_(myAgentStatus.value);
-            loadAgentsPanel_();
         });
     }
     inboxFilter.addEventListener("change", () => loadInbox());
@@ -1219,7 +1195,6 @@
                         body: JSON.stringify({ conversationId: selectedId })
                     });
                     await selectConversation(data.conversation);
-                    loadAgentsPanel_();
                     if (claimHint) claimHint.classList.remove("claim-hint-error");
                 } catch (e2) {
                     const m2 = e2.message || "Could not accept after reopen";

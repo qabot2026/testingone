@@ -659,13 +659,23 @@ export function mountLiveAgentRoutes(app) {
                 jsonError_(res, 400, "No active human chat");
                 return;
             }
-            const message = await appendMessage_({
-                conversationId: clientSessionId,
-                role: "visitor",
-                text,
-                senderEmail: "",
-                bumpUnread: { agent: 1, visitor: 0 }
-            });
+            let message;
+            try {
+                message = await appendMessage_({
+                    conversationId: clientSessionId,
+                    role: "visitor",
+                    text,
+                    senderEmail: "",
+                    bumpUnread: { agent: 1, visitor: 0 }
+                });
+            } catch (appendErr) {
+                if (/duplicate visitor message/i.test(appendErr.message || "")) {
+                    const conversation = await getConversation_(clientSessionId);
+                    res.json({ ok: true, deduped: true, conversation });
+                    return;
+                }
+                throw appendErr;
+            }
             const conversation = await getConversation_(clientSessionId);
             res.json({ ok: true, message, conversation });
         } catch (err) {
