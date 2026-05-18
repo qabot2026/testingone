@@ -64,6 +64,9 @@
         <p class="pane-title">Requests</p>
         <div class="inbox-toolbar">
           <p id="inboxStatus" class="inbox-status muted">Loading…</p>
+          <button type="button" class="btn ghost small" id="testVisitorBtn" title="One test handoff (test-my-demo). Safer than pasting fetch in the console.">
+            Test visitor
+          </button>
           <button type="button" class="btn ghost small" id="clearTestQueueBtn" hidden title="Close waiting chats whose session id starts with test-">
             Clear test chats
           </button>
@@ -75,6 +78,7 @@
         <div id="chatEmpty" class="chat-empty">
           <p>Select a request on the left, then <strong>Accept chat</strong> to reply.</p>
           <p class="muted small">New requests use round-robin by department (see Settings).</p>
+          <p class="muted small">To simulate a visitor, use <strong>Test visitor</strong> above — do not paste <code>fetch</code> in the console (Chrome often runs it many times).</p>
         </div>
 
         <div id="chatActive" class="chat-active hidden">

@@ -59,6 +59,7 @@ import {
     saveLiveAgentSettings_,
     updateDepartment_
 } from "./departments.mjs";
+import { cacheVisitorRequest_, getCachedVisitorRequest_ } from "./request-dedupe.mjs";
 
 const LOG_TAG = "[live-agent]";
 
@@ -467,6 +468,11 @@ export function mountLiveAgentRoutes(app) {
             return;
         }
         try {
+            const cached = getCachedVisitorRequest_(clientSessionId);
+            if (cached) {
+                res.json({ ok: true, ...cached, deduped: true });
+                return;
+            }
             const result = await requestHumanAgent_({
                 conversationId: clientSessionId,
                 botid: req.body && req.body.botid,
@@ -474,7 +480,9 @@ export function mountLiveAgentRoutes(app) {
                 initialMessage: req.body && req.body.initialMessage,
                 departmentId: req.body && req.body.departmentId
             });
-            res.json({ ok: true, ...result });
+            const payload = { ...result, deduped: false };
+            cacheVisitorRequest_(clientSessionId, payload);
+            res.json({ ok: true, ...payload });
         } catch (err) {
             logStoreError_(err, "request");
             jsonError_(res, 500, err.message || "Request failed");

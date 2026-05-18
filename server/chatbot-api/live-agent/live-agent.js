@@ -22,6 +22,7 @@
     const logoutBtn = $("logoutBtn");
     const inboxStatus = $("inboxStatus");
     const clearTestQueueBtn = $("clearTestQueueBtn");
+    const testVisitorBtn = $("testVisitorBtn");
     const inboxList = $("inboxList");
     const chatEmpty = $("chatEmpty");
     const chatActive = $("chatActive");
@@ -336,6 +337,67 @@
             clearTestQueue_().catch((e) => alert(e.message || "Clear failed"));
         });
     }
+
+    let testVisitorInFlight = null;
+    const TEST_VISITOR_SESSION = "test-my-demo";
+
+    async function sendTestVisitorRequest_() {
+        if (testVisitorInFlight) {
+            return testVisitorInFlight;
+        }
+        testVisitorInFlight = (async () => {
+            const res = await fetch(API + "/request", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    clientSessionId: TEST_VISITOR_SESSION,
+                    visitorName: "Test User",
+                    initialMessage: "Need a human"
+                })
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                throw new Error((data && data.error) || res.statusText || "Test request failed");
+            }
+            await loadInbox(true);
+            return data;
+        })();
+        try {
+            return await testVisitorInFlight;
+        } finally {
+            window.setTimeout(() => {
+                testVisitorInFlight = null;
+            }, 4000);
+        }
+    }
+
+    if (testVisitorBtn) {
+        testVisitorBtn.addEventListener("click", () => {
+            testVisitorBtn.disabled = true;
+            inboxStatus.textContent = "Sending test visitor…";
+            sendTestVisitorRequest_()
+                .then((data) => {
+                    const c = data && data.conversation;
+                    const id = c && c.id ? c.id : TEST_VISITOR_SESSION;
+                    if (data && data.alreadyActive) {
+                        inboxStatus.textContent =
+                            "Test chat already in queue (" + id + "). Select it on the left.";
+                    } else if (data && data.deduped) {
+                        inboxStatus.textContent = "Test request ignored (duplicate within a few seconds).";
+                    } else {
+                        inboxStatus.textContent = "Test visitor queued (" + id + ").";
+                    }
+                })
+                .catch((e) => {
+                    inboxStatus.textContent = e.message || "Test request failed";
+                })
+                .finally(() => {
+                    testVisitorBtn.disabled = false;
+                });
+        });
+    }
+
+    window.liveAgentTestRequest = sendTestVisitorRequest_;
 
     function formatTime(iso) {
         if (!iso) return "";
