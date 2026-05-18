@@ -389,36 +389,36 @@
       padding-left: 6px;
       padding-right: 6px;
     }
-    /** Narrow columns (matches sheet headers: Email, Mobile, Source URL, City, Document) */
+    /** Narrow columns (Email, Mobile, Source URL, IP Address, Document) */
     table.sheet thead th.col-w-email,
     table.sheet tbody td.col-w-email {
-      width: calc(25ch - 10px);
-      min-width: calc(25ch - 10px);
-      max-width: calc(25ch - 10px);
+      width: calc(25ch - 20px);
+      min-width: calc(25ch - 20px);
+      max-width: calc(25ch - 20px);
     }
     table.sheet thead th.col-w-mobile,
     table.sheet tbody td.col-w-mobile {
-      width: calc(15ch - 10px);
-      min-width: calc(15ch - 10px);
-      max-width: calc(15ch - 10px);
+      width: calc(15ch - 20px);
+      min-width: calc(15ch - 20px);
+      max-width: calc(15ch - 20px);
     }
-    table.sheet thead th.col-w-city,
-    table.sheet tbody td.col-w-city {
-      width: calc(12ch - 10px);
-      min-width: calc(12ch - 10px);
-      max-width: calc(12ch - 10px);
+    table.sheet thead th.col-w-ipaddress,
+    table.sheet tbody td.col-w-ipaddress {
+      width: calc(16ch - 20px);
+      min-width: calc(16ch - 20px);
+      max-width: calc(16ch - 20px);
     }
     table.sheet thead th.col-w-sourceurl,
     table.sheet tbody td.col-w-sourceurl {
-      min-width: 178px;
-      max-width: 320px;
-      width: 320px;
+      min-width: 128px;
+      max-width: 270px;
+      width: 270px;
     }
     table.sheet thead th.col-w-document,
     table.sheet tbody td.col-w-document {
-      min-width: 56px;
-      max-width: 170px;
-      width: 170px;
+      min-width: 178px;
+      max-width: 320px;
+      width: 320px;
     }
     tbody tr:nth-child(odd) td {
       background: var(--row-odd);
@@ -3032,11 +3032,11 @@
        * App. Booked, App. Date, App. Time, Document
        */
       var SHEET_COL_WIDTH_REDUCE_PX = {
-        email: 10,
-        mobile: 10,
-        sourceurl: 50,
-        city: 10,
-        document: 200
+        email: 20,
+        mobile: 20,
+        sourceurl: 100,
+        ipaddress: 20,
+        document: 50
       };
       var SHEET_COL_BODY_MIN_PX = 228;
       var SHEET_COL_BODY_MAX_PX = 370;
@@ -3064,7 +3064,9 @@
         if (nk === "sourceurl" || nk === "pageurl" || nk === "referrerurl" || nk === "landingurl") {
           return "sourceurl";
         }
-        if (nk === "city") return "city";
+        if (nk === "ipaddress" || nk === "ipadress" || nk === "clientip") {
+          return "ipaddress";
+        }
         if (nk === "document" || nk === "documents" || nk === "filelinks" || nk === "uploads") {
           return "document";
         }
