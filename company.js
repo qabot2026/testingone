@@ -1558,7 +1558,7 @@ const originalTextNodeContent = new Map();
 const originalElementAttributes = new Map();
 const googleTranslationCache = new Map();
 
-const COMPANY_JS_BUILD_TAG = "20260516-01";
+const COMPANY_JS_BUILD_TAG = "20260518-liveagent";
 const COMPANY_DEBUG_QUERY_FLAG = "dfchatDebug";
 let debugMountAttemptSeq = 0;
 let debugBadgeLastRenderAt = 0;
@@ -13975,6 +13975,34 @@ async function requestLiveAgentHandoff_(spec) {
 /**
  * @param {Event} event
  */
+function markLiveAgentRequestedInSession_(initialMessage) {
+    try {
+        const ctx = getClientContext();
+        /** @type {Record<string, unknown>} */
+        const sp =
+            ctx.session_params && typeof ctx.session_params === "object" && !Array.isArray(ctx.session_params)
+                ? { .../** @type {Record<string, unknown>} */ (ctx.session_params) }
+                : {};
+        sp.request_live_agent = "true";
+        persistClientContext({
+            ...ctx,
+            session_params: sp,
+            live_agent_requested: true,
+            live_agent_initial_message:
+                typeof initialMessage === "string" ? initialMessage.trim() : ""
+        });
+        if (activeDfMessenger) {
+            syncDfMessengerSessionParametersFromClientContext(activeDfMessenger);
+        }
+        scheduleSessionQueriesSheetSync_();
+        scheduleSessionTranscriptFirestoreSync_();
+    } catch (e) {
+        if (typeof console !== "undefined" && console.warn) {
+            console.warn("[live-agent] Could not mark session for server sync:", e);
+        }
+    }
+}
+
 function tryRequestLiveAgentFromBotResponse_(event) {
     if (!liveAgentWidgetEnabled_()) {
         return;
@@ -13983,6 +14011,7 @@ function tryRequestLiveAgentFromBotResponse_(event) {
     if (!spec) {
         return;
     }
+    markLiveAgentRequestedInSession_(spec.initialMessage);
     requestLiveAgentHandoff_(spec);
 }
 

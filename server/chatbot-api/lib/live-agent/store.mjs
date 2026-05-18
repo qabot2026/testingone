@@ -26,8 +26,14 @@ function firestoreDb_() {
 }
 
 function safeConversationId_(id) {
-    const s = trim_(id);
-    if (!s || s.length > 128 || !/^[A-Za-z0-9._-]+$/.test(s)) {
+    let s = trim_(id);
+    if (!s) {
+        throw new Error("Invalid conversation id");
+    }
+    if (!/^[A-Za-z0-9._-]+$/.test(s)) {
+        s = s.replace(/[^A-Za-z0-9._-]+/g, "_").replace(/_+/g, "_").replace(/^_|_$/g, "");
+    }
+    if (!s || s.length > 128) {
         throw new Error("Invalid conversation id");
     }
     return s;
@@ -228,7 +234,13 @@ export async function listInbox_({ status, agentEmail, limit }) {
 
     // Single-field orderBy avoids composite Firestore indexes for MVP.
     const fetchN = Math.min(lim * 4, 200);
-    const snap = await col.orderBy("lastMessageAt", "desc").limit(fetchN).get();
+    let snap;
+    try {
+        snap = await col.orderBy("lastMessageAt", "desc").limit(fetchN).get();
+    } catch (orderErr) {
+        console.warn(LOG_TAG, "inbox orderBy fallback:", orderErr.message || orderErr);
+        snap = await col.limit(fetchN).get();
+    }
     let rows = snap.docs.map((doc) => serializeConversation_(doc.id, doc.data()));
 
     if (st === "waiting") {

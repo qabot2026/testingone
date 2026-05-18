@@ -1701,8 +1701,11 @@ app.post("/webhook", express.json({ limit: "512kb" }), async (req, res) => {
 
     try {
         if (liveAgentHandoffTags.has(tag)) {
+            const { cxWebhookParamStr_ } = await import("./lib/live-agent/from-context.mjs");
             const convId =
-                normalizeStr_(params.client_session_id || params.clientSessionId) || sessionId;
+                cxWebhookParamStr_(params, "client_session_id")
+                || cxWebhookParamStr_(params, "clientSessionId")
+                || sessionId;
             const waitMsg =
                 normalizeStr_(params.message) || "Connecting you with an agent. Please wait…";
             if (convId) {
@@ -3149,12 +3152,23 @@ app.post(
             return res.status(400).json({ ok: false, error: "Missing client_session_id in client_context." });
         }
 
+        let liveAgentQueue = { queued: false, reason: "not_checked" };
+        try {
+            const { maybeQueueLiveAgentFromClientContext_ } = await import(
+                "./lib/live-agent/from-context.mjs"
+            );
+            liveAgentQueue = await maybeQueueLiveAgentFromClientContext_(clientContext);
+        } catch (laErr) {
+            liveAgentQueue = { queued: false, reason: laErr.message || String(laErr) };
+        }
+
         if (!clientContextHasUserChatEngagement_(clientContext)) {
             return res.status(200).json({
                 ok: true,
                 message: "No user chat engagement; sync skipped.",
                 skipped: true,
-                reason: "no_user_engagement"
+                reason: "no_user_engagement",
+                live_agent: liveAgentQueue
             });
         }
 
@@ -3282,7 +3296,8 @@ app.post(
             lead_transcript_patched: leadTranscriptPatched,
             firestore_disabled: FIRESTORE_DISABLED,
             chat_transcript_turns: coercedTranscript.length,
-            chat_transcript_json_written: Boolean(chatTranscriptJson)
+            chat_transcript_json_written: Boolean(chatTranscriptJson),
+            live_agent: liveAgentQueue
         });
     }
 );
@@ -3317,13 +3332,24 @@ app.post(
             return res.status(400).json({ ok: false, error: "Missing client_session_id in client_context." });
         }
 
+        let liveAgentQueue = { queued: false, reason: "not_checked" };
+        try {
+            const { maybeQueueLiveAgentFromClientContext_ } = await import(
+                "./lib/live-agent/from-context.mjs"
+            );
+            liveAgentQueue = await maybeQueueLiveAgentFromClientContext_(clientContext);
+        } catch (laErr) {
+            liveAgentQueue = { queued: false, reason: laErr.message || String(laErr) };
+        }
+
         if (!clientContextHasUserChatEngagement_(clientContext)) {
             return res.status(200).json({
                 ok: true,
                 message: "No user chat engagement; transcript not stored.",
                 stored_turns: 0,
                 skipped: true,
-                reason: "no_user_engagement"
+                reason: "no_user_engagement",
+                live_agent: liveAgentQueue
             });
         }
 
@@ -3383,7 +3409,8 @@ app.post(
             stored_turns: ct.length,
             stored_assistant_rows: assistantRows,
             stored_assistant_queries: aq.length,
-            lead_patched: leadPatched
+            lead_patched: leadPatched,
+            live_agent: liveAgentQueue
         });
     }
 );

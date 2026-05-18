@@ -184,9 +184,9 @@ export function mountLiveAgentRoutes(app) {
             const conversations = await listInbox_({
                 status,
                 agentEmail: req.liveAgentSession.agentId,
-                limit: Number.isFinite(limit) ? limit : 50
+                limit: Number.isFinite(limit) ? limit : 80
             });
-            res.json({ ok: true, conversations });
+            res.json({ ok: true, conversations, status, count: conversations.length });
         } catch (err) {
             logStoreError_(err, "inbox");
             jsonError_(res, 500, err.message || "Inbox failed");

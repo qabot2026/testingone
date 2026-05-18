@@ -133,13 +133,33 @@
         stopPolling();
     }
 
+    async function checkLiveAgentBackend_() {
+        try {
+            const h = await fetch("/api/live-agent/health", { credentials: "same-origin" });
+            const data = await h.json().catch(() => ({}));
+            if (!h.ok || !data.firestore_ready) {
+                inboxStatus.textContent =
+                    "Live agent storage not ready on server (check FIREBASE_SERVICE_ACCOUNT_JSON).";
+                return false;
+            }
+            return true;
+        } catch (e) {
+            inboxStatus.textContent = e.message || "Cannot reach live agent API.";
+            return false;
+        }
+    }
+
     function showApp() {
         document.body.classList.add("live-agent-locked");
         loginView.classList.add("hidden");
         appView.classList.remove("hidden");
         agentLabel.textContent = agentId;
         requestNotificationPermission_();
-        loadInbox();
+        checkLiveAgentBackend_().then((ok) => {
+            if (ok) {
+                loadInbox();
+            }
+        });
         startPolling();
     }
 
