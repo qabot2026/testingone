@@ -395,9 +395,10 @@
     /** Column width caps (width: auto) — ch columns narrowed; email/mobile less narrow than before */
     table.sheet thead th.col-w-email,
     table.sheet tbody td.col-w-email {
-      width: auto;
-      min-width: 0;
-      max-width: calc(25ch + 10px);
+      width: calc(25ch + 20px);
+      min-width: calc(25ch + 20px);
+      max-width: calc(25ch + 20px);
+      box-sizing: border-box;
     }
     table.sheet thead th.col-w-mobile,
     table.sheet tbody td.col-w-mobile {
@@ -3059,7 +3060,7 @@
       var SHEET_COL_CH_REDUCE_PX = {
         date: 5,
         time: 10,
-        email: -10,
+        email: -20,
         mobile: 5,
         appdate: 10,
         apptime: 14
@@ -3125,9 +3126,15 @@
               ? "calc(" + ch + "ch - " + cut + "px)"
               : ch + "ch";
         el.style.boxSizing = "border-box";
-        el.style.width = "auto";
-        el.style.minWidth = "0";
-        el.style.maxWidth = cap;
+        if (cut < 0) {
+          el.style.width = cap;
+          el.style.minWidth = cap;
+          el.style.maxWidth = cap;
+        } else {
+          el.style.width = "auto";
+          el.style.minWidth = "0";
+          el.style.maxWidth = cap;
+        }
       }
 
       /** Cap wide body columns; subtract cut from default 370px max (do not force min 228px). */
@@ -3341,9 +3348,15 @@
             cut < 0
               ? "calc(" + sm.wch + "ch + " + -cut + "px)"
               : "calc(" + sm.wch + "ch - " + cut + "px)";
-          el.style.width = "auto";
-          el.style.minWidth = "0";
-          el.style.maxWidth = cap;
+          if (cut < 0) {
+            el.style.width = cap;
+            el.style.minWidth = cap;
+            el.style.maxWidth = cap;
+          } else {
+            el.style.width = "auto";
+            el.style.minWidth = "0";
+            el.style.maxWidth = cap;
+          }
         } else {
           el.style.width = sm.wch + "ch";
           el.style.minWidth = sm.wch + "ch";
