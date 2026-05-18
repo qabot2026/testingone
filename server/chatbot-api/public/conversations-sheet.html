@@ -812,15 +812,26 @@
       min-width: 0;
     }
     .date-filter-block .presets {
-      flex-direction: column;
-      align-items: flex-start;
-      gap: 6px;
+      flex-direction: row;
+      flex-wrap: nowrap;
+      align-items: center;
+      gap: 8px;
       width: 100%;
     }
     .date-filter-block .presets .mini {
-      display: block;
-      width: 100%;
-      margin-bottom: 0;
+      flex: 0 0 auto;
+      width: auto;
+      margin: 0 2px 0 0;
+      white-space: nowrap;
+    }
+    .date-filter-block .presets .preset--clear {
+      margin-left: 4px;
+      color: var(--muted);
+      font-weight: 600;
+    }
+    .date-filter-block .presets .preset--clear:hover:not(:disabled) {
+      color: var(--text);
+      border-color: var(--border);
     }
     .date-fields-row {
       display: flex;
@@ -2213,6 +2224,7 @@
           <button type="button" class="preset" data-preset="today">Today</button>
           <button type="button" class="preset" data-preset="week">This Week</button>
           <button type="button" class="preset" data-preset="month">This Month</button>
+          <button type="button" class="preset preset--clear" data-preset="clear" title="Clear From and To dates">Clear</button>
         </div>
       </div>
     </div>
@@ -4223,16 +4235,22 @@
         return new Date(d.getFullYear(), d.getMonth(), 1);
       }
 
-      function applyDefaultDateRangeThisWeek() {
+      /** Last 4 days + today (5 calendar days, inclusive). */
+      function applyDefaultDateRange5Days() {
         var now = new Date();
-        dateFromEl.value = toYmdLocal(startOfWeekLocal_(now));
-        dateToEl.value = toYmdLocal(now);
+        var today = toYmdLocal(now);
+        var fromD = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 4);
+        dateFromEl.value = toYmdLocal(fromD);
+        dateToEl.value = today;
       }
 
       function applyPresets(which) {
         var now = new Date();
         var today = toYmdLocal(now);
-        if (which === "today") {
+        if (which === "clear") {
+          dateFromEl.value = "";
+          dateToEl.value = "";
+        } else if (which === "today") {
           dateFromEl.value = today;
           dateToEl.value = today;
         } else if (which === "week") {
@@ -5249,7 +5267,7 @@
           load();
         });
       }
-      if (dateFromEl && dateToEl) applyDefaultDateRangeThisWeek();
+      if (dateFromEl && dateToEl) applyDefaultDateRange5Days();
       if (secretEl) {
         secretEl.addEventListener("keydown", function (ev) {
           if (ev.key === "Enter") {
