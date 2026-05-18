@@ -23,6 +23,7 @@
     const inboxStatus = $("inboxStatus");
     const clearTestQueueBtn = $("clearTestQueueBtn");
     const testVisitorBtn = $("testVisitorBtn");
+    const practiceStatus = $("practiceStatus");
     const inboxList = $("inboxList");
     const chatEmpty = $("chatEmpty");
     const chatActive = $("chatActive");
@@ -371,33 +372,52 @@
         }
     }
 
+    function setPracticeStatus_(text, kind) {
+        if (!practiceStatus) return;
+        practiceStatus.textContent = text || "";
+        practiceStatus.classList.remove("ok", "warn", "err");
+        if (kind) practiceStatus.classList.add(kind);
+    }
+
+    async function selectPracticeChatInList_() {
+        const data = await apiFetch(`${API}/inbox?status=all&limit=80`);
+        const hit = (data.conversations || []).find((c) => c.id === TEST_VISITOR_SESSION);
+        if (hit) {
+            await selectConversation(hit);
+            const row = inboxList.querySelector(".inbox-item.selected");
+            if (row) row.scrollIntoView({ block: "nearest" });
+        }
+    }
+
     if (testVisitorBtn) {
         testVisitorBtn.addEventListener("click", () => {
             testVisitorBtn.disabled = true;
-            inboxStatus.textContent = "Sending test visitor…";
+            setPracticeStatus_("Adding practice visitor…", "");
             sendTestVisitorRequest_()
-                .then((data) => {
-                    const c = data && data.conversation;
-                    const id = c && c.id ? c.id : TEST_VISITOR_SESSION;
+                .then(async (data) => {
+                    if (data && data.deduped) {
+                        setPracticeStatus_("Please wait a few seconds, then try again.", "warn");
+                        return;
+                    }
                     if (data && data.alreadyActive) {
-                        inboxStatus.textContent =
-                            "Test chat already in queue (" + id + "). Select it on the left.";
-                    } else if (data && data.deduped) {
-                        inboxStatus.textContent = "Test request ignored (duplicate within a few seconds).";
+                        setPracticeStatus_("Test User is already waiting. Opening that chat…", "ok");
                     } else {
-                        inboxStatus.textContent = "Test visitor queued (" + id + ").";
+                        setPracticeStatus_("Done! Opening Test User — press Accept chat.", "ok");
+                    }
+                    try {
+                        await selectPracticeChatInList_();
+                    } catch (_) {
+                        setPracticeStatus_("Added. Click Test User in the list below.", "ok");
                     }
                 })
                 .catch((e) => {
-                    inboxStatus.textContent = e.message || "Test request failed";
+                    setPracticeStatus_(e.message || "Could not add practice visitor", "err");
                 })
                 .finally(() => {
                     testVisitorBtn.disabled = false;
                 });
         });
     }
-
-    window.liveAgentTestRequest = sendTestVisitorRequest_;
 
     function formatTime(iso) {
         if (!iso) return "";

@@ -231,22 +231,57 @@ body.live-agent-locked {
   flex-shrink: 0;
 }
 
-.inbox-toolbar {
+.practice-panel {
   flex-shrink: 0;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.35rem 0.5rem;
-  padding: 0 1rem 0.5rem;
+  margin: 0 1rem 0.75rem;
+  padding: 0.85rem 1rem;
+  border-radius: 10px;
+  border: 1px solid var(--accent);
+  background: rgba(14, 165, 233, 0.12);
+}
+
+.practice-title {
+  margin: 0 0 0.5rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.practice-steps {
+  margin: 0 0 0.75rem;
+  padding-left: 1.2rem;
+  font-size: 0.85rem;
+  color: var(--text);
+  line-height: 1.45;
+}
+
+.practice-btn {
+  width: 100%;
+  font-size: 1rem;
+  padding: 0.65rem 1rem;
+}
+
+.practice-status {
+  margin: 0.65rem 0 0;
+  font-size: 0.9rem;
+  min-height: 1.25rem;
+}
+
+.practice-status.ok {
+  color: #86efac;
+}
+
+.practice-status.warn {
+  color: #fcd34d;
+}
+
+.practice-status.err {
+  color: #fca5a5;
 }
 
 .inbox-status {
-  padding: 0;
+  padding: 0 1rem 0.5rem;
   margin: 0;
   font-size: 0.85rem;
-  flex: 1;
-  min-width: 8rem;
 }
 
 .inbox-list {

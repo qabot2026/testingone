@@ -61,24 +61,32 @@
 
     <div class="workspace">
       <aside class="inbox-pane" aria-label="Request queue">
-        <p class="pane-title">Requests</p>
-        <div class="inbox-toolbar">
-          <p id="inboxStatus" class="inbox-status muted">Loading…</p>
-          <button type="button" class="btn ghost small" id="testVisitorBtn" title="One test handoff (test-my-demo). Safer than pasting fetch in the console.">
-            Test visitor
+        <p class="pane-title">Visitor requests</p>
+
+        <div class="practice-panel" aria-label="Practice mode">
+          <p class="practice-title">How to try it</p>
+          <ol class="practice-steps">
+            <li>Press <strong>Add practice visitor</strong></li>
+            <li>Click <strong>Test User</strong> in the list</li>
+            <li>Press <strong>Accept chat</strong> and reply</li>
+          </ol>
+          <button type="button" class="btn primary practice-btn" id="testVisitorBtn">
+            Add practice visitor
           </button>
-          <button type="button" class="btn ghost small" id="clearTestQueueBtn" hidden title="Close waiting chats whose session id starts with test-">
-            Clear test chats
+          <p id="practiceStatus" class="practice-status" role="status" aria-live="polite"></p>
+          <button type="button" class="btn ghost small" id="clearTestQueueBtn" hidden>
+            Clear old practice chats
           </button>
         </div>
+
+        <p id="inboxStatus" class="inbox-status muted">Loading…</p>
         <ul id="inboxList" class="inbox-list"></ul>
       </aside>
 
       <main class="chat-pane" aria-label="Active conversation">
         <div id="chatEmpty" class="chat-empty">
-          <p>Select a request on the left, then <strong>Accept chat</strong> to reply.</p>
-          <p class="muted small">New requests use round-robin by department (see Settings).</p>
-          <p class="muted small">To simulate a visitor, use <strong>Test visitor</strong> above — do not paste <code>fetch</code> in the console (Chrome often runs it many times).</p>
+          <p class="chat-empty-lead">Pick a visitor on the left, then press <strong>Accept chat</strong>.</p>
+          <p class="muted small">Use <strong>Add practice visitor</strong> on the left to try without the website chat widget.</p>
         </div>
 
         <div id="chatActive" class="chat-active hidden">
