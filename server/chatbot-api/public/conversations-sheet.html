@@ -392,7 +392,7 @@
       padding-left: 6px;
       padding-right: 6px;
     }
-    /** Column width caps (width: auto) — ch columns narrowed; email/mobile less narrow than before */
+    /** Column width caps (width: auto) â€” ch columns narrowed; email/mobile less narrow than before */
     table.sheet thead th.col-w-email,
     table.sheet tbody td.col-w-email {
       width: calc(25ch + 30px) !important;
@@ -653,38 +653,56 @@
     .sheet-column-filters {
       display: flex;
       flex-wrap: wrap;
-      align-items: flex-end;
-      gap: 10px 14px;
-      margin-bottom: 10px;
-      padding: 12px 14px;
-      border-radius: var(--radius-sm);
-      border: 1px solid rgba(148, 163, 184, 0.45);
-      background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
-      box-shadow: var(--shadow-sm);
+      align-items: center;
+      gap: 6px 10px;
+      margin: 0 0 10px;
+      padding: 0 0 10px;
+      border-bottom: 1px solid rgba(148, 163, 184, 0.35);
     }
-    .sheet-column-filters .tool {
-      flex: 1 1 160px;
-      min-width: 140px;
-      max-width: 320px;
+    .sheet-column-filters__label {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-right: 2px;
+      flex: 0 0 auto;
     }
-    .sheet-column-filters select {
-      width: 100%;
-      margin-top: 4px;
-      padding: 8px 10px;
-      border-radius: 8px;
-      border: 1px solid rgba(148, 163, 184, 0.55);
-      font-size: 13px;
+    .sheet-col-filter-slot {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      flex: 0 1 auto;
+      min-width: 0;
+    }
+    .sheet-col-filter-slot select {
+      width: auto;
+      min-width: 0;
+      max-width: 118px;
+      padding: 3px 6px;
+      border-radius: 6px;
+      border: 1px solid rgba(148, 163, 184, 0.5);
+      font-size: 11px;
+      line-height: 1.25;
       background: #fff;
       color: var(--text);
     }
-    .sheet-column-filters select:disabled {
-      opacity: 0.55;
+    .sheet-col-filter-slot select.col-filter-col {
+      max-width: 96px;
+    }
+    .sheet-col-filter-slot select.col-filter-val {
+      max-width: 108px;
+    }
+    .sheet-col-filter-slot select:disabled {
+      opacity: 0.5;
       cursor: not-allowed;
     }
     .sheet-column-filters .col-filter-clear {
       flex: 0 0 auto;
-      align-self: flex-end;
-      margin-bottom: 2px;
+      margin: 0 0 0 4px;
+      padding: 3px 8px;
+      font-size: 10.5px;
+      line-height: 1.2;
     }
     .sheet-table-toolbar {
       display: flex;
@@ -2132,7 +2150,7 @@
     <div class="tools">
       <div class="tool grow">
         <label class="mini" for="filter">Contains (any column)</label>
-        <input id="filter" type="text" placeholder="Filter rows…" autocomplete="off" />
+        <input id="filter" type="text" placeholder="Filter rowsâ€¦" autocomplete="off" />
       </div>
       <div class="tool date-fields-row">
         <div class="date-field-modern-wrap">
@@ -2176,6 +2194,34 @@
     <div id="errBox" class="err" style="display: none;"></div>
 
     <section class="lead-stats" id="leadStatsWrap" aria-label="Lead performance overview">
+      <div class="sheet-column-filters" id="sheetColumnFilters" aria-label="Filter table by column values">
+        <span class="sheet-column-filters__label">Table filters</span>
+        <div class="sheet-col-filter-slot" data-slot="0">
+          <select class="col-filter-col" data-slot="0" title="Filter 1 column" aria-label="Filter 1 column">
+            <option value="">Column</option>
+          </select>
+          <select class="col-filter-val" data-slot="0" disabled title="Filter 1 value" aria-label="Filter 1 value">
+            <option value="">Value</option>
+          </select>
+        </div>
+        <div class="sheet-col-filter-slot" data-slot="1">
+          <select class="col-filter-col" data-slot="1" title="Filter 2 column" aria-label="Filter 2 column">
+            <option value="">Column</option>
+          </select>
+          <select class="col-filter-val" data-slot="1" disabled title="Filter 2 value" aria-label="Filter 2 value">
+            <option value="">Value</option>
+          </select>
+        </div>
+        <div class="sheet-col-filter-slot" data-slot="2">
+          <select class="col-filter-col" data-slot="2" title="Filter 3 column" aria-label="Filter 3 column">
+            <option value="">Column</option>
+          </select>
+          <select class="col-filter-val" data-slot="2" disabled title="Filter 3 value" aria-label="Filter 3 value">
+            <option value="">Value</option>
+          </select>
+        </div>
+        <button type="button" class="preset col-filter-clear" id="colFilterClear" title="Clear all column filters">Clear</button>
+      </div>
       <div id="leadStatsList" class="lead-stats-list" hidden aria-live="polite">
         <div id="leadStatsDashHead" class="lead-stats-dash-head-slot"></div>
         <div id="leadStatsNumericBlock" class="lead-stats-numeric-block"></div>
@@ -2184,14 +2230,14 @@
             <div class="lead-chart-card">
               <h4>Volume by channel</h4>
               <p class="lead-chart-card-total">
-                Total · <span id="lcChartTotalConv">0</span>
+                Total Â· <span id="lcChartTotalConv">0</span>
               </p>
               <div class="chart-canvas-wrap"><canvas id="lcBarChannel" aria-label="Volume by channel"></canvas></div>
             </div>
             <div class="lead-chart-card lead-chart-card--split">
               <h4>Lead capture split</h4>
               <p class="lead-chart-card-total lead-chart-card-total--split">
-                <span>Leads Captured · <span id="lcChartTotalLeads">0</span></span>
+                <span>Leads Captured Â· <span id="lcChartTotalLeads">0</span></span>
                 <span class="lead-chart-card-capture-rate"
                   >Lead capture rate <span id="lcChartLeadCapturePct">-</span></span
                 >
@@ -2215,24 +2261,6 @@
       </div>
       <div id="leadStatsErr" class="err" style="display: none; margin-top: 8px;"></div>
     </section>
-
-    <div class="sheet-column-filters" id="sheetColumnFilters" aria-label="Filter table by column value">
-      <div class="tool">
-        <label class="mini" for="colFilter">Column</label>
-        <select id="colFilter" title="Choose a column to filter">
-          <option value="">— Select column —</option>
-        </select>
-      </div>
-      <div class="tool">
-        <label class="mini" for="valFilter">Value</label>
-        <select id="valFilter" disabled title="Choose a value for the selected column">
-          <option value="">— Select column first —</option>
-        </select>
-      </div>
-      <button type="button" class="preset col-filter-clear" id="colFilterClear" title="Clear column filter">
-        Clear filter
-      </button>
-    </div>
 
     <div class="sheet-table-toolbar" id="sheetTableToolbar">
       <div id="limitToolWrap" class="tool" title="Rows per page within the selected date range">
@@ -2299,9 +2327,9 @@
         } catch (ignore) {}
       }
       var filterEl = document.getElementById("filter");
-      var colFilterEl = document.getElementById("colFilter");
-      var valFilterEl = document.getElementById("valFilter");
+      var sheetColumnFiltersEl = document.getElementById("sheetColumnFilters");
       var colFilterClearBtn = document.getElementById("colFilterClear");
+      var COLUMN_FILTER_SLOT_COUNT = 3;
       var limitEl = document.getElementById("limit");
       var refreshBtn = document.getElementById("refreshBtn");
       var syncSheet2Btn = document.getElementById("syncSheet2Btn");
@@ -3050,7 +3078,7 @@
         return "";
       }
 
-      /** Full sheet value for copy (preserves lines; objects → JSON string). */
+      /** Full sheet value for copy (preserves lines; objects â†’ JSON string). */
       function cellClipboardString(value) {
         if (value === undefined || value === null) return "";
         if (typeof value === "object") {
@@ -3097,7 +3125,7 @@
           .replace(/[^a-z0-9]/g, "");
       }
 
-      /** Collapse BOM / NBSP / narrow spaces Sheets sometimes embed inside “14 May 2026”. */
+      /** Collapse BOM / NBSP / narrow spaces Sheets sometimes embed inside â€œ14 May 2026â€. */
       function normalizeSpacesForParsing(s) {
         return String(s == null ? "" : s)
           .replace(/\uFEFF/g, "")
@@ -3111,7 +3139,7 @@
 
       /**
        * Table-only column width tweaks (px off default / fixed ch).
-       * Increase: Email, Mobile (+10px vs prior −20px caps → −10px from base ch).
+       * Increase: Email, Mobile (+10px vs prior âˆ’20px caps â†’ âˆ’10px from base ch).
        * Reduce: Source URL, App. Date, App. Time, Document.
        */
       var SHEET_COL_CH_REDUCE_PX = {
@@ -3211,7 +3239,7 @@
         var flat = flattenCellText(text).trim();
         if (!flat) return "";
         if (flat.length <= maxChars) return flat;
-        return flat.slice(0, maxChars) + "…";
+        return flat.slice(0, maxChars) + "â€¦";
       }
 
       /** ~15 visible chars; td._clipboardValue holds full text/URL for double-click copy */
@@ -3222,8 +3250,8 @@
         var preview = truncatePreviewLabel_(raw, SHEET_TRUNCATE_PREVIEW_CHARS);
         td.title = clip
           ? clip.length > 32000
-            ? clip.slice(0, 32000) + "… — double-click to copy full value"
-            : clip + " — double-click to copy"
+            ? clip.slice(0, 32000) + "â€¦ â€” double-click to copy full value"
+            : clip + " â€” double-click to copy"
           : "";
 
         var wrap = document.createElement("span");
@@ -3309,7 +3337,7 @@
         return null;
       }
 
-      /** First matching column each role, left→right → cumulative sticky left offsets */
+      /** First matching column each role, leftâ†’right â†’ cumulative sticky left offsets */
       function buildStickyMeta(headers) {
         if (!shouldPinLeadColumns_()) {
           return {};
@@ -3373,7 +3401,7 @@
           syncStickyLeftPx(tbl, tbl._stickyColIndices);
         }, 50);
       }
-      /** Header: title length + 2 “char” slack (≈ pre/post space), no data-column ch clamp */
+      /** Header: title length + 2 â€œcharâ€ slack (â‰ˆ pre/post space), no data-column ch clamp */
       function headerMinWidthCh(headerTitle) {
         var lbl = String(headerTitle == null ? "" : headerTitle).trim();
         return Math.max(1, lbl.length) + 2;
@@ -3649,7 +3677,7 @@
           ) {
             continue;
           }
-          /** “Message date” / “Last message date” must not be dropped just because of the word “message”. */
+          /** â€œMessage dateâ€ / â€œLast message dateâ€ must not be dropped just because of the word â€œmessageâ€. */
           var headerHintsDate =
             /date|datetime|timestamp|stamp|logged|received|scheduled|calendar|day|time/i.test(nk) ||
             /conversationdate|convdate|conversiondate|convdateonly/i.test(compact);
@@ -3670,7 +3698,7 @@
           var s =
             typeof v === "number" && !Number.isNaN(v) ? String(v) : normalizeSpacesForParsing(v);
           if (!s || s.length > 240) continue;
-          /** Skip long free-text “conversation” blobs that are not date-labeled columns. */
+          /** Skip long free-text â€œconversationâ€ blobs that are not date-labeled columns. */
           if (!headerHintsDate && s.length > 56) continue;
           var digitsOnly = s.replace(/[\s.+-]/g, "");
           if (!headerHintsDate && /^\d{12,}$/.test(digitsOnly)) continue;
@@ -3690,7 +3718,7 @@
         return bestYmd;
       }
 
-      /** YYYY-MM-DD for date filter — uses date column directly when possible (avoids UTC slips). */
+      /** YYYY-MM-DD for date filter â€” uses date column directly when possible (avoids UTC slips). */
       function rowDayYmd(row) {
         var dStr = findCell(row, [
           "Conv. Date",
@@ -3758,7 +3786,7 @@
         if (!df || !df.applied) return "";
         var from = df.from ? String(df.from) : "";
         var to = df.to ? String(df.to) : "";
-        if (from && to) return isoYmdToDisplayDdMmYyyy_(from) + " – " + isoYmdToDisplayDdMmYyyy_(to);
+        if (from && to) return isoYmdToDisplayDdMmYyyy_(from) + " â€“ " + isoYmdToDisplayDdMmYyyy_(to);
         if (from) return "from " + isoYmdToDisplayDdMmYyyy_(from);
         if (to) return "through " + isoYmdToDisplayDdMmYyyy_(to);
         return "";
@@ -3773,7 +3801,7 @@
       }
 
       /**
-       * Single-line cell: merges wrapped sheet lines (fewer short “mobile” wraps),
+       * Single-line cell: merges wrapped sheet lines (fewer short â€œmobileâ€ wraps),
        * ellipsis + full original (incl. newlines) in title.
        */
       function isChatScriptConvLinkColumn(headerTitle) {
@@ -3797,7 +3825,7 @@
         return flat.length > 80 && /^\s*\[\s*\{/.test(flat);
       }
 
-      /** Display label from Sheet column A (e.g. “Chat script” from HYPERLINK), not raw JSON. */
+      /** Display label from Sheet column A (e.g. â€œChat scriptâ€ from HYPERLINK), not raw JSON. */
       function chatLinkLabelFromSheetCell(raw) {
         if (isJsonTranscriptSheetCell_(raw)) return "";
         var flat = flattenCellText(raw);
@@ -3897,7 +3925,7 @@
           a.href = m[0];
           a.target = "_blank";
           a.rel = "noopener noreferrer";
-          a.textContent = trim.length > 400 ? trim.slice(0, 397) + "…" : trim;
+          a.textContent = trim.length > 400 ? trim.slice(0, 397) + "â€¦" : trim;
           a.addEventListener("click", function (e) {
             e.stopPropagation();
           });
@@ -4018,6 +4046,28 @@
 
       var lastColFilterHeadersKey_ = "";
 
+      function getColumnFilterSlots_() {
+        if (!sheetColumnFiltersEl) return [];
+        var slots = [];
+        for (var si = 0; si < COLUMN_FILTER_SLOT_COUNT; si++) {
+          slots.push({
+            col: sheetColumnFiltersEl.querySelector('.col-filter-col[data-slot="' + si + '"]'),
+            val: sheetColumnFiltersEl.querySelector('.col-filter-val[data-slot="' + si + '"]')
+          });
+        }
+        return slots;
+      }
+
+      function columnFilterActive_() {
+        var slots = getColumnFilterSlots_();
+        for (var si = 0; si < slots.length; si++) {
+          var col = slots[si].col && slots[si].col.value ? String(slots[si].col.value).trim() : "";
+          var val = slots[si].val && slots[si].val.value ? String(slots[si].val.value) : "";
+          if (col && val && val !== "__all__") return true;
+        }
+        return false;
+      }
+
       function cellDisplayForColumnFilter_(raw) {
         var s = flattenCellText(raw).trim();
         return s === "" ? "(blank)" : s;
@@ -4053,67 +4103,92 @@
       }
 
       function rowMatchesColumnFilter_(row) {
-        if (!colFilterEl || !valFilterEl) return true;
-        var col = colFilterEl.value ? String(colFilterEl.value).trim() : "";
-        var val = valFilterEl.value ? String(valFilterEl.value) : "";
-        if (!col || !val || val === "__all__") return true;
-        return cellDisplayForColumnFilter_(row[col]) === val;
+        var slots = getColumnFilterSlots_();
+        for (var si = 0; si < slots.length; si++) {
+          var colEl = slots[si].col;
+          var valEl = slots[si].val;
+          if (!colEl || !valEl) continue;
+          var col = colEl.value ? String(colEl.value).trim() : "";
+          var val = valEl.value ? String(valEl.value) : "";
+          if (!col || !val || val === "__all__") continue;
+          if (cellDisplayForColumnFilter_(row[col]) !== val) return false;
+        }
+        return true;
       }
 
-      function refreshValueFilterOptions_(preserveValue) {
-        if (!colFilterEl || !valFilterEl) return;
-        var col = colFilterEl.value ? String(colFilterEl.value).trim() : "";
-        var prev = preserveValue !== false ? valFilterEl.value : "__all__";
+      function refreshValueFilterOptions_(slotIndex, preserveValue) {
+        var slots = getColumnFilterSlots_();
+        var slot = slots[slotIndex];
+        if (!slot || !slot.col || !slot.val) return;
+        var col = slot.col.value ? String(slot.col.value).trim() : "";
+        var prev = preserveValue !== false ? slot.val.value : "__all__";
         if (!col) {
-          valFilterEl.disabled = true;
-          valFilterEl.innerHTML = '<option value="">— Select column first —</option>';
+          slot.val.disabled = true;
+          slot.val.innerHTML = '<option value="">Value</option>';
           return;
         }
-        valFilterEl.disabled = false;
+        slot.val.disabled = false;
         var rows = lastPayload ? rowsForColumnValueScan_(lastPayload) : [];
         var vals = distinctColumnValues_(rows, col);
-        valFilterEl.innerHTML = '<option value="__all__">— All values —</option>';
+        slot.val.innerHTML = '<option value="__all__">All</option>';
         for (var i = 0; i < vals.length; i++) {
           var opt = document.createElement("option");
           opt.value = vals[i];
           var label = vals[i];
-          if (label.length > 80) label = label.slice(0, 77) + "…";
+          if (label.length > 36) label = label.slice(0, 33) + "...";
           opt.textContent = label;
           opt.title = vals[i];
-          valFilterEl.appendChild(opt);
+          slot.val.appendChild(opt);
         }
         if (prev && (prev === "__all__" || vals.indexOf(prev) >= 0)) {
-          valFilterEl.value = prev;
+          slot.val.value = prev;
         } else {
-          valFilterEl.value = "__all__";
+          slot.val.value = "__all__";
+        }
+      }
+
+      function refreshAllValueFilterOptions_(preserveValues) {
+        for (var si = 0; si < COLUMN_FILTER_SLOT_COUNT; si++) {
+          refreshValueFilterOptions_(si, preserveValues !== false);
         }
       }
 
       function syncColumnFilterHeaders_(headers) {
-        if (!colFilterEl) return;
+        var slots = getColumnFilterSlots_();
+        if (!slots.length) return;
         var key = headers.join("\x1e");
         if (key === lastColFilterHeadersKey_) return;
         lastColFilterHeadersKey_ = key;
-        var prevCol = colFilterEl.value;
-        colFilterEl.innerHTML = '<option value="">— Select column —</option>';
-        for (var i = 0; i < headers.length; i++) {
-          var h = headers[i];
-          var opt = document.createElement("option");
-          opt.value = h;
-          opt.textContent = h;
-          colFilterEl.appendChild(opt);
+        var prevCols = [];
+        for (var si = 0; si < slots.length; si++) {
+          prevCols[si] = slots[si].col ? slots[si].col.value : "";
         }
-        if (prevCol && headers.indexOf(prevCol) >= 0) {
-          colFilterEl.value = prevCol;
-        } else {
-          colFilterEl.value = "";
+        for (var sj = 0; sj < slots.length; sj++) {
+          var colEl = slots[sj].col;
+          if (!colEl) continue;
+          colEl.innerHTML = '<option value="">Column</option>';
+          for (var i = 0; i < headers.length; i++) {
+            var h = headers[i];
+            var opt = document.createElement("option");
+            opt.value = h;
+            opt.textContent = h;
+            colEl.appendChild(opt);
+          }
+          if (prevCols[sj] && headers.indexOf(prevCols[sj]) >= 0) {
+            colEl.value = prevCols[sj];
+          } else {
+            colEl.value = "";
+          }
         }
-        refreshValueFilterOptions_(false);
+        refreshAllValueFilterOptions_(false);
       }
 
       function clearColumnFilter_() {
-        if (colFilterEl) colFilterEl.value = "";
-        refreshValueFilterOptions_(false);
+        var slots = getColumnFilterSlots_();
+        for (var si = 0; si < slots.length; si++) {
+          if (slots[si].col) slots[si].col.value = "";
+        }
+        refreshAllValueFilterOptions_(false);
         if (lastPayload) render(lastPayload);
       }
 
@@ -4240,13 +4315,13 @@
             : filtered.length;
         var pageNote =
           totalInRange > filtered.length
-            ? " · page " + filtered.length + " of " + totalInRange
+            ? " Â· page " + filtered.length + " of " + totalInRange
             : "";
         rowPill.textContent =
           totalInRange +
           " row" +
           (totalInRange === 1 ? "" : "s") +
-          (dateFromEl.value || dateToEl.value ? " · date-filtered" : "") +
+          (dateFromEl.value || dateToEl.value ? " Â· date-filtered" : "") +
           pageNote;
 
         if (!filtered.length) {
@@ -4258,18 +4333,12 @@
           var why = [];
           if (hasText) why.push("Contains filter");
           if (hasDr) why.push("date filters");
-          if (
-            colFilterEl &&
-            colFilterEl.value &&
-            valFilterEl &&
-            valFilterEl.value &&
-            valFilterEl.value !== "__all__"
-          ) {
+          if (columnFilterActive_()) {
             why.push("column filter");
           }
           emp.textContent = rawRows.length
             ? "No rows match " + (why.length ? why.join(" and ") : "filters") + "."
-            : "Nothing loaded yet — tap Reload.";
+            : "Nothing loaded yet â€” tap Reload.";
           convList.appendChild(emp);
           return;
         }
@@ -4318,7 +4387,7 @@
               var clip = cellClipboardString(raw);
               td._clipboardValue = clip;
               td.title =
-                clip.length > 32000 ? clip.slice(0, 32000) + "… (truncated in tooltip)" : clip;
+                clip.length > 32000 ? clip.slice(0, 32000) + "â€¦ (truncated in tooltip)" : clip;
               td.appendChild(linkifyCellForTable(raw == null ? "" : raw));
             }
             if (stickyMeta[ci]) decorateStickyCell(td, stickyMeta[ci], false);
@@ -4375,14 +4444,14 @@
         filterEl.addEventListener("input", function () {
           if (lastPayload) render(lastPayload);
         });
-        if (colFilterEl) {
-          colFilterEl.addEventListener("change", function () {
-            refreshValueFilterOptions_(false);
-            if (lastPayload) render(lastPayload);
-          });
-        }
-        if (valFilterEl) {
-          valFilterEl.addEventListener("change", function () {
+        if (sheetColumnFiltersEl) {
+          sheetColumnFiltersEl.addEventListener("change", function (ev) {
+            var t = ev.target;
+            if (!t || !t.classList) return;
+            if (t.classList.contains("col-filter-col")) {
+              var slotIdx = t.getAttribute("data-slot");
+              refreshValueFilterOptions_(slotIdx ? parseInt(slotIdx, 10) : 0, false);
+            }
             if (lastPayload) render(lastPayload);
           });
         }
@@ -4437,7 +4506,7 @@
           json.dateFilter && json.dateFilter.serverApplied
             ? "conversations (date filter)"
             : "conversations in this list";
-        pagerHint.textContent = total + " " + rowWord + " · " + lim + " per page";
+        pagerHint.textContent = total + " " + rowWord + " Â· " + lim + " per page";
       }
 
       if (pagerFirst) {
@@ -4513,7 +4582,7 @@
             showCopyToast("Copied!", false);
           },
           function () {
-            showCopyToast("Copy failed — select text and press Ctrl+C.", true);
+            showCopyToast("Copy failed â€” select text and press Ctrl+C.", true);
           }
         );
       });
@@ -4548,7 +4617,7 @@
         if (interactive && syncSheet2Btn) {
           syncSheet2Btn.disabled = true;
           prevBtnText = syncSheet2Btn.textContent;
-          syncSheet2Btn.textContent = "Syncing…";
+          syncSheet2Btn.textContent = "Syncingâ€¦";
         }
         return fetch(url, {
           method: "POST",
@@ -4596,8 +4665,8 @@
         persistViewerSecret_(secret);
         refreshBtn.disabled = true;
         var reloadLbl = refreshBtn.textContent;
-        refreshBtn.textContent = "Loading…";
-        setStatus("Loading conversations…");
+        refreshBtn.textContent = "Loadingâ€¦";
+        setStatus("Loading conversationsâ€¦");
         showLeadStatsLoading(true);
         var timedId = 0;
         var ctrl = null;
@@ -4670,7 +4739,7 @@
               curPage +
               " of " +
               totalPages +
-              " · " +
+              " Â· " +
               loaded +
               " row" +
               (loaded === 1 ? "" : "s") +
@@ -4681,15 +4750,15 @@
           }
           if (json.rowsTruncated) {
             msgParts.push(
-              "scan capped — narrow dates or raise CONVERSATIONS_SHEET_VIEW_RETURN_MAX_ROWS on Railway"
+              "scan capped â€” narrow dates or raise CONVERSATIONS_SHEET_VIEW_RETURN_MAX_ROWS on Railway"
             );
           }
-          setStatus(msgParts.join(" · ") + ".");
+          setStatus(msgParts.join(" Â· ") + ".");
           sheetOffset = Number(json.offset) || 0;
           hadLoadedSheet = true;
           syncPagerUi(json);
           render(json);
-          refreshValueFilterOptions_(true);
+          refreshAllValueFilterOptions_(true);
           if (json.leadStats) {
             try {
               renderLeadStats({ ok: true, ...json.leadStats });
@@ -4758,7 +4827,7 @@
           showLeadStatsErr("");
           if (dashHeadEl) {
             dashHeadEl.innerHTML =
-              '<p class="lead-stats-loading">Loading dashboard metrics…</p>';
+              '<p class="lead-stats-loading">Loading dashboard metricsâ€¦</p>';
           }
           if (numBlockEl) numBlockEl.innerHTML = "";
         }
@@ -5033,7 +5102,7 @@
               if (dashHeadEl) dashHeadEl.innerHTML = "";
               if (numBlockEl) {
                 numBlockEl.innerHTML =
-                  '<p class="lead-stats-fallback">Could not draw the overview strip. The conversation table below is unchanged—try reloading the page.</p>';
+                  '<p class="lead-stats-fallback">Could not draw the overview strip. The conversation table below is unchangedâ€”try reloading the page.</p>';
               }
             }
           }
@@ -5082,7 +5151,7 @@
             (qp.length ? "?" + qp.join("&") : "");
           downloadReportBtn.disabled = true;
           var prev = downloadReportBtn.textContent;
-          downloadReportBtn.textContent = "Preparing…";
+          downloadReportBtn.textContent = "Preparingâ€¦";
           fetch(url, {
             method: "GET",
             headers: { "X-Conversations-Sheet-Secret": secret },
@@ -5107,7 +5176,7 @@
                 ct.indexOf("text/plain") < 0
               ) {
                 return res.text().then(function () {
-                  showErr("Unexpected response type — report was not CSV.");
+                  showErr("Unexpected response type â€” report was not CSV.");
                 });
               }
               return res.blob().then(function (blob) {
@@ -5141,7 +5210,7 @@
               setStatus(
                 "CSV report downloaded" +
                   (fromV || toV ? " (date filter applied)" : "") +
-                  (sz ? " · ~" + sz + " KB" : "") +
+                  (sz ? " Â· ~" + sz + " KB" : "") +
                   "."
               );
             })
