@@ -2298,7 +2298,7 @@
           <div class="lead-stats-chart-grid">
             <div class="lead-chart-card lead-chart-card--area">
               <h4>Conversations by date</h4>
-              <p class="lead-chart-card-total">Selected date range</p>
+              <p class="lead-chart-card-total" id="lcAreaByDateSummary">Selected date range</p>
               <div class="chart-canvas-wrap chart-canvas-wrap--area">
                 <canvas id="lcAreaByDate" aria-label="Conversations per day in selected range"></canvas>
               </div>
@@ -3040,6 +3040,48 @@
         function pushRestLeadCharts() {
           if (!chartMountAlive()) return;
           var byDate = conversationsByDateSeriesFromPayload_(payload);
+          var areaStats = summarizeConversationsByDate_(byDate);
+          var areaSummaryEl = document.getElementById("lcAreaByDateSummary");
+          if (areaSummaryEl) {
+            if (areaStats.days > 0) {
+              areaSummaryEl.textContent =
+                "Average " +
+                areaStats.avgText +
+                " conversations per day (" +
+                areaStats.total +
+                " total over " +
+                areaStats.days +
+                " day" +
+                (areaStats.days === 1 ? "" : "s") +
+                ")";
+            } else {
+              areaSummaryEl.textContent = "No dates in the selected range";
+            }
+          }
+          var areaPointCount = byDate.labels ? byDate.labels.length : 0;
+          var areaMaxVal = 0;
+          for (var adi = 0; adi < byDate.data.length; adi++) {
+            if (byDate.data[adi] > areaMaxVal) areaMaxVal = byDate.data[adi];
+          }
+          var areaYMax = areaMaxVal < 1 ? 1 : Math.ceil(areaMaxVal * 1.18);
+          var areaDl = {
+            datalabels: Object.assign(
+              {
+                anchor: "end",
+                align: "top",
+                offset: 2,
+                color: chartDlTextColor,
+                font: { weight: "700", size: areaPointCount > 20 ? 8 : 9 },
+                clip: false,
+                formatter: function (v) {
+                  var n = typeof v === "number" ? v : Number(v);
+                  if (!Number.isFinite(n)) return "";
+                  return String(Math.trunc(n));
+                }
+              },
+              chartDlTextStroke
+            )
+          };
           leadChartInstances.push(
             new Chart(areaEl, {
               type: "line",
@@ -3053,21 +3095,21 @@
                     backgroundColor: "rgba(13, 148, 136, 0.22)",
                     borderColor: pal.teal,
                     borderWidth: 2,
-                    pointRadius: byDate.labels.length > 31 ? 0 : 3,
-                    pointHoverRadius: 4,
+                    pointRadius: areaPointCount > 45 ? 0 : areaPointCount > 31 ? 2 : 4,
+                    pointHoverRadius: 5,
                     tension: 0.32
                   }
                 ]
               },
               options: {
-                layout: chartLayoutTight,
+                layout: { padding: { top: 18, right: 4, bottom: 0, left: 0 } },
                 responsive: true,
                 maintainAspectRatio: false,
                 interaction: { mode: "index", intersect: false },
-                plugins: {
-                  legend: { display: false },
-                  datalabels: { display: false },
-                  tooltip: {
+                plugins: Object.assign(
+                  {
+                    legend: { display: false },
+                    tooltip: {
                     callbacks: {
                       title: function (items) {
                         return items && items[0] ? String(items[0].label || "") : "";
@@ -3078,7 +3120,9 @@
                       }
                     }
                   }
-                },
+                  },
+                  areaDl
+                ),
                 scales: {
                   x: {
                     grid: { display: false },
@@ -3086,6 +3130,7 @@
                   },
                   y: {
                     beginAtZero: true,
+                    suggestedMax: areaYMax,
                     ticks: { precision: 0, font: { size: 9 } },
                     grid: { color: "rgba(148,163,184,0.15)" },
                     border: { display: false }
@@ -4058,6 +4103,24 @@
           cur = next;
         }
         return { labels: labelsOut, data: dataOut };
+      }
+
+      function summarizeConversationsByDate_(byDate) {
+        var data = byDate && Array.isArray(byDate.data) ? byDate.data : [];
+        var days = data.length;
+        var total = 0;
+        for (var i = 0; i < data.length; i++) {
+          var n = Number(data[i]);
+          if (Number.isFinite(n)) total += Math.max(0, Math.trunc(n));
+        }
+        var avg = days > 0 ? total / days : 0;
+        var avgText =
+          days > 0
+            ? avg % 1 === 0
+              ? String(Math.trunc(avg))
+              : avg.toFixed(1)
+            : "-";
+        return { total: total, days: days, avg: avg, avgText: avgText };
       }
 
       function flattenCellText(text) {
