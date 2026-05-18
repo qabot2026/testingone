@@ -4923,11 +4923,11 @@ function sendUserTextViaDfMessenger(dfMessenger, text, shouldRenderCustomTextNow
     if (consumeLanguageSwitchFromUserFlowPhrase(t, null, dfMessenger)) {
         return;
     }
-    if (liveAgentVisitorToAgentInbox_()) {
-        liveAgentSendVisitorMessage_(dfMessenger, t, shouldRenderCustomTextNow);
-        return;
-    }
-    if (liveAgentHandoffIsActive_() && liveAgentCachedConvStatus === "waiting") {
+    if (liveAgentHandoffIsActive_()) {
+        if (!liveAgentAllowDialogflowForUserText_()) {
+            liveAgentSendVisitorMessage_(dfMessenger, t, shouldRenderCustomTextNow);
+            return;
+        }
         liveAgentMirrorVisitorToQueue_(t);
     }
     const hadM0 = hasStoredMobileForChatBlockGate_();
@@ -13869,6 +13869,44 @@ function liveAgentVisitorToAgentInbox_() {
     return liveAgentCachedConvStatus === "active";
 }
 
+/** Dialogflow may reply only while visitor is waiting in queue — not during active agent chat. */
+function liveAgentAllowDialogflowForUserText_() {
+    if (!liveAgentHandoffIsActive_()) {
+        return true;
+    }
+    if (liveAgentHumanChatActive_()) {
+        return false;
+    }
+    if (liveAgentCachedConvStatus === "active") {
+        return false;
+    }
+    return liveAgentCachedConvStatus === "waiting";
+}
+
+/**
+ * Block native df-messenger send to Dialogflow; route text to live agent inbox only.
+ * @param {Event | null | undefined} event
+ * @param {string} queryText
+ * @returns {boolean}
+ */
+function tryInterceptOutboundForLiveAgentHumanChat_(event, queryText) {
+    const t = typeof queryText === "string" ? queryText.trim() : "";
+    if (!t || !liveAgentHandoffIsActive_() || liveAgentAllowDialogflowForUserText_()) {
+        return false;
+    }
+    try {
+        if (event && typeof event.preventDefault === "function") {
+            event.preventDefault();
+        }
+    } catch {
+        /* ignore */
+    }
+    dfchatPendingTypedUtteranceForGate_ = "";
+    const ms = activeDfMessenger;
+    liveAgentSendVisitorMessage_(ms, t, true);
+    return true;
+}
+
 function setLiveAgentHumanChatActive_(on) {
     liveAgentHumanChatActive = Boolean(on);
 }
@@ -14296,6 +14334,10 @@ async function liveAgentSendVisitorMessage_(dfMessenger, text, shouldRenderCusto
 }
 
 function handleDfResponseReceived(event) {
+    if (liveAgentHandoffIsActive_() && !liveAgentAllowDialogflowForUserText_()) {
+        return;
+    }
+
     const messages = event.detail && event.detail.data && Array.isArray(event.detail.data.messages)
         ? event.detail.data.messages
         : [];
@@ -14653,6 +14695,9 @@ function attachPersonaHandlers(dfMessenger) {
             if (tryPreventChatSendForMissingMobileGate_(event, typedTrim)) {
                 return;
             }
+            if (tryInterceptOutboundForLiveAgentHumanChat_(event, typedTrim)) {
+                return;
+            }
             trackChatUserQueryInSessionContext_(typedTrim);
             const ms = activeDfMessenger;
             if (ms && typeof ms.renderCustomText === "function") {
@@ -14704,6 +14749,14 @@ function attachPersonaHandlers(dfMessenger) {
 
             if (tryInterceptOutboundForNearbyBranchesGeolocation_(event, effectiveQuery)) {
                 return;
+            }
+
+            if (tryInterceptOutboundForLiveAgentHumanChat_(event, effectiveQuery)) {
+                return;
+            }
+
+            if (liveAgentHandoffIsActive_() && liveAgentAllowDialogflowForUserText_() && effectiveQuery) {
+                liveAgentMirrorVisitorToQueue_(effectiveQuery);
             }
 
             trackChatUserQueryInSessionContext_(effectiveQuery);
