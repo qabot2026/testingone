@@ -1635,10 +1635,13 @@
     .lead-stats-visual-block > .lead-stats-section-h {
       margin: 0 0 4px;
     }
+    .lead-stats-visual-block {
+      min-width: 0;
+    }
     .lead-stats-chart-grid {
       display: grid;
-      grid-template-columns: repeat(6, minmax(0, 1fr));
-      gap: 10px;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 12px;
       width: 100%;
     }
     .lead-chart-card {
@@ -1652,20 +1655,58 @@
       display: flex;
       flex-direction: column;
     }
-    .lead-chart-card--area {
-      grid-column: span 3;
-    }
-    .lead-chart-card--city,
-    .lead-chart-card--sentiment {
-      grid-column: span 3;
-    }
-    .lead-stats-chart-grid > .lead-chart-card:not(.lead-chart-card--area):not(.lead-chart-card--city):not(.lead-chart-card--sentiment) {
-      grid-column: span 2;
-    }
     .lead-chart-card--area .chart-canvas-wrap--area {
-      height: 168px;
-      min-height: 168px;
-      max-height: 200px;
+      height: 176px;
+      min-height: 176px;
+      max-height: 220px;
+    }
+    @media (min-width: 720px) {
+      .lead-stats-chart-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px 14px;
+      }
+      .lead-chart-card--area {
+        grid-column: 1 / -1;
+      }
+      .lead-chart-card .chart-canvas-wrap {
+        height: 132px;
+        min-height: 132px;
+        max-height: 152px;
+      }
+      .lead-chart-card--area .chart-canvas-wrap--area {
+        height: 188px;
+        min-height: 188px;
+        max-height: 220px;
+      }
+      .lead-split-chart-canvas,
+      .lead-chart-card--split .chart-canvas-wrap.lead-split-chart-canvas {
+        height: 148px;
+        min-height: 148px;
+        max-height: 168px;
+      }
+    }
+    @media (min-width: 1080px) {
+      .lead-stats-chart-grid {
+        gap: 14px 16px;
+      }
+      .lead-chart-card--area {
+        grid-column: span 1;
+      }
+      .lead-chart-card .chart-canvas-wrap {
+        height: 140px;
+        min-height: 140px;
+        max-height: 160px;
+      }
+      .lead-chart-card--area .chart-canvas-wrap--area {
+        height: 200px;
+        min-height: 200px;
+        max-height: 240px;
+      }
+      .lead-chart-card--split .chart-canvas-wrap.lead-split-chart-canvas {
+        height: 156px;
+        min-height: 156px;
+        max-height: 176px;
+      }
     }
     .lead-chart-card h4 {
       margin: 0 0 4px;
@@ -1683,6 +1724,11 @@
       font-variant-numeric: tabular-nums;
       color: #0f172a;
       line-height: 1.25;
+    }
+    .lead-chart-card-total--compact {
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: #64748b;
     }
     .lead-chart-card .chart-canvas-wrap {
       flex: 1;
@@ -1883,34 +1929,6 @@
       }
     }
 
-    @media (max-width: 900px) {
-      .lead-stats-chart-grid {
-        grid-template-columns: 1fr;
-        gap: 12px;
-      }
-      .lead-chart-card--area,
-      .lead-chart-card--city,
-      .lead-chart-card--sentiment,
-      .lead-stats-chart-grid > .lead-chart-card:not(.lead-chart-card--area):not(.lead-chart-card--city):not(.lead-chart-card--sentiment) {
-        grid-column: auto;
-      }
-      .lead-chart-card .chart-canvas-wrap {
-        height: 128px;
-        min-height: 128px;
-        max-height: 148px;
-      }
-      .lead-split-chart-canvas,
-      .lead-chart-card--split .chart-canvas-wrap.lead-split-chart-canvas {
-        height: 148px;
-        min-height: 148px;
-        max-height: 168px;
-      }
-      .lead-pie-callout-col {
-        min-height: 148px;
-        height: 148px;
-      }
-    }
-
     @media (max-width: 640px) {
       .app {
         padding-left: max(10px, env(safe-area-inset-left, 0px));
@@ -2039,16 +2057,20 @@
         grid-template-columns: 1fr;
       }
       .lead-stats-chart-grid {
-        grid-template-columns: 1fr;
-        gap: 12px;
+        gap: 10px;
       }
       .lead-chart-card {
-        padding: 10px;
+        padding: 10px 10px 8px;
       }
       .lead-chart-card .chart-canvas-wrap {
-        height: 120px;
-        min-height: 120px;
-        max-height: 140px;
+        height: 128px;
+        min-height: 128px;
+        max-height: 148px;
+      }
+      .lead-chart-card--area .chart-canvas-wrap--area {
+        height: 168px;
+        min-height: 168px;
+        max-height: 200px;
       }
       .lead-chart-card--split {
         overflow: visible;
@@ -2309,6 +2331,15 @@
                 <canvas id="lcAreaByDate" aria-label="Conversations per day in selected range"></canvas>
               </div>
             </div>
+            <div class="lead-chart-card lead-chart-card--city">
+              <h4>Conversations by city</h4>
+              <div class="chart-canvas-wrap"><canvas id="lcBarCity" aria-label="Conversations by city"></canvas></div>
+            </div>
+            <div class="lead-chart-card lead-chart-card--sentiment">
+              <h4>Conversation sentiment</h4>
+              <p class="lead-chart-card-total lead-chart-card-total--compact" id="lcSentimentSummary">From user messages in range</p>
+              <div class="chart-canvas-wrap"><canvas id="lcBarSentiment" aria-label="Positive vs negative sentiment"></canvas></div>
+            </div>
             <div class="lead-chart-card">
               <h4>Volume by channel</h4>
               <p class="lead-chart-card-total">
@@ -2336,16 +2367,6 @@
             <div class="lead-chart-card">
               <h4>Pipeline</h4>
               <div class="chart-canvas-wrap"><canvas id="lcBarFunnel" aria-label="Pipeline funnel"></canvas></div>
-            </div>
-            <div class="lead-chart-card lead-chart-card--city">
-              <h4>Conversations by city</h4>
-              <p class="lead-chart-card-total" id="lcCityChartSummary">Top cities in range</p>
-              <div class="chart-canvas-wrap"><canvas id="lcBarCity" aria-label="Conversations by city"></canvas></div>
-            </div>
-            <div class="lead-chart-card lead-chart-card--sentiment">
-              <h4>Conversation sentiment</h4>
-              <p class="lead-chart-card-total" id="lcSentimentSummary">From user messages in range</p>
-              <div class="chart-canvas-wrap"><canvas id="lcBarSentiment" aria-label="Positive vs negative sentiment"></canvas></div>
             </div>
           </div>
           <p id="leadStatsChartNotice" class="lead-stats-chart-notice" hidden role="status"></p>
@@ -3067,16 +3088,6 @@
             } else {
               areaSummaryEl.textContent = "No dates in the selected range";
             }
-          }
-          var byCity = conversationsByCitySeriesFromPayload_(payload);
-          var citySummaryEl = document.getElementById("lcCityChartSummary");
-          if (citySummaryEl) {
-            var cityTotal = 0;
-            for (var cti = 0; cti < byCity.data.length; cti++) cityTotal += byCity.data[cti];
-            citySummaryEl.textContent =
-              byCity.labels.length > 0
-                ? cityTotal + " conversations across " + byCity.labels.length + " cities"
-                : "No city data in range";
           }
           var sentiment = sentimentSeriesFromPayload_(payload);
           var sentimentSummaryEl = document.getElementById("lcSentimentSummary");
