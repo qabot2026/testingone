@@ -1689,7 +1689,62 @@ app.post("/webhook", express.json({ limit: "512kb" }), async (req, res) => {
 
     const fallback = (msg) => res.json({ fulfillment_response: { messages: [cxText_(msg, lang)] } });
 
+    const liveAgentHandoffTags = new Set([
+        "request_live_agent",
+        "live_agent",
+        "human_agent",
+        "request_human_agent",
+        "handoff_live_agent",
+        "speak_to_agent",
+        "request_human"
+    ]);
+
     try {
+        if (liveAgentHandoffTags.has(tag)) {
+            const convId =
+                normalizeStr_(params.client_session_id || params.clientSessionId) || sessionId;
+            const waitMsg =
+                normalizeStr_(params.message) || "Connecting you with an agent. Please wait…";
+            if (convId) {
+                try {
+                    const { requestHumanAgent_, liveAgentFirestoreReady_ } = await import(
+                        "./lib/live-agent/store.mjs"
+                    );
+                    if (liveAgentFirestoreReady_()) {
+                        await requestHumanAgent_({
+                            conversationId: convId,
+                            visitorName: normalizeStr_(params.name) || "Visitor",
+                            initialMessage:
+                                normalizeStr_(
+                                    params.initial_message
+                                        || params.initialMessage
+                                        || params.query
+                                        || params.last_user_utterance
+                                ) || "",
+                            departmentId:
+                                normalizeStr_(params.department_id || params.departmentId) || ""
+                        });
+                        console.log("[webhook] live agent queued", convId, "tag=", tag);
+                    } else {
+                        console.warn("[webhook] live agent storage not configured (Firestore env)");
+                    }
+                } catch (handoffErr) {
+                    console.warn("[webhook] live agent handoff failed:", handoffErr.message || handoffErr);
+                }
+            }
+            return res.json({
+                fulfillment_response: {
+                    messages: [
+                        cxText_(waitMsg, lang),
+                        cxPayload_({
+                            action: "request_live_agent",
+                            message: waitMsg
+                        })
+                    ]
+                }
+            });
+        }
+
         if (tag === "diag_yes") {
             const dateISO = cxDateToISO_(params.testdate);
             const diagnosticName = normalizeStr_(params.diagnostics || "diagnostic");

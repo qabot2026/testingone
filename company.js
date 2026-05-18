@@ -13748,7 +13748,50 @@ function liveAgentWidgetEnabled_() {
     if (cfg.enabled === false) {
         return false;
     }
-    return Boolean(getApiEndpoint("/api/live-agent/health"));
+    return Boolean(getApiEndpoint("/api/live-agent/request"));
+}
+
+/** @param {unknown} v */
+function liveAgentCxParamTruthy_(v) {
+    if (v === true) {
+        return true;
+    }
+    const s = dfParameterScalarToString(v).trim().toLowerCase();
+    return s === "true" || s === "yes" || s === "1";
+}
+
+/**
+ * CX session parameters from both `detail.raw` and `detail.data` (Messenger + webhook shapes).
+ * @param {Event} event
+ * @returns {Record<string, string>}
+ */
+function mergedLiveAgentParamsFromEvent_(event) {
+    const d = event && event.detail;
+    /** @type {Record<string, string>} */
+    const merged = {};
+    ["raw", "data"].forEach((branch) => {
+        const obj = branch === "raw" ? d && d.raw : d && d.data;
+        const part = mergedParameterStringMapFromResponseBranch(obj);
+        if (!part) {
+            return;
+        }
+        Object.assign(merged, part);
+    });
+    return merged;
+}
+
+/** @param {string} act */
+function liveAgentPayloadActionMatches_(act) {
+    const a = (act || "").trim().toLowerCase();
+    return (
+        a === LIVE_AGENT_REQUEST_ACTION
+        || a === "live_agent"
+        || a === "handoff_live_agent"
+        || a === "request_human_agent"
+        || a === "human_agent"
+        || a === "speak_to_agent"
+        || a === "request_human"
+    );
 }
 
 function liveAgentSessionId_() {
@@ -13789,22 +13832,6 @@ function liveAgentHandoffIsActive_() {
     return liveAgentHandoffActive === true;
 }
 
-/**
- * @param {Event} event
- * @returns {Array<unknown>}
- */
-function collectEventMessagesForPayloadScan_(event) {
-    const responseMessages =
-        event && event.detail && event.detail.raw && event.detail.raw.queryResult
-        && Array.isArray(event.detail.raw.queryResult.responseMessages)
-            ? event.detail.raw.queryResult.responseMessages
-            : [];
-    const messengerMessages =
-        event && event.detail && event.detail.data && Array.isArray(event.detail.data.messages)
-            ? event.detail.data.messages
-            : [];
-    return [...responseMessages, ...messengerMessages];
-}
 
 /**
  * @param {Event} event
@@ -13815,47 +13842,69 @@ function extractLiveAgentHandoffFromEvent_(event) {
     let waitingMessage = "";
     let initialMessage = "";
     let requested = false;
-    for (const message of collectEventMessagesForPayloadScan_(event)) {
-        const payload = extractPayload(message);
+    const messages = mergeCxResponseEnvelopeForGallery(event);
+    for (let mi = 0; mi < messages.length; mi += 1) {
+        const message = messages[mi];
+        if (!messageHasFulfillmentPayload(message)) {
+            continue;
+        }
+        let payload = null;
+        try {
+            payload = extractPayload(message);
+        } catch {
+            payload = null;
+        }
         if (!payload) {
             continue;
         }
         const act = typeof payload.action === "string" ? payload.action.trim().toLowerCase() : "";
-        if (
-            act === LIVE_AGENT_REQUEST_ACTION
-            || act === "live_agent"
-            || act === "handoff_live_agent"
-        ) {
-            requested = true;
-            if (payload.department_id != null && String(payload.department_id).trim()) {
-                departmentId = String(payload.department_id).trim();
-            }
-            if (payload.departmentId != null && String(payload.departmentId).trim()) {
-                departmentId = String(payload.departmentId).trim();
-            }
-            if (payload.initial_message != null && String(payload.initial_message).trim()) {
-                initialMessage = String(payload.initial_message).trim();
-            }
-            if (payload.initialMessage != null && String(payload.initialMessage).trim()) {
-                initialMessage = String(payload.initialMessage).trim();
-            }
-            if (payload.message != null && String(payload.message).trim()) {
-                waitingMessage = String(payload.message).trim();
-            }
+        if (!liveAgentPayloadActionMatches_(act)) {
+            continue;
+        }
+        requested = true;
+        if (payload.department_id != null && String(payload.department_id).trim()) {
+            departmentId = String(payload.department_id).trim();
+        }
+        if (payload.departmentId != null && String(payload.departmentId).trim()) {
+            departmentId = String(payload.departmentId).trim();
+        }
+        if (payload.initial_message != null && String(payload.initial_message).trim()) {
+            initialMessage = String(payload.initial_message).trim();
+        }
+        if (payload.initialMessage != null && String(payload.initialMessage).trim()) {
+            initialMessage = String(payload.initialMessage).trim();
+        }
+        if (payload.message != null && String(payload.message).trim()) {
+            waitingMessage = String(payload.message).trim();
         }
     }
-    const qr = event && event.detail && event.detail.raw && event.detail.raw.queryResult;
-    const params = qr && qr.parameters && typeof qr.parameters === "object" ? qr.parameters : {};
-    if (
-        params.request_live_agent === true
-        || params.live_agent === true
-        || params.request_live_agent === "true"
-    ) {
-        requested = true;
+    const params = mergedLiveAgentParamsFromEvent_(event);
+    const paramKeys = [
+        "request_live_agent",
+        "live_agent",
+        "request_human_agent",
+        "human_agent",
+        "handoff_live_agent",
+        "speak_to_agent",
+        "request_human"
+    ];
+    for (let pi = 0; pi < paramKeys.length; pi += 1) {
+        if (liveAgentCxParamTruthy_(params[paramKeys[pi]])) {
+            requested = true;
+            break;
+        }
     }
-    const qText = qr && typeof qr.queryText === "string" ? qr.queryText.trim() : "";
-    if (requested && !initialMessage && qText) {
-        initialMessage = qText;
+    const qr = getQueryResultObjectFromDfEvent(event);
+    const qText = qr && typeof qr.text === "string" ? qr.text.trim() : "";
+    const qTextLegacy = qr && typeof qr.queryText === "string" ? qr.queryText.trim() : "";
+    if (requested && !initialMessage) {
+        initialMessage = qText || qTextLegacy || dfParameterScalarToString(params.query).trim();
+    }
+    if (!departmentId && params.department_id) {
+        departmentId = dfParameterScalarToString(params.department_id).trim();
+    }
+    if (!departmentId && params.departmentId) {
+        departmentId = dfParameterScalarToString(params.departmentId).trim();
     }
     if (!requested) {
         return null;
@@ -13873,7 +13922,12 @@ async function requestLiveAgentHandoff_(spec) {
     }
     const sid = liveAgentSessionId_();
     const endpoint = getApiEndpoint("/api/live-agent/request");
-    if (!endpoint || !sid) {
+    if (!endpoint) {
+        console.warn("[live-agent] No API URL — set meta dfchat-api-base-url to your Railway host.");
+        return false;
+    }
+    if (!sid) {
+        console.warn("[live-agent] Missing client_session_id in chat session.");
         return false;
     }
     const s = spec && typeof spec === "object" ? spec : {};
@@ -13891,8 +13945,14 @@ async function requestLiveAgentHandoff_(spec) {
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) {
+            console.warn(
+                "[live-agent] Handoff request failed",
+                res.status,
+                (data && data.error) || ""
+            );
             return false;
         }
+        console.info("[live-agent] Visitor queued for agent", sid);
         setLiveAgentHandoffActive_(true);
         liveAgentMessagesSinceIso = "";
         liveAgentSeenMessageIds_.clear();
