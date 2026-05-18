@@ -397,7 +397,7 @@
     table.sheet tbody td.col-w-email {
       width: auto;
       min-width: 0;
-      max-width: 25ch;
+      max-width: calc(25ch + 10px);
     }
     table.sheet thead th.col-w-mobile,
     table.sheet tbody td.col-w-mobile {
@@ -3059,7 +3059,7 @@
       var SHEET_COL_CH_REDUCE_PX = {
         date: 5,
         time: 10,
-        email: 0,
+        email: -10,
         mobile: 5,
         appdate: 10,
         apptime: 14
@@ -3117,7 +3117,13 @@
       }
 
       function applySheetColumnChCap_(el, ch, cutPx) {
-        var cap = "calc(" + ch + "ch - " + cutPx + "px)";
+        var cut = cutPx == null ? 0 : cutPx;
+        var cap =
+          cut < 0
+            ? "calc(" + ch + "ch + " + -cut + "px)"
+            : cut > 0
+              ? "calc(" + ch + "ch - " + cut + "px)"
+              : ch + "ch";
         el.style.boxSizing = "border-box";
         el.style.width = "auto";
         el.style.minWidth = "0";
@@ -3330,8 +3336,11 @@
           var roleCut = SHEET_COL_CH_REDUCE_PX[sm.role];
           cut = roleCut == null ? 0 : roleCut;
         }
-        if (cut > 0) {
-          var cap = "calc(" + sm.wch + "ch - " + cut + "px)";
+        if (cut !== 0) {
+          var cap =
+            cut < 0
+              ? "calc(" + sm.wch + "ch + " + -cut + "px)"
+              : "calc(" + sm.wch + "ch - " + cut + "px)";
           el.style.width = "auto";
           el.style.minWidth = "0";
           el.style.maxWidth = cap;
