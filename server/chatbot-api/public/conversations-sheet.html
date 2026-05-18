@@ -650,6 +650,42 @@
     .sheet-pager-bar[hidden] {
       display: none !important;
     }
+    .sheet-column-filters {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-end;
+      gap: 10px 14px;
+      margin-bottom: 10px;
+      padding: 12px 14px;
+      border-radius: var(--radius-sm);
+      border: 1px solid rgba(148, 163, 184, 0.45);
+      background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+      box-shadow: var(--shadow-sm);
+    }
+    .sheet-column-filters .tool {
+      flex: 1 1 160px;
+      min-width: 140px;
+      max-width: 320px;
+    }
+    .sheet-column-filters select {
+      width: 100%;
+      margin-top: 4px;
+      padding: 8px 10px;
+      border-radius: 8px;
+      border: 1px solid rgba(148, 163, 184, 0.55);
+      font-size: 13px;
+      background: #fff;
+      color: var(--text);
+    }
+    .sheet-column-filters select:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+    .sheet-column-filters .col-filter-clear {
+      flex: 0 0 auto;
+      align-self: flex-end;
+      margin-bottom: 2px;
+    }
     .sheet-table-toolbar {
       display: flex;
       flex-wrap: wrap;
@@ -2180,6 +2216,24 @@
       <div id="leadStatsErr" class="err" style="display: none; margin-top: 8px;"></div>
     </section>
 
+    <div class="sheet-column-filters" id="sheetColumnFilters" aria-label="Filter table by column value">
+      <div class="tool">
+        <label class="mini" for="colFilter">Column</label>
+        <select id="colFilter" title="Choose a column to filter">
+          <option value="">— Select column —</option>
+        </select>
+      </div>
+      <div class="tool">
+        <label class="mini" for="valFilter">Value</label>
+        <select id="valFilter" disabled title="Choose a value for the selected column">
+          <option value="">— Select column first —</option>
+        </select>
+      </div>
+      <button type="button" class="preset col-filter-clear" id="colFilterClear" title="Clear column filter">
+        Clear filter
+      </button>
+    </div>
+
     <div class="sheet-table-toolbar" id="sheetTableToolbar">
       <div id="limitToolWrap" class="tool" title="Rows per page within the selected date range">
         <label class="mini" for="limit">Rows per page</label>
@@ -2245,6 +2299,9 @@
         } catch (ignore) {}
       }
       var filterEl = document.getElementById("filter");
+      var colFilterEl = document.getElementById("colFilter");
+      var valFilterEl = document.getElementById("valFilter");
+      var colFilterClearBtn = document.getElementById("colFilterClear");
       var limitEl = document.getElementById("limit");
       var refreshBtn = document.getElementById("refreshBtn");
       var syncSheet2Btn = document.getElementById("syncSheet2Btn");
@@ -3959,6 +4016,107 @@
         return false;
       }
 
+      var lastColFilterHeadersKey_ = "";
+
+      function cellDisplayForColumnFilter_(raw) {
+        var s = flattenCellText(raw).trim();
+        return s === "" ? "(blank)" : s;
+      }
+
+      function rowsForColumnValueScan_(data) {
+        var rawRows = (data && data.conversations) || [];
+        var out = [];
+        for (var i = 0; i < rawRows.length; i++) {
+          var row = rawRows[i];
+          var ymd = rowDayYmd(row);
+          if (!inDateRange(ymd, data)) continue;
+          out.push(row);
+        }
+        return out;
+      }
+
+      function distinctColumnValues_(rows, header) {
+        var seen = {};
+        var vals = [];
+        for (var i = 0; i < rows.length; i++) {
+          var v = cellDisplayForColumnFilter_(rows[i][header]);
+          if (seen[v]) continue;
+          seen[v] = true;
+          vals.push(v);
+        }
+        vals.sort(function (a, b) {
+          if (a === "(blank)") return 1;
+          if (b === "(blank)") return -1;
+          return a.localeCompare(b, undefined, { sensitivity: "base" });
+        });
+        return vals;
+      }
+
+      function rowMatchesColumnFilter_(row) {
+        if (!colFilterEl || !valFilterEl) return true;
+        var col = colFilterEl.value ? String(colFilterEl.value).trim() : "";
+        var val = valFilterEl.value ? String(valFilterEl.value) : "";
+        if (!col || !val || val === "__all__") return true;
+        return cellDisplayForColumnFilter_(row[col]) === val;
+      }
+
+      function refreshValueFilterOptions_(preserveValue) {
+        if (!colFilterEl || !valFilterEl) return;
+        var col = colFilterEl.value ? String(colFilterEl.value).trim() : "";
+        var prev = preserveValue !== false ? valFilterEl.value : "__all__";
+        if (!col) {
+          valFilterEl.disabled = true;
+          valFilterEl.innerHTML = '<option value="">— Select column first —</option>';
+          return;
+        }
+        valFilterEl.disabled = false;
+        var rows = lastPayload ? rowsForColumnValueScan_(lastPayload) : [];
+        var vals = distinctColumnValues_(rows, col);
+        valFilterEl.innerHTML = '<option value="__all__">— All values —</option>';
+        for (var i = 0; i < vals.length; i++) {
+          var opt = document.createElement("option");
+          opt.value = vals[i];
+          var label = vals[i];
+          if (label.length > 80) label = label.slice(0, 77) + "…";
+          opt.textContent = label;
+          opt.title = vals[i];
+          valFilterEl.appendChild(opt);
+        }
+        if (prev && (prev === "__all__" || vals.indexOf(prev) >= 0)) {
+          valFilterEl.value = prev;
+        } else {
+          valFilterEl.value = "__all__";
+        }
+      }
+
+      function syncColumnFilterHeaders_(headers) {
+        if (!colFilterEl) return;
+        var key = headers.join("\x1e");
+        if (key === lastColFilterHeadersKey_) return;
+        lastColFilterHeadersKey_ = key;
+        var prevCol = colFilterEl.value;
+        colFilterEl.innerHTML = '<option value="">— Select column —</option>';
+        for (var i = 0; i < headers.length; i++) {
+          var h = headers[i];
+          var opt = document.createElement("option");
+          opt.value = h;
+          opt.textContent = h;
+          colFilterEl.appendChild(opt);
+        }
+        if (prevCol && headers.indexOf(prevCol) >= 0) {
+          colFilterEl.value = prevCol;
+        } else {
+          colFilterEl.value = "";
+        }
+        refreshValueFilterOptions_(false);
+      }
+
+      function clearColumnFilter_() {
+        if (colFilterEl) colFilterEl.value = "";
+        refreshValueFilterOptions_(false);
+        if (lastPayload) render(lastPayload);
+      }
+
       /** Last 4 days + today (5 calendar days, inclusive). */
       function applyDefaultDateRange5Days() {
         var now = new Date();
@@ -4054,6 +4212,7 @@
         headers = headers.filter(function (h) {
           return !isSheetJsonTranscriptStorageColumn(h);
         });
+        syncColumnFilterHeaders_(headers);
 
         /** @type {Record<string,string>[]} */
         var rows = [];
@@ -4067,6 +4226,7 @@
         for (var r = 0; r < rows.length; r++) {
           var row = rows[r];
           if (!rowMatchesFilter(row, q)) continue;
+          if (!rowMatchesColumnFilter_(row)) continue;
           var ymd = rowDayYmd(row);
           if (!inDateRange(ymd, data)) {
             continue;
@@ -4098,6 +4258,15 @@
           var why = [];
           if (hasText) why.push("Contains filter");
           if (hasDr) why.push("date filters");
+          if (
+            colFilterEl &&
+            colFilterEl.value &&
+            valFilterEl &&
+            valFilterEl.value &&
+            valFilterEl.value !== "__all__"
+          ) {
+            why.push("column filter");
+          }
           emp.textContent = rawRows.length
             ? "No rows match " + (why.length ? why.join(" and ") : "filters") + "."
             : "Nothing loaded yet — tap Reload.";
@@ -4206,6 +4375,20 @@
         filterEl.addEventListener("input", function () {
           if (lastPayload) render(lastPayload);
         });
+        if (colFilterEl) {
+          colFilterEl.addEventListener("change", function () {
+            refreshValueFilterOptions_(false);
+            if (lastPayload) render(lastPayload);
+          });
+        }
+        if (valFilterEl) {
+          valFilterEl.addEventListener("change", function () {
+            if (lastPayload) render(lastPayload);
+          });
+        }
+        if (colFilterClearBtn) {
+          colFilterClearBtn.addEventListener("click", clearColumnFilter_);
+        }
         dateFromEl.addEventListener("change", scheduleReloadForDateFilter);
         dateFromEl.addEventListener("input", scheduleReloadForDateFilter);
         dateFromEl.addEventListener("blur", scheduleReloadForDateFilter);
@@ -4506,6 +4689,7 @@
           hadLoadedSheet = true;
           syncPagerUi(json);
           render(json);
+          refreshValueFilterOptions_(true);
           if (json.leadStats) {
             try {
               renderLeadStats({ ok: true, ...json.leadStats });
