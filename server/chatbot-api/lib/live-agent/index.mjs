@@ -608,7 +608,13 @@ export function mountLiveAgentRoutes(app) {
             const agentConnected = !!(
                 conversation &&
                 conversation.status === "active" &&
-                (conversation.humanMode === "human" || conversation.aiEnabled === false)
+                trim_(conversation.assignedAgentEmail)
+            );
+            const aiCopilot = !!(
+                conversation &&
+                conversation.status === "active" &&
+                trim_(conversation.humanMode).toLowerCase() === "ai" &&
+                conversation.aiEnabled !== false
             );
             const { getLiveAgentSettings_, resolveAgentDisplayName_ } = await import(
                 "./departments.mjs"
@@ -630,6 +636,7 @@ export function mountLiveAgentRoutes(app) {
                 conversation,
                 humanActive,
                 agentConnected,
+                aiCopilot,
                 assignedAgentDisplayName,
                 agentProfiles,
                 aiEnabled: conversation ? conversation.aiEnabled !== false : true,

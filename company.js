@@ -13906,8 +13906,8 @@ function setLiveAgentHandoffActive_(on) {
         liveAgentCachedHumanMode = "";
         liveAgentCachedAiEnabled = true;
         liveAgentSeenMessageIds_.clear();
-        liveAgentLastVisitorSendKey_ = "";
-        liveAgentLastVisitorSendAt_ = 0;
+        liveAgentOutboundRoutedKey_ = "";
+        liveAgentOutboundRoutedAt_ = 0;
     }
 }
 
@@ -14012,10 +14012,21 @@ function liveAgentAllowDialogflowForUserText_() {
  * @param {string} queryText
  * @returns {boolean}
  */
+/** Dedupe visitor POST + bubble when df-user-input-entered, df-request-sent, and composer bridge all fire. */
 /** @type {string} */
-let liveAgentLastVisitorSendKey_ = "";
+let liveAgentOutboundRoutedKey_ = "";
 /** @type {number} */
-let liveAgentLastVisitorSendAt_ = 0;
+let liveAgentOutboundRoutedAt_ = 0;
+
+function liveAgentAlreadyRoutedOutbound_(text) {
+    const key = liveAgentVisitorSendDedupeKey_(text);
+    return Boolean(key && key === liveAgentOutboundRoutedKey_ && Date.now() - liveAgentOutboundRoutedAt_ < 3000);
+}
+
+function liveAgentMarkOutboundRouted_(text) {
+    liveAgentOutboundRoutedKey_ = liveAgentVisitorSendDedupeKey_(text);
+    liveAgentOutboundRoutedAt_ = Date.now();
+}
 let liveAgentComposerBridgeAttached = false;
 /** @type {Record<string, string>} */
 let liveAgentAgentProfileMap_ = {};
@@ -14082,6 +14093,10 @@ function liveAgentTryRouteVisitorText_(text, dfMessenger, opts) {
     if (!liveAgentShouldPostVisitorToAgent_(t)) {
         return false;
     }
+    if (liveAgentAlreadyRoutedOutbound_(t)) {
+        return true;
+    }
+    liveAgentMarkOutboundRouted_(t);
     const renderBubble = !opts || opts.renderBubble !== false;
     void liveAgentSendVisitorMessage_(dfMessenger || activeDfMessenger, t, renderBubble);
     return true;
@@ -14099,13 +14114,16 @@ function tryInterceptOutboundForLiveAgentHumanChat_(event, queryText) {
         return false;
     }
     if (liveAgentAllowDialogflowForUserText_()) {
-        if (liveAgentShouldPostVisitorToAgent_(t)) {
-            void liveAgentTryRouteVisitorText_(t, activeDfMessenger, { renderBubble: false });
+        if (liveAgentShouldPostVisitorToAgent_(t) && !liveAgentAlreadyRoutedOutbound_(t)) {
+            liveAgentMarkOutboundRouted_(t);
+            void liveAgentSendVisitorMessage_(activeDfMessenger, t, false);
         }
         return false;
     }
-    if (!liveAgentTryRouteVisitorText_(t, activeDfMessenger, { renderBubble: true })) {
-        return false;
+    const already = liveAgentAlreadyRoutedOutbound_(t);
+    if (!already) {
+        liveAgentMarkOutboundRouted_(t);
+        void liveAgentSendVisitorMessage_(activeDfMessenger, t, true);
     }
     try {
         if (event && typeof event.preventDefault === "function") {
@@ -14395,11 +14413,12 @@ async function liveAgentPollTick_(dfMessenger) {
             return;
         }
 
-        const copilotAi = status === "active" && humanMode === "ai";
+        const copilotAi =
+            status === "active" &&
+            (humanMode === "ai" || stData.aiCopilot === true);
         const agentAccepted =
             !copilotAi &&
             (status === "active" ||
-                Boolean(stData.agentConnected) ||
                 !!(conv && conv.assignedAgentEmail));
         const wasHuman = liveAgentHumanChatActive_();
         setLiveAgentHumanChatActive_(agentAccepted);
@@ -14563,7 +14582,8 @@ function liveAgentApplyConversationFromApi_(data) {
         liveAgentCachedAiEnabled = conv.aiEnabled;
     }
     if (status === "active") {
-        setLiveAgentHumanChatActive_(!liveAgentCoPilotAiEnabled_());
+        const hm = conv.humanMode ? String(conv.humanMode) : "";
+        setLiveAgentHumanChatActive_(hm !== "ai");
     } else if (status === "waiting") {
         setLiveAgentHumanChatActive_(false);
     }
@@ -15003,11 +15023,12 @@ function attachPersonaHandlers(dfMessenger) {
                 return;
             }
             const ms = activeDfMessenger;
-            if (typedTrim && liveAgentShouldPostVisitorToAgent_(typedTrim)) {
+            const routed =
+                typedTrim &&
+                liveAgentShouldPostVisitorToAgent_(typedTrim) &&
                 liveAgentTryRouteVisitorText_(typedTrim, ms, { renderBubble: false });
-            }
             trackChatUserQueryInSessionContext_(typedTrim);
-            if (ms && typeof ms.renderCustomText === "function") {
+            if (!routed && ms && typeof ms.renderCustomText === "function") {
                 renderUserPersona(ms);
             }
         },
@@ -15060,14 +15081,6 @@ function attachPersonaHandlers(dfMessenger) {
 
             if (tryInterceptOutboundForLiveAgentHumanChat_(event, effectiveQuery)) {
                 return;
-            }
-
-            if (
-                liveAgentHandoffIsActive_() &&
-                effectiveQuery &&
-                liveAgentCachedConvStatus === "waiting"
-            ) {
-                liveAgentMirrorVisitorToQueue_(effectiveQuery);
             }
 
             trackChatUserQueryInSessionContext_(effectiveQuery);

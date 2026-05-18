@@ -918,7 +918,16 @@
             return;
         }
         chatActionsBar.classList.remove("hidden");
-        const hm = (conv && conv.humanMode) || conv.status || "ai";
+        let hm = conv && conv.humanMode ? String(conv.humanMode) : "";
+        if (!hm) {
+            if (conv && conv.status === "waiting") {
+                hm = "waiting";
+            } else if (conv && conv.status === "active") {
+                hm = "human";
+            } else {
+                hm = "ai";
+            }
+        }
         const aiOn = conv && conv.aiEnabled !== false;
         const st = conv.status || "";
         const statusLine =

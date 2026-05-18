@@ -848,6 +848,25 @@ export async function updateConversationMode_({ conversationId, aiEnabled, human
         throw new Error("Nothing to update");
     }
     await ref.update(patch);
+    try {
+        const modeLabel =
+            hm === "ai"
+                ? "AI assistant enabled — the bot can reply to the visitor again."
+                : hm === "human"
+                  ? "Human agent took over — bot auto-reply is paused."
+                  : "";
+        if (modeLabel) {
+            await appendMessage_({
+                conversationId: id,
+                role: "system",
+                text: modeLabel,
+                senderEmail: "",
+                bumpUnread: { agent: 0, visitor: 1 }
+            });
+        }
+    } catch (modeMsgErr) {
+        console.warn(LOG_TAG, "mode system message:", modeMsgErr.message || modeMsgErr);
+    }
     const next = await ref.get();
     return serializeConversation_(id, next.data());
 }
