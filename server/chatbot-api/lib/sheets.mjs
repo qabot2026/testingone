@@ -929,11 +929,65 @@ function leadSegmentChannelAdd_(acc, ch) {
 }
 
 /** Mutable tallies while scanning sheet rows once for viewer + dashboard stats. */
+function ymdAddDays_(ymd, days) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(ymd || "").trim());
+    if (!m) {
+        return null;
+    }
+    const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+    d.setDate(d.getDate() + days);
+    const y = d.getFullYear();
+    const mo = String(d.getMonth() + 1).padStart(2, "0");
+    const da = String(d.getDate()).padStart(2, "0");
+    return `${y}-${mo}-${da}`;
+}
+
+/**
+ * @param {Record<string, number>|null|undefined} byDate
+ * @param {string|null} fromYmd
+ * @param {string|null} toYmd
+ */
+function leadCaptureConversationsByDateSeries_(byDate, fromYmd, toYmd) {
+    /** @type {string[]} */
+    const labels = [];
+    /** @type {number[]} */
+    const data = [];
+    if (!fromYmd || !toYmd || !isoYyyyMmDdOk_(fromYmd) || !isoYyyyMmDdOk_(toYmd)) {
+        return { labels, data };
+    }
+    let fromEff = fromYmd;
+    let toEff = toYmd;
+    if (fromEff > toEff) {
+        const swap = fromEff;
+        fromEff = toEff;
+        toEff = swap;
+    }
+    const map = byDate && typeof byDate === "object" ? byDate : {};
+    let cur = fromEff;
+    let guard = 0;
+    while (cur && cur <= toEff && guard < 4000) {
+        guard += 1;
+        labels.push(cur);
+        data.push(typeof map[cur] === "number" && Number.isFinite(map[cur]) ? Math.trunc(map[cur]) : 0);
+        if (cur === toEff) {
+            break;
+        }
+        const next = ymdAddDays_(cur, 1);
+        if (!next || next <= cur) {
+            break;
+        }
+        cur = next;
+    }
+    return { labels, data };
+}
+
 function leadCaptureStatsAccumulatorEmpty_() {
     return {
         dataRowsConsidered: 0,
         skippedNoDate: 0,
         conversations: 0,
+        /** @type {Record<string, number>} */
+        conversationsByDate: Object.create(null),
         onlyMobile: 0,
         onlyEmail: 0,
         mobileAndEmail: 0,
@@ -962,8 +1016,9 @@ function leadCaptureStatsAccumulatorEmpty_() {
  *   appointmentTimeIdx: number,
  *   apptDtIdx: number
  * }} col
+ * @param {string} [rowYmd]
  */
-function leadCaptureStatsAccumulateRow_(acc, cells, col) {
+function leadCaptureStatsAccumulateRow_(acc, cells, col, rowYmd) {
     if (!sheetRowHasAnyCell_(cells)) {
         return;
     }
@@ -974,6 +1029,9 @@ function leadCaptureStatsAccumulateRow_(acc, cells, col) {
     const hasMob = sheetCellHasLeadMobile_(mobCell);
     const channelKey = conversationChannelBucket_(chCell);
     acc.conversations += 1;
+    if (rowYmd && isoYyyyMmDdOk_(rowYmd)) {
+        acc.conversationsByDate[rowYmd] = (acc.conversationsByDate[rowYmd] || 0) + 1;
+    }
     if (hasMob && hasEm) {
         acc.mobileAndEmail += 1;
         leadSegmentChannelAdd_(acc.mobileAndEmailByChannel, channelKey);
@@ -1050,6 +1108,16 @@ function leadCaptureStatsPayloadFromAccumulator_(acc, baseEmpty) {
     out.ratios.mobileAndEmail = rpt(acc.mobileAndEmail);
     out.ratios.leads = rpt(leadsCaptured);
     out.ratios.leadCapturePct = pct;
+    const df = out.dateFilter && typeof out.dateFilter === "object" ? out.dateFilter : {};
+    const fromYmd = typeof df.from === "string" && df.from ? df.from : null;
+    const toYmd = typeof df.to === "string" && df.to ? df.to : null;
+    out.series = {
+        conversationsByDate: leadCaptureConversationsByDateSeries_(
+            acc.conversationsByDate,
+            fromYmd,
+            toYmd
+        )
+    };
     return out;
 }
 
@@ -3979,7 +4047,7 @@ export async function fetchConversationLeadCaptureStats(opts = {}) {
             if (!ymd || ymd < fromEff || ymd > toEff) {
                 continue;
             }
-            leadCaptureStatsAccumulateRow_(acc, cells, statCol);
+            leadCaptureStatsAccumulateRow_(acc, cells, statCol, ymd);
         }
         const out = leadCaptureStatsPayloadFromAccumulator_(acc, baseEmpty());
         out.dateFilter.serverApplied = true;
@@ -5613,7 +5681,7 @@ export async function fetchConversationSheetPreview(opts = {}) {
             }
             totalMatches += 1;
             if (acc) {
-                leadCaptureStatsAccumulateRow_(acc, cells, statCol);
+                leadCaptureStatsAccumulateRow_(acc, cells, statCol, ymd);
             }
             const row = conversationRowFromCells_(cells, headers);
             if (!row) {

@@ -1652,6 +1652,14 @@
       display: flex;
       flex-direction: column;
     }
+    .lead-chart-card--area {
+      grid-column: 1 / -1;
+    }
+    .lead-chart-card--area .chart-canvas-wrap--area {
+      height: 168px;
+      min-height: 168px;
+      max-height: 200px;
+    }
     .lead-chart-card h4 {
       margin: 0 0 4px;
       font-size: 0.6875rem;
@@ -2244,7 +2252,7 @@
     <div id="statusLine"></div>
     <div id="errBox" class="err" style="display: none;"></div>
 
-    <section class="lead-stats" id="leadStatsWrap" aria-label="Lead performance overview">
+    <section class="lead-stats lead-stats-wrap--visual" id="leadStatsWrap" aria-label="Lead performance overview">
       <div class="sheet-column-filters" id="sheetColumnFilters" aria-label="Filter table by column values">
         <span class="sheet-column-filters__label">Table filters</span>
         <div class="sheet-col-filter-slot" data-slot="0">
@@ -2278,9 +2286,16 @@
       </div>
       <div id="leadStatsList" class="lead-stats-list" hidden aria-live="polite">
         <div id="leadStatsDashHead" class="lead-stats-dash-head-slot"></div>
-        <div id="leadStatsNumericBlock" class="lead-stats-numeric-block"></div>
-        <div id="leadStatsVisualBlock" class="lead-stats-visual-block" hidden>
+        <div id="leadStatsNumericBlock" class="lead-stats-numeric-block" hidden></div>
+        <div id="leadStatsVisualBlock" class="lead-stats-visual-block">
           <div class="lead-stats-chart-grid">
+            <div class="lead-chart-card lead-chart-card--area">
+              <h4>Conversations by date</h4>
+              <p class="lead-chart-card-total">Selected date range</p>
+              <div class="chart-canvas-wrap chart-canvas-wrap--area">
+                <canvas id="lcAreaByDate" aria-label="Conversations per day in selected range"></canvas>
+              </div>
+            </div>
             <div class="lead-chart-card">
               <h4>Volume by channel</h4>
               <p class="lead-chart-card-total">
@@ -2727,7 +2742,7 @@
        * @param {Record<string, unknown>} [payload]
        */
       function setLeadStatsViewMode(mode, payload) {
-        if (mode !== "numeric" && mode !== "visual") mode = "numeric";
+        if (mode !== "numeric" && mode !== "visual") mode = "visual";
         try {
           localStorage.setItem(LEAD_STATS_VIEW_KEY, mode);
         } catch (ignore) {}
@@ -2855,11 +2870,12 @@
         var chBrandWhatsappGreen = "#25d366";
         var chBrandInstagramPink = "#f06292";
         var chBrandFacebookBlue = pal.fb;
+        var areaEl = document.getElementById("lcAreaByDate");
         var chBarEl = document.getElementById("lcBarChannel");
         var leadPieEl = document.getElementById("lcPieLead");
         var funnelEl = document.getElementById("lcBarFunnel");
 
-        if (!chBarEl || !leadPieEl || !funnelEl) {
+        if (!areaEl || !chBarEl || !leadPieEl || !funnelEl) {
           showLeadChartNotice("Chart area is missing from the page. Reload and try again.");
           return;
         }
@@ -3016,6 +3032,61 @@
 
         function pushRestLeadCharts() {
           if (!chartMountAlive()) return;
+          var byDate = conversationsByDateSeriesFromPayload_(payload);
+          leadChartInstances.push(
+            new Chart(areaEl, {
+              type: "line",
+              data: {
+                labels: byDate.labels,
+                datasets: [
+                  {
+                    label: "Conversations",
+                    data: byDate.data,
+                    fill: true,
+                    backgroundColor: "rgba(13, 148, 136, 0.22)",
+                    borderColor: pal.teal,
+                    borderWidth: 2,
+                    pointRadius: byDate.labels.length > 31 ? 0 : 3,
+                    pointHoverRadius: 4,
+                    tension: 0.32
+                  }
+                ]
+              },
+              options: {
+                layout: chartLayoutTight,
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: "index", intersect: false },
+                plugins: {
+                  legend: { display: false },
+                  datalabels: { display: false },
+                  tooltip: {
+                    callbacks: {
+                      title: function (items) {
+                        return items && items[0] ? String(items[0].label || "") : "";
+                      },
+                      label: function (ctx) {
+                        var v = chartSegmentValue_(ctx);
+                        return v === 1 ? "1 conversation" : v + " conversations";
+                      }
+                    }
+                  }
+                },
+                scales: {
+                  x: {
+                    grid: { display: false },
+                    ticks: { font: { size: 8 }, maxRotation: 45, autoSkip: true, maxTicksLimit: 14 }
+                  },
+                  y: {
+                    beginAtZero: true,
+                    ticks: { precision: 0, font: { size: 9 } },
+                    grid: { color: "rgba(148,163,184,0.15)" },
+                    border: { display: false }
+                  }
+                }
+              }
+            })
+          );
           var pieLeadChart = new Chart(leadPieEl, {
             type: "doughnut",
             data: {
@@ -3923,6 +3994,63 @@
         if (from) return "from " + isoYmdToDisplayDdMmYyyy_(from);
         if (to) return "through " + isoYmdToDisplayDdMmYyyy_(to);
         return "";
+      }
+
+      function ymdAddDaysLocal_(ymd, days) {
+        var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(ymd || "").trim());
+        if (!m) return null;
+        var d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+        d.setDate(d.getDate() + days);
+        return toYmdLocal(d);
+      }
+
+      function conversationsByDateSeriesFromPayload_(payload) {
+        var s = payload && payload.series && payload.series.conversationsByDate;
+        if (s && Array.isArray(s.labels) && Array.isArray(s.data) && s.labels.length) {
+          var labels = [];
+          var data = [];
+          for (var i = 0; i < s.labels.length; i++) {
+            labels.push(isoYmdToDisplayDdMmYyyy_(String(s.labels[i])));
+            var n = Number(s.data[i]);
+            data.push(Number.isFinite(n) ? Math.max(0, Math.trunc(n)) : 0);
+          }
+          return { labels: labels, data: data };
+        }
+        var df =
+          payload && payload.dateFilter
+            ? payload.dateFilter
+            : lastPayload && lastPayload.dateFilter
+              ? lastPayload.dateFilter
+              : null;
+        var fromV =
+          (df && df.from ? String(df.from) : "") || getDateFilterYmd_(dateFromEl);
+        var toV = (df && df.to ? String(df.to) : "") || getDateFilterYmd_(dateToEl);
+        if (!fromV || !toV) return { labels: [], data: [] };
+        var counts = Object.create(null);
+        var rows =
+          payload && Array.isArray(payload.conversations) ? payload.conversations : [];
+        if (!rows.length && lastPayload && Array.isArray(lastPayload.conversations)) {
+          rows = lastPayload.conversations;
+        }
+        for (var ri = 0; ri < rows.length; ri++) {
+          var ymd = rowDayYmd(rows[ri]);
+          if (!ymd || ymd < fromV || ymd > toV) continue;
+          counts[ymd] = (counts[ymd] || 0) + 1;
+        }
+        var labelsOut = [];
+        var dataOut = [];
+        var cur = fromV;
+        var guard = 0;
+        while (cur && cur <= toV && guard < 4000) {
+          guard += 1;
+          labelsOut.push(isoYmdToDisplayDdMmYyyy_(cur));
+          dataOut.push(counts[cur] || 0);
+          if (cur === toV) break;
+          var next = ymdAddDaysLocal_(cur, 1);
+          if (!next || next <= cur) break;
+          cur = next;
+        }
+        return { labels: labelsOut, data: dataOut };
       }
 
       function flattenCellText(text) {
@@ -4865,6 +4993,7 @@
               curPage +
               " of " +
               totalPages +
+              ", " +
               loaded +
               " row" +
               (loaded === 1 ? "" : "s") +
@@ -5129,8 +5258,8 @@
             : "Same filters as the table below") +
           "</p>" +
           '</div><div class="lead-stats-view-toggle" role="group" aria-label="Dashboard view">' +
+          '<button type="button" class="lead-view-btn is-active" data-mode="visual">Visual</button>' +
           '<button type="button" class="lead-view-btn" data-mode="numeric">Numeric</button>' +
-          '<button type="button" class="lead-view-btn" data-mode="visual">Visual</button>' +
           "</div></div>";
         numBlockEl.innerHTML =
           '<div class="lead-stats-numeric-layout">' +
@@ -5161,9 +5290,9 @@
           "</div></div></div>";
         updateLeadChartTotals(leadMetrics);
         lastLeadStatsPayload = payload;
-        var viewMode = "numeric";
+        var viewMode = "visual";
         try {
-          if (localStorage.getItem(LEAD_STATS_VIEW_KEY) === "visual") viewMode = "visual";
+          if (localStorage.getItem(LEAD_STATS_VIEW_KEY) === "numeric") viewMode = "numeric";
         } catch (ignore) {}
         setLeadStatsViewMode(viewMode, payload);
       }
