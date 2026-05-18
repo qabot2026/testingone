@@ -739,10 +739,15 @@ export async function appendMessage_({
         };
         if (roleNorm === "agent" || roleNorm === "staff") {
             const agentEmail = trim_(senderEmail).toLowerCase();
+            const curHmAgent = trim_(cur.humanMode).toLowerCase();
+            const aiCopilotOn =
+                cur.status === "active" && curHmAgent === "ai" && cur.aiEnabled !== false;
             convPatch.status = "active";
-            convPatch.humanMode = "human";
-            convPatch.aiEnabled = false;
             convPatch.visitorSessionActive = true;
+            if (!aiCopilotOn) {
+                convPatch.humanMode = "human";
+                convPatch.aiEnabled = false;
+            }
             if (agentEmail) {
                 if (!trim_(cur.assignedAgentEmail)) {
                     convPatch.assignedAgentEmail = agentEmail;

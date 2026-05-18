@@ -100,7 +100,7 @@ const VISITOR_CITY_ENDPOINT = "/api/visitor-city";
 const SESSION_TRANSCRIPT_SYNC_ENDPOINT = "/api/session-transcript-sync";
 /** Dialogflow custom payload `action` → hand off to human agent inbox (`/live-agent`). */
 const LIVE_AGENT_REQUEST_ACTION = "request_live_agent";
-const LIVE_AGENT_POLL_INTERVAL_MS = 3500;
+const LIVE_AGENT_POLL_INTERVAL_MS = 2000;
 let liveAgentHandoffActive = false;
 /** True only after an agent has accepted (active human chat) — visitor text goes to agent inbox, not Dialogflow. */
 let liveAgentHumanChatActive = false;
@@ -13913,10 +13913,7 @@ function liveAgentCoPilotAiEnabled_() {
     if (liveAgentCachedConvStatus !== "active") {
         return false;
     }
-    if (liveAgentCachedHumanMode === "ai") {
-        return true;
-    }
-    return liveAgentCachedAiEnabled === true;
+    return liveAgentCachedHumanMode === "ai";
 }
 
 /** Visitor messages go to agent inbox only during active human chat (not waiting, not AI co-pilot). */
@@ -13972,13 +13969,10 @@ function liveAgentShouldPostVisitorToAgent_(text) {
     if (!t || liveAgentIsBoilerplateHandoffPhrase_(t) || !liveAgentHandoffIsActive_()) {
         return false;
     }
-    if (!liveAgentAllowDialogflowForUserText_()) {
-        return true;
+    if (liveAgentCachedConvStatus === "closed") {
+        return false;
     }
-    if (liveAgentCachedConvStatus === "waiting") {
-        return true;
-    }
-    return liveAgentCoPilotAiEnabled_();
+    return true;
 }
 
 /** Dialogflow when waiting in queue, or when agent turned chatbot back on (co-pilot). */
@@ -14079,7 +14073,7 @@ function liveAgentTryRouteVisitorText_(text, dfMessenger, opts) {
     if (
         dedupeKey &&
         dedupeKey === liveAgentLastVisitorSendKey_ &&
-        now - liveAgentLastVisitorSendAt_ < 1500
+        now - liveAgentLastVisitorSendAt_ < 800
     ) {
         return true;
     }
@@ -14100,6 +14094,15 @@ function liveAgentTryRouteVisitorText_(text, dfMessenger, opts) {
  */
 function tryInterceptOutboundForLiveAgentHumanChat_(event, queryText) {
     const t = typeof queryText === "string" ? queryText.trim() : "";
+    if (!t || !liveAgentHandoffIsActive_()) {
+        return false;
+    }
+    if (liveAgentAllowDialogflowForUserText_()) {
+        if (liveAgentShouldPostVisitorToAgent_(t)) {
+            void liveAgentTryRouteVisitorText_(t, activeDfMessenger, { renderBubble: false });
+        }
+        return false;
+    }
     if (!liveAgentTryRouteVisitorText_(t, activeDfMessenger, { renderBubble: true })) {
         return false;
     }
@@ -14391,8 +14394,7 @@ async function liveAgentPollTick_(dfMessenger) {
             return;
         }
 
-        const copilotAi =
-            status === "active" && (humanMode === "ai" || aiEnabled === true);
+        const copilotAi = status === "active" && humanMode === "ai";
         const agentAccepted =
             !copilotAi &&
             (status === "active" ||

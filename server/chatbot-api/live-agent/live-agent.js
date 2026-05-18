@@ -70,11 +70,12 @@
     let inboxPollTimer = null;
     let inboxInFlight = false;
     let messagesInFlight = false;
+    let messagesPollPending = false;
     let lastWaitingCount = 0;
     let notificationsOk = false;
     let deskSettings = null;
-    const INBOX_POLL_INTERVAL_MS = 28000;
-    const CHAT_POLL_INTERVAL_MS = 6000;
+    const INBOX_POLL_INTERVAL_MS = 22000;
+    const CHAT_POLL_INTERVAL_MS = 2000;
     const PRESENCE_INTERVAL_MS = 180000;
     let agentsPanelLoaded = false;
     let presenceTimer = null;
@@ -967,6 +968,22 @@
 
     async function setMode_(patch) {
         if (!selectedId) return;
+        if (selectedConv) {
+            selectedConv = {
+                ...selectedConv,
+                humanMode: patch.humanMode || selectedConv.humanMode,
+                aiEnabled:
+                    patch.humanMode === "ai"
+                        ? true
+                        : patch.humanMode === "human"
+                          ? false
+                          : typeof patch.aiEnabled === "boolean"
+                            ? patch.aiEnabled
+                            : selectedConv.aiEnabled
+            };
+            applyConversationUi_(selectedConv, { skipContextReload: true });
+            renderChatActionsBar_(selectedConv);
+        }
         const busy = [enableChatbotBtn, takeHumanBtn].filter(Boolean);
         const prevLabels = busy.map((b) => b.textContent);
         busy.forEach((b) => {
@@ -1231,7 +1248,10 @@
     }
 
     async function loadMessages(conversationId, quiet) {
-        if (messagesInFlight) return;
+        if (messagesInFlight) {
+            messagesPollPending = true;
+            return;
+        }
         messagesInFlight = true;
         try {
             const q = lastMessageIso ? "?since=" + encodeURIComponent(lastMessageIso) : "";
