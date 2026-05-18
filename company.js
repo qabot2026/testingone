@@ -14056,10 +14056,28 @@ function liveAgentDisplayNameForEmail_(email) {
     return "Agent";
 }
 
+/** Staff-only system lines — do not show on the visitor widget. */
+function liveAgentVisitorShouldHideSystemLine_(text) {
+    const t = (text || "").trim().toLowerCase();
+    if (!t) {
+        return true;
+    }
+    if (t.includes("ai assistant enabled") || t.includes("human agent took over")) {
+        return true;
+    }
+    if (t.includes("connecting you with an agent") || t.includes("please wait")) {
+        return true;
+    }
+    return false;
+}
+
 function liveAgentVisitorLineText_(m) {
     const role = typeof m.role === "string" ? m.role.toLowerCase() : "";
     let text = typeof m.text === "string" ? m.text.trim() : "";
     if (!text) {
+        return "";
+    }
+    if (role === "system" && liveAgentVisitorShouldHideSystemLine_(text)) {
         return "";
     }
     if (role === "system") {
@@ -14259,6 +14277,14 @@ async function requestLiveAgentHandoff_(spec) {
     if (!liveAgentWidgetEnabled_()) {
         return false;
     }
+    if (liveAgentHandoffIsActive_()) {
+        if (liveAgentCoPilotAiEnabled_()) {
+            return true;
+        }
+        if (liveAgentCachedConvStatus === "waiting" || liveAgentCachedConvStatus === "active") {
+            return true;
+        }
+    }
     const sid = liveAgentSessionId_();
     const endpoint = getApiEndpoint("/api/live-agent/request");
     if (!endpoint) {
@@ -14351,6 +14377,14 @@ function tryRequestLiveAgentFromBotResponse_(event) {
     const spec = extractLiveAgentHandoffFromEvent_(event);
     if (!spec) {
         return;
+    }
+    if (liveAgentHandoffIsActive_()) {
+        if (liveAgentCoPilotAiEnabled_()) {
+            return;
+        }
+        if (liveAgentCachedConvStatus === "waiting" || liveAgentCachedConvStatus === "active") {
+            return;
+        }
     }
     markLiveAgentRequestedInSession_(spec.initialMessage);
     requestLiveAgentHandoff_(spec);
@@ -14458,6 +14492,13 @@ async function liveAgentPollTick_(dfMessenger) {
             const role = typeof m.role === "string" ? m.role.toLowerCase() : "";
             if (role === "visitor") {
                 continue;
+            }
+            if (role === "system") {
+                const sysPreview =
+                    typeof m.text === "string" ? m.text.trim() : "";
+                if (liveAgentVisitorShouldHideSystemLine_(sysPreview)) {
+                    continue;
+                }
             }
             const text = liveAgentVisitorLineText_(m);
             if (!text || !ms || typeof ms.renderCustomText !== "function") {

@@ -38,7 +38,6 @@
     const chatActionsBar = $("chatActionsBar");
     const chatModeStatus = $("chatModeStatus");
     const enableChatbotBtn = $("enableChatbotBtn");
-    const takeHumanBtn = $("takeHumanBtn");
     const endChatFooterBtn = $("endChatFooterBtn");
     const refreshChatBtn = $("refreshChatBtn");
     const copySessionBtn = $("copySessionBtn");
@@ -945,11 +944,13 @@
                 st;
         }
         if (enableChatbotBtn) {
-            enableChatbotBtn.classList.toggle("active-mode", hm === "ai" && aiOn);
-            enableChatbotBtn.disabled = hm === "ai" && aiOn;
-        }
-        if (takeHumanBtn) {
-            takeHumanBtn.disabled = (hm === "human" || hm === "waiting") && !aiOn;
+            const aiMode = hm === "ai" && aiOn;
+            enableChatbotBtn.textContent = aiMode ? "Takeover" : "Enable chatbot";
+            enableChatbotBtn.title = aiMode
+                ? "You reply to the visitor; AI auto-reply is off"
+                : "Let the AI bot reply to this visitor again";
+            enableChatbotBtn.classList.toggle("active-mode", aiMode);
+            enableChatbotBtn.disabled = st === "closed";
         }
         if (endChatFooterBtn) {
             endChatFooterBtn.hidden = st !== "active" && st !== "waiting";
@@ -994,16 +995,13 @@
             applyConversationUi_(selectedConv, { skipContextReload: true });
             renderChatActionsBar_(selectedConv);
         }
-        const busy = [enableChatbotBtn, takeHumanBtn].filter(Boolean);
-        const prevLabels = busy.map((b) => b.textContent);
-        busy.forEach((b) => {
-            b.disabled = true;
-            if (patch.humanMode === "ai") {
-                b.textContent = b.id === "enableChatbotBtn" ? "Enabling…" : b.textContent;
-            } else if (patch.humanMode === "human") {
-                b.textContent = b.id === "takeHumanBtn" ? "Taking over…" : b.textContent;
-            }
-        });
+        const busy = enableChatbotBtn ? [enableChatbotBtn] : [];
+        const prevLabel = enableChatbotBtn ? enableChatbotBtn.textContent : "";
+        if (enableChatbotBtn) {
+            enableChatbotBtn.disabled = true;
+            enableChatbotBtn.textContent =
+                patch.humanMode === "ai" ? "Enabling…" : "Taking over…";
+        }
         try {
             const data = await apiFetch(
                 `${API}/conversations/${encodeURIComponent(selectedId)}/mode`,
@@ -1027,24 +1025,26 @@
                 renderChatActionsBar_(selectedConv);
             }
         } finally {
-            busy.forEach((b, i) => {
-                if (prevLabels[i]) b.textContent = prevLabels[i];
-            });
             if (selectedConv) {
                 renderChatActionsBar_(selectedConv);
+            } else if (enableChatbotBtn && prevLabel) {
+                enableChatbotBtn.textContent = prevLabel;
+                enableChatbotBtn.disabled = false;
             }
         }
     }
 
     if (enableChatbotBtn) {
-        enableChatbotBtn.addEventListener("click", () =>
-            setMode_({ humanMode: "ai", aiEnabled: true })
-        );
-    }
-    if (takeHumanBtn) {
-        takeHumanBtn.addEventListener("click", () =>
-            setMode_({ humanMode: "human", aiEnabled: false })
-        );
+        enableChatbotBtn.addEventListener("click", () => {
+            if (!selectedConv) return;
+            const hm = selectedConv.humanMode ? String(selectedConv.humanMode) : "";
+            const aiOn = selectedConv.aiEnabled !== false;
+            if (hm === "ai" && aiOn) {
+                setMode_({ humanMode: "human", aiEnabled: false });
+            } else {
+                setMode_({ humanMode: "ai", aiEnabled: true });
+            }
+        });
     }
     if (refreshChatBtn) {
         refreshChatBtn.addEventListener("click", () => {
