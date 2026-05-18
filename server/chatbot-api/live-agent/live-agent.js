@@ -424,7 +424,13 @@
 
     function renderInbox(conversations) {
         inboxList.innerHTML = "";
-        const open = (conversations || []).filter((c) => c.status !== "closed");
+        const seenIds = new Set();
+        const open = (conversations || []).filter((c) => {
+            if (c.status === "closed" || !c.id) return false;
+            if (seenIds.has(c.id)) return false;
+            seenIds.add(c.id);
+            return true;
+        });
         updateNotifyPill_(open);
         updateClearTestBtn_(open);
         if (!open.length) {

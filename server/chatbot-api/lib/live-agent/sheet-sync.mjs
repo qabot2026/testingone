@@ -43,7 +43,8 @@ export async function syncLiveAgentToSheet_(conversationId) {
             browserName: "",
             deviceType: "",
             channel: "Live Agent",
-            userQueriesCsv: line
+            userQueriesCsv: line,
+            replaceCsvPrefix: "[Live Agent]"
         });
         return { ok: true, result };
     } catch (err) {

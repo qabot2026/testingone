@@ -1681,6 +1681,18 @@ function splitCsvValues_(raw) {
         .filter(Boolean);
 }
 
+/** Replace CSV segments that start with prefix (case-insensitive), then append the new segment. */
+function replacePrefixedCsvSegment_(existingCsv, prefix, newSegment) {
+    const pfx = typeof prefix === "string" ? prefix.trim().toLowerCase() : "";
+    const parts = splitCsvValues_(existingCsv).filter((seg) => {
+        if (!pfx) return true;
+        return !seg.trim().toLowerCase().startsWith(pfx);
+    });
+    const next = typeof newSegment === "string" ? newSegment.trim() : "";
+    if (next) parts.push(next);
+    return parts.join(", ");
+}
+
 function mergeCsvUnique_(existingCsv, incomingCsv, limit = 40) {
     const existing = splitCsvValues_(existingCsv);
     const incoming = splitCsvValues_(incomingCsv);
@@ -3551,7 +3563,11 @@ export async function upsertSessionQueriesInSheet(row) {
         /** @type {{ totalUpdatedCells?: number, totalUpdatedRows?: number, updatedRanges: string[] } | null} */
         let googleBatchQueries = null;
         if (incomingQ) {
-            merged = mergeCsvUnique_(existingCsv, incomingQ, 200);
+            const replacePrefix =
+                typeof row.replaceCsvPrefix === "string" ? row.replaceCsvPrefix.trim() : "";
+            merged = replacePrefix
+                ? replacePrefixedCsvSegment_(existingCsv, replacePrefix, incomingQ)
+                : mergeCsvUnique_(existingCsv, incomingQ, 200);
             queryColumnWritten = merged !== existingCsv;
             if (queryColumnWritten) {
                 const nBatch = await sheets.spreadsheets.values.batchUpdate({

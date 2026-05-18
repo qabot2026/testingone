@@ -120,6 +120,7 @@ export async function requestHumanAgent_({
     const now = admin.firestore.FieldValue.serverTimestamp();
 
     let created = false;
+    let alreadyQueued = false;
     await db.runTransaction(async (tx) => {
         const snap = await tx.get(ref);
         if (snap.exists) {
@@ -145,6 +146,14 @@ export async function requestHumanAgent_({
                     visitorSessionActive: true
                 }, { merge: true });
                 created = true;
+            } else if (cur.status === "waiting" || cur.status === "active") {
+                alreadyQueued = true;
+                const patch = {};
+                const vn = trim_(visitorName);
+                if (vn && vn !== cur.visitorName) patch.visitorName = vn;
+                if (Object.keys(patch).length) {
+                    tx.update(ref, patch);
+                }
             }
             return;
         }
@@ -170,8 +179,17 @@ export async function requestHumanAgent_({
         created = true;
     });
 
+    if (alreadyQueued && !created) {
+        const snap = await ref.get();
+        return {
+            conversation: serializeConversation_(id, snap.data()),
+            reopened: false,
+            alreadyActive: true
+        };
+    }
+
     const preview = trim_(initialMessage);
-    if (preview) {
+    if (preview && created) {
         await appendMessage_({
             conversationId: id,
             role: "visitor",
@@ -184,18 +202,13 @@ export async function requestHumanAgent_({
     const { applyInitialRoundRobin_ } = await import("./routing.mjs");
     const { syncLiveAgentToSheet_ } = await import("./sheet-sync.mjs");
     let conversation;
-    if (created) {
-        conversation = await applyInitialRoundRobin_(id, departmentId);
-    } else {
-        const snap = await ref.get();
-        conversation = serializeConversation_(id, snap.data());
-    }
+    conversation = await applyInitialRoundRobin_(id, departmentId);
     try {
         await syncLiveAgentToSheet_(id);
     } catch (_) {
         /* non-fatal */
     }
-    return { conversation, reopened: created };
+    return { conversation, reopened: created, alreadyActive: false };
 }
 
 export async function getConversation_(conversationId) {
