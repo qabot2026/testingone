@@ -418,16 +418,21 @@
       max-width: calc(12ch - 14px);
     }
     table.sheet thead th.col-w-sourceurl,
-    table.sheet tbody td.col-w-sourceurl {
-      width: auto;
-      min-width: 0;
-      max-width: 270px;
-    }
+    table.sheet tbody td.col-w-sourceurl,
     table.sheet thead th.col-w-document,
     table.sheet tbody td.col-w-document {
       width: auto;
       min-width: 0;
-      max-width: 270px;
+      max-width: 15ch;
+    }
+    table.sheet td.col-w-sourceurl .cell-line--truncate-preview,
+    table.sheet td.col-w-document .cell-line--truncate-preview {
+      display: inline-block;
+      max-width: 15ch;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      vertical-align: middle;
     }
     tbody tr:nth-child(odd) td {
       background: var(--row-odd);
@@ -3045,10 +3050,8 @@
         appdate: 10,
         apptime: 14
       };
-      var SHEET_COL_PX_REDUCE = {
-        sourceurl: 100,
-        document: 100
-      };
+      /** Source URL / Document: show ~15 chars; full value copied on double-click */
+      var SHEET_TRUNCATE_PREVIEW_CHARS = 15;
       var SHEET_COL_FIXED_CH = { appdate: 12, apptime: 12 };
       var SHEET_COL_BODY_MIN_PX = 228;
       var SHEET_COL_BODY_MAX_PX = 370;
@@ -3097,12 +3100,55 @@
       }
 
       /** Cap wide body columns; subtract cut from default 370px max (do not force min 228px). */
-      function applySheetColumnWidthPxCap_(el, cut) {
-        var maxPx = Math.max(72, SHEET_COL_BODY_MAX_PX - cut);
+      function applySheetColumnTruncatePreviewCap_(el) {
         el.style.boxSizing = "border-box";
         el.style.width = "auto";
         el.style.minWidth = "0";
-        el.style.maxWidth = maxPx + "px";
+        el.style.maxWidth = SHEET_TRUNCATE_PREVIEW_CHARS + "ch";
+      }
+
+      function isSheetTruncatePreviewColumn_(headerTitle) {
+        var role = sheetColWidthRole_(headerTitle);
+        return role === "sourceurl" || role === "document";
+      }
+
+      function truncatePreviewLabel_(text, maxChars) {
+        var flat = flattenCellText(text).trim();
+        if (!flat) return "";
+        if (flat.length <= maxChars) return flat;
+        return flat.slice(0, maxChars) + "…";
+      }
+
+      /** ~15 visible chars; td._clipboardValue holds full text/URL for double-click copy */
+      function appendTruncatedPreviewCell(td, raw) {
+        var clip = cellClipboardString(raw);
+        td._clipboardValue = clip;
+        var flat = flattenCellText(raw).trim();
+        var preview = truncatePreviewLabel_(raw, SHEET_TRUNCATE_PREVIEW_CHARS);
+        td.title = clip
+          ? clip.length > 32000
+            ? clip.slice(0, 32000) + "… — double-click to copy full value"
+            : clip + " — double-click to copy"
+          : "";
+
+        var wrap = document.createElement("span");
+        wrap.className = "cell-line cell-line--truncate-preview";
+        var urlMatch = /^(https?:\/\/[^\s]+)$/i.exec(flat);
+        if (urlMatch && urlMatch[0].length === flat.length) {
+          var a = document.createElement("a");
+          a.href = urlMatch[0];
+          a.target = "_blank";
+          a.rel = "noopener noreferrer";
+          a.textContent = preview || " ";
+          a.title = flat;
+          a.addEventListener("click", function (e) {
+            e.stopPropagation();
+          });
+          wrap.appendChild(a);
+        } else {
+          wrap.appendChild(document.createTextNode(preview === "" ? " " : preview));
+        }
+        td.appendChild(wrap);
       }
 
       /** Narrow specific sheet columns (table only); call after sticky/fixed/header width decorators */
@@ -3111,6 +3157,10 @@
         if (!role) return;
         el.classList.add("col-w-" + role);
 
+        if (role === "sourceurl" || role === "document") {
+          applySheetColumnTruncatePreviewCap_(el);
+          return;
+        }
         if (role === "email" || role === "mobile") {
           var chCut = SHEET_COL_CH_REDUCE_PX[role];
           if (chCut == null) return;
@@ -3124,9 +3174,6 @@
           applySheetColumnChCap_(el, fixedCh, appCut);
           return;
         }
-        var pxCut = SHEET_COL_PX_REDUCE[role];
-        if (pxCut == null) return;
-        applySheetColumnWidthPxCap_(el, pxCut);
       }
 
       /** On phones, sticky pins are wider than the screen and hide horizontally scrolled cells. */
@@ -4043,6 +4090,8 @@
             var raw = row[headers[ci]];
             if (isChatScriptConvLinkColumn(headers[ci])) {
               appendChatScriptConvLinkCell(td, row, raw);
+            } else if (isSheetTruncatePreviewColumn_(headers[ci])) {
+              appendTruncatedPreviewCell(td, raw);
             } else {
               var clip = cellClipboardString(raw);
               td._clipboardValue = clip;
