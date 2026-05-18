@@ -2284,14 +2284,14 @@
             <div class="lead-chart-card">
               <h4>Volume by channel</h4>
               <p class="lead-chart-card-total">
-                Total Â· <span id="lcChartTotalConv">0</span>
+                Total <span id="lcChartTotalConv">0</span>
               </p>
               <div class="chart-canvas-wrap"><canvas id="lcBarChannel" aria-label="Volume by channel"></canvas></div>
             </div>
             <div class="lead-chart-card lead-chart-card--split">
               <h4>Lead capture split</h4>
               <p class="lead-chart-card-total lead-chart-card-total--split">
-                <span>Leads Captured Â· <span id="lcChartTotalLeads">0</span></span>
+                <span>Leads Captured <span id="lcChartTotalLeads">0</span></span>
                 <span class="lead-chart-card-capture-rate"
                   >Lead capture rate <span id="lcChartLeadCapturePct">-</span></span
                 >
@@ -4442,13 +4442,13 @@
             : filtered.length;
         var pageNote =
           totalInRange > filtered.length
-            ? " Â· page " + filtered.length + " of " + totalInRange
+            ? " (page " + filtered.length + " of " + totalInRange + ")"
             : "";
         rowPill.textContent =
           totalInRange +
           " row" +
           (totalInRange === 1 ? "" : "s") +
-          (getDateFilterYmd_(dateFromEl) || getDateFilterYmd_(dateToEl) ? " · date-filtered" : "") +
+          (getDateFilterYmd_(dateFromEl) || getDateFilterYmd_(dateToEl) ? ", date-filtered" : "") +
           pageNote;
 
         if (!filtered.length) {
@@ -4632,7 +4632,7 @@
           json.dateFilter && json.dateFilter.serverApplied
             ? "conversations (date filter)"
             : "conversations in this list";
-        pagerHint.textContent = total + " " + rowWord + " Â· " + lim + " per page";
+        pagerHint.textContent = total + " " + rowWord + ", " + lim + " per page";
       }
 
       if (pagerFirst) {
@@ -4865,7 +4865,6 @@
               curPage +
               " of " +
               totalPages +
-              " Â· " +
               loaded +
               " row" +
               (loaded === 1 ? "" : "s") +
@@ -4879,7 +4878,7 @@
               "scan capped — narrow dates or raise CONVERSATIONS_SHEET_VIEW_RETURN_MAX_ROWS on Railway"
             );
           }
-          setStatus(msgParts.join(" Â· ") + ".");
+          setStatus(msgParts.join(", ") + ".");
           sheetOffset = Number(json.offset) || 0;
           hadLoadedSheet = true;
           syncPagerUi(json);
@@ -5336,7 +5335,7 @@
               setStatus(
                 "CSV report downloaded" +
                   (fromV || toV ? " (date filter applied)" : "") +
-                  (sz ? " Â· ~" + sz + " KB" : "") +
+                  (sz ? " (~" + sz + " KB)" : "") +
                   "."
               );
             })
