@@ -584,6 +584,10 @@ body.live-agent-locked {
   color: var(--muted);
 }
 
+.claim-hint.claim-hint-error {
+  color: #fca5a5;
+}
+
 .claim-hint {
   flex-shrink: 0;
   margin: 0;

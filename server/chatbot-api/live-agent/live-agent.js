@@ -162,6 +162,10 @@
         loginView.classList.add("hidden");
         appView.classList.remove("hidden");
         agentLabel.textContent = agentId;
+        if (!agentId.includes("@") && inboxStatus) {
+            inboxStatus.textContent =
+                "Add your work email: lock the desk, sign in again with you@company.com (required for Accept chat).";
+        }
         requestNotificationPermission_();
         loadDeskSettings_().then(() => {
             checkLiveAgentBackend_().then((ok) => {
@@ -1140,6 +1144,10 @@
             });
             await selectConversation(data.conversation);
             loadAgentsPanel_();
+            if (claimHint) {
+                claimHint.classList.remove("claim-hint-error");
+                claimHint.textContent = "";
+            }
         } catch (e) {
             const msg = e.message || "Could not accept chat";
             if (claimHint) {
