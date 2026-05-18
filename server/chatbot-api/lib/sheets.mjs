@@ -177,6 +177,26 @@ function conversationSheetBaseDate_(d) {
 
 const SHEET_DD_MM_YYYY_NUMBER_FORMAT = { type: "DATE", pattern: "dd/mm/yyyy" };
 
+/**
+ * @param {number} year
+ * @param {number} month 1–12
+ * @param {number} day 1–31
+ * @returns {boolean}
+ */
+function isoCalendarDayOk_(year, month, day) {
+    if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) {
+        return false;
+    }
+    const y = Math.trunc(year);
+    const mo = Math.trunc(month);
+    const d = Math.trunc(day);
+    if (mo < 1 || mo > 12 || d < 1 || d > 31) {
+        return false;
+    }
+    const probe = new Date(Date.UTC(y, mo - 1, d, 12, 0, 0));
+    return probe.getUTCFullYear() === y && probe.getUTCMonth() === mo - 1 && probe.getUTCDate() === d;
+}
+
 /** Google Sheets serial (days since 1899-12-30) for calendar Y-M-D. */
 function googleSheetsSerialFromIsoYmd_(iso) {
     const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || "").trim());
