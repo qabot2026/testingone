@@ -392,7 +392,7 @@
       padding-left: 6px;
       padding-right: 6px;
     }
-    /** Column width caps (width: auto) â€” ch columns narrowed; email/mobile less narrow than before */
+    /** Column width caps (width: auto) — ch columns narrowed; email/mobile less narrow than before */
     table.sheet thead th.col-w-email,
     table.sheet tbody td.col-w-email {
       width: calc(25ch + 30px) !important;
@@ -2192,12 +2192,9 @@
       </div>
       <div class="presets tool" style="min-width: 220px;">
         <span class="mini" style="width:100%; margin-bottom:2px;">Quick range</span>
-        <button type="button" class="preset" data-preset="all">Any</button>
         <button type="button" class="preset" data-preset="today">Today</button>
-        <button type="button" class="preset" data-preset="5">5 days</button>
-        <button type="button" class="preset" data-preset="7">7 days</button>
-        <button type="button" class="preset" data-preset="30">30 days</button>
-        <button type="button" class="preset" data-preset="clear">Clear dates</button>
+        <button type="button" class="preset" data-preset="week">This Week</button>
+        <button type="button" class="preset" data-preset="month">This Month</button>
       </div>
     </div>
 
@@ -3138,7 +3135,7 @@
           .replace(/[^a-z0-9]/g, "");
       }
 
-      /** Collapse BOM / NBSP / narrow spaces Sheets sometimes embed inside â€œ14 May 2026â€. */
+      /** Collapse BOM / NBSP / narrow spaces Sheets sometimes embed inside “14 May 2026”. */
       function normalizeSpacesForParsing(s) {
         return String(s == null ? "" : s)
           .replace(/\uFEFF/g, "")
@@ -3252,7 +3249,7 @@
         var flat = flattenCellText(text).trim();
         if (!flat) return "";
         if (flat.length <= maxChars) return flat;
-        return flat.slice(0, maxChars) + "â€¦";
+        return flat.slice(0, maxChars) + "…";
       }
 
       /** ~15 visible chars; td._clipboardValue holds full text/URL for double-click copy */
@@ -3263,8 +3260,8 @@
         var preview = truncatePreviewLabel_(raw, SHEET_TRUNCATE_PREVIEW_CHARS);
         td.title = clip
           ? clip.length > 32000
-            ? clip.slice(0, 32000) + "â€¦ â€” double-click to copy full value"
-            : clip + " â€” double-click to copy"
+            ? clip.slice(0, 32000) + "… — double-click to copy full value"
+            : clip + " — double-click to copy"
           : "";
 
         var wrap = document.createElement("span");
@@ -3414,7 +3411,7 @@
           syncStickyLeftPx(tbl, tbl._stickyColIndices);
         }, 50);
       }
-      /** Header: title length + 2 â€œcharâ€ slack (â‰ˆ pre/post space), no data-column ch clamp */
+      /** Header: title length + 2 “char” slack (â‰ˆ pre/post space), no data-column ch clamp */
       function headerMinWidthCh(headerTitle) {
         var lbl = String(headerTitle == null ? "" : headerTitle).trim();
         return Math.max(1, lbl.length) + 2;
@@ -3690,7 +3687,7 @@
           ) {
             continue;
           }
-          /** â€œMessage dateâ€ / â€œLast message dateâ€ must not be dropped just because of the word â€œmessageâ€. */
+          /** “Message date” / “Last message date” must not be dropped just because of the word “message”. */
           var headerHintsDate =
             /date|datetime|timestamp|stamp|logged|received|scheduled|calendar|day|time/i.test(nk) ||
             /conversationdate|convdate|conversiondate|convdateonly/i.test(compact);
@@ -3711,7 +3708,7 @@
           var s =
             typeof v === "number" && !Number.isNaN(v) ? String(v) : normalizeSpacesForParsing(v);
           if (!s || s.length > 240) continue;
-          /** Skip long free-text â€œconversationâ€ blobs that are not date-labeled columns. */
+          /** Skip long free-text “conversation” blobs that are not date-labeled columns. */
           if (!headerHintsDate && s.length > 56) continue;
           var digitsOnly = s.replace(/[\s.+-]/g, "");
           if (!headerHintsDate && /^\d{12,}$/.test(digitsOnly)) continue;
@@ -3731,7 +3728,7 @@
         return bestYmd;
       }
 
-      /** YYYY-MM-DD for date filter â€” uses date column directly when possible (avoids UTC slips). */
+      /** YYYY-MM-DD for date filter — uses date column directly when possible (avoids UTC slips). */
       function rowDayYmd(row) {
         var dStr = findCell(row, [
           "Conv. Date",
@@ -3799,7 +3796,7 @@
         if (!df || !df.applied) return "";
         var from = df.from ? String(df.from) : "";
         var to = df.to ? String(df.to) : "";
-        if (from && to) return isoYmdToDisplayDdMmYyyy_(from) + " â€“ " + isoYmdToDisplayDdMmYyyy_(to);
+        if (from && to) return isoYmdToDisplayDdMmYyyy_(from) + " – " + isoYmdToDisplayDdMmYyyy_(to);
         if (from) return "from " + isoYmdToDisplayDdMmYyyy_(from);
         if (to) return "through " + isoYmdToDisplayDdMmYyyy_(to);
         return "";
@@ -3814,7 +3811,7 @@
       }
 
       /**
-       * Single-line cell: merges wrapped sheet lines (fewer short â€œmobileâ€ wraps),
+       * Single-line cell: merges wrapped sheet lines (fewer short “mobile” wraps),
        * ellipsis + full original (incl. newlines) in title.
        */
       function isChatScriptConvLinkColumn(headerTitle) {
@@ -3838,7 +3835,7 @@
         return flat.length > 80 && /^\s*\[\s*\{/.test(flat);
       }
 
-      /** Display label from Sheet column A (e.g. â€œChat scriptâ€ from HYPERLINK), not raw JSON. */
+      /** Display label from Sheet column A (e.g. “Chat script” from HYPERLINK), not raw JSON. */
       function chatLinkLabelFromSheetCell(raw) {
         if (isJsonTranscriptSheetCell_(raw)) return "";
         var flat = flattenCellText(raw);
@@ -3938,7 +3935,7 @@
           a.href = m[0];
           a.target = "_blank";
           a.rel = "noopener noreferrer";
-          a.textContent = trim.length > 400 ? trim.slice(0, 397) + "â€¦" : trim;
+          a.textContent = trim.length > 400 ? trim.slice(0, 397) + "…" : trim;
           a.addEventListener("click", function (e) {
             e.stopPropagation();
           });
@@ -4195,35 +4192,35 @@
         if (lastPayload) render(lastPayload);
       }
 
-      /** Last 4 days + today (5 calendar days, inclusive). */
-      function applyDefaultDateRange5Days() {
+      /** Monday (ISO) through today, inclusive. */
+      function startOfWeekLocal_(d) {
+        var day = d.getDay();
+        var mondayOffset = (day + 6) % 7;
+        return new Date(d.getFullYear(), d.getMonth(), d.getDate() - mondayOffset);
+      }
+
+      /** First calendar day of the month. */
+      function startOfMonthLocal_(d) {
+        return new Date(d.getFullYear(), d.getMonth(), 1);
+      }
+
+      function applyDefaultDateRangeThisWeek() {
         var now = new Date();
-        var today = toYmdLocal(now);
-        var fromD = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 4);
-        dateFromEl.value = toYmdLocal(fromD);
-        dateToEl.value = today;
+        dateFromEl.value = toYmdLocal(startOfWeekLocal_(now));
+        dateToEl.value = toYmdLocal(now);
       }
 
       function applyPresets(which) {
         var now = new Date();
-        function ymdOff(days) {
-          var d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - days);
-          return toYmdLocal(d);
-        }
         var today = toYmdLocal(now);
-        if (which === "all" || which === "clear") {
-          dateFromEl.value = "";
-          dateToEl.value = "";
-        } else if (which === "today") {
+        if (which === "today") {
           dateFromEl.value = today;
           dateToEl.value = today;
-        } else if (which === "5") {
-          applyDefaultDateRange5Days();
-        } else if (which === "7") {
-          dateFromEl.value = ymdOff(6);
+        } else if (which === "week") {
+          dateFromEl.value = toYmdLocal(startOfWeekLocal_(now));
           dateToEl.value = today;
-        } else if (which === "30") {
-          dateFromEl.value = ymdOff(29);
+        } else if (which === "month") {
+          dateFromEl.value = toYmdLocal(startOfMonthLocal_(now));
           dateToEl.value = today;
         }
         sheetOffset = 0;
@@ -4337,7 +4334,7 @@
           }
           emp.textContent = rawRows.length
             ? "No rows match " + (why.length ? why.join(" and ") : "filters") + "."
-            : "Nothing loaded yet â€” tap Reload.";
+            : "Nothing loaded yet — tap Reload.";
           convList.appendChild(emp);
           return;
         }
@@ -4386,7 +4383,7 @@
               var clip = cellClipboardString(raw);
               td._clipboardValue = clip;
               td.title =
-                clip.length > 32000 ? clip.slice(0, 32000) + "â€¦ (truncated in tooltip)" : clip;
+                clip.length > 32000 ? clip.slice(0, 32000) + "… (truncated in tooltip)" : clip;
               td.appendChild(linkifyCellForTable(raw == null ? "" : raw));
             }
             if (stickyMeta[ci]) decorateStickyCell(td, stickyMeta[ci], false);
@@ -4578,7 +4575,7 @@
             showCopyToast("Copied!", false);
           },
           function () {
-            showCopyToast("Copy failed â€” select text and press Ctrl+C.", true);
+            showCopyToast("Copy failed — select text and press Ctrl+C.", true);
           }
         );
       });
@@ -4613,7 +4610,7 @@
         if (interactive && syncSheet2Btn) {
           syncSheet2Btn.disabled = true;
           prevBtnText = syncSheet2Btn.textContent;
-          syncSheet2Btn.textContent = "Syncingâ€¦";
+          syncSheet2Btn.textContent = "Syncing…";
         }
         return fetch(url, {
           method: "POST",
@@ -4661,8 +4658,8 @@
         persistViewerSecret_(secret);
         refreshBtn.disabled = true;
         var reloadLbl = refreshBtn.textContent;
-        refreshBtn.textContent = "Loadingâ€¦";
-        setStatus("Loading conversationsâ€¦");
+        refreshBtn.textContent = "Loading…";
+        setStatus("Loading conversations…");
         showLeadStatsLoading(true);
         var timedId = 0;
         var ctrl = null;
@@ -4746,7 +4743,7 @@
           }
           if (json.rowsTruncated) {
             msgParts.push(
-              "scan capped â€” narrow dates or raise CONVERSATIONS_SHEET_VIEW_RETURN_MAX_ROWS on Railway"
+              "scan capped — narrow dates or raise CONVERSATIONS_SHEET_VIEW_RETURN_MAX_ROWS on Railway"
             );
           }
           setStatus(msgParts.join(" Â· ") + ".");
@@ -4823,7 +4820,7 @@
           showLeadStatsErr("");
           if (dashHeadEl) {
             dashHeadEl.innerHTML =
-              '<p class="lead-stats-loading">Loading dashboard metricsâ€¦</p>';
+              '<p class="lead-stats-loading">Loading dashboard metrics…</p>';
           }
           if (numBlockEl) numBlockEl.innerHTML = "";
         }
@@ -5098,7 +5095,7 @@
               if (dashHeadEl) dashHeadEl.innerHTML = "";
               if (numBlockEl) {
                 numBlockEl.innerHTML =
-                  '<p class="lead-stats-fallback">Could not draw the overview strip. The conversation table below is unchangedâ€”try reloading the page.</p>';
+                  '<p class="lead-stats-fallback">Could not draw the overview strip. The conversation table below is unchanged—try reloading the page.</p>';
               }
             }
           }
@@ -5147,7 +5144,7 @@
             (qp.length ? "?" + qp.join("&") : "");
           downloadReportBtn.disabled = true;
           var prev = downloadReportBtn.textContent;
-          downloadReportBtn.textContent = "Preparingâ€¦";
+          downloadReportBtn.textContent = "Preparing…";
           fetch(url, {
             method: "GET",
             headers: { "X-Conversations-Sheet-Secret": secret },
@@ -5172,7 +5169,7 @@
                 ct.indexOf("text/plain") < 0
               ) {
                 return res.text().then(function () {
-                  showErr("Unexpected response type â€” report was not CSV.");
+                  showErr("Unexpected response type — report was not CSV.");
                 });
               }
               return res.blob().then(function (blob) {
@@ -5233,7 +5230,7 @@
           load();
         });
       }
-      if (dateFromEl && dateToEl) applyDefaultDateRange5Days();
+      if (dateFromEl && dateToEl) applyDefaultDateRangeThisWeek();
       if (secretEl) {
         secretEl.addEventListener("keydown", function (ev) {
           if (ev.key === "Enter") {
