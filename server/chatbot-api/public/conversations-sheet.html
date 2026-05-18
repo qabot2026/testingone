@@ -349,6 +349,9 @@
       min-width: 228px;
       max-width: 370px;
     }
+    table.sheet tbody td[class*="col-w-"] {
+      min-width: 0;
+    }
     table.sheet td .cell-line {
       display: block;
       overflow: hidden;
@@ -389,36 +392,36 @@
       padding-left: 6px;
       padding-right: 6px;
     }
-    /** Narrow columns (Email, Mobile, Source URL, IP Address, Document) */
+    /** Narrow columns — caps only (width: auto), never wider than sheet defaults (228–370px) */
     table.sheet thead th.col-w-email,
     table.sheet tbody td.col-w-email {
-      width: calc(25ch - 20px);
-      min-width: calc(25ch - 20px);
+      width: auto;
+      min-width: 0;
       max-width: calc(25ch - 20px);
     }
     table.sheet thead th.col-w-mobile,
     table.sheet tbody td.col-w-mobile {
-      width: calc(15ch - 20px);
-      min-width: calc(15ch - 20px);
+      width: auto;
+      min-width: 0;
       max-width: calc(15ch - 20px);
     }
     table.sheet thead th.col-w-ipaddress,
     table.sheet tbody td.col-w-ipaddress {
-      width: calc(16ch - 20px);
-      min-width: calc(16ch - 20px);
+      width: auto;
+      min-width: 0;
       max-width: calc(16ch - 20px);
     }
     table.sheet thead th.col-w-sourceurl,
     table.sheet tbody td.col-w-sourceurl {
-      min-width: 128px;
+      width: auto;
+      min-width: 0;
       max-width: 270px;
-      width: 270px;
     }
     table.sheet thead th.col-w-document,
     table.sheet tbody td.col-w-document {
-      min-width: 178px;
+      width: auto;
+      min-width: 0;
       max-width: 320px;
-      width: 320px;
     }
     tbody tr:nth-child(odd) td {
       background: var(--row-odd);
@@ -3088,17 +3091,21 @@
         return "calc(" + s + " - " + px + "px)";
       }
 
-      function applySheetColumnWidthPx_(el, role, cut) {
-        var baseMin = SHEET_COL_BODY_MIN_PX;
-        var baseMax = SHEET_COL_BODY_MAX_PX;
-        var floorMin = role === "document" ? 56 : 80;
-        var floorMax = role === "document" ? 96 : 120;
-        var minPx = Math.max(floorMin, baseMin - cut);
-        var maxPx = Math.max(floorMax, baseMax - cut);
+      function applySheetColumnChCap_(el, ch, cutPx) {
+        var cap = "calc(" + ch + "ch - " + cutPx + "px)";
         el.style.boxSizing = "border-box";
-        el.style.minWidth = minPx + "px";
+        el.style.width = "auto";
+        el.style.minWidth = "0";
+        el.style.maxWidth = cap;
+      }
+
+      /** Cap wide body columns; subtract cut from default 370px max (do not force min 228px). */
+      function applySheetColumnWidthPxCap_(el, cut) {
+        var maxPx = Math.max(72, SHEET_COL_BODY_MAX_PX - cut);
+        el.style.boxSizing = "border-box";
+        el.style.width = "auto";
+        el.style.minWidth = "0";
         el.style.maxWidth = maxPx + "px";
-        el.style.width = maxPx + "px";
       }
 
       /** Narrow specific sheet columns (table only); call after sticky/fixed/header width decorators */
@@ -3109,32 +3116,18 @@
         if (!cut) return;
         el.classList.add("col-w-" + role);
 
+        if (role === "email" || role === "mobile") {
+          applySheetColumnChCap_(el, STICKY_WIDTH_CH[role], cut);
+          return;
+        }
+        if (role === "ipaddress") {
+          applySheetColumnChCap_(el, 16, cut);
+          return;
+        }
         if (role === "sourceurl" || role === "document") {
-          applySheetColumnWidthPx_(el, role, cut);
+          applySheetColumnWidthPxCap_(el, cut);
           return;
         }
-
-        var w = el.style.width;
-        var mn = el.style.minWidth;
-        var mx = el.style.maxWidth;
-
-        if (w && (w.indexOf("ch") >= 0 || w.indexOf("calc(") === 0)) {
-          el.style.width = widthMinusPx_(w, cut);
-          el.style.minWidth = widthMinusPx_(mn || w, cut);
-          el.style.maxWidth = widthMinusPx_(mx || w, cut);
-          return;
-        }
-        if (mn && mn.indexOf("ch") >= 0) {
-          el.style.minWidth = widthMinusPx_(mn, cut);
-          if (mx && mx.indexOf("ch") >= 0) {
-            el.style.maxWidth = widthMinusPx_(mx, cut);
-          } else if (mx) {
-            el.style.maxWidth = widthMinusPx_(mx, cut);
-          }
-          return;
-        }
-
-        applySheetColumnWidthPx_(el, role, cut);
       }
 
       /** On phones, sticky pins are wider than the screen and hide horizontally scrolled cells. */
@@ -3256,9 +3249,20 @@
         el.classList.add("col-sticky");
         el.style.boxSizing = "border-box";
         el.style.zIndex = String(isHeader ? 75 + sm.ord : 35 + sm.ord);
-        el.style.width = sm.wch + "ch";
-        el.style.minWidth = sm.wch + "ch";
-        el.style.maxWidth = sm.wch + "ch";
+        var cut = 0;
+        if (sm.role === "email" || sm.role === "mobile") {
+          cut = SHEET_COL_WIDTH_REDUCE_PX[sm.role] || 0;
+        }
+        if (cut > 0) {
+          var cap = "calc(" + sm.wch + "ch - " + cut + "px)";
+          el.style.width = "auto";
+          el.style.minWidth = "0";
+          el.style.maxWidth = cap;
+        } else {
+          el.style.width = sm.wch + "ch";
+          el.style.minWidth = sm.wch + "ch";
+          el.style.maxWidth = sm.wch + "ch";
+        }
         el.style.overflow = "hidden";
         if (isHeader) {
           el.title = String(headerTitle == null ? "" : headerTitle);
