@@ -981,6 +981,165 @@ function leadCaptureConversationsByDateSeries_(byDate, fromYmd, toYmd) {
     return { labels, data };
 }
 
+const SHEET_H_USER_QUERIES = [
+    "userqueries",
+    "user_queries",
+    "userqueriescsv",
+    "userquery",
+    "user_queries_csv",
+    "visitorqueries",
+    "queries"
+];
+
+const LEAD_CAPTURE_POSITIVE_RE =
+    /\b(thank|thanks|thankyou|great|good|excellent|happy|love|appreciate|wonderful|amazing|helpful|satisfied|perfect|awesome|fantastic|pleased|glad|nice|delighted)\b/gi;
+const LEAD_CAPTURE_NEGATIVE_RE =
+    /\b(bad|terrible|awful|angry|hate|disappointed|frustrat|complaint|worst|rude|unhappy|poor|horrible|useless|annoyed|upset|disgust|not\s+happy|waste|pathetic|disappointing)\b/gi;
+
+/**
+ * @param {import("googleapis").sheets_v4.Sheets} sheets
+ * @param {string} tab
+ * @param {Record<string, number>} headerMap
+ * @param {unknown[]} headersRaw
+ */
+function leadCaptureStatColFromHeaders_(headerMap, headersRaw) {
+    const appointmentBookedIdx = pickAppointmentStatsColumnIdx_(headerMap, headersRaw, 15);
+    const appointmentDateIdx = pickHeaderIndex_(headerMap, SHEET_H_APPOINTMENT_DATE, 16);
+    const appointmentTimeIdx = pickHeaderIndex_(headerMap, SHEET_H_APPOINTMENT_TIME, 17);
+    const appointmentDatetimeIdx = firstHeaderIdxFromAliases_(headerMap, SHEET_H_APPOINTMENT_DATETIME);
+    const transcriptIdx = firstHeaderIdxFromAliases_(headerMap, CHAT_TRANSCRIPT_JSON_HEADER_ALIASES);
+    const userQueriesIdx = firstHeaderIdxFromAliases_(headerMap, SHEET_H_USER_QUERIES);
+    return {
+        mobileIdx: pickHeaderIndex_(headerMap, SHEET_H_MOBILE, 4),
+        emailIdx: pickHeaderIndex_(headerMap, SHEET_H_EMAIL, 5),
+        channelIdx: pickHeaderIndex_(headerMap, SHEET_H_CHANNEL, 6),
+        cityIdx: pickHeaderIndex_(headerMap, SHEET_H_CITY, 13),
+        appointmentBookedIdx,
+        appointmentDateIdx,
+        appointmentTimeIdx,
+        userQueriesIdx: userQueriesIdx !== undefined && userQueriesIdx >= 0 ? userQueriesIdx : 7,
+        transcriptIdx: transcriptIdx !== undefined && transcriptIdx >= 0 ? transcriptIdx : -1,
+        apptDtIdx:
+            appointmentDatetimeIdx !== undefined && appointmentDatetimeIdx >= 0
+                ? appointmentDatetimeIdx
+                : -1
+    };
+}
+
+/** @param {unknown} raw */
+function leadCaptureNormalizeCityLabel_(raw) {
+    const s = sheetCellString_(raw).trim().replace(/\s+/g, " ");
+    if (!s) {
+        return "Unknown";
+    }
+    if (s.length > 48) {
+        return `${s.slice(0, 45)}...`;
+    }
+    return s;
+}
+
+/**
+ * @param {unknown[]} cells
+ * @param {ReturnType<typeof leadCaptureStatColFromHeaders_>} col
+ */
+function leadCaptureExtractUserTextForSentiment_(cells, col) {
+    /** @type {string[]} */
+    const parts = [];
+    if (col.userQueriesIdx >= 0) {
+        const q = sheetCellString_(cells[col.userQueriesIdx]);
+        if (q) {
+            parts.push(q.replace(/,/g, " "));
+        }
+    }
+    if (col.transcriptIdx >= 0) {
+        const raw = sheetCellString_(cells[col.transcriptIdx]);
+        if (raw.startsWith("[")) {
+            try {
+                const arr = JSON.parse(raw);
+                if (Array.isArray(arr)) {
+                    for (let i = 0; i < arr.length; i += 1) {
+                        const item = arr[i];
+                        if (!item || typeof item !== "object") {
+                            continue;
+                        }
+                        const role = String(
+                            /** @type {Record<string, unknown>} */ (item).role
+                                ?? /** @type {Record<string, unknown>} */ (item).type
+                                ?? ""
+                        )
+                            .trim()
+                            .toLowerCase();
+                        if (role !== "user" && role !== "visitor") {
+                            continue;
+                        }
+                        const text =
+                            typeof /** @type {Record<string, unknown>} */ (item).text === "string"
+                                ? /** @type {Record<string, unknown>} */ (item).text.trim()
+                                : "";
+                        if (text) {
+                            parts.push(text);
+                        }
+                    }
+                }
+            } catch {
+                /* ignore malformed JSON */
+            }
+        }
+    }
+    return parts.join(" ").trim();
+}
+
+/** @param {string} text @returns {"positive"|"negative"|"neutral"} */
+function leadCaptureSentimentPolarity_(text) {
+    const s = String(text || "").toLowerCase();
+    if (!s || s.length < 2) {
+        return "neutral";
+    }
+    const pos = (s.match(LEAD_CAPTURE_POSITIVE_RE) || []).length;
+    const neg = (s.match(LEAD_CAPTURE_NEGATIVE_RE) || []).length;
+    if (pos === 0 && neg === 0) {
+        return "neutral";
+    }
+    if (pos > neg) {
+        return "positive";
+    }
+    if (neg > pos) {
+        return "negative";
+    }
+    return "neutral";
+}
+
+/**
+ * @param {Record<string, number>|null|undefined} byCity
+ * @param {number} [topN]
+ */
+function leadCaptureConversationsByCitySeries_(byCity, topN = 10) {
+    /** @type {string[]} */
+    const labels = [];
+    /** @type {number[]} */
+    const data = [];
+    const map = byCity && typeof byCity === "object" ? byCity : {};
+    const entries = Object.keys(map)
+        .map((k) => ({ label: k, count: map[k] }))
+        .filter((e) => e.label && typeof e.count === "number" && e.count > 0)
+        .sort((a, b) => b.count - a.count);
+    const cap = Math.max(1, Math.min(20, topN));
+    let other = 0;
+    for (let i = 0; i < entries.length; i += 1) {
+        if (i < cap) {
+            labels.push(entries[i].label);
+            data.push(Math.trunc(entries[i].count));
+        } else {
+            other += Math.trunc(entries[i].count);
+        }
+    }
+    if (other > 0) {
+        labels.push("Other");
+        data.push(other);
+    }
+    return { labels, data };
+}
+
 function leadCaptureStatsAccumulatorEmpty_() {
     return {
         dataRowsConsidered: 0,
@@ -988,6 +1147,10 @@ function leadCaptureStatsAccumulatorEmpty_() {
         conversations: 0,
         /** @type {Record<string, number>} */
         conversationsByDate: Object.create(null),
+        /** @type {Record<string, number>} */
+        conversationsByCity: Object.create(null),
+        sentimentPositive: 0,
+        sentimentNegative: 0,
         onlyMobile: 0,
         onlyEmail: 0,
         mobileAndEmail: 0,
@@ -1007,15 +1170,7 @@ function leadCaptureStatsAccumulatorEmpty_() {
 /**
  * @param {ReturnType<typeof leadCaptureStatsAccumulatorEmpty_>} acc
  * @param {unknown[]} cells
- * @param {{
- *   mobileIdx: number,
- *   emailIdx: number,
- *   channelIdx: number,
- *   appointmentBookedIdx: number,
- *   appointmentDateIdx: number,
- *   appointmentTimeIdx: number,
- *   apptDtIdx: number
- * }} col
+ * @param {ReturnType<typeof leadCaptureStatColFromHeaders_>} col
  * @param {string} [rowYmd]
  */
 function leadCaptureStatsAccumulateRow_(acc, cells, col, rowYmd) {
@@ -1031,6 +1186,17 @@ function leadCaptureStatsAccumulateRow_(acc, cells, col, rowYmd) {
     acc.conversations += 1;
     if (rowYmd && isoYyyyMmDdOk_(rowYmd)) {
         acc.conversationsByDate[rowYmd] = (acc.conversationsByDate[rowYmd] || 0) + 1;
+    }
+    if (col.cityIdx >= 0) {
+        const cityLbl = leadCaptureNormalizeCityLabel_(cells[col.cityIdx]);
+        acc.conversationsByCity[cityLbl] = (acc.conversationsByCity[cityLbl] || 0) + 1;
+    }
+    const userText = leadCaptureExtractUserTextForSentiment_(cells, col);
+    const sentiment = leadCaptureSentimentPolarity_(userText);
+    if (sentiment === "positive") {
+        acc.sentimentPositive += 1;
+    } else if (sentiment === "negative") {
+        acc.sentimentNegative += 1;
     }
     if (hasMob && hasEm) {
         acc.mobileAndEmail += 1;
@@ -1116,7 +1282,12 @@ function leadCaptureStatsPayloadFromAccumulator_(acc, baseEmpty) {
             acc.conversationsByDate,
             fromYmd,
             toYmd
-        )
+        ),
+        conversationsByCity: leadCaptureConversationsByCitySeries_(acc.conversationsByCity, 10),
+        sentiment: {
+            labels: ["Positive", "Negative"],
+            data: [acc.sentimentPositive, acc.sentimentNegative]
+        }
     };
     return out;
 }
@@ -4020,21 +4191,9 @@ export async function fetchConversationLeadCaptureStats(opts = {}) {
     let dataRows = [];
 
     if (filterActive) {
-        const apptDtIdx =
-            appointmentDatetimeIdx !== undefined && appointmentDatetimeIdx >= 0
-                ? appointmentDatetimeIdx
-                : -1;
         const blockRows = await getConversationSheetDataBlock_(sheets, tab, lastColIdx, nLast);
         const acc = leadCaptureStatsAccumulatorEmpty_();
-        const statCol = {
-            mobileIdx,
-            emailIdx,
-            channelIdx,
-            appointmentBookedIdx,
-            appointmentDateIdx,
-            appointmentTimeIdx,
-            apptDtIdx
-        };
+        const statCol = leadCaptureStatColFromHeaders_(headerMap, headersRaw);
         for (let ri = 0; ri < blockRows.length; ri += 1) {
             acc.dataRowsConsidered += 1;
             const cells = padSheetRow_(blockRows[ri] || [], padWidth);
@@ -5636,21 +5795,8 @@ export async function fetchConversationSheetPreview(opts = {}) {
         const appointmentBookedIdx = pickAppointmentStatsColumnIdx_(headerMap, headersRaw, 15);
         const appointmentDateIdx = pickHeaderIndex_(headerMap, SHEET_H_APPOINTMENT_DATE, 16);
         const appointmentTimeIdx = pickHeaderIndex_(headerMap, SHEET_H_APPOINTMENT_TIME, 17);
-        const appointmentDatetimeIdx = firstHeaderIdxFromAliases_(headerMap, SHEET_H_APPOINTMENT_DATETIME);
-        const apptDtIdx =
-            appointmentDatetimeIdx !== undefined && appointmentDatetimeIdx >= 0
-                ? appointmentDatetimeIdx
-                : -1;
         const padWidth = previewLastCol0 + 1;
-        const statCol = {
-            mobileIdx,
-            emailIdx,
-            channelIdx,
-            appointmentBookedIdx,
-            appointmentDateIdx,
-            appointmentTimeIdx,
-            apptDtIdx
-        };
+        const statCol = leadCaptureStatColFromHeaders_(headerMap, headersRaw);
         const acc = includeStats ? leadCaptureStatsAccumulatorEmpty_() : null;
         const viewerCap = conversationSheetViewerReturnMaxRows_();
         const listCap = conversationSheetDateFilterMaxRows_();

@@ -1655,7 +1655,11 @@
     .lead-chart-card--area {
       grid-column: span 3;
     }
-    .lead-stats-chart-grid > .lead-chart-card:not(.lead-chart-card--area) {
+    .lead-chart-card--city,
+    .lead-chart-card--sentiment {
+      grid-column: span 3;
+    }
+    .lead-stats-chart-grid > .lead-chart-card:not(.lead-chart-card--area):not(.lead-chart-card--city):not(.lead-chart-card--sentiment) {
       grid-column: span 2;
     }
     .lead-chart-card--area .chart-canvas-wrap--area {
@@ -1885,7 +1889,9 @@
         gap: 12px;
       }
       .lead-chart-card--area,
-      .lead-stats-chart-grid > .lead-chart-card:not(.lead-chart-card--area) {
+      .lead-chart-card--city,
+      .lead-chart-card--sentiment,
+      .lead-stats-chart-grid > .lead-chart-card:not(.lead-chart-card--area):not(.lead-chart-card--city):not(.lead-chart-card--sentiment) {
         grid-column: auto;
       }
       .lead-chart-card .chart-canvas-wrap {
@@ -2330,6 +2336,16 @@
             <div class="lead-chart-card">
               <h4>Pipeline</h4>
               <div class="chart-canvas-wrap"><canvas id="lcBarFunnel" aria-label="Pipeline funnel"></canvas></div>
+            </div>
+            <div class="lead-chart-card lead-chart-card--city">
+              <h4>Conversations by city</h4>
+              <p class="lead-chart-card-total" id="lcCityChartSummary">Top cities in range</p>
+              <div class="chart-canvas-wrap"><canvas id="lcBarCity" aria-label="Conversations by city"></canvas></div>
+            </div>
+            <div class="lead-chart-card lead-chart-card--sentiment">
+              <h4>Conversation sentiment</h4>
+              <p class="lead-chart-card-total" id="lcSentimentSummary">From user messages in range</p>
+              <div class="chart-canvas-wrap"><canvas id="lcBarSentiment" aria-label="Positive vs negative sentiment"></canvas></div>
             </div>
           </div>
           <p id="leadStatsChartNotice" class="lead-stats-chart-notice" hidden role="status"></p>
@@ -2881,6 +2897,8 @@
         var chBarEl = document.getElementById("lcBarChannel");
         var leadPieEl = document.getElementById("lcPieLead");
         var funnelEl = document.getElementById("lcBarFunnel");
+        var cityBarEl = document.getElementById("lcBarCity");
+        var sentimentBarEl = document.getElementById("lcBarSentiment");
 
         if (!areaEl || !chBarEl || !leadPieEl || !funnelEl) {
           showLeadChartNotice("Chart area is missing from the page. Reload and try again.");
@@ -3045,18 +3063,28 @@
           if (areaSummaryEl) {
             if (areaStats.days > 0) {
               areaSummaryEl.textContent =
-                "Average " +
-                areaStats.avgText +
-                " conversations per day (" +
-                areaStats.total +
-                " total over " +
-                areaStats.days +
-                " day" +
-                (areaStats.days === 1 ? "" : "s") +
-                ")";
+                "Average " + areaStats.avgRounded + " conversations per day";
             } else {
               areaSummaryEl.textContent = "No dates in the selected range";
             }
+          }
+          var byCity = conversationsByCitySeriesFromPayload_(payload);
+          var citySummaryEl = document.getElementById("lcCityChartSummary");
+          if (citySummaryEl) {
+            var cityTotal = 0;
+            for (var cti = 0; cti < byCity.data.length; cti++) cityTotal += byCity.data[cti];
+            citySummaryEl.textContent =
+              byCity.labels.length > 0
+                ? cityTotal + " conversations across " + byCity.labels.length + " cities"
+                : "No city data in range";
+          }
+          var sentiment = sentimentSeriesFromPayload_(payload);
+          var sentimentSummaryEl = document.getElementById("lcSentimentSummary");
+          if (sentimentSummaryEl) {
+            var sentTotal = sentiment.data[0] + sentiment.data[1];
+            sentimentSummaryEl.textContent = sentTotal
+              ? "Keyword analysis of user messages (" + sentTotal + " classified)"
+              : "No classifiable user messages in range";
           }
           var areaPointCount = byDate.labels ? byDate.labels.length : 0;
           var areaMaxVal = 0;
@@ -3209,6 +3237,96 @@
             }
           })
         );
+        if (cityBarEl) {
+          var byCityChart = conversationsByCitySeriesFromPayload_(payload);
+          var cityTotalForPct = byCityChart.data.reduce(function (sum, v) {
+            return sum + v;
+          }, 0);
+          leadChartInstances.push(
+            new Chart(cityBarEl, {
+              type: "bar",
+              data: {
+                labels: byCityChart.labels,
+                datasets: [
+                  {
+                    label: "Conversations",
+                    data: byCityChart.data,
+                    backgroundColor: pal.indigo,
+                    maxBarThickness: 36
+                  }
+                ]
+              },
+              options: {
+                layout: { padding: { top: 18, right: 4, bottom: 0, left: 0 } },
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: Object.assign(
+                  { legend: { display: false } },
+                  {
+                    datalabels: Object.assign(
+                      {
+                        anchor: "end",
+                        align: "top",
+                        offset: 2,
+                        color: chartDlTextColor,
+                        font: { weight: "700", size: 9 },
+                        formatter: function (v, ctx) {
+                          return chartCountPctLabel(ctx, cityTotalForPct);
+                        }
+                      },
+                      chartDlTextStroke
+                    )
+                  }
+                ),
+                scales: barAxes
+              }
+            })
+          );
+        }
+        if (sentimentBarEl) {
+          var sentimentChart = sentimentSeriesFromPayload_(payload);
+          var sentTotalBar = sentimentChart.data[0] + sentimentChart.data[1];
+          leadChartInstances.push(
+            new Chart(sentimentBarEl, {
+              type: "bar",
+              data: {
+                labels: sentimentChart.labels,
+                datasets: [
+                  {
+                    label: "Conversations",
+                    data: sentimentChart.data,
+                    backgroundColor: ["#16a34a", "#dc2626"],
+                    maxBarThickness: 48
+                  }
+                ]
+              },
+              options: {
+                layout: chartLayoutTight,
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: Object.assign(
+                  { legend: { display: false } },
+                  {
+                    datalabels: Object.assign(
+                      {
+                        anchor: "end",
+                        align: "top",
+                        offset: 2,
+                        color: chartDlTextColor,
+                        font: { weight: "700", size: 10 },
+                        formatter: function (v, ctx) {
+                          return chartCountPctLabel(ctx, sentTotalBar);
+                        }
+                      },
+                      chartDlTextStroke
+                    )
+                  }
+                ),
+                scales: barAxes
+              }
+            })
+          );
+        }
         leadChartInstances.forEach(function (ch) {
           try {
             ch.resize();
@@ -4114,13 +4232,154 @@
           if (Number.isFinite(n)) total += Math.max(0, Math.trunc(n));
         }
         var avg = days > 0 ? total / days : 0;
-        var avgText =
-          days > 0
-            ? avg % 1 === 0
-              ? String(Math.trunc(avg))
-              : avg.toFixed(1)
-            : "-";
-        return { total: total, days: days, avg: avg, avgText: avgText };
+        var avgRounded = days > 0 ? Math.round(avg) : 0;
+        return { total: total, days: days, avg: avg, avgRounded: avgRounded };
+      }
+
+      var SENTIMENT_POSITIVE_RE =
+        /\b(thank|thanks|thankyou|great|good|excellent|happy|love|appreciate|wonderful|amazing|helpful|satisfied|perfect|awesome|fantastic|pleased|glad|nice|delighted)\b/gi;
+      var SENTIMENT_NEGATIVE_RE =
+        /\b(bad|terrible|awful|angry|hate|disappointed|frustrat|complaint|worst|rude|unhappy|poor|horrible|useless|annoyed|upset|disgust|not\s+happy|waste|pathetic|disappointing)\b/gi;
+
+      function sentimentPolarityFromText_(text) {
+        var s = String(text || "").toLowerCase();
+        if (!s || s.length < 2) return "neutral";
+        var pos = (s.match(SENTIMENT_POSITIVE_RE) || []).length;
+        var neg = (s.match(SENTIMENT_NEGATIVE_RE) || []).length;
+        if (pos === 0 && neg === 0) return "neutral";
+        if (pos > neg) return "positive";
+        if (neg > pos) return "negative";
+        return "neutral";
+      }
+
+      function extractUserTextForSentimentFromRow_(row) {
+        if (!row || typeof row !== "object") return "";
+        var parts = [];
+        var keys = Object.keys(row);
+        for (var ki = 0; ki < keys.length; ki++) {
+          var nk = normKey(keys[ki]);
+          if (!nk) continue;
+          if (nk.indexOf("userquer") >= 0 || nk === "userqueries") {
+            parts.push(String(row[keys[ki]] == null ? "" : row[keys[ki]]).replace(/,/g, " "));
+            continue;
+          }
+          if (
+            nk.indexOf("chattranscript") >= 0 ||
+            nk.indexOf("transcriptjson") >= 0 ||
+            nk === "chathistoryjson"
+          ) {
+            var raw = String(row[keys[ki]] == null ? "" : row[keys[ki]]).trim();
+            if (raw.charAt(0) === "[") {
+              try {
+                var arr = JSON.parse(raw);
+                if (Array.isArray(arr)) {
+                  for (var ti = 0; ti < arr.length; ti++) {
+                    var item = arr[ti];
+                    if (!item || typeof item !== "object") continue;
+                    var role = String(item.role || item.type || "")
+                      .trim()
+                      .toLowerCase();
+                    if (role !== "user" && role !== "visitor") continue;
+                    var txt = typeof item.text === "string" ? item.text.trim() : "";
+                    if (txt) parts.push(txt);
+                  }
+                }
+              } catch (ignoreParse) {}
+            }
+          }
+        }
+        return parts.join(" ").trim();
+      }
+
+      function conversationsByCitySeriesFromPayload_(payload) {
+        var s = payload && payload.series && payload.series.conversationsByCity;
+        if (s && Array.isArray(s.labels) && Array.isArray(s.data) && s.labels.length) {
+          var labels = [];
+          var data = [];
+          for (var ci = 0; ci < s.labels.length; ci++) {
+            labels.push(String(s.labels[ci]));
+            var cn = Number(s.data[ci]);
+            data.push(Number.isFinite(cn) ? Math.max(0, Math.trunc(cn)) : 0);
+          }
+          return { labels: labels, data: data };
+        }
+        var counts = Object.create(null);
+        var rows =
+          payload && Array.isArray(payload.conversations) ? payload.conversations : [];
+        if (!rows.length && lastPayload && Array.isArray(lastPayload.conversations)) {
+          rows = lastPayload.conversations;
+        }
+        for (var ri = 0; ri < rows.length; ri++) {
+          var cityRaw = findCell(rows[ri], [
+            "City",
+            "Visitor city",
+            "User city",
+            "City name",
+            "Location",
+            "Preferred city"
+          ]);
+          var cityLbl = cityRaw ? normCityLabel_(cityRaw) : "Unknown";
+          counts[cityLbl] = (counts[cityLbl] || 0) + 1;
+        }
+        var entries = [];
+        for (var ck in counts) {
+          if (Object.prototype.hasOwnProperty.call(counts, ck)) {
+            entries.push({ label: ck, count: counts[ck] });
+          }
+        }
+        entries.sort(function (a, b) {
+          return b.count - a.count;
+        });
+        var labelsOut = [];
+        var dataOut = [];
+        var cap = 10;
+        var other = 0;
+        for (var ei = 0; ei < entries.length; ei++) {
+          if (ei < cap) {
+            labelsOut.push(entries[ei].label);
+            dataOut.push(entries[ei].count);
+          } else {
+            other += entries[ei].count;
+          }
+        }
+        if (other > 0) {
+          labelsOut.push("Other");
+          dataOut.push(other);
+        }
+        return { labels: labelsOut, data: dataOut };
+      }
+
+      function normCityLabel_(raw) {
+        var s = flattenCellText(raw);
+        if (!s) return "Unknown";
+        if (s.length > 48) return s.slice(0, 45) + "...";
+        return s;
+      }
+
+      function sentimentSeriesFromPayload_(payload) {
+        var s = payload && payload.series && payload.series.sentiment;
+        if (s && Array.isArray(s.data) && s.data.length >= 2) {
+          return {
+            labels: ["Positive", "Negative"],
+            data: [
+              Math.max(0, Math.trunc(Number(s.data[0]) || 0)),
+              Math.max(0, Math.trunc(Number(s.data[1]) || 0))
+            ]
+          };
+        }
+        var pos = 0;
+        var neg = 0;
+        var rows =
+          payload && Array.isArray(payload.conversations) ? payload.conversations : [];
+        if (!rows.length && lastPayload && Array.isArray(lastPayload.conversations)) {
+          rows = lastPayload.conversations;
+        }
+        for (var si = 0; si < rows.length; si++) {
+          var pol = sentimentPolarityFromText_(extractUserTextForSentimentFromRow_(rows[si]));
+          if (pol === "positive") pos += 1;
+          else if (pol === "negative") neg += 1;
+        }
+        return { labels: ["Positive", "Negative"], data: [pos, neg] };
       }
 
       function flattenCellText(text) {
