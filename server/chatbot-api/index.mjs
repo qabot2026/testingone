@@ -3964,7 +3964,7 @@ function describeChatTranscriptStorage_(cx) {
 
 /**
  * @param {Record<string, unknown>} rec
- * @returns {"assistant" | "user"}
+ * @returns {"assistant" | "user" | "agent"}
  */
 function normalizeTranscriptItemRole_(rec) {
     const raw =
@@ -3977,18 +3977,25 @@ function normalizeTranscriptItemRole_(rec) {
         ?? rec.source
         ?? rec.speaker;
     const r = typeof raw === "string" ? raw.trim().toLowerCase() : "";
+    if (r === "staff" || r === "human_agent" || r === "live_agent") {
+        return "agent";
+    }
+    if (r === "agent") {
+        return "agent";
+    }
     if (
         r === "assistant"
         || r === "bot"
-        || r === "agent"
         || r === "model"
         || r === "assistant_bot"
         || r === "virtual_agent"
         || r === "df-bot"
-        || r === "system"
         || r === "chirp"
         || r.includes("automated")
     ) {
+        return "assistant";
+    }
+    if (r === "system") {
         return "assistant";
     }
     if (r === "user" || r === "human" || r === "customer" || r === "client" || r === "end_user" || r === "enduser") {
@@ -3998,6 +4005,121 @@ function normalizeTranscriptItemRole_(rec) {
         return "assistant";
     }
     return "user";
+}
+
+/** @param {{ role?: string }} turn */
+function transcriptTurnRoleForMerge_(turn) {
+    const r = String(turn && turn.role != null ? turn.role : "")
+        .trim()
+        .toLowerCase();
+    if (r === "agent" || r === "staff") {
+        return "agent";
+    }
+    if (r === "assistant") {
+        return "assistant";
+    }
+    return "user";
+}
+
+function liveAgentSystemLineHiddenFromTranscript_(text) {
+    const t = String(text || "")
+        .trim()
+        .toLowerCase();
+    if (!t) {
+        return true;
+    }
+    if (t.includes("ai assistant enabled") || t.includes("human agent took over")) {
+        return true;
+    }
+    if (t.includes("this chat has ended")) {
+        return true;
+    }
+    return false;
+}
+
+/**
+ * @param {string} sessionId
+ * @returns {Promise<{ role: string, text: string, at?: number }[]>}
+ */
+async function transcriptTurnsFromLiveAgentInbox_(sessionId) {
+    try {
+        const { liveAgentFirestoreReady_, listMessages_, getConversation_, resolveConversationId_ } =
+            await import("./lib/live-agent/store.mjs");
+        const { resolveAgentDisplayName_, getLiveAgentSettings_ } = await import(
+            "./lib/live-agent/departments.mjs"
+        );
+        if (!liveAgentFirestoreReady_()) {
+            return [];
+        }
+        let id = "";
+        try {
+            id = resolveConversationId_(sessionId);
+        } catch {
+            return [];
+        }
+        const conv = await getConversation_(id);
+        if (!conv) {
+            return [];
+        }
+        const messages = await listMessages_({ conversationId: id, limit: 200 });
+        if (!messages.length) {
+            return [];
+        }
+        const settings = await getLiveAgentSettings_();
+        /** @type {{ role: string, text: string, at?: number }[]} */
+        const turns = [];
+        for (let i = 0; i < messages.length; i += 1) {
+            const m = messages[i];
+            if (!m) {
+                continue;
+            }
+            const roleRaw = typeof m.role === "string" ? m.role.trim().toLowerCase() : "";
+            const text = typeof m.text === "string" ? m.text.trim() : "";
+            if (!text) {
+                continue;
+            }
+            const atMs = coerceTranscriptAtMs_(m.createdAt);
+            if (roleRaw === "visitor") {
+                /** @type {{ role: string, text: string, at?: number }} */
+                const row = { role: "user", text };
+                if (typeof atMs === "number" && Number.isFinite(atMs)) {
+                    row.at = atMs;
+                }
+                turns.push(row);
+                continue;
+            }
+            if (roleRaw === "agent" || roleRaw === "staff") {
+                const name =
+                    typeof m.senderDisplayName === "string" && m.senderDisplayName.trim()
+                        ? m.senderDisplayName.trim()
+                        : resolveAgentDisplayName_(m.senderEmail, settings);
+                const line = name ? `${name}: ${text}` : text;
+                /** @type {{ role: string, text: string, at?: number }} */
+                const row = { role: "agent", text: line };
+                if (typeof atMs === "number" && Number.isFinite(atMs)) {
+                    row.at = atMs;
+                }
+                turns.push(row);
+                continue;
+            }
+            if (roleRaw === "system") {
+                if (liveAgentSystemLineHiddenFromTranscript_(text)) {
+                    continue;
+                }
+                /** @type {{ role: string, text: string, at?: number }} */
+                const row = { role: "agent", text };
+                if (typeof atMs === "number" && Number.isFinite(atMs)) {
+                    row.at = atMs;
+                }
+                turns.push(row);
+            }
+        }
+        return turns;
+    } catch (err) {
+        const msg = err && err.message ? err.message : String(err);
+        console.warn("[chatbot-api] live-agent transcript:", msg.slice(0, 240));
+        return [];
+    }
 }
 
 /** @param {{ role: string, text: string, at?: number, seq?: number }[]} turns */
@@ -4513,10 +4635,17 @@ function hasAssistantTurns_(turns) {
  * @returns {{ role: string, text: string, rich?: Record<string, unknown>, at?: number, seq?: number }}
  */
 function cloneTranscriptTurnForMerge_(t) {
-    const role =
-        t && typeof t === "object"
-            ? normalizeTranscriptItemRole_(/** @type {Record<string, unknown>} */ (t))
-            : "user";
+    let role = "user";
+    if (t && typeof t === "object") {
+        const raw = String(t.role != null ? t.role : "")
+            .trim()
+            .toLowerCase();
+        if (raw === "agent" || raw === "staff") {
+            role = "agent";
+        } else {
+            role = normalizeTranscriptItemRole_(/** @type {Record<string, unknown>} */ (t));
+        }
+    }
     const out = /** @type {{ role: string, text: string, rich?: Record<string, unknown>, at?: number, seq?: number }} */ ({
         role,
         text: String(t && t.text != null ? t.text : "")
@@ -4658,7 +4787,7 @@ function mergeConversationTranscriptTurnSources_(a, b) {
                   ? Number(String(rawSeq).trim())
                   : NaN;
         const seq = Number.isFinite(seqParsed) ? seqParsed : undefined;
-        const role = turn.role === "assistant" ? "assistant" : "user";
+        const role = transcriptTurnRoleForMerge_(turn);
         const textTrim = String(turn.text || "").trim();
         /** Form confirms may repeat with new `seq`/`at`; other bot lines keep seq so fallback/menu turns stay distinct. */
         let sig;
@@ -4679,7 +4808,7 @@ function mergeConversationTranscriptTurnSources_(a, b) {
     }
     for (let u = 0; u < noAtA.length; u += 1) {
         const t = noAtA[u];
-        const roleNoAt = t.role === "assistant" ? "assistant" : "user";
+        const roleNoAt = transcriptTurnRoleForMerge_(t);
         const textNoAt = String(t.text || "").trim();
         const sig =
             roleNoAt === "assistant"
@@ -4695,7 +4824,7 @@ function mergeConversationTranscriptTurnSources_(a, b) {
     }
     for (let v = 0; v < noAtB.length; v += 1) {
         const t = noAtB[v];
-        const roleNoAtB = t.role === "assistant" ? "assistant" : "user";
+        const roleNoAtB = transcriptTurnRoleForMerge_(t);
         const textNoAtB = String(t.text || "").trim();
         const sig =
             roleNoAtB === "assistant"
@@ -5542,6 +5671,12 @@ app.get(PATHNAME_CONVERSATION_TRANSCRIPT_JSON, async (req, res) => {
             }
         }
 
+        const liveAgentTurns = await transcriptTurnsFromLiveAgentInbox_(session);
+        if (liveAgentTurns.length) {
+            sourceParts.push("live_agent_inbox");
+            turns = mergeConversationTranscriptTurnSources_(turns, liveAgentTurns);
+        }
+
         turns = orderTranscriptTurnsForDisplay_(turns);
         turns = collapseIdenticalAssistantTranscriptTurns_(turns);
         turns = collapseRedundantAssistantTranscriptTurns_(turns);
@@ -5596,6 +5731,7 @@ app.get(PATHNAME_CONVERSATION_TRANSCRIPT_JSON, async (req, res) => {
             transcript_fallback,
             transcript_stats: {
                 assistant_turns: assistantTurnCount_(turns),
+                agent_turns: turns.filter((t) => t && t.role === "agent").length,
                 user_turns: turns.filter((t) => t && t.role === "user").length,
                 stored_lead_assistant_rows: countRawAssistant(rawLeadArr),
                 stored_session_assistant_rows: countRawAssistant(rawLiveArr),

@@ -228,6 +228,13 @@
       margin-right: 10%;
       border: 1px solid rgba(51, 65, 85, 0.12);
     }
+    .msg--agent {
+      align-self: flex-start;
+      background: #ede9fe;
+      border-bottom-left-radius: 4px;
+      margin-right: 10%;
+      border: 1px solid rgba(109, 40, 217, 0.18);
+    }
     .msg .who {
       display: flex;
       flex-wrap: wrap;
@@ -243,6 +250,9 @@
     }
     .msg--assistant .who {
       color: var(--bot);
+    }
+    .msg--agent .who {
+      color: #6d28d9;
     }
     .msg .who-label {
       min-width: 0;
@@ -1210,8 +1220,18 @@
           thread.appendChild(dayLine);
           for (var i = 0; i < turns.length; i++) {
             var t = turns[i];
-            var role = t && t.role === "assistant" ? "assistant" : "user";
-            var who = role === "assistant" ? "Assistant" : "User";
+            var role =
+              t && t.role === "assistant"
+                ? "assistant"
+                : t && t.role === "agent"
+                  ? "agent"
+                  : "user";
+            var who =
+              role === "assistant"
+                ? "Assistant"
+                : role === "agent"
+                  ? "Agent"
+                  : "User";
             var atMs =
               t && typeof t.at === "number" && Number.isFinite(t.at) ? t.at : null;
             var timeLbl =
