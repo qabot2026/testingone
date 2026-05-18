@@ -71,6 +71,7 @@
     let messagesInFlight = false;
     let messagesPollPending = false;
     let messagePollsSinceFullSync = 0;
+    let contextPollTicks = 0;
     let lastWaitingCount = 0;
     let notificationsOk = false;
     let deskSettings = null;
@@ -303,6 +304,13 @@
                 (selectedConv.status === "active" || selectedConv.status === "waiting")
             ) {
                 loadMessages(selectedId, true);
+                contextPollTicks += 1;
+                const v = selectedVisitorContext || {};
+                const sparseContact = !v.name && !v.email && !v.mobile;
+                const contextEvery = sparseContact ? 4 : 15;
+                if (contextPollTicks % contextEvery === 0) {
+                    void loadContext(selectedId);
+                }
             }
         };
         loadInbox(true);

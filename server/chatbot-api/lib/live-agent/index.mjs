@@ -510,7 +510,7 @@ export function mountLiveAgentRoutes(app) {
         }
         try {
             const conversation = await getConversation_(conversationId);
-            const visitor = await getVisitorContext_(conversationId);
+            const visitor = await getVisitorContext_(conversationId, { conversation });
             res.json({ ok: true, conversation, visitor });
         } catch (err) {
             logStoreError_(err, "context");
