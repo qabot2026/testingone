@@ -13889,10 +13889,47 @@ function liveAgentAllowDialogflowForUserText_() {
  * @param {string} queryText
  * @returns {boolean}
  */
+/** @type {string} */
+let liveAgentLastVisitorSendKey_ = "";
+/** @type {number} */
+let liveAgentLastVisitorSendAt_ = 0;
+
+function liveAgentVisitorSendDedupeKey_(text) {
+    return (text || "").trim() + "|" + liveAgentSessionId_();
+}
+
+/**
+ * Block df-messenger → Dialogflow; POST to live-agent inbox only.
+ * Only call from `df-request-sent` (reliable query text). Do not use on `df-user-input-entered`
+ * — preventDefault there can cancel request-sent with an empty query so nothing reaches the agent.
+ * @param {Event | null | undefined} event
+ * @param {string} queryText
+ * @returns {boolean}
+ */
 function tryInterceptOutboundForLiveAgentHumanChat_(event, queryText) {
     const t = typeof queryText === "string" ? queryText.trim() : "";
     if (!t || !liveAgentHandoffIsActive_() || liveAgentAllowDialogflowForUserText_()) {
         return false;
+    }
+    const dedupeKey = liveAgentVisitorSendDedupeKey_(t);
+    const now = Date.now();
+    if (
+        dedupeKey &&
+        dedupeKey === liveAgentLastVisitorSendKey_ &&
+        now - liveAgentLastVisitorSendAt_ < 800
+    ) {
+        try {
+            if (event && typeof event.preventDefault === "function") {
+                event.preventDefault();
+            }
+        } catch {
+            /* ignore */
+        }
+        return true;
+    }
+    if (dedupeKey) {
+        liveAgentLastVisitorSendKey_ = dedupeKey;
+        liveAgentLastVisitorSendAt_ = now;
     }
     try {
         if (event && typeof event.preventDefault === "function") {
@@ -13903,7 +13940,7 @@ function tryInterceptOutboundForLiveAgentHumanChat_(event, queryText) {
     }
     dfchatPendingTypedUtteranceForGate_ = "";
     const ms = activeDfMessenger;
-    liveAgentSendVisitorMessage_(ms, t, true);
+    void liveAgentSendVisitorMessage_(ms, t, true);
     return true;
 }
 
@@ -14327,9 +14364,17 @@ async function liveAgentSendVisitorMessage_(dfMessenger, text, shouldRenderCusto
         const data = await res.json().catch(() => ({}));
         if (res.ok) {
             liveAgentApplyConversationFromApi_(data);
+        } else if (typeof console !== "undefined" && console.warn) {
+            console.warn(
+                "[live-agent] visitor-message failed",
+                res.status,
+                (data && data.error) || ""
+            );
         }
-    } catch {
-        /* ignore */
+    } catch (e) {
+        if (typeof console !== "undefined" && console.warn) {
+            console.warn("[live-agent] visitor-message error:", e);
+        }
     }
 }
 
@@ -14695,9 +14740,6 @@ function attachPersonaHandlers(dfMessenger) {
             if (tryPreventChatSendForMissingMobileGate_(event, typedTrim)) {
                 return;
             }
-            if (tryInterceptOutboundForLiveAgentHumanChat_(event, typedTrim)) {
-                return;
-            }
             trackChatUserQueryInSessionContext_(typedTrim);
             const ms = activeDfMessenger;
             if (ms && typeof ms.renderCustomText === "function") {
@@ -14782,8 +14824,13 @@ function attachPersonaHandlers(dfMessenger) {
         if (tryPreventChatSendForMissingMobileGate_(null, q)) {
             return;
         }
-        trackChatUserQueryInSessionContext_(q);
         const ms = activeDfMessenger;
+        if (liveAgentHandoffIsActive_() && !liveAgentAllowDialogflowForUserText_()) {
+            void liveAgentSendVisitorMessage_(ms, q, true);
+            scheduleClearDfMessengerComposerInput_();
+            return;
+        }
+        trackChatUserQueryInSessionContext_(q);
         if (ms && typeof ms.renderCustomText === "function") {
             renderUserPersona(ms);
         }
