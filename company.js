@@ -100,10 +100,12 @@ const VISITOR_CITY_ENDPOINT = "/api/visitor-city";
 const SESSION_TRANSCRIPT_SYNC_ENDPOINT = "/api/session-transcript-sync";
 /** Dialogflow custom payload `action` → hand off to human agent inbox (`/live-agent`). */
 const LIVE_AGENT_REQUEST_ACTION = "request_live_agent";
-const LIVE_AGENT_POLL_INTERVAL_MS = 6000;
+const LIVE_AGENT_POLL_INTERVAL_MS = 3500;
 let liveAgentHandoffActive = false;
 /** True only after an agent has accepted (active human chat) — visitor text goes to agent inbox, not Dialogflow. */
 let liveAgentHumanChatActive = false;
+/** Last queue status from poll (waiting | active | closed). */
+let liveAgentCachedConvStatus = "";
 let liveAgentPollTimerId = 0;
 let liveAgentMessagesSinceIso = "";
 /** @type {Set<string>} */
@@ -4921,11 +4923,11 @@ function sendUserTextViaDfMessenger(dfMessenger, text, shouldRenderCustomTextNow
     if (consumeLanguageSwitchFromUserFlowPhrase(t, null, dfMessenger)) {
         return;
     }
-    if (liveAgentHandoffIsActive_() && liveAgentHumanChatActive_()) {
+    if (liveAgentVisitorToAgentInbox_()) {
         liveAgentSendVisitorMessage_(dfMessenger, t, shouldRenderCustomTextNow);
         return;
     }
-    if (liveAgentHandoffIsActive_() && !liveAgentHumanChatActive_()) {
+    if (liveAgentHandoffIsActive_() && liveAgentCachedConvStatus === "waiting") {
         liveAgentMirrorVisitorToQueue_(t);
     }
     const hadM0 = hasStoredMobileForChatBlockGate_();
@@ -13856,6 +13858,17 @@ function liveAgentHumanChatActive_() {
     return liveAgentHumanChatActive === true;
 }
 
+/** Visitor messages go to agent when handoff is on and chat is active (flag or last known status). */
+function liveAgentVisitorToAgentInbox_() {
+    if (!liveAgentHandoffIsActive_()) {
+        return false;
+    }
+    if (liveAgentHumanChatActive_()) {
+        return true;
+    }
+    return liveAgentCachedConvStatus === "active";
+}
+
 function setLiveAgentHumanChatActive_(on) {
     liveAgentHumanChatActive = Boolean(on);
 }
@@ -14105,8 +14118,10 @@ async function liveAgentPollTick_(dfMessenger) {
         const conv = stData.conversation;
         const status = conv && conv.status ? String(conv.status) : "";
         const humanMode = conv && conv.humanMode ? String(conv.humanMode) : "";
+        liveAgentCachedConvStatus = status;
 
         if (status === "closed") {
+            liveAgentCachedConvStatus = "";
             setLiveAgentHumanChatActive_(false);
             clearLiveAgentRequestedInSession_();
             setLiveAgentHandoffActive_(false);
@@ -14122,9 +14137,14 @@ async function liveAgentPollTick_(dfMessenger) {
         }
 
         const agentAccepted =
-            status === "active" &&
-            (humanMode === "human" || conv.aiEnabled === false);
+            status === "active" ||
+            Boolean(stData.agentConnected) ||
+            (status === "active" && !!(conv && conv.assignedAgentEmail));
+        const wasHuman = liveAgentHumanChatActive_();
         setLiveAgentHumanChatActive_(agentAccepted);
+        if (agentAccepted && !wasHuman) {
+            liveAgentMessagesSinceIso = "";
+        }
 
         const keepPoll =
             status === "waiting" ||
@@ -14169,7 +14189,12 @@ async function liveAgentPollTick_(dfMessenger) {
             if (!text || !ms || typeof ms.renderCustomText !== "function") {
                 continue;
             }
-            ms.renderCustomText(text, true);
+            const isAgent = role === "agent" || role === "staff";
+            const prefix =
+                isAgent && m.senderEmail
+                    ? String(m.senderEmail).trim().split("@")[0] + ": "
+                    : "";
+            ms.renderCustomText(prefix + text, true);
             renderBotPersona(ms, Date.now());
         }
     } catch {
@@ -14191,10 +14216,22 @@ function startLiveAgentPoll_(dfMessenger) {
 }
 
 /**
- * @param {HTMLElement | null | undefined} dfMessenger
- * @param {string} text
- * @param {boolean | undefined} shouldRenderCustomTextNow
+ * @param {{ conversation?: { status?: string } }} data
  */
+function liveAgentApplyConversationFromApi_(data) {
+    const conv = data && data.conversation;
+    if (!conv || !conv.status) {
+        return;
+    }
+    const status = String(conv.status);
+    liveAgentCachedConvStatus = status;
+    if (status === "active") {
+        setLiveAgentHumanChatActive_(true);
+    } else if (status === "waiting") {
+        setLiveAgentHumanChatActive_(false);
+    }
+}
+
 /**
  * While waiting for an agent, copy visitor text to the agent queue without blocking Dialogflow.
  * @param {string} text
@@ -14214,7 +14251,9 @@ function liveAgentMirrorVisitorToQueue_(text) {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ clientSessionId: sid, text: t })
-        });
+        })
+            .then((res) => res.json().catch(() => ({})))
+            .then(liveAgentApplyConversationFromApi_);
     } catch {
         /* ignore */
     }
@@ -14242,11 +14281,15 @@ async function liveAgentSendVisitorMessage_(dfMessenger, text, shouldRenderCusto
     trackChatUserQueryInSessionContext_(t);
     scheduleClearDfMessengerComposerInput_();
     try {
-        await fetch(endpoint, {
+        const res = await fetch(endpoint, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ clientSessionId: sid, text: t })
         });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok) {
+            liveAgentApplyConversationFromApi_(data);
+        }
     } catch {
         /* ignore */
     }

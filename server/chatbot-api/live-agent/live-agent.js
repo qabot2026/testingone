@@ -68,10 +68,12 @@
     let lastWaitingCount = 0;
     let notificationsOk = false;
     let deskSettings = null;
-    const POLL_INTERVAL_MS = 15000;
+    const POLL_INTERVAL_MS = 12000;
+    const POLL_MESSAGES_ACTIVE_MS = 4000;
     const PRESENCE_INTERVAL_MS = 120000;
     let agentsPanelLoaded = false;
     let presenceTimer = null;
+    let messagePollTimer = null;
 
     function loadStoredAuth_() {
         try {
@@ -181,6 +183,10 @@
         if (pollTimer) {
             clearInterval(pollTimer);
             pollTimer = null;
+        }
+        if (messagePollTimer) {
+            clearInterval(messagePollTimer);
+            messagePollTimer = null;
         }
     }
 
@@ -293,13 +299,32 @@
 
     function startPolling() {
         stopPolling();
-        pollTimer = setInterval(() => {
+        const tick = () => {
             if (document.hidden) return;
             loadInbox(true);
-            if (selectedId && selectedConv && selectedConv.status === "active") {
+            if (
+                selectedId &&
+                selectedConv &&
+                (selectedConv.status === "waiting" || selectedConv.status === "active")
+            ) {
                 loadMessages(selectedId, true);
             }
-        }, POLL_INTERVAL_MS);
+        };
+        tick();
+        pollTimer = setInterval(tick, POLL_INTERVAL_MS);
+        if (messagePollTimer) {
+            clearInterval(messagePollTimer);
+        }
+        messagePollTimer = setInterval(() => {
+            if (document.hidden) return;
+            if (
+                selectedId &&
+                selectedConv &&
+                selectedConv.status === "active"
+            ) {
+                loadMessages(selectedId, true);
+            }
+        }, POLL_MESSAGES_ACTIVE_MS);
     }
 
     document.addEventListener("visibilitychange", () => {
@@ -1266,6 +1291,7 @@
             }
             messageList.scrollTop = messageList.scrollHeight;
             loadInbox(true);
+            loadMessages(selectedId, true);
         } catch (e) {
             const opt = messageList.querySelector('[data-msg-id="' + optimisticId + '"]');
             if (opt) opt.remove();

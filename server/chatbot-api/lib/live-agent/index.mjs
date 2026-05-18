@@ -666,7 +666,8 @@ export function mountLiveAgentRoutes(app) {
                 senderEmail: "",
                 bumpUnread: { agent: 1, visitor: 0 }
             });
-            res.json({ ok: true, message });
+            const conversation = await getConversation_(clientSessionId);
+            res.json({ ok: true, message, conversation });
         } catch (err) {
             logStoreError_(err, "visitor send");
             jsonError_(res, 400, err.message || "Send failed");
