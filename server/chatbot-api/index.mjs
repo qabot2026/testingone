@@ -2968,7 +2968,14 @@ app.post(
                             }
                         }
                     );
-                    wroteToSheets = !!(sheetOutcome && sheetOutcome.patched);
+                    wroteToSheets = !!(
+                        sheetOutcome
+                        && (
+                            sheetOutcome.patched
+                            || sheetOutcome.action === "appended"
+                            || sheetOutcome.action === "duplicate_updated"
+                        )
+                    );
                 } catch (se) {
                     const detail = se && se.message ? se.message : String(se);
                     throw new Error(`Sheets: ${detail}`);

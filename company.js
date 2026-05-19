@@ -64,6 +64,14 @@ function shouldSyncChatSessionToBackend_() {
     return hasChatUserEngaged_();
 }
 
+/** Client context for contact-form / sheet API — includes Dialogflow `session_params` when chat engaged. */
+function clientContextForLeadApiSubmit_() {
+    if (hasChatUserEngaged_()) {
+        return buildClientContextForServerSync_();
+    }
+    return clientContextForLeadSubmitWithoutChatScript_();
+}
+
 /** Lead submit when the visitor never messaged in chat — omit transcript blobs from the API payload. */
 function clientContextForLeadSubmitWithoutChatScript_() {
     const ctx = getClientContext();
@@ -17814,7 +17822,7 @@ function submitContactForm(event) {
     const isOtpUpdateMobile = isOtpForm && otpStep === "mobile";
 
     const payload = {
-        client_context: hasChatUserEngaged_() ? getClientContext() : clientContextForLeadSubmitWithoutChatScript_(),
+        client_context: clientContextForLeadApiSubmit_(),
         _contactFormId: staffFormLabelForKey_(cfg0.formKey)
     };
     let chatSummaryPayload = /** @type {Record<string, string> | null} */ (null);
@@ -18310,9 +18318,7 @@ function submitContactForm(event) {
                 formMobileValue = m;
             }
         }
-        const clientSnapshot = hasChatUserEngaged_()
-            ? getClientContext()
-            : clientContextForLeadSubmitWithoutChatScript_();
+        const clientSnapshot = clientContextForLeadApiSubmit_();
         const sessionMobile =
             dfParameterScalarToString(
                 clientSnapshot && clientSnapshot.mobile != null ? clientSnapshot.mobile : ""
@@ -18345,9 +18351,7 @@ function submitContactForm(event) {
         const summaryPayloadJson = chatSummaryPayload != null ? chatSummaryPayload : payload;
         const summaryLinesJson = buildContactFormSubmissionSummaryLines_(summaryPayloadJson);
         const assistantMarkdownJson = summaryLinesJson.join("  \n");
-        const baseCtxJson = hasChatUserEngaged_()
-            ? getClientContext()
-            : clientContextForLeadSubmitWithoutChatScript_();
+        const baseCtxJson = clientContextForLeadApiSubmit_();
         payload.client_context = cloneClientContextWithTranscriptAssistantTurn_(
             baseCtxJson,
             assistantMarkdownJson
@@ -18471,6 +18475,10 @@ function submitContactForm(event) {
                     status.classList.add("is-success");
                     status.classList.remove("is-error");
                 }
+            }
+
+            if (hasChatUserEngaged_()) {
+                scheduleSessionQueriesSheetSync_();
             }
 
             const summaryForChat = chatSummaryPayload != null ? chatSummaryPayload : payload;

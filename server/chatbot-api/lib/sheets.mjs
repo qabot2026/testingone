@@ -442,7 +442,7 @@ const CANONICAL_LEAD_SHEET_HEADERS = [
     "Duration",
     "CRM Push Status",
     "Message Count",
-    "AVG Response Time",
+    "Average Response Time",
     "UtmCampaign",
     "UtmContent",
     "UtmMedium",
@@ -4455,6 +4455,43 @@ async function patchExistingSessionLeadRow_(
             ? String(/** @type {{ message?: string }} */ (dupErr).message)
             : String(dupErr);
         console.error("[chatbot-api] Sheets duplicate-session full row update:", m);
+        try {
+            const partial = await updateExistingSessionRow_(
+                sheets,
+                tab,
+                duplicateRowNum,
+                {
+                    name: typeof row.name === "string" ? row.name : "",
+                    mobile: typeof row.mobile === "string" ? row.mobile : "",
+                    email: typeof row.email === "string" ? row.email : "",
+                    browserName: typeof row.browserName === "string" ? row.browserName : "",
+                    deviceType: typeof row.deviceType === "string" ? row.deviceType : "",
+                    channel: typeof row.channel === "string" ? row.channel : "web",
+                    userQueriesCsv: typeof row.userQueriesCsv === "string" ? row.userQueriesCsv : "",
+                    city: typeof row.city === "string" ? row.city : "",
+                    ip: typeof row.ip === "string" ? row.ip : "",
+                    sourceUrl: typeof row.sourceUrl === "string" ? row.sourceUrl : "",
+                    appointmentBooked: typeof row.appointmentBooked === "string" ? row.appointmentBooked : "",
+                    appointmentDate: typeof row.appointmentDate === "string" ? row.appointmentDate : "",
+                    appointmentTime: typeof row.appointmentTime === "string" ? row.appointmentTime : "",
+                    fileLinks: typeof row.fileLinks === "string" ? row.fileLinks : "",
+                    repeated
+                },
+                { preferIncomingContact: true }
+            );
+            patched = !!(partial && partial.applied);
+            if (patched) {
+                console.warn(
+                    "[chatbot-api] Sheets duplicate-session: full row write failed; applied contact columns via fallback.",
+                    m.slice(0, 160)
+                );
+            }
+        } catch (fallbackErr) {
+            const fm = fallbackErr && /** @type {{ message?: string }} */ (fallbackErr).message
+                ? String(/** @type {{ message?: string }} */ (fallbackErr).message)
+                : String(fallbackErr);
+            console.error("[chatbot-api] Sheets duplicate-session fallback patch:", fm);
+        }
     }
     if (SYNC_DASHBOARD_ON_APPEND && patched) {
         void writeLeadCaptureDashboardToSheet2({}).catch((e) => {

@@ -35,7 +35,8 @@
   }
 
   var CHAT_HOST = chatHostFromLoaderSrc() || "https://qabot2026.github.io/testingone/";
-  var IFRAME_VERSION = "109";
+  var IFRAME_VERSION = "110";
+  var DEFAULT_API_BASE = "https://handsome-amazement-production-7f65.up.railway.app";
 
   function getLoaderQuery() {
     var cur = document.currentScript;
@@ -59,8 +60,8 @@
   }
   var q = getLoaderQuery();
   var bot = (q.get("botid") || "").trim();
-  /** Pass-through: backend base URL for `/contact-form-submissions` (Railway API). Same-origin if omitted. */
-  var apiBase = (q.get("apiBase") || "").trim();
+  /** Pass-through: backend base URL for `/contact-form-submissions` (Railway API). */
+  var apiBase = (q.get("apiBase") || "").trim() || DEFAULT_API_BASE;
 
   var frameUrl = CHAT_HOST + "chat-frame.html?v=" + encodeURIComponent(IFRAME_VERSION);
   if (bot) {
