@@ -282,6 +282,16 @@ function getBlockChatWithoutMobileMessage_() {
         : "You've reached the message limit without a mobile number. Please share your mobile number to continue.";
 }
 
+/** `company.config.js` → `common.features.captureMobileFromChat` */
+const CAPTURE_MOBILE_FROM_CHAT_CONFIG =
+    FEATURES_CONFIG.captureMobileFromChat && typeof FEATURES_CONFIG.captureMobileFromChat === "object"
+        ? FEATURES_CONFIG.captureMobileFromChat
+        : {};
+
+function isCaptureMobileFromChatEnabled() {
+    return isFeatureEnabledFromConfig(CAPTURE_MOBILE_FROM_CHAT_CONFIG, true);
+}
+
 const IDLE_END_CONVERSATION_CONFIG = FEATURES_CONFIG.idleEndConversation && typeof FEATURES_CONFIG.idleEndConversation === "object"
     ? FEATURES_CONFIG.idleEndConversation
     : {};
@@ -13660,9 +13670,13 @@ function extractLikelyMobileDigitsForMerge_(raw) {
 
 /**
  * Persist mobile from chat: bare numeric lines (legacy) or numbers embedded in natural language.
+ * Gated by `company.config.js` → `common.features.captureMobileFromChat.enabled`.
  * @param {string} raw
  */
 function mergeLikelyMobileFromChatText(raw) {
+    if (!isCaptureMobileFromChatEnabled()) {
+        return;
+    }
     const t = typeof raw === "string" ? raw.trim() : "";
     if (!t || t.length > 520) {
         return;

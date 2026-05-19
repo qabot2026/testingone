@@ -180,6 +180,15 @@ window.COMPANY_CHAT_UI_CONFIG = {
         dialogflowEventOnBlock: ""
       },
 
+      /**
+       * Detect Indian 10-digit mobile from chat (typed or chip), e.g. `9876543210` or “call me on 98 76 54 3210”.
+       * `enabled: true`  → save to `client_context.mobile` and sync Sheets (see `mergeLikelyMobileFromChatText` in company.js).
+       * `enabled: false` → do not guess mobile from chat text (Dialogflow session params / contact form still work).
+       */
+      captureMobileFromChat: {
+        enabled: true
+      },
+
       // POST telemetry to `/chat-client-context` on your API base (see `dfchat-api-base-url`). Static sites
       // (GitHub Pages, host-my-page, etc.) have no backend — turn off to avoid 404 in the Network tab.
       clientContextCapture: {
