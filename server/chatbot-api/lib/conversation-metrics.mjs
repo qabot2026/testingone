@@ -7,7 +7,9 @@ import { crmFieldsFromClientContext_ } from "./crm-sync.mjs";
 import {
     buildTranscriptTurnsFromClientContext_,
     coerceChatTranscriptArray_,
-    enrichClientContextForSheetMetricsAsync_
+    enrichClientContextForSheetMetricsAsync_,
+    normalizeTranscriptItemRole_,
+    transcriptTurnTextFromItem_
 } from "./chat-transcript-turns.mjs";
 
 export { enrichClientContextForSheetMetricsAsync_ };
@@ -15,6 +17,48 @@ export { enrichClientContextForSheetMetricsAsync_ };
 /** @param {string} s */
 function looksLikeUserBotMessageCount_(s) {
     return /^\d{1,5}-\d{1,5}$/.test(String(s || "").trim());
+}
+
+/** @param {string} text */
+function isFormSubmissionTranscriptLine_(text) {
+    return /^form submission\b/i.test(String(text || "").trim());
+}
+
+/**
+ * Count user/bot lines in raw widget `chat_transcript` (typed + chip/list selections).
+ *
+ * @param {unknown} cx
+ * @returns {{ user: number, bot: number }}
+ */
+function countMessagesFromRawChatTranscript_(cx) {
+    const o =
+        cx && typeof cx === "object" && !Array.isArray(cx)
+            ? /** @type {Record<string, unknown>} */ (cx)
+            : {};
+    const raw = coerceChatTranscriptArray_(o.chat_transcript);
+    let user = 0;
+    let bot = 0;
+    for (let i = 0; i < raw.length; i += 1) {
+        const item = raw[i];
+        if (!item || typeof item !== "object") {
+            continue;
+        }
+        const rec = /** @type {Record<string, unknown>} */ (item);
+        const role = normalizeTranscriptItemRole_(rec);
+        const text = transcriptTurnTextFromItem_(rec);
+        if (!text || isFormSubmissionTranscriptLine_(text)) {
+            if (role === "assistant" || role === "agent") {
+                bot += 1;
+            }
+            continue;
+        }
+        if (role === "user") {
+            user += 1;
+        } else if (role === "assistant" || role === "agent") {
+            bot += 1;
+        }
+    }
+    return { user, bot };
 }
 
 /**
@@ -71,6 +115,9 @@ function countMessagesFromContextLists_(cx) {
             }
         }
     }
+    const fromRaw = countMessagesFromRawChatTranscript_(cx);
+    user = Math.max(user, fromRaw.user);
+    bot = Math.max(bot, fromRaw.bot);
     return { user, bot };
 }
 
@@ -79,18 +126,25 @@ function countMessagesFromContextLists_(cx) {
  * @param {{ role: string, text: string, at: number }[]} turns
  */
 function countUserBotFromTurns_(cx, turns) {
-    let userCount = 0;
-    let botCount = 0;
+    const fromLists = countMessagesFromContextLists_(cx);
+    let userFromTurns = 0;
+    let botFromTurns = 0;
     for (let i = 0; i < turns.length; i += 1) {
+        const text = String(turns[i].text || "").trim();
+        if (!text || isFormSubmissionTranscriptLine_(text)) {
+            if (turns[i].role === "assistant" || turns[i].role === "agent") {
+                botFromTurns += 1;
+            }
+            continue;
+        }
         if (turns[i].role === "user") {
-            userCount += 1;
+            userFromTurns += 1;
         } else if (turns[i].role === "assistant" || turns[i].role === "agent") {
-            botCount += 1;
+            botFromTurns += 1;
         }
     }
-    const fromLists = countMessagesFromContextLists_(cx);
-    userCount = Math.max(userCount, fromLists.user);
-    botCount = Math.max(botCount, fromLists.bot);
+    const userCount = Math.max(fromLists.user, userFromTurns);
+    const botCount = Math.max(fromLists.bot, botFromTurns);
     return { userCount, botCount };
 }
 

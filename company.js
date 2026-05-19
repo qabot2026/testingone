@@ -13715,9 +13715,55 @@ function mergeLikelyEmailFromChatText(raw) {
  * Merge phone / email hints from outgoing chat text before mobile gate and query counting.
  * @param {string} raw
  */
+/** Common chat replies — not treated as a visitor name. */
+const CHAT_NAME_FALSE_POSITIVE_RE =
+    /^(yes|no|ok|okay|hi|hello|hey|thanks|thank\s*you|thx|please|pls|help|skip|none|na|n\/a|cancel|stop|restart|menu|back|next|sure|maybe|done|submit|book|booking|appointment)$/i;
+
+/**
+ * When the bot asks for a name and the visitor types it in chat (not only via form / CX params).
+ * @param {string} raw
+ */
+function mergeLikelyNameFromChatText_(raw) {
+    const t = typeof raw === "string" ? raw.replace(/\u00a0/g, " ").trim() : "";
+    if (!t || t.length < 2 || t.length > 80) {
+        return;
+    }
+    if (/\d/.test(t) || EMAIL_VALIDATION_RE.test(t)) {
+        return;
+    }
+    if (extractLikelyMobileDigitsForMerge_(t)) {
+        return;
+    }
+    const words = t.split(/\s+/).filter(Boolean);
+    if (!words.length || words.length > 4) {
+        return;
+    }
+    if (!/^[\p{L}\s'.-]+$/u.test(t)) {
+        return;
+    }
+    if (CHAT_NAME_FALSE_POSITIVE_RE.test(t.replace(/\s+/g, " ").trim())) {
+        return;
+    }
+    try {
+        const prev = readStoredClientContext();
+        const existing = dfParameterScalarToString(prev && prev.name != null ? prev.name : "").trim();
+        if (existing) {
+            return;
+        }
+        persistClientContext({
+            ...prev,
+            name: t.slice(0, 200)
+        });
+        scheduleSessionQueriesSheetSync_();
+    } catch {
+        /* ignore */
+    }
+}
+
 function mergeLikelyContactHintsFromChatText_(raw) {
     mergeLikelyMobileFromChatText(raw);
     mergeLikelyEmailFromChatText(raw);
+    mergeLikelyNameFromChatText_(raw);
 }
 
 /**
@@ -15053,6 +15099,9 @@ function attachPersonaHandlers(dfMessenger) {
             const hadM1 = hasStoredMobileForChatBlockGate_();
             const prev1 = readStoredClientContext();
             const hadE1 = !!(dfParameterScalarToString(prev1 && prev1.email != null ? prev1.email : "").trim());
+            if (typedTrim) {
+                trackChatUserQueryInSessionContext_(typedTrim);
+            }
             mergeLikelyContactHintsFromChatText_(typedTrim);
             if (tryRenderThanksAfterMergeSuppressDf_(event, typedTrim, { hadMobile: hadM1, hadEmail: hadE1 })) {
                 return;
@@ -15065,7 +15114,6 @@ function attachPersonaHandlers(dfMessenger) {
                 typedTrim &&
                 liveAgentShouldPostVisitorToAgent_(typedTrim) &&
                 liveAgentTryRouteVisitorText_(typedTrim, ms, { renderBubble: false });
-            trackChatUserQueryInSessionContext_(typedTrim);
             if (!routed && ms && typeof ms.renderCustomText === "function") {
                 renderUserPersona(ms);
             }
@@ -15105,6 +15153,9 @@ function attachPersonaHandlers(dfMessenger) {
             const hadM2 = hasStoredMobileForChatBlockGate_();
             const prev2 = readStoredClientContext();
             const hadE2 = !!(dfParameterScalarToString(prev2 && prev2.email != null ? prev2.email : "").trim());
+            if (effectiveQuery) {
+                trackChatUserQueryInSessionContext_(effectiveQuery);
+            }
             mergeLikelyContactHintsFromChatText_(effectiveQuery);
             if (tryRenderThanksAfterMergeSuppressDf_(event, effectiveQuery, { hadMobile: hadM2, hadEmail: hadE2 })) {
                 return;
@@ -15120,8 +15171,6 @@ function attachPersonaHandlers(dfMessenger) {
             if (tryInterceptOutboundForLiveAgentHumanChat_(event, effectiveQuery)) {
                 return;
             }
-
-            trackChatUserQueryInSessionContext_(effectiveQuery);
 
             if (effectiveQuery) {
                 const ms = activeDfMessenger;
@@ -15140,6 +15189,7 @@ function attachPersonaHandlers(dfMessenger) {
         if (!q) {
             return;
         }
+        trackChatUserQueryInSessionContext_(q);
         mergeLikelyContactHintsFromChatText_(q);
         if (tryPreventChatSendForMissingMobileGate_(null, q)) {
             return;
@@ -15149,7 +15199,6 @@ function attachPersonaHandlers(dfMessenger) {
             scheduleClearDfMessengerComposerInput_();
             return;
         }
-        trackChatUserQueryInSessionContext_(q);
         if (ms && typeof ms.renderCustomText === "function") {
             renderUserPersona(ms);
         }
@@ -15287,6 +15336,28 @@ function scheduleSessionQueriesSheetSync_() {
  * @returns {Record<string, unknown>}
  */
 function buildClientContextForServerSync_() {
+    try {
+        const snap = readStoredClientContext();
+        const sp =
+            snap.session_params && typeof snap.session_params === "object" && !Array.isArray(snap.session_params)
+                ? /** @type {Record<string, unknown>} */ (snap.session_params)
+                : null;
+        if (sp) {
+            /** @type {Record<string, string>} */
+            const sm = {};
+            for (const [k, val] of Object.entries(sp)) {
+                const s = dfParameterScalarToString(val);
+                if (s) {
+                    sm[k] = s;
+                }
+            }
+            if (Object.keys(sm).length) {
+                mergeOptionalContactFieldsFromParameterSlice_(sm);
+            }
+        }
+    } catch {
+        /* ignore */
+    }
     const stored = readStoredClientContext();
     const live = getClientContext();
     const out = { ...live };
@@ -20768,6 +20839,8 @@ function mergeVisitorMobileIntoStoredContext(rawMobile, opts) {
         });
         if (syncSheet) {
             scheduleSheetRowForCapturedChatMobile(v);
+        } else if (fromChat || force) {
+            scheduleSessionQueriesSheetSync_();
         }
     } catch {
         /* ignore */
@@ -21314,6 +21387,7 @@ function mergeOptionalContactFieldsFromParameterSlice_(slice) {
             }
         }
         persistClientContext(next);
+        scheduleSessionQueriesSheetSync_();
     } catch {
         /* ignore */
     }
@@ -21357,6 +21431,8 @@ function mergeSessionParamsFromQueryResultIntoStoredContext_(qr) {
             next.coursename = prevSp.coursename;
         }
         persistClientContext(next);
+        mergeOptionalContactFieldsFromParameterSlice_(sm);
+        scheduleSessionQueriesSheetSync_();
     } catch {
         /* ignore */
     }

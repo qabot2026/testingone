@@ -631,12 +631,36 @@ function stringifyClientContextCsvHint_(maybe) {
     return s.length && s.length <= 8000 ? s : "";
 }
 
+/** @param {string} s */
+function userQueryLineCompareNorm_(s) {
+    return String(s || "")
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, " ")
+        .slice(0, 200);
+}
+
 function collectUserQueriesLinesFromContext_(ctx) {
     if (!ctx || typeof ctx !== "object") {
         return [];
     }
     /** @type {string[]} */
     const out = [];
+    /** @type {Set<string>} */
+    const seen = new Set();
+    /** @param {string} cell */
+    const pushLine = (cell) => {
+        const t = typeof cell === "string" ? cell.trim() : "";
+        if (!t || t.length > 8000) {
+            return;
+        }
+        const nk = userQueryLineCompareNorm_(t);
+        if (!nk || seen.has(nk)) {
+            return;
+        }
+        seen.add(nk);
+        out.push(t);
+    };
     const keys = ["user_queries", "chat_queries", "visitor_queries", "dialog_queries", "conversation_queries"];
     for (let i = 0; i < keys.length; i += 1) {
         const a = ctx[keys[i]];
@@ -644,11 +668,23 @@ function collectUserQueriesLinesFromContext_(ctx) {
             continue;
         }
         for (let j = 0; j < a.length; j += 1) {
-            const cell = typeof a[j] === "string" ? a[j].trim() : "";
-            // Match per-line cap in widget (company.js MAX_STORED_CHAT_USER_QUERY_CHARS).
-            if (cell && cell.length <= 8000) {
-                out.push(cell);
-            }
+            const cell = typeof a[j] === "string" ? a[j] : "";
+            pushLine(cell);
+        }
+    }
+    const raw = coerceChatTranscriptArray_(ctx.chat_transcript);
+    for (let i = 0; i < raw.length; i += 1) {
+        const item = raw[i];
+        if (!item || typeof item !== "object") {
+            continue;
+        }
+        const rec = /** @type {Record<string, unknown>} */ (item);
+        if (normalizeTranscriptItemRole_(rec) !== "user") {
+            continue;
+        }
+        const text = transcriptTurnTextFromItem_(rec);
+        if (text && !/^form submission\b/i.test(text.trim())) {
+            pushLine(text);
         }
     }
     return out;
