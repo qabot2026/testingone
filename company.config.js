@@ -186,7 +186,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
        * `enabled: false` → do not guess mobile from chat text (Dialogflow session params / contact form still work).
        */
       captureMobileFromChat: {
-        enabled: true
+        enabled: false
       },
 
       // POST telemetry to `/chat-client-context` on your API base (see `dfchat-api-base-url`). Static sites
