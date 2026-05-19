@@ -151,7 +151,7 @@ export function mountLiveAgentRoutes(app) {
     const router = express.Router();
     router.use(express.json({ limit: "256kb" }));
 
-    router.get("/me", (req, res) => {
+    router.get("/me", async (req, res) => {
         setNoCache_(res);
         if (!liveAgentAuthRequired_()) {
             res.json({
