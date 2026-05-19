@@ -9,7 +9,7 @@
   <!-- <meta name="dfchat-published-widget-path" content="published-widget-settings.json" /> -->
   <title>Chat</title>
   <link rel="stylesheet" href="https://www.gstatic.com/dialogflow-console/fast/df-messenger/prod/v1/themes/df-messenger-default.css" />
-  <link rel="stylesheet" href="company.css?v=80" />
+  <link rel="stylesheet" href="company.css?v=81" />
   <script src="https://www.gstatic.com/dialogflow-console/fast/df-messenger/prod/v1/df-messenger.js"></script>
   <script>
     (function () {
@@ -50,7 +50,7 @@
   <script src="forms/birthform.js?v=79"></script>
   <script src="forms/nearest-branch.js?v=79"></script>
   <script src="company.config.js?v=109"></script>
-  <script src="company.js?v=145-handoff-name"></script>
+  <script src="company.js?v=147-mobile-chat"></script>
   <script>
     (function () {
       function parseHexRgb(hex) {
@@ -382,7 +382,20 @@
     })();
   </script>
   <style>
-    html, body { height: 100%; margin: 0; background: transparent; overflow: visible; }
+    html, body { height: 100%; margin: 0; background: transparent; overflow: visible; pointer-events: none; }
+    df-messenger,
+    #dfchat-chat-action-bar,
+    #dfchat-powered-by-strip,
+    #dfchat-chat-launcher-strip,
+    #dfchat-chat-launcher-input-strip,
+    #dfchat-chat-footer-overlay,
+    #dfchat-contact-form,
+    #dfchat-image-lightbox,
+    #dfchat-video-lightbox,
+    .dfchat-chat-launcher-strip,
+    .dfchat-chat-launcher-input-strip {
+      pointer-events: auto;
+    }
   </style>
 </head>
 <body></body>

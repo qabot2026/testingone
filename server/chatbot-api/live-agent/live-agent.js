@@ -58,6 +58,7 @@
     const agentsList = $("agentsList");
     const refreshAgentsBtn = $("refreshAgentsBtn");
     const agentsPanelStatus = $("agentsPanelStatus");
+    const mobileBackBtn = $("mobileBackBtn");
 
     let viewerSecret = "";
     let agentId = "Agent";
@@ -370,13 +371,22 @@
 
     function isMobileAgentDesk_() {
         try {
-            if (window.matchMedia && window.matchMedia("(max-width: 900px)").matches) {
+            if (window.matchMedia && window.matchMedia("(max-width: 768px)").matches) {
                 return true;
             }
         } catch {
             /* ignore */
         }
         return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || "");
+    }
+
+    function syncMobileDeskLayout_() {
+        const mobile = isMobileAgentDesk_();
+        document.body.classList.toggle("mobile-desk", mobile);
+        document.body.classList.toggle("mobile-chat-focus", mobile && !!selectedId);
+        if (mobileBackBtn) {
+            mobileBackBtn.hidden = !mobile || !selectedId;
+        }
     }
 
     function inboxPollIntervalMs_() {
@@ -748,6 +758,13 @@
         });
     }
     inboxFilter.addEventListener("change", () => loadInbox());
+    if (mobileBackBtn) {
+        mobileBackBtn.addEventListener("click", () => {
+            clearSelectedChatUi_();
+            loadInbox(true);
+        });
+    }
+    window.addEventListener("resize", () => syncMobileDeskLayout_());
     if (clearTestQueueBtn) {
         clearTestQueueBtn.addEventListener("click", () => {
             clearTestQueue_().catch((e) => alert(e.message || "Clear failed"));
@@ -802,6 +819,7 @@
         if (chatActionsBar) {
             chatActionsBar.classList.add("hidden");
         }
+        syncMobileDeskLayout_();
     }
 
     function removeConversationFromInboxUi_(conversationId) {
@@ -1428,6 +1446,7 @@
         messageList.innerHTML = "";
         chatEmpty.classList.add("hidden");
         chatActive.classList.remove("hidden");
+        syncMobileDeskLayout_();
 
         applyConversationUi_(c);
 
@@ -1702,7 +1721,7 @@
         if (!selectedConv || !selectedId) return false;
         if (selectedConv.status === "closed") return false;
         if (isAiCopilotConv_(selectedConv)) return false;
-        if (selectedConv.status === "waiting") return true;
+        if (selectedConv.status === "waiting") return false;
         if (selectedConv.status !== "active") return false;
         const assignee = (selectedConv.assignedAgentEmail || "").trim();
         if (!assignee) return true;

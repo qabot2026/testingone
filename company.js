@@ -3788,12 +3788,44 @@ function clampChatActionBarInViewport(bar) {
         dx = margin - br.left;
     }
     if (Math.abs(dx) < 2) {
+        dx = 0;
+    }
+    let curTop = parseFloat(bar.style.top);
+    if (!Number.isFinite(curTop)) {
+        curTop = br.top;
+    }
+    let dy = 0;
+    if (isMobileViewport()) {
+        const messenger = activeDfMessenger || document.querySelector("df-messenger");
+        const anchor = messenger ? getPoweredByComposerAnchorRect(messenger) : null;
+        if (anchor && anchor.height > 0) {
+            const barH = br.height || bar.offsetHeight || 38;
+            const maxTop = Math.round(anchor.top - barH - 6);
+            if (br.bottom > anchor.top - 4 && maxTop >= 4) {
+                dy = maxTop - br.top;
+            }
+        }
+        const vv = window.visualViewport;
+        if (vv && Number.isFinite(vv.height)) {
+            const oTop = Number.isFinite(vv.offsetTop) ? vv.offsetTop : 0;
+            const visBottom = oTop + vv.height;
+            if (br.bottom + dy > visBottom - 4) {
+                dy = (visBottom - 4) - br.bottom;
+            }
+            if (br.top + dy < oTop + 4) {
+                dy = (oTop + 4) - br.top;
+            }
+        }
+    }
+    if (Math.abs(dx) < 2 && Math.abs(dy) < 2) {
         return;
     }
-    const next = Math.round(curLeft + dx);
-    bar.style.left = `${next}px`;
+    const nextLeft = Math.round(curLeft + dx);
+    const nextTop = Math.round(curTop + dy);
+    bar.style.left = `${nextLeft}px`;
+    bar.style.top = `${nextTop}px`;
     if (chatActionBarFixedPos) {
-        chatActionBarFixedPos = { left: next, top: chatActionBarFixedPos.top };
+        chatActionBarFixedPos = { left: nextLeft, top: nextTop };
     }
 }
 
@@ -9702,9 +9734,13 @@ function initializeMobileChatLayout(dfMessenger, config) {
         const topInset = typeof mobileConfig.topInsetPx === "number" ? mobileConfig.topInsetPx : 14;
         const minWidth = typeof mobileConfig.minWidthPx === "number" ? mobileConfig.minWidthPx : 280;
         const minHeight = typeof mobileConfig.minHeightPx === "number" ? mobileConfig.minHeightPx : 200;
-        const mobileExtraH = typeof mobileConfig.extraHeightTowardBubblePx === "number" && Number.isFinite(mobileConfig.extraHeightTowardBubblePx)
+        let mobileExtraH = typeof mobileConfig.extraHeightTowardBubblePx === "number" && Number.isFinite(mobileConfig.extraHeightTowardBubblePx)
             ? mobileConfig.extraHeightTowardBubblePx
             : 0;
+        /* Keyboard shrinks visual viewport — do not inflate panel height or the composer clips off-screen. */
+        if (viewport && Number.isFinite(window.innerHeight) && viewport.height < window.innerHeight * 0.82) {
+            mobileExtraH = 0;
+        }
         const safeTopReserve = typeof mobileConfig.safeAreaTopReservePx === "number" && Number.isFinite(mobileConfig.safeAreaTopReservePx)
             ? mobileConfig.safeAreaTopReservePx
             : 28;
