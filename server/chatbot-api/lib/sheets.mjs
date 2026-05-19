@@ -2720,6 +2720,7 @@ const SHEET_H_APPOINTMENT_DATETIME = [
 ];
 
 const SHEET_H_FEEDBACK_RATING = [
+    "rating",
     "feedbackrating",
     "feedback_rating",
     "feedback rating",
@@ -2729,6 +2730,7 @@ const SHEET_H_FEEDBACK_RATING = [
 ];
 
 const SHEET_H_FEEDBACK_MESSAGE = [
+    "feedback",
     "feedbackmessage",
     "feedback_message",
     "feedback message",
@@ -2736,6 +2738,49 @@ const SHEET_H_FEEDBACK_MESSAGE = [
     "feedback comment",
     "visitorfeedback"
 ];
+
+/** Staff viewer / export: always fetch through column U (feedback message). */
+const CONVERSATION_SHEET_PREVIEW_MIN_COL_INDEX0 = 20;
+
+/**
+ * @param {unknown[]} headersRaw
+ */
+function conversationSheetPreviewLastCol0_(headersRaw) {
+    const fromHeaders = Array.isArray(headersRaw) && headersRaw.length ? headersRaw.length - 1 : 0;
+    return Math.min(
+        GOOGLE_SHEETS_LAST_COL_INDEX0,
+        Math.max(fromHeaders, STANDARD_DOCUMENT_COL_INDEX0, CONVERSATION_SHEET_PREVIEW_MIN_COL_INDEX0)
+    );
+}
+
+/**
+ * Staff dashboard column titles for T (rating) and U (message).
+ *
+ * @param {number} colIndex0
+ * @param {unknown} rawLabel
+ */
+function canonicalConversationSheetHeaderLabel_(colIndex0, rawLabel) {
+    const label = sheetCellString_(rawLabel);
+    const nk = normalizedHeaderKey_(label);
+    const ratingNk = new Set(SHEET_H_FEEDBACK_RATING.map((a) => normalizedHeaderKey_(a)));
+    const feedbackNk = new Set(SHEET_H_FEEDBACK_MESSAGE.map((a) => normalizedHeaderKey_(a)));
+    if (colIndex0 === 19 || (nk && ratingNk.has(nk))) {
+        return "RATING";
+    }
+    if (colIndex0 === 20 || (nk && feedbackNk.has(nk) && nk !== "feedbackrating")) {
+        return "FEEDBACK";
+    }
+    if (label) {
+        return label;
+    }
+    if (colIndex0 === 19) {
+        return "RATING";
+    }
+    if (colIndex0 === 20) {
+        return "FEEDBACK";
+    }
+    return "";
+}
 
 const SHEET_H_CAMPAIGN_PARAMS = [
     "campaignparams",
@@ -6093,10 +6138,12 @@ export async function fetchConversationSheetPreview(opts = {}) {
         sheetSchemaCache_.tab === tab && Array.isArray(sheetSchemaCache_.headersRaw)
             ? sheetSchemaCache_.headersRaw
             : [];
+    const previewLastCol0 = conversationSheetPreviewLastCol0_(headersRaw);
+    const headerWidth = Math.max(headersRaw.length, previewLastCol0 + 1);
     const headers = [];
     const used = new Set();
-    for (let i = 0; i < headersRaw.length; i += 1) {
-        let label = sheetCellString_(headersRaw[i]);
+    for (let i = 0; i < headerWidth; i += 1) {
+        let label = canonicalConversationSheetHeaderLabel_(i, headersRaw[i]);
         if (!label) {
             label = `Column_${i + 1}`;
         }
@@ -6132,8 +6179,6 @@ export async function fetchConversationSheetPreview(opts = {}) {
     if (!Number.isFinite(offset) || offset < 0) {
         offset = 0;
     }
-    /** Same right edge as statistics scan so the date column is always fetched. */
-    const previewLastCol0 = Math.min(175, Math.max(headersRaw.length - 1, 18));
     const previewRightLetter = columnLetterFromIndex_(previewLastCol0);
 
     if (previewDateFilterActive) {
@@ -6386,10 +6431,12 @@ export async function fetchConversationSheetExport(opts = {}) {
     const headersRaw = Array.isArray(headerGot.data.values) && headerGot.data.values[0]
         ? /** @type {unknown[]} */ (headerGot.data.values[0])
         : [];
+    const previewLastCol0Export = conversationSheetPreviewLastCol0_(headersRaw);
+    const headerWidthExport = Math.max(headersRaw.length, previewLastCol0Export + 1);
     const headers = [];
     const usedKeys = new Set();
-    for (let i = 0; i < headersRaw.length; i += 1) {
-        let label = sheetCellString_(headersRaw[i]);
+    for (let i = 0; i < headerWidthExport; i += 1) {
+        let label = canonicalConversationSheetHeaderLabel_(i, headersRaw[i]);
         if (!label) {
             label = `Column_${i + 1}`;
         }
@@ -6416,7 +6463,7 @@ export async function fetchConversationSheetExport(opts = {}) {
         };
     }
 
-    const previewLastCol0 = Math.min(175, Math.max(headersRaw.length - 1, 18));
+    const previewLastCol0 = previewLastCol0Export;
     const previewRightLetter = columnLetterFromIndex_(previewLastCol0);
     const headerMap = await getHeaderIndexMap_(sheets, tab);
     const dateIdx = pickHeaderIndex_(headerMap, SHEET_H_CONV_DATE_CELL, 1);

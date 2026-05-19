@@ -3475,7 +3475,8 @@
       };
       /** Source URL / Document: show ~15 chars; full value copied on double-click */
       var SHEET_TRUNCATE_PREVIEW_CHARS = 15;
-      var SHEET_COL_FIXED_CH = { appdate: 12, apptime: 12 };
+      var SHEET_COL_FIXED_CH = { appdate: 12, apptime: 12, rating: 8 };
+      var SHEET_FEEDBACK_PREVIEW_CHARS = 40;
       var SHEET_COL_BODY_MIN_PX = 228;
       var SHEET_COL_BODY_MAX_PX = 370;
 
@@ -3522,6 +3523,17 @@
         if (nk === "document" || nk === "documents" || nk === "filelinks" || nk === "uploads") {
           return "document";
         }
+        if (nk === "rating" || nk === "feedbackrating" || nk === "csat" || nk === "csatrating") {
+          return "rating";
+        }
+        if (
+          nk === "feedback" ||
+          nk === "feedbackmessage" ||
+          nk === "feedbackcomment" ||
+          nk === "visitorfeedback"
+        ) {
+          return "feedback";
+        }
         return null;
       }
 
@@ -3555,7 +3567,7 @@
 
       function isSheetTruncatePreviewColumn_(headerTitle) {
         var role = sheetColWidthRole_(headerTitle);
-        return role === "sourceurl" || role === "document";
+        return role === "sourceurl" || role === "document" || role === "feedback";
       }
 
       function truncatePreviewLabel_(text, maxChars) {
@@ -3566,11 +3578,13 @@
       }
 
       /** ~15 visible chars; td._clipboardValue holds full text/URL for double-click copy */
-      function appendTruncatedPreviewCell(td, raw) {
+      function appendTruncatedPreviewCell(td, raw, maxChars) {
+        var limit =
+          typeof maxChars === "number" && maxChars > 0 ? maxChars : SHEET_TRUNCATE_PREVIEW_CHARS;
         var clip = cellClipboardString(raw);
         td._clipboardValue = clip;
         var flat = flattenCellText(raw).trim();
-        var preview = truncatePreviewLabel_(raw, SHEET_TRUNCATE_PREVIEW_CHARS);
+        var preview = truncatePreviewLabel_(raw, limit);
         td.title = clip
           ? clip.length > 32000
             ? clip.slice(0, 32000) + "… — double-click to copy full value"
@@ -3605,6 +3619,18 @@
 
         if (role === "sourceurl" || role === "document") {
           applySheetColumnTruncatePreviewCap_(el);
+          return;
+        }
+        if (role === "feedback") {
+          el.style.boxSizing = "border-box";
+          el.style.width = "auto";
+          el.style.minWidth = "0";
+          el.style.maxWidth = SHEET_FEEDBACK_PREVIEW_CHARS + "ch";
+          return;
+        }
+        if (role === "rating") {
+          var ratingCh = SHEET_COL_FIXED_CH.rating;
+          applySheetColumnChCap_(el, ratingCh, 0);
           return;
         }
         if (role === "date" || role === "time" || role === "email" || role === "mobile") {
@@ -4993,7 +5019,11 @@
             if (isChatScriptConvLinkColumn(headers[ci])) {
               appendChatScriptConvLinkCell(td, row, raw);
             } else if (isSheetTruncatePreviewColumn_(headers[ci])) {
-              appendTruncatedPreviewCell(td, raw);
+              var prevMax =
+                sheetColWidthRole_(headers[ci]) === "feedback"
+                  ? SHEET_FEEDBACK_PREVIEW_CHARS
+                  : SHEET_TRUNCATE_PREVIEW_CHARS;
+              appendTruncatedPreviewCell(td, raw, prevMax);
             } else {
               var clip = cellClipboardString(raw);
               td._clipboardValue = clip;
