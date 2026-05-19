@@ -105,10 +105,9 @@ export function resolveContactMobile(fields, body, clientContext) {
         }
     }
     if (clientContext && typeof clientContext === "object") {
+        const lookup = contactContextLookupRecord_(clientContext);
         for (const k of MOBILE_KEYS) {
-            const v = scalarFormValue(
-                /** @type {Record<string, unknown>} */ (clientContext)[k]
-            );
+            const v = scalarFormValue(lookup[k]);
             if (v) {
                 return v;
             }
@@ -123,9 +122,7 @@ export function resolveContactMobile(fields, body, clientContext) {
         return loose;
     }
     if (clientContext && typeof clientContext === "object") {
-        loose = pickMobileFromLooseKeys(
-            /** @type {Record<string, unknown>} */ (clientContext)
-        );
+        loose = pickMobileFromLooseKeys(contactContextLookupRecord_(clientContext));
         if (loose) {
             return loose;
         }
@@ -147,6 +144,24 @@ function trimNameCell_(s) {
 }
 
 const CONTACT_NAME_KEYS = ["name"];
+
+/**
+ * Flat map for contact resolution: top-level `client_context` plus Dialogflow `session_params`.
+ *
+ * @param {Record<string, unknown> | null | undefined} clientContext
+ * @returns {Record<string, unknown>}
+ */
+export function contactContextLookupRecord_(clientContext) {
+    if (!clientContext || typeof clientContext !== "object" || Array.isArray(clientContext)) {
+        return {};
+    }
+    const cx = /** @type {Record<string, unknown>} */ (clientContext);
+    const sp =
+        cx.session_params && typeof cx.session_params === "object" && !Array.isArray(cx.session_params)
+            ? /** @type {Record<string, unknown>} */ (cx.session_params)
+            : {};
+    return { ...sp, ...cx };
+}
 
 const CONTACT_NAME_ALIASES = [
     "customer_name",
@@ -240,14 +255,14 @@ export function resolveContactName(fields, body, clientContext) {
         }
     }
     if (clientContext && typeof clientContext === "object") {
-        const cx = /** @type {Record<string, unknown>} */ (clientContext);
+        const lookup = contactContextLookupRecord_(clientContext);
         for (const k of CONTACT_NAME_KEYS) {
-            const t = trimNameCell_(scalarFormValue(cx[k]));
+            const t = trimNameCell_(scalarFormValue(lookup[k]));
             if (t) {
                 return t;
             }
         }
-        const loose = pickNameFromLooseKeys_(cx);
+        const loose = pickNameFromLooseKeys_(lookup);
         if (loose) {
             return loose;
         }
@@ -305,12 +320,15 @@ export function resolveContactEmail(fields, body, clientContext) {
         }
     }
     if (clientContext && typeof clientContext === "object") {
-        const cx = /** @type {Record<string, unknown>} */ (clientContext);
-        const direct = scalarFormValue(cx.email) || scalarFormValue(cx.user_email);
+        const lookup = contactContextLookupRecord_(clientContext);
+        const direct =
+            scalarFormValue(lookup.email)
+            || scalarFormValue(lookup.user_email)
+            || scalarFormValue(lookup.contact_email);
         if (direct) {
             return direct.trim();
         }
-        return pickEmailFromLooseKeys_(cx);
+        return pickEmailFromLooseKeys_(lookup);
     }
     return "";
 }

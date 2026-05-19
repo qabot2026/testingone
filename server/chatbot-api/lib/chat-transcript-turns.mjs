@@ -330,8 +330,31 @@ function sortTurnsDialogOrder_(turns) {
     return turns;
 }
 
+/** @param {number} at */
+function turnAtLooksLikeEpochMs_(at) {
+    return Number.isFinite(at) && at > 1_000_000_000_000;
+}
+
 /**
- * Normalize `at` to 0, 1000, 2000… so response-time math works when sources mixed epoch ms + index stamps.
+ * True when turns carry real wall-clock stamps (widget `Date.now()` on each line).
+ *
+ * @param {{ at: number }[]} turns
+ */
+function turnsHaveUsableEpochTimestamps_(turns) {
+    if (!turns.length) {
+        return false;
+    }
+    const epoch = turns.filter((t) => turnAtLooksLikeEpochMs_(t.at));
+    if (epoch.length < 2) {
+        return false;
+    }
+    const minAt = Math.min(...epoch.map((t) => t.at));
+    const maxAt = Math.max(...epoch.map((t) => t.at));
+    return maxAt > minAt;
+}
+
+/**
+ * Normalize `at` to 0, 1000, 2000… only when sources lack real epoch stamps.
  *
  * @param {{ role: string, text: string, at: number, seq?: number }[]} turns
  */
@@ -340,6 +363,9 @@ function assignMonotonicTurnTimesForMetrics_(turns) {
         return turns;
     }
     const sorted = sortTurnsDialogOrder_(turns.slice());
+    if (turnsHaveUsableEpochTimestamps_(sorted)) {
+        return sorted;
+    }
     return sorted.map((t, i) => ({
         ...t,
         at: i * 1000

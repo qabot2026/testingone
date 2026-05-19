@@ -295,6 +295,99 @@ function metricScalarFromContext_(v) {
 }
 
 
+/** @param {unknown} raw */
+function coerceContextTimestampMs_(raw) {
+    if (typeof raw === "number" && Number.isFinite(raw)) {
+        if (raw > 1_000_000_000_000) {
+            return raw;
+        }
+        if (raw > 1_000_000_000) {
+            return raw * 1000;
+        }
+        return 0;
+    }
+    if (raw && typeof raw === "object") {
+        const o = /** @type {{ seconds?: unknown, _seconds?: unknown }} */ (raw);
+        const sec =
+            typeof o.seconds === "number" && Number.isFinite(o.seconds)
+                ? o.seconds
+                : typeof o._seconds === "number" && Number.isFinite(o._seconds)
+                  ? o._seconds
+                  : NaN;
+        if (Number.isFinite(sec)) {
+            return sec * 1000;
+        }
+    }
+    if (typeof raw === "string" && raw.trim()) {
+        const parsed = Date.parse(raw.trim());
+        return Number.isFinite(parsed) ? parsed : 0;
+    }
+    return 0;
+}
+
+/**
+ * Wall-clock chat span: first activity → last activity (how long the visitor stayed in chat).
+ *
+ * @param {Record<string, unknown>} cx
+ * @param {{ at: number }[]} turns
+ */
+function chatSessionDurationMs_(cx, turns) {
+    const now = Date.now();
+    let endMs = 0;
+    for (const k of [
+        "assistant_queries_last_at",
+        "user_queries_last_at",
+        "chat_last_message_at",
+        "last_message_at"
+    ]) {
+        const v = coerceContextTimestampMs_(cx[k]);
+        if (v > endMs) {
+            endMs = v;
+        }
+    }
+    for (let i = 0; i < turns.length; i += 1) {
+        const at = turns[i].at;
+        if (at > 1_000_000_000_000 && at > endMs) {
+            endMs = at;
+        }
+    }
+    if (!endMs) {
+        endMs = now;
+    }
+
+    let startMs = 0;
+    for (const k of [
+        "chat_session_started_at",
+        "chat_started_at",
+        "session_started_at",
+        "first_message_at",
+        "chat_first_message_at"
+    ]) {
+        const v = coerceContextTimestampMs_(cx[k]);
+        if (v > 0) {
+            startMs = v;
+            break;
+        }
+    }
+    if (!startMs && turns.length) {
+        const epochAts = turns.map((t) => t.at).filter((at) => at > 1_000_000_000_000);
+        if (epochAts.length) {
+            startMs = Math.min(...epochAts);
+        }
+    }
+    if (startMs > 0 && endMs >= startMs) {
+        return endMs - startMs;
+    }
+    if (turns.length >= 2) {
+        const ats = turns.map((t) => t.at);
+        const span = Math.max(0, Math.max(...ats) - Math.min(...ats));
+        if (span > 0) {
+            return span;
+        }
+    }
+    return 0;
+}
+
 /** @param {number} ms */
 function formatChatDuration_(ms) {
     if (!Number.isFinite(ms) || ms < 0) {
@@ -370,14 +463,13 @@ export function computeConversationMetricsFromClientContext_(clientContext) {
 
     const turns = buildTranscriptTurnsFromClientContext_(cx);
     const { userCount, botCount } = countUserBotFromTurns_(cx, turns);
-    const ats = turns.map((t) => t.at);
+    const durationMs = chatSessionDurationMs_(cx, turns);
 
     let chatDurationSec = 0;
     let chatDurationDisplay = "";
-    if (ats.length >= 2) {
-        const span = Math.max(0, Math.max(...ats) - Math.min(...ats));
-        chatDurationSec = Math.round(span / 1000);
-        chatDurationDisplay = formatChatDuration_(span);
+    if (durationMs > 0) {
+        chatDurationSec = Math.round(durationMs / 1000);
+        chatDurationDisplay = formatChatDuration_(durationMs);
     } else if (typeof cx.chat_duration_sec === "number" && Number.isFinite(cx.chat_duration_sec)) {
         chatDurationSec = Math.max(0, Math.round(cx.chat_duration_sec));
         chatDurationDisplay = formatChatDuration_(chatDurationSec * 1000);
@@ -388,18 +480,20 @@ export function computeConversationMetricsFromClientContext_(clientContext) {
     const messageCount =
         userCount > 0 || botCount > 0 ? `${userCount}-${botCount}` : "";
 
-    const responseLatencies = botResponseLatenciesMs_(turns);
+    const totalMessages = userCount + botCount;
     let avgResponseTimeMs = "";
-    if (responseLatencies.length) {
-        const avg = responseLatencies.reduce((a, b) => a + b, 0) / responseLatencies.length;
-        avgResponseTimeMs = String(Math.max(1, Math.round(avg)));
-    } else if (userCount > 0 && botCount > 0 && chatDurationSec > 0) {
-        const pairs = Math.min(userCount, botCount);
-        avgResponseTimeMs = String(Math.max(1, Math.round((chatDurationSec * 1000) / pairs)));
-    } else if (userCount > 0 && botCount > 0 && turns.length >= 2) {
-        avgResponseTimeMs = String(
-            Math.max(1, Math.round((turns.length * 1000) / Math.min(userCount, botCount)))
-        );
+    if (durationMs > 0 && totalMessages > 0) {
+        avgResponseTimeMs = String(Math.max(1, Math.round(durationMs / totalMessages)));
+    } else {
+        const responseLatencies = botResponseLatenciesMs_(turns);
+        if (responseLatencies.length) {
+            const avg = responseLatencies.reduce((a, b) => a + b, 0) / responseLatencies.length;
+            avgResponseTimeMs = String(Math.max(1, Math.round(avg)));
+        } else if (userCount > 0 && botCount > 0 && chatDurationSec > 0) {
+            avgResponseTimeMs = String(
+                Math.max(1, Math.round((chatDurationSec * 1000) / totalMessages))
+            );
+        }
     }
 
     /** @type {string[]} */
@@ -482,24 +576,33 @@ export function conversationMetricsForSheetRow_(metrics, clientContext, incoming
     const fromLists = countMessagesFromContextLists_(cx);
     const listFallback =
         fromLists.user > 0 || fromLists.bot > 0 ? `${fromLists.user}-${fromLists.bot}` : "";
-    const messageCount = m.messageCount || pick("message_count", "messageCount") || listFallback;
-    let avgResponseTimeMs = m.avgResponseTimeMs || pick("avg_response_time_ms", "avgResponseTimeMs");
-    if (looksLikeUserBotMessageCount_(avgResponseTimeMs)) {
-        avgResponseTimeMs = m.avgResponseTimeMs && !looksLikeUserBotMessageCount_(m.avgResponseTimeMs)
+    const messageCount =
+        (m.messageCount && !looksLikeUserBotMessageCount_(m.messageCount) ? m.messageCount : "")
+        || listFallback
+        || pick("message_count", "messageCount");
+    let avgResponseTimeMs =
+        m.avgResponseTimeMs && !looksLikeUserBotMessageCount_(m.avgResponseTimeMs)
             ? m.avgResponseTimeMs
             : "";
+    if (!avgResponseTimeMs) {
+        const picked = pick("avg_response_time_ms", "avgResponseTimeMs");
+        avgResponseTimeMs = looksLikeUserBotMessageCount_(picked) ? "" : picked;
     }
-    if (!avgResponseTimeMs && messageCount && messageCount.includes("-")) {
+    if (!avgResponseTimeMs && messageCount && messageCount.includes("-") && m.chatDurationSec > 0) {
         const parts = messageCount.split("-");
         const u = Number(parts[0]);
         const b = Number(parts[1]);
-        if (u > 0 && b > 0 && m.chatDurationSec > 0) {
-            avgResponseTimeMs = String(Math.max(1, Math.round((m.chatDurationSec * 1000) / Math.min(u, b))));
+        const total = u + b;
+        if (total > 0) {
+            avgResponseTimeMs = String(Math.max(1, Math.round((m.chatDurationSec * 1000) / total)));
         }
     }
     return {
         crmPushStatus: sanitizeCrmPushStatusForSheet_(m.crmPushStatus) || pickCrm("crm_push_status", "crmPushStatus", "crm_status"),
-        duration: m.chatDurationDisplay || pick("chatduration", "chat_duration", "duration"),
+        duration:
+            m.chatDurationDisplay
+            || (m.chatDurationSec > 0 ? formatChatDuration_(m.chatDurationSec * 1000) : "")
+            || pick("chatduration", "chat_duration", "duration"),
         messageCount,
         avgResponseTimeMs,
         sentiment: m.sentiment || pick("sentiment"),

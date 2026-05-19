@@ -15252,6 +15252,10 @@ function trackChatUserQueryInSessionContext_(raw) {
             ...prev,
             user_queries: capped,
             user_queries_last_at: now,
+            chat_session_started_at:
+                typeof prev.chat_session_started_at === "number" && Number.isFinite(prev.chat_session_started_at)
+                    ? prev.chat_session_started_at
+                    : now,
             chat_transcript: cappedTr,
             chat_transcript_seq: seq
         });

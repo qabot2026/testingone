@@ -13,6 +13,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { google } from "googleapis";
 import {
+    contactContextLookupRecord_,
     resolveContactEmail,
     resolveContactMobile,
     resolveContactName,
@@ -1118,16 +1119,23 @@ export function assembleLeadSheetPayloadFromSources_(incomingRow, sheetExtrasSou
     const src = sheetExtrasSources && typeof sheetExtrasSources === "object" ? sheetExtrasSources : {};
     const ctxRaw = src.clientContext;
     const ctxEnriched = clientContextEnrichedForSheetMetrics_(ctxRaw, row);
+    const contactLookup = contactContextLookupRecord_(ctxRaw);
     const fieldsRec = formFieldsRecordForSheet_(src.fields);
+    const preserve = row.preserveSheetContact && typeof row.preserveSheetContact === "object"
+        ? /** @type {{ name?: string, mobile?: string, email?: string }} */ (row.preserveSheetContact)
+        : null;
     const nameResolved =
-        resolveContactName(fieldsRec, {}, ctxEnriched)
-        || sheetOutboundCell_(row.name);
+        resolveContactName(fieldsRec, {}, contactLookup)
+        || sheetOutboundCell_(row.name)
+        || (preserve && preserve.name ? preserve.name : "");
     const mobileResolved =
-        resolveContactMobile(fieldsRec, {}, ctxEnriched)
-        || sheetOutboundCell_(row.mobile);
+        resolveContactMobile(fieldsRec, {}, contactLookup)
+        || sheetOutboundCell_(row.mobile)
+        || (preserve && preserve.mobile ? preserve.mobile : "");
     const emailResolved =
-        resolveContactEmail(fieldsRec, {}, ctxEnriched)
-        || sheetOutboundCell_(row.email);
+        resolveContactEmail(fieldsRec, {}, contactLookup)
+        || sheetOutboundCell_(row.email)
+        || (preserve && preserve.email ? preserve.email : "");
     const fb = feedbackFieldsFromLeadSources_({
         formId: row.formId,
         fields: src.fields,
@@ -4299,6 +4307,42 @@ export async function patchSheetLeadBySessionId_(sessionId, fields) {
 }
 
 /**
+ * @param {import("googleapis").sheets_v4.Sheets} sheets
+ * @param {string} tab
+ * @param {number} rowNumber
+ */
+async function readLeadContactFromSheetRow_(sheets, tab, rowNumber) {
+    if (!rowNumber || rowNumber < 1) {
+        return { name: "", mobile: "", email: "" };
+    }
+    const map = await getHeaderIndexMap_(sheets, tab);
+    const lastCol = columnLetterFromIndex_(CONVERSATION_SHEET_PREVIEW_MIN_COL_INDEX0);
+    const got = await sheets.spreadsheets.values.get({
+        spreadsheetId: SPREADSHEET_ID,
+        range: `${tab}!A${rowNumber}:${lastCol}${rowNumber}`
+    });
+    const cells = Array.isArray(got.data.values) && got.data.values[0] ? got.data.values[0] : [];
+    /** @param {string[]} keys */
+    const pick = (...keys) => {
+        for (let i = 0; i < keys.length; i += 1) {
+            const idx = map[normalizedHeaderKey_(keys[i])];
+            if (idx !== undefined) {
+                const v = sheetCellString_(cells[idx]);
+                if (v) {
+                    return v;
+                }
+            }
+        }
+        return "";
+    };
+    return {
+        name: pick("name"),
+        mobile: pick("mobile", "phone", "phonenumber", "mobileno"),
+        email: pick("email", "emailaddress")
+    };
+}
+
+/**
  * Update an existing session row with full header-aligned lead payload (contact + metrics).
  *
  * @param {import("googleapis").sheets_v4.Sheets} sheets
@@ -4319,7 +4363,8 @@ async function patchExistingSessionLeadRow_(
     appendRangeUsed
 ) {
     const repeated = repeatedUserLabelFromRepeatedFlag_(scanFull.repeatedAcrossSessions);
-    const rowForSheet = { ...row, repeated };
+    const preserveSheetContact = await readLeadContactFromSheetRow_(sheets, tab, duplicateRowNum);
+    const rowForSheet = { ...row, repeated, preserveSheetContact };
     let patched = false;
     try {
         const fullLead = assembleLeadSheetPayloadFromSources_(rowForSheet, sheetExtrasSources);
@@ -4653,6 +4698,7 @@ export async function upsertSessionQueriesInSheet(row) {
         }
         let fullRowWritten = false;
         try {
+            const preserveSheetContact = await readLeadContactFromSheetRow_(sheets, tab, rowNumber);
             const fullLead = assembleLeadSheetPayloadFromSources_(
                 {
                     convDate: row.convDate,
@@ -4673,7 +4719,8 @@ export async function upsertSessionQueriesInSheet(row) {
                     appointmentDate: row.appointmentDate,
                     appointmentTime: row.appointmentTime,
                     userQueriesCsv: merged || existingCsv || incomingQ,
-                    chatTranscriptJson: row.chatTranscriptJson
+                    chatTranscriptJson: row.chatTranscriptJson,
+                    preserveSheetContact
                 },
                 sheetExtrasSources
             );
