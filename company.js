@@ -18387,6 +18387,31 @@ function submitContactForm(event) {
             syncDfMessengerSessionParametersFromClientContext(activeDfMessenger);
             renderContactFormSubmissionResponse(summaryForChat);
 
+            if (cfg0.formKey === "feedback") {
+                let ratingNum;
+                const rawRating = payload.rating != null ? payload.rating : payload.feedback_rating;
+                if (typeof rawRating === "number" && Number.isFinite(rawRating)) {
+                    ratingNum = Math.round(rawRating);
+                } else if (typeof rawRating === "string" && rawRating.trim()) {
+                    const ri = Math.round(Number(rawRating));
+                    if (ri >= 1 && ri <= 5) {
+                        ratingNum = ri;
+                    }
+                }
+                const commentTrim =
+                    typeof payload.message === "string"
+                        ? payload.message.trim().slice(0, 2000)
+                        : typeof payload.feedback_message === "string"
+                          ? payload.feedback_message.trim().slice(0, 2000)
+                          : "";
+                if (ratingNum !== undefined || commentTrim) {
+                    postChatFeedbackToApi_({
+                        rating: ratingNum,
+                        comment: commentTrim
+                    });
+                }
+            }
+
             for (const def of fieldDefs) {
                 if (!def || !def.id) {
                     continue;

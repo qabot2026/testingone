@@ -70,6 +70,7 @@ import {
     sanitizeUserQueriesCsvForSheet,
     upsertSessionQueriesInSheet,
     patchSheetLeadBySessionId_,
+    feedbackFieldsFromLeadSources_,
     writeLeadCaptureDashboardToSheet2
 } from "./lib/sheets.mjs";
 import {
@@ -2828,6 +2829,25 @@ app.post(
             /** @type {{ action: string, patched: boolean, tab?: string } | null} */
             let sheetOutcome = null;
             const sheetsT0Ms = Date.now();
+            const feedbackForSheet = feedbackFieldsFromLeadSources_({
+                formId,
+                fields: fields && typeof fields === "object" ? fields : {},
+                clientContext: mergedClientContext
+            });
+            if (feedbackForSheet.feedbackRating || feedbackForSheet.feedbackMessage) {
+                mergedClientContext = {
+                    ...mergedClientContext,
+                    ...(feedbackForSheet.feedbackRating
+                        ? { feedback_rating: feedbackForSheet.feedbackRating }
+                        : {}),
+                    ...(feedbackForSheet.feedbackMessage
+                        ? {
+                              feedback_message: feedbackForSheet.feedbackMessage,
+                              feedback_comment: feedbackForSheet.feedbackMessage
+                          }
+                        : {})
+                };
+            }
             if (!SHEETS_DISABLED) {
                 try {
                     sheetOutcome = await appendContactRowToSheet(
@@ -2849,7 +2869,9 @@ app.post(
                             appointmentBooked,
                             appointmentDate,
                             appointmentTime,
-                            userQueriesCsv
+                            userQueriesCsv,
+                            feedbackRating: feedbackForSheet.feedbackRating,
+                            feedbackMessage: feedbackForSheet.feedbackMessage
                         },
                         {
                             preferIncomingContact: true,

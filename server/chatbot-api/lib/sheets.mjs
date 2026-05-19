@@ -975,7 +975,13 @@ export function feedbackFieldsFromClientContext_(clientContext) {
         rating = r.trim();
     }
     let message = "";
-    for (const k of ["feedback_message", "feedbackMessage", "feedback_comment", "comment"]) {
+    for (const k of [
+        "feedback_message",
+        "feedbackMessage",
+        "feedback_comment",
+        "message",
+        "comment"
+    ]) {
         const v = cx[k];
         if (typeof v === "string" && v.trim()) {
             message = v.trim();
@@ -993,6 +999,57 @@ export function feedbackFieldsFromClientContext_(clientContext) {
     }
     return { feedbackRating: rating, feedbackMessage: message };
 }
+
+/** @param {unknown} val */
+function scalarFormFieldForSheet_(val) {
+    if (typeof val === "string") {
+        return val.trim();
+    }
+    if (typeof val === "number" && Number.isFinite(val)) {
+        return String(val);
+    }
+    if (typeof val === "boolean") {
+        return val ? "true" : "false";
+    }
+    return "";
+}
+
+/**
+ * Feedback rating (T) and message (U) from contact-form `fields` and/or `client_context`.
+ *
+ * @param {{ formId?: string, fields?: Record<string, unknown> | null, clientContext?: unknown }} sources
+ */
+export function feedbackFieldsFromLeadSources_(sources) {
+    const src = sources && typeof sources === "object" ? sources : {};
+    const fromCx = feedbackFieldsFromClientContext_(src.clientContext);
+    let rating = fromCx.feedbackRating;
+    let message = fromCx.feedbackMessage;
+    const fid = String(src.formId || "")
+        .trim()
+        .toLowerCase();
+    const f =
+        src.fields && typeof src.fields === "object" && !Array.isArray(src.fields)
+            ? /** @type {Record<string, unknown>} */ (src.fields)
+            : {};
+    const isFeedbackForm = fid === "feedback" || fid.includes("feedback");
+    const r = scalarFormFieldForSheet_(f.rating ?? f.feedback_rating ?? f.feedbackRating);
+    const m = scalarFormFieldForSheet_(
+        f.message ?? f.feedback_message ?? f.feedbackMessage ?? f.comment ?? f.feedback_comment
+    );
+    if (r) {
+        rating = r;
+    } else if (isFeedbackForm && !rating) {
+        rating = "";
+    }
+    if (m) {
+        message = m;
+    }
+    return { feedbackRating: rating, feedbackMessage: message };
+}
+
+/** Column T (rating) and U (message) — 0-based indices 19 and 20. */
+const SHEET_FEEDBACK_RATING_COL_LETTER = "T";
+const SHEET_FEEDBACK_MESSAGE_COL_LETTER = "U";
 
 /** @param {string} s */
 function isLiveAgentChannelLabel_(s) {
@@ -3619,6 +3676,21 @@ async function buildStandardLeadRowUpdates_(sheets, tab, rowNumber, lead) {
     put(SHEET_H_CAMPAIGN_PARAMS, 21, lead.campaignParams);
     put(SHEET_H_CRM_STATUS, 22, lead.crmStatus);
 
+    const fr = sheetOutboundCell_(lead.feedbackRating);
+    const fm = sheetOutboundCell_(lead.feedbackMessage);
+    if (String(fr || "").trim()) {
+        updates.push({
+            range: `${tab}!${SHEET_FEEDBACK_RATING_COL_LETTER}${rowNumber}`,
+            values: [[fr]]
+        });
+    }
+    if (String(fm || "").trim()) {
+        updates.push({
+            range: `${tab}!${SHEET_FEEDBACK_MESSAGE_COL_LETTER}${rowNumber}`,
+            values: [[fm]]
+        });
+    }
+
     return updates;
 }
 
@@ -3850,6 +3922,24 @@ export async function appendContactRowToSheet(row, opts) {
                 console.warn("[chatbot-api] Dashboard tab sync failed:", msg);
             });
         }
+        const fbDup = feedbackFieldsFromLeadSources_({
+            formId: row.formId,
+            fields: sheetExtrasSources ? sheetExtrasSources.fields : null,
+            clientContext: sheetExtrasSources ? sheetExtrasSources.clientContext : null
+        });
+        if (fbDup.feedbackRating || fbDup.feedbackMessage) {
+            try {
+                await writeLeadRowByHeader_(sheets, tabResolved, scan.matchedRowNumber, {
+                    feedbackRating: fbDup.feedbackRating,
+                    feedbackMessage: fbDup.feedbackMessage
+                });
+            } catch (fbErr) {
+                const m = fbErr && /** @type {{ message?: string }} */ (fbErr).message
+                    ? String(/** @type {{ message?: string }} */ (fbErr).message)
+                    : String(fbErr);
+                console.warn("[chatbot-api] Sheets feedback columns duplicate path:", m.slice(0, 200));
+            }
+        }
         await maybeWriteLeadConvLinkColumnA_(sheets, tabResolved, scan.matchedRowNumber, row.clientSessionId);
         await maybeWriteSheetRowOpenLink_(sheets, tabResolved, scan.matchedRowNumber, row.clientSessionId);
         if (typeof row.chatTranscriptJson === "string" && row.chatTranscriptJson.trim()) {
@@ -3960,10 +4050,11 @@ export async function appendContactRowToSheet(row, opts) {
     }
     try {
         if (appendedRowNum) {
-            const fb =
-                sheetExtrasSources && sheetExtrasSources.clientContext
-                    ? feedbackFieldsFromClientContext_(sheetExtrasSources.clientContext)
-                    : { feedbackRating: "", feedbackMessage: "" };
+            const fb = feedbackFieldsFromLeadSources_({
+                formId: row.formId,
+                fields: sheetExtrasSources ? sheetExtrasSources.fields : null,
+                clientContext: sheetExtrasSources ? sheetExtrasSources.clientContext : null
+            });
             const campaignParams =
                 sheetExtrasSources && sheetExtrasSources.clientContext
                     ? formatCampaignParamsForSheet_(sheetExtrasSources.clientContext)
