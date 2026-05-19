@@ -1153,7 +1153,8 @@
         const isMine = isActive && agentIdsMatch_(conv.assignedAgentEmail, agentId);
         const takenByOther =
             isActive && conv.assignedAgentEmail && !agentIdsMatch_(conv.assignedAgentEmail, agentId);
-        const canReply = isMine;
+        const aiCopilot = isAiCopilotConv_(conv);
+        const canReply = isMine && !aiCopilot;
 
         if (chatClosedBanner) chatClosedBanner.classList.toggle("hidden", !isClosed);
         if (claimBtn) claimBtn.hidden = !isWaiting || isClosed;
@@ -1454,6 +1455,10 @@
         ev.preventDefault();
         const text = composerInput.value.trim();
         if (!text || !selectedId) return;
+        if (selectedConv && isAiCopilotConv_(selectedConv)) {
+            alert("Chatbot is replying to the visitor. Click Takeover before sending a message.");
+            return;
+        }
         if (!agentId.includes("@")) {
             alert("Sign in with your work email to send messages.");
             return;
