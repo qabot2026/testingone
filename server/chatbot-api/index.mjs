@@ -69,7 +69,7 @@ import {
     probeSheetsSpreadsheetAccess,
     sanitizeUserQueriesCsvForSheet,
     upsertSessionQueriesInSheet,
-    shouldThrottleSessionSheetSync_,
+    runCoalescedSessionSheetSync_,
     patchSheetLeadBySessionId_,
     feedbackFieldsFromLeadSources_,
     writeLeadCaptureDashboardToSheet2
@@ -3342,18 +3342,6 @@ app.post(
             return res.status(400).json({ ok: false, error: "Missing client_session_id in client_context." });
         }
 
-        const sheetSyncThrottle = shouldThrottleSessionSheetSync_(clientSessionId);
-        if (sheetSyncThrottle.throttle) {
-            return res.status(200).json({
-                ok: true,
-                message: "Sync throttled to protect Google Sheets quota; try again shortly.",
-                skipped: true,
-                reason: "rate_limited",
-                retry_after_ms: sheetSyncThrottle.retryAfterMs,
-                live_agent: { queued: false, reason: "not_checked" }
-            });
-        }
-
         let liveAgentQueue = { queued: false, reason: "not_checked" };
         try {
             const { maybeQueueLiveAgentFromClientContext_ } = await import(
@@ -3468,7 +3456,7 @@ app.post(
         }
         if (userQueriesCsv || hasLiveChatTranscript) {
             try {
-                syncDetail = await upsertSessionQueriesInSheet({
+                const rowPayload = {
                     convDate: convSheetDate,
                     convTime: convSheetTime,
                     formId,
@@ -3490,18 +3478,22 @@ app.post(
                     chatTranscriptJson,
                     writeChatTranscriptOnSessionSync: true,
                     lightweightSessionSync: true,
+                    clientAuthoritativeQueries: true,
                     sheetExtrasSources: {
                         clientContext: mergedClientContext,
                         fields
                     }
-                });
+                };
+                syncDetail = await runCoalescedSessionSheetSync_(clientSessionId, () =>
+                    upsertSessionQueriesInSheet(rowPayload)
+                );
             } catch (se) {
                 const detail = se && se.message ? se.message : String(se);
                 console.error("[chatbot-api] session-sheet-sync", detail, se);
                 if (/quota exceeded|rate limit|resource_exhausted/i.test(detail)) {
                     return res.status(200).json({
                         ok: true,
-                        message: "Google Sheets read quota busy; chat saved elsewhere. Sync will retry on next message or form submit.",
+                        message: "Chat saved; Google Sheets will catch up on the next sync.",
                         skipped: true,
                         reason: "sheets_quota",
                         live_agent: liveAgentQueue

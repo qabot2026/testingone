@@ -147,15 +147,15 @@ const SESSION_ROW_LOOKBACK_ROWS = Math.max(
     10,
     Number.parseInt(process.env.SHEETS_SESSION_ROW_LOOKBACK_ROWS || "80", 10) || 80
 );
-/** Min ms between session-sheet-sync writes per session id (server-side). */
-const SESSION_SHEET_SYNC_MIN_INTERVAL_MS = Math.max(
-    5000,
-    Number.parseInt(process.env.SHEETS_SESSION_SYNC_MIN_INTERVAL_MS || "20000", 10) || 20_000
+/** Batch rapid session sync HTTP calls per session (near real-time, fewer API calls). */
+const SESSION_SHEET_COALESCE_MS = Math.max(
+    400,
+    Number.parseInt(process.env.SHEETS_SESSION_SYNC_COALESCE_MS || "1200", 10) || 1200
 );
 /** Min ms between full-row refreshes on session sync when row already exists. */
 const SESSION_SHEET_FULL_ROW_MIN_INTERVAL_MS = Math.max(
-    30_000,
-    Number.parseInt(process.env.SHEETS_SESSION_FULL_ROW_MIN_INTERVAL_MS || "120000", 10) || 120_000
+    15_000,
+    Number.parseInt(process.env.SHEETS_SESSION_FULL_ROW_MIN_INTERVAL_MS || "45000", 10) || 45_000
 );
 const DEDUP_WINDOW_MS = Math.max(
     10_000,
@@ -2665,38 +2665,85 @@ const SESSION_LEAD_ROW_CACHE_TTL_MS = 15 * 60 * 1000;
 /** session id → last full-row sync timestamp */
 const sessionLastFullRowSyncAt_ = new Map();
 
-/** session id → last server session-sheet-sync accept time */
-const sessionSheetSyncRateAt_ = new Map();
+/** session id → last queries CSV written (skip duplicate writes). */
+const sessionLastQueriesWritten_ = new Map();
+
+/** @type {Map<string, { run: () => Promise<unknown>, resolvers: Array<(v: unknown) => void>, rejecters: Array<(e: unknown) => void>, timer: ReturnType<typeof setTimeout> | null }>} */
+const sessionSheetCoalesceBuckets_ = new Map();
 
 let gridRowCountCache_ = { tab: "", at: 0, rowCount: 0 };
 const GRID_ROW_COUNT_CACHE_TTL_MS = 5 * 60 * 1000;
 
 /**
- * Throttle live session-sheet-sync to protect Sheets read quota (per session id).
+ * Merge burst session-sheet-sync requests per session (~1.2s) — feels real-time, protects quota.
  *
  * @param {string} sessionId
+ * @param {() => Promise<unknown>} run latest upsert for this session
  */
-export function shouldThrottleSessionSheetSync_(sessionId) {
+export function runCoalescedSessionSheetSync_(sessionId, run) {
     const sid = typeof sessionId === "string" ? sessionId.trim() : "";
     if (!sid) {
-        return { throttle: false, retryAfterMs: 0 };
+        return run();
     }
-    const now = Date.now();
-    const prev = sessionSheetSyncRateAt_.get(sid) || 0;
-    const wait = SESSION_SHEET_SYNC_MIN_INTERVAL_MS - (now - prev);
-    if (prev && wait > 0) {
-        return { throttle: true, retryAfterMs: wait };
+    return new Promise((resolve, reject) => {
+        let bucket = sessionSheetCoalesceBuckets_.get(sid);
+        if (!bucket) {
+            bucket = { run, resolvers: [], rejecters: [], timer: null };
+            sessionSheetCoalesceBuckets_.set(sid, bucket);
+        } else {
+            bucket.run = run;
+        }
+        bucket.resolvers.push(resolve);
+        bucket.rejecters.push(reject);
+        if (bucket.timer) {
+            clearTimeout(bucket.timer);
+        }
+        bucket.timer = setTimeout(() => {
+            void flushSessionSheetCoalesceBucket_(sid);
+        }, SESSION_SHEET_COALESCE_MS);
+    });
+}
+
+/** @param {string} sid */
+async function flushSessionSheetCoalesceBucket_(sid) {
+    const bucket = sessionSheetCoalesceBuckets_.get(sid);
+    if (!bucket) {
+        return;
     }
-    sessionSheetSyncRateAt_.set(sid, now);
-    if (sessionSheetSyncRateAt_.size > 5000) {
-        const cutoff = now - SESSION_SHEET_SYNC_MIN_INTERVAL_MS * 4;
-        for (const [k, t] of sessionSheetSyncRateAt_) {
-            if (t < cutoff) {
-                sessionSheetSyncRateAt_.delete(k);
-            }
+    sessionSheetCoalesceBuckets_.delete(sid);
+    const { run, resolvers, rejecters } = bucket;
+    try {
+        const result = await run();
+        for (let i = 0; i < resolvers.length; i += 1) {
+            resolvers[i](result);
+        }
+    } catch (err) {
+        if (sheetsApiQuotaHit_(err)) {
+            console.warn("[chatbot-api] Sheets quota busy; retrying session sync for", sid.slice(0, 12));
+            setTimeout(() => {
+                runCoalescedSessionSheetSync_(sid, run)
+                    .then((r) => {
+                        for (let i = 0; i < resolvers.length; i += 1) {
+                            resolvers[i](r);
+                        }
+                    })
+                    .catch(() => {
+                        const fallback = {
+                            mode: "deferred_quota",
+                            ok: true,
+                            message: "Sheets busy; will catch up on next sync."
+                        };
+                        for (let i = 0; i < resolvers.length; i += 1) {
+                            resolvers[i](fallback);
+                        }
+                    });
+            }, 4500);
+            return;
+        }
+        for (let i = 0; i < rejecters.length; i += 1) {
+            rejecters[i](err);
         }
     }
-    return { throttle: false, retryAfterMs: 0 };
 }
 
 /** @param {string} tab @param {string} sessionId @param {number} rowNumber */
@@ -4931,6 +4978,7 @@ export async function upsertSessionQueriesInSheet(row) {
         typeof row.chatTranscriptJson === "string" ? row.chatTranscriptJson.trim() : "";
     const writeChatTranscriptOnSessionSync = row.writeChatTranscriptOnSessionSync === true;
     const lightweightSessionSync = row.lightweightSessionSync === true;
+    const clientAuthoritativeQueries = row.clientAuthoritativeQueries === true;
     if (!incomingQ && !chatTranscriptJson) {
         return { mode: "skipped_empty_queries" };
     }
@@ -4960,7 +5008,7 @@ export async function upsertSessionQueriesInSheet(row) {
     if (rowNumber > 0) {
         const queriesCol = await getUserQueriesColumnInfo_(sheets, tab);
         let existingCsv = "";
-        if (incomingQ) {
+        if (incomingQ && !clientAuthoritativeQueries) {
             const gotQ = await sheetsValuesGet_(sheets, {
                 spreadsheetId: SPREADSHEET_ID,
                 range: `${tab}!${queriesCol.colLetter}${rowNumber}`
@@ -4975,10 +5023,15 @@ export async function upsertSessionQueriesInSheet(row) {
         if (incomingQ) {
             const replacePrefix =
                 typeof row.replaceCsvPrefix === "string" ? row.replaceCsvPrefix.trim() : "";
-            merged = replacePrefix
-                ? replacePrefixedCsvSegment_(existingCsv, replacePrefix, incomingQ)
-                : mergeCsvUnique_(existingCsv, incomingQ, 200);
-            queryColumnWritten = merged !== existingCsv;
+            if (clientAuthoritativeQueries && !replacePrefix) {
+                merged = incomingQ;
+            } else {
+                merged = replacePrefix
+                    ? replacePrefixedCsvSegment_(existingCsv, replacePrefix, incomingQ)
+                    : mergeCsvUnique_(existingCsv, incomingQ, 200);
+            }
+            const lastWritten = sessionLastQueriesWritten_.get(sid) || "";
+            queryColumnWritten = merged !== existingCsv && merged !== lastWritten;
             if (queryColumnWritten) {
                 const nBatch = await sheets.spreadsheets.values.batchUpdate({
                     spreadsheetId: SPREADSHEET_ID,
@@ -4988,6 +5041,7 @@ export async function upsertSessionQueriesInSheet(row) {
                     }
                 });
                 googleBatchQueries = googleBatchSummaryFromResponse_(nBatch);
+                sessionLastQueriesWritten_.set(sid, merged);
             }
         }
         const now = Date.now();
@@ -5077,7 +5131,8 @@ export async function upsertSessionQueriesInSheet(row) {
 
     const sheetOutcome = await appendContactRowToSheet(row, {
         preferIncomingContact: true,
-        sheetExtrasSources
+        sheetExtrasSources,
+        sessionFastPath: lightweightSessionSync
     });
     let appendedRn =
         typeof sheetOutcome.sheetRowNumber === "number" && sheetOutcome.sheetRowNumber > 0

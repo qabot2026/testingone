@@ -15366,10 +15366,10 @@ function trackChatUserQueryInSessionContext_(raw) {
 }
 
 let sessionSheetSyncDebounceTimer = 0;
-/** Debounced batch before POST session-sheet-sync (reduces Google Sheets read quota). */
-const SESSION_SHEET_SYNC_DEBOUNCE_MS = 8000;
-/** Min gap between session-sheet-sync POSTs from this tab. */
-const SESSION_SHEET_SYNC_MIN_CLIENT_INTERVAL_MS = 20000;
+/** Debounced batch before POST session-sheet-sync (~1.2s feels real-time; server coalesces further). */
+const SESSION_SHEET_SYNC_DEBOUNCE_MS = 1200;
+/** Min gap between session-sheet-sync POSTs from this tab (server also coalesces per session). */
+const SESSION_SHEET_SYNC_MIN_CLIENT_INTERVAL_MS = 2000;
 let sessionSheetSyncLastPostAt = 0;
 
 function scheduleSessionQueriesSheetSync_() {
