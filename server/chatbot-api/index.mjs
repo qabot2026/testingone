@@ -2858,6 +2858,8 @@ app.post(
                 conversationMetrics
             );
             record.client_context = mergedClientContext;
+            const chatTranscriptJsonForSheet =
+                stringifyChatTranscriptForSheetPayload_(mergedClientContext);
             if (!SHEETS_DISABLED) {
                 try {
                     sheetOutcome = await appendContactRowToSheet(
@@ -2881,7 +2883,10 @@ app.post(
                             appointmentTime,
                             userQueriesCsv,
                             feedbackRating: feedbackForSheet.feedbackRating,
-                            feedbackMessage: feedbackForSheet.feedbackMessage
+                            feedbackMessage: feedbackForSheet.feedbackMessage,
+                            ...(chatTranscriptJsonForSheet
+                                ? { chatTranscriptJson: chatTranscriptJsonForSheet }
+                                : {})
                         },
                         {
                             preferIncomingContact: true,
@@ -3109,6 +3114,8 @@ app.post(
             mergedClientContext,
             conversationMetricsMobile
         );
+        const chatTranscriptJsonMobile =
+            stringifyChatTranscriptForSheetPayload_(mergedClientContext);
         try {
             const sheetOutcome = await appendContactRowToSheet(
                 {
@@ -3129,7 +3136,10 @@ app.post(
                     appointmentBooked: "No",
                     appointmentDate: "",
                     appointmentTime: "",
-                    userQueriesCsv
+                    userQueriesCsv,
+                    ...(chatTranscriptJsonMobile
+                        ? { chatTranscriptJson: chatTranscriptJsonMobile }
+                        : {})
                 },
                 {
                     sheetExtrasSources: {

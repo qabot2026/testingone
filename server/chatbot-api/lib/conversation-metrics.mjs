@@ -124,6 +124,57 @@ function normalizeTranscriptRole_(role) {
 }
 
 /**
+ * Ensure transcript / precomputed metrics exist before sheet analytics (e.g. from `chatTranscriptJson` on the row).
+ *
+ * @param {unknown} clientContext
+ * @param {unknown} [incomingRow]
+ * @returns {Record<string, unknown>}
+ */
+export function clientContextEnrichedForSheetMetrics_(clientContext, incomingRow) {
+    const cx =
+        clientContext && typeof clientContext === "object" && !Array.isArray(clientContext)
+            ? { .../** @type {Record<string, unknown>} */ (clientContext) }
+            : {};
+    const row =
+        incomingRow && typeof incomingRow === "object" && !Array.isArray(incomingRow)
+            ? /** @type {Record<string, unknown>} */ (incomingRow)
+            : {};
+    const hasTranscript =
+        Array.isArray(cx.chat_transcript) && cx.chat_transcript.length > 0;
+    if (!hasTranscript) {
+        const json = row.chatTranscriptJson;
+        if (typeof json === "string" && json.trim()) {
+            try {
+                const parsed = JSON.parse(json);
+                if (Array.isArray(parsed) && parsed.length) {
+                    cx.chat_transcript = parsed;
+                }
+            } catch {
+                /* ignore */
+            }
+        }
+    }
+    return cx;
+}
+
+/** @param {unknown} v */
+function metricScalarFromContext_(v) {
+    if (v == null) {
+        return "";
+    }
+    if (typeof v === "string") {
+        return v.trim();
+    }
+    if (typeof v === "number" && Number.isFinite(v)) {
+        return String(v);
+    }
+    if (typeof v === "boolean") {
+        return v ? "true" : "false";
+    }
+    return "";
+}
+
+/**
  * @param {unknown} clientContext
  * @returns {{ role: string, text: string, at: number }[]}
  */
@@ -342,20 +393,45 @@ export function computeConversationMetricsFromClientContext_(clientContext) {
 /**
  * @param {ReturnType<typeof computeConversationMetricsFromClientContext_>} metrics
  */
-export function conversationMetricsForSheetRow_(metrics) {
+/**
+ * @param {unknown} clientContext
+ * @param {unknown} [incomingRow]
+ */
+export function conversationMetricsForSheetRow_(metrics, clientContext, incomingRow) {
     const m = metrics && typeof metrics === "object" ? metrics : {};
+    const cx = clientContextEnrichedForSheetMetrics_(clientContext, incomingRow);
+    const sp =
+        cx.session_params && typeof cx.session_params === "object" && !Array.isArray(cx.session_params)
+            ? /** @type {Record<string, unknown>} */ (cx.session_params)
+            : {};
+    /** @param {string[]} keys */
+    const pick = (...keys) => {
+        for (let i = 0; i < keys.length; i += 1) {
+            const k = keys[i];
+            const v = metricScalarFromContext_(cx[k]) || metricScalarFromContext_(sp[k]);
+            if (v) {
+                return v;
+            }
+        }
+        return "";
+    };
+    const unanswered =
+        m.unansweredQuestions != null && String(m.unansweredQuestions) !== ""
+            ? String(m.unansweredQuestions)
+            : pick("unanswered_questions", "unansweredQuestions") || "0";
+    const userBot = m.messageCount || pick("message_count", "messageCount");
     return {
-        crmPushStatus: m.crmPushStatus || "",
-        duration: m.chatDurationDisplay || "",
-        messageCount: m.messageCount || "",
-        avgResponseTimeMs: m.avgResponseTimeMs || "",
-        sentiment: m.sentiment || "",
-        unansweredQuestions: m.unansweredQuestions || "",
-        utmCampaign: m.utmCampaign || "",
-        utmContent: m.utmContent || "",
-        utmMedium: m.utmMedium || "",
-        utmSource: m.utmSource || "",
-        utmTerm: m.utmTerm || ""
+        crmPushStatus: m.crmPushStatus || pick("crm_push_status", "crmPushStatus", "crm_status"),
+        duration: m.chatDurationDisplay || pick("chatduration", "chat_duration", "duration"),
+        messageCount: userBot || (Array.isArray(cx.chat_transcript) && cx.chat_transcript.length ? "0-0" : ""),
+        avgResponseTimeMs: m.avgResponseTimeMs || pick("avg_response_time_ms", "avgResponseTimeMs"),
+        sentiment: m.sentiment || pick("sentiment"),
+        unansweredQuestions: unanswered,
+        utmCampaign: m.utmCampaign || pick("utm_campaign", "utmcampaign"),
+        utmContent: m.utmContent || pick("utm_content", "utmcontent"),
+        utmMedium: m.utmMedium || pick("utm_medium", "utmmedium"),
+        utmSource: m.utmSource || pick("utm_source", "utmsource"),
+        utmTerm: m.utmTerm || pick("utm_term", "utmterm")
     };
 }
 

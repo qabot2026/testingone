@@ -13,6 +13,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { google } from "googleapis";
 import {
+    clientContextEnrichedForSheetMetrics_,
     computeConversationMetricsFromClientContext_,
     conversationMetricsForSheetRow_
 } from "./conversation-metrics.mjs";
@@ -1047,6 +1048,78 @@ export function feedbackFieldsFromLeadSources_(sources) {
         message = m;
     }
     return { feedbackRating: rating, feedbackMessage: message };
+}
+
+/**
+ * Full standard lead row (A–AF) from append/sync `row` + `sheetExtrasSources` (contact fields + client_context).
+ *
+ * @param {*} incomingRow
+ * @param {{ clientContext?: Record<string, unknown> | null, fields?: Record<string, unknown> | null } | null | undefined} sheetExtrasSources
+ */
+export function assembleLeadSheetPayloadFromSources_(incomingRow, sheetExtrasSources) {
+    const row = incomingRow && typeof incomingRow === "object" ? incomingRow : {};
+    const src = sheetExtrasSources && typeof sheetExtrasSources === "object" ? sheetExtrasSources : {};
+    const ctxRaw = src.clientContext;
+    const ctxEnriched = clientContextEnrichedForSheetMetrics_(ctxRaw, row);
+    const fb = feedbackFieldsFromLeadSources_({
+        formId: row.formId,
+        fields: src.fields,
+        clientContext: ctxEnriched
+    });
+    const metricsComputed = computeConversationMetricsFromClientContext_(ctxEnriched);
+    const metrics = conversationMetricsForSheetRow_(metricsComputed, ctxEnriched, row);
+
+    const chRaw = typeof row.channel === "string" && row.channel.trim() ? row.channel.trim() : "web";
+    const ch = formatChannelForSheetDisplay(chRaw);
+    const deviceForAppend = formatDeviceTypeForSheetDisplay(
+        typeof row.deviceType === "string" ? row.deviceType.trim() : ""
+    );
+    const fileLinks =
+        typeof row.fileLinks === "string" && row.fileLinks.trim() ? row.fileLinks.trim() : "";
+    const city = typeof row.city === "string" ? row.city.trim() : "";
+    const ip = typeof row.ip === "string" ? row.ip.trim() : "";
+    const sourceUrl = typeof row.sourceUrl === "string" ? row.sourceUrl.trim() : "";
+    const appointmentBookedRaw =
+        typeof row.appointmentBooked === "string" ? row.appointmentBooked.trim() : "";
+    const appointmentBooked = appointmentBookedSheetValue_(appointmentBookedRaw);
+    const appointmentDate = typeof row.appointmentDate === "string" ? row.appointmentDate.trim() : "";
+    const appointmentTime = typeof row.appointmentTime === "string" ? row.appointmentTime.trim() : "";
+    const userQueriesCsv = sanitizeUserQueriesCsvForSheet(
+        typeof row.userQueriesCsv === "string" ? row.userQueriesCsv : ""
+    );
+    const repeated =
+        typeof row.repeated === "string" && row.repeated.trim()
+            ? row.repeated.trim()
+            : "";
+    const parts = conversationPartsFromIncomingRow_(row);
+
+    return {
+        convDate: parts.convDate,
+        convTime: parts.convTime,
+        name: row.name,
+        mobile: row.mobile,
+        email: row.email,
+        clientSessionId: row.clientSessionId,
+        deviceType: deviceForAppend,
+        browserName: row.browserName,
+        channel: ch,
+        userQueriesCsv,
+        city,
+        ip,
+        repeated,
+        sourceUrl,
+        appointmentBooked,
+        appointmentDate,
+        appointmentTime,
+        driveFileLink: fileLinks,
+        feedbackRating:
+            (typeof row.feedbackRating === "string" && row.feedbackRating.trim())
+            || fb.feedbackRating,
+        feedbackMessage:
+            (typeof row.feedbackMessage === "string" && row.feedbackMessage.trim())
+            || fb.feedbackMessage,
+        ...metrics
+    };
 }
 
 /** Column T (rating) and U (message) — 0-based indices 19 and 20. */
@@ -3683,13 +3756,18 @@ async function buildStandardLeadRowUpdates_(sheets, tab, rowNumber, lead) {
 
     /** @type {Array<{ range: string, values: string[][] }>} */
     const updates = [];
-    const put = (aliases, fallbackIdx, value) => {
+    const put = (aliases, fallbackIdx, value, forceWrite = false) => {
         const v = sheetOutboundCell_(value);
-        if (!String(v || "").trim()) {
+        if (!forceWrite && !String(v || "").trim()) {
             return;
         }
         const idx0 = getIdx(aliases, fallbackIdx);
         updates.push({ range: `${tab}!${col(idx0)}${rowNumber}`, values: [[v]] });
+    };
+    const putMetricCell = (aliases, fallbackIdx, colLet, value) => {
+        const v = sheetOutboundCell_(value);
+        put(aliases, fallbackIdx, v, true);
+        updates.push({ range: `${tab}!${colLet}${rowNumber}`, values: [[v]] });
     };
     const putDate = (aliases, fallbackIdx, raw) => {
         const cell = sheetDateCellForSheetsApi_(raw);
@@ -3763,35 +3841,17 @@ async function buildStandardLeadRowUpdates_(sheets, tab, rowNumber, lead) {
     );
     put(SHEET_H_FEEDBACK_RATING, 19, lead.feedbackRating);
     put(SHEET_H_FEEDBACK_MESSAGE, 20, lead.feedbackMessage);
-    put(SHEET_H_CRM_PUSH_STATUS, 21, lead.crmPushStatus);
-    put(SHEET_H_CHAT_DURATION, 22, lead.duration);
-    put(SHEET_H_MESSAGE_COUNT, 23, lead.messageCount);
-    put(SHEET_H_AVG_RESPONSE_MS, 24, lead.avgResponseTimeMs);
-    put(SHEET_H_SENTIMENT, 25, lead.sentiment);
-    put(SHEET_H_UNANSWERED, 26, lead.unansweredQuestions);
-    put(SHEET_H_UTM_CAMPAIGN, 27, lead.utmCampaign);
-    put(SHEET_H_UTM_CONTENT, 28, lead.utmContent);
-    put(SHEET_H_UTM_MEDIUM, 29, lead.utmMedium);
-    put(SHEET_H_UTM_SOURCE, 30, lead.utmSource);
-    put(SHEET_H_UTM_TERM, 31, lead.utmTerm);
-
-    const pushMetricCol = (colLet, val) => {
-        const v = sheetOutboundCell_(val);
-        if (String(v || "").trim()) {
-            updates.push({ range: `${tab}!${colLet}${rowNumber}`, values: [[v]] });
-        }
-    };
-    pushMetricCol(SHEET_COL_CRM_PUSH_STATUS, lead.crmPushStatus);
-    pushMetricCol(SHEET_COL_DURATION, lead.duration);
-    pushMetricCol(SHEET_COL_MESSAGE_COUNT, lead.messageCount);
-    pushMetricCol(SHEET_COL_AVG_RESPONSE_MS, lead.avgResponseTimeMs);
-    pushMetricCol(SHEET_COL_SENTIMENT, lead.sentiment);
-    pushMetricCol(SHEET_COL_UNANSWERED, lead.unansweredQuestions);
-    pushMetricCol(SHEET_COL_UTM_CAMPAIGN, lead.utmCampaign);
-    pushMetricCol(SHEET_COL_UTM_CONTENT, lead.utmContent);
-    pushMetricCol(SHEET_COL_UTM_MEDIUM, lead.utmMedium);
-    pushMetricCol(SHEET_COL_UTM_SOURCE, lead.utmSource);
-    pushMetricCol(SHEET_COL_UTM_TERM, lead.utmTerm);
+    putMetricCell(SHEET_H_CRM_PUSH_STATUS, 21, SHEET_COL_CRM_PUSH_STATUS, lead.crmPushStatus);
+    putMetricCell(SHEET_H_CHAT_DURATION, 22, SHEET_COL_DURATION, lead.duration);
+    putMetricCell(SHEET_H_MESSAGE_COUNT, 23, SHEET_COL_MESSAGE_COUNT, lead.messageCount);
+    putMetricCell(SHEET_H_AVG_RESPONSE_MS, 24, SHEET_COL_AVG_RESPONSE_MS, lead.avgResponseTimeMs);
+    putMetricCell(SHEET_H_SENTIMENT, 25, SHEET_COL_SENTIMENT, lead.sentiment);
+    putMetricCell(SHEET_H_UNANSWERED, 26, SHEET_COL_UNANSWERED, lead.unansweredQuestions);
+    putMetricCell(SHEET_H_UTM_CAMPAIGN, 27, SHEET_COL_UTM_CAMPAIGN, lead.utmCampaign);
+    putMetricCell(SHEET_H_UTM_CONTENT, 28, SHEET_COL_UTM_CONTENT, lead.utmContent);
+    putMetricCell(SHEET_H_UTM_MEDIUM, 29, SHEET_COL_UTM_MEDIUM, lead.utmMedium);
+    putMetricCell(SHEET_H_UTM_SOURCE, 30, SHEET_COL_UTM_SOURCE, lead.utmSource);
+    putMetricCell(SHEET_H_UTM_TERM, 31, SHEET_COL_UTM_TERM, lead.utmTerm);
 
     const fr = sheetOutboundCell_(lead.feedbackRating);
     const fm = sheetOutboundCell_(lead.feedbackMessage);
@@ -3871,46 +3931,32 @@ async function applySheetExtrasAfterDuplicateSessionRow_(sheets, tab, rowNumber,
 
     const parts = conversationPartsFromIncomingRow_(row);
 
-    const lead = {
-        convDate: parts.convDate,
-        convTime: parts.convTime,
-        name: row.name,
-        mobile: row.mobile,
-        email: row.email,
-        clientSessionId: row.clientSessionId,
-        deviceType: formatDeviceTypeForSheetDisplay(typeof row.deviceType === "string" ? row.deviceType.trim() : ""),
-        browserName: row.browserName,
-        channel: formatChannelForSheetDisplay(ch),
-        userQueriesCsv,
-        city,
-        ip,
-        repeated,
-        sourceUrl,
-        appointmentBooked,
-        appointmentDate,
-        appointmentTime,
-        driveFileLink: fileLinks
-    };
+    const lead = assembleLeadSheetPayloadFromSources_(
+        {
+            ...row,
+            channel: ch,
+            deviceType: typeof row.deviceType === "string" ? row.deviceType.trim() : "",
+            userQueriesCsv,
+            city,
+            ip,
+            repeated,
+            sourceUrl,
+            appointmentBooked,
+            appointmentDate,
+            appointmentTime,
+            fileLinks
+        },
+        sheetExtrasSources
+    );
 
     try {
-        const standard = await buildStandardLeadRowUpdates_(sheets, tab, rowNumber, lead);
-        const extras = buildConfiguredExtraCellUpdates_(tab, rowNumber, sheetExtrasSources, standard);
-        if (!extras.length) {
-            return { applied: false };
-        }
-        await sheets.spreadsheets.values.batchUpdate({
-            spreadsheetId: SPREADSHEET_ID,
-            requestBody: {
-                valueInputOption: "USER_ENTERED",
-                data: extras
-            }
-        });
+        await writeLeadRowByHeader_(sheets, tab, rowNumber, lead, sheetExtrasSources);
         return { applied: true };
     } catch (e) {
         const msg = e && /** @type {{ message?: string }} */ (e).message
             ? String(/** @type {{ message?: string }} */ (e).message)
             : String(e);
-        console.error("[chatbot-api] Sheet extras after duplicate-row update:", msg);
+        console.error("[chatbot-api] Sheet full row after duplicate-session update:", msg);
         return { applied: false };
     }
 }
@@ -4066,37 +4112,6 @@ export async function appendContactRowToSheet(row, opts) {
                 console.warn("[chatbot-api] Dashboard tab sync failed:", msg);
             });
         }
-        const fbDup = feedbackFieldsFromLeadSources_({
-            formId: row.formId,
-            fields: sheetExtrasSources ? sheetExtrasSources.fields : null,
-            clientContext: sheetExtrasSources ? sheetExtrasSources.clientContext : null
-        });
-        if (fbDup.feedbackRating || fbDup.feedbackMessage) {
-            try {
-                await writeLeadRowByHeader_(sheets, tabResolved, scan.matchedRowNumber, {
-                    feedbackRating: fbDup.feedbackRating,
-                    feedbackMessage: fbDup.feedbackMessage
-                });
-            } catch (fbErr) {
-                const m = fbErr && /** @type {{ message?: string }} */ (fbErr).message
-                    ? String(/** @type {{ message?: string }} */ (fbErr).message)
-                    : String(fbErr);
-                console.warn("[chatbot-api] Sheets feedback columns duplicate path:", m.slice(0, 200));
-            }
-        }
-        if (sheetExtrasSources && sheetExtrasSources.clientContext) {
-            try {
-                const metrics = conversationMetricsForSheetRow_(
-                    computeConversationMetricsFromClientContext_(sheetExtrasSources.clientContext)
-                );
-                await writeLeadRowByHeader_(sheets, tabResolved, scan.matchedRowNumber, metrics);
-            } catch (metErr) {
-                const m = metErr && /** @type {{ message?: string }} */ (metErr).message
-                    ? String(/** @type {{ message?: string }} */ (metErr).message)
-                    : String(metErr);
-                console.warn("[chatbot-api] Sheets metrics columns duplicate path:", m.slice(0, 200));
-            }
-        }
         await maybeWriteLeadConvLinkColumnA_(sheets, tabResolved, scan.matchedRowNumber, row.clientSessionId);
         await maybeWriteSheetRowOpenLink_(sheets, tabResolved, scan.matchedRowNumber, row.clientSessionId);
         if (typeof row.chatTranscriptJson === "string" && row.chatTranscriptJson.trim()) {
@@ -4207,41 +4222,26 @@ export async function appendContactRowToSheet(row, opts) {
     }
     try {
         if (appendedRowNum) {
-            const fb = feedbackFieldsFromLeadSources_({
-                formId: row.formId,
-                fields: sheetExtrasSources ? sheetExtrasSources.fields : null,
-                clientContext: sheetExtrasSources ? sheetExtrasSources.clientContext : null
-            });
-            const metrics =
-                sheetExtrasSources && sheetExtrasSources.clientContext
-                    ? conversationMetricsForSheetRow_(
-                        computeConversationMetricsFromClientContext_(sheetExtrasSources.clientContext)
-                    )
-                    : {};
-            await writeLeadRowByHeader_(sheets, tabResolved, appendedRowNum, {
-                convDate: convParts.convDate,
-                convTime: convParts.convTime,
-                name: row.name,
-                mobile: row.mobile,
-                email: row.email,
-                clientSessionId: row.clientSessionId,
-                deviceType: deviceForAppend,
-                browserName: row.browserName,
-                channel: ch,
-                userQueriesCsv,
-                city,
-                ip,
-                repeated,
-                sourceUrl,
-                appointmentBooked,
-                appointmentDate,
-                appointmentTime,
-                driveFileLink: fileLinks,
-                feedbackRating: fb.feedbackRating,
-                feedbackMessage: fb.feedbackMessage,
-                ...metrics
-            },
-                sheetExtrasSources);
+            const fullLead = assembleLeadSheetPayloadFromSources_(
+                {
+                    ...row,
+                    channel: chRaw,
+                    deviceType: typeof row.deviceType === "string" ? row.deviceType.trim() : "",
+                    userQueriesCsv,
+                    city,
+                    ip,
+                    repeated,
+                    sourceUrl,
+                    appointmentBooked,
+                    appointmentDate,
+                    appointmentTime,
+                    fileLinks,
+                    convDate: convParts.convDate,
+                    convTime: convParts.convTime
+                },
+                sheetExtrasSources
+            );
+            await writeLeadRowByHeader_(sheets, tabResolved, appendedRowNum, fullLead, sheetExtrasSources);
         }
     } catch (e) {
         const msg = e && e.message ? e.message : String(e);
