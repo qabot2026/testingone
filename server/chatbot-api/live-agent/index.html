@@ -143,6 +143,13 @@
               <button type="button" class="btn ghost small" id="copySessionBtn" title="Copy session ID">ID</button>
               <button type="button" class="btn ghost small" id="dismissFooterBtn" title="Remove from queue">Dismiss</button>
             </div>
+            <div id="handoverBar" class="handover-bar hidden">
+              <label class="handover-label">
+                Hand over to
+                <select id="handoverAgentSelect" class="handover-select"></select>
+              </label>
+              <button type="button" class="btn ghost small" id="handoverBtn">Transfer</button>
+            </div>
           </div>
         </div>
       </main>
@@ -165,6 +172,6 @@
     </div>
   </section>
 
-  <script src="/live-agent/live-agent.js?v=145-inbox-name" defer></script>
+  <script src="/live-agent/live-agent.js?v=146-agent-desk" defer></script>
 </body>
 </html>

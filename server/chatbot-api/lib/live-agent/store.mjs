@@ -518,6 +518,78 @@ export async function claimConversation_({ conversationId, agentEmail }) {
 export const acceptConversation_ = claimConversation_;
 
 /**
+ * Hand active chat to another registered agent (current assignee only).
+ *
+ * @param {{ conversationId: string, fromAgentEmail: string, toAgentEmail: string }} opts
+ */
+export async function transferConversation_({ conversationId, fromAgentEmail, toAgentEmail }) {
+    const id = safeConversationId_(conversationId);
+    const from = trim_(fromAgentEmail).toLowerCase();
+    const to = trim_(toAgentEmail).toLowerCase();
+    if (!from || !from.includes("@")) {
+        throw new Error("Your work email is required to transfer a chat");
+    }
+    if (!to || !to.includes("@")) {
+        throw new Error("Select an agent email to transfer to");
+    }
+    if (from === to) {
+        throw new Error("Cannot transfer to yourself");
+    }
+    const { isAgentEmailRegistered_, resolveAgentDisplayName_, getLiveAgentSettings_ } = await import(
+        "./departments.mjs"
+    );
+    if (!(await isAgentEmailRegistered_(to))) {
+        throw new Error("That agent is not registered in Live Agent Settings");
+    }
+    const db = firestoreDb_();
+    const ref = db.collection(conversationsCollection_()).doc(id);
+    const now = admin.firestore.FieldValue.serverTimestamp();
+    await db.runTransaction(async (tx) => {
+        const snap = await tx.get(ref);
+        if (!snap.exists) {
+            throw new Error("Conversation not found");
+        }
+        const cur = snap.data() || {};
+        if (cur.status === "closed") {
+            throw new Error("Conversation is closed");
+        }
+        if (cur.status !== "active") {
+            throw new Error("Only active chats can be transferred");
+        }
+        const assignee = trim_(cur.assignedAgentEmail).toLowerCase();
+        if (assignee && assignee !== from) {
+            throw new Error("Only the agent handling this chat can transfer it");
+        }
+        tx.update(ref, {
+            status: "active",
+            humanMode: "human",
+            aiEnabled: false,
+            assignedAgentEmail: to,
+            currentAssigneeEmail: to,
+            acceptedByEmail: to,
+            unreadForAgent: Math.min((cur.unreadForAgent || 0) + 1, 99),
+            visitorSessionActive: true
+        });
+    });
+    try {
+        const settings = await getLiveAgentSettings_();
+        const fromName = resolveAgentDisplayName_(from, settings);
+        const toName = resolveAgentDisplayName_(to, settings);
+        await appendMessage_({
+            conversationId: id,
+            role: "system",
+            text: fromName + " handed this chat to " + toName + ".",
+            senderEmail: from,
+            bumpUnread: { agent: 1, visitor: 1 }
+        });
+    } catch (msgErr) {
+        console.warn(LOG_TAG, "transfer system message:", msgErr.message || msgErr);
+    }
+    const snap = await ref.get();
+    return serializeConversation_(id, snap.data());
+}
+
+/**
  * Close many open chats whose id starts with idPrefix (e.g. test-). Caps work per call.
  */
 export async function bulkCloseTestConversations_({ idPrefix, agentEmail, maxClose }) {

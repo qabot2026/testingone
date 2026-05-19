@@ -320,6 +320,58 @@ export async function saveLiveAgentSettings_(patch) {
     return getLiveAgentSettings_();
 }
 
+/** Emails allowed to sign in (Settings → agent profiles + department agent lists). */
+export async function collectRegisteredAgentEmails_() {
+    const emails = new Set();
+    try {
+        const settings = await getLiveAgentSettings_();
+        const profiles =
+            settings && settings.general && Array.isArray(settings.general.agentProfiles)
+                ? settings.general.agentProfiles
+                : [];
+        for (let i = 0; i < profiles.length; i += 1) {
+            const e = normalizeEmail_(profiles[i] && profiles[i].email);
+            if (e && e.includes("@")) {
+                emails.add(e);
+            }
+        }
+    } catch (err) {
+        console.warn(LOG_TAG, "settings for agent allowlist:", err.message || err);
+    }
+    try {
+        const depts = await listDepartments_();
+        for (let di = 0; di < depts.length; di += 1) {
+            const list = depts[di].agentEmails || [];
+            for (let ei = 0; ei < list.length; ei += 1) {
+                const e = normalizeEmail_(list[ei]);
+                if (e && e.includes("@")) {
+                    emails.add(e);
+                }
+            }
+        }
+    } catch (err) {
+        console.warn(LOG_TAG, "departments for agent allowlist:", err.message || err);
+    }
+    return [...emails].sort();
+}
+
+/** @param {string} email */
+export async function isAgentEmailRegistered_(email) {
+    const e = normalizeEmail_(email);
+    if (!e || !e.includes("@")) {
+        return false;
+    }
+    const allowUnlisted = trim_(process.env.LIVE_AGENT_ALLOW_UNLISTED_LOGIN).toLowerCase();
+    if (allowUnlisted === "1" || allowUnlisted === "true" || allowUnlisted === "yes") {
+        return true;
+    }
+    const registered = await collectRegisteredAgentEmails_();
+    if (!registered.length) {
+        return false;
+    }
+    return registered.includes(e);
+}
+
 export async function listDepartments_() {
     await ensureGeneralDepartment_();
     const snap = await departmentsCol_().get();

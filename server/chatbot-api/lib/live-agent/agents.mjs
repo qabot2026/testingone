@@ -206,6 +206,16 @@ export async function bumpAgentStats_({ agentEmail, kind, conversationId, visito
 async function collectKnownAgentEmails_() {
     const emails = new Set();
     try {
+        const { collectRegisteredAgentEmails_ } = await import("./departments.mjs");
+        for (const e of await collectRegisteredAgentEmails_()) {
+            if (e) {
+                emails.add(normalizeEmail_(e));
+            }
+        }
+    } catch (err) {
+        console.warn(LOG_TAG, "registered agents list:", err.message || err);
+    }
+    try {
         const depts = await listDepartments_();
         for (const d of depts) {
             for (const e of d.agentEmails || []) {

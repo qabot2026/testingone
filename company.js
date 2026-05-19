@@ -13774,6 +13774,24 @@ const CHAT_NAME_FALSE_POSITIVE_RE =
  * When the bot asks for a name and the visitor types it in chat (not only via form / CX params).
  * @param {string} raw
  */
+function sessionRequestsLiveAgent_(ctx) {
+    const c = ctx && typeof ctx === "object" ? ctx : readStoredClientContext();
+    if (c.live_agent_requested === true) {
+        return true;
+    }
+    const sp =
+        c.session_params && typeof c.session_params === "object" && !Array.isArray(c.session_params)
+            ? c.session_params
+            : {};
+    return (
+        liveAgentCxParamTruthy_(sp.request_live_agent)
+        || liveAgentCxParamTruthy_(sp.live_agent)
+        || liveAgentCxParamTruthy_(sp.request_human_agent)
+        || liveAgentCxParamTruthy_(sp.human_agent)
+        || liveAgentCxParamTruthy_(sp.handoff_live_agent)
+    );
+}
+
 function mergeLikelyNameFromChatText_(raw) {
     const t = typeof raw === "string" ? raw.replace(/\u00a0/g, " ").trim() : "";
     if (!t || t.length < 2 || t.length > 80) {
@@ -13800,6 +13818,9 @@ function mergeLikelyNameFromChatText_(raw) {
     }
     try {
         const prev = readStoredClientContext();
+        if (sessionRequestsLiveAgent_(prev) || liveAgentHandoffIsActive_()) {
+            return;
+        }
         const existing = dfParameterScalarToString(prev && prev.name != null ? prev.name : "").trim();
         if (existing) {
             return;
@@ -14446,7 +14467,26 @@ async function requestLiveAgentHandoff_(spec) {
  */
 function markLiveAgentRequestedInSession_(initialMessage) {
     try {
-        const ctx = getClientContext();
+        let ctx = getClientContext();
+        const im = typeof initialMessage === "string" ? initialMessage.trim() : "";
+        const nameNow = dfParameterScalarToString(ctx.name != null ? ctx.name : "").trim();
+        const uq = Array.isArray(ctx.user_queries) ? ctx.user_queries : [];
+        const lastQ =
+            uq.length && typeof uq[uq.length - 1] === "string" ? String(uq[uq.length - 1]).trim() : "";
+        const norm = (s) =>
+            String(s || "")
+                .trim()
+                .toLowerCase()
+                .replace(/\s+/g, " ");
+        if (
+            nameNow
+            && (norm(nameNow) === norm(lastQ)
+                || norm(nameNow) === norm(im)
+                || liveAgentIsBoilerplateHandoffPhrase_(nameNow))
+        ) {
+            ctx = { ...ctx };
+            delete ctx.name;
+        }
         /** @type {Record<string, unknown>} */
         const sp =
             ctx.session_params && typeof ctx.session_params === "object" && !Array.isArray(ctx.session_params)
@@ -14457,8 +14497,7 @@ function markLiveAgentRequestedInSession_(initialMessage) {
             ...ctx,
             session_params: sp,
             live_agent_requested: true,
-            live_agent_initial_message:
-                typeof initialMessage === "string" ? initialMessage.trim() : ""
+            live_agent_initial_message: im
         });
         if (activeDfMessenger) {
             syncDfMessengerSessionParametersFromClientContext(activeDfMessenger);

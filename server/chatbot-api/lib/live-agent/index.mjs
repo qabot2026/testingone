@@ -51,7 +51,8 @@ import {
     logStoreError_,
     requestHumanAgent_,
     resolveConversationId_,
-    updateConversationMode_
+    updateConversationMode_,
+    transferConversation_
 } from "./store.mjs";
 import {
     createDepartment_,
@@ -176,6 +177,22 @@ export function mountLiveAgentRoutes(app) {
                     : "Unauthorized — send header X-Conversations-Sheet-Secret matching CONVERSATIONS_SHEET_VIEW_SECRET.";
             res.status(401).json({ ok: false, error: msg });
             return;
+        }
+        const email = trim_(sess.agentId).toLowerCase();
+        if (email.includes("@")) {
+            try {
+                const { isAgentEmailRegistered_ } = await import("./departments.mjs");
+                if (!(await isAgentEmailRegistered_(email))) {
+                    res.status(403).json({
+                        ok: false,
+                        error:
+                            "This email is not registered for the agent desk. Add it in Live Agent Settings."
+                    });
+                    return;
+                }
+            } catch (allowErr) {
+                logStoreError_(allowErr, "me allowlist");
+            }
         }
         res.json({ ok: true, agentId: sess.agentId });
     });
@@ -524,6 +541,33 @@ export function mountLiveAgentRoutes(app) {
         } catch (err) {
             logStoreError_(err, "context");
             jsonError_(res, 500, err.message || "Context failed");
+        }
+    });
+
+    router.post("/conversations/:id/transfer", requireLiveAgentSession_(), async (req, res) => {
+        setNoCache_(res);
+        let conversationId = "";
+        try {
+            conversationId = resolveConversationId_(req.params && req.params.id);
+        } catch (idErr) {
+            jsonError_(res, 400, idErr.message || "Invalid conversation id");
+            return;
+        }
+        const toAgentEmail = trim_(req.body && req.body.toAgentEmail);
+        if (!toAgentEmail) {
+            jsonError_(res, 400, "toAgentEmail required");
+            return;
+        }
+        try {
+            const conversation = await transferConversation_({
+                conversationId,
+                fromAgentEmail: req.liveAgentSession.agentId,
+                toAgentEmail
+            });
+            res.json({ ok: true, conversation });
+        } catch (err) {
+            logStoreError_(err, "transfer");
+            jsonError_(res, 400, err.message || "Transfer failed");
         }
     });
 

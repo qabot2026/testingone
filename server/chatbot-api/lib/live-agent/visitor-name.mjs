@@ -95,3 +95,15 @@ export function sanitizeVisitorNameForStorage_(raw) {
     const t = trim_(raw);
     return isPlausibleVisitorDisplayName_(t) ? t : "";
 }
+
+/**
+ * Drop stored name when it is only the last pre-handoff chat line (not a real contact name).
+ *
+ * @param {string} candidateName
+ * @param {string} [compareLine]
+ */
+export function visitorNameMatchesChatLine_(candidateName, compareLine) {
+    const a = normalizedPhrase_(candidateName);
+    const b = normalizedPhrase_(compareLine);
+    return Boolean(a && b && a === b);
+}

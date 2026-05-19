@@ -66,7 +66,7 @@ export function liveAgentAuthRequired_() {
 }
 
 export function requireLiveAgentSession_() {
-    return (req, res, next) => {
+    return async (req, res, next) => {
         if (!liveAgentAuthRequired_()) {
             req.liveAgentSession = {
                 agentId: trim_(process.env.LIVE_AGENT_DEV_AGENT_NAME) || "dev"
@@ -92,6 +92,23 @@ export function requireLiveAgentSession_() {
                     : "Unauthorized — send header X-Conversations-Sheet-Secret matching CONVERSATIONS_SHEET_VIEW_SECRET.";
             res.status(401).json({ ok: false, error: msg });
             return;
+        }
+        const email = trim_(sess.agentId).toLowerCase();
+        if (email.includes("@")) {
+            try {
+                const { isAgentEmailRegistered_ } = await import("./departments.mjs");
+                const allowed = await isAgentEmailRegistered_(email);
+                if (!allowed) {
+                    res.status(403).json({
+                        ok: false,
+                        error:
+                            "This email is not registered for the agent desk. Add it under Live Agent Settings (agent profile or department list)."
+                    });
+                    return;
+                }
+            } catch (allowErr) {
+                console.warn("[live-agent/auth] allowlist check:", allowErr.message || allowErr);
+            }
         }
         req.liveAgentSession = sess;
         next();

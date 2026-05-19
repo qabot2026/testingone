@@ -4,7 +4,10 @@
  */
 
 import { requestHumanAgent_, liveAgentFirestoreReady_ } from "./store.mjs";
-import { sanitizeVisitorNameForStorage_ } from "./visitor-name.mjs";
+import {
+    sanitizeVisitorNameForStorage_,
+    visitorNameMatchesChatLine_
+} from "./visitor-name.mjs";
 
 const LOG_TAG = "[live-agent/from-context]";
 
@@ -87,10 +90,14 @@ export async function maybeQueueLiveAgentFromClientContext_(clientContext) {
         return { queued: false, reason: "not_requested", conversationId: sid };
     }
 
-    const visitorName =
+    const lastQ = lastUserQueryLine_(ctx);
+    let visitorName =
         sanitizeVisitorNameForStorage_(scalar_(ctx.name) || scalar_(ctx.visitor_name)) || "";
+    if (visitorName && (visitorNameMatchesChatLine_(visitorName, lastQ) || visitorNameMatchesChatLine_(visitorName, scalar_(ctx.live_agent_initial_message)))) {
+        visitorName = "";
+    }
     let initialMessage =
-        scalar_(ctx.live_agent_initial_message) || lastUserQueryLine_(ctx) || "";
+        scalar_(ctx.live_agent_initial_message) || lastQ || "";
     const imNorm = initialMessage.toLowerCase().replace(/\s+/g, " ").trim();
     const handoffOnly =
         !imNorm ||

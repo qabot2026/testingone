@@ -43,6 +43,9 @@
     const copySessionBtn = $("copySessionBtn");
     const transcriptFooterBtn = $("transcriptFooterBtn");
     const dismissFooterBtn = $("dismissFooterBtn");
+    const handoverBar = $("handoverBar");
+    const handoverAgentSelect = $("handoverAgentSelect");
+    const handoverBtn = $("handoverBtn");
     const contextEmpty = $("contextEmpty");
     const contextBody = $("contextBody");
     const modeStatusLine = $("modeStatusLine");
@@ -77,7 +80,8 @@
     let deskSettings = null;
     /** Last inbox payload — used for instant dismiss without waiting on refetch. */
     let lastInboxConversations_ = [];
-    const INBOX_POLL_INTERVAL_MS = 22000;
+    const INBOX_POLL_INTERVAL_MS_DESKTOP = 22000;
+    const INBOX_POLL_INTERVAL_MS_MOBILE = 6000;
     const CHAT_POLL_INTERVAL_MS = 2000;
     const PRESENCE_INTERVAL_MS = 180000;
     let agentsPanelLoaded = false;
@@ -364,6 +368,31 @@
         return parts.join(" · ");
     }
 
+    function isMobileAgentDesk_() {
+        try {
+            if (window.matchMedia && window.matchMedia("(max-width: 900px)").matches) {
+                return true;
+            }
+        } catch {
+            /* ignore */
+        }
+        return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || "");
+    }
+
+    function inboxPollIntervalMs_() {
+        return isMobileAgentDesk_() ? INBOX_POLL_INTERVAL_MS_MOBILE : INBOX_POLL_INTERVAL_MS_DESKTOP;
+    }
+
+    function refreshDeskNow_() {
+        if (appView && appView.classList.contains("hidden")) {
+            return;
+        }
+        loadInbox(true);
+        if (selectedId) {
+            loadMessages(selectedId, true);
+        }
+    }
+
     function startPolling() {
         stopPolling();
         const tick = () => {
@@ -386,10 +415,17 @@
         loadInbox(true);
         tick();
         pollTimer = setInterval(tick, CHAT_POLL_INTERVAL_MS);
-        inboxPollTimer = setInterval(() => {
-            if (document.hidden) return;
-            loadInbox(true);
-        }, INBOX_POLL_INTERVAL_MS);
+        const scheduleInboxPoll = () => {
+            if (inboxPollTimer) {
+                clearInterval(inboxPollTimer);
+            }
+            inboxPollTimer = setInterval(() => {
+                if (document.hidden) return;
+                loadInbox(true);
+            }, inboxPollIntervalMs_());
+        };
+        scheduleInboxPoll();
+        window.addEventListener("resize", scheduleInboxPoll);
     }
 
     function stopPolling() {
@@ -405,8 +441,17 @@
 
     document.addEventListener("visibilitychange", () => {
         if (!document.hidden && appView && !appView.classList.contains("hidden")) {
-            loadInbox(true);
-            if (selectedId) loadMessages(selectedId, true);
+            refreshDeskNow_();
+        }
+    });
+    window.addEventListener("pageshow", () => {
+        if (appView && !appView.classList.contains("hidden")) {
+            refreshDeskNow_();
+        }
+    });
+    window.addEventListener("focus", () => {
+        if (appView && !appView.classList.contains("hidden")) {
+            refreshDeskNow_();
         }
     });
 
@@ -654,7 +699,11 @@
             showApp();
         } catch (e) {
             clearAuth_();
-            loginMessage.textContent = e.message || "Secret rejected.";
+            loginMessage.textContent =
+                e.status === 403
+                    ? e.message ||
+                      "This email is not registered. Add it in Live Agent Settings → Departments or agent profiles."
+                    : e.message || "Secret rejected.";
         }
     });
 
@@ -1023,13 +1072,78 @@
         return v.transcriptUrl || "/conversation-transcript?session=" + encodeURIComponent(sessionId || "");
     }
 
+    async function populateHandoverSelect_() {
+        if (!handoverAgentSelect) {
+            return;
+        }
+        handoverAgentSelect.innerHTML = "";
+        try {
+            const data = await apiFetch(`${API}/agents`);
+            const agents = Array.isArray(data.agents) ? data.agents : [];
+            let n = 0;
+            for (let i = 0; i < agents.length; i += 1) {
+                const a = agents[i];
+                const e = a && a.email ? String(a.email).trim().toLowerCase() : "";
+                if (!e || !e.includes("@") || agentIdsMatch_(e, agentId)) {
+                    continue;
+                }
+                const opt = document.createElement("option");
+                opt.value = e;
+                let label = e;
+                const profiles = deskSettings && deskSettings.general && deskSettings.general.agentProfiles;
+                if (Array.isArray(profiles)) {
+                    for (let pi = 0; pi < profiles.length; pi += 1) {
+                        const p = profiles[pi];
+                        if (p && agentIdsMatch_(p.email, e) && p.name) {
+                            label = String(p.name).trim();
+                            break;
+                        }
+                    }
+                }
+                opt.textContent = label;
+                handoverAgentSelect.appendChild(opt);
+                n += 1;
+            }
+            if (!n) {
+                const opt = document.createElement("option");
+                opt.value = "";
+                opt.textContent = "No other agents in settings";
+                handoverAgentSelect.appendChild(opt);
+            }
+        } catch {
+            const opt = document.createElement("option");
+            opt.value = "";
+            opt.textContent = "Could not load agents";
+            handoverAgentSelect.appendChild(opt);
+        }
+    }
+
+    function updateHandoverBar_(conv) {
+        if (!handoverBar) {
+            return;
+        }
+        const show =
+            conv
+            && conv.status === "active"
+            && agentIdsMatch_(conv.assignedAgentEmail, agentId)
+            && !isAiCopilotConv_(conv);
+        handoverBar.classList.toggle("hidden", !show);
+        if (show) {
+            void populateHandoverSelect_();
+        }
+    }
+
     function renderChatActionsBar_(conv) {
         if (!chatActionsBar) return;
         if (!selectedId || !conv) {
             chatActionsBar.classList.add("hidden");
+            if (handoverBar) {
+                handoverBar.classList.add("hidden");
+            }
             return;
         }
         chatActionsBar.classList.remove("hidden");
+        updateHandoverBar_(conv);
         let hm = conv && conv.humanMode ? String(conv.humanMode) : "";
         if (!hm) {
             if (conv && conv.status === "waiting") {
@@ -1395,7 +1509,13 @@
         div.className = "msg " + (m.role || "visitor");
         div.dataset.msgId = m.id;
         let body = escapeHtml(m.text || "");
-        if ((m.role === "agent" || m.role === "staff") && deskGeneral_().showAgentNameInChat !== false) {
+        const isMyAgentMsg =
+            (m.role === "agent" || m.role === "staff") && agentIdsMatch_(m.senderEmail, agentId);
+        if (
+            (m.role === "agent" || m.role === "staff")
+            && deskGeneral_().showAgentNameInChat !== false
+            && !isMyAgentMsg
+        ) {
             body =
                 '<span class="msg-agent-name">' +
                 escapeHtml(agentLabelForMessage_(m)) +
@@ -1483,6 +1603,44 @@
 
     if (endChatFooterBtn) {
         endChatFooterBtn.addEventListener("click", () => endChat_());
+    }
+
+    if (handoverBtn) {
+        handoverBtn.addEventListener("click", async () => {
+            if (!selectedId || !handoverAgentSelect) {
+                return;
+            }
+            const to = handoverAgentSelect.value.trim().toLowerCase();
+            if (!to || !to.includes("@")) {
+                alert("Choose an agent to transfer this chat to.");
+                return;
+            }
+            handoverBtn.disabled = true;
+            try {
+                const data = await apiFetch(
+                    `${API}/conversations/${encodeURIComponent(selectedId)}/transfer`,
+                    {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ toAgentEmail: to })
+                    }
+                );
+                if (data.conversation) {
+                    selectedConv = data.conversation;
+                    applyConversationUi_(data.conversation, { skipContextReload: true });
+                }
+                alert("Chat transferred. It will appear in the other agent's queue.");
+                selectedId = "";
+                selectedConv = null;
+                chatActive.classList.add("hidden");
+                chatEmpty.classList.remove("hidden");
+                loadInbox(true);
+            } catch (e) {
+                alert(e.message || "Transfer failed");
+            } finally {
+                handoverBtn.disabled = false;
+            }
+        });
     }
 
     composerForm.addEventListener("submit", async (ev) => {
