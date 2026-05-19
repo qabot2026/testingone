@@ -1644,6 +1644,24 @@
       gap: 12px;
       width: 100%;
     }
+    .lead-chart-card--area {
+      order: 1;
+    }
+    .lead-chart-card--split {
+      order: 2;
+    }
+    .lead-chart-card--channel {
+      order: 3;
+    }
+    .lead-chart-card--city {
+      order: 4;
+    }
+    .lead-chart-card--sentiment {
+      order: 5;
+    }
+    .lead-chart-card--pipeline {
+      order: 6;
+    }
     .lead-chart-card {
       border-radius: 10px;
       border: 1px solid rgba(15, 23, 42, 0.06);
@@ -2340,7 +2358,7 @@
               <p class="lead-chart-card-total lead-chart-card-total--compact" id="lcSentimentSummary">From user messages in range</p>
               <div class="chart-canvas-wrap"><canvas id="lcBarSentiment" aria-label="Positive vs negative sentiment"></canvas></div>
             </div>
-            <div class="lead-chart-card">
+            <div class="lead-chart-card lead-chart-card--channel">
               <h4>Volume by channel</h4>
               <p class="lead-chart-card-total">
                 Total <span id="lcChartTotalConv">0</span>
@@ -2364,7 +2382,7 @@
               </div>
               <div class="lead-split-legend" id="lcPieLeadLegend" aria-hidden="true"></div>
             </div>
-            <div class="lead-chart-card">
+            <div class="lead-chart-card lead-chart-card--pipeline">
               <h4>Pipeline</h4>
               <div class="chart-canvas-wrap"><canvas id="lcBarFunnel" aria-label="Pipeline funnel"></canvas></div>
             </div>
