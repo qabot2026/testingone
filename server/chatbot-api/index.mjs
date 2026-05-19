@@ -77,7 +77,7 @@ import {
     formatCampaignParamsForTranscript_,
     mergeCampaignParamsIntoSessionParams
 } from "./lib/campaign-params.mjs";
-import { syncLeadToCrm_ } from "./lib/crm-sync.mjs";
+import { formatCrmExchangeForTranscript_, syncLeadToCrm_ } from "./lib/crm-sync.mjs";
 import { getServiceAccountCredentials } from "./lib/google-service-account.mjs";
 import { uploadSubmissionFilesToDrive } from "./lib/drive-upload.mjs";
 import { hasDriveUploadCredentials } from "./lib/drive-auth.mjs";
@@ -4985,6 +4985,11 @@ function isCampaignParamsAssistantText_(text) {
     return /^Campaign parameters\b/im.test(String(text ?? "").trim());
 }
 
+/** @param {unknown} text */
+function isCrmIntegrationAssistantText_(text) {
+    return /^CRM integration\b/im.test(String(text ?? "").trim());
+}
+
 /**
  * @param {unknown} clientContext
  * @returns {{ role: string, text: string, at: number }[]}
@@ -4995,6 +5000,18 @@ function syntheticCampaignParamsAssistantTurnsFromContext_(clientContext) {
         return [];
     }
     return [{ role: "assistant", text: body, at: Date.now() }];
+}
+
+/**
+ * @param {unknown} clientContext
+ * @returns {{ role: string, text: string, at: number }[]}
+ */
+function syntheticCrmExchangeAssistantTurnsFromContext_(clientContext) {
+    const body = formatCrmExchangeForTranscript_(clientContext);
+    if (!body.trim()) {
+        return [];
+    }
+    return [{ role: "assistant", text: body, at: Date.now() + 2 }];
 }
 
 /**
@@ -5756,6 +5773,10 @@ app.get(PATHNAME_CONVERSATION_TRANSCRIPT_JSON, async (req, res) => {
             }
         }
 
+        const metaSubmittedAtMs = firestoreRec ? submittedAtEpochMs_(firestoreRec.submitted_at) : undefined;
+        const synthMetaAtBase =
+            metaSubmittedAtMs !== undefined ? metaSubmittedAtMs + 1 : Date.now();
+
         const campaignCtx =
             firestoreRec && firestoreRec.client_context && typeof firestoreRec.client_context === "object"
                 ? mergeCampaignParamsIntoClientContextRecord_(
@@ -5771,10 +5792,36 @@ app.get(PATHNAME_CONVERSATION_TRANSCRIPT_JSON, async (req, res) => {
                     && t.role === "assistant"
                     && isCampaignParamsAssistantText_(t.text)
             );
-            const synthCampaign = syntheticCampaignParamsAssistantTurnsFromContext_(campaignCtx);
+            const synthCampaign = syntheticCampaignParamsAssistantTurnsFromContext_(campaignCtx).map((t) => ({
+                ...t,
+                at: synthMetaAtBase
+            }));
             if (synthCampaign.length && !hasCampaignBubble) {
                 sourceParts.push("synthetic_campaign");
                 turns = mergeConversationTranscriptTurnSources_(turns, synthCampaign);
+            }
+        }
+
+        const crmCtx =
+            firestoreRec && firestoreRec.client_context && typeof firestoreRec.client_context === "object"
+                ? /** @type {Record<string, unknown>} */ (firestoreRec.client_context)
+                : liveCx && typeof liveCx === "object"
+                  ? /** @type {Record<string, unknown>} */ (liveCx)
+                  : null;
+        if (crmCtx) {
+            const hasCrmBubble = turns.some(
+                (t) =>
+                    t
+                    && t.role === "assistant"
+                    && isCrmIntegrationAssistantText_(t.text)
+            );
+            const synthCrm = syntheticCrmExchangeAssistantTurnsFromContext_(crmCtx).map((t) => ({
+                ...t,
+                at: synthMetaAtBase + 1
+            }));
+            if (synthCrm.length && !hasCrmBubble) {
+                sourceParts.push("synthetic_crm");
+                turns = mergeConversationTranscriptTurnSources_(turns, synthCrm);
             }
         }
 
