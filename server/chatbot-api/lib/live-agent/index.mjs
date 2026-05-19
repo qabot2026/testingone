@@ -38,6 +38,7 @@ import {
 import { getVisitorContext_ } from "./context.mjs";
 import {
     appendMessage_,
+    isLiveAgentAiCopilot_,
     bulkCloseTestConversations_,
     acceptConversation_,
     claimConversation_,
@@ -443,6 +444,14 @@ export function mountLiveAgentRoutes(app) {
                 jsonError_(res, 403, "Assigned to another agent");
                 return;
             }
+            if (isLiveAgentAiCopilot_(conv)) {
+                jsonError_(
+                    res,
+                    409,
+                    "Takeover required — chatbot is replying to the visitor. Click Takeover to send as agent."
+                );
+                return;
+            }
             const message = await appendMessage_({
                 conversationId,
                 role: "agent",
@@ -699,6 +708,14 @@ export function mountLiveAgentRoutes(app) {
             const conv = await getConversation_(clientSessionId);
             if (!conv || conv.status === "closed") {
                 jsonError_(res, 400, "No active human chat");
+                return;
+            }
+            if (isLiveAgentAiCopilot_(conv)) {
+                jsonError_(
+                    res,
+                    409,
+                    "Chatbot is handling this chat — visitor messages are not routed to the agent inbox"
+                );
                 return;
             }
             let message;

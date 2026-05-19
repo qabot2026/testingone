@@ -14080,7 +14080,13 @@ function liveAgentShouldPostVisitorToAgent_(text) {
     if (liveAgentCachedConvStatus === "closed") {
         return false;
     }
-    return true;
+    if (liveAgentCoPilotAiEnabled_()) {
+        return false;
+    }
+    if (liveAgentCachedConvStatus === "waiting") {
+        return true;
+    }
+    return liveAgentVisitorToAgentInbox_();
 }
 
 /** Dialogflow when waiting in queue, or when agent turned chatbot back on (co-pilot). */
@@ -14226,10 +14232,6 @@ function tryInterceptOutboundForLiveAgentHumanChat_(event, queryText) {
         return false;
     }
     if (liveAgentAllowDialogflowForUserText_()) {
-        if (liveAgentShouldPostVisitorToAgent_(t) && !liveAgentAlreadyRoutedOutbound_(t)) {
-            liveAgentMarkOutboundRouted_(t);
-            void liveAgentSendVisitorMessage_(activeDfMessenger, t, false);
-        }
         return false;
     }
     const already = liveAgentAlreadyRoutedOutbound_(t);
@@ -14582,11 +14584,18 @@ async function liveAgentPollTick_(dfMessenger) {
         const ms = dfMessenger || activeDfMessenger;
         for (let i = 0; i < messages.length; i += 1) {
             const m = messages[i];
-            if (!m || !m.id || liveAgentSeenMessageIds_.has(m.id)) {
+            if (!m || !m.id) {
+                continue;
+            }
+            const role = typeof m.role === "string" ? m.role.toLowerCase() : "";
+            if (copilotAi && (role === "agent" || role === "staff")) {
+                liveAgentRememberSeenMessageId_(m.id);
+                continue;
+            }
+            if (liveAgentSeenMessageIds_.has(m.id)) {
                 continue;
             }
             liveAgentRememberSeenMessageId_(m.id);
-            const role = typeof m.role === "string" ? m.role.toLowerCase() : "";
             if (role === "visitor") {
                 continue;
             }
@@ -14753,7 +14762,7 @@ function liveAgentMirrorVisitorToQueue_(text) {
 
 async function liveAgentSendVisitorMessage_(dfMessenger, text, shouldRenderCustomTextNow) {
     const t = (text || "").trim();
-    if (!t) {
+    if (!t || liveAgentCoPilotAiEnabled_()) {
         return;
     }
     const sid = liveAgentSessionId_();

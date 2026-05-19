@@ -716,6 +716,16 @@ export async function appendMessage_({
         if (cur.status === "closed") throw new Error("Conversation is closed");
 
         const roleNorm = trim_(role).toLowerCase();
+        if (roleNorm === "agent" || roleNorm === "staff") {
+            if (isLiveAgentAiCopilot_(serializeConversation_(id, cur))) {
+                throw new Error(
+                    "Takeover required — chatbot is replying to the visitor. Click Takeover to send as agent."
+                );
+            }
+        }
+        if (roleNorm === "visitor" && isLiveAgentAiCopilot_(serializeConversation_(id, cur))) {
+            throw new Error("Chatbot is handling this chat — visitor messages go through the bot");
+        }
 
         /** @type {Record<string, unknown>} */
         const msgData = {
@@ -828,6 +838,14 @@ export async function listMessages_({ conversationId, sinceIso, limit, markReadF
     }
 
     return enrichMessagesWithAgentNames_(messages);
+}
+
+/** Active chat where the widget should use Dialogflow, not the agent inbox. */
+export function isLiveAgentAiCopilot_(conv) {
+    if (!conv || conv.status !== "active") {
+        return false;
+    }
+    return trim_(conv.humanMode).toLowerCase() === "ai" && conv.aiEnabled !== false;
 }
 
 /**

@@ -394,6 +394,14 @@
         return "Agent";
     }
 
+    function isAiCopilotConv_(conv) {
+        if (!conv || conv.status !== "active") {
+            return false;
+        }
+        const hm = conv.humanMode ? String(conv.humanMode).toLowerCase() : "";
+        return hm === "ai" && conv.aiEnabled !== false;
+    }
+
     function agentLabelForMessage_(m) {
         const stored =
             m && typeof m.senderDisplayName === "string" ? m.senderDisplayName.trim() : "";
@@ -1161,15 +1169,17 @@
             composerInput.disabled = isClosed || !canReply;
             composerInput.placeholder = isClosed
                 ? "Reopen this chat to reply…"
-                : canReply
-                  ? "Type a reply to the visitor…"
-                  : isWaiting
-                    ? "Accept this chat first to reply…"
-                    : takenByOther
-                      ? "Assigned to " +
-                        (conv.assignedAgentEmail || "another agent") +
-                        " — use another queue filter or ask them to close it."
-                      : "Select a chat to reply…";
+                : aiCopilot && isMine
+                  ? "Chatbot is replying — click Takeover to message the visitor…"
+                  : canReply
+                    ? "Type a reply to the visitor…"
+                    : isWaiting
+                      ? "Accept this chat first to reply…"
+                      : takenByOther
+                        ? "Assigned to " +
+                          (conv.assignedAgentEmail || "another agent") +
+                          " — use another queue filter or ask them to close it."
+                        : "Select a chat to reply…";
         }
         if (sendBtn) sendBtn.disabled = isClosed || !canReply;
 
@@ -1494,6 +1504,7 @@
     function canReplyActive_() {
         if (!selectedConv || !selectedId) return false;
         if (selectedConv.status === "closed") return false;
+        if (isAiCopilotConv_(selectedConv)) return false;
         if (selectedConv.status === "waiting") return true;
         if (selectedConv.status !== "active") return false;
         const assignee = (selectedConv.assignedAgentEmail || "").trim();
