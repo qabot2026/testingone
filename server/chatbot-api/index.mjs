@@ -69,6 +69,7 @@ import {
     probeSheetsSpreadsheetAccess,
     sanitizeUserQueriesCsvForSheet,
     upsertSessionQueriesInSheet,
+    patchSheetLeadBySessionId_,
     writeLeadCaptureDashboardToSheet2
 } from "./lib/sheets.mjs";
 import { getServiceAccountCredentials } from "./lib/google-service-account.mjs";
@@ -3521,7 +3522,26 @@ app.post(
 
         try {
             await persistChatFeedbackRecord(doc);
-            return res.status(200).json({ ok: true, message: "Recorded." });
+            /** @type {Record<string, unknown>} */
+            const out = { ok: true, message: "Recorded." };
+            if (!SHEETS_DISABLED) {
+                const feedbackMessage =
+                    comment
+                    || tag
+                    || (doc.helpful === true ? "Helpful" : doc.helpful === false ? "Not helpful" : "");
+                const feedbackRating = doc.rating != null ? String(doc.rating) : "";
+                try {
+                    out.sheet = await patchSheetLeadBySessionId_(sidRaw, {
+                        feedbackRating,
+                        feedbackMessage
+                    });
+                } catch (se) {
+                    const detail = se && se.message ? se.message : String(se);
+                    console.warn("[chatbot-api] chat-feedback sheet patch:", detail.slice(0, 240));
+                    out.sheet = { ok: false, error: detail.slice(0, 200) };
+                }
+            }
+            return res.status(200).json(out);
         } catch (e) {
             const msg =
                 e && /** @type {{ message?: string }} */ (e).message

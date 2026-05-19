@@ -287,29 +287,79 @@ function sheetDateCellForSheetsApi_(raw) {
 }
 
 /**
+ * 12-hour clock for Sheets Conv. Time: `06:12:44 pm` (2-digit hour, lowercase am/pm).
+ * @param {Date} d
+ * @returns {string}
+ */
+function formatConversationTimePartsFromDate_(d) {
+    const dt = conversationSheetBaseDate_(d);
+    const tz = conversationDateTimeZoneForIntl_();
+    const opts = /** @type {Intl.DateTimeFormatOptions} */ ({
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: true
+    });
+    if (tz) {
+        opts.timeZone = tz;
+    }
+    try {
+        const parts = new Intl.DateTimeFormat("en-IN", opts).formatToParts(dt);
+        /** @param {string} type */
+        const pick = (type) => {
+            const p = parts.find((x) => x.type === type);
+            return p ? p.value : "";
+        };
+        const h = pick("hour");
+        const mi = pick("minute");
+        const s = pick("second");
+        const ap = pick("dayPeriod").toLowerCase();
+        if (h && mi && s && ap) {
+            return `${h}:${mi}:${s} ${ap}`;
+        }
+    } catch {
+        /* fall through */
+    }
+    const h24 = dt.getHours();
+    const h12 = h24 % 12 || 12;
+    const ap = h24 < 12 ? "am" : "pm";
+    return `${String(h12).padStart(2, "0")}:${String(dt.getMinutes()).padStart(2, "0")}:${String(dt.getSeconds()).padStart(2, "0")} ${ap}`;
+}
+
+/**
+ * Normalize inbound time strings to `06:12:44 pm` for the Conv. Time column.
+ * @param {unknown} raw
+ * @returns {string}
+ */
+function normalizeConversationTimeForSheet_(raw) {
+    const s = String(raw == null ? "" : raw)
+        .trim()
+        .replace(/^'+|'+$/g, "");
+    if (!s) {
+        return "";
+    }
+    const m = /^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(a\.?m\.?|p\.?m\.?)\s*$/i.exec(s);
+    if (m) {
+        const h = String(parseInt(m[1], 10)).padStart(2, "0");
+        const mi = m[2];
+        const sec = m[3] != null && m[3] !== "" ? m[3] : "00";
+        const ap = /^p/i.test(m[4]) ? "pm" : "am";
+        return `${h}:${mi}:${sec} ${ap}`;
+    }
+    const parsed = Date.parse(`1970-01-01T${s.replace(/\s+/g, "")}`);
+    if (!Number.isNaN(parsed)) {
+        return formatConversationTimePartsFromDate_(new Date(parsed));
+    }
+    return s;
+}
+
+/**
  * Conversation **time only** for Sheets column C (12-hour clock) when column A is the Conv. link.
  * @param {Date} [d]
  * @returns {string}
  */
 export function formatConversationTimeForSheet(d = new Date()) {
-    const dt = conversationSheetBaseDate_(d);
-    const tz = conversationDateTimeZoneForIntl_();
-    try {
-        const opts = /** @type {Intl.DateTimeFormatOptions} */ ({
-            timeStyle: "medium",
-            hour12: true
-        });
-        if (tz) {
-            opts.timeZone = tz;
-        }
-        return new Intl.DateTimeFormat("en-IN", opts).format(dt);
-    } catch {
-        try {
-            return dt.toLocaleTimeString("en-US", { hour12: true });
-        } catch {
-            return dt.toISOString().slice(11, 19);
-        }
-    }
+    return formatConversationTimePartsFromDate_(d instanceof Date ? d : new Date());
 }
 
 /**
@@ -373,15 +423,17 @@ function conversationPartsFromIncomingRow_(row) {
     if (convDate === "") {
         convDate = formatConversationDateForSheet(new Date());
     }
-    let convTime = tt;
+    let convTime = tt ? normalizeConversationTimeForSheet_(tt) : "";
     if (!convTime) {
         const iso = typeof row.iso === "string" ? row.iso.trim() : "";
         if (iso.includes(",")) {
-            convTime = iso
-                .split(",")
-                .slice(1)
-                .join(", ")
-                .trim();
+            convTime = normalizeConversationTimeForSheet_(
+                iso
+                    .split(",")
+                    .slice(1)
+                    .join(", ")
+                    .trim()
+            );
         }
     }
     if (!convTime) {
@@ -902,6 +954,44 @@ export function formatDeviceTypeForSheetDisplay(raw) {
  * @param {unknown} raw
  * @returns {string}
  */
+/**
+ * Visitor CSAT / feedback stored on `client_context` (widget or `/chat-feedback`).
+ *
+ * @param {unknown} clientContext
+ * @returns {{ feedbackRating: string, feedbackMessage: string }}
+ */
+export function feedbackFieldsFromClientContext_(clientContext) {
+    const cx =
+        clientContext && typeof clientContext === "object" && !Array.isArray(clientContext)
+            ? /** @type {Record<string, unknown>} */ (clientContext)
+            : {};
+    let rating = "";
+    const r = cx.feedback_rating ?? cx.feedbackRating ?? cx.rating;
+    if (typeof r === "number" && Number.isFinite(r)) {
+        rating = String(Math.round(r));
+    } else if (typeof r === "string" && r.trim()) {
+        rating = r.trim();
+    }
+    let message = "";
+    for (const k of ["feedback_message", "feedbackMessage", "feedback_comment", "comment"]) {
+        const v = cx[k];
+        if (typeof v === "string" && v.trim()) {
+            message = v.trim();
+            break;
+        }
+    }
+    if (!message && (cx.helpful === true || cx.helpful === false)) {
+        message = cx.helpful ? "Helpful" : "Not helpful";
+    }
+    const tag = typeof cx.feedback_tag === "string" ? cx.feedback_tag.trim() : typeof cx.tag === "string" ? cx.tag.trim() : "";
+    if (tag && message) {
+        message = `${message} (${tag})`;
+    } else if (tag) {
+        message = tag;
+    }
+    return { feedbackRating: rating, feedbackMessage: message };
+}
+
 export function formatChannelForSheetDisplay(raw) {
     const s = typeof raw === "string" ? raw.trim() : String(raw ?? "").trim();
     if (!s) {
@@ -1745,7 +1835,9 @@ function sheetConvDateOrTimeCell_(v) {
     if (!s) {
         return "";
     }
-    return /^'/.test(s) ? s : `'${s}`;
+    const bare = s.replace(/^'+/, "");
+    const out = normalizeConversationTimeForSheet_(bare) || bare;
+    return `'${out}`;
 }
 
 /** @param {import("googleapis").gaxios.GaxiosResponse<import("googleapis").sheets_v4.Schema$BatchUpdateValuesResponse> | null | undefined} batchRes */
@@ -2104,7 +2196,10 @@ async function updateExistingSessionRow_(sheets, tab, rowNumber, incoming, optio
     const mobile = contactPatchFor(typeof incoming.mobile === "string" ? incoming.mobile : "", 4);
     const email = contactPatchFor(typeof incoming.email === "string" ? incoming.email : "", 5);
     const channelRaw = patchScalarInto(typeof incoming.channel === "string" ? incoming.channel : "", 6);
-    const channel = channelRaw ? formatChannelForSheetDisplay(channelRaw) : "";
+    let channel = channelRaw ? formatChannelForSheetDisplay(channelRaw) : "";
+    if (channel && /^live\s*agent$/i.test(channel.replace(/\s+/g, " "))) {
+        channel = "";
+    }
     const deviceTypeRaw = patchScalarInto(typeof incoming.deviceType === "string" ? incoming.deviceType : "", 11);
     const deviceType = deviceTypeRaw ? formatDeviceTypeForSheetDisplay(deviceTypeRaw) : "";
     const browserName =
@@ -2558,6 +2653,24 @@ const SHEET_H_APPOINTMENT_DATETIME = [
     "scheduledat",
     "bookedat",
     "booked_datetime"
+];
+
+const SHEET_H_FEEDBACK_RATING = [
+    "feedbackrating",
+    "feedback_rating",
+    "feedback rating",
+    "csat",
+    "csatrating",
+    "visitorrating"
+];
+
+const SHEET_H_FEEDBACK_MESSAGE = [
+    "feedbackmessage",
+    "feedback_message",
+    "feedback message",
+    "feedbackcomment",
+    "feedback comment",
+    "visitorfeedback"
 ];
 
 /**
@@ -3475,6 +3588,8 @@ async function buildStandardLeadRowUpdates_(sheets, tab, rowNumber, lead) {
         18,
         lead.driveFileLink
     );
+    put(SHEET_H_FEEDBACK_RATING, 19, lead.feedbackRating);
+    put(SHEET_H_FEEDBACK_MESSAGE, 20, lead.feedbackMessage);
 
     return updates;
 }
@@ -3593,6 +3708,49 @@ async function applySheetExtrasAfterDuplicateSessionRow_(sheets, tab, rowNumber,
  * @param {{ preferIncomingContact?: boolean, skipSessionDedup?: boolean, sheetExtrasSources?: { clientContext?: Record<string, unknown> | null, fields?: Record<string, unknown> | null } }} [opts] `skipSessionDedup` (with `preferIncomingContact`) skips “one row per session” and always appends — default for main contact-form POST. `sheetExtrasSources` uses dot paths from `sheet-integration.config.json`.
  * @returns {Promise<{ action: "appended"|"duplicate_updated"|"duplicate_noop", patched: boolean, tab: string, appendRangeUsed?: string, sheetRowNumber?: number, googleAppend?: { updatedRange?: string, updatedRows?: number, spreadsheetId?: string }, googleBatch?: { totalUpdatedCells?: number, totalUpdatedRows?: number, updatedRanges: string[] } }>}
  */
+
+/**
+ * Patch standard lead columns on an existing row by session id (header-aware).
+ *
+ * @param {string} sessionId
+ * @param {{ feedbackRating?: string, feedbackMessage?: string, campaignParams?: string, crmStatus?: string }} fields
+ */
+export async function patchSheetLeadBySessionId_(sessionId, fields) {
+    if (!SPREADSHEET_ID || process.env.DISABLE_SHEETS === "1") {
+        return { ok: false, skipped: "sheets_disabled" };
+    }
+    const sid = typeof sessionId === "string" ? sessionId.trim() : "";
+    if (!sid) {
+        return { ok: false, skipped: "no_session" };
+    }
+    const client = await getSheetsAuthClient();
+    const sheets = google.sheets({ version: "v4", auth: client });
+    const tab = tabNameFromRange(RANGE);
+    const rowNumber = await findSessionRowNumberBySessionId_(sheets, tab, sid);
+    if (!rowNumber) {
+        return { ok: false, skipped: "no_row" };
+    }
+    /** @type {Record<string, string>} */
+    const lead = {};
+    if (typeof fields.feedbackRating === "string" && fields.feedbackRating.trim()) {
+        lead.feedbackRating = fields.feedbackRating.trim();
+    }
+    if (typeof fields.feedbackMessage === "string" && fields.feedbackMessage.trim()) {
+        lead.feedbackMessage = fields.feedbackMessage.trim();
+    }
+    if (typeof fields.campaignParams === "string" && fields.campaignParams.trim()) {
+        lead.campaignParams = fields.campaignParams.trim();
+    }
+    if (typeof fields.crmStatus === "string" && fields.crmStatus.trim()) {
+        lead.crmStatus = fields.crmStatus.trim();
+    }
+    if (!Object.keys(lead).length) {
+        return { ok: false, skipped: "empty_patch" };
+    }
+    await writeLeadRowByHeader_(sheets, tab, rowNumber, lead);
+    return { ok: true, tab, sheetRowNumber: rowNumber };
+}
+
 export async function appendContactRowToSheet(row, opts) {
     const tabResolved = tabNameFromRange(RANGE);
     if (!SPREADSHEET_ID) {
@@ -3774,6 +3932,10 @@ export async function appendContactRowToSheet(row, opts) {
     }
     try {
         if (appendedRowNum) {
+            const fb =
+                sheetExtrasSources && sheetExtrasSources.clientContext
+                    ? feedbackFieldsFromClientContext_(sheetExtrasSources.clientContext)
+                    : { feedbackRating: "", feedbackMessage: "" };
             await writeLeadRowByHeader_(sheets, tabResolved, appendedRowNum, {
                 convDate: convParts.convDate,
                 convTime: convParts.convTime,
@@ -3792,7 +3954,9 @@ export async function appendContactRowToSheet(row, opts) {
                 appointmentBooked,
                 appointmentDate,
                 appointmentTime,
-                driveFileLink: fileLinks
+                driveFileLink: fileLinks,
+                feedbackRating: fb.feedbackRating,
+                feedbackMessage: fb.feedbackMessage
             },
                 sheetExtrasSources);
         }
