@@ -405,8 +405,43 @@ export function formatConversationDateTimeForSheet(d = new Date()) {
  */
 function appendRangeSchemaWidth_(raw) {
     const tab = tabNameFromRange(raw);
-    return `${tab}!A:S`;
+    return `${tab}!A:AE`;
 }
+
+/** Row 1 headers when the sheet header row is empty (matches standard lead + metrics layout). */
+const CANONICAL_LEAD_SHEET_HEADERS = [
+    "Conv. Link",
+    "Conv. Date",
+    "Conv. Time",
+    "Name",
+    "Mobile",
+    "Email",
+    "Channel",
+    "User Queries",
+    "Repeated User",
+    "Source URL",
+    "Session ID",
+    "Device",
+    "Browser",
+    "City",
+    "IP Address",
+    "App. Booked",
+    "App. Date",
+    "App. Time",
+    "Document",
+    "Sentiment",
+    "Rating",
+    "Feedback",
+    "Duration",
+    "CRM Push Status",
+    "Message Count",
+    "AVG Response Time",
+    "UtmCampaign",
+    "UtmContent",
+    "UtmMedium",
+    "UtmSource",
+    "UtmTerm"
+];
 
 /**
  * Resolve Date + Time strings for Sheets (preferred) or derive from legacy `iso` combined cell.
@@ -2922,6 +2957,165 @@ const SHEET_H_UTM_SOURCE = ["utmsource", "utm_source"];
 const SHEET_H_UTM_TERM = ["utmterm", "utm_term"];
 
 /**
+ * @param {import("googleapis").sheets_v4.Sheets} sheets
+ * @param {string} tab
+ * @returns {Promise<unknown[]>}
+ */
+async function getSheetHeaderRowRaw_(sheets, tab) {
+    await getHeaderIndexMap_(sheets, tab);
+    const raw = sheetSchemaCache_.headersRaw;
+    if (Array.isArray(raw) && raw.length) {
+        return raw;
+    }
+    return CANONICAL_LEAD_SHEET_HEADERS.slice();
+}
+
+/**
+ * Map one normalized header label → cell value (column position comes from row 1, not fallback index).
+ *
+ * @param {string} nk
+ * @param {*} lead
+ * @param {{ convLinkFormula?: string }} [opts]
+ */
+function resolveLeadValueForNormalizedHeader_(nk, lead, opts) {
+    const o = opts && typeof opts === "object" ? opts : {};
+    const L = lead && typeof lead === "object" ? lead : {};
+    if (!nk) {
+        return "";
+    }
+    if (
+        nk === "convlink"
+        || nk === "conversationlink"
+        || nk === "chatscriptlink"
+        || nk === "chatscript"
+        || nk === "conv"
+    ) {
+        return o.convLinkFormula || sheetOutboundCell_(L.convLink) || "";
+    }
+    if (nk === "convdate" || nk === "conversationdate" || nk === "convdateonly") {
+        return sheetConvDateCellValue_(L.convDate);
+    }
+    if (nk === "convtime" || nk === "conversationtime" || nk === "convtimeonly") {
+        return sheetConvDateOrTimeCell_(L.convTime);
+    }
+    if (nk === "name") {
+        return sheetOutboundCell_(L.name);
+    }
+    if (nk === "mobile" || nk === "mobileno" || nk === "phonenumber" || nk === "phone") {
+        return sheetOutboundCell_(L.mobile);
+    }
+    if (nk === "email" || nk === "emailaddress") {
+        return sheetOutboundCell_(L.email);
+    }
+    if (nk === "channel") {
+        return formatChannelForSheetDisplay(L.channel);
+    }
+    if (nk === "userqueries" || nk === "userqueriescsv") {
+        return sheetOutboundCell_(L.userQueriesCsv);
+    }
+    if (nk === "repeateduser" || nk === "repeated") {
+        return sheetOutboundCell_(L.repeated);
+    }
+    if (nk === "sourceurl" || nk === "pageurl") {
+        return sheetOutboundCell_(L.sourceUrl);
+    }
+    if (
+        nk === "sessionid"
+        || nk === "sessioniid"
+        || nk === "clientsessionid"
+        || nk === "session"
+    ) {
+        return sheetOutboundCell_(L.clientSessionId);
+    }
+    if (nk === "device" || nk === "devicetype") {
+        return formatDeviceTypeForSheetDisplay(L.deviceType);
+    }
+    if (nk === "browser" || nk === "browsername") {
+        return sheetOutboundCell_(L.browserName);
+    }
+    if (nk === "city" || nk === "visitorcity") {
+        return sheetOutboundCell_(L.city);
+    }
+    if (nk === "ip" || nk === "ipaddress") {
+        return sheetOutboundCell_(L.ip);
+    }
+    if (nk === "appointmentbooked" || nk === "appbooked") {
+        return sheetOutboundCell_(L.appointmentBooked);
+    }
+    if (nk === "appointmentdate" || nk === "appdate") {
+        const d = sheetDateCellForSheetsApi_(L.appointmentDate);
+        return d === "" || d == null ? "" : d;
+    }
+    if (nk === "appointmenttime" || nk === "apptime") {
+        return sheetOutboundCell_(L.appointmentTime);
+    }
+    if (nk === "document" || nk === "documents" || nk === "filelinks" || nk === "drivefilelink") {
+        return sheetOutboundCell_(L.driveFileLink);
+    }
+    if (nk === "sentiment" || nk === "conversationsentiment" || nk === "chatsentiment") {
+        return sheetOutboundCell_(L.sentiment);
+    }
+    if (nk === "rating" || nk === "feedbackrating" || nk === "csat" || nk === "csatrating") {
+        return sheetOutboundCell_(L.feedbackRating);
+    }
+    if (nk === "feedback" || nk === "feedbackmessage" || nk === "feedbackcomment") {
+        return sheetOutboundCell_(L.feedbackMessage);
+    }
+    if (nk === "duration" || nk === "chatduration" || nk === "chat_duration") {
+        return sheetOutboundCell_(L.duration);
+    }
+    if (nk === "crmpushstatus" || nk === "crmstatus" || nk === "crmpassed") {
+        return sheetOutboundCell_(L.crmPushStatus);
+    }
+    if (nk === "messagecount" || nk === "messages") {
+        return sheetOutboundCell_(L.messageCount);
+    }
+    if (
+        nk === "avgresponsetime"
+        || nk === "averageresponsetime"
+        || nk === "avg_response_time"
+    ) {
+        return sheetOutboundCell_(L.avgResponseTimeMs);
+    }
+    if (nk === "utmcampaign") {
+        return sheetOutboundCell_(L.utmCampaign);
+    }
+    if (nk === "utmcontent") {
+        return sheetOutboundCell_(L.utmContent);
+    }
+    if (nk === "utmmedium") {
+        return sheetOutboundCell_(L.utmMedium);
+    }
+    if (nk === "utmsource") {
+        return sheetOutboundCell_(L.utmSource);
+    }
+    if (nk === "utmterm") {
+        return sheetOutboundCell_(L.utmTerm);
+    }
+    return "";
+}
+
+/**
+ * Build one row array aligned to the sheet’s row-1 headers (value at index i → column i).
+ *
+ * @param {unknown[]} headersRaw
+ * @param {*} lead
+ * @param {{ convLinkFormula?: string }} [opts]
+ */
+function buildSheetRowValuesFromHeaders_(headersRaw, lead, opts) {
+    const headers = Array.isArray(headersRaw) && headersRaw.length
+        ? headersRaw
+        : CANONICAL_LEAD_SHEET_HEADERS;
+    /** @type {string[]} */
+    const out = [];
+    for (let i = 0; i < headers.length; i += 1) {
+        const nk = normalizedHeaderKey_(sheetCellString_(headers[i]));
+        out.push(resolveLeadValueForNormalizedHeader_(nk, lead, opts));
+    }
+    return out;
+}
+
+/**
  * Infer “appointment booked / scheduled?” column — ignore pure date/time headers.
  *
  * @param {Record<string, number>} headerMap
@@ -3562,7 +3756,11 @@ const CHAT_TRANSCRIPT_JSON_HEADER_ALIASES = [
 
 /** @param {number} idx0 */
 function isReservedColumnForChatTranscriptJson_(idx0) {
-    return idx0 === STANDARD_CHAT_SCRIPT_LINK_COL_INDEX0 || idx0 === STANDARD_DOCUMENT_COL_INDEX0;
+    return (
+        idx0 === STANDARD_CHAT_SCRIPT_LINK_COL_INDEX0
+        || idx0 === STANDARD_DOCUMENT_COL_INDEX0
+        || (idx0 >= 19 && idx0 <= CONVERSATION_SHEET_PREVIEW_MIN_COL_INDEX0)
+    );
 }
 
 /**
@@ -3879,11 +4077,32 @@ async function buildStandardLeadRowUpdates_(sheets, tab, rowNumber, lead) {
  * @param {number} rowNumber
  * @param {*} lead
  * @param {{ clientContext?: Record<string, unknown> | null, fields?: Record<string, unknown> | null } | null | undefined} [sheetExtrasSources]
+ * @param {{ partialPatch?: boolean }} [options] partialPatch=true: only update cells present on `lead` (feedback patch).
  */
-async function writeLeadRowByHeader_(sheets, tab, rowNumber, lead, sheetExtrasSources) {
-    const standard = await buildStandardLeadRowUpdates_(sheets, tab, rowNumber, lead);
-    const extras = buildConfiguredExtraCellUpdates_(tab, rowNumber, sheetExtrasSources, standard);
-    const updates = [...standard, ...extras];
+async function writeLeadRowByHeader_(sheets, tab, rowNumber, lead, sheetExtrasSources, options = {}) {
+    if (!rowNumber) {
+        return;
+    }
+    /** @type {Array<{ range: string, values: string[][] }>} */
+    let updates = [];
+    if (options && options.partialPatch) {
+        updates = await buildStandardLeadRowUpdates_(sheets, tab, rowNumber, lead);
+    } else {
+        const headersRaw = await getSheetHeaderRowRaw_(sheets, tab);
+        const sid =
+            typeof lead.clientSessionId === "string" ? lead.clientSessionId.trim() : "";
+        const convLink = await conversationLinkFormulaForLeadSheetCell_(sheets, tab, rowNumber, sid);
+        const rowValues = buildSheetRowValuesFromHeaders_(headersRaw, lead, {
+            convLinkFormula: convLink
+        });
+        const lastCol = columnLetterFromIndex_(Math.max(0, rowValues.length - 1));
+        updates.push({
+            range: `${tab}!A${rowNumber}:${lastCol}${rowNumber}`,
+            values: [rowValues]
+        });
+    }
+    const extras = buildConfiguredExtraCellUpdates_(tab, rowNumber, sheetExtrasSources, updates);
+    updates = [...updates, ...extras];
     if (!updates.length) {
         return;
     }
@@ -4037,7 +4256,7 @@ export async function patchSheetLeadBySessionId_(sessionId, fields) {
     if (!Object.keys(lead).length) {
         return { ok: false, skipped: "empty_patch" };
     }
-    await writeLeadRowByHeader_(sheets, tab, rowNumber, lead);
+    await writeLeadRowByHeader_(sheets, tab, rowNumber, lead, null, { partialPatch: true });
     return { ok: true, tab, sheetRowNumber: rowNumber };
 }
 
@@ -4157,28 +4376,30 @@ export async function appendContactRowToSheet(row, opts) {
     const convParts = conversationPartsFromIncomingRow_(row);
     const sid0 = typeof row.clientSessionId === "string" ? row.clientSessionId.trim() : "";
     const colAFormula = await conversationLinkFormulaForLeadSheetCell_(sheets, tabResolved, 0, sid0);
-    // Append A–S directly (Conv. link, Date, Time, then lead fields …).
-    const values = [[
-        colAFormula || "",
-        sheetConvDateCellValue_(convParts.convDate),
-        sheetConvDateOrTimeCell_(convParts.convTime),
-        sheetOutboundCell_(row.name),
-        sheetOutboundCell_(row.mobile),
-        sheetOutboundCell_(row.email),
-        sheetOutboundCell_(ch),
-        sheetOutboundCell_(userQueriesCsv),
-        sheetOutboundCell_(repeated),
-        sheetOutboundCell_(sourceUrl),
-        sheetOutboundCell_(row.clientSessionId),
-        sheetOutboundCell_(deviceForAppend),
-        sheetOutboundCell_(row.browserName),
-        sheetOutboundCell_(city),
-        sheetOutboundCell_(ip),
-        sheetOutboundCell_(appointmentBooked),
-        sheetAppointmentDateCellValue_(appointmentDate),
-        sheetOutboundCell_(appointmentTime),
-        sheetOutboundCell_(fileLinks)
-    ]];
+    const headersRaw = await getSheetHeaderRowRaw_(sheets, tabResolved);
+    const fullLeadAppend = assembleLeadSheetPayloadFromSources_(
+        {
+            ...row,
+            channel: chRaw,
+            deviceType: typeof row.deviceType === "string" ? row.deviceType.trim() : "",
+            userQueriesCsv,
+            city,
+            ip,
+            repeated,
+            sourceUrl,
+            appointmentBooked,
+            appointmentDate,
+            appointmentTime,
+            fileLinks,
+            convDate: convParts.convDate,
+            convTime: convParts.convTime
+        },
+        sheetExtrasSources
+    );
+    const rowValues = buildSheetRowValuesFromHeaders_(headersRaw, fullLeadAppend, {
+        convLinkFormula: colAFormula || ""
+    });
+    const values = [rowValues];
     const appendRes = await sheets.spreadsheets.values.append({
         spreadsheetId: SPREADSHEET_ID,
         range: appendRangeUsed,
@@ -4221,31 +4442,26 @@ export async function appendContactRowToSheet(row, opts) {
         );
     }
     try {
-        if (appendedRowNum) {
-            const fullLead = assembleLeadSheetPayloadFromSources_(
-                {
-                    ...row,
-                    channel: chRaw,
-                    deviceType: typeof row.deviceType === "string" ? row.deviceType.trim() : "",
-                    userQueriesCsv,
-                    city,
-                    ip,
-                    repeated,
-                    sourceUrl,
-                    appointmentBooked,
-                    appointmentDate,
-                    appointmentTime,
-                    fileLinks,
-                    convDate: convParts.convDate,
-                    convTime: convParts.convTime
-                },
-                sheetExtrasSources
+        if (appendedRowNum && sheetExtrasSources) {
+            const extrasOnly = buildConfiguredExtraCellUpdates_(
+                tabResolved,
+                appendedRowNum,
+                sheetExtrasSources,
+                []
             );
-            await writeLeadRowByHeader_(sheets, tabResolved, appendedRowNum, fullLead, sheetExtrasSources);
+            if (extrasOnly.length) {
+                await sheets.spreadsheets.values.batchUpdate({
+                    spreadsheetId: SPREADSHEET_ID,
+                    requestBody: {
+                        valueInputOption: "USER_ENTERED",
+                        data: extrasOnly
+                    }
+                });
+            }
         }
     } catch (e) {
         const msg = e && e.message ? e.message : String(e);
-        console.error("[chatbot-api] Sheets header-mapped patch failed; row still appended.", msg);
+        console.error("[chatbot-api] Sheets extra-column patch failed; row still appended.", msg);
     }
     await maybeWriteSheetRowOpenLink_(sheets, tabResolved, appendedRowNum, row.clientSessionId);
     if (
