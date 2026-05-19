@@ -447,6 +447,22 @@
       white-space: nowrap;
       vertical-align: middle;
     }
+    /** RATING header shows full label; body cells stay narrow (1–5). */
+    table.sheet thead th.col-w-rating {
+      width: auto !important;
+      min-width: 9ch !important;
+      max-width: none !important;
+      overflow: visible;
+      text-overflow: clip;
+    }
+    table.sheet tbody td.col-w-rating {
+      width: auto;
+      min-width: 0;
+      max-width: 7ch;
+      padding-left: 6px;
+      padding-right: 6px;
+      box-sizing: border-box;
+    }
     tbody tr:nth-child(odd) td {
       background: var(--row-odd);
     }
@@ -3578,19 +3594,26 @@
         return flat.slice(0, maxChars) + "…";
       }
 
-      /** ~15 visible chars; td._clipboardValue holds full text/URL for double-click copy */
+      /** Visible preview only; td._clipboardValue always holds the full cell text for double-click copy. */
       function appendTruncatedPreviewCell(td, raw, maxChars) {
         var limit =
           typeof maxChars === "number" && maxChars > 0 ? maxChars : SHEET_TRUNCATE_PREVIEW_CHARS;
         var clip = cellClipboardString(raw);
         td._clipboardValue = clip;
         var flat = flattenCellText(raw).trim();
-        var preview = truncatePreviewLabel_(raw, limit);
-        td.title = clip
-          ? clip.length > 32000
-            ? clip.slice(0, 32000) + "… — double-click to copy full value"
-            : clip + " — double-click to copy"
-          : "";
+        var preview = flat.length <= limit ? flat : flat.slice(0, limit) + "…";
+        if (limit === SHEET_FEEDBACK_PREVIEW_CHARS && clip) {
+          td.title =
+            clip.length > 280
+              ? clip.slice(0, 280) + "… — double-click copies full message (" + clip.length + " chars)"
+              : clip + " — double-click to copy full message";
+        } else {
+          td.title = clip
+            ? clip.length > 32000
+              ? clip.slice(0, 32000) + "… — double-click to copy full value"
+              : clip + " — double-click to copy"
+            : "";
+        }
 
         var wrap = document.createElement("span");
         wrap.className = "cell-line cell-line--truncate-preview";
@@ -3612,11 +3635,14 @@
         td.appendChild(wrap);
       }
 
-      /** Narrow specific sheet columns (table only); call after sticky/fixed/header width decorators */
+      /** Narrow specific sheet columns (tbody only); headers use decorateHeaderWidth / CSS. */
       function applySheetColumnWidthTweak(el, headerTitle) {
         var role = sheetColWidthRole_(headerTitle);
         if (!role) return;
         el.classList.add("col-w-" + role);
+        if (el && el.tagName && String(el.tagName).toUpperCase() === "TH") {
+          return;
+        }
 
         if (role === "sourceurl" || role === "document") {
           applySheetColumnTruncatePreviewCap_(el);
