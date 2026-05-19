@@ -3446,7 +3446,7 @@ app.post(
                 firestore_disabled: FIRESTORE_DISABLED
             });
         }
-        if (userQueriesCsv) {
+        if (userQueriesCsv || hasLiveChatTranscript) {
             try {
                 syncDetail = await upsertSessionQueriesInSheet({
                     convDate: convSheetDate,
@@ -3484,7 +3484,7 @@ app.post(
         return res.status(200).json({
             ok: true,
             message: userQueriesCsv ? "Queries synced." : "Transcript synced.",
-            sheet_integration: userQueriesCsv
+            sheet_integration: userQueriesCsv || hasLiveChatTranscript
                 ? { enabled: true, result: syncDetail }
                 : { enabled: true, skipped: "queries_only_in_firestore" },
             firestore_transcript_patched: sessionTranscriptStored,
