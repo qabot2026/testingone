@@ -4,6 +4,7 @@
  */
 
 import { requestHumanAgent_, liveAgentFirestoreReady_ } from "./store.mjs";
+import { sanitizeVisitorNameForStorage_ } from "./visitor-name.mjs";
 
 const LOG_TAG = "[live-agent/from-context]";
 
@@ -86,7 +87,8 @@ export async function maybeQueueLiveAgentFromClientContext_(clientContext) {
         return { queued: false, reason: "not_requested", conversationId: sid };
     }
 
-    const visitorName = scalar_(ctx.name) || scalar_(ctx.visitor_name) || "Visitor";
+    const visitorName =
+        sanitizeVisitorNameForStorage_(scalar_(ctx.name) || scalar_(ctx.visitor_name)) || "";
     let initialMessage =
         scalar_(ctx.live_agent_initial_message) || lastUserQueryLine_(ctx) || "";
     const imNorm = initialMessage.toLowerCase().replace(/\s+/g, " ").trim();

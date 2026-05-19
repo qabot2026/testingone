@@ -5,6 +5,7 @@
 import admin from "firebase-admin";
 import { getFirestore } from "firebase-admin/firestore";
 import { firebaseAdminInit } from "../firebase-admin-init.mjs";
+import { isPlausibleVisitorDisplayName_, sanitizeVisitorNameForStorage_ } from "./visitor-name.mjs";
 
 const LOG_TAG = "[live-agent/store]";
 
@@ -77,7 +78,9 @@ function serializeConversation_(id, data) {
         humanMode,
         aiEnabled,
         botid: typeof d.botid === "string" ? d.botid : "default",
-        visitorName: typeof d.visitorName === "string" ? d.visitorName : "",
+        visitorName: isPlausibleVisitorDisplayName_(typeof d.visitorName === "string" ? d.visitorName : "")
+            ? trim_(d.visitorName)
+            : "",
         assignedAgentEmail: typeof d.assignedAgentEmail === "string" ? d.assignedAgentEmail : "",
         departmentId: typeof d.departmentId === "string" ? d.departmentId : "general",
         departmentName: typeof d.departmentName === "string" ? d.departmentName : "General Department",
@@ -199,7 +202,10 @@ export async function requestHumanAgent_({
                     humanMode: "waiting",
                     aiEnabled: true,
                     botid: botIdOrDefault_(botid),
-                    visitorName: trim_(visitorName) || cur.visitorName || "",
+                    visitorName:
+                        sanitizeVisitorNameForStorage_(visitorName)
+                        || (isPlausibleVisitorDisplayName_(cur.visitorName) ? cur.visitorName : "")
+                        || "",
                     assignedAgentEmail: "",
                     departmentId: trim_(departmentId) || cur.departmentId || "general",
                     currentAssigneeEmail: "",
@@ -217,8 +223,10 @@ export async function requestHumanAgent_({
             } else if (cur.status === "waiting" || cur.status === "active") {
                 alreadyQueued = true;
                 const patch = {};
-                const vn = trim_(visitorName);
-                if (vn && vn !== cur.visitorName) patch.visitorName = vn;
+                const vn = sanitizeVisitorNameForStorage_(visitorName);
+                if (vn && vn !== cur.visitorName) {
+                    patch.visitorName = vn;
+                }
                 if (Object.keys(patch).length) {
                     tx.update(ref, patch);
                 }
@@ -230,7 +238,7 @@ export async function requestHumanAgent_({
             humanMode: "waiting",
             aiEnabled: true,
             botid: botIdOrDefault_(botid),
-            visitorName: trim_(visitorName),
+            visitorName: sanitizeVisitorNameForStorage_(visitorName),
             assignedAgentEmail: "",
             departmentId: trim_(departmentId) || "general",
             currentAssigneeEmail: "",

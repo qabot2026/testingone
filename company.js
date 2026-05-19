@@ -13795,6 +13795,9 @@ function mergeLikelyNameFromChatText_(raw) {
     if (CHAT_NAME_FALSE_POSITIVE_RE.test(t.replace(/\s+/g, " ").trim())) {
         return;
     }
+    if (liveAgentIsBoilerplateHandoffPhrase_(t)) {
+        return;
+    }
     try {
         const prev = readStoredClientContext();
         const existing = dfParameterScalarToString(prev && prev.name != null ? prev.name : "").trim();

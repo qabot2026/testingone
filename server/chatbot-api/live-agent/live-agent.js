@@ -278,20 +278,90 @@
         }
     }
 
-    function buildInboxSubtitle_(c) {
-        if (!c) return "";
-        const parts = [];
-        if (c.departmentName || c.departmentId) {
-            parts.push(c.departmentName || c.departmentId);
+    function isPlausibleVisitorName_(s) {
+        const t = String(s || "").trim();
+        if (!t || t.length < 2 || t.length > 80) {
+            return false;
         }
-        if (c.currentAssigneeEmail) {
-            parts.push("Queue: " + c.currentAssigneeEmail);
+        if (/\d/.test(t) || /@/.test(t) || t.includes("?")) {
+            return false;
         }
-        if (c.acceptedByEmail && c.status === "active") {
-            parts.push("Accepted: " + c.acceptedByEmail);
-            if (c.acceptedAt) parts.push(formatTime(c.acceptedAt));
+        const n = t.toLowerCase().replace(/\s+/g, " ");
+        const blocked = new Set([
+            "human agent",
+            "live agent",
+            "live chat",
+            "request live agent",
+            "request human agent",
+            "speak to agent",
+            "talk to agent",
+            "connect to agent",
+            "agent please",
+            "customer service",
+            "help",
+            "menu",
+            "hi",
+            "hello"
+        ]);
+        if (blocked.has(n)) {
+            return false;
         }
-        return parts.join(" · ") || "—";
+        if (/^(human|live)\s+(agent|chat)\b/.test(n)) {
+            return false;
+        }
+        if (/\b(agent|chatbot|live\s*chat)\b/.test(n) && t.split(/\s+/).length <= 4) {
+            return false;
+        }
+        return t.split(/\s+/).filter(Boolean).length <= 5;
+    }
+
+    function resolveVisitorDisplayName_(conv, visitor) {
+        const v = visitor && typeof visitor === "object" ? visitor : {};
+        const contactName =
+            v.name && isPlausibleVisitorName_(v.name) ? String(v.name).trim() : "";
+        const convName =
+            conv && conv.visitorName && isPlausibleVisitorName_(conv.visitorName)
+                ? String(conv.visitorName).trim()
+                : "";
+        if (contactName) {
+            return contactName;
+        }
+        if (convName) {
+            return convName;
+        }
+        const mobile = v.mobile ? String(v.mobile).trim() : "";
+        const digits = mobile.replace(/\D/g, "");
+        if (digits.length >= 4) {
+            return "Visitor " + digits.slice(-4);
+        }
+        return "Visitor";
+    }
+
+    function inboxStatusLabel_(c) {
+        const st = c && c.status ? String(c.status) : "";
+        if (st === "waiting") {
+            return "Waiting";
+        }
+        if (st === "active") {
+            return "Active";
+        }
+        if (st === "closed") {
+            return "Closed";
+        }
+        return st ? st.charAt(0).toUpperCase() + st.slice(1) : "—";
+    }
+
+    function buildInboxItemDetails_(c) {
+        if (!c) {
+            return "";
+        }
+        const dept = c.departmentName || c.departmentId || "General";
+        const parts = [inboxStatusLabel_(c), "Department: " + dept];
+        const unreadN = Number(c.unreadForAgent) || 0;
+        if (unreadN > 0) {
+            parts.push("Unread: " + formatUnreadCount_(unreadN));
+        }
+        return parts.join(" · ");
     }
 
     function startPolling() {
@@ -793,10 +863,7 @@
             if (assignee && assignee === agentId && c.status === "waiting") {
                 li.classList.add("assigned-to-me");
             }
-            const title = c.visitorName || "Visitor";
-            const unreadN = formatUnreadCount_(c.unreadForAgent);
-            const unread = unreadN ? " · " + unreadN + " unread" : "";
-            const mode = c.humanMode || c.status;
+            const title = resolveVisitorDisplayName_(c, null);
             const main = document.createElement("div");
             main.className = "inbox-item-main";
             main.innerHTML =
@@ -805,19 +872,10 @@
                 ' <span class="badge ' +
                 escapeHtml(c.status) +
                 '">' +
-                escapeHtml(c.status) +
+                escapeHtml(inboxStatusLabel_(c)) +
                 "</span></p>" +
-                '<p class="inbox-item-preview">' +
-                escapeHtml(c.lastMessagePreview || "—") +
-                "</p>" +
                 '<p class="inbox-item-meta">' +
-                escapeHtml(shortSessionId_(c.id)) +
-                " · " +
-                escapeHtml(c.status) +
-                escapeHtml(unread) +
-                "</p>" +
-                '<p class="inbox-item-sub">' +
-                escapeHtml(buildInboxSubtitle_(c)) +
+                escapeHtml(buildInboxItemDetails_(c)) +
                 "</p>";
             li.appendChild(main);
             if (c.status === "waiting" || c.status === "active") {
@@ -905,8 +963,9 @@
                 contactDl.innerHTML =
                     '<dt>Contact</dt><dd><span class="muted">Hidden by settings</span></dd>';
             } else {
+            const displayName = isPlausibleVisitorName_(v.name) ? String(v.name).trim() : "";
             const rows = [
-                ["Name", v.name],
+                ["Name", displayName],
                 ["Email", v.email],
                 ["Mobile", v.mobile],
                 ["Channel", v.channel],
@@ -953,6 +1012,9 @@
             const url = transcriptUrlForSession_(selectedId, v);
             transcriptLink.href = url;
             if (transcriptFooterBtn) transcriptFooterBtn.href = url;
+        }
+        if (chatTitle && conv) {
+            chatTitle.textContent = resolveVisitorDisplayName_(conv, v);
         }
     }
 
@@ -1125,8 +1187,7 @@
         const skipContextReload = opts && opts.skipContextReload === true;
         if (!conv || !selectedId) return;
 
-        const title = conv.visitorName || "Session " + conv.id.slice(0, 12);
-        chatTitle.textContent = title;
+        chatTitle.textContent = resolveVisitorDisplayName_(conv, selectedVisitorContext);
         let meta = formatConvStatusShort_(conv);
         if (conv.assignedAgentEmail && conv.status === "active") {
             meta += " · " + resolveAgentDisplayName_(conv.assignedAgentEmail);

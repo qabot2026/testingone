@@ -6,6 +6,7 @@ import {
     fetchLatestContactSubmissionForClientSession,
     fetchSessionChatTranscriptContext
 } from "../firestore.mjs";
+import { isPlausibleVisitorDisplayName_ } from "./visitor-name.mjs";
 
 const NAME_KEYS = ["name", "visitor_name", "full_name", "customer_name"];
 const EMAIL_KEYS = ["email", "mail", "e_mail"];
@@ -217,7 +218,7 @@ export async function getVisitorContext_(sessionId, options = {}) {
     const conv = options.conversation;
     if (conv && typeof conv === "object") {
         const vn = trim_(/** @type {{ visitorName?: string }} */ (conv).visitorName);
-        if (vn) {
+        if (isPlausibleVisitorDisplayName_(vn)) {
             sources.push({ name: vn, visitor_name: vn });
         }
     }
@@ -226,7 +227,8 @@ export async function getVisitorContext_(sessionId, options = {}) {
         return base;
     }
 
-    base.name = pickFirst_(sources, NAME_KEYS);
+    const rawName = pickFirst_(sources, NAME_KEYS);
+    base.name = isPlausibleVisitorDisplayName_(rawName) ? rawName : "";
     base.email = pickFirst_(sources, EMAIL_KEYS);
     base.mobile = pickFirst_(sources, MOBILE_KEYS);
     base.channel = pickFirst_(sources, CHANNEL_KEYS);
