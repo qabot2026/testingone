@@ -79,6 +79,10 @@ import {
     mergeCampaignParamsIntoSessionParams
 } from "./lib/campaign-params.mjs";
 import { formatCrmExchangeForTranscript_, syncLeadToCrm_ } from "./lib/crm-sync.mjs";
+import {
+    computeConversationMetricsFromClientContext_,
+    mergeConversationMetricsIntoClientContext_
+} from "./lib/conversation-metrics.mjs";
 import { getServiceAccountCredentials } from "./lib/google-service-account.mjs";
 import { uploadSubmissionFilesToDrive } from "./lib/drive-upload.mjs";
 import { hasDriveUploadCredentials } from "./lib/drive-auth.mjs";
@@ -2848,6 +2852,12 @@ app.post(
                         : {})
                 };
             }
+            const conversationMetrics = computeConversationMetricsFromClientContext_(mergedClientContext);
+            mergedClientContext = mergeConversationMetricsIntoClientContext_(
+                mergedClientContext,
+                conversationMetrics
+            );
+            record.client_context = mergedClientContext;
             if (!SHEETS_DISABLED) {
                 try {
                     sheetOutcome = await appendContactRowToSheet(
@@ -3094,6 +3104,11 @@ app.post(
             || (await resolveCityForRequest(req));
         const userQueriesCsv = normalizeUserQueriesCsvFromClientContext(mergedClientContext);
         const sourceUrl = resolveSourceUrlForSheet(mergedClientContext);
+        const conversationMetricsMobile = computeConversationMetricsFromClientContext_(mergedClientContext);
+        mergedClientContext = mergeConversationMetricsIntoClientContext_(
+            mergedClientContext,
+            conversationMetricsMobile
+        );
         try {
             const sheetOutcome = await appendContactRowToSheet(
                 {

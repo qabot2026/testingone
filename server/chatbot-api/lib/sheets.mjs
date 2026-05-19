@@ -12,8 +12,10 @@ import { existsSync, readFileSync } from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { google } from "googleapis";
-import { formatCampaignParamsForSheet_ } from "./campaign-params.mjs";
-import { crmFieldsFromClientContext_ } from "./crm-sync.mjs";
+import {
+    computeConversationMetricsFromClientContext_,
+    conversationMetricsForSheetRow_
+} from "./conversation-metrics.mjs";
 import { getServiceAccountCredentials } from "./google-service-account.mjs";
 
 const SHEET_CONFIG_DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -2739,8 +2741,21 @@ const SHEET_H_FEEDBACK_MESSAGE = [
     "visitorfeedback"
 ];
 
-/** Staff viewer / export: always fetch through column U (feedback message). */
-const CONVERSATION_SHEET_PREVIEW_MIN_COL_INDEX0 = 20;
+/** Staff viewer / export: through column AF (UtmTerm). */
+const CONVERSATION_SHEET_PREVIEW_MIN_COL_INDEX0 = 31;
+
+/** Fixed column letters V–AF (metrics + UTM). */
+const SHEET_COL_CRM_PUSH_STATUS = "V";
+const SHEET_COL_DURATION = "W";
+const SHEET_COL_MESSAGE_COUNT = "X";
+const SHEET_COL_AVG_RESPONSE_MS = "Y";
+const SHEET_COL_SENTIMENT = "Z";
+const SHEET_COL_UNANSWERED = "AA";
+const SHEET_COL_UTM_CAMPAIGN = "AB";
+const SHEET_COL_UTM_CONTENT = "AC";
+const SHEET_COL_UTM_MEDIUM = "AD";
+const SHEET_COL_UTM_SOURCE = "AE";
+const SHEET_COL_UTM_TERM = "AF";
 
 /**
  * @param {unknown[]} headersRaw
@@ -2782,23 +2797,53 @@ function canonicalConversationSheetHeaderLabel_(colIndex0, rawLabel) {
     return "";
 }
 
-const SHEET_H_CAMPAIGN_PARAMS = [
-    "campaignparams",
-    "campaign_params",
-    "campaign parameters",
-    "campaignparameters",
-    "utmparams",
-    "utm_params"
+const SHEET_H_CRM_PUSH_STATUS = [
+    "crmpushstatus",
+    "crm_push_status",
+    "crm push status",
+    "crmpassed",
+    "crmstatus"
 ];
 
-const SHEET_H_CRM_STATUS = [
-    "crmstatus",
-    "crm_status",
-    "crm passed",
-    "crm passed or failed",
-    "crmpassed",
-    "crmresult"
+const SHEET_H_CHAT_DURATION = [
+    "duration",
+    "chatduration",
+    "chat_duration",
+    "conversationduration",
+    "sessionduration"
 ];
+
+const SHEET_H_MESSAGE_COUNT = [
+    "messagecount",
+    "message_count",
+    "messages",
+    "msgcount"
+];
+
+const SHEET_H_AVG_RESPONSE_MS = [
+    "avgresponsetime",
+    "avg_response_time",
+    "averageresponsetime",
+    "averageresponsetimeinms",
+    "avgresponsetimeinms",
+    "avgresponsetime(ms)"
+];
+
+const SHEET_H_SENTIMENT = ["sentiment", "conversationsentiment", "chatsentiment"];
+
+const SHEET_H_UNANSWERED = [
+    "unansweredquestions",
+    "unanswered_questions",
+    "unanswered",
+    "fallbackquestions",
+    "botfallbackcount"
+];
+
+const SHEET_H_UTM_CAMPAIGN = ["utmcampaign", "utm_campaign"];
+const SHEET_H_UTM_CONTENT = ["utmcontent", "utm_content"];
+const SHEET_H_UTM_MEDIUM = ["utmmedium", "utm_medium"];
+const SHEET_H_UTM_SOURCE = ["utmsource", "utm_source"];
+const SHEET_H_UTM_TERM = ["utmterm", "utm_term"];
 
 /**
  * Infer “appointment booked / scheduled?” column — ignore pure date/time headers.
@@ -3718,8 +3763,35 @@ async function buildStandardLeadRowUpdates_(sheets, tab, rowNumber, lead) {
     );
     put(SHEET_H_FEEDBACK_RATING, 19, lead.feedbackRating);
     put(SHEET_H_FEEDBACK_MESSAGE, 20, lead.feedbackMessage);
-    put(SHEET_H_CAMPAIGN_PARAMS, 21, lead.campaignParams);
-    put(SHEET_H_CRM_STATUS, 22, lead.crmStatus);
+    put(SHEET_H_CRM_PUSH_STATUS, 21, lead.crmPushStatus);
+    put(SHEET_H_CHAT_DURATION, 22, lead.duration);
+    put(SHEET_H_MESSAGE_COUNT, 23, lead.messageCount);
+    put(SHEET_H_AVG_RESPONSE_MS, 24, lead.avgResponseTimeMs);
+    put(SHEET_H_SENTIMENT, 25, lead.sentiment);
+    put(SHEET_H_UNANSWERED, 26, lead.unansweredQuestions);
+    put(SHEET_H_UTM_CAMPAIGN, 27, lead.utmCampaign);
+    put(SHEET_H_UTM_CONTENT, 28, lead.utmContent);
+    put(SHEET_H_UTM_MEDIUM, 29, lead.utmMedium);
+    put(SHEET_H_UTM_SOURCE, 30, lead.utmSource);
+    put(SHEET_H_UTM_TERM, 31, lead.utmTerm);
+
+    const pushMetricCol = (colLet, val) => {
+        const v = sheetOutboundCell_(val);
+        if (String(v || "").trim()) {
+            updates.push({ range: `${tab}!${colLet}${rowNumber}`, values: [[v]] });
+        }
+    };
+    pushMetricCol(SHEET_COL_CRM_PUSH_STATUS, lead.crmPushStatus);
+    pushMetricCol(SHEET_COL_DURATION, lead.duration);
+    pushMetricCol(SHEET_COL_MESSAGE_COUNT, lead.messageCount);
+    pushMetricCol(SHEET_COL_AVG_RESPONSE_MS, lead.avgResponseTimeMs);
+    pushMetricCol(SHEET_COL_SENTIMENT, lead.sentiment);
+    pushMetricCol(SHEET_COL_UNANSWERED, lead.unansweredQuestions);
+    pushMetricCol(SHEET_COL_UTM_CAMPAIGN, lead.utmCampaign);
+    pushMetricCol(SHEET_COL_UTM_CONTENT, lead.utmContent);
+    pushMetricCol(SHEET_COL_UTM_MEDIUM, lead.utmMedium);
+    pushMetricCol(SHEET_COL_UTM_SOURCE, lead.utmSource);
+    pushMetricCol(SHEET_COL_UTM_TERM, lead.utmTerm);
 
     const fr = sheetOutboundCell_(lead.feedbackRating);
     const fm = sheetOutboundCell_(lead.feedbackMessage);
@@ -3858,7 +3930,21 @@ async function applySheetExtrasAfterDuplicateSessionRow_(sheets, tab, rowNumber,
  * Patch standard lead columns on an existing row by session id (header-aware).
  *
  * @param {string} sessionId
- * @param {{ feedbackRating?: string, feedbackMessage?: string, campaignParams?: string, crmStatus?: string }} fields
+ * @param {{
+ *   feedbackRating?: string,
+ *   feedbackMessage?: string,
+ *   crmPushStatus?: string,
+ *   duration?: string,
+ *   messageCount?: string,
+ *   avgResponseTimeMs?: string,
+ *   sentiment?: string,
+ *   unansweredQuestions?: string,
+ *   utmCampaign?: string,
+ *   utmContent?: string,
+ *   utmMedium?: string,
+ *   utmSource?: string,
+ *   utmTerm?: string
+ * }} fields
  */
 export async function patchSheetLeadBySessionId_(sessionId, fields) {
     if (!SPREADSHEET_ID || process.env.DISABLE_SHEETS === "1") {
@@ -3883,11 +3969,24 @@ export async function patchSheetLeadBySessionId_(sessionId, fields) {
     if (typeof fields.feedbackMessage === "string" && fields.feedbackMessage.trim()) {
         lead.feedbackMessage = fields.feedbackMessage.trim();
     }
-    if (typeof fields.campaignParams === "string" && fields.campaignParams.trim()) {
-        lead.campaignParams = fields.campaignParams.trim();
-    }
-    if (typeof fields.crmStatus === "string" && fields.crmStatus.trim()) {
-        lead.crmStatus = fields.crmStatus.trim();
+    const metricKeys = [
+        "crmPushStatus",
+        "duration",
+        "messageCount",
+        "avgResponseTimeMs",
+        "sentiment",
+        "unansweredQuestions",
+        "utmCampaign",
+        "utmContent",
+        "utmMedium",
+        "utmSource",
+        "utmTerm"
+    ];
+    for (const k of metricKeys) {
+        const v = fields[k];
+        if (typeof v === "string" && v.trim()) {
+            lead[k] = v.trim();
+        }
     }
     if (!Object.keys(lead).length) {
         return { ok: false, skipped: "empty_patch" };
@@ -3983,6 +4082,19 @@ export async function appendContactRowToSheet(row, opts) {
                     ? String(/** @type {{ message?: string }} */ (fbErr).message)
                     : String(fbErr);
                 console.warn("[chatbot-api] Sheets feedback columns duplicate path:", m.slice(0, 200));
+            }
+        }
+        if (sheetExtrasSources && sheetExtrasSources.clientContext) {
+            try {
+                const metrics = conversationMetricsForSheetRow_(
+                    computeConversationMetricsFromClientContext_(sheetExtrasSources.clientContext)
+                );
+                await writeLeadRowByHeader_(sheets, tabResolved, scan.matchedRowNumber, metrics);
+            } catch (metErr) {
+                const m = metErr && /** @type {{ message?: string }} */ (metErr).message
+                    ? String(/** @type {{ message?: string }} */ (metErr).message)
+                    : String(metErr);
+                console.warn("[chatbot-api] Sheets metrics columns duplicate path:", m.slice(0, 200));
             }
         }
         await maybeWriteLeadConvLinkColumnA_(sheets, tabResolved, scan.matchedRowNumber, row.clientSessionId);
@@ -4100,14 +4212,12 @@ export async function appendContactRowToSheet(row, opts) {
                 fields: sheetExtrasSources ? sheetExtrasSources.fields : null,
                 clientContext: sheetExtrasSources ? sheetExtrasSources.clientContext : null
             });
-            const campaignParams =
+            const metrics =
                 sheetExtrasSources && sheetExtrasSources.clientContext
-                    ? formatCampaignParamsForSheet_(sheetExtrasSources.clientContext)
-                    : "";
-            const crm =
-                sheetExtrasSources && sheetExtrasSources.clientContext
-                    ? crmFieldsFromClientContext_(sheetExtrasSources.clientContext)
-                    : { crmStatus: "", crmRequest: "", crmResponse: "" };
+                    ? conversationMetricsForSheetRow_(
+                        computeConversationMetricsFromClientContext_(sheetExtrasSources.clientContext)
+                    )
+                    : {};
             await writeLeadRowByHeader_(sheets, tabResolved, appendedRowNum, {
                 convDate: convParts.convDate,
                 convTime: convParts.convTime,
@@ -4129,8 +4239,7 @@ export async function appendContactRowToSheet(row, opts) {
                 driveFileLink: fileLinks,
                 feedbackRating: fb.feedbackRating,
                 feedbackMessage: fb.feedbackMessage,
-                campaignParams,
-                crmStatus: crm.crmStatus
+                ...metrics
             },
                 sheetExtrasSources);
         }
