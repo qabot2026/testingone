@@ -3919,6 +3919,25 @@ app.get("/contact-form-sheets-health", async (_req, res) => {
         };
         if (!SHEETS_DISABLED && getServiceAccountCredentials()) {
             body.read_probe = await probeSheetsSpreadsheetAccess();
+            try {
+                const { google } = await import("googleapis");
+                const key = getServiceAccountCredentials();
+                const tab = (process.env.SHEETS_RANGE || "Sheet1!A:S").split("!")[0] || "Sheet1";
+                const auth = new google.auth.GoogleAuth({
+                    credentials: key,
+                    scopes: ["https://www.googleapis.com/auth/spreadsheets"]
+                });
+                const sheetsApi = google.sheets({ version: "v4", auth: await auth.getClient() });
+                const got = await sheetsApi.spreadsheets.values.get({
+                    spreadsheetId: id,
+                    range: `${tab}!1:1`
+                });
+                const h0 = Array.isArray(got.data.values) && got.data.values[0] ? got.data.values[0] : [];
+                body.header_row_1 = h0.slice(0, 35).map((c) => String(c ?? "").trim());
+                body.header_row_1_length = h0.length;
+            } catch (hdrErr) {
+                body.header_row_1_error = hdrErr && hdrErr.message ? String(hdrErr.message).slice(0, 200) : String(hdrErr);
+            }
         }
         return res.status(200).json(body);
     } catch (e) {

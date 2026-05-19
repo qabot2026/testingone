@@ -27,8 +27,37 @@ let idleEndConversationFired = false;
 /** True after the visitor sends at least one message or taps a chip/button/list item. */
 let idleEndConversationUserHasEngaged = false;
 
+/** True when the visitor sent at least one user message/chip (not welcome-only). */
 function hasChatUserEngaged_() {
-    return idleEndConversationUserHasEngaged === true;
+    if (idleEndConversationUserHasEngaged === true) {
+        return true;
+    }
+    try {
+        const prev = readStoredClientContext();
+        const qs = prev && Array.isArray(prev.user_queries) ? prev.user_queries : [];
+        for (let i = 0; i < qs.length; i += 1) {
+            if (typeof qs[i] === "string" && qs[i].trim()) {
+                return true;
+            }
+        }
+        const ct = prev && Array.isArray(prev.chat_transcript) ? prev.chat_transcript : [];
+        for (let j = 0; j < ct.length; j += 1) {
+            const it = ct[j];
+            if (!it || typeof it !== "object") {
+                continue;
+            }
+            const role = String(it.role || "")
+                .trim()
+                .toLowerCase();
+            const text = typeof it.text === "string" ? it.text.trim() : "";
+            if (role === "user" && text) {
+                return true;
+            }
+        }
+    } catch {
+        /* ignore */
+    }
+    return false;
 }
 
 function shouldSyncChatSessionToBackend_() {

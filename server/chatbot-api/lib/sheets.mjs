@@ -3072,13 +3072,13 @@ async function getSheetHeaderRowRaw_(sheets, tab) {
  * @param {{ convLinkFormula?: string }} [opts]
  */
 async function buildFullLeadRowValuesForSheet_(sheets, tab, lead, opts) {
-    let headersRaw = await getSheetHeaderRowRaw_(sheets, tab);
-    let rowValues = buildSheetRowValuesFromHeaders_(headersRaw, lead, opts);
+    void sheets;
+    void tab;
+    const rowValues = buildSheetRowValuesFromHeaders_(CANONICAL_LEAD_SHEET_HEADERS.slice(), lead, opts);
     if (leadRowValuesLookBlank_(rowValues, lead)) {
-        headersRaw = CANONICAL_LEAD_SHEET_HEADERS.slice();
-        rowValues = buildSheetRowValuesFromHeaders_(headersRaw, lead, opts);
         console.warn(
-            "[chatbot-api] Sheets: row-1 headers did not map lead fields; used canonical A–AE header layout for this write."
+            "[chatbot-api] Sheets: assembled lead payload produced no mapped cells for canonical A–AE layout.",
+            typeof lead.clientSessionId === "string" ? lead.clientSessionId.slice(0, 36) : ""
         );
     }
     return rowValues;
@@ -4215,20 +4215,17 @@ async function writeLeadRowByHeader_(sheets, tab, rowNumber, lead, sheetExtrasSo
     if (options && options.partialPatch) {
         updates = await buildStandardLeadRowUpdates_(sheets, tab, rowNumber, lead);
     } else {
-        updates = await buildStandardLeadRowUpdates_(sheets, tab, rowNumber, lead);
-        if (!updates.length && leadPayloadHasSheetData_(lead)) {
-            const sid =
-                typeof lead.clientSessionId === "string" ? lead.clientSessionId.trim() : "";
-            const convLink = await conversationLinkFormulaForLeadSheetCell_(sheets, tab, rowNumber, sid);
-            const rowValues = await buildFullLeadRowValuesForSheet_(sheets, tab, lead, {
-                convLinkFormula: convLink
-            });
-            const lastCol = columnLetterFromIndex_(Math.max(0, rowValues.length - 1));
-            updates.push({
-                range: `${tab}!A${rowNumber}:${lastCol}${rowNumber}`,
-                values: [rowValues]
-            });
-        }
+        const sid =
+            typeof lead.clientSessionId === "string" ? lead.clientSessionId.trim() : "";
+        const convLink = await conversationLinkFormulaForLeadSheetCell_(sheets, tab, rowNumber, sid);
+        const rowValues = await buildFullLeadRowValuesForSheet_(sheets, tab, lead, {
+            convLinkFormula: convLink
+        });
+        const lastCol = columnLetterFromIndex_(Math.max(0, rowValues.length - 1));
+        updates.push({
+            range: `${tab}!A${rowNumber}:${lastCol}${rowNumber}`,
+            values: [rowValues]
+        });
     }
     const extras = buildConfiguredExtraCellUpdates_(tab, rowNumber, sheetExtrasSources, updates);
     updates = [...updates, ...extras];
