@@ -35,7 +35,7 @@
   }
 
   var CHAT_HOST = chatHostFromLoaderSrc() || "https://qabot2026.github.io/testingone/";
-  var IFRAME_VERSION = "113-mobile-pass-through";
+  var IFRAME_VERSION = "114-pointer-fix";
   var DEFAULT_API_BASE = "https://handsome-amazement-production-7f65.up.railway.app";
 
   function getLoaderQuery() {
@@ -89,9 +89,8 @@
     f.title = "Chat";
     f.setAttribute("src", frameUrl);
     f.setAttribute("referrerpolicy", "strict-origin-when-cross-origin");
-    /* Full-height strip on the right; matches typical right-docked chat. */
-    /* pointer-events:none on the iframe shell: transparent areas pass clicks to the host page;
-       chat-frame.html re-enables pointer-events on df-messenger and footer chrome. */
+    /* Full-height strip on the right; matches typical right-docked chat.
+       iframe must stay pointer-events:auto — none on the iframe element blocks every click inside it. */
     f.style.cssText = [
       "position:fixed",
       "top:0",
@@ -102,7 +101,7 @@
       "max-width:100vw",
       "border:0",
       "z-index:2147483000",
-      "pointer-events:none",
+      "pointer-events:auto",
       "background:transparent"
     ].join(";");
     document.body.appendChild(f);
