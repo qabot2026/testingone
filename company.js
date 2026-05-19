@@ -15341,7 +15341,9 @@ function trackChatUserQueryInSessionContext_(raw) {
 
         // Deduplicate: `df-user-input-entered` and `df-request-sent` can fire for the same user message.
         const last = next.length ? String(next[next.length - 1]).trim() : "";
-        if (last && last === t) {
+        const key = normalizeChatTranscriptCompareText_(t);
+        const lastKey = last ? normalizeChatTranscriptCompareText_(last) : "";
+        if (lastKey && key && lastKey === key) {
             return;
         }
         const now = Date.now();

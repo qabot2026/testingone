@@ -661,8 +661,8 @@ body.live-agent-locked {
 .chat-actions-primary {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 0.5rem;
-  margin-bottom: 0.55rem;
 }
 
 .chat-actions-primary .btn {
@@ -680,10 +680,13 @@ body.live-agent-locked {
   box-shadow: 0 0 0 2px var(--accent-hover);
 }
 
-.chat-actions-secondary {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.35rem;
+.context-links {
+  margin: 0.75rem 0 0;
+  font-size: 0.9rem;
+}
+
+.context-body .mode-status {
+  margin: 0 0 0.75rem;
 }
 
 .pane-title {

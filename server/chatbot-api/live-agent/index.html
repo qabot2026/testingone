@@ -12,7 +12,7 @@
   <section id="loginView" class="login-view hidden" aria-label="Unlock inbox">
     <div class="login-card">
       <h1>Agent Service Desk</h1>
-      <p class="muted">Human chat console. Use the same viewer secret as conversation leads.</p>
+      <p class="muted">Sign in with your viewer secret (same as the leads sheet).</p>
       <form id="loginForm">
         <label>
           Viewer secret
@@ -20,7 +20,7 @@
             placeholder="CONVERSATIONS_SHEET_VIEW_SECRET" />
         </label>
         <label>
-          Your email <span class="muted small">(required — used when you accept a chat)</span>
+          Your email
           <input id="loginAgentName" type="email" autocomplete="email" required placeholder="you@company.com" />
         </label>
         <div class="login-actions">
@@ -28,7 +28,7 @@
           <button type="submit" class="btn primary" id="loginSubmitBtn">Open service desk</button>
         </div>
         <p id="loginMessage" class="login-message muted" role="status"></p>
-        <p class="muted small"><a href="/live-agent/settings">Live Agent Settings</a> · departments &amp; timing</p>
+        <p class="muted small"><a href="/live-agent/settings">Settings</a></p>
       </form>
     </div>
   </section>
@@ -37,36 +37,36 @@
     <header class="top-bar">
       <div class="top-bar-inner">
         <div class="brand">
-          <h1>Service desk</h1>
-          <p class="muted" id="agentLabel">—</p>
+          <h1>Agent desk</h1>
+          <p class="muted small" id="agentLabel">—</p>
         </div>
         <div class="top-actions">
           <label class="filter-label agent-status-label" title="Your availability">
-            Status
+            You
             <select id="myAgentStatus">
               <option value="online" selected>Online</option>
               <option value="away">Away</option>
               <option value="offline">Offline</option>
             </select>
           </label>
-          <span id="notifyPill" class="notify-pill hidden" title="Chats waiting for an agent">0 waiting</span>
+          <span id="notifyPill" class="notify-pill hidden" title="Waiting for an agent">0 waiting</span>
           <label class="filter-label">
-            Queue
+            Show
             <select id="inboxFilter">
-              <option value="all" data-tab="tabAllChats" selected>All chats</option>
-              <option value="assigned" data-tab="tabAllAssigned">All assigned</option>
+              <option value="all" data-tab="tabAllChats" selected>All</option>
+              <option value="waiting" data-tab="tabAllChats">Waiting</option>
+              <option value="mine" data-tab="tabAllChats">Mine</option>
+              <option value="active" data-tab="tabAgentChats">Active</option>
+              <option value="assigned" data-tab="tabAllAssigned">Assigned</option>
               <option value="unassigned" data-tab="tabUnassigned">Unassigned</option>
-              <option value="waiting" data-tab="tabAllChats">Waiting for agent</option>
-              <option value="mine" data-tab="tabAllChats">My queue</option>
-              <option value="active" data-tab="tabAgentChats">All active</option>
-              <option value="ai" data-tab="tabAiChats">AI chats</option>
-              <option value="agent" data-tab="tabAgentChats">Agent chats</option>
-              <option value="closed" data-tab="tabCompleted">Completed</option>
+              <option value="ai" data-tab="tabAiChats">Bot mode</option>
+              <option value="agent" data-tab="tabAgentChats">Human mode</option>
+              <option value="closed" data-tab="tabCompleted">Done</option>
             </select>
           </label>
-          <button type="button" class="btn ghost" id="refreshInboxBtn">Refresh</button>
-          <a class="btn ghost nav-link" href="/live-agent/settings">Settings</a>
-          <a class="btn ghost nav-link" href="/conversations-sheet" id="leadsLink">Leads sheet</a>
+          <button type="button" class="btn ghost" id="refreshInboxBtn" title="Refresh list">↻</button>
+          <a class="btn ghost nav-link" href="/live-agent/settings" title="Departments &amp; routing">⚙</a>
+          <a class="btn ghost nav-link" href="/conversations-sheet" id="leadsLink" title="Leads sheet">Leads</a>
           <button type="button" class="btn ghost" id="logoutBtn">Lock</button>
         </div>
       </div>
@@ -74,13 +74,13 @@
 
     <div class="workspace">
       <aside class="inbox-pane" aria-label="Request queue">
-        <p class="pane-title">Visitor requests</p>
+        <p class="pane-title">Chats</p>
 
         <section class="agents-panel" aria-label="Agent status">
           <div class="agents-panel-head">
-            <h3>Agents</h3>
+            <h3>Team</h3>
             <div class="agents-panel-actions">
-              <button type="button" class="btn ghost small" id="toggleAgentsPanelBtn">Show agents</button>
+              <button type="button" class="btn ghost small" id="toggleAgentsPanelBtn">Team</button>
               <button type="button" class="btn ghost small" id="refreshAgentsBtn" hidden>Refresh</button>
             </div>
           </div>
@@ -90,7 +90,7 @@
           </div>
         </section>
 
-        <p class="inbox-hint muted small">Visitors who ask for a human on the chatbot appear below. Select one, then press <strong>Accept chat</strong>.</p>
+        <p class="inbox-hint muted small">Pick a chat, then <strong>Accept</strong> to reply.</p>
         <p id="inboxStatus" class="inbox-status muted">Loading…</p>
         <button type="button" class="btn ghost small" id="clearTestQueueBtn" hidden>
           Clear old test chats
@@ -100,8 +100,7 @@
 
       <main class="chat-pane" aria-label="Active conversation">
         <div id="chatEmpty" class="chat-empty">
-          <p class="chat-empty-lead">Select a visitor on the left, then press <strong>Accept chat</strong> to reply.</p>
-          <p class="muted small">Visitors appear here after they request a human agent from the website or mobile chat.</p>
+          <p class="chat-empty-lead">Select a chat on the left.</p>
         </div>
 
         <div id="chatActive" class="chat-active hidden">
@@ -111,15 +110,15 @@
               <p class="muted" id="chatMeta">—</p>
             </div>
             <div class="chat-head-actions">
-              <button type="button" class="btn primary small" id="claimBtn" hidden>Accept chat</button>
+              <button type="button" class="btn primary small" id="claimBtn" hidden>Accept</button>
             </div>
           </header>
 
           <p id="claimHint" class="claim-hint muted small hidden" role="status"></p>
 
           <div id="chatClosedBanner" class="chat-closed-banner hidden" role="status">
-            <p><strong>This chat was closed.</strong> Reopen it to accept and reply.</p>
-            <button type="button" class="btn primary small" id="reopenChatBtn">Reopen chat</button>
+            <p><strong>Chat closed.</strong></p>
+            <button type="button" class="btn primary small" id="reopenChatBtn">Reopen</button>
           </div>
 
           <div class="chat-main">
@@ -131,55 +130,41 @@
           </div>
 
           <div id="chatActionsBar" class="chat-actions-bar" aria-label="Chat controls">
-            <p id="chatModeStatus" class="chat-mode-status muted small">Select a chat to use controls.</p>
+            <p id="chatModeStatus" class="chat-mode-status muted small"></p>
             <div class="chat-actions-primary">
               <button type="button" class="btn primary" id="enableChatbotBtn" title="Toggle AI bot vs human agent replies">
                 Enable chatbot
               </button>
-              <button type="button" class="btn danger" id="endChatFooterBtn" title="End this live chat">
+              <button type="button" class="btn danger" id="endChatFooterBtn" title="End live chat">
                 End chat
               </button>
-            </div>
-            <div class="chat-actions-secondary">
-              <button type="button" class="btn ghost small" id="refreshChatBtn">Refresh messages</button>
-              <button type="button" class="btn ghost small" id="copySessionBtn">Copy session ID</button>
-              <a class="btn ghost small" id="transcriptFooterBtn" href="#" target="_blank" rel="noopener noreferrer">Open transcript</a>
-              <button type="button" class="btn ghost small" id="dismissFooterBtn" title="Remove from queue">Dismiss request</button>
+              <button type="button" class="btn ghost small" id="refreshChatBtn" title="Reload messages">↻</button>
+              <a class="btn ghost small" id="transcriptFooterBtn" href="#" target="_blank" rel="noopener noreferrer" title="Full transcript">Transcript</a>
+              <button type="button" class="btn ghost small" id="copySessionBtn" title="Copy session ID">ID</button>
+              <button type="button" class="btn ghost small" id="dismissFooterBtn" title="Remove from queue">Dismiss</button>
             </div>
           </div>
         </div>
       </main>
 
       <aside class="context-pane" id="contextPane" aria-label="Visitor details">
-        <p class="pane-title">Visitor</p>
+        <p class="pane-title">Details</p>
         <div class="context-scroll">
           <div id="contextEmpty" class="context-empty muted">
-            <p>Select a conversation to see contact details.</p>
+            <p>Select a chat.</p>
           </div>
           <div id="contextBody" class="context-body hidden">
-            <section class="context-block">
-              <h3>Routing</h3>
-              <p id="modeStatusLine" class="mode-status muted">—</p>
-            </section>
-            <section class="context-block">
-              <h3>Contact</h3>
-              <dl class="detail-dl" id="contactDl"></dl>
-            </section>
-            <section class="context-block">
-              <h3>Documents</h3>
-              <ul id="documentsList" class="documents-list"></ul>
-              <p id="documentsEmpty" class="muted small hidden">No files on record for this session yet.</p>
-            </section>
-            <section class="context-block">
-              <h3>Links</h3>
-              <p><a id="transcriptLink" href="#" target="_blank" rel="noopener noreferrer">Open full transcript</a></p>
-            </section>
+            <p id="modeStatusLine" class="mode-status muted small">—</p>
+            <dl class="detail-dl" id="contactDl"></dl>
+            <ul id="documentsList" class="documents-list"></ul>
+            <p id="documentsEmpty" class="muted small hidden">No files yet.</p>
+            <p class="context-links"><a id="transcriptLink" href="#" target="_blank" rel="noopener noreferrer">Transcript</a></p>
           </div>
         </div>
       </aside>
     </div>
   </section>
 
-  <script src="/live-agent/live-agent.js?v=143-aicopilot-fix" defer></script>
+  <script src="/live-agent/live-agent.js?v=144-desk-simple" defer></script>
 </body>
 </html>

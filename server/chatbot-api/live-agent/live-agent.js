@@ -402,6 +402,31 @@
         return hm === "ai" && conv.aiEnabled !== false;
     }
 
+    /** One-line status for chat header and side panel. */
+    function formatConvStatusShort_(conv) {
+        if (!conv) {
+            return "";
+        }
+        const st = conv.status || "";
+        const hm = conv.humanMode ? String(conv.humanMode).toLowerCase() : "";
+        if (st === "waiting") {
+            return "Waiting for agent";
+        }
+        if (st === "closed") {
+            return "Closed";
+        }
+        if (st === "active") {
+            if (hm === "ai" && conv.aiEnabled !== false) {
+                return "Active · Bot replying";
+            }
+            if (hm === "human" || conv.aiEnabled === false) {
+                return "Active · You are chatting";
+            }
+            return "Active";
+        }
+        return st || "—";
+    }
+
     function agentLabelForMessage_(m) {
         const stored =
             m && typeof m.senderDisplayName === "string" ? m.senderDisplayName.trim() : "";
@@ -862,25 +887,10 @@
         contextEmpty.classList.add("hidden");
         contextBody.classList.remove("hidden");
 
-        const aiOn = conv && conv.aiEnabled !== false;
-        const hm = (conv && conv.humanMode) || "ai";
-        const modeText =
-            hm === "waiting"
-                ? "Visitor is waiting for a human agent."
-                : hm === "human"
-                  ? "Human agent chat — AI replies are off."
-                  : "AI mode — bot can auto-reply.";
-        const routeLine =
-            "Dept: " +
-            (conv.departmentName || conv.departmentId || "General") +
-            " · " +
-            (conv.currentAssigneeEmail
-                ? "Queue: " + conv.currentAssigneeEmail
-                : "Queue: unassigned") +
-            " · " +
-            modeText;
+        const dept = conv.departmentName || conv.departmentId || "General";
+        const routeLine = formatConvStatusShort_(conv) + " · " + dept;
         if (modeStatusLine) modeStatusLine.textContent = routeLine;
-        renderChatActionsBar_(conv, modeText);
+        renderChatActionsBar_(conv);
 
         const v = visitor || {};
         const viewContact = deskAccess_().viewContact || "all";
@@ -951,7 +961,7 @@
         return v.transcriptUrl || "/conversation-transcript?session=" + encodeURIComponent(sessionId || "");
     }
 
-    function renderChatActionsBar_(conv, modeText) {
+    function renderChatActionsBar_(conv) {
         if (!chatActionsBar) return;
         if (!selectedId || !conv) {
             chatActionsBar.classList.add("hidden");
@@ -968,21 +978,9 @@
                 hm = "ai";
             }
         }
-        const aiOn = conv && conv.aiEnabled !== false;
         const st = conv.status || "";
-        const statusLine =
-            modeText ||
-            (hm === "waiting"
-                ? "Visitor is waiting for a human agent."
-                : hm === "human"
-                  ? "Human agent chat — AI replies are off."
-                  : "AI mode — bot can auto-reply.");
         if (chatModeStatus) {
-            chatModeStatus.textContent =
-                statusLine +
-                (aiOn ? " · Chatbot on" : " · Chatbot off") +
-                " · " +
-                st;
+            chatModeStatus.textContent = formatConvStatusShort_(conv);
         }
         if (enableChatbotBtn) {
             const aiMode = hm === "ai" && aiOn;
@@ -1129,21 +1127,9 @@
 
         const title = conv.visitorName || "Session " + conv.id.slice(0, 12);
         chatTitle.textContent = title;
-        const statusLabel = conv.status === "closed" ? "closed" : conv.humanMode || conv.status;
-        let meta =
-            statusLabel +
-            " · " +
-            (conv.aiEnabled === false ? "AI off" : "AI on") +
-            " · bot " +
-            (conv.botid || "default");
-        if (conv.acceptedByEmail) {
-            meta += " · Accepted by " + resolveAgentDisplayName_(conv.acceptedByEmail);
-            if (conv.acceptedAt) meta += " at " + formatTime(conv.acceptedAt);
-        } else if (conv.assignedAgentEmail && conv.status === "active") {
-            meta += " · Agent " + resolveAgentDisplayName_(conv.assignedAgentEmail);
-        }
-        if (conv.closedByEmail && conv.status === "closed") {
-            meta += " · Closed by " + conv.closedByEmail;
+        let meta = formatConvStatusShort_(conv);
+        if (conv.assignedAgentEmail && conv.status === "active") {
+            meta += " · " + resolveAgentDisplayName_(conv.assignedAgentEmail);
         }
         chatMeta.textContent = meta;
 
@@ -1160,9 +1146,7 @@
         if (claimBtn) claimBtn.hidden = !isWaiting || isClosed;
         if (claimHint) {
             claimHint.hidden = !isWaiting || isClosed;
-            claimHint.textContent = isWaiting
-                ? "Click Accept chat above — then you can type a reply below."
-                : "";
+            claimHint.textContent = isWaiting ? "Press Accept to reply." : "";
         }
         if (composerForm) composerForm.classList.toggle("hidden", isClosed);
         if (chatActionsBar) chatActionsBar.classList.toggle("hidden", isClosed);
@@ -1189,19 +1173,8 @@
         } else {
             renderChatActionsBar_(conv);
             if (modeStatusLine) {
-                const hm = (conv && conv.humanMode) || "ai";
-                const modeText =
-                    hm === "waiting"
-                        ? "Visitor is waiting for a human agent."
-                        : hm === "human"
-                          ? "Human agent chat — AI replies are off."
-                          : "AI mode — bot can auto-reply.";
-                const routeLine =
-                    "Dept: " +
-                    (conv.departmentName || conv.departmentId || "General") +
-                    " · " +
-                    modeText;
-                modeStatusLine.textContent = routeLine;
+                const dept = conv.departmentName || conv.departmentId || "General";
+                modeStatusLine.textContent = formatConvStatusShort_(conv) + " · " + dept;
             }
         }
         if (!skipContextReload) {

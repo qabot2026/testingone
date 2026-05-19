@@ -121,31 +121,140 @@ function countMessagesFromContextLists_(cx) {
     return { user, bot };
 }
 
+/** @param {string} text */
+function normalizeUtteranceForCount_(text) {
+    return String(text || "")
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, " ")
+        .slice(0, 240);
+}
+
+/**
+ * User messages from merged transcript (skips consecutive duplicates from double events).
+ *
+ * @param {{ role: string, text: string }[]} turns
+ */
+function countUserMessagesFromTurns_(turns) {
+    let n = 0;
+    let lastKey = "";
+    for (let i = 0; i < turns.length; i += 1) {
+        if (turns[i].role !== "user") {
+            continue;
+        }
+        const text = String(turns[i].text || "").trim();
+        if (!text || isFormSubmissionTranscriptLine_(text)) {
+            continue;
+        }
+        const key = normalizeUtteranceForCount_(text);
+        if (key && key === lastKey) {
+            continue;
+        }
+        lastKey = key;
+        n += 1;
+    }
+    return n;
+}
+
+/**
+ * Bot/agent side: one count per reply burst (multi-bubble CX response = 1).
+ *
+ * @param {{ role: string, text: string }[]} turns
+ */
+function countBotReplyRoundsFromTurns_(turns) {
+    let n = 0;
+    let inReplyBurst = false;
+    for (let i = 0; i < turns.length; i += 1) {
+        const role = turns[i].role;
+        if (role === "user") {
+            inReplyBurst = false;
+            continue;
+        }
+        if (role !== "assistant" && role !== "agent") {
+            continue;
+        }
+        const text = String(turns[i].text || "").trim();
+        if (isFormSubmissionTranscriptLine_(text)) {
+            continue;
+        }
+        if (!inReplyBurst) {
+            n += 1;
+            inReplyBurst = true;
+        }
+    }
+    return n;
+}
+
+/**
+ * @param {unknown} cx
+ * @returns {{ user: number, bot: number }}
+ */
+function countUserBotFallbackFromLists_(cx) {
+    const o =
+        cx && typeof cx === "object" && !Array.isArray(cx)
+            ? /** @type {Record<string, unknown>} */ (cx)
+            : {};
+    let user = 0;
+    let lastKey = "";
+    const uq = o.user_queries;
+    if (Array.isArray(uq)) {
+        for (let i = 0; i < uq.length; i += 1) {
+            const item = uq[i];
+            const t =
+                typeof item === "string"
+                    ? item.trim()
+                    : item && typeof item === "object"
+                      ? String(
+                            /** @type {Record<string, unknown>} */ (item).text
+                                || /** @type {Record<string, unknown>} */ (item).query
+                                || ""
+                        ).trim()
+                      : "";
+            if (!t || isFormSubmissionTranscriptLine_(t)) {
+                continue;
+            }
+            const key = normalizeUtteranceForCount_(t);
+            if (key === lastKey) {
+                continue;
+            }
+            lastKey = key;
+            user += 1;
+        }
+    }
+    let bot = 0;
+    const aq = o.assistant_queries;
+    if (Array.isArray(aq)) {
+        let lastBot = "";
+        for (let i = 0; i < aq.length; i += 1) {
+            const item = aq[i];
+            const t = typeof item === "string" ? item.trim() : "";
+            if (!t) {
+                continue;
+            }
+            const key = normalizeUtteranceForCount_(t);
+            if (key === lastBot) {
+                continue;
+            }
+            lastBot = key;
+            bot += 1;
+        }
+    }
+    return { user, bot };
+}
+
 /**
  * @param {unknown} cx
  * @param {{ role: string, text: string, at: number }[]} turns
  */
 function countUserBotFromTurns_(cx, turns) {
-    const fromLists = countMessagesFromContextLists_(cx);
-    let userFromTurns = 0;
-    let botFromTurns = 0;
-    for (let i = 0; i < turns.length; i += 1) {
-        const text = String(turns[i].text || "").trim();
-        if (!text || isFormSubmissionTranscriptLine_(text)) {
-            if (turns[i].role === "assistant" || turns[i].role === "agent") {
-                botFromTurns += 1;
-            }
-            continue;
-        }
-        if (turns[i].role === "user") {
-            userFromTurns += 1;
-        } else if (turns[i].role === "assistant" || turns[i].role === "agent") {
-            botFromTurns += 1;
-        }
+    if (turns.length > 0) {
+        return {
+            userCount: countUserMessagesFromTurns_(turns),
+            botCount: countBotReplyRoundsFromTurns_(turns)
+        };
     }
-    const userCount = Math.max(fromLists.user, userFromTurns);
-    const botCount = Math.max(fromLists.bot, botFromTurns);
-    return { userCount, botCount };
+    const fb = countUserBotFallbackFromLists_(cx);
+    return { userCount: fb.user, botCount: fb.bot };
 }
 
 /**
@@ -626,12 +735,8 @@ export function conversationMetricsForSheetRow_(metrics, clientContext, incoming
         m.unansweredQuestions != null && String(m.unansweredQuestions) !== ""
             ? String(m.unansweredQuestions)
             : pick("unanswered_questions", "unansweredQuestions") || "0";
-    const fromLists = countMessagesFromContextLists_(cx);
-    const listFallback =
-        fromLists.user > 0 || fromLists.bot > 0 ? `${fromLists.user}-${fromLists.bot}` : "";
     const messageCount =
-        (m.messageCount && !looksLikeUserBotMessageCount_(m.messageCount) ? m.messageCount : "")
-        || listFallback
+        (m.messageCount && looksLikeUserBotMessageCount_(m.messageCount) ? m.messageCount : "")
         || pick("message_count", "messageCount");
     let avgResponseTimeMs =
         m.avgResponseTimeMs && !looksLikeUserBotMessageCount_(m.avgResponseTimeMs)
