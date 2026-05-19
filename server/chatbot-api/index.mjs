@@ -77,6 +77,7 @@ import {
     formatCampaignParamsForTranscript_,
     mergeCampaignParamsIntoSessionParams
 } from "./lib/campaign-params.mjs";
+import { syncLeadToCrm_ } from "./lib/crm-sync.mjs";
 import { getServiceAccountCredentials } from "./lib/google-service-account.mjs";
 import { uploadSubmissionFilesToDrive } from "./lib/drive-upload.mjs";
 import { hasDriveUploadCredentials } from "./lib/drive-auth.mjs";
@@ -2758,6 +2759,43 @@ app.post(
                 fields
             })
         );
+
+        try {
+            const crmOut = await syncLeadToCrm_({
+                submitted_at: submittedAtIso,
+                form_id: formId,
+                name,
+                email,
+                mobile,
+                channel,
+                source_url: sourceUrl,
+                city,
+                client_session_id: clientSessionId,
+                fields
+            });
+            if (!crmOut.skipped) {
+                mergedClientContext = {
+                    ...mergedClientContext,
+                    crm_status: crmOut.status,
+                    crm_ok: crmOut.ok,
+                    crm_request: crmOut.request,
+                    crm_response: crmOut.response || crmOut.error || ""
+                };
+            }
+        } catch (crmErr) {
+            const msg =
+                crmErr && /** @type {{ message?: string }} */ (crmErr).message
+                    ? String(crmErr.message)
+                    : String(crmErr);
+            console.warn("[chatbot-api] CRM sync:", msg.slice(0, 280));
+            mergedClientContext = {
+                ...mergedClientContext,
+                crm_status: "Failed",
+                crm_ok: false,
+                crm_request: "",
+                crm_response: msg.slice(0, 500)
+            };
+        }
 
         const record = {
             submitted_at: submittedAtIso,

@@ -13,6 +13,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { google } from "googleapis";
 import { formatCampaignParamsForSheet_ } from "./campaign-params.mjs";
+import { crmFieldsFromClientContext_ } from "./crm-sync.mjs";
 import { getServiceAccountCredentials } from "./google-service-account.mjs";
 
 const SHEET_CONFIG_DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -2688,6 +2689,15 @@ const SHEET_H_CAMPAIGN_PARAMS = [
     "utm_params"
 ];
 
+const SHEET_H_CRM_STATUS = [
+    "crmstatus",
+    "crm_status",
+    "crm passed",
+    "crm passed or failed",
+    "crmpassed",
+    "crmresult"
+];
+
 /**
  * Infer “appointment booked / scheduled?” column — ignore pure date/time headers.
  *
@@ -3607,6 +3617,7 @@ async function buildStandardLeadRowUpdates_(sheets, tab, rowNumber, lead) {
     put(SHEET_H_FEEDBACK_RATING, 19, lead.feedbackRating);
     put(SHEET_H_FEEDBACK_MESSAGE, 20, lead.feedbackMessage);
     put(SHEET_H_CAMPAIGN_PARAMS, 21, lead.campaignParams);
+    put(SHEET_H_CRM_STATUS, 22, lead.crmStatus);
 
     return updates;
 }
@@ -3957,6 +3968,10 @@ export async function appendContactRowToSheet(row, opts) {
                 sheetExtrasSources && sheetExtrasSources.clientContext
                     ? formatCampaignParamsForSheet_(sheetExtrasSources.clientContext)
                     : "";
+            const crm =
+                sheetExtrasSources && sheetExtrasSources.clientContext
+                    ? crmFieldsFromClientContext_(sheetExtrasSources.clientContext)
+                    : { crmStatus: "", crmRequest: "", crmResponse: "" };
             await writeLeadRowByHeader_(sheets, tabResolved, appendedRowNum, {
                 convDate: convParts.convDate,
                 convTime: convParts.convTime,
@@ -3978,7 +3993,8 @@ export async function appendContactRowToSheet(row, opts) {
                 driveFileLink: fileLinks,
                 feedbackRating: fb.feedbackRating,
                 feedbackMessage: fb.feedbackMessage,
-                campaignParams
+                campaignParams,
+                crmStatus: crm.crmStatus
             },
                 sheetExtrasSources);
         }
