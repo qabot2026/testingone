@@ -992,9 +992,14 @@ export function feedbackFieldsFromClientContext_(clientContext) {
     return { feedbackRating: rating, feedbackMessage: message };
 }
 
+/** @param {string} s */
+function isLiveAgentChannelLabel_(s) {
+    return /^live[\s_-]*agent$/i.test(String(s || "").trim().replace(/\s+/g, " "));
+}
+
 export function formatChannelForSheetDisplay(raw) {
     const s = typeof raw === "string" ? raw.trim() : String(raw ?? "").trim();
-    if (!s) {
+    if (!s || isLiveAgentChannelLabel_(s)) {
         return "";
     }
     return s
@@ -3554,7 +3559,8 @@ async function buildStandardLeadRowUpdates_(sheets, tab, rowNumber, lead) {
     put(SHEET_H_NAME, 3, lead.name);
     put(SHEET_H_MOBILE, 4, lead.mobile);
     put(SHEET_H_EMAIL, 5, lead.email);
-    put(["channel"], 6, formatChannelForSheetDisplay(lead.channel));
+    const chDisp = formatChannelForSheetDisplay(lead.channel);
+    put(["channel"], 6, chDisp);
     put(
         [
             "userqueries",

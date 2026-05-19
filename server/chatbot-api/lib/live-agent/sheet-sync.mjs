@@ -2,7 +2,8 @@
  * Upsert live-agent queue state onto the conversations Google Sheet row (same session id).
  */
 
-import { upsertSessionQueriesInSheet } from "../sheets.mjs";
+import { formatChannelForSheetDisplay, upsertSessionQueriesInSheet } from "../sheets.mjs";
+import { getVisitorContext_ } from "./context.mjs";
 import { getConversation_ } from "./store.mjs";
 
 function trim_(v) {
@@ -35,18 +36,29 @@ export async function syncLiveAgentToSheet_(conversationId) {
     const conv = await getConversation_(id);
     if (!conv) return { ok: false, skipped: "no_conversation" };
     const line = liveAgentSheetLine_(conv);
+    let channel = "";
     try {
-        const result = await upsertSessionQueriesInSheet({
+        const visitorCtx = await getVisitorContext_(id, { conversation: conv });
+        channel = formatChannelForSheetDisplay(visitorCtx.channel || "web");
+    } catch {
+        channel = formatChannelForSheetDisplay("web");
+    }
+    try {
+        /** @type {Parameters<typeof upsertSessionQueriesInSheet>[0]} */
+        const row = {
             clientSessionId: id,
             name: conv.visitorName || "",
             mobile: "",
             email: "",
             browserName: "",
             deviceType: "",
-            channel: "Live Agent",
             userQueriesCsv: line,
             replaceCsvPrefix: "[Live Agent]"
-        });
+        };
+        if (channel) {
+            row.channel = channel;
+        }
+        const result = await upsertSessionQueriesInSheet(row);
         return { ok: true, result };
     } catch (err) {
         console.warn("[live-agent/sheet-sync]", err.message || err);
