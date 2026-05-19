@@ -5011,7 +5011,7 @@ function syntheticCrmExchangeAssistantTurnsFromContext_(clientContext) {
     if (!body.trim()) {
         return [];
     }
-    return [{ role: "assistant", text: body, at: Date.now() + 2 }];
+    return [{ role: "assistant", text: body, at: Date.now() }];
 }
 
 /**
