@@ -2897,7 +2897,6 @@ app.post(
                         },
                         {
                             preferIncomingContact: true,
-                            skipSessionDedup: SHEETS_CONTACT_FORM_APPEND_FREELY,
                             sheetExtrasSources: {
                                 clientContext: mergedClientContext,
                                 fields: fields && typeof fields === "object" ? fields : {}
@@ -3155,6 +3154,7 @@ app.post(
                         : {})
                 },
                 {
+                    preferIncomingContact: true,
                     sheetExtrasSources: {
                         clientContext: mergedClientContext,
                         fields: {}
@@ -3333,6 +3333,15 @@ app.post(
         const city = pickCityFromClientContextMerged_(mergedClientContext)
             || (await resolveCityForRequest(req));
         const sourceUrl = resolveSourceUrlForSheet(mergedClientContext);
+        mergedClientContext = await enrichClientContextForSheetMetricsAsync_(mergedClientContext, {
+            sessionId: clientSessionId,
+            incomingRow: chatTranscriptJson ? { chatTranscriptJson } : {}
+        });
+        const conversationMetricsSync = computeConversationMetricsFromClientContext_(mergedClientContext);
+        mergedClientContext = mergeConversationMetricsIntoClientContext_(
+            mergedClientContext,
+            conversationMetricsSync
+        );
 
         let sessionTranscriptStored = false;
         let leadTranscriptPatched = false;
@@ -3390,7 +3399,11 @@ app.post(
                     appointmentTime: "",
                     userQueriesCsv,
                     chatTranscriptJson,
-                    writeChatTranscriptOnSessionSync: true
+                    writeChatTranscriptOnSessionSync: true,
+                    sheetExtrasSources: {
+                        clientContext: mergedClientContext,
+                        fields
+                    }
                 });
             } catch (se) {
                 const detail = se && se.message ? se.message : String(se);

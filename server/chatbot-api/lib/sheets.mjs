@@ -13,6 +13,12 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { google } from "googleapis";
 import {
+    resolveContactEmail,
+    resolveContactMobile,
+    resolveContactName,
+    scalarFormValue
+} from "./contact-mobile.mjs";
+import {
     clientContextEnrichedForSheetMetrics_,
     computeConversationMetricsFromClientContext_,
     conversationMetricsForSheetRow_
@@ -1091,11 +1097,37 @@ export function feedbackFieldsFromLeadSources_(sources) {
  * @param {*} incomingRow
  * @param {{ clientContext?: Record<string, unknown> | null, fields?: Record<string, unknown> | null } | null | undefined} sheetExtrasSources
  */
+/** @param {Record<string, unknown> | null | undefined} raw */
+function formFieldsRecordForSheet_(raw) {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+        return /** @type {Record<string, string>} */ ({});
+    }
+    /** @type {Record<string, string>} */
+    const out = {};
+    for (const [k, val] of Object.entries(raw)) {
+        const s = scalarFormValue(val);
+        if (s) {
+            out[k] = s;
+        }
+    }
+    return out;
+}
+
 export function assembleLeadSheetPayloadFromSources_(incomingRow, sheetExtrasSources) {
     const row = incomingRow && typeof incomingRow === "object" ? incomingRow : {};
     const src = sheetExtrasSources && typeof sheetExtrasSources === "object" ? sheetExtrasSources : {};
     const ctxRaw = src.clientContext;
     const ctxEnriched = clientContextEnrichedForSheetMetrics_(ctxRaw, row);
+    const fieldsRec = formFieldsRecordForSheet_(src.fields);
+    const nameResolved =
+        resolveContactName(fieldsRec, {}, ctxEnriched)
+        || sheetOutboundCell_(row.name);
+    const mobileResolved =
+        resolveContactMobile(fieldsRec, {}, ctxEnriched)
+        || sheetOutboundCell_(row.mobile);
+    const emailResolved =
+        resolveContactEmail(fieldsRec, {}, ctxEnriched)
+        || sheetOutboundCell_(row.email);
     const fb = feedbackFieldsFromLeadSources_({
         formId: row.formId,
         fields: src.fields,
@@ -1131,9 +1163,9 @@ export function assembleLeadSheetPayloadFromSources_(incomingRow, sheetExtrasSou
     return {
         convDate: parts.convDate,
         convTime: parts.convTime,
-        name: row.name,
-        mobile: row.mobile,
-        email: row.email,
+        name: nameResolved,
+        mobile: mobileResolved,
+        email: emailResolved,
         clientSessionId: row.clientSessionId,
         deviceType: deviceForAppend,
         browserName: row.browserName,
@@ -1942,9 +1974,10 @@ async function fetchSheetAzTail_(sheets, tab, lookback) {
         return { rows: [], firstSheetRow1Based: 1 };
     }
     const startRow = Math.max(1, lastRow - lb + 1);
+    const lastColLetter = columnLetterFromIndex_(CONVERSATION_SHEET_PREVIEW_MIN_COL_INDEX0);
     const got = await sheets.spreadsheets.values.get({
         spreadsheetId: SPREADSHEET_ID,
-        range: `${tab}!A${startRow}:Z${lastRow}`
+        range: `${tab}!A${startRow}:${lastColLetter}${lastRow}`
     });
     const rows = Array.isArray(got.data.values) ? got.data.values : [];
     return { rows, firstSheetRow1Based: startRow };
@@ -4265,6 +4298,66 @@ export async function patchSheetLeadBySessionId_(sessionId, fields) {
     return { ok: true, tab, sheetRowNumber: rowNumber };
 }
 
+/**
+ * Update an existing session row with full header-aligned lead payload (contact + metrics).
+ *
+ * @param {import("googleapis").sheets_v4.Sheets} sheets
+ * @param {string} tab
+ * @param {number} duplicateRowNum
+ * @param {*} row
+ * @param {{ clientContext?: Record<string, unknown> | null, fields?: Record<string, unknown> | null } | null} sheetExtrasSources
+ * @param {{ repeatedAcrossSessions?: boolean }} scanFull
+ * @param {string} appendRangeUsed
+ */
+async function patchExistingSessionLeadRow_(
+    sheets,
+    tab,
+    duplicateRowNum,
+    row,
+    sheetExtrasSources,
+    scanFull,
+    appendRangeUsed
+) {
+    const repeated = repeatedUserLabelFromRepeatedFlag_(scanFull.repeatedAcrossSessions);
+    const rowForSheet = { ...row, repeated };
+    let patched = false;
+    try {
+        const fullLead = assembleLeadSheetPayloadFromSources_(rowForSheet, sheetExtrasSources);
+        await writeLeadRowByHeader_(sheets, tab, duplicateRowNum, fullLead, sheetExtrasSources);
+        patched = true;
+    } catch (dupErr) {
+        const m = dupErr && /** @type {{ message?: string }} */ (dupErr).message
+            ? String(/** @type {{ message?: string }} */ (dupErr).message)
+            : String(dupErr);
+        console.error("[chatbot-api] Sheets duplicate-session full row update:", m);
+    }
+    if (SYNC_DASHBOARD_ON_APPEND && patched) {
+        void writeLeadCaptureDashboardToSheet2({}).catch((e) => {
+            const msg = e && /** @type {{ message?: string }} */ (e).message
+                ? String(/** @type {{ message?: string }} */ (e).message)
+                : String(e);
+            console.warn("[chatbot-api] Dashboard tab sync failed:", msg);
+        });
+    }
+    await maybeWriteLeadConvLinkColumnA_(sheets, tab, duplicateRowNum, row.clientSessionId);
+    await maybeWriteSheetRowOpenLink_(sheets, tab, duplicateRowNum, row.clientSessionId);
+    if (typeof row.chatTranscriptJson === "string" && row.chatTranscriptJson.trim()) {
+        await maybeWriteChatTranscriptJsonToSheetCell_(
+            sheets,
+            tab,
+            duplicateRowNum,
+            row.chatTranscriptJson
+        );
+    }
+    return {
+        action: patched ? "duplicate_updated" : "duplicate_noop",
+        patched,
+        tab,
+        appendRangeUsed,
+        sheetRowNumber: duplicateRowNum
+    };
+}
+
 export async function appendContactRowToSheet(row, opts) {
     const tabResolved = tabNameFromRange(RANGE);
     if (!SPREADSHEET_ID) {
@@ -4278,82 +4371,26 @@ export async function appendContactRowToSheet(row, opts) {
             ? opts.sheetExtrasSources
             : null;
 
-    const preferIncoming = !!(opts && opts.preferIncomingContact);
-    const skipSessionDedup =
-        !!(opts && opts.skipSessionDedup)
-        && preferIncoming
-        && typeof row.clientSessionId === "string"
-        && row.clientSessionId.trim();
+    const sidForDedup =
+        typeof row.clientSessionId === "string" ? row.clientSessionId.trim() : "";
 
-    // Prevent double-write when chat mobile sync and form submission both hit Sheets,
-    // but *update* the existing session row when the contact-form later provides name/email.
     const scanFull = await scanSheetTailForDedupeAndRepeat_(sheets, row);
-    const scan = skipSessionDedup
-        ? { duplicate: false, matchedRowNumber: 0, repeatedAcrossSessions: scanFull.repeatedAcrossSessions }
-        : scanFull;
     const tab = tabNameFromRange(RANGE);
     const appendRangeUsed = appendRangeSchemaWidth_(RANGE);
-    if (scan.duplicate) {
-        const repeated = repeatedUserLabelFromRepeatedFlag_(scanFull.repeatedAcrossSessions);
-        const up = await updateExistingSessionRow_(
+    let duplicateRowNum = scanFull.matchedRowNumber || 0;
+    if (!duplicateRowNum && sidForDedup) {
+        duplicateRowNum = await findSessionRowNumberBySessionId_(sheets, tabResolved, sidForDedup);
+    }
+    if (duplicateRowNum) {
+        return await patchExistingSessionLeadRow_(
             sheets,
-            tab,
-            scan.matchedRowNumber,
-            { ...row, repeated },
-            { preferIncomingContact: !!(opts && opts.preferIncomingContact) }
+            tabResolved,
+            duplicateRowNum,
+            row,
+            sheetExtrasSources,
+            scanFull,
+            appendRangeUsed
         );
-        /** @type {{ applied: boolean }} */
-        let extrasUp = { applied: false };
-        try {
-            extrasUp = await applySheetExtrasAfterDuplicateSessionRow_(
-                sheets,
-                tab,
-                scan.matchedRowNumber,
-                row,
-                sheetExtrasSources,
-                scanFull
-            );
-        } catch (ee) {
-            const m = ee && /** @type {{ message?: string }} */ (ee).message
-                ? String(/** @type {{ message?: string }} */ (ee).message)
-                : String(ee);
-            console.error("[chatbot-api] Sheet extras duplicate path:", m);
-        }
-        const patched = !!(up && up.applied) || !!(extrasUp && extrasUp.applied);
-        const prefer = !!(opts && opts.preferIncomingContact);
-        if (prefer && !patched) {
-            console.warn(
-                "[chatbot-api] Contact form Sheets write: duplicate session row matched but batchUpdate skipped (nothing changed). ",
-                `tab="${tabResolved}" row=${scan.matchedRowNumber} spreadsheet tail …${String(SPREADSHEET_ID).slice(-8)}.`,
-                'Confirm SHEETS_RANGE tab matches your open sheet; ensure POST includes name/mobile/email in body or client_context.'
-            );
-        }
-        if (SYNC_DASHBOARD_ON_APPEND && patched) {
-            void writeLeadCaptureDashboardToSheet2({}).catch((e) => {
-                const msg = e && /** @type {{ message?: string }} */ (e).message
-                    ? String(/** @type {{ message?: string }} */ (e).message)
-                    : String(e);
-                console.warn("[chatbot-api] Dashboard tab sync failed:", msg);
-            });
-        }
-        await maybeWriteLeadConvLinkColumnA_(sheets, tabResolved, scan.matchedRowNumber, row.clientSessionId);
-        await maybeWriteSheetRowOpenLink_(sheets, tabResolved, scan.matchedRowNumber, row.clientSessionId);
-        if (typeof row.chatTranscriptJson === "string" && row.chatTranscriptJson.trim()) {
-            await maybeWriteChatTranscriptJsonToSheetCell_(
-                sheets,
-                tabResolved,
-                scan.matchedRowNumber,
-                row.chatTranscriptJson
-            );
-        }
-        return {
-            action: patched ? "duplicate_updated" : "duplicate_noop",
-            patched,
-            tab: tabResolved,
-            appendRangeUsed,
-            sheetRowNumber: scan.matchedRowNumber,
-            googleBatch: up.googleBatch
-        };
     }
 
     const chRaw = typeof row.channel === "string" && row.channel.trim()
@@ -4380,6 +4417,20 @@ export async function appendContactRowToSheet(row, opts) {
     const repeated = repeatedUserLabelFromRepeatedFlag_(scanFull.repeatedAcrossSessions);
     const convParts = conversationPartsFromIncomingRow_(row);
     const sid0 = typeof row.clientSessionId === "string" ? row.clientSessionId.trim() : "";
+    if (sid0) {
+        const lateDup = await findSessionRowNumberBySessionId_(sheets, tabResolved, sid0);
+        if (lateDup) {
+            return await patchExistingSessionLeadRow_(
+                sheets,
+                tabResolved,
+                lateDup,
+                row,
+                sheetExtrasSources,
+                scanFull,
+                appendRangeUsed
+            );
+        }
+    }
     const colAFormula = await conversationLinkFormulaForLeadSheetCell_(sheets, tabResolved, 0, sid0);
     const headersRaw = await getSheetHeaderRowRaw_(sheets, tabResolved);
     const fullLeadAppend = assembleLeadSheetPayloadFromSources_(
@@ -4543,7 +4594,7 @@ async function findSessionRowNumberBySessionId_(sheets, tab, sessionId) {
  * Merge latest user_queries into the User Queries column for this session, or append a minimal row if none exists.
  * Used for live chat query sync without requiring another form POST.
  *
- * @param {{ iso?: string, convDate?: string, convTime?: string, formId?: string, name: string, mobile: string, email: string, clientSessionId: string, browserName: string, deviceType: string, channel: string, fileLinks?: string, city?: string, ip?: string, userQueriesCsv?: string, chatTranscriptJson?: string }} row
+ * @param {{ iso?: string, convDate?: string, convTime?: string, formId?: string, name: string, mobile: string, email: string, clientSessionId: string, browserName: string, deviceType: string, channel: string, fileLinks?: string, city?: string, ip?: string, sourceUrl?: string, appointmentBooked?: string, appointmentDate?: string, appointmentTime?: string, userQueriesCsv?: string, chatTranscriptJson?: string, writeChatTranscriptOnSessionSync?: boolean, sheetExtrasSources?: { clientContext?: Record<string, unknown> | null, fields?: Record<string, unknown> | null } }} row
  */
 export async function upsertSessionQueriesInSheet(row) {
     if (!SPREADSHEET_ID) {
@@ -4564,6 +4615,10 @@ export async function upsertSessionQueriesInSheet(row) {
     if (!sid) {
         throw new Error("Missing clientSessionId");
     }
+    const sheetExtrasSources =
+        row.sheetExtrasSources && typeof row.sheetExtrasSources === "object"
+            ? row.sheetExtrasSources
+            : null;
 
     const rowNumber = await findSessionRowNumberBySessionId_(sheets, tab, sid);
     if (rowNumber > 0) {
@@ -4596,36 +4651,39 @@ export async function upsertSessionQueriesInSheet(row) {
                 googleBatchQueries = googleBatchSummaryFromResponse_(nBatch);
             }
         }
-        // Chat may append a row on mobile first (blank name/email), then capture fields later; session
-        // query sync still hits this path — fill blank contact columns without rewriting the queries column twice.
-        /** @type {{ applied: boolean, googleBatch?: { totalUpdatedCells?: number, totalUpdatedRows?: number, updatedRanges: string[] } }} */
-        let contact = { applied: false };
-        if (incomingQ) {
-            contact = await updateExistingSessionRow_(
-                sheets,
-                tab,
-                rowNumber,
+        let fullRowWritten = false;
+        try {
+            const fullLead = assembleLeadSheetPayloadFromSources_(
                 {
-                    name: typeof row.name === "string" ? row.name : "",
-                    mobile: typeof row.mobile === "string" ? row.mobile : "",
-                    email: typeof row.email === "string" ? row.email : "",
-                    browserName: typeof row.browserName === "string" ? row.browserName : "",
-                    deviceType: typeof row.deviceType === "string" ? row.deviceType : "",
-                    channel: typeof row.channel === "string" ? row.channel : "",
-                    fileLinks: typeof row.fileLinks === "string" ? row.fileLinks : "",
-                    city: typeof row.city === "string" ? row.city : "",
-                    ip: typeof row.ip === "string" ? row.ip : "",
-                    sourceUrl: typeof row.sourceUrl === "string" ? row.sourceUrl : "",
-                    appointmentBooked:
-                        typeof row.appointmentBooked === "string" ? row.appointmentBooked : "",
-                    appointmentDate:
-                        typeof row.appointmentDate === "string" ? row.appointmentDate : "",
-                    appointmentTime:
-                        typeof row.appointmentTime === "string" ? row.appointmentTime : "",
-                    userQueriesCsv: ""
+                    convDate: row.convDate,
+                    convTime: row.convTime,
+                    formId: row.formId,
+                    name: row.name,
+                    mobile: row.mobile,
+                    email: row.email,
+                    clientSessionId: sid,
+                    browserName: row.browserName,
+                    deviceType: row.deviceType,
+                    channel: row.channel,
+                    fileLinks: row.fileLinks,
+                    city: row.city,
+                    ip: row.ip,
+                    sourceUrl: row.sourceUrl,
+                    appointmentBooked: row.appointmentBooked,
+                    appointmentDate: row.appointmentDate,
+                    appointmentTime: row.appointmentTime,
+                    userQueriesCsv: merged || existingCsv || incomingQ,
+                    chatTranscriptJson: row.chatTranscriptJson
                 },
-                {}
+                sheetExtrasSources
             );
+            await writeLeadRowByHeader_(sheets, tab, rowNumber, fullLead, sheetExtrasSources);
+            fullRowWritten = true;
+        } catch (fullErr) {
+            const m = fullErr && /** @type {{ message?: string }} */ (fullErr).message
+                ? String(/** @type {{ message?: string }} */ (fullErr).message)
+                : String(fullErr);
+            console.error("[chatbot-api] session-sheet-sync full row update:", m);
         }
         await maybeWriteLeadConvLinkColumnA_(sheets, tab, rowNumber, sid);
         await maybeWriteSheetRowOpenLink_(sheets, tab, rowNumber, sid);
@@ -4639,7 +4697,8 @@ export async function upsertSessionQueriesInSheet(row) {
                 mode: "transcript_only_existing_row",
                 tab,
                 sheetRowNumber: rowNumber,
-                chat_transcript_json_written: Boolean(chatTranscriptJson)
+                chat_transcript_json_written: Boolean(chatTranscriptJson),
+                fullRowWritten
             };
         }
         return {
@@ -4648,10 +4707,7 @@ export async function upsertSessionQueriesInSheet(row) {
             sheetRowNumber: rowNumber,
             queryColumnWritten,
             googleBatchQueries,
-            contactFill: {
-                applied: contact.applied,
-                googleBatch: contact.googleBatch
-            }
+            fullRowWritten
         };
     }
 
@@ -4659,7 +4715,10 @@ export async function upsertSessionQueriesInSheet(row) {
         return { mode: "skipped_no_session_row_for_transcript" };
     }
 
-    const sheetOutcome = await appendContactRowToSheet(row);
+    const sheetOutcome = await appendContactRowToSheet(row, {
+        preferIncomingContact: true,
+        sheetExtrasSources
+    });
     let appendedRn =
         typeof sheetOutcome.sheetRowNumber === "number" && sheetOutcome.sheetRowNumber > 0
             ? sheetOutcome.sheetRowNumber

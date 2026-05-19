@@ -484,6 +484,11 @@ export function conversationMetricsForSheetRow_(metrics, clientContext, incoming
         fromLists.user > 0 || fromLists.bot > 0 ? `${fromLists.user}-${fromLists.bot}` : "";
     const messageCount = m.messageCount || pick("message_count", "messageCount") || listFallback;
     let avgResponseTimeMs = m.avgResponseTimeMs || pick("avg_response_time_ms", "avgResponseTimeMs");
+    if (looksLikeUserBotMessageCount_(avgResponseTimeMs)) {
+        avgResponseTimeMs = m.avgResponseTimeMs && !looksLikeUserBotMessageCount_(m.avgResponseTimeMs)
+            ? m.avgResponseTimeMs
+            : "";
+    }
     if (!avgResponseTimeMs && messageCount && messageCount.includes("-")) {
         const parts = messageCount.split("-");
         const u = Number(parts[0]);
