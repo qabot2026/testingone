@@ -12,6 +12,7 @@ import { existsSync, readFileSync } from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { google } from "googleapis";
+import { formatCampaignParamsForSheet_ } from "./campaign-params.mjs";
 import { getServiceAccountCredentials } from "./google-service-account.mjs";
 
 const SHEET_CONFIG_DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -2678,6 +2679,15 @@ const SHEET_H_FEEDBACK_MESSAGE = [
     "visitorfeedback"
 ];
 
+const SHEET_H_CAMPAIGN_PARAMS = [
+    "campaignparams",
+    "campaign_params",
+    "campaign parameters",
+    "campaignparameters",
+    "utmparams",
+    "utm_params"
+];
+
 /**
  * Infer “appointment booked / scheduled?” column — ignore pure date/time headers.
  *
@@ -3596,6 +3606,7 @@ async function buildStandardLeadRowUpdates_(sheets, tab, rowNumber, lead) {
     );
     put(SHEET_H_FEEDBACK_RATING, 19, lead.feedbackRating);
     put(SHEET_H_FEEDBACK_MESSAGE, 20, lead.feedbackMessage);
+    put(SHEET_H_CAMPAIGN_PARAMS, 21, lead.campaignParams);
 
     return updates;
 }
@@ -3942,6 +3953,10 @@ export async function appendContactRowToSheet(row, opts) {
                 sheetExtrasSources && sheetExtrasSources.clientContext
                     ? feedbackFieldsFromClientContext_(sheetExtrasSources.clientContext)
                     : { feedbackRating: "", feedbackMessage: "" };
+            const campaignParams =
+                sheetExtrasSources && sheetExtrasSources.clientContext
+                    ? formatCampaignParamsForSheet_(sheetExtrasSources.clientContext)
+                    : "";
             await writeLeadRowByHeader_(sheets, tabResolved, appendedRowNum, {
                 convDate: convParts.convDate,
                 convTime: convParts.convTime,
@@ -3962,7 +3977,8 @@ export async function appendContactRowToSheet(row, opts) {
                 appointmentTime,
                 driveFileLink: fileLinks,
                 feedbackRating: fb.feedbackRating,
-                feedbackMessage: fb.feedbackMessage
+                feedbackMessage: fb.feedbackMessage,
+                campaignParams
             },
                 sheetExtrasSources);
         }

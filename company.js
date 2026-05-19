@@ -20081,6 +20081,100 @@ function scheduleVisitorCityCapture_() {
         });
 }
 
+/** @param {string} key */
+function isCampaignQueryParamKey_(key) {
+    const k = String(key || "").trim().toLowerCase();
+    if (!k) {
+        return false;
+    }
+    if (
+        k.startsWith("utm_")
+        || k === "gclid"
+        || k === "fbclid"
+        || k === "msclkid"
+        || k === "dclid"
+        || k === "twclid"
+        || k === "li_fat_id"
+        || k === "mc_cid"
+        || k === "mc_eid"
+        || k === "ref"
+        || k === "referrer"
+        || k === "campaign"
+        || k === "campaign_id"
+        || k === "adgroup"
+        || k === "adgroupid"
+        || k === "keyword"
+        || k === "matchtype"
+        || k === "creative"
+        || k === "placement"
+    ) {
+        return true;
+    }
+    return false;
+}
+
+/** @returns {Record<string, string>} */
+function extractCampaignParamsFromPageUrl_() {
+    /** @type {Record<string, string>} */
+    const out = {};
+    const href = getEmbedParentPageUrl() || window.location.href || "";
+    if (!href) {
+        return out;
+    }
+    try {
+        const u = new URL(href);
+        u.searchParams.forEach((v, k) => {
+            if (!isCampaignQueryParamKey_(k)) {
+                return;
+            }
+            const val = String(v || "").trim();
+            if (val) {
+                out[k.toLowerCase()] = val.length > 500 ? val.slice(0, 500) : val;
+            }
+        });
+    } catch {
+        /* ignore */
+    }
+    return out;
+}
+
+/**
+ * @param {Record<string, unknown>} cx
+ * @returns {Record<string, unknown>}
+ */
+function mergeCampaignParamsIntoClientContext_(cx) {
+    const fromUrl = extractCampaignParamsFromPageUrl_();
+    const prevSp =
+        cx.session_params && typeof cx.session_params === "object" && !Array.isArray(cx.session_params)
+            ? { .../** @type {Record<string, unknown>} */ (cx.session_params) }
+            : {};
+    const prevCp =
+        prevSp.campaign_params && typeof prevSp.campaign_params === "object" && !Array.isArray(prevSp.campaign_params)
+            ? { .../** @type {Record<string, string>} */ (prevSp.campaign_params) }
+            : {};
+    /** @type {Record<string, string>} */
+    const merged = { ...prevCp };
+    const urlKeys = Object.keys(fromUrl);
+    for (let i = 0; i < urlKeys.length; i += 1) {
+        const kk = urlKeys[i];
+        merged[kk] = fromUrl[kk];
+    }
+    for (const [k, v] of Object.entries(prevSp)) {
+        if (!isCampaignQueryParamKey_(k)) {
+            continue;
+        }
+        const s = dfParameterScalarToString(v);
+        if (s && !merged[k.toLowerCase()]) {
+            merged[k.toLowerCase()] = s;
+        }
+    }
+    if (!Object.keys(merged).length) {
+        return cx;
+    }
+    const nextSp = { ...prevSp, campaign_params: merged };
+    return { ...cx, session_params: nextSp, campaign_params: merged };
+}
+
 function getClientContext() {
     scheduleVisitorCityCapture_();
     const storedContext = readStoredClientContext();
@@ -20121,8 +20215,9 @@ function getClientContext() {
         channel: "web"
     };
 
-    persistClientContext(clientContext);
-    return clientContext;
+    const withCampaign = mergeCampaignParamsIntoClientContext_(clientContext);
+    persistClientContext(withCampaign);
+    return withCampaign;
 }
 
 function readStoredClientContext() {
