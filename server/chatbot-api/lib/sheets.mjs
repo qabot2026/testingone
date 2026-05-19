@@ -871,6 +871,124 @@ function repeatedUserSheetSemantics_(raw) {
     return "";
 }
 
+/** One sheet write chain per session id — stops duplicate rows for the same Session ID. */
+const sessionLeadSheetMutexTail_ = new Map();
+
+/**
+ * @param {string} sessionId
+ * @param {() => Promise<T>} fn
+ * @template T
+ */
+async function withSessionLeadSheetMutex_(sessionId, fn) {
+    const sid = typeof sessionId === "string" ? sessionId.trim() : "";
+    if (!sid) {
+        return fn();
+    }
+    const prev = sessionLeadSheetMutexTail_.get(sid) || Promise.resolve();
+    /** @type {() => void} */
+    let release = () => {};
+    const gate = new Promise((resolve) => {
+        release = resolve;
+    });
+    sessionLeadSheetMutexTail_.set(
+        sid,
+        prev.then(() => gate)
+    );
+    await prev;
+    try {
+        return await fn();
+    } finally {
+        release();
+    }
+}
+
+/**
+ * “Repeated User” = same mobile on another row (First Time otherwise).
+ *
+ * @param {import("googleapis").sheets_v4.Sheets} sheets
+ * @param {string} tab
+ * @param {*} row
+ * @param {number} [excludeSheetRow1Based]
+ */
+/**
+ * @param {*} row
+ * @param {{ clientContext?: Record<string, unknown> | null, fields?: Record<string, unknown> | null } | null | undefined} [sheetExtrasSources]
+ */
+function leadRowForRepeatedUserCheck_(row, sheetExtrasSources) {
+    const ro = row && typeof row === "object" ? /** @type {Record<string, unknown>} */ ({ ...row }) : {};
+    if (sheetOutboundCell_(ro.mobile)) {
+        return ro;
+    }
+    const src = sheetExtrasSources && typeof sheetExtrasSources === "object" ? sheetExtrasSources : null;
+    if (!src) {
+        return ro;
+    }
+    const ctx = src.clientContext;
+    const fields =
+        src.fields && typeof src.fields === "object" && !Array.isArray(src.fields)
+            ? /** @type {Record<string, unknown>} */ (src.fields)
+            : {};
+    const mobile =
+        resolveContactMobile(fields, ro, contactContextLookupRecord_(ctx))
+        || "";
+    if (mobile) {
+        ro.mobile = mobile;
+    }
+    return ro;
+}
+
+/**
+ * @param {import("googleapis").sheets_v4.Sheets} sheets
+ * @param {string} tab
+ * @param {number} rowNumber
+ * @param {string} label
+ */
+async function patchRepeatedUserColumn_(sheets, tab, rowNumber, label) {
+    const v = repeatedUserSheetSemantics_(label) || label;
+    if (!rowNumber || !v) {
+        return false;
+    }
+    const repeatedCol = await getRepeatedColumnInfo_(sheets, tab);
+    await sheets.spreadsheets.values.batchUpdate({
+        spreadsheetId: SPREADSHEET_ID,
+        requestBody: {
+            valueInputOption: "USER_ENTERED",
+            data: [{ range: `${tab}!${repeatedCol.repeatedColLetter}${rowNumber}`, values: [[v]] }]
+        }
+    });
+    return true;
+}
+
+async function resolveRepeatedUserLabelForLead_(sheets, tab, row, excludeSheetRow1Based = 0, sheetExtrasSources) {
+    const ro = leadRowForRepeatedUserCheck_(row, sheetExtrasSources);
+    const explicit = typeof ro.repeated === "string" ? repeatedUserSheetSemantics_(ro.repeated) : "";
+    if (explicit) {
+        return explicit;
+    }
+    let mobileDigits = mobileKeyFromCell_(ro.mobile);
+    if (!mobileDigits && excludeSheetRow1Based > 0) {
+        const sheetContact = await readLeadContactFromSheetRow_(sheets, tab, excludeSheetRow1Based);
+        mobileDigits = mobileKeyFromCell_(sheetContact.mobile);
+    }
+    if (!mobileDigits) {
+        return repeatedUserLabelFromRepeatedFlag_(false);
+    }
+    const mobileCol = await getMobileColumnInfo_(sheets, tab);
+    const { rows: tail, firstSheetRow1Based: tailOffset } = await fetchSheetAzTailCached_(
+        sheets,
+        tab,
+        DEDUP_LOOKBACK_ROWS
+    );
+    const otherMatches = countOtherRowsWithSameMobile_(
+        /** @type {unknown[][]} */ (tail),
+        mobileDigits,
+        mobileCol.mobileColIdx,
+        excludeSheetRow1Based || 0,
+        tailOffset
+    );
+    return repeatedUserLabelFromRepeatedFlag_(otherMatches >= 1);
+}
+
 /** Outbound Appointment booked: `Scheduled` or blank (`No` clears). Handles legacy Yes/No. */
 function appointmentBookedSheetValue_(raw) {
     const s = typeof raw === "string" ? raw.trim() : "";
@@ -2772,14 +2890,10 @@ function getCachedSessionLeadRow_(tab, sessionId) {
     return hit.rowNumber;
 }
 
-/** @param {string} tab @param {string} [sessionId] */
-function invalidateSheetTailCaches_(tab, sessionId) {
+/** @param {string} tab */
+function invalidateSheetTailCaches_(tab) {
     if (sheetTailFetchCache_.tab === tab) {
         sheetTailFetchCache_.at = 0;
-    }
-    const sid = typeof sessionId === "string" ? sessionId.trim() : "";
-    if (sid) {
-        sessionLeadRowCache_.delete(`${tab}|${sid}`);
     }
 }
 
@@ -4634,7 +4748,13 @@ async function patchExistingSessionLeadRow_(
     scanFull,
     appendRangeUsed
 ) {
-    const repeated = repeatedUserLabelFromRepeatedFlag_(scanFull.repeatedAcrossSessions);
+    const repeated = await resolveRepeatedUserLabelForLead_(
+        sheets,
+        tab,
+        row,
+        duplicateRowNum,
+        sheetExtrasSources
+    );
     const preserveSheetContact = await readLeadContactFromSheetRow_(sheets, tab, duplicateRowNum);
     const rowForSheet = { ...row, repeated, preserveSheetContact };
     let patched = false;
@@ -4713,6 +4833,19 @@ async function patchExistingSessionLeadRow_(
 }
 
 export async function appendContactRowToSheet(row, opts) {
+    const sidForLock =
+        row && typeof row.clientSessionId === "string" ? row.clientSessionId.trim() : "";
+    if (sidForLock) {
+        return withSessionLeadSheetMutex_(sidForLock, () => appendContactRowToSheet_(row, opts));
+    }
+    return appendContactRowToSheet_(row, opts);
+}
+
+/**
+ * @param {*} row
+ * @param {{ preferIncomingContact?: boolean, sheetExtrasSources?: { clientContext?: Record<string, unknown> | null, fields?: Record<string, unknown> | null } | null, sessionFastPath?: boolean }} [opts]
+ */
+async function appendContactRowToSheet_(row, opts) {
     const tabResolved = tabNameFromRange(RANGE);
     if (!SPREADSHEET_ID) {
         throw new Error("Missing SHEETS_SPREADSHEET_ID in env (or set DISABLE_SHEETS=1).");
@@ -4728,12 +4861,20 @@ export async function appendContactRowToSheet(row, opts) {
     const sidForDedup =
         typeof row.clientSessionId === "string" ? row.clientSessionId.trim() : "";
 
-    const scanFull = await scanSheetTailForDedupeAndRepeat_(sheets, row);
     const tab = tabNameFromRange(RANGE);
     const appendRangeUsed = appendRangeSchemaWidth_(RANGE);
-    let duplicateRowNum = scanFull.matchedRowNumber || 0;
+    let duplicateRowNum = sidForDedup ? getCachedSessionLeadRow_(tabResolved, sidForDedup) : 0;
+    const scanFull = await scanSheetTailForDedupeAndRepeat_(sheets, row);
+    if (!duplicateRowNum) {
+        duplicateRowNum = scanFull.matchedRowNumber || 0;
+    }
     if (!duplicateRowNum && sidForDedup) {
-        duplicateRowNum = await findSessionRowNumberBySessionId_(sheets, tabResolved, sidForDedup);
+        duplicateRowNum = await findSessionRowNumberBySessionId_(
+            sheets,
+            tabResolved,
+            sidForDedup,
+            DEDUP_LOOKBACK_ROWS
+        );
     }
     if (duplicateRowNum) {
         if (sidForDedup) {
@@ -4771,12 +4912,18 @@ export async function appendContactRowToSheet(row, opts) {
     const userQueriesCsv = sanitizeUserQueriesCsvForSheet(
         typeof row.userQueriesCsv === "string" ? row.userQueriesCsv : ""
     );
-    const repeated = repeatedUserLabelFromRepeatedFlag_(scanFull.repeatedAcrossSessions);
     const convParts = conversationPartsFromIncomingRow_(row);
     const sid0 = typeof row.clientSessionId === "string" ? row.clientSessionId.trim() : "";
+    const repeated = await resolveRepeatedUserLabelForLead_(sheets, tabResolved, row, 0, sheetExtrasSources);
     if (sid0) {
-        const lateDup = await findSessionRowNumberBySessionId_(sheets, tabResolved, sid0);
+        const lateDup = await findSessionRowNumberBySessionId_(
+            sheets,
+            tabResolved,
+            sid0,
+            DEDUP_LOOKBACK_ROWS
+        );
         if (lateDup) {
+            setCachedSessionLeadRow_(tabResolved, sid0, lateDup);
             return await patchExistingSessionLeadRow_(
                 sheets,
                 tabResolved,
@@ -4842,7 +4989,7 @@ export async function appendContactRowToSheet(row, opts) {
     const appendedRowNum = rowNumberFromUpdatedRange_(googleAppend.updatedRange);
     if (appendedRowNum && sid0) {
         setCachedSessionLeadRow_(tabResolved, sid0, appendedRowNum);
-        invalidateSheetTailCaches_(tabResolved, sid0);
+        invalidateSheetTailCaches_(tabResolved);
     }
     if (appendedRowNum && !colAFormula && sid0) {
         await maybeWriteLeadConvLinkColumnA_(sheets, tabResolved, appendedRowNum, sid0);
@@ -4928,7 +5075,7 @@ async function findSessionRowNumberBySessionId_(sheets, tab, sessionId, lookback
     const lb =
         typeof lookbackRows === "number" && lookbackRows > 0
             ? Math.trunc(lookbackRows)
-            : SESSION_ROW_LOOKBACK_ROWS;
+            : DEDUP_LOOKBACK_ROWS;
     const { rows: tail, firstSheetRow1Based: tailOffset } = await fetchSheetAzTailCached_(
         sheets,
         tab,
@@ -4969,6 +5116,17 @@ async function findSessionRowNumberBySessionId_(sheets, tab, sessionId, lookback
  * @param {{ iso?: string, convDate?: string, convTime?: string, formId?: string, name: string, mobile: string, email: string, clientSessionId: string, browserName: string, deviceType: string, channel: string, fileLinks?: string, city?: string, ip?: string, sourceUrl?: string, appointmentBooked?: string, appointmentDate?: string, appointmentTime?: string, userQueriesCsv?: string, chatTranscriptJson?: string, writeChatTranscriptOnSessionSync?: boolean, sheetExtrasSources?: { clientContext?: Record<string, unknown> | null, fields?: Record<string, unknown> | null } }} row
  */
 export async function upsertSessionQueriesInSheet(row) {
+    const sidLock = typeof row.clientSessionId === "string" ? row.clientSessionId.trim() : "";
+    if (sidLock) {
+        return withSessionLeadSheetMutex_(sidLock, () => upsertSessionQueriesInSheet_(row));
+    }
+    return upsertSessionQueriesInSheet_(row);
+}
+
+/**
+ * @param {*} row
+ */
+async function upsertSessionQueriesInSheet_(row) {
     if (!SPREADSHEET_ID) {
         throw new Error("Missing SHEETS_SPREADSHEET_ID in env (or set DISABLE_SHEETS=1).");
     }
@@ -4999,12 +5157,17 @@ export async function upsertSessionQueriesInSheet(row) {
         || (typeof row.email === "string" && row.email.trim())
     );
 
-    const rowNumber = await findSessionRowNumberBySessionId_(
-        sheets,
-        tab,
-        sid,
-        lightweightSessionSync ? SESSION_ROW_LOOKBACK_ROWS : DEDUP_LOOKBACK_ROWS
-    );
+    let rowNumber = getCachedSessionLeadRow_(tab, sid);
+    if (!rowNumber) {
+        rowNumber = await findSessionRowNumberBySessionId_(sheets, tab, sid, DEDUP_LOOKBACK_ROWS);
+    }
+    if (!rowNumber) {
+        const scanHit = await scanSheetTailForDedupeAndRepeat_(sheets, row);
+        if (scanHit.matchedRowNumber) {
+            rowNumber = scanHit.matchedRowNumber;
+            setCachedSessionLeadRow_(tab, sid, rowNumber);
+        }
+    }
     if (rowNumber > 0) {
         const queriesCol = await getUserQueriesColumnInfo_(sheets, tab);
         let existingCsv = "";
@@ -5051,6 +5214,13 @@ export async function upsertSessionQueriesInSheet(row) {
             || incomingHasContact
             || !lastFull
             || now - lastFull >= SESSION_SHEET_FULL_ROW_MIN_INTERVAL_MS;
+        const repeatedLabel = await resolveRepeatedUserLabelForLead_(
+            sheets,
+            tab,
+            row,
+            rowNumber,
+            sheetExtrasSources
+        );
         let fullRowWritten = false;
         if (needsFullRow) {
             try {
@@ -5077,6 +5247,7 @@ export async function upsertSessionQueriesInSheet(row) {
                         appointmentDate: row.appointmentDate,
                         appointmentTime: row.appointmentTime,
                         userQueriesCsv: merged || existingCsv || incomingQ,
+                        repeated: repeatedLabel,
                         chatTranscriptJson: row.chatTranscriptJson,
                         preserveSheetContact
                     },
@@ -5099,6 +5270,16 @@ export async function upsertSessionQueriesInSheet(row) {
                 await maybeWriteChatTranscriptJsonToSheetCell_(sheets, tab, rowNumber, chatTranscriptJson, {
                     sessionSync: writeChatTranscriptOnSessionSync
                 });
+            }
+        }
+        if (repeatedLabel) {
+            try {
+                await patchRepeatedUserColumn_(sheets, tab, rowNumber, repeatedLabel);
+            } catch (repErr) {
+                const m = repErr && /** @type {{ message?: string }} */ (repErr).message
+                    ? String(/** @type {{ message?: string }} */ (repErr).message)
+                    : String(repErr);
+                console.warn("[chatbot-api] session-sheet-sync repeated column:", m.slice(0, 160));
             }
         }
         setCachedSessionLeadRow_(tab, sid, rowNumber);
@@ -5129,15 +5310,19 @@ export async function upsertSessionQueriesInSheet(row) {
         return { mode: "skipped_no_session_row_for_transcript" };
     }
 
-    const sheetOutcome = await appendContactRowToSheet(row, {
+    invalidateSheetTailCaches_(tab);
+    const sheetOutcome = await appendContactRowToSheet_(row, {
         preferIncomingContact: true,
-        sheetExtrasSources,
-        sessionFastPath: lightweightSessionSync
+        sheetExtrasSources
     });
     let appendedRn =
         typeof sheetOutcome.sheetRowNumber === "number" && sheetOutcome.sheetRowNumber > 0
             ? sheetOutcome.sheetRowNumber
             : 0;
+    if (appendedRn && sid) {
+        setCachedSessionLeadRow_(tab, sid, appendedRn);
+        invalidateSheetTailCaches_(tab);
+    }
     if (chatTranscriptJson && appendedRn) {
         await maybeWriteChatTranscriptJsonToSheetCell_(sheets, tab, appendedRn, chatTranscriptJson, {
             sessionSync: writeChatTranscriptOnSessionSync
