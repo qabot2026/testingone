@@ -1018,7 +1018,7 @@ function scalarFormFieldForSheet_(val) {
 }
 
 /**
- * Feedback rating (T) and message (U) from contact-form `fields` and/or `client_context`.
+ * Feedback rating (U) and message (V) from contact-form `fields` and/or `client_context`.
  *
  * @param {{ formId?: string, fields?: Record<string, unknown> | null, clientContext?: unknown }} sources
  */
@@ -1122,9 +1122,9 @@ export function assembleLeadSheetPayloadFromSources_(incomingRow, sheetExtrasSou
     };
 }
 
-/** Column T (rating) and U (message) — 0-based indices 19 and 20. */
-const SHEET_FEEDBACK_RATING_COL_LETTER = "T";
-const SHEET_FEEDBACK_MESSAGE_COL_LETTER = "U";
+/** Column U (rating) and V (feedback) — 0-based indices 20 and 21. */
+const SHEET_FEEDBACK_RATING_COL_LETTER = "U";
+const SHEET_FEEDBACK_MESSAGE_COL_LETTER = "V";
 
 /** @param {string} s */
 function isLiveAgentChannelLabel_(s) {
@@ -2730,6 +2730,7 @@ const SHEET_H_SESSION = [
     "session",
     "session_id",
     "sessioniid",
+    "sessioni_id",
     "sessioni",
     "clientsessionid",
     "client_session_id",
@@ -2737,7 +2738,6 @@ const SHEET_H_SESSION = [
     "conversationid",
     "conversation_id",
     "chatsessionid",
-    "sessioni_id",
     "session_id_client"
 ];
 
@@ -2814,21 +2814,25 @@ const SHEET_H_FEEDBACK_MESSAGE = [
     "visitorfeedback"
 ];
 
-/** Staff viewer / export: through column AF (UtmTerm). */
-const CONVERSATION_SHEET_PREVIEW_MIN_COL_INDEX0 = 31;
+/** Staff viewer / export: through column AE (UtmTerm). */
+const CONVERSATION_SHEET_PREVIEW_MIN_COL_INDEX0 = 30;
 
-/** Fixed column letters V–AF (metrics + UTM). */
-const SHEET_COL_CRM_PUSH_STATUS = "V";
+/**
+ * Fixed column letters T–AE (row-1 headers: Sentiment … UtmTerm).
+ * A–S = Conv. link through Document; T = Sentiment; U = Rating; V = Feedback; W+ = metrics/UTM.
+ */
+const SHEET_COL_SENTIMENT = "T";
+const SHEET_COL_FEEDBACK_RATING = "U";
+const SHEET_COL_FEEDBACK_MESSAGE = "V";
 const SHEET_COL_DURATION = "W";
-const SHEET_COL_MESSAGE_COUNT = "X";
-const SHEET_COL_AVG_RESPONSE_MS = "Y";
-const SHEET_COL_SENTIMENT = "Z";
-const SHEET_COL_UNANSWERED = "AA";
-const SHEET_COL_UTM_CAMPAIGN = "AB";
-const SHEET_COL_UTM_CONTENT = "AC";
-const SHEET_COL_UTM_MEDIUM = "AD";
-const SHEET_COL_UTM_SOURCE = "AE";
-const SHEET_COL_UTM_TERM = "AF";
+const SHEET_COL_CRM_PUSH_STATUS = "X";
+const SHEET_COL_MESSAGE_COUNT = "Y";
+const SHEET_COL_AVG_RESPONSE_MS = "Z";
+const SHEET_COL_UTM_CAMPAIGN = "AA";
+const SHEET_COL_UTM_CONTENT = "AB";
+const SHEET_COL_UTM_MEDIUM = "AC";
+const SHEET_COL_UTM_SOURCE = "AD";
+const SHEET_COL_UTM_TERM = "AE";
 
 /**
  * @param {unknown[]} headersRaw
@@ -2842,7 +2846,7 @@ function conversationSheetPreviewLastCol0_(headersRaw) {
 }
 
 /**
- * Staff dashboard column titles for T (rating) and U (message).
+ * Staff dashboard column titles for T (sentiment), U (rating), V (feedback).
  *
  * @param {number} colIndex0
  * @param {unknown} rawLabel
@@ -2850,21 +2854,28 @@ function conversationSheetPreviewLastCol0_(headersRaw) {
 function canonicalConversationSheetHeaderLabel_(colIndex0, rawLabel) {
     const label = sheetCellString_(rawLabel);
     const nk = normalizedHeaderKey_(label);
+    const sentimentNk = new Set(SHEET_H_SENTIMENT.map((a) => normalizedHeaderKey_(a)));
     const ratingNk = new Set(SHEET_H_FEEDBACK_RATING.map((a) => normalizedHeaderKey_(a)));
     const feedbackNk = new Set(SHEET_H_FEEDBACK_MESSAGE.map((a) => normalizedHeaderKey_(a)));
-    if (colIndex0 === 19 || (nk && ratingNk.has(nk))) {
+    if (colIndex0 === 19 || (nk && sentimentNk.has(nk))) {
+        return "SENTIMENT";
+    }
+    if (colIndex0 === 20 || (nk && ratingNk.has(nk))) {
         return "RATING";
     }
-    if (colIndex0 === 20 || (nk && feedbackNk.has(nk) && nk !== "feedbackrating")) {
+    if (colIndex0 === 21 || (nk && feedbackNk.has(nk) && nk !== "feedbackrating")) {
         return "FEEDBACK";
     }
     if (label) {
         return label;
     }
     if (colIndex0 === 19) {
-        return "RATING";
+        return "SENTIMENT";
     }
     if (colIndex0 === 20) {
+        return "RATING";
+    }
+    if (colIndex0 === 21) {
         return "FEEDBACK";
     }
     return "";
@@ -2903,14 +2914,6 @@ const SHEET_H_AVG_RESPONSE_MS = [
 ];
 
 const SHEET_H_SENTIMENT = ["sentiment", "conversationsentiment", "chatsentiment"];
-
-const SHEET_H_UNANSWERED = [
-    "unansweredquestions",
-    "unanswered_questions",
-    "unanswered",
-    "fallbackquestions",
-    "botfallbackcount"
-];
 
 const SHEET_H_UTM_CAMPAIGN = ["utmcampaign", "utm_campaign"];
 const SHEET_H_UTM_CONTENT = ["utmcontent", "utm_content"];
@@ -3839,31 +3842,30 @@ async function buildStandardLeadRowUpdates_(sheets, tab, rowNumber, lead) {
         18,
         lead.driveFileLink
     );
-    put(SHEET_H_FEEDBACK_RATING, 19, lead.feedbackRating);
-    put(SHEET_H_FEEDBACK_MESSAGE, 20, lead.feedbackMessage);
-    putMetricCell(SHEET_H_CRM_PUSH_STATUS, 21, SHEET_COL_CRM_PUSH_STATUS, lead.crmPushStatus);
+    putMetricCell(SHEET_H_SENTIMENT, 19, SHEET_COL_SENTIMENT, lead.sentiment);
+    put(SHEET_H_FEEDBACK_RATING, 20, lead.feedbackRating);
+    put(SHEET_H_FEEDBACK_MESSAGE, 21, lead.feedbackMessage);
     putMetricCell(SHEET_H_CHAT_DURATION, 22, SHEET_COL_DURATION, lead.duration);
-    putMetricCell(SHEET_H_MESSAGE_COUNT, 23, SHEET_COL_MESSAGE_COUNT, lead.messageCount);
-    putMetricCell(SHEET_H_AVG_RESPONSE_MS, 24, SHEET_COL_AVG_RESPONSE_MS, lead.avgResponseTimeMs);
-    putMetricCell(SHEET_H_SENTIMENT, 25, SHEET_COL_SENTIMENT, lead.sentiment);
-    putMetricCell(SHEET_H_UNANSWERED, 26, SHEET_COL_UNANSWERED, lead.unansweredQuestions);
-    putMetricCell(SHEET_H_UTM_CAMPAIGN, 27, SHEET_COL_UTM_CAMPAIGN, lead.utmCampaign);
-    putMetricCell(SHEET_H_UTM_CONTENT, 28, SHEET_COL_UTM_CONTENT, lead.utmContent);
-    putMetricCell(SHEET_H_UTM_MEDIUM, 29, SHEET_COL_UTM_MEDIUM, lead.utmMedium);
-    putMetricCell(SHEET_H_UTM_SOURCE, 30, SHEET_COL_UTM_SOURCE, lead.utmSource);
-    putMetricCell(SHEET_H_UTM_TERM, 31, SHEET_COL_UTM_TERM, lead.utmTerm);
+    putMetricCell(SHEET_H_CRM_PUSH_STATUS, 23, SHEET_COL_CRM_PUSH_STATUS, lead.crmPushStatus);
+    putMetricCell(SHEET_H_MESSAGE_COUNT, 24, SHEET_COL_MESSAGE_COUNT, lead.messageCount);
+    putMetricCell(SHEET_H_AVG_RESPONSE_MS, 25, SHEET_COL_AVG_RESPONSE_MS, lead.avgResponseTimeMs);
+    putMetricCell(SHEET_H_UTM_CAMPAIGN, 26, SHEET_COL_UTM_CAMPAIGN, lead.utmCampaign);
+    putMetricCell(SHEET_H_UTM_CONTENT, 27, SHEET_COL_UTM_CONTENT, lead.utmContent);
+    putMetricCell(SHEET_H_UTM_MEDIUM, 28, SHEET_COL_UTM_MEDIUM, lead.utmMedium);
+    putMetricCell(SHEET_H_UTM_SOURCE, 29, SHEET_COL_UTM_SOURCE, lead.utmSource);
+    putMetricCell(SHEET_H_UTM_TERM, 30, SHEET_COL_UTM_TERM, lead.utmTerm);
 
     const fr = sheetOutboundCell_(lead.feedbackRating);
     const fm = sheetOutboundCell_(lead.feedbackMessage);
     if (String(fr || "").trim()) {
         updates.push({
-            range: `${tab}!${SHEET_FEEDBACK_RATING_COL_LETTER}${rowNumber}`,
+            range: `${tab}!${SHEET_COL_FEEDBACK_RATING}${rowNumber}`,
             values: [[fr]]
         });
     }
     if (String(fm || "").trim()) {
         updates.push({
-            range: `${tab}!${SHEET_FEEDBACK_MESSAGE_COL_LETTER}${rowNumber}`,
+            range: `${tab}!${SHEET_COL_FEEDBACK_MESSAGE}${rowNumber}`,
             values: [[fm]]
         });
     }
@@ -3984,7 +3986,6 @@ async function applySheetExtrasAfterDuplicateSessionRow_(sheets, tab, rowNumber,
  *   messageCount?: string,
  *   avgResponseTimeMs?: string,
  *   sentiment?: string,
- *   unansweredQuestions?: string,
  *   utmCampaign?: string,
  *   utmContent?: string,
  *   utmMedium?: string,
@@ -4021,7 +4022,6 @@ export async function patchSheetLeadBySessionId_(sessionId, fields) {
         "messageCount",
         "avgResponseTimeMs",
         "sentiment",
-        "unansweredQuestions",
         "utmCampaign",
         "utmContent",
         "utmMedium",
