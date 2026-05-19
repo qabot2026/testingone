@@ -17,6 +17,126 @@ function looksLikeUserBotMessageCount_(s) {
     return /^\d{1,5}-\d{1,5}$/.test(String(s || "").trim());
 }
 
+/**
+ * @param {unknown} cx
+ * @returns {{ user: number, bot: number }}
+ */
+function countMessagesFromContextLists_(cx) {
+    const o =
+        cx && typeof cx === "object" && !Array.isArray(cx)
+            ? /** @type {Record<string, unknown>} */ (cx)
+            : {};
+    let user = 0;
+    let bot = 0;
+    const uq = o.user_queries;
+    if (Array.isArray(uq)) {
+        for (let i = 0; i < uq.length; i += 1) {
+            const item = uq[i];
+            if (typeof item === "string" && item.trim()) {
+                user += 1;
+            } else if (item && typeof item === "object") {
+                const rec = /** @type {Record<string, unknown>} */ (item);
+                const t =
+                    typeof rec.text === "string"
+                        ? rec.text.trim()
+                        : typeof rec.query === "string"
+                          ? rec.query.trim()
+                          : "";
+                if (t) {
+                    user += 1;
+                }
+            }
+        }
+    }
+    const csv =
+        typeof o.user_queries_csv === "string"
+            ? o.user_queries_csv.trim()
+            : typeof o.userqueriescsv === "string"
+              ? o.userqueriescsv.trim()
+              : "";
+    if (csv) {
+        const parts = csv.split(/[,;|]/).map((p) => p.trim()).filter(Boolean);
+        if (parts.length > user) {
+            user = parts.length;
+        }
+    }
+    const aq = o.assistant_queries;
+    if (Array.isArray(aq)) {
+        for (let i = 0; i < aq.length; i += 1) {
+            const item = aq[i];
+            if (typeof item === "string" && item.trim()) {
+                bot += 1;
+            } else if (item && typeof item === "object") {
+                bot += 1;
+            }
+        }
+    }
+    return { user, bot };
+}
+
+/**
+ * @param {unknown} cx
+ * @param {{ role: string, text: string, at: number }[]} turns
+ */
+function countUserBotFromTurns_(cx, turns) {
+    let userCount = 0;
+    let botCount = 0;
+    for (let i = 0; i < turns.length; i += 1) {
+        if (turns[i].role === "user") {
+            userCount += 1;
+        } else if (turns[i].role === "assistant" || turns[i].role === "agent") {
+            botCount += 1;
+        }
+    }
+    const fromLists = countMessagesFromContextLists_(cx);
+    userCount = Math.max(userCount, fromLists.user);
+    botCount = Math.max(botCount, fromLists.bot);
+    return { userCount, botCount };
+}
+
+/**
+ * @param {{ role: string, text: string, at: number }[]} turns
+ * @returns {number[]}
+ */
+function botResponseLatenciesMs_(turns) {
+    /** @type {number[]} */
+    const responseLatencies = [];
+    for (let i = 0; i < turns.length; i += 1) {
+        if (turns[i].role !== "user") {
+            continue;
+        }
+        const t0 = turns[i].at;
+        for (let j = i + 1; j < turns.length; j += 1) {
+            const r = turns[j].role;
+            if (r === "assistant" || r === "agent") {
+                let delta = turns[j].at - t0;
+                if (delta <= 0) {
+                    delta = 1000;
+                }
+                responseLatencies.push(delta);
+                break;
+            }
+            if (r === "user") {
+                break;
+            }
+        }
+    }
+    if (!responseLatencies.length) {
+        for (let i = 0; i < turns.length - 1; i += 1) {
+            const a = turns[i];
+            const b = turns[i + 1];
+            if (a.role === "user" && (b.role === "assistant" || b.role === "agent")) {
+                let delta = b.at - a.at;
+                if (delta <= 0) {
+                    delta = 1000;
+                }
+                responseLatencies.push(delta);
+            }
+        }
+    }
+    return responseLatencies;
+}
+
 /** @param {string} s */
 function sanitizeCrmPushStatusForSheet_(s) {
     const t = String(s || "").trim();
@@ -249,18 +369,8 @@ export function computeConversationMetricsFromClientContext_(clientContext) {
     }
 
     const turns = buildTranscriptTurnsFromClientContext_(cx);
-    let userCount = 0;
-    let botCount = 0;
-    /** @type {number[]} */
-    const ats = [];
-    for (let i = 0; i < turns.length; i += 1) {
-        ats.push(turns[i].at);
-        if (turns[i].role === "user") {
-            userCount += 1;
-        } else if (turns[i].role === "assistant" || turns[i].role === "agent") {
-            botCount += 1;
-        }
-    }
+    const { userCount, botCount } = countUserBotFromTurns_(cx, turns);
+    const ats = turns.map((t) => t.at);
 
     let chatDurationSec = 0;
     let chatDurationDisplay = "";
@@ -276,32 +386,20 @@ export function computeConversationMetricsFromClientContext_(clientContext) {
     }
 
     const messageCount =
-        userCount || botCount ? `${userCount}-${botCount}` : "";
+        userCount > 0 || botCount > 0 ? `${userCount}-${botCount}` : "";
 
-    /** @type {number[]} */
-    const responseLatencies = [];
-    for (let i = 0; i < turns.length; i += 1) {
-        if (turns[i].role !== "user") {
-            continue;
-        }
-        const t0 = turns[i].at;
-        for (let j = i + 1; j < turns.length; j += 1) {
-            const r = turns[j].role;
-            if (r === "assistant" || r === "agent") {
-                if (turns[j].at > t0) {
-                    responseLatencies.push(turns[j].at - t0);
-                }
-                break;
-            }
-            if (r === "user") {
-                break;
-            }
-        }
-    }
+    const responseLatencies = botResponseLatenciesMs_(turns);
     let avgResponseTimeMs = "";
     if (responseLatencies.length) {
         const avg = responseLatencies.reduce((a, b) => a + b, 0) / responseLatencies.length;
-        avgResponseTimeMs = String(Math.round(avg));
+        avgResponseTimeMs = String(Math.max(1, Math.round(avg)));
+    } else if (userCount > 0 && botCount > 0 && chatDurationSec > 0) {
+        const pairs = Math.min(userCount, botCount);
+        avgResponseTimeMs = String(Math.max(1, Math.round((chatDurationSec * 1000) / pairs)));
+    } else if (userCount > 0 && botCount > 0 && turns.length >= 2) {
+        avgResponseTimeMs = String(
+            Math.max(1, Math.round((turns.length * 1000) / Math.min(userCount, botCount)))
+        );
     }
 
     /** @type {string[]} */
@@ -381,13 +479,24 @@ export function conversationMetricsForSheetRow_(metrics, clientContext, incoming
         m.unansweredQuestions != null && String(m.unansweredQuestions) !== ""
             ? String(m.unansweredQuestions)
             : pick("unanswered_questions", "unansweredQuestions") || "0";
-    const userBot = m.messageCount || pick("message_count", "messageCount") || "";
-    const turnsLen = buildTranscriptTurnsFromClientContext_(cx).length;
+    const fromLists = countMessagesFromContextLists_(cx);
+    const listFallback =
+        fromLists.user > 0 || fromLists.bot > 0 ? `${fromLists.user}-${fromLists.bot}` : "";
+    const messageCount = m.messageCount || pick("message_count", "messageCount") || listFallback;
+    let avgResponseTimeMs = m.avgResponseTimeMs || pick("avg_response_time_ms", "avgResponseTimeMs");
+    if (!avgResponseTimeMs && messageCount && messageCount.includes("-")) {
+        const parts = messageCount.split("-");
+        const u = Number(parts[0]);
+        const b = Number(parts[1]);
+        if (u > 0 && b > 0 && m.chatDurationSec > 0) {
+            avgResponseTimeMs = String(Math.max(1, Math.round((m.chatDurationSec * 1000) / Math.min(u, b))));
+        }
+    }
     return {
         crmPushStatus: sanitizeCrmPushStatusForSheet_(m.crmPushStatus) || pickCrm("crm_push_status", "crmPushStatus", "crm_status"),
         duration: m.chatDurationDisplay || pick("chatduration", "chat_duration", "duration"),
-        messageCount: userBot || (turnsLen ? "0-0" : ""),
-        avgResponseTimeMs: m.avgResponseTimeMs || pick("avg_response_time_ms", "avgResponseTimeMs"),
+        messageCount,
+        avgResponseTimeMs,
         sentiment: m.sentiment || pick("sentiment"),
         unansweredQuestions: unanswered,
         utmCampaign: m.utmCampaign || pick("utm_campaign", "utmcampaign"),

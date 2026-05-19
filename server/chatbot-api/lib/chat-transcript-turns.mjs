@@ -260,10 +260,20 @@ function turnsFromAssistantQueriesList_(cx) {
     if (!Array.isArray(aq)) {
         return out;
     }
+    const baseAt =
+        typeof o.assistant_queries_last_at === "number" && Number.isFinite(o.assistant_queries_last_at)
+            ? o.assistant_queries_last_at
+            : typeof o.user_queries_last_at === "number" && Number.isFinite(o.user_queries_last_at)
+              ? o.user_queries_last_at
+              : Date.now();
     for (let i = 0; i < aq.length; i += 1) {
         const item = aq[i];
         if (typeof item === "string" && item.trim() && !isFormSubmissionLine_(item)) {
-            out.push({ role: "assistant", text: item.trim(), at: i + 1 });
+            out.push({
+                role: "assistant",
+                text: item.trim(),
+                at: baseAt - (aq.length - i) * 1000 + 500
+            });
             continue;
         }
         if (item && typeof item === "object") {
@@ -271,10 +281,14 @@ function turnsFromAssistantQueriesList_(cx) {
             const text = transcriptTurnTextFromItem_(rec);
             if (text && !isFormSubmissionLine_(text)) {
                 const atMs = coerceTranscriptAtMs_(rec.at);
+                const role = normalizeTranscriptItemRole_(rec);
                 out.push({
-                    role: normalizeTranscriptItemRole_(rec) === "user" ? "user" : "assistant",
+                    role: role === "user" ? "user" : "assistant",
                     text,
-                    at: typeof atMs === "number" ? atMs : i + 1
+                    at:
+                        typeof atMs === "number" && Number.isFinite(atMs)
+                            ? atMs
+                            : baseAt - (aq.length - i) * 1000 + 500
                 });
             }
         }
@@ -289,17 +303,57 @@ function turnDedupKey_(t) {
         .trim()
         .toLowerCase()
         .slice(0, 200);
-    const at = typeof t.at === "number" ? t.at : 0;
     const seq = typeof t.seq === "number" ? t.seq : "";
-    return `${role}|${text}|${at}|${seq}`;
+    return `${role}|${text}|${seq}`;
+}
+
+/**
+ * @param {{ role: string, text: string, at: number, seq?: number }[]} turns
+ */
+function sortTurnsDialogOrder_(turns) {
+    if (!turns.length) {
+        return turns;
+    }
+    const seqCount = turns.filter((t) => typeof t.seq === "number" && Number.isFinite(t.seq)).length;
+    if (seqCount === turns.length) {
+        turns.sort((a, b) => /** @type {number} */ (a.seq) - /** @type {number} */ (b.seq));
+        return turns;
+    }
+    const maxAt = Math.max(...turns.map((t) => t.at));
+    const minAt = Math.min(...turns.map((t) => t.at));
+    const allEpochMs = minAt > 1_000_000_000_000 && maxAt > 1_000_000_000_000;
+    const allEpochSec = !allEpochMs && minAt > 1_000_000_000 && maxAt > 1_000_000_000;
+    if (allEpochMs || allEpochSec) {
+        turns.sort((a, b) => a.at - b.at);
+        return turns;
+    }
+    return turns;
+}
+
+/**
+ * Normalize `at` to 0, 1000, 2000… so response-time math works when sources mixed epoch ms + index stamps.
+ *
+ * @param {{ role: string, text: string, at: number, seq?: number }[]} turns
+ */
+function assignMonotonicTurnTimesForMetrics_(turns) {
+    if (!turns.length) {
+        return turns;
+    }
+    const sorted = sortTurnsDialogOrder_(turns.slice());
+    return sorted.map((t, i) => ({
+        ...t,
+        at: i * 1000
+    }));
 }
 
 /**
  * @param {{ role: string, text: string, at: number, seq?: number }[]} turns
  */
 function mergeTurnLists_(...lists) {
-    /** @type {Map<string, { role: string, text: string, at: number, seq?: number }>} */
-    const seen = new Map();
+    /** @type {Set<string>} */
+    const seen = new Set();
+    /** @type {{ role: string, text: string, at: number, seq?: number }[]} */
+    const out = [];
     for (let li = 0; li < lists.length; li += 1) {
         const list = lists[li];
         if (!Array.isArray(list)) {
@@ -311,14 +365,14 @@ function mergeTurnLists_(...lists) {
                 continue;
             }
             const key = turnDedupKey_(t);
-            if (!seen.has(key)) {
-                seen.set(key, t);
+            if (seen.has(key)) {
+                continue;
             }
+            seen.add(key);
+            out.push(t);
         }
     }
-    const out = Array.from(seen.values());
-    out.sort((a, b) => a.at - b.at || 0);
-    return out;
+    return assignMonotonicTurnTimesForMetrics_(out);
 }
 
 /**
@@ -338,6 +392,9 @@ export function buildTranscriptTurnsFromClientContext_(clientContext) {
         if (row) {
             fromTranscript.push(row);
         }
+    }
+    if (fromTranscript.length) {
+        sortTurnsDialogOrder_(fromTranscript);
     }
     return mergeTurnLists_(fromTranscript, turnsFromUserQueriesList_(cx), turnsFromAssistantQueriesList_(cx));
 }

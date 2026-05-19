@@ -3078,6 +3078,7 @@ function resolveLeadValueForNormalizedHeader_(nk, lead, opts) {
         nk === "avgresponsetime"
         || nk === "averageresponsetime"
         || nk === "avg_response_time"
+        || nk === "averageresponsetimeinms"
     ) {
         return sheetOutboundCell_(L.avgResponseTimeMs);
     }
