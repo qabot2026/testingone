@@ -809,6 +809,15 @@ function appointmentDateInputToIso_(raw) {
     const t = normalizeStr_(raw);
     if (!t) return "";
     if (/^\d{4}-\d{2}-\d{2}$/.test(t)) return t;
+    const slash = /^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{4})$/.exec(t);
+    if (slash) {
+        const dd = Number(slash[1]);
+        const mo = Number(slash[2]);
+        const yyyy = Number(slash[3]);
+        if (!Number.isFinite(dd) || !Number.isFinite(mo) || !Number.isFinite(yyyy)) return "";
+        if (mo < 1 || mo > 12 || dd < 1 || dd > 31 || yyyy < 1900 || yyyy > 2100) return "";
+        return `${yyyy}-${String(mo).padStart(2, "0")}-${String(dd).padStart(2, "0")}`;
+    }
     const m = /^(\d{2})-(\d{2})-(\d{4})$/.exec(t);
     if (!m) return "";
     const dd = m[1];
@@ -2705,7 +2714,7 @@ app.post(
             || scalarFormValue(fields.appointmentDate)
             || scalarFormValue(fields.appointment_date)
             || "";
-        const appointmentDate = appointmentDateRaw ? appointmentDateRaw.split('-').reverse().join('-') : "";
+        const appointmentDate = appointmentDateInputToIso_(appointmentDateRaw);
         const appointmentTimeRaw =
             scalarFormValue(fields.appointmenttime)
             || scalarFormValue(fields.appointmentTime)

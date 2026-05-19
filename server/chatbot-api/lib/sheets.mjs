@@ -197,6 +197,15 @@ function isoCalendarDayOk_(year, month, day) {
     return probe.getUTCFullYear() === y && probe.getUTCMonth() === mo - 1 && probe.getUTCDate() === d;
 }
 
+/** @param {string} ymd YYYY-MM-DD */
+function isoYmdToDdMmYyyySlash_(ymd) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(ymd || "").trim());
+    if (!m) {
+        return "";
+    }
+    return `${m[3]}/${m[2]}/${m[1]}`;
+}
+
 /** Google Sheets serial (days since 1899-12-30) for calendar Y-M-D. */
 function googleSheetsSerialFromIsoYmd_(iso) {
     const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || "").trim());
@@ -253,6 +262,28 @@ function sheetConvDateCellValue_(raw) {
 /** @param {unknown} raw */
 function sheetAppointmentDateCellValue_(raw) {
     return sheetConvDateCellValue_(raw);
+}
+
+/**
+ * Value for Sheets API date columns: numeric serial (preferred) or dd/mm/yyyy text for USER_ENTERED.
+ * Never stringify serials (e.g. "45462") — that breaks display/formatting.
+ * @param {unknown} raw
+ * @returns {number|string}
+ */
+function sheetDateCellForSheetsApi_(raw) {
+    const ser = sheetConvDateCellValue_(raw);
+    if (typeof ser === "number" && Number.isFinite(ser) && ser > 0) {
+        return ser;
+    }
+    const ms = parseConversationDateCellWide_(raw);
+    if (Number.isFinite(ms)) {
+        const ymd = conversationRowYmdInSheetTz_(ms);
+        const slash = ymd ? isoYmdToDdMmYyyySlash_(ymd) : "";
+        if (slash) {
+            return slash;
+        }
+    }
+    return "";
 }
 
 /**
@@ -329,26 +360,34 @@ function appendRangeSchemaWidth_(raw) {
  */
 function conversationPartsFromIncomingRow_(row) {
     const tt = typeof row.convTime === "string" ? row.convTime.trim() : "";
-    if (typeof row.convDate === "number" && Number.isFinite(row.convDate)) {
-        return { convDate: row.convDate, convTime: tt };
-    }
-    const dd = typeof row.convDate === "string" ? row.convDate.trim() : "";
-    if (dd && tt) {
-        return { convDate: dd, convTime: tt };
-    }
-    const iso = typeof row.iso === "string" ? row.iso.trim() : "";
-    if (iso) {
-        const parts = iso.split(",").map((s) => s.trim());
-        if (parts.length >= 2) {
-            return { convDate: parts[0], convTime: parts.slice(1).join(", ") };
+    /** @type {unknown} */
+    let dateInput = row.convDate;
+    if (dateInput == null || dateInput === "") {
+        const iso = typeof row.iso === "string" ? row.iso.trim() : "";
+        if (iso) {
+            const parts = iso.split(",").map((s) => s.trim());
+            dateInput = parts[0] || iso;
         }
-        return { convDate: iso, convTime: tt };
     }
-    const now = new Date();
-    return {
-        convDate: formatConversationDateForSheet(now),
-        convTime: formatConversationTimeForSheet(now)
-    };
+    let convDate = sheetConvDateCellValue_(dateInput);
+    if (convDate === "") {
+        convDate = formatConversationDateForSheet(new Date());
+    }
+    let convTime = tt;
+    if (!convTime) {
+        const iso = typeof row.iso === "string" ? row.iso.trim() : "";
+        if (iso.includes(",")) {
+            convTime = iso
+                .split(",")
+                .slice(1)
+                .join(", ")
+                .trim();
+        }
+    }
+    if (!convTime) {
+        convTime = formatConversationTimeForSheet(new Date());
+    }
+    return { convDate, convTime };
 }
 
 function tabNameFromRange(raw) {
@@ -2134,7 +2173,7 @@ async function updateExistingSessionRow_(sheets, tab, rowNumber, incoming, optio
         data.push({ range: `${tab}!${colL(15)}${rowNumber}`, values: [[appointmentBookedPatch]] });
     }
     if (appointmentDate) {
-        const apptDateCell = sheetAppointmentDateCellValue_(appointmentDate);
+        const apptDateCell = sheetDateCellForSheetsApi_(appointmentDate);
         if (apptDateCell !== "") {
             data.push({ range: `${tab}!${colL(16)}${rowNumber}`, values: [[apptDateCell]] });
         }
@@ -2160,6 +2199,16 @@ async function updateExistingSessionRow_(sheets, tab, rowNumber, incoming, optio
             data
         }
     });
+    try {
+        await ensureSheetDateColumnsFormat_(sheets, tab);
+    } catch (fmtColErr) {
+        console.warn(
+            "[chatbot-api] Sheets date column format after row update:",
+            fmtColErr && /** @type {{ message?: string }} */ (fmtColErr).message
+                ? String(/** @type {{ message?: string }} */ (fmtColErr).message).slice(0, 200)
+                : fmtColErr
+        );
+    }
     return {
         applied: true,
         googleBatch: googleBatchSummaryFromResponse_(batchRes)
@@ -3357,9 +3406,17 @@ async function buildStandardLeadRowUpdates_(sheets, tab, rowNumber, lead) {
         const idx0 = getIdx(aliases, fallbackIdx);
         updates.push({ range: `${tab}!${col(idx0)}${rowNumber}`, values: [[v]] });
     };
+    const putDate = (aliases, fallbackIdx, raw) => {
+        const cell = sheetDateCellForSheetsApi_(raw);
+        if (cell === "" || cell == null) {
+            return;
+        }
+        const idx0 = getIdx(aliases, fallbackIdx);
+        updates.push({ range: `${tab}!${col(idx0)}${rowNumber}`, values: [[cell]] });
+    };
 
     // Prefer declared A–S schema (Chat transcript, Date, Time, then lead fields…); aliases correct column when order differs.
-    put(
+    putDate(
         [
             "conversationdate",
             "convdate",
@@ -3368,7 +3425,7 @@ async function buildStandardLeadRowUpdates_(sheets, tab, rowNumber, lead) {
             "date"
         ],
         1,
-        sheetConvDateCellValue_(lead.convDate)
+        lead.convDate
     );
     put(
         [
@@ -3411,7 +3468,7 @@ async function buildStandardLeadRowUpdates_(sheets, tab, rowNumber, lead) {
     put(["ip", "ipaddress", "ip_address"], 14, lead.ip);
     // Prefer exact "Appointment Booked" match only — aliases like `appointment` would hit Date/Time headers.
     put(["appointmentbooked", "appointment_booked", "isappointmentbooked"], 15, lead.appointmentBooked);
-    put(["appointmentdate"], 16, lead.appointmentDate);
+    putDate(["appointmentdate"], 16, lead.appointmentDate);
     put(["appointmenttime"], 17, lead.appointmentTime);
     put(
         ["document", "documents", "drivefilelink", "drive file link", "drivefile", "filelink", "filelinks", "drivelink"],
