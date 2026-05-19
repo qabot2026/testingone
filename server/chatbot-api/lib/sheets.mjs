@@ -142,6 +142,21 @@ const DEDUP_LOOKBACK_ROWS = Math.max(
     10,
     Number.parseInt(process.env.SHEETS_DEDUP_LOOKBACK_ROWS || "500", 10) || 500
 );
+/** Smaller tail scan for live session-sheet-sync (reduces Sheets read quota). */
+const SESSION_ROW_LOOKBACK_ROWS = Math.max(
+    10,
+    Number.parseInt(process.env.SHEETS_SESSION_ROW_LOOKBACK_ROWS || "80", 10) || 80
+);
+/** Min ms between session-sheet-sync writes per session id (server-side). */
+const SESSION_SHEET_SYNC_MIN_INTERVAL_MS = Math.max(
+    5000,
+    Number.parseInt(process.env.SHEETS_SESSION_SYNC_MIN_INTERVAL_MS || "20000", 10) || 20_000
+);
+/** Min ms between full-row refreshes on session sync when row already exists. */
+const SESSION_SHEET_FULL_ROW_MIN_INTERVAL_MS = Math.max(
+    30_000,
+    Number.parseInt(process.env.SHEETS_SESSION_FULL_ROW_MIN_INTERVAL_MS || "120000", 10) || 120_000
+);
 const DEDUP_WINDOW_MS = Math.max(
     10_000,
     Number.parseInt(process.env.SHEETS_DEDUP_WINDOW_MS || String(10 * 60 * 1000), 10)
@@ -1885,6 +1900,14 @@ function conversationSheetScanHardCap_() {
  * @returns {Promise<number>}
  */
 async function conversationSheetGridRowCount_(sheets, tab) {
+    const now = Date.now();
+    if (
+        gridRowCountCache_.tab === tab
+        && now - gridRowCountCache_.at < GRID_ROW_COUNT_CACHE_TTL_MS
+        && gridRowCountCache_.rowCount > 0
+    ) {
+        return gridRowCountCache_.rowCount;
+    }
     try {
         const meta = await sheets.spreadsheets.get({
             spreadsheetId: SPREADSHEET_ID,
@@ -1901,7 +1924,9 @@ async function conversationSheetGridRowCount_(sheets, tab) {
                         ? p.gridProperties.rowCount
                         : 0;
                 if (Number.isFinite(gr) && gr > 0) {
-                    return Math.trunc(gr);
+                    const n = Math.trunc(gr);
+                    gridRowCountCache_ = { tab, at: now, rowCount: n };
+                    return n;
                 }
                 break;
             }
@@ -1969,6 +1994,38 @@ async function conversationSheetLastDataRow1Based_(sheets, tab, chunkRows, gridR
  * @param {number} lookback max rows to return
  * @returns {Promise<{ rows: unknown[][], firstSheetRow1Based: number }>}
  */
+/**
+ * @param {import("googleapis").sheets_v4.Sheets} sheets
+ * @param {string} tab
+ * @param {number} lookback
+ */
+async function fetchSheetAzTailCached_(sheets, tab, lookback) {
+    const lb = Math.max(1, lookback);
+    const now = Date.now();
+    if (
+        sheetTailFetchCache_.tab === tab
+        && sheetTailFetchCache_.lookback >= lb
+        && now - sheetTailFetchCache_.at < SHEET_TAIL_FETCH_CACHE_TTL_MS
+        && Array.isArray(sheetTailFetchCache_.rows)
+    ) {
+        const all = sheetTailFetchCache_.rows;
+        const sliceStart = Math.max(0, all.length - lb);
+        return {
+            rows: all.slice(sliceStart),
+            firstSheetRow1Based: sheetTailFetchCache_.firstSheetRow1Based + sliceStart
+        };
+    }
+    const fresh = await fetchSheetAzTail_(sheets, tab, lb);
+    sheetTailFetchCache_ = {
+        tab,
+        lookback: lb,
+        at: now,
+        rows: fresh.rows,
+        firstSheetRow1Based: fresh.firstSheetRow1Based
+    };
+    return fresh;
+}
+
 async function fetchSheetAzTail_(sheets, tab, lookback) {
     const lb = Math.max(1, lookback);
     const gridRows = await conversationSheetGridRowCount_(sheets, tab);
@@ -2162,7 +2219,7 @@ async function scanSheetTailForDedupeAndRepeat_(sheets, row) {
     const key = buildDedupeKey(row);
     const tab = tabNameFromRange(RANGE);
     const mobileCol = await getMobileColumnInfo_(sheets, tab);
-    const { rows: tail, firstSheetRow1Based: tailOffset } = await fetchSheetAzTail_(
+    const { rows: tail, firstSheetRow1Based: tailOffset } = await fetchSheetAzTailCached_(
         sheets,
         tab,
         DEDUP_LOOKBACK_ROWS
@@ -2590,6 +2647,94 @@ let conversationSheetScanCache_ = {
 };
 
 const CONVERSATION_SHEET_SCAN_CACHE_TTL_MS = 90_000;
+
+/** Cached tail slice from `fetchSheetAzTail_` — shared by dedupe + session row lookup. */
+let sheetTailFetchCache_ = {
+    tab: "",
+    lookback: 0,
+    at: 0,
+    rows: /** @type {unknown[][]} */ ([]),
+    firstSheetRow1Based: 1
+};
+const SHEET_TAIL_FETCH_CACHE_TTL_MS = 60_000;
+
+/** session id → sheet row number (avoids re-scanning the tail on every chat message). */
+const sessionLeadRowCache_ = new Map();
+const SESSION_LEAD_ROW_CACHE_TTL_MS = 15 * 60 * 1000;
+
+/** session id → last full-row sync timestamp */
+const sessionLastFullRowSyncAt_ = new Map();
+
+/** session id → last server session-sheet-sync accept time */
+const sessionSheetSyncRateAt_ = new Map();
+
+let gridRowCountCache_ = { tab: "", at: 0, rowCount: 0 };
+const GRID_ROW_COUNT_CACHE_TTL_MS = 5 * 60 * 1000;
+
+/**
+ * Throttle live session-sheet-sync to protect Sheets read quota (per session id).
+ *
+ * @param {string} sessionId
+ */
+export function shouldThrottleSessionSheetSync_(sessionId) {
+    const sid = typeof sessionId === "string" ? sessionId.trim() : "";
+    if (!sid) {
+        return { throttle: false, retryAfterMs: 0 };
+    }
+    const now = Date.now();
+    const prev = sessionSheetSyncRateAt_.get(sid) || 0;
+    const wait = SESSION_SHEET_SYNC_MIN_INTERVAL_MS - (now - prev);
+    if (prev && wait > 0) {
+        return { throttle: true, retryAfterMs: wait };
+    }
+    sessionSheetSyncRateAt_.set(sid, now);
+    if (sessionSheetSyncRateAt_.size > 5000) {
+        const cutoff = now - SESSION_SHEET_SYNC_MIN_INTERVAL_MS * 4;
+        for (const [k, t] of sessionSheetSyncRateAt_) {
+            if (t < cutoff) {
+                sessionSheetSyncRateAt_.delete(k);
+            }
+        }
+    }
+    return { throttle: false, retryAfterMs: 0 };
+}
+
+/** @param {string} tab @param {string} sessionId @param {number} rowNumber */
+function setCachedSessionLeadRow_(tab, sessionId, rowNumber) {
+    const sid = typeof sessionId === "string" ? sessionId.trim() : "";
+    if (!sid || !rowNumber) {
+        return;
+    }
+    sessionLeadRowCache_.set(`${tab}|${sid}`, { rowNumber, at: Date.now() });
+}
+
+/** @param {string} tab @param {string} sessionId */
+function getCachedSessionLeadRow_(tab, sessionId) {
+    const sid = typeof sessionId === "string" ? sessionId.trim() : "";
+    if (!sid) {
+        return 0;
+    }
+    const hit = sessionLeadRowCache_.get(`${tab}|${sid}`);
+    if (!hit) {
+        return 0;
+    }
+    if (Date.now() - hit.at > SESSION_LEAD_ROW_CACHE_TTL_MS) {
+        sessionLeadRowCache_.delete(`${tab}|${sid}`);
+        return 0;
+    }
+    return hit.rowNumber;
+}
+
+/** @param {string} tab @param {string} [sessionId] */
+function invalidateSheetTailCaches_(tab, sessionId) {
+    if (sheetTailFetchCache_.tab === tab) {
+        sheetTailFetchCache_.at = 0;
+    }
+    const sid = typeof sessionId === "string" ? sessionId.trim() : "";
+    if (sid) {
+        sessionLeadRowCache_.delete(`${tab}|${sid}`);
+    }
+}
 
 /**
  * @param {import("googleapis").sheets_v4.Sheets} sheets
@@ -4397,7 +4542,7 @@ async function readLeadContactFromSheetRow_(sheets, tab, rowNumber) {
     }
     const map = await getHeaderIndexMap_(sheets, tab);
     const lastCol = columnLetterFromIndex_(CONVERSATION_SHEET_PREVIEW_MIN_COL_INDEX0);
-    const got = await sheets.spreadsheets.values.get({
+    const got = await sheetsValuesGet_(sheets, {
         spreadsheetId: SPREADSHEET_ID,
         range: `${tab}!A${rowNumber}:${lastCol}${rowNumber}`
     });
@@ -4544,6 +4689,9 @@ export async function appendContactRowToSheet(row, opts) {
         duplicateRowNum = await findSessionRowNumberBySessionId_(sheets, tabResolved, sidForDedup);
     }
     if (duplicateRowNum) {
+        if (sidForDedup) {
+            setCachedSessionLeadRow_(tabResolved, sidForDedup, duplicateRowNum);
+        }
         return await patchExistingSessionLeadRow_(
             sheets,
             tabResolved,
@@ -4645,6 +4793,10 @@ export async function appendContactRowToSheet(row, opts) {
     }
 
     const appendedRowNum = rowNumberFromUpdatedRange_(googleAppend.updatedRange);
+    if (appendedRowNum && sid0) {
+        setCachedSessionLeadRow_(tabResolved, sid0, appendedRowNum);
+        invalidateSheetTailCaches_(tabResolved, sid0);
+    }
     if (appendedRowNum && !colAFormula && sid0) {
         await maybeWriteLeadConvLinkColumnA_(sheets, tabResolved, appendedRowNum, sid0);
     }
@@ -4717,15 +4869,23 @@ export async function appendContactRowToSheet(row, opts) {
  * @param {string} tab
  * @param {string} sessionId
  */
-async function findSessionRowNumberBySessionId_(sheets, tab, sessionId) {
+async function findSessionRowNumberBySessionId_(sheets, tab, sessionId, lookbackRows) {
     const sid = typeof sessionId === "string" ? sessionId.trim() : "";
     if (!sid) {
         return 0;
     }
-    const { rows: tail, firstSheetRow1Based: tailOffset } = await fetchSheetAzTail_(
+    const cached = getCachedSessionLeadRow_(tab, sid);
+    if (cached) {
+        return cached;
+    }
+    const lb =
+        typeof lookbackRows === "number" && lookbackRows > 0
+            ? Math.trunc(lookbackRows)
+            : SESSION_ROW_LOOKBACK_ROWS;
+    const { rows: tail, firstSheetRow1Based: tailOffset } = await fetchSheetAzTailCached_(
         sheets,
         tab,
-        DEDUP_LOOKBACK_ROWS
+        lb
     );
     if (!tail.length) {
         return 0;
@@ -4737,13 +4897,17 @@ async function findSessionRowNumberBySessionId_(sheets, tab, sessionId) {
             || sheetCellString_(r[STANDARD_SESSION_COLUMN_INDEX0_PRE_TRANSCRIPT])
             || sheetCellString_(r[STANDARD_SESSION_COLUMN_INDEX0_LEGACY]);
         if (existingSid === sid) {
-            return tailOffset + i;
+            const rn = tailOffset + i;
+            setCachedSessionLeadRow_(tab, sid, rn);
+            return rn;
         }
         if (Array.isArray(r)) {
             for (let c = 0; c < r.length; c++) {
                 const cell = sheetCellString_(r[c]);
                 if (cell && cell === sid) {
-                    return tailOffset + i;
+                    const rn = tailOffset + i;
+                    setCachedSessionLeadRow_(tab, sid, rn);
+                    return rn;
                 }
             }
         }
@@ -4766,6 +4930,7 @@ export async function upsertSessionQueriesInSheet(row) {
     const chatTranscriptJson =
         typeof row.chatTranscriptJson === "string" ? row.chatTranscriptJson.trim() : "";
     const writeChatTranscriptOnSessionSync = row.writeChatTranscriptOnSessionSync === true;
+    const lightweightSessionSync = row.lightweightSessionSync === true;
     if (!incomingQ && !chatTranscriptJson) {
         return { mode: "skipped_empty_queries" };
     }
@@ -4780,16 +4945,29 @@ export async function upsertSessionQueriesInSheet(row) {
         row.sheetExtrasSources && typeof row.sheetExtrasSources === "object"
             ? row.sheetExtrasSources
             : null;
+    const incomingHasContact = !!(
+        (typeof row.name === "string" && row.name.trim())
+        || (typeof row.mobile === "string" && row.mobile.trim())
+        || (typeof row.email === "string" && row.email.trim())
+    );
 
-    const rowNumber = await findSessionRowNumberBySessionId_(sheets, tab, sid);
+    const rowNumber = await findSessionRowNumberBySessionId_(
+        sheets,
+        tab,
+        sid,
+        lightweightSessionSync ? SESSION_ROW_LOOKBACK_ROWS : DEDUP_LOOKBACK_ROWS
+    );
     if (rowNumber > 0) {
         const queriesCol = await getUserQueriesColumnInfo_(sheets, tab);
-        const got = await sheets.spreadsheets.values.get({
-            spreadsheetId: SPREADSHEET_ID,
-            range: `${tab}!A${rowNumber}:S${rowNumber}`
-        });
-        const r0 = Array.isArray(got.data.values) && got.data.values[0] ? got.data.values[0] : [];
-        const existingCsv = sanitizeUserQueriesCsvForSheet(sheetCellString_(r0[queriesCol.colIdx]));
+        let existingCsv = "";
+        if (incomingQ) {
+            const gotQ = await sheetsValuesGet_(sheets, {
+                spreadsheetId: SPREADSHEET_ID,
+                range: `${tab}!${queriesCol.colLetter}${rowNumber}`
+            });
+            const q0 = Array.isArray(gotQ.data.values) && gotQ.data.values[0] ? gotQ.data.values[0] : [];
+            existingCsv = sanitizeUserQueriesCsvForSheet(sheetCellString_(q0[0]));
+        }
         let merged = existingCsv;
         let queryColumnWritten = false;
         /** @type {{ totalUpdatedCells?: number, totalUpdatedRows?: number, updatedRanges: string[] } | null} */
@@ -4812,56 +4990,74 @@ export async function upsertSessionQueriesInSheet(row) {
                 googleBatchQueries = googleBatchSummaryFromResponse_(nBatch);
             }
         }
+        const now = Date.now();
+        const lastFull = sessionLastFullRowSyncAt_.get(sid) || 0;
+        const needsFullRow =
+            !lightweightSessionSync
+            || incomingHasContact
+            || !lastFull
+            || now - lastFull >= SESSION_SHEET_FULL_ROW_MIN_INTERVAL_MS;
         let fullRowWritten = false;
-        try {
-            const preserveSheetContact = await readLeadContactFromSheetRow_(sheets, tab, rowNumber);
-            const fullLead = assembleLeadSheetPayloadFromSources_(
-                {
-                    convDate: row.convDate,
-                    convTime: row.convTime,
-                    formId: row.formId,
-                    name: row.name,
-                    mobile: row.mobile,
-                    email: row.email,
-                    clientSessionId: sid,
-                    browserName: row.browserName,
-                    deviceType: row.deviceType,
-                    channel: row.channel,
-                    fileLinks: row.fileLinks,
-                    city: row.city,
-                    ip: row.ip,
-                    sourceUrl: row.sourceUrl,
-                    appointmentBooked: row.appointmentBooked,
-                    appointmentDate: row.appointmentDate,
-                    appointmentTime: row.appointmentTime,
-                    userQueriesCsv: merged || existingCsv || incomingQ,
-                    chatTranscriptJson: row.chatTranscriptJson,
-                    preserveSheetContact
-                },
-                sheetExtrasSources
-            );
-            await writeLeadRowByHeader_(sheets, tab, rowNumber, fullLead, sheetExtrasSources);
-            fullRowWritten = true;
-        } catch (fullErr) {
-            const m = fullErr && /** @type {{ message?: string }} */ (fullErr).message
-                ? String(/** @type {{ message?: string }} */ (fullErr).message)
-                : String(fullErr);
-            console.error("[chatbot-api] session-sheet-sync full row update:", m);
+        if (needsFullRow) {
+            try {
+                const preserveSheetContact = incomingHasContact
+                    ? { name: "", mobile: "", email: "" }
+                    : await readLeadContactFromSheetRow_(sheets, tab, rowNumber);
+                const fullLead = assembleLeadSheetPayloadFromSources_(
+                    {
+                        convDate: row.convDate,
+                        convTime: row.convTime,
+                        formId: row.formId,
+                        name: row.name,
+                        mobile: row.mobile,
+                        email: row.email,
+                        clientSessionId: sid,
+                        browserName: row.browserName,
+                        deviceType: row.deviceType,
+                        channel: row.channel,
+                        fileLinks: row.fileLinks,
+                        city: row.city,
+                        ip: row.ip,
+                        sourceUrl: row.sourceUrl,
+                        appointmentBooked: row.appointmentBooked,
+                        appointmentDate: row.appointmentDate,
+                        appointmentTime: row.appointmentTime,
+                        userQueriesCsv: merged || existingCsv || incomingQ,
+                        chatTranscriptJson: row.chatTranscriptJson,
+                        preserveSheetContact
+                    },
+                    sheetExtrasSources
+                );
+                await writeLeadRowByHeader_(sheets, tab, rowNumber, fullLead, sheetExtrasSources);
+                fullRowWritten = true;
+                sessionLastFullRowSyncAt_.set(sid, now);
+            } catch (fullErr) {
+                const m = fullErr && /** @type {{ message?: string }} */ (fullErr).message
+                    ? String(/** @type {{ message?: string }} */ (fullErr).message)
+                    : String(fullErr);
+                console.error("[chatbot-api] session-sheet-sync full row update:", m);
+            }
+            if (!lightweightSessionSync || incomingHasContact) {
+                await maybeWriteLeadConvLinkColumnA_(sheets, tab, rowNumber, sid);
+                await maybeWriteSheetRowOpenLink_(sheets, tab, rowNumber, sid);
+            }
+            if (chatTranscriptJson && writeChatTranscriptOnSessionSync) {
+                await maybeWriteChatTranscriptJsonToSheetCell_(sheets, tab, rowNumber, chatTranscriptJson, {
+                    sessionSync: writeChatTranscriptOnSessionSync
+                });
+            }
         }
-        await maybeWriteLeadConvLinkColumnA_(sheets, tab, rowNumber, sid);
-        await maybeWriteSheetRowOpenLink_(sheets, tab, rowNumber, sid);
-        if (chatTranscriptJson) {
-            await maybeWriteChatTranscriptJsonToSheetCell_(sheets, tab, rowNumber, chatTranscriptJson, {
-                sessionSync: writeChatTranscriptOnSessionSync
-            });
-        }
+        setCachedSessionLeadRow_(tab, sid, rowNumber);
         if (!incomingQ) {
             return {
-                mode: "transcript_only_existing_row",
+                mode: lightweightSessionSync && !needsFullRow
+                    ? "transcript_deferred_light_sync"
+                    : "transcript_only_existing_row",
                 tab,
                 sheetRowNumber: rowNumber,
-                chat_transcript_json_written: Boolean(chatTranscriptJson),
-                fullRowWritten
+                chat_transcript_json_written: Boolean(chatTranscriptJson && needsFullRow),
+                fullRowWritten,
+                lightweight: lightweightSessionSync
             };
         }
         return {
@@ -4870,7 +5066,8 @@ export async function upsertSessionQueriesInSheet(row) {
             sheetRowNumber: rowNumber,
             queryColumnWritten,
             googleBatchQueries,
-            fullRowWritten
+            fullRowWritten,
+            lightweight: lightweightSessionSync
         };
     }
 

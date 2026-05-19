@@ -15366,6 +15366,11 @@ function trackChatUserQueryInSessionContext_(raw) {
 }
 
 let sessionSheetSyncDebounceTimer = 0;
+/** Debounced batch before POST session-sheet-sync (reduces Google Sheets read quota). */
+const SESSION_SHEET_SYNC_DEBOUNCE_MS = 8000;
+/** Min gap between session-sheet-sync POSTs from this tab. */
+const SESSION_SHEET_SYNC_MIN_CLIENT_INTERVAL_MS = 20000;
+let sessionSheetSyncLastPostAt = 0;
 
 function scheduleSessionQueriesSheetSync_() {
     if (!shouldSyncChatSessionToBackend_()) {
@@ -15378,7 +15383,7 @@ function scheduleSessionQueriesSheetSync_() {
         sessionSheetSyncDebounceTimer = 0;
         postSessionQueriesToSheetRow_();
         postSessionTranscriptToFirestore_();
-    }, 600);
+    }, SESSION_SHEET_SYNC_DEBOUNCE_MS);
 }
 
 /**
@@ -15512,10 +15517,19 @@ function postSessionTranscriptToFirestore_() {
         .catch(() => {});
 }
 
-function postSessionQueriesToSheetRow_() {
+/**
+ * @param {{ force?: boolean }} [opts] force=true skips client min-interval (e.g. after contact form).
+ */
+function postSessionQueriesToSheetRow_(opts) {
     if (!shouldSyncChatSessionToBackend_()) {
         return;
     }
+    const force = !!(opts && opts.force);
+    const now = Date.now();
+    if (!force && now - sessionSheetSyncLastPostAt < SESSION_SHEET_SYNC_MIN_CLIENT_INTERVAL_MS) {
+        return;
+    }
+    sessionSheetSyncLastPostAt = now;
     const endpoint = getApiEndpoint(CONTACT_FORM_SESSION_SHEET_SYNC_ENDPOINT);
     if (!endpoint || typeof fetch !== "function") {
         return;
@@ -18478,7 +18492,7 @@ function submitContactForm(event) {
             }
 
             if (hasChatUserEngaged_()) {
-                scheduleSessionQueriesSheetSync_();
+                postSessionQueriesToSheetRow_({ force: true });
             }
 
             const summaryForChat = chatSummaryPayload != null ? chatSummaryPayload : payload;

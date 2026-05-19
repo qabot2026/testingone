@@ -69,6 +69,7 @@ import {
     probeSheetsSpreadsheetAccess,
     sanitizeUserQueriesCsvForSheet,
     upsertSessionQueriesInSheet,
+    shouldThrottleSessionSheetSync_,
     patchSheetLeadBySessionId_,
     feedbackFieldsFromLeadSources_,
     writeLeadCaptureDashboardToSheet2
@@ -3341,6 +3342,18 @@ app.post(
             return res.status(400).json({ ok: false, error: "Missing client_session_id in client_context." });
         }
 
+        const sheetSyncThrottle = shouldThrottleSessionSheetSync_(clientSessionId);
+        if (sheetSyncThrottle.throttle) {
+            return res.status(200).json({
+                ok: true,
+                message: "Sync throttled to protect Google Sheets quota; try again shortly.",
+                skipped: true,
+                reason: "rate_limited",
+                retry_after_ms: sheetSyncThrottle.retryAfterMs,
+                live_agent: { queued: false, reason: "not_checked" }
+            });
+        }
+
         let liveAgentQueue = { queued: false, reason: "not_checked" };
         try {
             const { maybeQueueLiveAgentFromClientContext_ } = await import(
@@ -3476,6 +3489,7 @@ app.post(
                     userQueriesCsv,
                     chatTranscriptJson,
                     writeChatTranscriptOnSessionSync: true,
+                    lightweightSessionSync: true,
                     sheetExtrasSources: {
                         clientContext: mergedClientContext,
                         fields
@@ -3484,6 +3498,15 @@ app.post(
             } catch (se) {
                 const detail = se && se.message ? se.message : String(se);
                 console.error("[chatbot-api] session-sheet-sync", detail, se);
+                if (/quota exceeded|rate limit|resource_exhausted/i.test(detail)) {
+                    return res.status(200).json({
+                        ok: true,
+                        message: "Google Sheets read quota busy; chat saved elsewhere. Sync will retry on next message or form submit.",
+                        skipped: true,
+                        reason: "sheets_quota",
+                        live_agent: liveAgentQueue
+                    });
+                }
                 return res.status(500).json({ ok: false, error: detail });
             }
         }
