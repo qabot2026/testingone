@@ -89,6 +89,7 @@ import { uploadSubmissionFilesToDrive } from "./lib/drive-upload.mjs";
 import { hasDriveUploadCredentials } from "./lib/drive-auth.mjs";
 import { forwardSubmissionToAppsScript } from "./lib/apps-script-upload.mjs";
 import {
+    contactContextLookupRecord_,
     resolveContactMobile,
     resolveContactEmail,
     resolveContactName,
@@ -161,6 +162,32 @@ const DEFER_FIRESTORE_UNTIL_AFTER_HTTP_RESPONSE =
     !FIRESTORE_DISABLED &&
     !SHEETS_DISABLED &&
     process.env.CONTACT_FORM_DEFER_FIRESTORE_AFTER_RESPONSE === "1";
+
+/**
+ * Copy Dialogflow `session_params` contact fields onto top-level `client_context` for Sheets / Firestore.
+ *
+ * @param {Record<string, unknown>} clientContext
+ */
+function hydrateClientContextContactFromSession_(clientContext) {
+    const base =
+        clientContext && typeof clientContext === "object" && !Array.isArray(clientContext)
+            ? { ...clientContext }
+            : {};
+    const lookup = contactContextLookupRecord_(base);
+    const name = resolveContactName({}, {}, lookup);
+    const mobile = resolveContactMobile({}, {}, lookup);
+    const email = resolveContactEmail({}, {}, lookup);
+    if (name) {
+        base.name = name;
+    }
+    if (mobile) {
+        base.mobile = mobile;
+    }
+    if (email) {
+        base.email = email;
+    }
+    return base;
+}
 
 /**
  * Live session transcript doc + patch newest lead `client_context` (bot lines for staff script).
@@ -2550,10 +2577,12 @@ app.post(
         const clientContext =
             body.client_context && typeof body.client_context === "object" ? body.client_context : {};
         const channel = normalizeLeadChannel(clientContext.channel);
-        let mergedClientContext = clientContextForStorageWithoutChatScriptUnlessEngaged_({
-            ...clientContext,
-            channel
-        });
+        let mergedClientContext = hydrateClientContextContactFromSession_(
+            clientContextForStorageWithoutChatScriptUnlessEngaged_({
+                ...clientContext,
+                channel
+            })
+        );
 
         /** @type {Record<string, string>} */
         const fields = {};
@@ -3059,10 +3088,12 @@ app.post(
         const clientContext =
             body.client_context && typeof body.client_context === "object" ? body.client_context : {};
         const channel = normalizeLeadChannel(clientContext.channel);
-        let mergedClientContext = clientContextForStorageWithoutChatScriptUnlessEngaged_({
-            ...clientContext,
-            channel
-        });
+        let mergedClientContext = hydrateClientContextContactFromSession_(
+            clientContextForStorageWithoutChatScriptUnlessEngaged_({
+                ...clientContext,
+                channel
+            })
+        );
 
         if (!clientContextHasUserChatEngagement_(clientContext)) {
             return res.status(200).json({
@@ -3253,10 +3284,12 @@ app.post(
         const clientContext =
             body.client_context && typeof body.client_context === "object" ? body.client_context : {};
         const channel = normalizeLeadChannel(clientContext.channel);
-        let mergedClientContext = clientContextForStorageWithoutChatScriptUnlessEngaged_({
-            ...clientContext,
-            channel
-        });
+        let mergedClientContext = hydrateClientContextContactFromSession_(
+            clientContextForStorageWithoutChatScriptUnlessEngaged_({
+                ...clientContext,
+                channel
+            })
+        );
 
         const clientSessionId = typeof clientContext.client_session_id === "string"
             ? clientContext.client_session_id.trim()

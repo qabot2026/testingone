@@ -273,7 +273,6 @@ export function clientContextEnrichedForSheetMetrics_(clientContext, incomingRow
             cx.chat_transcript = coerceChatTranscriptArray_(json);
         }
     }
-    cx.chat_transcript = buildTranscriptTurnsFromClientContext_(cx);
     return cx;
 }
 

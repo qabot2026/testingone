@@ -160,7 +160,19 @@ export function contactContextLookupRecord_(clientContext) {
         cx.session_params && typeof cx.session_params === "object" && !Array.isArray(cx.session_params)
             ? /** @type {Record<string, unknown>} */ (cx.session_params)
             : {};
-    return { ...sp, ...cx };
+    /** @type {Record<string, unknown>} */
+    const out = { ...sp };
+    for (const [k, val] of Object.entries(cx)) {
+        if (k === "session_params" || (typeof k === "string" && k.startsWith("_"))) {
+            continue;
+        }
+        const s = scalarFormValue(val);
+        if (!s) {
+            continue;
+        }
+        out[k] = val;
+    }
+    return out;
 }
 
 const CONTACT_NAME_ALIASES = [

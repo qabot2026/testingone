@@ -2,6 +2,8 @@
  * Normalize widget / Firestore chat payloads into countable transcript turns (metrics + Sheets).
  */
 
+import { mergeChatTranscriptArrays_ } from "./firestore.mjs";
+
 /** @param {unknown} raw */
 export function coerceChatTranscriptArray_(raw) {
     if (Array.isArray(raw)) {
@@ -191,11 +193,18 @@ function turnFromTranscriptItem_(item, ord) {
         return null;
     }
     const o = /** @type {Record<string, unknown>} */ (item);
-    const text = transcriptTurnTextFromItem_(o);
-    if (!text || isFormSubmissionLine_(text)) {
-        return null;
-    }
     const role = normalizeTranscriptItemRole_(o);
+    let text = transcriptTurnTextFromItem_(o);
+    if (!text && (o.rich || o.fulfillment_response || o.fulfillmentResponse || o.payload)) {
+        text = "(Bot message)";
+    }
+    if (!text || isFormSubmissionLine_(text)) {
+        if (role === "assistant" || role === "agent") {
+            text = "(Bot message)";
+        } else {
+            return null;
+        }
+    }
     const atMs = coerceTranscriptAtMs_(o.at);
     const at = typeof atMs === "number" && Number.isFinite(atMs) ? atMs : ord + 1;
     const rawSeq = o.seq;
@@ -387,7 +396,15 @@ function mergeTurnLists_(...lists) {
         }
         for (let i = 0; i < list.length; i += 1) {
             const t = list[i];
-            if (!t || !t.text) {
+            if (!t) {
+                continue;
+            }
+            let text = typeof t.text === "string" ? t.text.trim() : "";
+            if (!text && (t.role === "assistant" || t.role === "agent")) {
+                text = "(Bot message)";
+                t.text = text;
+            }
+            if (!text) {
                 continue;
             }
             const key = turnDedupKey_(t);
@@ -432,13 +449,10 @@ export function buildTranscriptTurnsFromClientContext_(clientContext) {
 function mergeClientContextRecords_(a, b) {
     const A = a && typeof a === "object" && !Array.isArray(a) ? /** @type {Record<string, unknown>} */ (a) : {};
     const B = b && typeof b === "object" && !Array.isArray(b) ? /** @type {Record<string, unknown>} */ (b) : {};
-    const turnsA = buildTranscriptTurnsFromClientContext_(A);
-    const turnsB = buildTranscriptTurnsFromClientContext_(B);
-    const mergedTurns = mergeTurnLists_(turnsA, turnsB);
     return {
         ...A,
         ...B,
-        chat_transcript: mergedTurns,
+        chat_transcript: mergeChatTranscriptArrays_(A.chat_transcript, B.chat_transcript),
         user_queries: Array.isArray(B.user_queries) && B.user_queries.length
             ? B.user_queries
             : A.user_queries,
@@ -498,7 +512,5 @@ export async function enrichClientContextForSheetMetricsAsync_(clientContext, op
             console.warn("[chatbot-api] enrichClientContextForSheetMetrics Firestore:", m.slice(0, 200));
         }
     }
-    const turns = buildTranscriptTurnsFromClientContext_(cx);
-    cx.chat_transcript = turns;
     return cx;
 }

@@ -370,7 +370,7 @@ function normalizeTranscriptMergeRole_(o) {
  * @param {unknown} next
  * @returns {unknown[]}
  */
-function mergeChatTranscriptArrays_(prev, next) {
+export function mergeChatTranscriptArrays_(prev, next) {
     const p = Array.isArray(prev) ? prev : [];
     const n = Array.isArray(next) ? next : [];
     if (!n.length) {
