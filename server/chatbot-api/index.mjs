@@ -81,7 +81,8 @@ import {
 import { formatCrmExchangeForTranscript_, syncLeadToCrm_ } from "./lib/crm-sync.mjs";
 import {
     computeConversationMetricsFromClientContext_,
-    mergeConversationMetricsIntoClientContext_
+    mergeConversationMetricsIntoClientContext_,
+    enrichClientContextForSheetMetricsAsync_
 } from "./lib/conversation-metrics.mjs";
 import { getServiceAccountCredentials } from "./lib/google-service-account.mjs";
 import { uploadSubmissionFilesToDrive } from "./lib/drive-upload.mjs";
@@ -2852,14 +2853,20 @@ app.post(
                         : {})
                 };
             }
+            const chatTranscriptJsonForSheet =
+                stringifyChatTranscriptForSheetPayload_(mergedClientContext);
+            mergedClientContext = await enrichClientContextForSheetMetricsAsync_(mergedClientContext, {
+                sessionId: clientSessionId,
+                incomingRow: chatTranscriptJsonForSheet
+                    ? { chatTranscriptJson: chatTranscriptJsonForSheet }
+                    : {}
+            });
             const conversationMetrics = computeConversationMetricsFromClientContext_(mergedClientContext);
             mergedClientContext = mergeConversationMetricsIntoClientContext_(
                 mergedClientContext,
                 conversationMetrics
             );
             record.client_context = mergedClientContext;
-            const chatTranscriptJsonForSheet =
-                stringifyChatTranscriptForSheetPayload_(mergedClientContext);
             if (!SHEETS_DISABLED) {
                 try {
                     sheetOutcome = await appendContactRowToSheet(
@@ -3109,13 +3116,19 @@ app.post(
             || (await resolveCityForRequest(req));
         const userQueriesCsv = normalizeUserQueriesCsvFromClientContext(mergedClientContext);
         const sourceUrl = resolveSourceUrlForSheet(mergedClientContext);
+        const chatTranscriptJsonMobile =
+            stringifyChatTranscriptForSheetPayload_(mergedClientContext);
+        mergedClientContext = await enrichClientContextForSheetMetricsAsync_(mergedClientContext, {
+            sessionId: clientSessionId,
+            incomingRow: chatTranscriptJsonMobile
+                ? { chatTranscriptJson: chatTranscriptJsonMobile }
+                : {}
+        });
         const conversationMetricsMobile = computeConversationMetricsFromClientContext_(mergedClientContext);
         mergedClientContext = mergeConversationMetricsIntoClientContext_(
             mergedClientContext,
             conversationMetricsMobile
         );
-        const chatTranscriptJsonMobile =
-            stringifyChatTranscriptForSheetPayload_(mergedClientContext);
         try {
             const sheetOutcome = await appendContactRowToSheet(
                 {

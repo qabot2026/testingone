@@ -3065,7 +3065,11 @@ function resolveLeadValueForNormalizedHeader_(nk, lead, opts) {
         return sheetOutboundCell_(L.duration);
     }
     if (nk === "crmpushstatus" || nk === "crmstatus" || nk === "crmpassed") {
-        return sheetOutboundCell_(L.crmPushStatus);
+        const crm = sheetOutboundCell_(L.crmPushStatus);
+        if (/^\d{1,5}-\d{1,5}$/.test(crm)) {
+            return "";
+        }
+        return crm;
     }
     if (nk === "messagecount" || nk === "messages") {
         return sheetOutboundCell_(L.messageCount);

@@ -4,6 +4,33 @@
 
 import { campaignParamsFromClientContext_ } from "./campaign-params.mjs";
 import { crmFieldsFromClientContext_ } from "./crm-sync.mjs";
+import {
+    buildTranscriptTurnsFromClientContext_,
+    coerceChatTranscriptArray_,
+    enrichClientContextForSheetMetricsAsync_
+} from "./chat-transcript-turns.mjs";
+
+export { enrichClientContextForSheetMetricsAsync_ };
+
+/** @param {string} s */
+function looksLikeUserBotMessageCount_(s) {
+    return /^\d{1,5}-\d{1,5}$/.test(String(s || "").trim());
+}
+
+/** @param {string} s */
+function sanitizeCrmPushStatusForSheet_(s) {
+    const t = String(s || "").trim();
+    if (!t || looksLikeUserBotMessageCount_(t)) {
+        return "";
+    }
+    if (/^passed$/i.test(t)) {
+        return "Success";
+    }
+    if (/^failed$/i.test(t) || /^fail$/i.test(t)) {
+        return "Fail";
+    }
+    return t;
+}
 
 const LEAD_CAPTURE_POSITIVE_RE =
     /\b(thank|thanks|thankyou|great|good|excellent|happy|love|appreciate|wonderful|amazing|helpful|satisfied|perfect|awesome|fantastic|pleased|glad|nice|delighted)\b/gi;
@@ -105,26 +132,7 @@ function isUserQuestionText_(text) {
 }
 
 /**
- * @param {unknown} role
- */
-function normalizeTranscriptRole_(role) {
-    const r = String(role || "")
-        .trim()
-        .toLowerCase();
-    if (r === "user" || r === "visitor" || r === "human") {
-        return "user";
-    }
-    if (r === "agent" || r === "human_agent" || r === "live_agent") {
-        return "agent";
-    }
-    if (r === "assistant" || r === "bot") {
-        return "assistant";
-    }
-    return r;
-}
-
-/**
- * Ensure transcript / precomputed metrics exist before sheet analytics (e.g. from `chatTranscriptJson` on the row).
+ * Ensure transcript exists for metrics (sync; prefer {@link enrichClientContextForSheetMetricsAsync_} on submit).
  *
  * @param {unknown} clientContext
  * @param {unknown} [incomingRow]
@@ -139,21 +147,13 @@ export function clientContextEnrichedForSheetMetrics_(clientContext, incomingRow
         incomingRow && typeof incomingRow === "object" && !Array.isArray(incomingRow)
             ? /** @type {Record<string, unknown>} */ (incomingRow)
             : {};
-    const hasTranscript =
-        Array.isArray(cx.chat_transcript) && cx.chat_transcript.length > 0;
-    if (!hasTranscript) {
+    if (!coerceChatTranscriptArray_(cx.chat_transcript).length) {
         const json = row.chatTranscriptJson;
         if (typeof json === "string" && json.trim()) {
-            try {
-                const parsed = JSON.parse(json);
-                if (Array.isArray(parsed) && parsed.length) {
-                    cx.chat_transcript = parsed;
-                }
-            } catch {
-                /* ignore */
-            }
+            cx.chat_transcript = coerceChatTranscriptArray_(json);
         }
     }
+    cx.chat_transcript = buildTranscriptTurnsFromClientContext_(cx);
     return cx;
 }
 
@@ -174,41 +174,6 @@ function metricScalarFromContext_(v) {
     return "";
 }
 
-/**
- * @param {unknown} clientContext
- * @returns {{ role: string, text: string, at: number }[]}
- */
-function transcriptTurnsFromClientContext_(clientContext) {
-    const cx =
-        clientContext && typeof clientContext === "object" && !Array.isArray(clientContext)
-            ? /** @type {Record<string, unknown>} */ (clientContext)
-            : {};
-    const raw = cx.chat_transcript;
-    if (!Array.isArray(raw)) {
-        return [];
-    }
-    /** @type {{ role: string, text: string, at: number }[]} */
-    const out = [];
-    for (let i = 0; i < raw.length; i += 1) {
-        const item = raw[i];
-        if (!item || typeof item !== "object") {
-            continue;
-        }
-        const o = /** @type {Record<string, unknown>} */ (item);
-        const role = normalizeTranscriptRole_(o.role);
-        const text = typeof o.text === "string" ? o.text.trim() : "";
-        if (!text) {
-            continue;
-        }
-        let at = typeof o.at === "number" && Number.isFinite(o.at) ? o.at : 0;
-        if (!at) {
-            at = i + 1;
-        }
-        out.push({ role, text, at });
-    }
-    out.sort((a, b) => a.at - b.at || 0);
-    return out;
-}
 
 /** @param {number} ms */
 function formatChatDuration_(ms) {
@@ -274,12 +239,8 @@ export function computeConversationMetricsFromClientContext_(clientContext) {
 
     const crm = crmFieldsFromClientContext_(cx);
     let crmPushStatus = "";
-    const crmRaw = crm.crmStatus || "";
-    if (/^passed$/i.test(crmRaw) || /^success$/i.test(crmRaw)) {
-        crmPushStatus = "Success";
-    } else if (/^failed$/i.test(crmRaw) || /^fail$/i.test(crmRaw)) {
-        crmPushStatus = "Fail";
-    } else if (crmRaw) {
+    const crmRaw = sanitizeCrmPushStatusForSheet_(crm.crmStatus || "");
+    if (crmRaw) {
         crmPushStatus = crmRaw;
     } else if (cx.crm_ok === true) {
         crmPushStatus = "Success";
@@ -287,7 +248,7 @@ export function computeConversationMetricsFromClientContext_(clientContext) {
         crmPushStatus = "Fail";
     }
 
-    const turns = transcriptTurnsFromClientContext_(cx);
+    const turns = buildTranscriptTurnsFromClientContext_(cx);
     let userCount = 0;
     let botCount = 0;
     /** @type {number[]} */
@@ -415,15 +376,17 @@ export function conversationMetricsForSheetRow_(metrics, clientContext, incoming
         }
         return "";
     };
+    const pickCrm = (...keys) => sanitizeCrmPushStatusForSheet_(pick(...keys));
     const unanswered =
         m.unansweredQuestions != null && String(m.unansweredQuestions) !== ""
             ? String(m.unansweredQuestions)
             : pick("unanswered_questions", "unansweredQuestions") || "0";
-    const userBot = m.messageCount || pick("message_count", "messageCount");
+    const userBot = m.messageCount || pick("message_count", "messageCount") || "";
+    const turnsLen = buildTranscriptTurnsFromClientContext_(cx).length;
     return {
-        crmPushStatus: m.crmPushStatus || pick("crm_push_status", "crmPushStatus", "crm_status"),
+        crmPushStatus: sanitizeCrmPushStatusForSheet_(m.crmPushStatus) || pickCrm("crm_push_status", "crmPushStatus", "crm_status"),
         duration: m.chatDurationDisplay || pick("chatduration", "chat_duration", "duration"),
-        messageCount: userBot || (Array.isArray(cx.chat_transcript) && cx.chat_transcript.length ? "0-0" : ""),
+        messageCount: userBot || (turnsLen ? "0-0" : ""),
         avgResponseTimeMs: m.avgResponseTimeMs || pick("avg_response_time_ms", "avgResponseTimeMs"),
         sentiment: m.sentiment || pick("sentiment"),
         unansweredQuestions: unanswered,
@@ -456,7 +419,7 @@ export function mergeConversationMetricsIntoClientContext_(clientContext, metric
         }
     };
 
-    setSp("crm_push_status", m.crmPushStatus);
+    setSp("crm_push_status", sanitizeCrmPushStatusForSheet_(m.crmPushStatus));
     setSp("chatduration", m.chatDurationDisplay);
     setSp("chat_duration", m.chatDurationDisplay);
     if (m.chatDurationSec > 0) {
