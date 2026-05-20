@@ -1976,6 +1976,131 @@ function isBlankSheetCell_(rawCell) {
     return !sheetCellString_(rawCell);
 }
 
+/** @param {unknown[]} rowCells */
+function rowCellsHaveLeadSessionId_(rowCells) {
+    const r = Array.isArray(rowCells) ? rowCells : [];
+    const sid =
+        sheetCellString_(r[STANDARD_SESSION_COLUMN_INDEX0_PRIMARY])
+        || sheetCellString_(r[STANDARD_SESSION_COLUMN_INDEX0_PRE_TRANSCRIPT])
+        || sheetCellString_(r[STANDARD_SESSION_COLUMN_INDEX0_LEGACY]);
+    if (sid) {
+        return true;
+    }
+    for (let c = 0; c < r.length; c += 1) {
+        const cell = sheetCellString_(r[c]);
+        if (cell && cell.length >= 12 && cell.includes("-") && /[a-f0-9]{6,}/i.test(cell)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * True when a data row (row 2+) has no session, contact, or name — safe to reuse after manual clears.
+ * Ignores leftover HYPERLINK in column A when session/mobile/email are gone.
+ *
+ * @param {unknown[]} rowCells
+ * @param {number} mobileColIdx
+ */
+function isLeadSheetDataRowEmpty_(rowCells, mobileColIdx) {
+    if (!Array.isArray(rowCells) || !rowCells.length) {
+        return true;
+    }
+    if (rowCellsHaveLeadSessionId_(rowCells)) {
+        return false;
+    }
+    const mobIdx = typeof mobileColIdx === "number" && mobileColIdx >= 0 ? mobileColIdx : 4;
+    if (mobileKeyFromCell_(sheetCellString_(rowCells[mobIdx]))) {
+        return false;
+    }
+    for (let c = 0; c < rowCells.length; c += 1) {
+        if (sheetCellLooksLikeLeadEmail_(rowCells[c])) {
+            return false;
+        }
+        if (c !== mobIdx && mobileKeyFromCell_(sheetCellString_(rowCells[c]))) {
+            return false;
+        }
+    }
+    const nameIdx = 3;
+    const nm = sheetCellString_(rowCells[nameIdx]);
+    if (nm && nm.length > 1 && !/^\d[\d\-\/\.]+$/.test(nm)) {
+        return false;
+    }
+    return true;
+}
+
+/**
+ * First 1-based row at or below row 2 with no lead data (reuses gaps after staff clear rows).
+ *
+ * @param {import("googleapis").sheets_v4.Sheets} sheets
+ * @param {string} tab
+ * @returns {Promise<number>}
+ */
+async function findFirstEmptyLeadRow1Based_(sheets, tab) {
+    const hardCap = conversationSheetScanHardCap_();
+    const gridRows = await conversationSheetGridRowCount_(sheets, tab);
+    const nLast = await conversationSheetLastDataRow1Based_(sheets, tab, hardCap, gridRows);
+    const mobileCol = await getMobileColumnInfo_(sheets, tab);
+    const scanEnd = Math.min(
+        gridRows > 0 ? gridRows : nLast + DEDUP_LOOKBACK_ROWS,
+        Math.max(nLast + 5, 2 + DEDUP_LOOKBACK_ROWS)
+    );
+    if (scanEnd < 2) {
+        return 2;
+    }
+    const got = await sheetsValuesGet_(sheets, {
+        spreadsheetId: SPREADSHEET_ID,
+        range: `${tab}!A2:S${scanEnd}`
+    });
+    const rows = Array.isArray(got.data.values) ? got.data.values : [];
+    for (let i = 0; i < rows.length; i += 1) {
+        if (isLeadSheetDataRowEmpty_(rows[i] || [], mobileCol.mobileColIdx)) {
+            return 2 + i;
+        }
+    }
+    return nLast >= 2 ? nLast + 1 : 2;
+}
+
+/**
+ * @param {import("googleapis").sheets_v4.Sheets} sheets
+ * @param {string} tab
+ * @param {number} rowNumber1Based
+ */
+async function isLeadSheetRowEmptyAt_(sheets, tab, rowNumber1Based) {
+    const rn = Math.trunc(rowNumber1Based);
+    if (!Number.isFinite(rn) || rn < 2) {
+        return true;
+    }
+    const mobileCol = await getMobileColumnInfo_(sheets, tab);
+    const got = await sheetsValuesGet_(sheets, {
+        spreadsheetId: SPREADSHEET_ID,
+        range: `${tab}!A${rn}:S${rn}`
+    });
+    const row = Array.isArray(got.data.values) && got.data.values[0] ? got.data.values[0] : [];
+    return isLeadSheetDataRowEmpty_(row, mobileCol.mobileColIdx);
+}
+
+/**
+ * @param {import("googleapis").sheets_v4.Sheets} sheets
+ * @param {string} tab
+ * @param {string} sessionId
+ */
+async function getValidatedCachedSessionLeadRow_(sheets, tab, sessionId) {
+    const sid = typeof sessionId === "string" ? sessionId.trim() : "";
+    if (!sid) {
+        return 0;
+    }
+    const cached = getCachedSessionLeadRow_(tab, sid);
+    if (!cached) {
+        return 0;
+    }
+    if (await isLeadSheetRowEmptyAt_(sheets, tab, cached)) {
+        sessionLeadRowCache_.delete(`${tab}|${sid}`);
+        return 0;
+    }
+    return cached;
+}
+
 /**
  * Last 1-based sheet row with any value in column A or B (chat JSON in A, conv. date in B on default schema).
  * @param {unknown[][]} abRows from `${tab}!A1:B${cap}`
@@ -2367,15 +2492,19 @@ async function scanSheetTailForDedupeAndRepeat_(sheets, row) {
 
         // If we have a session id, enforce "only once per session".
         if (key && incomingSid && existingSid && existingSid === incomingSid) {
-            duplicateRowNum = rowNumber;
-            break;
+            if (!isLeadSheetDataRowEmpty_(r, mobileCol.mobileColIdx)) {
+                duplicateRowNum = rowNumber;
+                break;
+            }
         }
         // Some sheets have different column ordering; scan the whole row for the session id string.
         if (key && incomingSid && Array.isArray(r)) {
             for (let c = 0; c < r.length; c++) {
                 const cell = sheetCellString_(r[c]);
                 if (cell && cell === incomingSid) {
-                    duplicateRowNum = rowNumber;
+                    if (!isLeadSheetDataRowEmpty_(r, mobileCol.mobileColIdx)) {
+                        duplicateRowNum = rowNumber;
+                    }
                     break;
                 }
             }
@@ -4863,7 +4992,9 @@ async function appendContactRowToSheet_(row, opts) {
 
     const tab = tabNameFromRange(RANGE);
     const appendRangeUsed = appendRangeSchemaWidth_(RANGE);
-    let duplicateRowNum = sidForDedup ? getCachedSessionLeadRow_(tabResolved, sidForDedup) : 0;
+    let duplicateRowNum = sidForDedup
+        ? await getValidatedCachedSessionLeadRow_(sheets, tabResolved, sidForDedup)
+        : 0;
     const scanFull = await scanSheetTailForDedupeAndRepeat_(sheets, row);
     if (!duplicateRowNum) {
         duplicateRowNum = scanFull.matchedRowNumber || 0;
@@ -4875,6 +5006,12 @@ async function appendContactRowToSheet_(row, opts) {
             sidForDedup,
             DEDUP_LOOKBACK_ROWS
         );
+    }
+    if (duplicateRowNum && (await isLeadSheetRowEmptyAt_(sheets, tabResolved, duplicateRowNum))) {
+        duplicateRowNum = 0;
+        if (sidForDedup) {
+            sessionLeadRowCache_.delete(`${tabResolved}|${sidForDedup}`);
+        }
     }
     if (duplicateRowNum) {
         if (sidForDedup) {
@@ -4922,7 +5059,7 @@ async function appendContactRowToSheet_(row, opts) {
             sid0,
             DEDUP_LOOKBACK_ROWS
         );
-        if (lateDup) {
+        if (lateDup && !(await isLeadSheetRowEmptyAt_(sheets, tabResolved, lateDup))) {
             setCachedSessionLeadRow_(tabResolved, sid0, lateDup);
             return await patchExistingSessionLeadRow_(
                 sheets,
@@ -4955,38 +5092,17 @@ async function appendContactRowToSheet_(row, opts) {
         },
         sheetExtrasSources
     );
-    const rowValues = await buildFullLeadRowValuesForSheet_(sheets, tabResolved, fullLeadAppend, {
-        convLinkFormula: colAFormula || ""
-    });
-    const values = [rowValues];
-    const appendRes = await sheets.spreadsheets.values.append({
-        spreadsheetId: SPREADSHEET_ID,
-        range: appendRangeUsed,
-        valueInputOption: "USER_ENTERED",
-        insertDataOption: "INSERT_ROWS",
-        requestBody: { values }
-    });
-    const up = appendRes && appendRes.data && appendRes.data.updates ? appendRes.data.updates : {};
+    const targetRow = await findFirstEmptyLeadRow1Based_(sheets, tabResolved);
+    await writeLeadRowByHeader_(sheets, tabResolved, targetRow, fullLeadAppend, sheetExtrasSources);
+    invalidateSheetTailCaches_(tabResolved);
     /** @type {{ updatedRange?: string, updatedRows?: number, spreadsheetId?: string }} */
-    const googleAppend = {};
-    if (typeof up.updatedRange === "string") {
-        googleAppend.updatedRange = up.updatedRange;
-    }
-    if (typeof up.updatedRows === "number") {
-        googleAppend.updatedRows = up.updatedRows;
-    }
-    if (typeof up.spreadsheetId === "string") {
-        googleAppend.spreadsheetId = up.spreadsheetId;
-    }
-    if (!googleAppend.updatedRange) {
-        console.warn(
-            "[chatbot-api] Sheets append succeeded but updates.updatedRange missing; check SHEETS_RANGE tab and spreadsheet id.",
-            `tab="${tabResolved}"`,
-            appendRangeUsed
-        );
-    }
+    const googleAppend = {
+        updatedRange: `${tabResolved}!A${targetRow}:AE${targetRow}`,
+        updatedRows: 1,
+        spreadsheetId: SPREADSHEET_ID
+    };
 
-    const appendedRowNum = rowNumberFromUpdatedRange_(googleAppend.updatedRange);
+    const appendedRowNum = targetRow;
     if (appendedRowNum && sid0) {
         setCachedSessionLeadRow_(tabResolved, sid0, appendedRowNum);
         invalidateSheetTailCaches_(tabResolved);
@@ -5068,7 +5184,7 @@ async function findSessionRowNumberBySessionId_(sheets, tab, sessionId, lookback
     if (!sid) {
         return 0;
     }
-    const cached = getCachedSessionLeadRow_(tab, sid);
+    const cached = await getValidatedCachedSessionLeadRow_(sheets, tab, sid);
     if (cached) {
         return cached;
     }
@@ -5084,8 +5200,12 @@ async function findSessionRowNumberBySessionId_(sheets, tab, sessionId, lookback
     if (!tail.length) {
         return 0;
     }
+    const mobileCol = await getMobileColumnInfo_(sheets, tab);
     for (let i = tail.length - 1; i >= 0; i--) {
         const r = tail[i] || [];
+        if (isLeadSheetDataRowEmpty_(r, mobileCol.mobileColIdx)) {
+            continue;
+        }
         const existingSid =
             sheetCellString_(r[STANDARD_SESSION_COLUMN_INDEX0_PRIMARY])
             || sheetCellString_(r[STANDARD_SESSION_COLUMN_INDEX0_PRE_TRANSCRIPT])
@@ -5157,7 +5277,7 @@ async function upsertSessionQueriesInSheet_(row) {
         || (typeof row.email === "string" && row.email.trim())
     );
 
-    let rowNumber = getCachedSessionLeadRow_(tab, sid);
+    let rowNumber = await getValidatedCachedSessionLeadRow_(sheets, tab, sid);
     if (!rowNumber) {
         rowNumber = await findSessionRowNumberBySessionId_(sheets, tab, sid, DEDUP_LOOKBACK_ROWS);
     }
@@ -5167,6 +5287,10 @@ async function upsertSessionQueriesInSheet_(row) {
             rowNumber = scanHit.matchedRowNumber;
             setCachedSessionLeadRow_(tab, sid, rowNumber);
         }
+    }
+    if (rowNumber > 0 && (await isLeadSheetRowEmptyAt_(sheets, tab, rowNumber))) {
+        sessionLeadRowCache_.delete(`${tab}|${sid}`);
+        rowNumber = 0;
     }
     if (rowNumber > 0) {
         const queriesCol = await getUserQueriesColumnInfo_(sheets, tab);
