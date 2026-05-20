@@ -50,7 +50,7 @@
   <script src="forms/birthform.js?v=79"></script>
   <script src="forms/nearest-branch.js?v=79"></script>
   <script src="company.config.js?v=109"></script>
-  <script src="company.js?v=149-ai-copilot-routing"></script>
+  <script src="company.js?v=150-widget-visible"></script>
   <script>
     (function () {
       function parseHexRgb(hex) {
@@ -382,7 +382,28 @@
     })();
   </script>
   <style>
-    html, body { height: 100%; margin: 0; background: transparent; overflow: visible; }
+    html, body {
+      height: 100%;
+      margin: 0;
+      background: transparent;
+      overflow: visible;
+      pointer-events: none;
+    }
+    /* Host + bubble must receive clicks; iframe shell uses pointer-events:none for pass-through. */
+    df-messenger,
+    df-messenger-chat-bubble,
+    #dfchat-chat-action-bar,
+    #dfchat-powered-by-strip,
+    #dfchat-chat-launcher-strip,
+    #dfchat-chat-launcher-input-strip,
+    #dfchat-chat-footer-overlay,
+    #dfchat-contact-form,
+    #dfchat-image-lightbox,
+    #dfchat-video-lightbox,
+    .dfchat-chat-launcher-strip,
+    .dfchat-chat-launcher-input-strip {
+      pointer-events: auto;
+    }
   </style>
 </head>
 <body></body>

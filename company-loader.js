@@ -35,7 +35,7 @@
   }
 
   var CHAT_HOST = chatHostFromLoaderSrc() || "https://qabot2026.github.io/testingone/";
-  var IFRAME_VERSION = "114-pointer-fix";
+  var IFRAME_VERSION = "115-widget-visible";
   var DEFAULT_API_BASE = "https://handsome-amazement-production-7f65.up.railway.app";
 
   function getLoaderQuery() {
@@ -89,21 +89,36 @@
     f.title = "Chat";
     f.setAttribute("src", frameUrl);
     f.setAttribute("referrerpolicy", "strict-origin-when-cross-origin");
-    /* Full-height strip on the right; matches typical right-docked chat.
-       iframe must stay pointer-events:auto — none on the iframe element blocks every click inside it. */
-    f.style.cssText = [
-      "position:fixed",
-      "top:0",
-      "right:0",
-      "bottom:0",
-      "width:min(100vw, 900px)",
-      "height:100%",
-      "max-width:100vw",
-      "border:0",
-      "z-index:2147483000",
-      "pointer-events:auto",
-      "background:transparent"
-    ].join(";");
+    /* Docked chat strip (not a full-screen overlay). pointer-events:none on the iframe shell;
+       chat-frame.html re-enables hits on df-messenger and footer chrome only. */
+    var mobile = false;
+    try {
+      mobile = window.matchMedia && window.matchMedia("(max-width: 768px)").matches;
+    } catch (e0) {
+      mobile = false;
+    }
+    f.style.cssText = mobile
+      ? [
+          "position:fixed",
+          "inset:0",
+          "width:100%",
+          "height:100%",
+          "border:0",
+          "z-index:2147483000",
+          "pointer-events:none",
+          "background:transparent"
+        ].join(";")
+      : [
+          "position:fixed",
+          "right:0",
+          "bottom:0",
+          "width:min(440px, 100vw)",
+          "height:min(720px, 100vh)",
+          "border:0",
+          "z-index:2147483000",
+          "pointer-events:none",
+          "background:transparent"
+        ].join(";");
     document.body.appendChild(f);
   }
 

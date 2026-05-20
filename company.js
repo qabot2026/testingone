@@ -2874,6 +2874,9 @@ function createAndMountMessenger() {
     scheduleSyncChatActionBarPosition();
     window.setTimeout(scheduleSyncChatActionBarPosition, 120);
     applyDeviceChatbotVisibility(COMPANY_UI_CONFIG, df);
+    df.style.setProperty("visibility", "visible", "important");
+    df.style.pointerEvents = "auto";
+    ensureBubbleVisible(df);
     startPersonaDecorator(df);
 
     updateCompanyDebugBadge([
@@ -5374,7 +5377,15 @@ function applyDeviceChatbotVisibility(config, dfMessenger) {
     const show = isDeviceShowChatbotEnabled(config);
     const hide = !show;
     if (dfMessenger) {
-        dfMessenger.style.display = hide ? "none" : "";
+        if (hide) {
+            dfMessenger.style.display = "none";
+        } else {
+            dfMessenger.style.removeProperty("display");
+            dfMessenger.style.setProperty("visibility", "visible", "important");
+            dfMessenger.style.setProperty("opacity", "1", "important");
+            dfMessenger.style.pointerEvents = "auto";
+            ensureBubbleVisible(dfMessenger);
+        }
         try {
             dfMessenger.setAttribute("aria-hidden", hide ? "true" : "false");
         } catch (e) {
@@ -14106,10 +14117,16 @@ function syncLiveAgentModeCacheFromConversation_(conv, stData) {
         !copilotAi
         && (status === "active" || !!(conv && conv.assignedAgentEmail));
     setLiveAgentHumanChatActive_(agentAccepted);
-    if (copilotAi) {
-        markLiveAgentCopilotInSession_();
-    } else if (status === "active" && humanMode === "human") {
-        clearLiveAgentCopilotInSession_();
+    try {
+        if (copilotAi) {
+            markLiveAgentCopilotInSession_();
+        } else if (status === "active" && humanMode === "human") {
+            clearLiveAgentCopilotInSession_();
+        }
+    } catch (sessErr) {
+        if (typeof console !== "undefined" && console.warn) {
+            console.warn("[live-agent] session copilot flags:", sessErr);
+        }
     }
     return copilotAi;
 }
@@ -14748,7 +14765,6 @@ async function liveAgentPollTick_(dfMessenger) {
             return;
         }
 
-        const wasHuman = liveAgentHumanChatActive_();
         if (liveAgentHumanChatActive_() && !wasHuman) {
             liveAgentMessagesSinceIso = "";
         }
