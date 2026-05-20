@@ -14653,9 +14653,6 @@ async function tryBlockDialogflowForLiveAgentHumanChat_(event, queryText) {
     if (!t || !liveAgentHandoffIsActive_()) {
         return false;
     }
-    if (liveAgentShouldBlockDialogflowNow_()) {
-        preventDialogflowMessengerEvent_(event);
-    }
     await liveAgentRefreshModeFromServer_(true);
     if (liveAgentAllowDialogflowForUserText_()) {
         return false;
@@ -15140,6 +15137,13 @@ async function liveAgentPollTick_(dfMessenger) {
         const copilotAi = syncLiveAgentModeCacheFromConversation_(conv, stData);
         if (wasHuman && copilotAi) {
             liveAgentModeRefreshAt_ = 0;
+            setLiveAgentHumanChatActive_(false);
+            try {
+                markLiveAgentCopilotInSession_();
+                clearLiveAgentHumanChatInSession_();
+            } catch {
+                /* ignore */
+            }
         }
 
         if (status === "closed") {
@@ -15289,14 +15293,6 @@ function attachLiveAgentComposerBridge_(dfMessenger) {
                                 return;
                             }
                             void (async () => {
-                            if (liveAgentShouldBlockDialogflowNow_()) {
-                                try {
-                                    ev.preventDefault();
-                                    ev.stopPropagation();
-                                } catch {
-                                    /* ignore */
-                                }
-                            }
                             await liveAgentRefreshModeFromServer_(true);
                             if (
                                 !liveAgentAllowDialogflowForUserText_()
@@ -15447,13 +15443,6 @@ async function liveAgentSendVisitorMessage_(dfMessenger, text, shouldRenderCusto
 }
 
 async function handleDfResponseReceived(event) {
-    if (liveAgentHandoffIsActive_() && liveAgentShouldBlockDialogflowNow_()) {
-        preventDialogflowMessengerEvent_(event);
-        scheduleSuppressDfMessengerErrorUi_();
-        scheduleSuppressDfMessengerBotRepliesDuringHumanHandoff_();
-        void liveAgentRefreshModeFromServer_(true);
-        return;
-    }
     if (liveAgentHandoffIsActive_()) {
         await liveAgentRefreshModeFromServer_(true);
     }
