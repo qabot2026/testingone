@@ -14094,6 +14094,10 @@ function setLiveAgentHandoffActive_(on) {
         liveAgentSeenMessageIds_.clear();
         liveAgentOutboundRoutedKey_ = "";
         liveAgentOutboundRoutedAt_ = 0;
+        liveAgentVisitorQueryTrackedKey_ = "";
+        liveAgentVisitorQueryTrackedAt_ = 0;
+        liveAgentVisitorUiRenderedKey_ = "";
+        liveAgentVisitorUiRenderedAt_ = 0;
     }
 }
 
@@ -14130,9 +14134,13 @@ function syncLiveAgentModeCacheFromConversation_(conv, stData) {
     if (prevCopilot !== copilotAi) {
         liveAgentModeRefreshAt_ = 0;
     }
+    const agentConnected = Boolean(stData && stData.agentConnected);
     const agentAccepted =
-        !copilotAi
-        && (status === "active" || !!(conv && conv.assignedAgentEmail));
+        status === "active"
+        && !copilotAi
+        && (humanMode === "human"
+            || aiEnabled === false
+            || (agentConnected && humanMode !== "ai"));
     setLiveAgentHumanChatActive_(agentAccepted);
     try {
         if (copilotAi) {
@@ -14278,6 +14286,27 @@ function liveAgentShouldPostVisitorToAgent_(text) {
     return liveAgentVisitorToAgentInbox_();
 }
 
+/** Fast cache check before async /status refresh (blocks bot flash when agent just connected). */
+function liveAgentShouldBlockDialogflowNow_() {
+    if (!liveAgentHandoffIsActive_() || liveAgentCoPilotAiEnabled_()) {
+        return false;
+    }
+    if (liveAgentHumanChatActive_()) {
+        return true;
+    }
+    if (liveAgentCachedConvStatus === "active" && liveAgentCachedHumanMode === "human") {
+        return true;
+    }
+    if (
+        liveAgentCachedConvStatus === "active"
+        && liveAgentCachedHumanMode !== "ai"
+        && liveAgentCachedAiEnabled === false
+    ) {
+        return true;
+    }
+    return false;
+}
+
 /** Dialogflow when waiting in queue, or when agent turned chatbot back on (co-pilot). */
 function liveAgentAllowDialogflowForUserText_() {
     if (!liveAgentHandoffIsActive_()) {
@@ -14315,6 +14344,26 @@ function liveAgentAlreadyRoutedOutbound_(text) {
 function liveAgentMarkOutboundRouted_(text) {
     liveAgentOutboundRoutedKey_ = liveAgentVisitorSendDedupeKey_(text);
     liveAgentOutboundRoutedAt_ = Date.now();
+}
+
+/** @type {string} */
+let liveAgentVisitorQueryTrackedKey_ = "";
+/** @type {number} */
+let liveAgentVisitorQueryTrackedAt_ = 0;
+
+function liveAgentAlreadyTrackedVisitorQuery_(text) {
+    const key = liveAgentVisitorSendDedupeKey_(text);
+    return Boolean(key && key === liveAgentVisitorQueryTrackedKey_ && Date.now() - liveAgentVisitorQueryTrackedAt_ < 5000);
+}
+
+function liveAgentTrackVisitorQueryOnce_(text) {
+    const t = (text || "").trim();
+    if (!t || liveAgentAlreadyTrackedVisitorQuery_(t)) {
+        return;
+    }
+    liveAgentVisitorQueryTrackedKey_ = liveAgentVisitorSendDedupeKey_(t);
+    liveAgentVisitorQueryTrackedAt_ = Date.now();
+    trackChatUserQueryInSessionContext_(t);
 }
 
 /** Dedupe visitor bubble UI (POST dedupe alone still double-renders on df-user-input + df-request-sent). */
@@ -14604,6 +14653,9 @@ async function tryBlockDialogflowForLiveAgentHumanChat_(event, queryText) {
     if (!t || !liveAgentHandoffIsActive_()) {
         return false;
     }
+    if (liveAgentShouldBlockDialogflowNow_()) {
+        preventDialogflowMessengerEvent_(event);
+    }
     await liveAgentRefreshModeFromServer_(true);
     if (liveAgentAllowDialogflowForUserText_()) {
         return false;
@@ -14645,8 +14697,9 @@ function scheduleSuppressDuplicateVisitorMessageRows_(dfMessenger, text) {
         return;
     }
     const run = () => suppressDuplicateVisitorMessageRows_(dfMessenger, t);
-    window.setTimeout(run, 0);
-    window.setTimeout(run, 120);
+    [0, 50, 120, 280, 520, 900, 1400].forEach((ms) => {
+        window.setTimeout(run, ms);
+    });
 }
 
 function suppressDuplicateVisitorMessageRows_(dfMessenger, text) {
@@ -15107,6 +15160,9 @@ async function liveAgentPollTick_(dfMessenger) {
 
         if (liveAgentHumanChatActive_() && !wasHuman) {
             liveAgentMessagesSinceIso = "";
+            liveAgentModeRefreshAt_ = 0;
+            const msHuman = dfMessenger || activeDfMessenger;
+            suppressDfMessengerBotRepliesDuringHumanHandoff_(msHuman);
             scheduleSuppressDfMessengerBotRepliesDuringHumanHandoff_();
             try {
                 markLiveAgentHumanChatInSession_();
@@ -15233,6 +15289,14 @@ function attachLiveAgentComposerBridge_(dfMessenger) {
                                 return;
                             }
                             void (async () => {
+                            if (liveAgentShouldBlockDialogflowNow_()) {
+                                try {
+                                    ev.preventDefault();
+                                    ev.stopPropagation();
+                                } catch {
+                                    /* ignore */
+                                }
+                            }
                             await liveAgentRefreshModeFromServer_(true);
                             if (
                                 !liveAgentAllowDialogflowForUserText_()
@@ -15244,21 +15308,6 @@ function attachLiveAgentComposerBridge_(dfMessenger) {
                                 } catch {
                                     /* ignore */
                                 }
-                                window.setTimeout(() => {
-                                    if (!liveAgentAlreadyRoutedOutbound_(text)) {
-                                        liveAgentMarkOutboundRouted_(text);
-                                        void liveAgentSendVisitorMessage_(ms, text, false);
-                                    }
-                                    liveAgentMaybeRenderVisitorBubbleOnce_(ms, text);
-                                    scheduleSuppressDuplicateVisitorMessageRows_(ms, text);
-                                    scheduleClearDfMessengerComposerInput_();
-                                }, 0);
-                                return;
-                            }
-                            if (!liveAgentShouldPostVisitorToAgent_(text)) {
-                                return;
-                            }
-                            window.setTimeout(() => {
                                 if (!liveAgentAlreadyRoutedOutbound_(text)) {
                                     liveAgentMarkOutboundRouted_(text);
                                     void liveAgentSendVisitorMessage_(ms, text, false);
@@ -15266,7 +15315,18 @@ function attachLiveAgentComposerBridge_(dfMessenger) {
                                 liveAgentMaybeRenderVisitorBubbleOnce_(ms, text);
                                 scheduleSuppressDuplicateVisitorMessageRows_(ms, text);
                                 scheduleClearDfMessengerComposerInput_();
-                            }, 0);
+                                return;
+                            }
+                            if (!liveAgentShouldPostVisitorToAgent_(text)) {
+                                return;
+                            }
+                            if (!liveAgentAlreadyRoutedOutbound_(text)) {
+                                liveAgentMarkOutboundRouted_(text);
+                                void liveAgentSendVisitorMessage_(ms, text, false);
+                            }
+                            liveAgentMaybeRenderVisitorBubbleOnce_(ms, text);
+                            scheduleSuppressDuplicateVisitorMessageRows_(ms, text);
+                            scheduleClearDfMessengerComposerInput_();
                             })();
                         },
                         true
@@ -15361,7 +15421,7 @@ async function liveAgentSendVisitorMessage_(dfMessenger, text, shouldRenderCusto
     if (renderCustom) {
         liveAgentMaybeRenderVisitorBubbleOnce_(ms, t);
     }
-    trackChatUserQueryInSessionContext_(t);
+    liveAgentTrackVisitorQueryOnce_(t);
     scheduleClearDfMessengerComposerInput_();
     try {
         const res = await fetch(endpoint, {
@@ -15387,6 +15447,13 @@ async function liveAgentSendVisitorMessage_(dfMessenger, text, shouldRenderCusto
 }
 
 async function handleDfResponseReceived(event) {
+    if (liveAgentHandoffIsActive_() && liveAgentShouldBlockDialogflowNow_()) {
+        preventDialogflowMessengerEvent_(event);
+        scheduleSuppressDfMessengerErrorUi_();
+        scheduleSuppressDfMessengerBotRepliesDuringHumanHandoff_();
+        void liveAgentRefreshModeFromServer_(true);
+        return;
+    }
     if (liveAgentHandoffIsActive_()) {
         await liveAgentRefreshModeFromServer_(true);
     }
@@ -15958,6 +16025,18 @@ function trackChatUserQueryInSessionContext_(raw) {
         const lastKey = last ? normalizeChatTranscriptCompareText_(last) : "";
         if (lastKey && key && lastKey === key) {
             return;
+        }
+        const transcriptProbe =
+            prev.chat_transcript && Array.isArray(prev.chat_transcript) ? prev.chat_transcript : [];
+        for (let ti = transcriptProbe.length - 1; ti >= Math.max(0, transcriptProbe.length - 6); ti -= 1) {
+            const tr = transcriptProbe[ti];
+            if (
+                tr
+                && tr.role === "user"
+                && normalizeChatTranscriptCompareText_(tr.text) === key
+            ) {
+                return;
+            }
         }
         const now = Date.now();
         const seq = bumpChatTranscriptSeq_(prev);

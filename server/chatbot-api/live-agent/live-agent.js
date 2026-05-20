@@ -535,19 +535,16 @@
         const st = conv.status || "";
         const hm = conv.humanMode ? String(conv.humanMode).toLowerCase() : "";
         if (st === "waiting") {
-            return "Waiting for agent";
+            return "Waiting for you";
         }
         if (st === "closed") {
             return "Closed";
         }
         if (st === "active") {
             if (hm === "ai" && conv.aiEnabled !== false) {
-                return "Active · Bot replying";
+                return "Bot is replying";
             }
-            if (hm === "human" || conv.aiEnabled === false) {
-                return "Active · You are chatting";
-            }
-            return "Active";
+            return "You are replying";
         }
         return st || "—";
     }
@@ -1162,16 +1159,6 @@
         }
         chatActionsBar.classList.remove("hidden");
         updateHandoverBar_(conv);
-        let hm = conv && conv.humanMode ? String(conv.humanMode) : "";
-        if (!hm) {
-            if (conv && conv.status === "waiting") {
-                hm = "waiting";
-            } else if (conv && conv.status === "active") {
-                hm = "human";
-            } else {
-                hm = "ai";
-            }
-        }
         const st = conv.status || "";
         if (chatModeStatus) {
             chatModeStatus.textContent = formatConvStatusShort_(conv);
@@ -1181,22 +1168,21 @@
             const isMine =
                 st === "active" && agentIdsMatch_(conv.assignedAgentEmail, agentId);
             const aiCopilot = isAiCopilotConv_(conv);
-            const aiMode = hm === "ai" && aiOn;
             enableChatbotBtn.hidden = false;
             if (isWaiting) {
                 enableChatbotBtn.dataset.deskAction = "accept";
                 enableChatbotBtn.textContent = "Accept";
-                enableChatbotBtn.title = "Accept this chat and start replying";
+                enableChatbotBtn.title = "Accept and reply to this visitor";
                 enableChatbotBtn.classList.remove("active-mode");
-            } else if (isMine && (aiCopilot || aiMode)) {
+            } else if (isMine && aiCopilot) {
                 enableChatbotBtn.dataset.deskAction = "takeover";
-                enableChatbotBtn.textContent = "Take over";
-                enableChatbotBtn.title = "Stop the chatbot and reply as the human agent";
+                enableChatbotBtn.textContent = "You reply";
+                enableChatbotBtn.title = "Stop the bot — you reply to the visitor";
                 enableChatbotBtn.classList.add("active-mode");
             } else if (isMine && st === "active") {
                 enableChatbotBtn.dataset.deskAction = "enable-ai";
-                enableChatbotBtn.textContent = "Enable Chatbot";
-                enableChatbotBtn.title = "Let the AI bot reply to this visitor again";
+                enableChatbotBtn.textContent = "Bot on";
+                enableChatbotBtn.title = "Let the bot reply again";
                 enableChatbotBtn.classList.remove("active-mode");
             } else {
                 enableChatbotBtn.dataset.deskAction = "";
@@ -1252,7 +1238,7 @@
         if (enableChatbotBtn) {
             enableChatbotBtn.disabled = true;
             enableChatbotBtn.textContent =
-                patch.humanMode === "ai" ? "Enabling…" : "Taking over…";
+                patch.humanMode === "ai" ? "Bot on…" : "You reply…";
         }
         try {
             const data = await apiFetch(
@@ -1357,11 +1343,9 @@
                 void acceptSelectedChat_();
                 return;
             }
-            const hm = selectedConv.humanMode ? String(selectedConv.humanMode) : "";
-            const aiOn = selectedConv.aiEnabled !== false;
-            if (action === "takeover" || (hm === "ai" && aiOn)) {
+            if (action === "takeover") {
                 setMode_({ humanMode: "human", aiEnabled: false });
-            } else {
+            } else if (action === "enable-ai") {
                 setMode_({ humanMode: "ai", aiEnabled: true });
             }
         });
