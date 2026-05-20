@@ -1177,12 +1177,31 @@
             chatModeStatus.textContent = formatConvStatusShort_(conv);
         }
         if (enableChatbotBtn) {
+            const isWaiting = st === "waiting";
+            const isMine =
+                st === "active" && agentIdsMatch_(conv.assignedAgentEmail, agentId);
+            const aiCopilot = isAiCopilotConv_(conv);
             const aiMode = hm === "ai" && aiOn;
-            enableChatbotBtn.textContent = aiMode ? "Takeover" : "Enable chatbot";
-            enableChatbotBtn.title = aiMode
-                ? "You reply to the visitor; AI auto-reply is off"
-                : "Let the AI bot reply to this visitor again";
-            enableChatbotBtn.classList.toggle("active-mode", aiMode);
+            enableChatbotBtn.hidden = false;
+            if (isWaiting) {
+                enableChatbotBtn.dataset.deskAction = "accept";
+                enableChatbotBtn.textContent = "Accept";
+                enableChatbotBtn.title = "Accept this chat and start replying";
+                enableChatbotBtn.classList.remove("active-mode");
+            } else if (isMine && (aiCopilot || aiMode)) {
+                enableChatbotBtn.dataset.deskAction = "takeover";
+                enableChatbotBtn.textContent = "Take over";
+                enableChatbotBtn.title = "Stop the chatbot and reply as the human agent";
+                enableChatbotBtn.classList.add("active-mode");
+            } else if (isMine && st === "active") {
+                enableChatbotBtn.dataset.deskAction = "enable-ai";
+                enableChatbotBtn.textContent = "Enable Chatbot";
+                enableChatbotBtn.title = "Let the AI bot reply to this visitor again";
+                enableChatbotBtn.classList.remove("active-mode");
+            } else {
+                enableChatbotBtn.dataset.deskAction = "";
+                enableChatbotBtn.hidden = true;
+            }
             enableChatbotBtn.disabled = st === "closed";
         }
         if (endChatFooterBtn) {
@@ -1267,12 +1286,80 @@
         }
     }
 
+    async function acceptSelectedChat_() {
+        if (!selectedId) return;
+        const prevLabel = enableChatbotBtn ? enableChatbotBtn.textContent : "";
+        if (enableChatbotBtn) {
+            enableChatbotBtn.disabled = true;
+            enableChatbotBtn.textContent = "Accepting…";
+        }
+        try {
+            const data = await apiFetch(`${API}/accept`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ conversationId: selectedId })
+            });
+            if (!data || !data.conversation || !data.conversation.id) {
+                throw new Error("Accept failed — no conversation returned from server");
+            }
+            await selectConversation(data.conversation, { skipRefresh: true });
+            loadInbox(true);
+            if (sendBtn) sendBtn.disabled = false;
+            if (claimHint) {
+                claimHint.classList.remove("claim-hint-error");
+                claimHint.textContent = "";
+            }
+        } catch (e) {
+            const msg = e.message || "Could not accept chat";
+            if (claimHint) {
+                claimHint.hidden = false;
+                claimHint.textContent = msg;
+                claimHint.classList.add("claim-hint-error");
+            }
+            if (/closed/i.test(msg) && confirm(msg + "\n\nReopen this chat and accept it?")) {
+                await reopenSelectedChat_();
+                try {
+                    const data = await apiFetch(`${API}/accept`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ conversationId: selectedId })
+                    });
+                    await selectConversation(data.conversation);
+                    if (claimHint) claimHint.classList.remove("claim-hint-error");
+                } catch (e2) {
+                    const m2 = e2.message || "Could not accept after reopen";
+                    if (claimHint) claimHint.textContent = m2;
+                    alert(m2);
+                }
+            } else if (/already have|maximum allowed/i.test(msg)) {
+                alert(msg + "\n\nClose an active chat or raise Max concurrent windows in Live Agent Settings.");
+            } else {
+                alert(msg);
+            }
+            loadInbox(true);
+        } finally {
+            if (enableChatbotBtn) {
+                enableChatbotBtn.disabled = false;
+                if (selectedConv) {
+                    renderChatActionsBar_(selectedConv);
+                } else if (prevLabel) {
+                    enableChatbotBtn.textContent = prevLabel;
+                }
+            }
+        }
+    }
+
     if (enableChatbotBtn) {
         enableChatbotBtn.addEventListener("click", () => {
             if (!selectedConv) return;
+            const action = enableChatbotBtn.dataset.deskAction || "";
+            if (action === "accept") {
+                void acceptSelectedChat_();
+                return;
+            }
             const hm = selectedConv.humanMode ? String(selectedConv.humanMode) : "";
             const aiOn = selectedConv.aiEnabled !== false;
-            if (hm === "ai" && aiOn) {
+            if (action === "takeover" || (hm === "ai" && aiOn)) {
                 setMode_({ humanMode: "human", aiEnabled: false });
             } else {
                 setMode_({ humanMode: "ai", aiEnabled: true });
@@ -1336,10 +1423,12 @@
         const canReply = isMine && !aiCopilot;
 
         if (chatClosedBanner) chatClosedBanner.classList.toggle("hidden", !isClosed);
-        if (claimBtn) claimBtn.hidden = !isWaiting || isClosed;
+        if (claimBtn) claimBtn.hidden = true;
         if (claimHint) {
             claimHint.hidden = !isWaiting || isClosed;
-            claimHint.textContent = isWaiting ? "Press Accept to reply." : "";
+            claimHint.textContent = isWaiting
+                ? "Use Accept below to take this chat."
+                : "";
         }
         if (composerForm) composerForm.classList.toggle("hidden", isClosed);
         if (chatActionsBar) chatActionsBar.classList.toggle("hidden", isClosed);
@@ -1348,11 +1437,11 @@
             composerInput.placeholder = isClosed
                 ? "Reopen this chat to reply…"
                 : aiCopilot && isMine
-                  ? "Chatbot is replying — click Takeover to message the visitor…"
+                  ? "Chatbot is replying — click Take over to message the visitor…"
                   : canReply
                     ? "Type a reply to the visitor…"
                     : isWaiting
-                      ? "Accept this chat first to reply…"
+                      ? "Press Accept below to reply…"
                       : takenByOther
                         ? "Assigned to " +
                           (conv.assignedAgentEmail || "another agent") +
@@ -1571,57 +1660,11 @@
         reopenChatBtn.addEventListener("click", () => reopenSelectedChat_());
     }
 
-    claimBtn.addEventListener("click", async () => {
-        if (!selectedId) return;
-        claimBtn.disabled = true;
-        try {
-            const data = await apiFetch(`${API}/accept`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ conversationId: selectedId })
-            });
-            if (!data || !data.conversation || !data.conversation.id) {
-                throw new Error("Accept failed — no conversation returned from server");
-            }
-            await selectConversation(data.conversation, { skipRefresh: true });
-            loadInbox(true);
-            if (sendBtn) sendBtn.disabled = false;
-            if (claimHint) {
-                claimHint.classList.remove("claim-hint-error");
-                claimHint.textContent = "";
-            }
-        } catch (e) {
-            const msg = e.message || "Could not accept chat";
-            if (claimHint) {
-                claimHint.hidden = false;
-                claimHint.textContent = msg;
-                claimHint.classList.add("claim-hint-error");
-            }
-            if (/closed/i.test(msg) && confirm(msg + "\n\nReopen this chat and accept it?")) {
-                await reopenSelectedChat_();
-                try {
-                    const data = await apiFetch(`${API}/accept`, {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ conversationId: selectedId })
-                    });
-                    await selectConversation(data.conversation);
-                    if (claimHint) claimHint.classList.remove("claim-hint-error");
-                } catch (e2) {
-                    const m2 = e2.message || "Could not accept after reopen";
-                    if (claimHint) claimHint.textContent = m2;
-                    alert(m2);
-                }
-            } else if (/already have|maximum allowed/i.test(msg)) {
-                alert(msg + "\n\nClose an active chat or raise Max concurrent windows in Live Agent Settings.");
-            } else {
-                alert(msg);
-            }
-            loadInbox(true);
-        } finally {
-            claimBtn.disabled = false;
-        }
-    });
+    if (claimBtn) {
+        claimBtn.addEventListener("click", () => {
+            void acceptSelectedChat_();
+        });
+    }
 
     async function endChat_() {
         if (!selectedId || !confirm("End this chat for the visitor? They can request a human again later.")) return;
@@ -1689,7 +1732,7 @@
         const text = composerInput.value.trim();
         if (!text || !selectedId) return;
         if (selectedConv && isAiCopilotConv_(selectedConv)) {
-            alert("Chatbot is replying to the visitor. Click Takeover before sending a message.");
+            alert("Chatbot is replying to the visitor. Click Take over before sending a message.");
             return;
         }
         if (!agentId.includes("@")) {

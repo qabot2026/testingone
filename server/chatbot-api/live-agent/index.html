@@ -90,7 +90,7 @@
           </div>
         </section>
 
-        <p class="inbox-hint muted small">Pick a chat, then <strong>Accept</strong> to reply.</p>
+        <p class="inbox-hint muted small">Pick a waiting chat, then press <strong>Accept</strong> in the chat panel.</p>
         <p id="inboxStatus" class="inbox-status muted">Loading…</p>
         <button type="button" class="btn ghost small" id="clearTestQueueBtn" hidden>
           Clear old test chats
@@ -110,9 +110,7 @@
               <h2 id="chatTitle">Visitor</h2>
               <p class="muted" id="chatMeta">—</p>
             </div>
-            <div class="chat-head-actions">
-              <button type="button" class="btn primary small" id="claimBtn" hidden>Accept</button>
-            </div>
+            <div class="chat-head-actions" hidden aria-hidden="true"></div>
           </header>
 
           <p id="claimHint" class="claim-hint muted small hidden" role="status"></p>
@@ -133,8 +131,8 @@
           <div id="chatActionsBar" class="chat-actions-bar" aria-label="Chat controls">
             <p id="chatModeStatus" class="chat-mode-status muted small"></p>
             <div class="chat-actions-primary">
-              <button type="button" class="btn primary" id="enableChatbotBtn" title="Toggle AI bot vs human agent replies">
-                Enable chatbot
+              <button type="button" class="btn primary" id="enableChatbotBtn" title="Accept chat or toggle AI vs human replies">
+                Accept
               </button>
               <button type="button" class="btn danger" id="endChatFooterBtn" title="End live chat">
                 End chat
