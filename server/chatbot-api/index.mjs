@@ -122,6 +122,7 @@ import { maybeSendClientLeadAckEmail } from "./lib/mail/client-lead-ack-email.mj
 import { maybeSendAppointmentChatbotStaffNotifyEmail } from "./lib/mail/appointment-chatbot-staff-notify-email.mjs";
 import { maybeSendAppointmentClientAckEmail } from "./lib/mail/appointment-client-ack-email.mjs";
 import { mountSmsOtpRoutes } from "./lib/sms-otp/index.mjs";
+import { mountWhatsappRoutes } from "./lib/whatsapp/index.mjs";
 import { mountDashboardRoutes } from "./lib/dashboard/index.mjs";
 import { mountLiveAgentRoutes } from "./lib/live-agent/index.mjs";
 import { normalizeSheetFormId as normalizeStaffSheetFormId_ } from "./lib/form-staff-labels.mjs";
@@ -857,6 +858,9 @@ app.options(PATHNAME_CHAT_FEEDBACK, (_req, res) => res.sendStatus(204));
 // SMS OTP routes: /api/sms-otp/send, /api/sms-otp/verify, /api/sms-otp/health.
 // Active provider via SMS_OTP_PROVIDER env (default "msg91"). See lib/sms-otp/README.md.
 mountSmsOtpRoutes(app);
+
+// WhatsApp Cloud API: GET/POST /api/whatsapp/webhook, GET /api/whatsapp/health
+mountWhatsappRoutes(app);
 
 // Customization dashboard: /dashboard (static SPA) + /api/dashboard/* (auth + settings)
 // + /api/public/widget-settings (read by chat-frame.html on load). See lib/dashboard/README.md.
