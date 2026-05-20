@@ -35,7 +35,7 @@
   }
 
   var CHAT_HOST = chatHostFromLoaderSrc() || "https://qabot2026.github.io/testingone/";
-  var IFRAME_VERSION = "115-widget-visible";
+  var IFRAME_VERSION = "116-pointer-auto";
   var DEFAULT_API_BASE = "https://handsome-amazement-production-7f65.up.railway.app";
 
   function getLoaderQuery() {
@@ -89,8 +89,7 @@
     f.title = "Chat";
     f.setAttribute("src", frameUrl);
     f.setAttribute("referrerpolicy", "strict-origin-when-cross-origin");
-    /* Docked chat strip (not a full-screen overlay). pointer-events:none on the iframe shell;
-       chat-frame.html re-enables hits on df-messenger and footer chrome only. */
+    /* iframe must use pointer-events:auto — none on the iframe element sends every click through to the host page, so the chat cannot be used. */
     var mobile = false;
     try {
       mobile = window.matchMedia && window.matchMedia("(max-width: 768px)").matches;
@@ -100,12 +99,15 @@
     f.style.cssText = mobile
       ? [
           "position:fixed",
-          "inset:0",
+          "left:0",
+          "right:0",
+          "bottom:0",
+          "top:0",
           "width:100%",
           "height:100%",
           "border:0",
           "z-index:2147483000",
-          "pointer-events:none",
+          "pointer-events:auto",
           "background:transparent"
         ].join(";")
       : [
@@ -116,7 +118,7 @@
           "height:min(720px, 100vh)",
           "border:0",
           "z-index:2147483000",
-          "pointer-events:none",
+          "pointer-events:auto",
           "background:transparent"
         ].join(";");
     document.body.appendChild(f);

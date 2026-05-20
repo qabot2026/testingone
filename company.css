@@ -34,6 +34,7 @@
    z-index: 999;
    overflow: visible;
    box-sizing: border-box;
+   pointer-events: auto;
    /* Scroll inside the chat, not the host page (paired with `applyHostPageScrollLockForOpenChat` in company.js) */
    overscroll-behavior: contain;
    touch-action: manipulation;

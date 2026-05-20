@@ -9,7 +9,7 @@
   <!-- <meta name="dfchat-published-widget-path" content="published-widget-settings.json" /> -->
   <title>Chat</title>
   <link rel="stylesheet" href="https://www.gstatic.com/dialogflow-console/fast/df-messenger/prod/v1/themes/df-messenger-default.css" />
-  <link rel="stylesheet" href="company.css?v=81" />
+  <link rel="stylesheet" href="company.css?v=82" />
   <script src="https://www.gstatic.com/dialogflow-console/fast/df-messenger/prod/v1/df-messenger.js"></script>
   <script>
     (function () {
@@ -50,7 +50,7 @@
   <script src="forms/birthform.js?v=79"></script>
   <script src="forms/nearest-branch.js?v=79"></script>
   <script src="company.config.js?v=109"></script>
-  <script src="company.js?v=150-widget-visible"></script>
+  <script src="company.js?v=151-pointer-auto"></script>
   <script>
     (function () {
       function parseHexRgb(hex) {
@@ -387,22 +387,10 @@
       margin: 0;
       background: transparent;
       overflow: visible;
-      pointer-events: none;
     }
-    /* Host + bubble must receive clicks; iframe shell uses pointer-events:none for pass-through. */
-    df-messenger,
-    df-messenger-chat-bubble,
-    #dfchat-chat-action-bar,
-    #dfchat-powered-by-strip,
-    #dfchat-chat-launcher-strip,
-    #dfchat-chat-launcher-input-strip,
-    #dfchat-chat-footer-overlay,
-    #dfchat-contact-form,
-    #dfchat-image-lightbox,
-    #dfchat-video-lightbox,
-    .dfchat-chat-launcher-strip,
-    .dfchat-chat-launcher-input-strip {
+    df-messenger {
       pointer-events: auto;
+      touch-action: manipulation;
     }
   </style>
 </head>
