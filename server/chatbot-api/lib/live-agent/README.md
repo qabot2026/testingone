@@ -42,6 +42,28 @@ Poll **`GET /api/live-agent/status?clientSessionId=`** — response includes:
 
 Agents can change mode from the dashboard (`POST /api/live-agent/conversations/:id/mode`).
 
+## Dialogflow CX (control the flow)
+
+The widget does **not** queue a human agent when the visitor types “human” or “human agent” by itself.
+Your CX flow decides when to hand off (e.g. contact form first, then handoff).
+
+**Recommended — custom payload** on the last step of your Human Agent flow:
+
+```json
+{
+  "action": "request_live_agent",
+  "message": "Connecting you with an agent. Please wait…"
+}
+```
+
+**Alternative — webhook fulfillment** with tag `request_live_agent` (see `POST /webhook` in `server/chatbot-api/index.mjs`).
+
+Avoid setting session parameter `request_live_agent=true` on the **first** page of the Human intent
+(that can queue early via session sync). Set lead/contact fields first; trigger handoff only on the
+final fulfillment after the form is submitted.
+
+Widget config (`company.config.js` → `COMMON.liveAgent.requireCxHandoffPayload`, default `true`).
+
 ## Visitor API (widget)
 
 ```

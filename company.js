@@ -14228,16 +14228,16 @@ function liveAgentIsBoilerplateHandoffPhrase_(text) {
     return /^(request|speak|talk|connect|need|want|get)\s+(to\s+)?(a\s+)?(human\s+)?agent$/.test(n);
 }
 
-/** Whole-message phrases that should queue live agent immediately (not only via CX payload). */
-function liveAgentIsHandoffRequestPhrase_(text) {
-    if (liveAgentIsBoilerplateHandoffPhrase_(text)) {
-        return true;
-    }
-    const n = normalizeWholeMessageIntentPhrase(text);
-    return n === "human" || n === "agent" || n === "live chat";
-}
-
 const LIVE_AGENT_HUMAN_CONNECTED_MARKER = "live_agent_human_connected";
+
+/** When true, handoff only starts from CX custom payload `action: request_live_agent` (not session params alone). */
+function liveAgentRequiresCxHandoffPayload_() {
+    const cfg =
+        COMMON_CONFIG.liveAgent && typeof COMMON_CONFIG.liveAgent === "object"
+            ? COMMON_CONFIG.liveAgent
+            : {};
+    return cfg.requireCxHandoffPayload !== false;
+}
 
 /**
  * POST visitor text to agent inbox (human chat, waiting queue, or AI co-pilot transcript).
@@ -14513,31 +14513,6 @@ function scheduleSuppressDfMessengerErrorUi_() {
 }
 
 /**
- * Queue live agent as soon as the visitor types a handoff phrase (do not wait for CX round-trip).
- * @param {Event | null | undefined} event
- * @param {string} typedTrim
- * @returns {boolean}
- */
-function tryEarlyLiveAgentHandoffOnUserPhrase_(event, typedTrim) {
-    const t = typeof typedTrim === "string" ? typedTrim.trim() : "";
-    if (!t || !liveAgentWidgetEnabled_() || liveAgentHandoffIsActive_()) {
-        return false;
-    }
-    if (!liveAgentIsHandoffRequestPhrase_(t)) {
-        return false;
-    }
-    markLiveAgentRequestedInSession_(liveAgentIsBoilerplateHandoffPhrase_(t) ? "" : t);
-    preventDialogflowMessengerEvent_(event);
-    dfchatPendingTypedUtteranceForGate_ = "";
-    void requestLiveAgentHandoff_({
-        initialMessage: liveAgentIsBoilerplateHandoffPhrase_(t) ? "" : t,
-        waitingMessage: "Connecting you with an agent. Please wait…"
-    });
-    scheduleSuppressDfMessengerErrorUi_();
-    return true;
-}
-
-/**
  * Block Dialogflow send/response while visitor is in active human chat (not queue, not AI co-pilot).
  * @param {Event | null | undefined} event
  * @param {string} queryText
@@ -14659,19 +14634,21 @@ function extractLiveAgentHandoffFromEvent_(event) {
         }
     }
     const params = mergedLiveAgentParamsFromEvent_(event);
-    const paramKeys = [
-        "request_live_agent",
-        "live_agent",
-        "request_human_agent",
-        "human_agent",
-        "handoff_live_agent",
-        "speak_to_agent",
-        "request_human"
-    ];
-    for (let pi = 0; pi < paramKeys.length; pi += 1) {
-        if (liveAgentCxParamTruthy_(params[paramKeys[pi]])) {
-            requested = true;
-            break;
+    if (!requested && !liveAgentRequiresCxHandoffPayload_()) {
+        const paramKeys = [
+            "request_live_agent",
+            "live_agent",
+            "request_human_agent",
+            "human_agent",
+            "handoff_live_agent",
+            "speak_to_agent",
+            "request_human"
+        ];
+        for (let pi = 0; pi < paramKeys.length; pi += 1) {
+            if (liveAgentCxParamTruthy_(params[paramKeys[pi]])) {
+                requested = true;
+                break;
+            }
         }
     }
     const qr = getQueryResultObjectFromDfEvent(event);
@@ -15610,9 +15587,6 @@ function attachPersonaHandlers(dfMessenger) {
                 return;
             }
             if (tryPreventChatSendForMissingMobileGate_(event, typedTrim)) {
-                return;
-            }
-            if (typedTrim && tryEarlyLiveAgentHandoffOnUserPhrase_(event, typedTrim)) {
                 return;
             }
             if (typedTrim && tryBlockDialogflowForLiveAgentHumanChat_(event, typedTrim)) {

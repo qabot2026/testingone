@@ -90,20 +90,8 @@ export async function maybeQueueLiveAgentFromClientContext_(clientContext) {
         return { queued: false, reason: "ai_copilot_session", conversationId: sid };
     }
 
-    let requested = paramTruthy_(ctx.live_agent_requested);
-    const paramKeys = [
-        "request_live_agent",
-        "live_agent",
-        "request_human_agent",
-        "human_agent",
-        "handoff_live_agent"
-    ];
-    for (let i = 0; i < paramKeys.length; i += 1) {
-        if (paramTruthy_(sp[paramKeys[i]])) {
-            requested = true;
-            break;
-        }
-    }
+    /** Only queue after the widget received CX handoff payload (`markLiveAgentRequestedInSession_`). */
+    const requested = paramTruthy_(ctx.live_agent_requested);
 
     if (!requested) {
         return { queued: false, reason: "not_requested", conversationId: sid };

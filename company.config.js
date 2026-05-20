@@ -152,13 +152,30 @@ window.COMPANY_CHAT_UI_CONFIG = {
       },
 
       /**
+       * Live human-agent handoff (Railway `/api/live-agent/*` + agent desk `/live-agent`).
+       * Handoff is driven by Dialogflow CX — not by matching phrases in the browser.
+       *
+       * CX setup (after contact form / lead capture in your flow):
+       * 1. Fulfillment → Custom payload (JSON):
+       *    `{ "action": "request_live_agent", "message": "Connecting you with an agent. Please wait…" }`
+       * 2. Or webhook fulfillment tag: `request_live_agent` (see server/chatbot-api `/webhook`).
+       *
+       * `requireCxHandoffPayload: true` (default) — widget queues only when that payload arrives.
+       * Do not set session param `request_live_agent=true` on the first turn of the Human intent
+       * (that used to queue before the contact form). Set it only on the final handoff step if needed.
+       */
+      liveAgent: {
+        requireCxHandoffPayload: true
+      },
+
+      /**
        * After the visitor interacts once (message or chip), if they send nothing for `idleMs`, the widget
        * sends `dialogflowEvent` to CX. Welcome-only sessions do not sync transcript/Sheet/Firestore and do
        * not trigger the idle event. Timer resets only on user actions — bot replies do not reset it.
        */
       idleEndConversation: {
         enabled: true,
-        idleMs: 20000,
+        idleMs: 120000,
         dialogflowEvent: "END_CONVERSATION_IDLE"
       },
 
