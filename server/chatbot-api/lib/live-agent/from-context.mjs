@@ -90,7 +90,10 @@ export async function maybeQueueLiveAgentFromClientContext_(clientContext) {
         return { queued: false, reason: "ai_copilot_session", conversationId: sid };
     }
 
-    /** Only queue after the widget received CX handoff payload (`markLiveAgentRequestedInSession_`). */
+    /**
+     * Only queue after the widget received CX handoff payload (`markLiveAgentRequestedInSession_`).
+     * Session params such as `request_live_agent` alone do not queue (CX controls contact form first).
+     */
     const requested = paramTruthy_(ctx.live_agent_requested);
 
     if (!requested) {

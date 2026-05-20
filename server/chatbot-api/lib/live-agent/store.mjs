@@ -808,7 +808,7 @@ export async function appendMessage_({
         if (roleNorm === "agent" || roleNorm === "staff") {
             if (isLiveAgentAiCopilot_(serializeConversation_(id, cur))) {
                 throw new Error(
-                    "Takeover required — chatbot is replying to the visitor. Click Takeover to send as agent."
+                    "Take over required — chatbot is replying to the visitor. Click Take over on the desk to send as agent."
                 );
             }
         }

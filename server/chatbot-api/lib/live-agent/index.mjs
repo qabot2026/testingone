@@ -465,7 +465,7 @@ export function mountLiveAgentRoutes(app) {
                 jsonError_(
                     res,
                     409,
-                    "Takeover required — chatbot is replying to the visitor. Click Takeover to send as agent."
+                    "Take over required — chatbot is replying to the visitor. Click Take over on the desk to send as agent."
                 );
                 return;
             }

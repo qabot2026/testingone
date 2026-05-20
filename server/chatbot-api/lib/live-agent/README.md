@@ -24,9 +24,10 @@ The browser reuses `conversations_sheet_secret_v1` in storage when you switch be
 ## Agent workflow
 
 1. **Requests** (left) — visitors who asked for a human; default filter is **Waiting for agent**.
-2. Select any request → **Claim chat** → reply in the center panel.
-3. **Visitor** (right) — contact fields, documents captured, AI/Human mode toggles, transcript link.
-4. **End chat** returns the visitor to AI mode (`aiEnabled: true`).
+2. Select a waiting chat → press **Accept** in the chat panel (bottom) → reply in the center panel.
+3. After accept: **Enable Chatbot** lets the bot reply again; **Take over** returns the chat to human-only mode.
+4. **Visitor** (right) — contact fields, documents captured, AI/Human mode toggles, transcript link.
+5. **End chat** returns the visitor to AI mode (`aiEnabled: true`).
 
 Browser notifications + sound when new waiting requests arrive (if you allow notifications).
 
