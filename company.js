@@ -147,6 +147,12 @@ let liveAgentCachedConvStatus = "";
 let liveAgentCachedHumanMode = "";
 /** From poll / conversation: false = agent-only (no bot replies). */
 let liveAgentCachedAiEnabled = true;
+/** True when server reports AI co-pilot (bot may reply; visitor text not routed to agent inbox). */
+let liveAgentCachedAiCopilot_ = false;
+/** @type {number} */
+let liveAgentModeRefreshAt_ = 0;
+/** @type {Promise<void> | null} */
+let liveAgentModeRefreshInFlight_ = null;
 let liveAgentPollTimerId = 0;
 let liveAgentMessagesSinceIso = "";
 /** @type {Set<string>} */
@@ -14059,6 +14065,8 @@ function setLiveAgentHandoffActive_(on) {
         liveAgentMessagesSinceIso = "";
         liveAgentCachedHumanMode = "";
         liveAgentCachedAiEnabled = true;
+        liveAgentCachedAiCopilot_ = false;
+        liveAgentModeRefreshAt_ = 0;
         liveAgentSeenMessageIds_.clear();
         liveAgentOutboundRoutedKey_ = "";
         liveAgentOutboundRoutedAt_ = 0;
@@ -14073,6 +14081,75 @@ function liveAgentHumanChatActive_() {
     return liveAgentHumanChatActive === true;
 }
 
+/**
+ * Sync queue/human vs AI co-pilot flags from /status or mode API (lowercase humanMode).
+ * @param {{ status?: string, humanMode?: string, aiEnabled?: boolean, assignedAgentEmail?: string } | null | undefined} conv
+ * @param {{ aiCopilot?: boolean, aiEnabled?: boolean } | null | undefined} [stData]
+ * @returns {boolean} copilotAi
+ */
+function syncLiveAgentModeCacheFromConversation_(conv, stData) {
+    const status = conv && conv.status ? String(conv.status) : "";
+    const humanMode =
+        conv && conv.humanMode ? String(conv.humanMode).trim().toLowerCase() : "";
+    const aiEnabled =
+        conv && typeof conv.aiEnabled === "boolean"
+            ? conv.aiEnabled
+            : !stData || stData.aiEnabled !== false;
+    liveAgentCachedConvStatus = status;
+    liveAgentCachedHumanMode = humanMode;
+    liveAgentCachedAiEnabled = aiEnabled;
+    const copilotAi =
+        status === "active"
+        && ((humanMode === "ai" && aiEnabled) || Boolean(stData && stData.aiCopilot));
+    liveAgentCachedAiCopilot_ = copilotAi;
+    const agentAccepted =
+        !copilotAi
+        && (status === "active" || !!(conv && conv.assignedAgentEmail));
+    setLiveAgentHumanChatActive_(agentAccepted);
+    if (copilotAi) {
+        markLiveAgentCopilotInSession_();
+    } else if (status === "active" && humanMode === "human") {
+        clearLiveAgentCopilotInSession_();
+    }
+    return copilotAi;
+}
+
+/** Refresh mode from server before routing a send (short TTL so Enable chatbot applies immediately). */
+async function liveAgentRefreshModeFromServer_() {
+    if (!liveAgentHandoffIsActive_()) {
+        return;
+    }
+    if (Date.now() - liveAgentModeRefreshAt_ < 700) {
+        return;
+    }
+    if (liveAgentModeRefreshInFlight_) {
+        await liveAgentModeRefreshInFlight_;
+        return;
+    }
+    const sid = liveAgentSessionId_();
+    const statusUrl = getApiEndpoint(
+        "/api/live-agent/status?clientSessionId=" + encodeURIComponent(sid)
+    );
+    if (!statusUrl || !sid) {
+        return;
+    }
+    liveAgentModeRefreshInFlight_ = fetch(statusUrl)
+        .then((res) => res.json().catch(() => ({})))
+        .then((stData) => {
+            liveAgentModeRefreshAt_ = Date.now();
+            if (stData && stData.conversation) {
+                syncLiveAgentModeCacheFromConversation_(stData.conversation, stData);
+            }
+        })
+        .catch(() => {
+            /* ignore */
+        })
+        .finally(() => {
+            liveAgentModeRefreshInFlight_ = null;
+        });
+    await liveAgentModeRefreshInFlight_;
+}
+
 /** Agent re-enabled chatbot on an active chat (visitor gets Dialogflow again; not while waiting in queue). */
 function liveAgentCoPilotAiEnabled_() {
     if (!liveAgentHandoffIsActive_()) {
@@ -14081,7 +14158,10 @@ function liveAgentCoPilotAiEnabled_() {
     if (liveAgentCachedConvStatus !== "active") {
         return false;
     }
-    return liveAgentCachedHumanMode === "ai";
+    if (liveAgentCachedAiCopilot_) {
+        return true;
+    }
+    return liveAgentCachedHumanMode === "ai" && liveAgentCachedAiEnabled !== false;
 }
 
 /** Visitor messages go to agent inbox only during active human chat (not waiting, not AI co-pilot). */
@@ -14547,6 +14627,59 @@ function markLiveAgentRequestedInSession_(initialMessage) {
     }
 }
 
+/** Session flag: bot may reply while the live-agent row stays active for the assigned agent. */
+function markLiveAgentCopilotInSession_() {
+    try {
+        const ctx = getClientContext();
+        /** @type {Record<string, unknown>} */
+        const sp =
+            ctx.session_params && typeof ctx.session_params === "object" && !Array.isArray(ctx.session_params)
+                ? { .../** @type {Record<string, unknown>} */ (ctx.session_params) }
+                : {};
+        sp.live_agent_copilot = "true";
+        persistClientContext({
+            ...ctx,
+            session_params: sp,
+            live_agent_copilot: true
+        });
+        if (activeDfMessenger) {
+            syncDfMessengerSessionParametersFromClientContext(activeDfMessenger);
+        }
+        scheduleSessionQueriesSheetSync_();
+        scheduleSessionTranscriptFirestoreSync_();
+    } catch (e) {
+        if (typeof console !== "undefined" && console.warn) {
+            console.warn("[live-agent] Could not mark AI co-pilot session:", e);
+        }
+    }
+}
+
+function clearLiveAgentCopilotInSession_() {
+    try {
+        const ctx = getClientContext();
+        /** @type {Record<string, unknown>} */
+        const sp =
+            ctx.session_params && typeof ctx.session_params === "object" && !Array.isArray(ctx.session_params)
+                ? { .../** @type {Record<string, unknown>} */ (ctx.session_params) }
+                : {};
+        delete sp.live_agent_copilot;
+        persistClientContext({
+            ...ctx,
+            session_params: sp,
+            live_agent_copilot: false
+        });
+        if (activeDfMessenger) {
+            syncDfMessengerSessionParametersFromClientContext(activeDfMessenger);
+        }
+        scheduleSessionQueriesSheetSync_();
+        scheduleSessionTranscriptFirestoreSync_();
+    } catch (e) {
+        if (typeof console !== "undefined" && console.warn) {
+            console.warn("[live-agent] Could not clear AI co-pilot session:", e);
+        }
+    }
+}
+
 function tryRequestLiveAgentFromBotResponse_(event) {
     if (!liveAgentWidgetEnabled_()) {
         return;
@@ -14592,18 +14725,12 @@ async function liveAgentPollTick_(dfMessenger) {
             return;
         }
         const conv = stData.conversation;
-        const status = conv && conv.status ? String(conv.status) : "";
-        const humanMode = conv && conv.humanMode ? String(conv.humanMode) : "";
-        const aiEnabled =
-            conv && typeof conv.aiEnabled === "boolean"
-                ? conv.aiEnabled
-                : stData.aiEnabled !== false;
-        liveAgentCachedConvStatus = status;
-        liveAgentCachedHumanMode = humanMode;
-        liveAgentCachedAiEnabled = aiEnabled;
         if (Array.isArray(stData.agentProfiles)) {
             liveAgentCacheAgentProfiles_(stData.agentProfiles);
         }
+        const status = conv && conv.status ? String(conv.status) : "";
+        const wasHuman = liveAgentHumanChatActive_();
+        const copilotAi = syncLiveAgentModeCacheFromConversation_(conv, stData);
 
         if (status === "closed") {
             liveAgentCachedConvStatus = "";
@@ -14621,16 +14748,8 @@ async function liveAgentPollTick_(dfMessenger) {
             return;
         }
 
-        const copilotAi =
-            status === "active" &&
-            (humanMode === "ai" || stData.aiCopilot === true);
-        const agentAccepted =
-            !copilotAi &&
-            (status === "active" ||
-                !!(conv && conv.assignedAgentEmail));
         const wasHuman = liveAgentHumanChatActive_();
-        setLiveAgentHumanChatActive_(agentAccepted);
-        if (agentAccepted && !wasHuman) {
+        if (liveAgentHumanChatActive_() && !wasHuman) {
             liveAgentMessagesSinceIso = "";
         }
 
@@ -14795,20 +14914,8 @@ function liveAgentApplyConversationFromApi_(data) {
     if (!conv || !conv.status) {
         return;
     }
-    const status = String(conv.status);
-    liveAgentCachedConvStatus = status;
-    if (conv.humanMode) {
-        liveAgentCachedHumanMode = String(conv.humanMode);
-    }
-    if (typeof conv.aiEnabled === "boolean") {
-        liveAgentCachedAiEnabled = conv.aiEnabled;
-    }
-    if (status === "active") {
-        const hm = conv.humanMode ? String(conv.humanMode) : "";
-        setLiveAgentHumanChatActive_(hm !== "ai");
-    } else if (status === "waiting") {
-        setLiveAgentHumanChatActive_(false);
-    }
+    syncLiveAgentModeCacheFromConversation_(conv, null);
+    liveAgentModeRefreshAt_ = Date.now();
 }
 
 /**
@@ -15208,9 +15315,12 @@ function attachPersonaHandlers(dfMessenger) {
     /** Capture phase: typed input often originates under `df-messenger` shadow; bubble listeners can miss `detail.input`. */
     window.addEventListener(
         "df-user-input-entered",
-        (event) => {
+        async (event) => {
             const typed = extractDfUserInputEnteredText(event);
             const typedTrim = typeof typed === "string" ? typed.trim() : "";
+            if (liveAgentHandoffIsActive_() && typedTrim) {
+                await liveAgentRefreshModeFromServer_();
+            }
             if (consumeContactOnlyThanksSuppressForQuery_(event, typedTrim)) {
                 dfchatPendingTypedUtteranceForGate_ = "";
                 return;
@@ -15261,7 +15371,10 @@ function attachPersonaHandlers(dfMessenger) {
 
     window.addEventListener(
         "df-request-sent",
-        (event) => {
+        async (event) => {
+            if (liveAgentHandoffIsActive_()) {
+                await liveAgentRefreshModeFromServer_();
+            }
             const queryRaw = extractQueryTextFromDfRequestSentEvent_(event);
             const fromReq = typeof queryRaw === "string" ? queryRaw.trim() : "";
             const pendingSnap =

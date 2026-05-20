@@ -3,7 +3,12 @@
  * Runs on session sync endpoints so handoff works even when the browser fetch path fails.
  */
 
-import { requestHumanAgent_, liveAgentFirestoreReady_ } from "./store.mjs";
+import {
+    requestHumanAgent_,
+    liveAgentFirestoreReady_,
+    getConversation_,
+    isLiveAgentAiCopilot_
+} from "./store.mjs";
 import {
     sanitizeVisitorNameForStorage_,
     visitorNameMatchesChatLine_
@@ -70,8 +75,22 @@ export async function maybeQueueLiveAgentFromClientContext_(clientContext) {
         return { queued: false, reason: "no_client_session_id" };
     }
 
-    let requested = paramTruthy_(ctx.live_agent_requested);
     const sp = ctx.session_params && typeof ctx.session_params === "object" ? ctx.session_params : {};
+
+    try {
+        const conv = await getConversation_(sid);
+        if (conv && isLiveAgentAiCopilot_(conv)) {
+            return { queued: false, reason: "ai_copilot", conversationId: sid };
+        }
+    } catch (copilotErr) {
+        console.warn(LOG_TAG, "copilot check:", copilotErr.message || copilotErr);
+    }
+
+    if (paramTruthy_(ctx.live_agent_copilot) || paramTruthy_(sp.live_agent_copilot)) {
+        return { queued: false, reason: "ai_copilot_session", conversationId: sid };
+    }
+
+    let requested = paramTruthy_(ctx.live_agent_requested);
     const paramKeys = [
         "request_live_agent",
         "live_agent",
