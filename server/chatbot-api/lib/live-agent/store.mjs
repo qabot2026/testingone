@@ -159,7 +159,7 @@ async function enrichMessagesWithAgentNames_(messages, options = {}) {
                 const text =
                     audience === "agent"
                         ? formatSystemMessageTextForAgent_(m.text, visitorDisplayName)
-                        : formatSystemMessageTextForVisitor_(m.text, settings);
+                        : formatSystemMessageTextForVisitor_(m.text, settings, m.senderEmail);
                 return {
                     ...m,
                     text
@@ -480,13 +480,11 @@ export async function claimConversation_({ conversationId, agentEmail }) {
     });
 
     try {
-        const { resolveAgentDisplayName_, getLiveAgentSettings_ } = await import("./departments.mjs");
-        const settings = await getLiveAgentSettings_();
-        const agentName = resolveAgentDisplayName_(email, settings);
+        const { LIVE_AGENT_HUMAN_CONNECTED_MARKER_ } = await import("./departments.mjs");
         await appendMessage_({
             conversationId: id,
             role: "system",
-            text: agentName + " joined the chat.",
+            text: LIVE_AGENT_HUMAN_CONNECTED_MARKER_,
             senderEmail: email,
             bumpUnread: { agent: 0, visitor: 1 }
         });
@@ -790,7 +788,11 @@ export async function appendMessage_({
     const now = admin.firestore.FieldValue.serverTimestamp();
     const roleNormEarly = trim_(role).toLowerCase();
     let senderDisplayName = "";
-    if (roleNormEarly === "agent" || roleNormEarly === "staff") {
+    if (
+        roleNormEarly === "agent"
+        || roleNormEarly === "staff"
+        || (roleNormEarly === "system" && trim_(senderEmail))
+    ) {
         const { resolveAgentDisplayName_ } = await import("./departments.mjs");
         const settings = await cachedLiveAgentSettings_();
         senderDisplayName = resolveAgentDisplayName_(senderEmail, settings);

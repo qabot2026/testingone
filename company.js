@@ -14228,6 +14228,17 @@ function liveAgentIsBoilerplateHandoffPhrase_(text) {
     return /^(request|speak|talk|connect|need|want|get)\s+(to\s+)?(a\s+)?(human\s+)?agent$/.test(n);
 }
 
+/** Whole-message phrases that should queue live agent immediately (not only via CX payload). */
+function liveAgentIsHandoffRequestPhrase_(text) {
+    if (liveAgentIsBoilerplateHandoffPhrase_(text)) {
+        return true;
+    }
+    const n = normalizeWholeMessageIntentPhrase(text);
+    return n === "human" || n === "agent" || n === "live chat";
+}
+
+const LIVE_AGENT_HUMAN_CONNECTED_MARKER = "live_agent_human_connected";
+
 /**
  * POST visitor text to agent inbox (human chat, waiting queue, or AI co-pilot transcript).
  * @param {string} text
@@ -14288,6 +14299,40 @@ function liveAgentMarkOutboundRouted_(text) {
     liveAgentOutboundRoutedKey_ = liveAgentVisitorSendDedupeKey_(text);
     liveAgentOutboundRoutedAt_ = Date.now();
 }
+
+/** Dedupe visitor bubble UI (POST dedupe alone still double-renders on df-user-input + df-request-sent). */
+/** @type {string} */
+let liveAgentVisitorUiRenderedKey_ = "";
+/** @type {number} */
+let liveAgentVisitorUiRenderedAt_ = 0;
+
+function liveAgentAlreadyRenderedVisitorUi_(text) {
+    const key = liveAgentVisitorSendDedupeKey_(text);
+    return Boolean(key && key === liveAgentVisitorUiRenderedKey_ && Date.now() - liveAgentVisitorUiRenderedAt_ < 3000);
+}
+
+function liveAgentMarkVisitorUiRendered_(text) {
+    liveAgentVisitorUiRenderedKey_ = liveAgentVisitorSendDedupeKey_(text);
+    liveAgentVisitorUiRenderedAt_ = Date.now();
+}
+
+/**
+ * @param {HTMLElement | null | undefined} dfMessenger
+ * @param {string} text
+ */
+function liveAgentMaybeRenderVisitorBubbleOnce_(dfMessenger, text) {
+    const t = (text || "").trim();
+    const ms = dfMessenger || activeDfMessenger;
+    if (!t || !ms || typeof ms.renderCustomText !== "function" || liveAgentAlreadyRenderedVisitorUi_(t)) {
+        return;
+    }
+    liveAgentMarkVisitorUiRendered_(t);
+    ms.renderCustomText(t, false);
+    if (typeof ms.renderUserPersona === "function") {
+        renderUserPersona(ms);
+    }
+}
+
 let liveAgentComposerBridgeAttached = false;
 /** @type {Record<string, string>} */
 let liveAgentAgentProfileMap_ = {};
@@ -14345,9 +14390,22 @@ function liveAgentVisitorLineText_(m) {
         return "";
     }
     if (role === "system") {
+        if (text === LIVE_AGENT_HUMAN_CONNECTED_MARKER) {
+            const displayName =
+                typeof m.senderDisplayName === "string" && m.senderDisplayName.trim()
+                    ? m.senderDisplayName.trim()
+                    : liveAgentDisplayNameForEmail_(m.senderEmail);
+            return "You are now chatting with " + displayName + ".";
+        }
+        const joined = text.match(/^(.+?)\s+joined the chat\.?$/i);
+        if (joined) {
+            const who = joined[1];
+            const name = /@/.test(who) ? liveAgentDisplayNameForEmail_(who) : who;
+            return "You are now chatting with " + name + ".";
+        }
         const legacy = text.match(/^Agent\s+(\S+@\S+)\s+accepted the chat\.?$/i);
         if (legacy) {
-            return liveAgentDisplayNameForEmail_(legacy[1]) + " joined the chat.";
+            return "You are now chatting with " + liveAgentDisplayNameForEmail_(legacy[1]) + ".";
         }
         return text.replace(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/gi, (em) =>
             liveAgentDisplayNameForEmail_(em)
@@ -14377,7 +14435,10 @@ function liveAgentTryRouteVisitorText_(text, dfMessenger, opts) {
     }
     liveAgentMarkOutboundRouted_(t);
     const renderBubble = !opts || opts.renderBubble !== false;
-    void liveAgentSendVisitorMessage_(dfMessenger || activeDfMessenger, t, renderBubble);
+    void liveAgentSendVisitorMessage_(dfMessenger || activeDfMessenger, t, false);
+    if (renderBubble) {
+        liveAgentMaybeRenderVisitorBubbleOnce_(dfMessenger || activeDfMessenger, t);
+    }
     return true;
 }
 
@@ -14400,6 +14461,82 @@ function preventDialogflowMessengerEvent_(event) {
     }
 }
 
+/** df-messenger shows "Something went wrong" when we preventDefault outbound CX requests during handoff. */
+function suppressDfMessengerGenericErrorUi_(dfMessenger) {
+    if (!liveAgentHandoffIsActive_()) {
+        return;
+    }
+    const ms = dfMessenger || activeDfMessenger;
+    if (!ms) {
+        return;
+    }
+    const roots = collectSearchRoots(ms);
+    for (let ri = 0; ri < roots.length; ri += 1) {
+        const root = roots[ri];
+        if (!root || typeof root.querySelectorAll !== "function") {
+            continue;
+        }
+        let entries = [];
+        try {
+            entries = Array.from(root.querySelectorAll(".entry.bot, .entry.error, df-markdown-message"));
+        } catch {
+            entries = [];
+        }
+        for (let ei = 0; ei < entries.length; ei += 1) {
+            const entry = entries[ei];
+            const text = (entry.innerText || entry.textContent || "")
+                .toLowerCase()
+                .replace(/\s+/g, " ");
+            if (
+                text.includes("something went wrong")
+                || (text.includes("try again") && text.includes("wrong"))
+            ) {
+                try {
+                    entry.remove();
+                } catch {
+                    if (entry instanceof HTMLElement) {
+                        entry.style.display = "none";
+                    }
+                }
+            }
+        }
+    }
+}
+
+function scheduleSuppressDfMessengerErrorUi_() {
+    const ms = activeDfMessenger;
+    const run = () => suppressDfMessengerGenericErrorUi_(ms);
+    run();
+    window.setTimeout(run, 40);
+    window.setTimeout(run, 180);
+    window.setTimeout(run, 500);
+}
+
+/**
+ * Queue live agent as soon as the visitor types a handoff phrase (do not wait for CX round-trip).
+ * @param {Event | null | undefined} event
+ * @param {string} typedTrim
+ * @returns {boolean}
+ */
+function tryEarlyLiveAgentHandoffOnUserPhrase_(event, typedTrim) {
+    const t = typeof typedTrim === "string" ? typedTrim.trim() : "";
+    if (!t || !liveAgentWidgetEnabled_() || liveAgentHandoffIsActive_()) {
+        return false;
+    }
+    if (!liveAgentIsHandoffRequestPhrase_(t)) {
+        return false;
+    }
+    markLiveAgentRequestedInSession_(liveAgentIsBoilerplateHandoffPhrase_(t) ? "" : t);
+    preventDialogflowMessengerEvent_(event);
+    dfchatPendingTypedUtteranceForGate_ = "";
+    void requestLiveAgentHandoff_({
+        initialMessage: liveAgentIsBoilerplateHandoffPhrase_(t) ? "" : t,
+        waitingMessage: "Connecting you with an agent. Please wait…"
+    });
+    scheduleSuppressDfMessengerErrorUi_();
+    return true;
+}
+
 /**
  * Block Dialogflow send/response while visitor is in active human chat (not queue, not AI co-pilot).
  * @param {Event | null | undefined} event
@@ -14417,13 +14554,17 @@ function tryBlockDialogflowForLiveAgentHumanChat_(event, queryText) {
     if (liveAgentIsBoilerplateHandoffPhrase_(t)) {
         return false;
     }
-    if (liveAgentShouldPostVisitorToAgent_(t) && !liveAgentAlreadyRoutedOutbound_(t)) {
-        liveAgentMarkOutboundRouted_(t);
-        void liveAgentSendVisitorMessage_(activeDfMessenger, t, true);
+    if (liveAgentShouldPostVisitorToAgent_(t)) {
+        if (!liveAgentAlreadyRoutedOutbound_(t)) {
+            liveAgentMarkOutboundRouted_(t);
+            void liveAgentSendVisitorMessage_(activeDfMessenger, t, false);
+        }
+        liveAgentMaybeRenderVisitorBubbleOnce_(activeDfMessenger, t);
     }
     preventDialogflowMessengerEvent_(event);
     dfchatPendingTypedUtteranceForGate_ = "";
     scheduleClearDfMessengerComposerInput_();
+    scheduleSuppressDfMessengerErrorUi_();
     return true;
 }
 
@@ -14914,6 +15055,7 @@ async function liveAgentPollTick_(dfMessenger) {
             ms.renderCustomText(prefix + text, true);
             renderBotPersona(ms, Date.now());
         }
+        scheduleSuppressDfMessengerErrorUi_();
     } catch {
         /* ignore */
     }
@@ -14975,7 +15117,7 @@ function attachLiveAgentComposerBridge_(dfMessenger) {
                                     /* ignore */
                                 }
                                 window.setTimeout(() => {
-                                    if (liveAgentTryRouteVisitorText_(text, ms, { renderBubble: false })) {
+                                    if (liveAgentTryRouteVisitorText_(text, ms, { renderBubble: true })) {
                                         scheduleClearDfMessengerComposerInput_();
                                     }
                                 }, 0);
@@ -14985,7 +15127,7 @@ function attachLiveAgentComposerBridge_(dfMessenger) {
                                 return;
                             }
                             window.setTimeout(() => {
-                                if (liveAgentTryRouteVisitorText_(text, ms, { renderBubble: false })) {
+                                if (liveAgentTryRouteVisitorText_(text, ms, { renderBubble: true })) {
                                     scheduleClearDfMessengerComposerInput_();
                                 }
                             }, 0);
@@ -15070,14 +15212,11 @@ async function liveAgentSendVisitorMessage_(dfMessenger, text, shouldRenderCusto
     if (!endpoint || !sid) {
         return;
     }
+    const ms = dfMessenger || activeDfMessenger;
     const renderCustom =
         typeof shouldRenderCustomTextNow === "boolean" ? shouldRenderCustomTextNow : true;
-    const ms = dfMessenger || activeDfMessenger;
-    if (renderCustom && ms && typeof ms.renderCustomText === "function") {
-        ms.renderCustomText(t, false);
-        if (typeof ms.renderUserPersona === "function") {
-            renderUserPersona(ms);
-        }
+    if (renderCustom) {
+        liveAgentMaybeRenderVisitorBubbleOnce_(ms, t);
     }
     trackChatUserQueryInSessionContext_(t);
     scheduleClearDfMessengerComposerInput_();
@@ -15471,6 +15610,9 @@ function attachPersonaHandlers(dfMessenger) {
                 return;
             }
             if (tryPreventChatSendForMissingMobileGate_(event, typedTrim)) {
+                return;
+            }
+            if (typedTrim && tryEarlyLiveAgentHandoffOnUserPhrase_(event, typedTrim)) {
                 return;
             }
             if (typedTrim && tryBlockDialogflowForLiveAgentHumanChat_(event, typedTrim)) {

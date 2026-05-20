@@ -140,43 +140,59 @@ export function resolveAgentDisplayName_(email, settings) {
     return "Agent";
 }
 
+/** Stored on accept; formatted per audience in enrichMessagesWithAgentNames_. */
+export const LIVE_AGENT_HUMAN_CONNECTED_MARKER_ = "live_agent_human_connected";
+
 /** Agent desk: accept/join lines show the visitor name, not the agent's own name. */
 export function formatSystemMessageTextForAgent_(text, visitorDisplayName) {
     let t = trim_(text);
     if (!t) {
         return t;
     }
+    if (t === LIVE_AGENT_HUMAN_CONNECTED_MARKER_) {
+        const visitor = trim_(visitorDisplayName) || "Visitor";
+        return `You are now chatting with ${visitor}.`;
+    }
     const visitor = trim_(visitorDisplayName) || "Visitor";
     const joined = t.match(/^(.+?)\s+joined the chat\.?$/i);
     if (joined) {
-        return visitor + " joined the chat.";
+        return `You are now chatting with ${visitor}.`;
     }
     const acceptLegacy = t.match(/^Agent\s+(\S+@\S+)\s+accepted the chat\.?$/i);
     if (acceptLegacy) {
-        return visitor + " joined the chat.";
+        return `You are now chatting with ${visitor}.`;
     }
     const acceptShort = t.match(/^(\S+@\S+)\s+accepted the chat\.?$/i);
     if (acceptShort) {
-        return visitor + " joined the chat.";
+        return `You are now chatting with ${visitor}.`;
     }
     return t;
 }
 
 /** Visitor-safe system line (no email addresses). */
-export function formatSystemMessageTextForVisitor_(text, settings) {
+export function formatSystemMessageTextForVisitor_(text, settings, senderEmail) {
     let t = trim_(text);
     if (!t) {
         return t;
     }
+    if (t === LIVE_AGENT_HUMAN_CONNECTED_MARKER_) {
+        const name = resolveAgentDisplayName_(senderEmail, settings);
+        return `You are now chatting with ${name}.`;
+    }
     const acceptLegacy = t.match(/^Agent\s+(\S+@\S+)\s+accepted the chat\.?$/i);
     if (acceptLegacy) {
         const name = resolveAgentDisplayName_(acceptLegacy[1], settings);
-        return name + " joined the chat.";
+        return `You are now chatting with ${name}.`;
     }
     const acceptShort = t.match(/^(\S+@\S+)\s+accepted the chat\.?$/i);
     if (acceptShort) {
         const name = resolveAgentDisplayName_(acceptShort[1], settings);
-        return name + " joined the chat.";
+        return `You are now chatting with ${name}.`;
+    }
+    const joined = t.match(/^(.+?)\s+joined the chat\.?$/i);
+    if (joined) {
+        const name = resolveAgentDisplayName_(joined[1], settings);
+        return `You are now chatting with ${name}.`;
     }
     if (/ended|closed/i.test(t)) {
         return t.replace(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/gi, () => "Agent");

@@ -81,7 +81,7 @@
     let deskSettings = null;
     /** Last inbox payload — used for instant dismiss without waiting on refetch. */
     let lastInboxConversations_ = [];
-    const INBOX_POLL_INTERVAL_MS_DESKTOP = 22000;
+    const INBOX_POLL_INTERVAL_MS_DESKTOP = 4000;
     const INBOX_POLL_INTERVAL_MS_MOBILE = 6000;
     const CHAT_POLL_INTERVAL_MS = 2000;
     const PRESENCE_INTERVAL_MS = 180000;
@@ -1529,12 +1529,15 @@
             return t;
         }
         const visitor = resolveVisitorDisplayName_(selectedConv, selectedVisitorContext);
+        if (t === "live_agent_human_connected") {
+            return "You are now chatting with " + visitor + ".";
+        }
         if (/^(.+?)\s+joined the chat\.?$/i.test(t)) {
-            return visitor + " joined the chat.";
+            return "You are now chatting with " + visitor + ".";
         }
         const legacy = t.match(/^Agent\s+(\S+@\S+)\s+accepted the chat\.?$/i);
         if (legacy) {
-            return visitor + " joined the chat.";
+            return "You are now chatting with " + visitor + ".";
         }
         return t;
     }
