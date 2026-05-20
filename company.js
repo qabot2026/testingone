@@ -14120,8 +14120,12 @@ function syncLiveAgentModeCacheFromConversation_(conv, stData) {
     try {
         if (copilotAi) {
             markLiveAgentCopilotInSession_();
-        } else if (status === "active" && humanMode === "human") {
+            clearLiveAgentHumanChatInSession_();
+        } else if (agentAccepted && status === "active" && humanMode === "human") {
             clearLiveAgentCopilotInSession_();
+            markLiveAgentHumanChatInSession_();
+        } else {
+            clearLiveAgentHumanChatInSession_();
         }
     } catch (sessErr) {
         if (typeof console !== "undefined" && console.warn) {
@@ -14383,7 +14387,26 @@ function liveAgentTryRouteVisitorText_(text, dfMessenger, opts) {
  * @param {string} queryText
  * @returns {boolean}
  */
-function tryInterceptOutboundForLiveAgentHumanChat_(event, queryText) {
+function preventDialogflowMessengerEvent_(event) {
+    try {
+        if (event && typeof event.preventDefault === "function") {
+            event.preventDefault();
+        }
+        if (event && typeof event.stopPropagation === "function") {
+            event.stopPropagation();
+        }
+    } catch {
+        /* ignore */
+    }
+}
+
+/**
+ * Block Dialogflow send/response while visitor is in active human chat (not queue, not AI co-pilot).
+ * @param {Event | null | undefined} event
+ * @param {string} queryText
+ * @returns {boolean}
+ */
+function tryBlockDialogflowForLiveAgentHumanChat_(event, queryText) {
     const t = typeof queryText === "string" ? queryText.trim() : "";
     if (!t || !liveAgentHandoffIsActive_()) {
         return false;
@@ -14391,20 +14414,21 @@ function tryInterceptOutboundForLiveAgentHumanChat_(event, queryText) {
     if (liveAgentAllowDialogflowForUserText_()) {
         return false;
     }
-    const already = liveAgentAlreadyRoutedOutbound_(t);
-    if (!already) {
+    if (liveAgentIsBoilerplateHandoffPhrase_(t)) {
+        return false;
+    }
+    if (liveAgentShouldPostVisitorToAgent_(t) && !liveAgentAlreadyRoutedOutbound_(t)) {
         liveAgentMarkOutboundRouted_(t);
         void liveAgentSendVisitorMessage_(activeDfMessenger, t, true);
     }
-    try {
-        if (event && typeof event.preventDefault === "function") {
-            event.preventDefault();
-        }
-    } catch {
-        /* ignore */
-    }
+    preventDialogflowMessengerEvent_(event);
     dfchatPendingTypedUtteranceForGate_ = "";
+    scheduleClearDfMessengerComposerInput_();
     return true;
+}
+
+function tryInterceptOutboundForLiveAgentHumanChat_(event, queryText) {
+    return tryBlockDialogflowForLiveAgentHumanChat_(event, queryText);
 }
 
 function setLiveAgentHumanChatActive_(on) {
@@ -14427,11 +14451,13 @@ function clearLiveAgentRequestedInSession_() {
         delete sp.request_human_agent;
         delete sp.human_agent;
         delete sp.handoff_live_agent;
+        delete sp.live_agent_human_chat;
         persistClientContext({
             ...ctx,
             session_params: sp,
             live_agent_requested: false,
-            live_agent_initial_message: ""
+            live_agent_initial_message: "",
+            live_agent_human_chat: false
         });
         if (activeDfMessenger) {
             syncDfMessengerSessionParametersFromClientContext(activeDfMessenger);
@@ -14697,6 +14723,59 @@ function clearLiveAgentCopilotInSession_() {
     }
 }
 
+/** CX session hint: active human chat — bot should not reply (co-pilot clears this). */
+function markLiveAgentHumanChatInSession_() {
+    try {
+        const ctx = getClientContext();
+        /** @type {Record<string, unknown>} */
+        const sp =
+            ctx.session_params && typeof ctx.session_params === "object" && !Array.isArray(ctx.session_params)
+                ? { .../** @type {Record<string, unknown>} */ (ctx.session_params) }
+                : {};
+        sp.live_agent_human_chat = "true";
+        persistClientContext({
+            ...ctx,
+            session_params: sp,
+            live_agent_human_chat: true
+        });
+        if (activeDfMessenger) {
+            syncDfMessengerSessionParametersFromClientContext(activeDfMessenger);
+        }
+        scheduleSessionQueriesSheetSync_();
+        scheduleSessionTranscriptFirestoreSync_();
+    } catch (e) {
+        if (typeof console !== "undefined" && console.warn) {
+            console.warn("[live-agent] Could not mark human chat session:", e);
+        }
+    }
+}
+
+function clearLiveAgentHumanChatInSession_() {
+    try {
+        const ctx = getClientContext();
+        /** @type {Record<string, unknown>} */
+        const sp =
+            ctx.session_params && typeof ctx.session_params === "object" && !Array.isArray(ctx.session_params)
+                ? { .../** @type {Record<string, unknown>} */ (ctx.session_params) }
+                : {};
+        delete sp.live_agent_human_chat;
+        persistClientContext({
+            ...ctx,
+            session_params: sp,
+            live_agent_human_chat: false
+        });
+        if (activeDfMessenger) {
+            syncDfMessengerSessionParametersFromClientContext(activeDfMessenger);
+        }
+        scheduleSessionQueriesSheetSync_();
+        scheduleSessionTranscriptFirestoreSync_();
+    } catch (e) {
+        if (typeof console !== "undefined" && console.warn) {
+            console.warn("[live-agent] Could not clear human chat session:", e);
+        }
+    }
+}
+
 function tryRequestLiveAgentFromBotResponse_(event) {
     if (!liveAgentWidgetEnabled_()) {
         return;
@@ -14882,6 +14961,26 @@ function attachLiveAgentComposerBridge_(dfMessenger) {
                                 return;
                             }
                             const text = typeof ta.value === "string" ? ta.value.trim() : "";
+                            if (!text || !liveAgentHandoffIsActive_()) {
+                                return;
+                            }
+                            if (
+                                !liveAgentAllowDialogflowForUserText_()
+                                && !liveAgentIsBoilerplateHandoffPhrase_(text)
+                            ) {
+                                try {
+                                    ev.preventDefault();
+                                    ev.stopPropagation();
+                                } catch {
+                                    /* ignore */
+                                }
+                                window.setTimeout(() => {
+                                    if (liveAgentTryRouteVisitorText_(text, ms, { renderBubble: false })) {
+                                        scheduleClearDfMessengerComposerInput_();
+                                    }
+                                }, 0);
+                                return;
+                            }
                             if (!liveAgentShouldPostVisitorToAgent_(text)) {
                                 return;
                             }
@@ -15007,6 +15106,7 @@ async function liveAgentSendVisitorMessage_(dfMessenger, text, shouldRenderCusto
 
 function handleDfResponseReceived(event) {
     if (liveAgentHandoffIsActive_() && !liveAgentAllowDialogflowForUserText_()) {
+        preventDialogflowMessengerEvent_(event);
         return;
     }
 
@@ -15373,12 +15473,11 @@ function attachPersonaHandlers(dfMessenger) {
             if (tryPreventChatSendForMissingMobileGate_(event, typedTrim)) {
                 return;
             }
+            if (typedTrim && tryBlockDialogflowForLiveAgentHumanChat_(event, typedTrim)) {
+                return;
+            }
             const ms = activeDfMessenger;
-            const routed =
-                typedTrim &&
-                liveAgentShouldPostVisitorToAgent_(typedTrim) &&
-                liveAgentTryRouteVisitorText_(typedTrim, ms, { renderBubble: false });
-            if (!routed && ms && typeof ms.renderCustomText === "function") {
+            if (ms && typeof ms.renderCustomText === "function") {
                 renderUserPersona(ms);
             }
         },
@@ -15472,20 +15571,34 @@ function attachPersonaHandlers(dfMessenger) {
         scheduleClearDfMessengerComposerInput_();
     };
     ["df-chip-clicked", "df-button-clicked"].forEach((evtName) => {
-        window.addEventListener(evtName, (event) => {
+        window.addEventListener(evtName, async (event) => {
             notifyUserActivityForIdleEnd_(activeDfMessenger);
             const phrase = dfMessengerRichChoiceDetailToPhrase_(event && event.detail);
-            if (phrase) {
-                trackRichMessengerPhraseAndPersona(phrase);
+            if (!phrase) {
+                return;
             }
+            if (liveAgentHandoffIsActive_()) {
+                await liveAgentRefreshModeFromServer_();
+            }
+            if (tryBlockDialogflowForLiveAgentHumanChat_(event, phrase)) {
+                return;
+            }
+            trackRichMessengerPhraseAndPersona(phrase);
         }, true);
     });
-    window.addEventListener("df-list-element-clicked", (event) => {
+    window.addEventListener("df-list-element-clicked", async (event) => {
         notifyUserActivityForIdleEnd_(activeDfMessenger);
         const phrase = dfMessengerRichChoiceDetailToPhrase_(event && event.detail);
-        if (phrase) {
-            trackRichMessengerPhraseAndPersona(phrase);
+        if (!phrase) {
+            return;
         }
+        if (liveAgentHandoffIsActive_()) {
+            await liveAgentRefreshModeFromServer_();
+        }
+        if (tryBlockDialogflowForLiveAgentHumanChat_(event, phrase)) {
+            return;
+        }
+        trackRichMessengerPhraseAndPersona(phrase);
     }, true);
 
     /** Capture:true helps when messenger dispatches inside shadow/custom element trees. */
