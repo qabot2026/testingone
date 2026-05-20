@@ -134,14 +134,17 @@ export async function refreshDeskSettingsCache_() {
     }
 }
 
-async function enrichMessagesWithAgentNames_(messages) {
+async function enrichMessagesWithAgentNames_(messages, options = {}) {
     if (!messages.length) {
         return messages;
     }
+    const audience = options.audience === "agent" ? "agent" : "visitor";
+    const visitorDisplayName = trim_(options.visitorDisplayName);
     try {
         const {
             resolveAgentDisplayName_,
-            formatSystemMessageTextForVisitor_
+            formatSystemMessageTextForVisitor_,
+            formatSystemMessageTextForAgent_
         } = await import("./departments.mjs");
         const settings = await cachedLiveAgentSettings_();
         return messages.map((m) => {
@@ -153,9 +156,13 @@ async function enrichMessagesWithAgentNames_(messages) {
                 };
             }
             if (role === "system") {
+                const text =
+                    audience === "agent"
+                        ? formatSystemMessageTextForAgent_(m.text, visitorDisplayName)
+                        : formatSystemMessageTextForVisitor_(m.text, settings);
                 return {
                     ...m,
-                    text: formatSystemMessageTextForVisitor_(m.text, settings)
+                    text
                 };
             }
             return m;
@@ -911,13 +918,27 @@ export async function listMessages_({ conversationId, sinceIso, limit, markReadF
         });
     }
 
+    let visitorDisplayName = "";
     if (markReadFor === "agent") {
+        try {
+            const convSnap = await convRef.get();
+            if (convSnap.exists) {
+                const conv = serializeConversation_(id, convSnap.data());
+                const { resolveVisitorDisplayName_ } = await import("./visitor-name.mjs");
+                visitorDisplayName = resolveVisitorDisplayName_({ visitorName: conv.visitorName });
+            }
+        } catch (nameErr) {
+            console.warn(LOG_TAG, "visitor display name for messages:", nameErr.message || nameErr);
+        }
         await convRef.update({ unreadForAgent: 0 });
     } else if (markReadFor === "visitor") {
         await convRef.update({ unreadForVisitor: 0 });
     }
 
-    return enrichMessagesWithAgentNames_(messages);
+    return enrichMessagesWithAgentNames_(messages, {
+        audience: markReadFor === "agent" ? "agent" : "visitor",
+        visitorDisplayName
+    });
 }
 
 /** Active chat where the widget should use Dialogflow, not the agent inbox. */

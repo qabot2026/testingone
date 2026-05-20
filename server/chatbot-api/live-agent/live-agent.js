@@ -1523,11 +1523,30 @@
         }
     }
 
+    function formatSystemLineForDesk_(text) {
+        const t = String(text || "").trim();
+        if (!t) {
+            return t;
+        }
+        const visitor = resolveVisitorDisplayName_(selectedConv, selectedVisitorContext);
+        if (/^(.+?)\s+joined the chat\.?$/i.test(t)) {
+            return visitor + " joined the chat.";
+        }
+        const legacy = t.match(/^Agent\s+(\S+@\S+)\s+accepted the chat\.?$/i);
+        if (legacy) {
+            return visitor + " joined the chat.";
+        }
+        return t;
+    }
+
     function appendMessageEl(m) {
         const div = document.createElement("div");
         div.className = "msg " + (m.role || "visitor");
         div.dataset.msgId = m.id;
-        let body = escapeHtml(m.text || "");
+        let body =
+            m.role === "system"
+                ? escapeHtml(formatSystemLineForDesk_(m.text || ""))
+                : escapeHtml(m.text || "");
         const isMyAgentMsg =
             (m.role === "agent" || m.role === "staff") && agentIdsMatch_(m.senderEmail, agentId);
         if (

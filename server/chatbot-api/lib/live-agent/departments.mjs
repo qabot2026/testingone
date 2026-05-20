@@ -140,6 +140,28 @@ export function resolveAgentDisplayName_(email, settings) {
     return "Agent";
 }
 
+/** Agent desk: accept/join lines show the visitor name, not the agent's own name. */
+export function formatSystemMessageTextForAgent_(text, visitorDisplayName) {
+    let t = trim_(text);
+    if (!t) {
+        return t;
+    }
+    const visitor = trim_(visitorDisplayName) || "Visitor";
+    const joined = t.match(/^(.+?)\s+joined the chat\.?$/i);
+    if (joined) {
+        return visitor + " joined the chat.";
+    }
+    const acceptLegacy = t.match(/^Agent\s+(\S+@\S+)\s+accepted the chat\.?$/i);
+    if (acceptLegacy) {
+        return visitor + " joined the chat.";
+    }
+    const acceptShort = t.match(/^(\S+@\S+)\s+accepted the chat\.?$/i);
+    if (acceptShort) {
+        return visitor + " joined the chat.";
+    }
+    return t;
+}
+
 /** Visitor-safe system line (no email addresses). */
 export function formatSystemMessageTextForVisitor_(text, settings) {
     let t = trim_(text);
