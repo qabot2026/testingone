@@ -52,12 +52,12 @@ function videoTitleFromBody_(body) {
             : null;
     const direct = payloadString_(
         body.title
-        ?? body.label
-        ?? body.heading
-        ?? body.name
-        ?? body.subtitle
         ?? body.videoTitle
         ?? body.video_title
+        ?? body.name
+        ?? body.heading
+        ?? body.label
+        ?? body.subtitle
         ?? body.videoLabel
         ?? body.video_label
     );
@@ -372,6 +372,10 @@ function absorbActionPayload_(parts, body) {
 
             if (!title && caption && choices.length && !isGenericChoicePrompt_(caption)) {
                 title = caption;
+                message = "";
+            } else if (caption && isGenericChoicePrompt_(caption)) {
+                message = "";
+            } else if (caption && title && payloadString_(caption) === title) {
                 message = "";
             }
 

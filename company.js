@@ -11560,15 +11560,19 @@ function scheduleInjectInlineVideoPlayer(dfMessenger, embedHttpsUrl, options, me
         if (title) {
             const titleEl = document.createElement("div");
             titleEl.textContent = title;
+            titleEl.setAttribute("data-dfchat-video-title", "1");
             titleEl.style.cssText = [
                 "width:100%",
                 "box-sizing:border-box",
                 "color:#0f172a",
-                "font-size:14px",
-                "font-weight:600",
-                "line-height:1.35",
-                "margin:0 0 8px",
-                "padding:0 2px"
+                "font-size:15px",
+                "font-weight:700",
+                "line-height:1.4",
+                "margin:0 0 10px",
+                "padding:6px 4px",
+                "background:rgba(241,245,249,0.95)",
+                "border-radius:8px",
+                "border:1px solid rgba(148,163,184,0.35)"
             ].join(";");
             wrap.appendChild(titleEl);
         }

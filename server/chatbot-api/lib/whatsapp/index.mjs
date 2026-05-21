@@ -668,7 +668,7 @@ function resolveVideoIntro_(parts) {
 }
 
 /**
- * YouTube on WhatsApp: agent intro, bold title, then link preview bubble.
+ * YouTube on WhatsApp: agent intro, titled thumbnail, then link preview.
  * @param {{ to: string, youtubeId: string, title?: string, message?: string }} input
  */
 async function sendWhatsappYoutubeLink_(input) {
@@ -680,7 +680,18 @@ async function sendWhatsappYoutubeLink_(input) {
         await sendWhatsappText_({ to: input.to, body: message });
     }
     if (title) {
-        await sendWhatsappText_({ to: input.to, body: title });
+        try {
+            await sendWhatsappImage_({
+                to: input.to,
+                link: youtubeThumbnailUrl_(input.youtubeId),
+                caption: title.slice(0, 1024)
+            });
+        } catch (e) {
+            await sendWhatsappText_({ to: input.to, body: title });
+            log_("video_title_image_fallback", {
+                error: e && e.message ? String(e.message).slice(0, 160) : String(e)
+            });
+        }
     }
 
     return whatsappGraphPost_({
@@ -1301,6 +1312,22 @@ async function processInboundMetaMessage_(input) {
         live_agent: !!parts.liveAgent,
         image_count: parts.images.length
     });
+    if (parts.video?.url && !trim_(parts.video?.title)) {
+        /** @type {string[]} */
+        const payloadKeys = [];
+        const rawMsgs = cx?.queryResult?.responseMessages;
+        if (Array.isArray(rawMsgs)) {
+            for (const m of rawMsgs) {
+                const p = m?.payload;
+                if (p && typeof p === "object" && !Array.isArray(p)) {
+                    payloadKeys.push(...Object.keys(/** @type {Record<string, unknown>} */ (p)));
+                }
+            }
+        }
+        log_("video_title_missing", {
+            payload_keys: [...new Set(payloadKeys)].sort().join(",") || "(none)"
+        });
+    }
 }
 
 /**
