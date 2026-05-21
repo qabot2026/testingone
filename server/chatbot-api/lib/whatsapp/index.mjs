@@ -382,43 +382,144 @@ function cardCarouselChoiceOptions_(cards) {
 }
 
 /**
+ * @param {WaCarouselCard} card
+ */
+function formatCardBodyText_(card) {
+    const title = trim_(card.title);
+    const subtitle = trim_(card.subtitle);
+    if (title && subtitle) {
+        return `${title}\n${subtitle}`;
+    }
+    return title || subtitle || "";
+}
+
+/**
+ * One carousel card: image header + title/subtitle body + single reply button.
+ * @param {{ to: string, card: WaCarouselCard, index: number }} input
+ */
+async function sendWhatsappCardInteractive_(input) {
+    const bodyText = formatCardBodyText_(input.card)
+        || trim_(input.card.ctaLabel)
+        || `Option ${input.index + 1}`;
+    const buttonLabel = waShortTitle_(trim_(input.card.ctaLabel) || trim_(input.card.title) || "Select", 20);
+    if (!bodyText || !buttonLabel) {
+        return null;
+    }
+    /** @type {Record<string, unknown>} */
+    const interactive = {
+        type: "button",
+        body: { text: bodyText.slice(0, 1024) },
+        action: {
+            buttons: [
+                {
+                    type: "reply",
+                    reply: {
+                        id: `card_${input.index}`,
+                        title: buttonLabel
+                    }
+                }
+            ]
+        }
+    };
+    if (isHttpsUrl_(input.card.imageUrl)) {
+        interactive.header = {
+            type: "image",
+            image: { link: input.card.imageUrl }
+        };
+    }
+    return whatsappGraphPost_({
+        messaging_product: "whatsapp",
+        to: input.to,
+        type: "interactive",
+        interactive
+    });
+}
+
+/**
  * @param {string} to
  * @param {string} sessionId
  * @param {WaCarouselCard[]} cards
  * @param {CxReplyParts} parts
- * @param {string} [alreadyShown]
  */
-async function sendWhatsappChoicesFromCards_(to, sessionId, cards, parts) {
-    const opts = cardCarouselChoiceOptions_(cards);
+async function sendWhatsappCardCarouselWithOptions_(to, sessionId, cards, parts) {
+    const list = cards.slice(0, 10);
+    const opts = cardCarouselChoiceOptions_(list);
     if (!opts.length) {
         return;
     }
     rememberChoiceOptions_(sessionId, opts.map((o) => o.label), opts.map((o) => o.value));
-    const menuPrompt = trim_(parts.choicePrompt) || trim_(parts.cardCarousel?.message) || "";
-    const numbered = opts.map((opt, i) => `${i + 1}. ${opt.label}`).join("\n");
-    if (!menuPrompt) {
-        await sendWhatsappText_({ to, body: numbered });
-        return;
+
+    const intro = trim_(parts.choicePrompt) || trim_(parts.cardCarousel?.message) || "";
+    if (intro) {
+        await sendWhatsappText_({ to, body: intro });
     }
-    try {
-        const sent = await sendWhatsappChoiceMenu_({
-            to,
-            body: menuPrompt,
-            labels: opts.map((o) => o.label),
-            idPrefix: "card",
-            allowDefault: false
-        });
-        if (!sent) {
-            throw new Error("card_menu_empty");
+
+    for (let i = 0; i < list.length; i += 1) {
+        const card = list[i];
+        const caption = formatCardBodyText_(card);
+        const buttonLabel = trim_(card.ctaLabel) || trim_(card.title) || "Select";
+        try {
+            const sent = await sendWhatsappCardInteractive_({ to, card, index: i });
+            if (!sent) {
+                throw new Error("card_interactive_empty");
+            }
+        } catch (e) {
+            if (isHttpsUrl_(card.imageUrl)) {
+                try {
+                    await sendWhatsappImage_({
+                        to,
+                        link: card.imageUrl,
+                        caption: caption || undefined
+                    });
+                } catch (imgErr) {
+                    log_("card_image_skip", {
+                        index: i,
+                        error: imgErr && imgErr.message ? String(imgErr.message).slice(0, 160) : String(imgErr)
+                    });
+                    if (caption) {
+                        await sendWhatsappText_({ to, body: caption });
+                    }
+                }
+            } else if (caption) {
+                await sendWhatsappText_({ to, body: caption });
+            }
+            try {
+                const body = caption || buttonLabel;
+                await whatsappGraphPost_({
+                    messaging_product: "whatsapp",
+                    to,
+                    type: "interactive",
+                    interactive: {
+                        type: "button",
+                        body: { text: body.slice(0, 1024) },
+                        action: {
+                            buttons: [
+                                {
+                                    type: "reply",
+                                    reply: {
+                                        id: `card_${i}`,
+                                        title: waShortTitle_(buttonLabel, 20)
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                });
+            } catch (btnErr) {
+                await sendWhatsappText_({
+                    to,
+                    body: `${caption || buttonLabel}\n\nReply: ${buttonLabel}`
+                });
+                log_("card_button_fallback", {
+                    index: i,
+                    error: btnErr && btnErr.message ? String(btnErr.message).slice(0, 200) : String(btnErr)
+                });
+            }
+            log_("card_interactive_fallback", {
+                index: i,
+                error: e && e.message ? String(e.message).slice(0, 200) : String(e)
+            });
         }
-    } catch (e) {
-        await sendWhatsappText_({
-            to,
-            body: `${menuPrompt}\n\n${numbered}`
-        });
-        log_("card_menu_fallback", {
-            error: e && e.message ? String(e.message).slice(0, 200) : String(e)
-        });
     }
 }
 
@@ -537,17 +638,22 @@ async function sendWhatsappCxReply_(input) {
         if (agentText) {
             await sendWhatsappText_({ to: input.to, body: agentText });
         }
-        await sendWhatsappCardCarousel_({
-            to: input.to,
-            message: undefined,
-            cards: parts.cardCarousel.cards
-        });
         if (parts.cardCarousel.explicitOptions && parts.choices.length) {
+            await sendWhatsappCardCarousel_({
+                to: input.to,
+                message: undefined,
+                cards: parts.cardCarousel.cards
+            });
             await sendWhatsappChoicesFromParts_(input.to, input.sessionId, parts, {
                 payloadMessageOnly: true
             });
         } else {
-            await sendWhatsappChoicesFromCards_(input.to, input.sessionId, parts.cardCarousel.cards, parts);
+            await sendWhatsappCardCarouselWithOptions_(
+                input.to,
+                input.sessionId,
+                parts.cardCarousel.cards,
+                parts
+            );
         }
         return;
     }
