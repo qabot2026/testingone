@@ -524,6 +524,12 @@ function absorbRichContent_(parts, body) {
                 for (const o of normalizeSelectOptions_(item.options)) {
                     pushChoice_(parts, o);
                 }
+                const chipMsg = payloadString_(
+                    item.title ?? item.text ?? item.message ?? item.prompt ?? item.subtitle
+                );
+                if (chipMsg && !parts.choicePrompt && !isGenericChoicePrompt_(chipMsg)) {
+                    parts.choicePrompt = chipMsg;
+                }
             } else if (type === "info" || type === "accordion") {
                 const title = payloadString_(item.title);
                 const subtitle = payloadString_(item.subtitle);

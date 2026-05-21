@@ -236,12 +236,53 @@ function resolveChoiceSelection_(sessionId, choiceId, fallbackTitle) {
     if (!cached || Date.now() - cached.at > CHOICE_MAP_TTL_MS) {
         return fallbackTitle;
     }
-    const m = /^(?:chip|card)_(\d+)$/.exec(trim_(choiceId));
-    if (!m) {
-        return fallbackTitle;
+    const id = trim_(choiceId);
+    const m = /^(?:chip|card)_(\d+)$/.exec(id);
+    if (m) {
+        const idx = Number.parseInt(m[1], 10);
+        return cached.values[idx] || cached.labels[idx] || fallbackTitle;
     }
-    const idx = Number.parseInt(m[1], 10);
-    return cached.values[idx] || cached.labels[idx] || fallbackTitle;
+    return resolveTextChoiceReply_(sessionId, fallbackTitle) || fallbackTitle;
+}
+
+/**
+ * Map typed replies (1, 2, or option label) to the Dialogflow value from the last menu.
+ * @param {string} sessionId
+ * @param {string} text
+ */
+function resolveTextChoiceReply_(sessionId, text) {
+    const cached = waSessionChoiceMap_.get(sessionId);
+    if (!cached || Date.now() - cached.at > CHOICE_MAP_TTL_MS) {
+        return text;
+    }
+    const t = trim_(text);
+    if (!t) {
+        return text;
+    }
+    const numMatch = /^#?(\d+)\.?$/.exec(t);
+    if (numMatch) {
+        const idx = Number.parseInt(numMatch[1], 10) - 1;
+        if (idx >= 0 && idx < cached.labels.length) {
+            return cached.values[idx] || cached.labels[idx] || text;
+        }
+    }
+    const lower = t.toLowerCase();
+    for (let i = 0; i < cached.labels.length; i += 1) {
+        if (trim_(cached.labels[i]).toLowerCase() === lower) {
+            return cached.values[i] || cached.labels[i];
+        }
+    }
+    for (let i = 0; i < cached.values.length; i += 1) {
+        if (trim_(cached.values[i]).toLowerCase() === lower) {
+            return cached.values[i];
+        }
+    }
+    return text;
+}
+
+/** WhatsApp interactive menus require body text — build from option labels when payload has no message. */
+function choiceMenuBodyFromLabels_(labels) {
+    return labels.map((l) => trim_(l)).filter(Boolean).join("\n");
 }
 
 function isHttpsUrl_(raw) {
@@ -618,13 +659,14 @@ async function sendWhatsappOptions_(to, sessionId, options, menuPrompt, displayM
         return;
     }
 
-    if (!prompt) {
-        await sendWhatsappText_({ to, body: numbered });
+    const menuBody = prompt || choiceMenuBodyFromLabels_(labels);
+    if (!menuBody) {
+        log_("choice_menu_empty", { mode: "carousel", reason: "no_body" });
         return;
     }
     const sent = await sendWhatsappChoiceMenu_({
         to,
-        body: prompt,
+        body: menuBody,
         labels,
         idPrefix: "chip"
     });
@@ -1597,7 +1639,7 @@ function extractInboundPageText_(event, sessionId) {
         }
     }
     if (typeof msg.text === "string") {
-        return trim_(msg.text);
+        return resolveTextChoiceReply_(sessionId, trim_(msg.text));
     }
     return "";
 }
@@ -1676,7 +1718,7 @@ function extractInboundWhatsappText_(msg, sessionId) {
         return "";
     }
     if (msg.type === "text" && msg.text?.body) {
-        return trim_(msg.text.body);
+        return resolveTextChoiceReply_(sessionId, trim_(msg.text.body));
     }
     if (msg.type === "interactive" && msg.interactive) {
         const ir = msg.interactive;
