@@ -69,6 +69,16 @@ function videoTitleFromBody_(body) {
             nested.title ?? nested.label ?? nested.heading ?? nested.name ?? nested.subtitle
         );
     }
+    const params = body.parameters;
+    if (params && typeof params === "object" && !Array.isArray(params)) {
+        return payloadString_(
+            /** @type {Record<string, unknown>} */ (params).title
+            ?? /** @type {Record<string, unknown>} */ (params).label
+            ?? /** @type {Record<string, unknown>} */ (params).videoTitle
+            ?? /** @type {Record<string, unknown>} */ (params).video_title
+            ?? /** @type {Record<string, unknown>} */ (params).name
+        );
+    }
     return "";
 }
 
@@ -120,6 +130,33 @@ function unwrapDialogflowValue_(value) {
     return value;
 }
 
+/** Flatten Dialogflow `{ fields: { key: { stringValue } } }` payloads. @param {unknown} body */
+function flattenPayloadRecord_(body) {
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+        return null;
+    }
+    let rec = /** @type {Record<string, unknown>} */ (body);
+    if (
+        rec.fields
+        && typeof rec.fields === "object"
+        && !Array.isArray(rec.fields)
+        && !payloadString_(rec.action)
+    ) {
+        /** @type {Record<string, unknown>} */
+        const fromFields = {};
+        for (const [k, v] of Object.entries(/** @type {Record<string, unknown>} */ (rec.fields))) {
+            fromFields[k] = unwrapDialogflowValue_(v);
+        }
+        rec = fromFields;
+    }
+    /** @type {Record<string, unknown>} */
+    const out = {};
+    for (const [k, v] of Object.entries(rec)) {
+        out[k] = unwrapDialogflowValue_(v);
+    }
+    return out;
+}
+
 /** @param {unknown} payload */
 function normalizePayloadBody_(payload) {
     let body = unwrapDialogflowValue_(payload);
@@ -127,11 +164,15 @@ function normalizePayloadBody_(payload) {
     if (!body || typeof body !== "object" || Array.isArray(body)) {
         return null;
     }
+    body = flattenPayloadRecord_(body);
+    if (!body) {
+        return null;
+    }
+    if (payloadString_(body.action)) {
+        return body;
+    }
     /** @type {Record<string, unknown>} */
     const rec = body;
-    if (payloadString_(rec.action)) {
-        return rec;
-    }
     const fr = rec.fulfillment_response;
     if (fr && typeof fr === "object") {
         const msgs = /** @type {{ messages?: unknown[] }} */ (fr).messages;
@@ -250,6 +291,35 @@ function pushChoice_(parts, opt) {
 
 /**
  * @param {CxReplyParts} parts
+ * @param {Record<string, unknown>} item
+ */
+function mergeVideoFromItem_(parts, item) {
+    const url = payloadString_(
+        item.url ?? item.videoUrl ?? item.video_url ?? item.link ?? item.src ?? item.href
+    );
+    if (!url) {
+        return;
+    }
+    const title = payloadString_(item.title ?? item.label ?? item.name ?? item.heading);
+    const caption = payloadVideoCaption_(item);
+    const prev = parts.video;
+    parts.video = {
+        title: title || prev?.title || "",
+        message: caption || prev?.message || "",
+        url: url || prev?.url || "",
+        choices: prev?.choices || []
+    };
+    const opts = normalizeSelectOptions_(item.options ?? item.option ?? item.chips);
+    for (const o of opts) {
+        pushChoice_(parts, o);
+    }
+    if (opts.length) {
+        parts.video.choices = opts;
+    }
+}
+
+/**
+ * @param {CxReplyParts} parts
  * @param {Record<string, unknown>} body
  */
 function absorbActionPayload_(parts, body) {
@@ -305,11 +375,12 @@ function absorbActionPayload_(parts, body) {
                 message = "";
             }
 
+            const prev = parts.video;
             parts.video = {
-                title,
-                message,
+                title: title || prev?.title || "",
+                message: message || prev?.message || "",
                 url,
-                choices
+                choices: choices.length ? choices : (prev?.choices || [])
             };
             for (const o of parts.video.choices) {
                 pushChoice_(parts, o);
@@ -425,6 +496,8 @@ function absorbRichContent_(parts, body) {
                 if (alt) {
                     parts.infoLines.push(alt);
                 }
+            } else if (type === "video") {
+                mergeVideoFromItem_(parts, item);
             }
         }
     }

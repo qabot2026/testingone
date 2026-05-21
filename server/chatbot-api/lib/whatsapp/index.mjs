@@ -679,8 +679,8 @@ async function sendWhatsappYoutubeLink_(input) {
     if (message) {
         await sendWhatsappText_({ to: input.to, body: message });
     }
-    if (title && !promptsEquivalent_(title, message)) {
-        await sendWhatsappText_({ to: input.to, body: `*${title}*` });
+    if (title) {
+        await sendWhatsappText_({ to: input.to, body: title });
     }
 
     return whatsappGraphPost_({
@@ -755,16 +755,17 @@ async function sendWhatsappVideo_(input) {
         return;
     }
 
-    if (title && !promptsEquivalent_(title, message)) {
-        await sendWhatsappText_({ to: input.to, body: `*${title}*` });
+    if (title) {
+        await sendWhatsappText_({ to: input.to, body: title });
     }
 
     if (isDirectVideoFileUrl_(url) || isHttpsUrl_(url)) {
         try {
+            const caption = [title, message].filter(Boolean).join("\n\n");
             await sendWhatsappNativeVideo_({
                 to: input.to,
                 url,
-                message: message || undefined
+                message: caption || undefined
             });
             return;
         } catch (e) {
@@ -1295,6 +1296,7 @@ async function processInboundMetaMessage_(input) {
         card_count: parts.cardCarousel?.cards?.length || 0,
         gallery_count: parts.gallery?.urls?.length || 0,
         video: !!parts.video?.url,
+        video_title: trim_(parts.video?.title) || "",
         form: !!parts.form,
         live_agent: !!parts.liveAgent,
         image_count: parts.images.length

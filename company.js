@@ -11844,11 +11844,15 @@ function extractFirstOpenYoutubeEmbedFromCxMessages(messages) {
                                         : Object.prototype.hasOwnProperty.call(pl, "video_title") ? pl.video_title
                                             : Object.prototype.hasOwnProperty.call(pl, "videoLabel") ? pl.videoLabel
                                                 : Object.prototype.hasOwnProperty.call(pl, "video_label") ? pl.video_label
-                                                    : (pl.video && typeof pl.video === "object"
-                                                        ? (/** @type {Record<string, unknown>} */ (pl.video).title
-                                                            ?? /** @type {Record<string, unknown>} */ (pl.video).label
-                                                            ?? /** @type {Record<string, unknown>} */ (pl.video).subtitle)
-                                                        : null);
+                                                    : (pl.parameters && typeof pl.parameters === "object"
+                                                        ? (/** @type {Record<string, unknown>} */ (pl.parameters).title
+                                                            ?? /** @type {Record<string, unknown>} */ (pl.parameters).label
+                                                            ?? /** @type {Record<string, unknown>} */ (pl.parameters).videoTitle)
+                                                        : (pl.video && typeof pl.video === "object"
+                                                            ? (/** @type {Record<string, unknown>} */ (pl.video).title
+                                                                ?? /** @type {Record<string, unknown>} */ (pl.video).label
+                                                                ?? /** @type {Record<string, unknown>} */ (pl.video).subtitle)
+                                                            : null));
             let titleText = normalizeOpenVideoMessage(rawTitle);
             if (!titleText && messageText && !/^please choose an option[.!?:]?$/i.test(messageText.trim())) {
                 titleText = messageText;
@@ -11856,6 +11860,74 @@ function extractFirstOpenYoutubeEmbedFromCxMessages(messages) {
             const displayMessage =
                 titleText && messageText && titleText === messageText ? "" : messageText;
             return { embed, options, messageText: displayMessage, titleText };
+        }
+    }
+    return null;
+}
+
+/**
+ * `richContent` video rows (Dialogflow Messenger format).
+ *
+ * @param {unknown[]} messages
+ * @returns {{ embed: string, options: Array<{label: string, value: string}>, messageText: string, titleText: string } | null}
+ */
+function extractRichContentVideoFromCxMessages(messages) {
+    if (!Array.isArray(messages) || messages.length === 0) {
+        return null;
+    }
+    for (let vx = 0; vx < messages.length; vx += 1) {
+        const vm = messages[vx];
+        if (!messageHasFulfillmentPayload(vm)) {
+            continue;
+        }
+        /** @type {Record<string, unknown> | null} */
+        let pl = null;
+        try {
+            pl = extractPayload(/** @type {unknown} */ (vm));
+        } catch {
+            pl = null;
+        }
+        const rc = pl && Array.isArray(pl.richContent) ? pl.richContent : null;
+        if (!rc) {
+            continue;
+        }
+        for (let ri = 0; ri < rc.length; ri += 1) {
+            const row = rc[ri];
+            if (!Array.isArray(row)) {
+                continue;
+            }
+            for (let ii = 0; ii < row.length; ii += 1) {
+                const item = row[ii];
+                if (!item || typeof item !== "object") {
+                    continue;
+                }
+                /** @type {Record<string, unknown>} */
+                const it = /** @type {Record<string, unknown>} */ (item);
+                const typeStr = unwrapPayloadStringField(it.type).toLowerCase();
+                if (typeStr !== "video") {
+                    continue;
+                }
+                const pageUrl = unwrapPayloadStringField(
+                    it.url ?? it.videoUrl ?? it.video_url ?? it.link ?? it.src
+                );
+                const embed = normalizeYoutubeVideoEmbedUrl(pageUrl);
+                if (!embed) {
+                    continue;
+                }
+                const options = normalizeOpenVideoOptions(it.options ?? it.option ?? it.chips);
+                const messageText = normalizeOpenVideoMessage(
+                    it.message ?? it.text ?? it.prompt ?? it.description ?? it.caption
+                );
+                let titleText = normalizeOpenVideoMessage(
+                    it.title ?? it.label ?? it.name ?? it.heading ?? it.subtitle
+                );
+                if (!titleText && messageText && !/^please choose an option[.!?:]?$/i.test(messageText.trim())) {
+                    titleText = messageText;
+                }
+                const displayMessage =
+                    titleText && messageText && titleText === messageText ? "" : messageText;
+                return { embed, options, messageText: displayMessage, titleText };
+            }
         }
     }
     return null;
@@ -11870,8 +11942,10 @@ function extractFirstOpenYoutubeEmbedFromCxMessages(messages) {
  */
 function pruneStaleInlineVideoForCxResponse(messages, event) {
     try {
-        const videoPayload = extractFirstOpenYoutubeEmbedFromCxMessages(messages);
-        const hasPayload = !!(videoPayload && videoPayload.embed);
+        const hasPayload = !!(
+            (extractFirstOpenYoutubeEmbedFromCxMessages(messages)?.embed)
+            || (extractRichContentVideoFromCxMessages(messages)?.embed)
+        );
         const gateOk = passesInlineRichMediaIntentGate(event);
         if (hasPayload && gateOk) {
             return;
@@ -11898,7 +11972,9 @@ function tryOpenVideoFromBotResponseMessages(messages, event) {
         if (!passesInlineRichMediaIntentGate(event)) {
             return;
         }
-        const videoPayload = extractFirstOpenYoutubeEmbedFromCxMessages(messages);
+        const videoPayload =
+            extractFirstOpenYoutubeEmbedFromCxMessages(messages)
+            || extractRichContentVideoFromCxMessages(messages);
         if (!videoPayload || !videoPayload.embed) {
             return;
         }
