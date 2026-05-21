@@ -310,13 +310,16 @@ async function sendWhatsappImage_(input) {
 }
 
 /**
- * @param {{ to: string, body: string, labels: string[], idPrefix?: string }} input
+ * @param {{ to: string, body: string, labels: string[], idPrefix?: string, allowDefault?: boolean }} input
  */
 async function sendWhatsappChoiceMenu_(input) {
     const labels = input.labels.slice(0, 10);
     const idPrefix = input.idPrefix || "chip";
-    const body = waShortTitle_(input.body || "Please choose an option:", 1024);
-    if (labels.length === 0) {
+    let body = waShortTitle_(trim_(input.body), 1024);
+    if (!body && input.allowDefault !== false) {
+        body = waShortTitle_("Please choose an option:", 1024);
+    }
+    if (!body || labels.length === 0) {
         return null;
     }
     if (labels.length <= 3) {
@@ -384,25 +387,26 @@ function cardCarouselChoiceOptions_(cards) {
  * @param {CxReplyParts} parts
  * @param {string} [alreadyShown]
  */
-async function sendWhatsappChoicesFromCards_(to, sessionId, cards, parts, alreadyShown) {
+async function sendWhatsappChoicesFromCards_(to, sessionId, cards, parts) {
     const opts = cardCarouselChoiceOptions_(cards);
     if (!opts.length) {
         return;
     }
     rememberChoiceOptions_(sessionId, opts.map((o) => o.label), opts.map((o) => o.value));
-    const menuPrompt = resolveChoiceMenuPrompt_(parts, alreadyShown || "");
+    const menuPrompt = trim_(parts.choicePrompt) || trim_(parts.cardCarousel?.message) || "";
     try {
         await sendWhatsappChoiceMenu_({
             to,
             body: menuPrompt,
             labels: opts.map((o) => o.label),
-            idPrefix: "card"
+            idPrefix: "card",
+            allowDefault: false
         });
     } catch (e) {
         const numbered = opts.map((opt, i) => `${i + 1}. ${opt.label}`).join("\n");
         await sendWhatsappText_({
             to,
-            body: `${menuPrompt}\n\n${numbered}\n\nReply with the option text.`
+            body: menuPrompt ? `${menuPrompt}\n\n${numbered}` : numbered
         });
         log_("card_menu_fallback", {
             error: e && e.message ? String(e.message).slice(0, 200) : String(e)
@@ -470,19 +474,25 @@ async function sendWhatsappChoicesFromParts_(to, sessionId, parts, opts = {}) {
         return;
     }
     rememberChoiceOptions_(sessionId, choiceLabels_(parts), choiceValues_(parts));
-    const menuPrompt = resolveChoiceMenuPrompt_(parts, opts.alreadyShown || "");
+    const menuPrompt = opts.payloadMessageOnly
+        ? trim_(parts.choicePrompt)
+        : resolveChoiceMenuPrompt_(parts, opts.alreadyShown || "");
     try {
-        await sendWhatsappChoiceMenu_({
+        const sent = await sendWhatsappChoiceMenu_({
             to,
             body: menuPrompt,
             labels: choiceLabels_(parts),
-            idPrefix: "chip"
+            idPrefix: "chip",
+            allowDefault: !opts.payloadMessageOnly
         });
+        if (!sent && menuPrompt) {
+            throw new Error("choice_menu_empty");
+        }
     } catch (e) {
         const numbered = parts.choices.map((opt, i) => `${i + 1}. ${opt.label}`).join("\n");
         await sendWhatsappText_({
             to,
-            body: `${menuPrompt}\n\n${numbered}\n\nReply with the option text.`
+            body: menuPrompt ? `${menuPrompt}\n\n${numbered}` : numbered
         });
         log_("chip_menu_fallback", {
             error: e && e.message ? String(e.message).slice(0, 200) : String(e)
@@ -515,47 +525,33 @@ async function sendWhatsappCxReply_(input) {
     }
 
     if (parts.cardCarousel?.cards?.length) {
-        const hasChoices = parts.choices.length > 0;
-        let intro = trim_(leadText);
-        if (!hasChoices) {
-            intro = [intro, trim_(parts.cardCarousel.message)].filter(Boolean).join("\n\n");
-        }
         await sendWhatsappCardCarousel_({
             to: input.to,
-            message: intro || undefined,
+            message: undefined,
             cards: parts.cardCarousel.cards
         });
-        if (hasChoices) {
+        if (parts.choices.length) {
             await sendWhatsappChoicesFromParts_(input.to, input.sessionId, parts, {
-                alreadyShown: intro
+                payloadMessageOnly: true
             });
         } else {
-            await sendWhatsappChoicesFromCards_(
-                input.to,
-                input.sessionId,
-                parts.cardCarousel.cards,
-                parts,
-                intro
-            );
+            await sendWhatsappChoicesFromCards_(input.to, input.sessionId, parts.cardCarousel.cards, parts);
         }
         return;
     }
 
     if (parts.gallery?.urls?.length) {
-        const hasChoices = parts.choices.length > 0;
-        let intro = trim_(leadText);
-        if (!hasChoices) {
-            const galleryMsg = trim_(parts.gallery.message);
-            intro = [intro, galleryMsg].filter(Boolean).join("\n\n");
+        if (!parts.choices.length && trim_(parts.gallery.message)) {
+            await sendWhatsappText_({ to: input.to, body: trim_(parts.gallery.message) });
         }
         await sendWhatsappGallery_({
             to: input.to,
-            message: intro || undefined,
+            message: undefined,
             urls: parts.gallery.urls
         });
-        if (hasChoices) {
+        if (parts.choices.length) {
             await sendWhatsappChoicesFromParts_(input.to, input.sessionId, parts, {
-                alreadyShown: intro
+                payloadMessageOnly: true
             });
         }
         return;

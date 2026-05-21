@@ -341,6 +341,8 @@ function absorbActionPayload_(parts, body) {
         }
         if (msg && !parts.choicePrompt && opts.length) {
             parts.choicePrompt = msg;
+        } else if (msg && !parts.choicePrompt && cards.length) {
+            parts.choicePrompt = msg;
         }
         return;
     }
@@ -367,7 +369,7 @@ function absorbActionPayload_(parts, body) {
             pushChoice_(parts, o);
         }
         if (opts.length) {
-            parts.choicePrompt = msg || parts.choicePrompt || "Please choose an option:";
+            parts.choicePrompt = msg || parts.choicePrompt || "";
         } else if (msg && !parts.choicePrompt) {
             parts.choicePrompt = msg;
         }
