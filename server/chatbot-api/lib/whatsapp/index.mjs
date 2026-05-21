@@ -352,10 +352,8 @@ async function sendWhatsappChoiceMenu_(input) {
  */
 async function sendWhatsappCardButton_(input) {
     const buttonTitle = waShortTitle_(input.card.ctaLabel || input.card.title || "View", 20);
-    const bodyText = waShortTitle_(
-        [input.card.title, input.card.subtitle].filter(Boolean).join("\n") || "Tap below:",
-        1024
-    );
+    const detail = [input.card.title, input.card.subtitle].filter(Boolean).join("\n");
+    const bodyText = waShortTitle_(detail || "Tap below:", 1024);
     return whatsappGraphPost_({
         messaging_product: "whatsapp",
         to: input.to,
@@ -393,25 +391,19 @@ async function sendWhatsappCardCarousel_(input) {
 
     for (let i = 0; i < cards.length; i += 1) {
         const card = cards[i];
-        const caption = [card.title, card.subtitle].filter(Boolean).join("\n");
-        if (isHttpsUrl_(card.imageUrl)) {
+        const hasImage = isHttpsUrl_(card.imageUrl);
+        if (hasImage) {
             try {
                 await sendWhatsappImage_({
                     to: input.to,
-                    link: card.imageUrl,
-                    caption: caption || undefined
+                    link: card.imageUrl
                 });
             } catch (e) {
                 log_("card_image_skip", {
                     index: i,
                     error: e && e.message ? String(e.message).slice(0, 160) : String(e)
                 });
-                if (caption) {
-                    await sendWhatsappText_({ to: input.to, body: caption });
-                }
             }
-        } else if (caption) {
-            await sendWhatsappText_({ to: input.to, body: caption });
         }
         try {
             await sendWhatsappCardButton_({ to: input.to, cardIndex: i, card });
@@ -420,9 +412,12 @@ async function sendWhatsappCardCarousel_(input) {
                 index: i,
                 error: e && e.message ? String(e.message).slice(0, 160) : String(e)
             });
+            const fallback = [card.title, card.subtitle].filter(Boolean).join("\n");
             await sendWhatsappText_({
                 to: input.to,
-                body: `Reply "${card.ctaLabel || card.title || values[i]}" to select this option.`
+                body: fallback
+                    ? `${fallback}\n\nReply "${card.ctaLabel || card.title || values[i]}" to select.`
+                    : `Reply "${card.ctaLabel || card.title || values[i]}" to select this option.`
             });
         }
     }
@@ -630,14 +625,14 @@ async function sendPageQuickReplies_(input) {
  */
 function pageGenericElementForCard_(input) {
     const card = input.card;
-    const title = waShortTitle_(card.title || card.subtitle || "Option", 80);
+    const title = waShortTitle_(card.title || "Option", 80);
     if (!title) {
         return null;
     }
+    const subtitleRaw = waShortTitle_(card.subtitle || "", 80);
     /** @type {Record<string, unknown>} */
     const el = {
         title,
-        subtitle: waShortTitle_(card.subtitle || "", 80),
         buttons: [
             {
                 type: "postback",
@@ -646,6 +641,9 @@ function pageGenericElementForCard_(input) {
             }
         ]
     };
+    if (subtitleRaw && subtitleRaw !== title) {
+        el.subtitle = subtitleRaw;
+    }
     if (isHttpsUrl_(card.imageUrl)) {
         el.image_url = card.imageUrl;
     }
