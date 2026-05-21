@@ -590,12 +590,13 @@ async function sendWhatsappCardCarousel_(input) {
 }
 
 /**
+ * @param {"numbered" | "carousel"} displayMode
  * @param {string} to
  * @param {string} sessionId
  * @param {{ label: string, value: string }[]} options
  * @param {string} menuPrompt
  */
-async function sendWhatsappChoiceMenuFromOptions_(to, sessionId, options, menuPrompt) {
+async function sendWhatsappOptions_(to, sessionId, options, menuPrompt, displayMode) {
     if (!options.length) {
         return;
     }
@@ -607,29 +608,40 @@ async function sendWhatsappChoiceMenuFromOptions_(to, sessionId, options, menuPr
     const prompt = trim_(menuPrompt);
     const labels = options.map((o) => o.label);
     const numbered = options.map((opt, i) => `${i + 1}. ${opt.label}`).join("\n");
+    const mode = displayMode === "numbered" ? "numbered" : "carousel";
+
+    if (mode === "numbered") {
+        await sendWhatsappText_({
+            to,
+            body: prompt ? `${prompt}\n\n${numbered}` : numbered
+        });
+        return;
+    }
+
     if (!prompt) {
         await sendWhatsappText_({ to, body: numbered });
         return;
     }
-    try {
-        const sent = await sendWhatsappChoiceMenu_({
-            to,
-            body: prompt,
-            labels,
-            idPrefix: "chip"
-        });
-        if (!sent) {
-            throw new Error("gallery_menu_empty");
-        }
-    } catch (e) {
-        await sendWhatsappText_({
-            to,
-            body: `${prompt}\n\n${numbered}`
-        });
-        log_("gallery_menu_fallback", {
-            error: e && e.message ? String(e.message).slice(0, 200) : String(e)
-        });
+    const sent = await sendWhatsappChoiceMenu_({
+        to,
+        body: prompt,
+        labels,
+        idPrefix: "chip"
+    });
+    if (!sent) {
+        log_("choice_menu_empty", { mode: "carousel" });
     }
+}
+
+/**
+ * @param {string} to
+ * @param {string} sessionId
+ * @param {{ label: string, value: string }[]} options
+ * @param {string} menuPrompt
+ * @param {"numbered" | "carousel"} displayMode
+ */
+async function sendWhatsappChoiceMenuFromOptions_(to, sessionId, options, menuPrompt, displayMode) {
+    await sendWhatsappOptions_(to, sessionId, options, menuPrompt, displayMode);
 }
 
 /**
@@ -668,7 +680,13 @@ async function sendWhatsappGalleryFull_(to, sessionId, parts) {
     }
 
     if (options.length) {
-        await sendWhatsappChoiceMenuFromOptions_(to, sessionId, options, menuPrompt);
+        await sendWhatsappChoiceMenuFromOptions_(
+            to,
+            sessionId,
+            options,
+            menuPrompt,
+            parts.optionsDisplay || "carousel"
+        );
     } else if (trim_(gallery.message)) {
         await sendWhatsappText_({ to, body: trim_(gallery.message) });
     }
@@ -702,28 +720,14 @@ async function sendWhatsappChoicesFromParts_(to, sessionId, parts, opts = {}) {
     if (!parts.choices.length) {
         return;
     }
-    rememberChoiceOptions_(sessionId, choiceLabels_(parts), choiceValues_(parts));
     const menuPrompt = resolveChoiceMenuPrompt_(parts, opts.alreadyShown || "");
-    try {
-        const sent = await sendWhatsappChoiceMenu_({
-            to,
-            body: menuPrompt,
-            labels: choiceLabels_(parts),
-            idPrefix: "chip"
-        });
-        if (!sent) {
-            throw new Error("choice_menu_empty");
-        }
-    } catch (e) {
-        const numbered = parts.choices.map((opt, i) => `${i + 1}. ${opt.label}`).join("\n");
-        await sendWhatsappText_({
-            to,
-            body: menuPrompt ? `${menuPrompt}\n\n${numbered}` : numbered
-        });
-        log_("chip_menu_fallback", {
-            error: e && e.message ? String(e.message).slice(0, 200) : String(e)
-        });
-    }
+    await sendWhatsappOptions_(
+        to,
+        sessionId,
+        parts.choices,
+        menuPrompt,
+        parts.optionsDisplay || "carousel"
+    );
 }
 
 /**
@@ -764,6 +768,20 @@ async function sendWhatsappCxReply_(input) {
             await sendWhatsappChoicesFromParts_(input.to, input.sessionId, parts, {
                 alreadyShown: intro
             });
+        } else if (parts.optionsDisplay === "numbered") {
+            const intro = trim_(parts.choicePrompt) || trim_(parts.cardCarousel?.message) || "";
+            if (intro) {
+                await sendWhatsappText_({ to: input.to, body: intro });
+            }
+            await sendWhatsappCardCarouselSeparated_(input.to, parts.cardCarousel.cards);
+            const cardOpts = cardCarouselChoiceOptions_(parts.cardCarousel.cards);
+            await sendWhatsappOptions_(
+                input.to,
+                input.sessionId,
+                cardOpts,
+                "",
+                "numbered"
+            );
         } else {
             await sendWhatsappCardCarouselWithOptions_(
                 input.to,
@@ -1307,6 +1325,18 @@ async function sendPageChoicesFromParts_(recipientId, sessionId, parts) {
         || trim_(parts.gallery?.prompt)
         || trim_(parts.cardCarousel?.message)
         || "";
+    const numbered = parts.choices.map((opt, i) => `${i + 1}. ${opt.label}`).join("\n");
+    const mode = parts.optionsDisplay === "numbered" ? "numbered" : "carousel";
+
+    if (mode === "numbered") {
+        await sendPageText_(
+            recipientId,
+            prompt ? `${prompt}\n\n${numbered}` : numbered
+        );
+        rememberChoiceOptions_(sessionId, choiceLabels_(parts), choiceValues_(parts));
+        return;
+    }
+
     try {
         await sendPageQuickReplies_({
             recipientId,
@@ -1316,7 +1346,6 @@ async function sendPageChoicesFromParts_(recipientId, sessionId, parts) {
             values: choiceValues_(parts)
         });
     } catch (e) {
-        const numbered = parts.choices.map((opt, i) => `${i + 1}. ${opt.label}`).join("\n");
         await sendPageText_(
             recipientId,
             prompt ? `${prompt}\n\n${numbered}\n\nReply with the option text.` : `${numbered}\n\nReply with the option text.`

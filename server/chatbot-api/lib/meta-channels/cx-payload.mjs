@@ -246,6 +246,7 @@ export function normalizeSelectOptions_(opts) {
  *   images: string[],
  *   choices: ChoiceOption[],
  *   choicePrompt: string,
+ *   optionsDisplay: "numbered" | "carousel",
  *   cardCarousel: { message: string, cards: CarouselCard[], explicitOptions?: boolean } | null,
  *   gallery: { message: string, prompt: string, urls: string[], options: ChoiceOption[] } | null,
  *   video: { title: string, message: string, url: string, choices: ChoiceOption[] } | null,
@@ -329,10 +330,44 @@ function mergeVideoFromItem_(parts, item) {
 }
 
 /**
+ * @param {Record<string, unknown>} body
+ * @returns {"numbered" | "carousel" | null}
+ */
+export function parseOptionsDisplay_(body) {
+    const raw = payloadString_(
+        body.optionsDisplay ?? body.options_display
+        ?? body.optionsFormat ?? body.options_format
+        ?? body.choiceDisplay ?? body.choice_display
+    ).toLowerCase();
+    if (!raw) {
+        return null;
+    }
+    if (raw === "numbered" || raw === "numbering" || raw === "number" || raw === "numbers") {
+        return "numbered";
+    }
+    if (raw === "carousel" || raw === "buttons" || raw === "chips" || raw === "menu" || raw === "interactive") {
+        return "carousel";
+    }
+    return null;
+}
+
+/**
+ * @param {CxReplyParts} parts
+ * @param {Record<string, unknown>} body
+ */
+function absorbOptionsDisplay_(parts, body) {
+    const parsed = parseOptionsDisplay_(body);
+    if (parsed) {
+        parts.optionsDisplay = parsed;
+    }
+}
+
+/**
  * @param {CxReplyParts} parts
  * @param {Record<string, unknown>} body
  */
 function absorbActionPayload_(parts, body) {
+    absorbOptionsDisplay_(parts, body);
     const action = payloadString_(body.action).toLowerCase();
     if (!action) {
         return;
@@ -543,6 +578,7 @@ export function extractCxResponse_(data) {
         images: [],
         choices: [],
         choicePrompt: "",
+        optionsDisplay: "carousel",
         cardCarousel: null,
         gallery: null,
         video: null,
@@ -573,6 +609,7 @@ export function extractCxResponse_(data) {
 
         absorbActionPayload_(parts, body);
         absorbRichContent_(parts, body);
+        absorbOptionsDisplay_(parts, body);
 
         const lateMsg = payloadString_(body.message);
         if (lateMsg && parts.choices.length && !parts.choicePrompt && !isGenericChoicePrompt_(lateMsg)) {
