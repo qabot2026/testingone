@@ -24,11 +24,11 @@ import {
     youtubeThumbnailUrl_,
     isDirectVideoFileUrl_
 } from "../meta-channels/cx-payload.mjs";
+import FormData from "form-data";
 import {
-    youtubeMp4ProxyUrl_,
-    streamYoutubeMp4ToResponse_,
-    downloadYoutubeMp4Buffer_
-} from "../meta-channels/youtube-mp4-proxy.mjs";
+    downloadYoutubeMp4Buffer_,
+    streamYoutubeMp4ToResponse_
+} from "../meta-channels/youtube-download.mjs";
 
 /**
  * Dialogflow-only credentials. Use when Firebase JSON is from another GCP project
@@ -575,14 +575,19 @@ async function uploadWhatsappMedia_(buffer, mimeType) {
     const c = whatsappConfig_();
     const form = new FormData();
     form.append("messaging_product", "whatsapp");
-    form.append("type", mimeType);
-    form.append("file", new Blob([buffer], { type: mimeType }), "video.mp4");
+    form.append("file", buffer, {
+        filename: "video.mp4",
+        contentType: mimeType,
+        knownLength: buffer.length
+    });
     const url = `https://graph.facebook.com/${c.graphVersion}/${c.phoneNumberId}/media`;
     const res = await fetch(url, {
         method: "POST",
         headers: {
-            Authorization: `Bearer ${c.accessToken}`
+            Authorization: `Bearer ${c.accessToken}`,
+            ...form.getHeaders()
         },
+        // @ts-expect-error form-data stream body for fetch
         body: form
     });
     const raw = await res.text();
@@ -631,31 +636,6 @@ async function sendWhatsappNativeVideoById_(input) {
 }
 
 /**
- * @param {{ to: string, youtubeId: string, message?: string }} input
- */
-async function sendWhatsappYoutubePreview_(input) {
-    const watchUrl = youtubeWatchUrl_(input.youtubeId);
-    const thumb = youtubeThumbnailUrl_(input.youtubeId);
-    const message = trim_(input.message);
-    try {
-        await sendWhatsappImage_({
-            to: input.to,
-            link: thumb,
-            caption: message || undefined
-        });
-    } catch (e) {
-        log_("wa_youtube_thumb_skip", {
-            error: e && e.message ? String(e.message).slice(0, 160) : String(e)
-        });
-    }
-    await sendWhatsappVideoLink_({
-        to: input.to,
-        url: watchUrl,
-        message: message ? undefined : "Tap below to watch on YouTube:"
-    });
-}
-
-/**
  * @param {{ to: string, url: string, message?: string }} input
  */
 async function sendWhatsappVideoLink_(input) {
@@ -693,6 +673,10 @@ async function sendWhatsappVideo_(input) {
     if (youtubeId) {
         try {
             const buffer = await downloadYoutubeMp4Buffer_(youtubeId);
+            log_("wa_youtube_download_ok", {
+                bytes: buffer.length,
+                videoId: youtubeId
+            });
             const mediaId = await uploadWhatsappMedia_(buffer, "video/mp4");
             await sendWhatsappNativeVideoById_({
                 to: input.to,
@@ -701,27 +685,16 @@ async function sendWhatsappVideo_(input) {
             });
             return;
         } catch (e) {
-            log_("wa_youtube_upload_skip", {
-                error: e && e.message ? String(e.message).slice(0, 160) : String(e)
-            });
-        }
-        try {
-            await sendWhatsappYoutubePreview_({
-                to: input.to,
-                youtubeId,
-                message: message || undefined
-            });
-            return;
-        } catch (e) {
-            log_("wa_youtube_preview_skip", {
-                error: e && e.message ? String(e.message).slice(0, 160) : String(e)
+            log_("wa_youtube_native_fail", {
+                videoId: youtubeId,
+                error: e && e.message ? String(e.message).slice(0, 240) : String(e)
             });
         }
         await sendWhatsappText_({
             to: input.to,
             body: message
-                ? `${message}\n\nWatch: ${youtubeWatchUrl_(youtubeId)}`
-                : `Watch: ${youtubeWatchUrl_(youtubeId)}`
+                ? `${message}\n\nVideo could not be loaded in WhatsApp. Watch here: ${youtubeWatchUrl_(youtubeId)}`
+                : `Video could not be loaded in WhatsApp. Watch here: ${youtubeWatchUrl_(youtubeId)}`
         });
         return;
     }

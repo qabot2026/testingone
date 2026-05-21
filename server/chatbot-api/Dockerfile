@@ -18,6 +18,10 @@ FROM node:20-bookworm-slim
 WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=8080
+# yt-dlp + ffmpeg: download YouTube as H.264 MP4 for WhatsApp native video messages.
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends yt-dlp ffmpeg \
+  && rm -rf /var/lib/apt/lists/*
 # Default ~4GB heap when the service has 8GB RAM. Override in Railway Variables if needed.
 ENV NODE_OPTIONS=--max-old-space-size=4096
 COPY --from=deps /app/node_modules ./node_modules

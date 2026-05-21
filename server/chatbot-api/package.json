@@ -11,10 +11,11 @@
   "dependencies": {
     "cors": "^2.8.6",
     "express": "^4.21.2",
-    "nodemailer": "^6.9.16",
     "firebase-admin": "^13.6.0",
+    "form-data": "^4.0.5",
     "googleapis": "^169.0.0",
     "multer": "^1.4.5-lts.1",
-    "@distube/ytdl-core": "^4.16.12"
+    "nodemailer": "^6.9.16",
+    "youtubei.js": "^17.0.1"
   }
 }
