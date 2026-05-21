@@ -356,14 +356,19 @@ function absorbActionPayload_(parts, body) {
                 }
             }
         }
-        if (urls.length) {
-            parts.gallery = { message: msg, urls: urls.slice(0, 10) };
-        }
         const opts = normalizeSelectOptions_(body.options ?? body.option ?? body.chips);
+        if (urls.length) {
+            parts.gallery = {
+                message: opts.length ? "" : msg,
+                urls: urls.slice(0, 10)
+            };
+        }
         for (const o of opts) {
             pushChoice_(parts, o);
         }
-        if (msg && !parts.choicePrompt) {
+        if (opts.length) {
+            parts.choicePrompt = msg || parts.choicePrompt || "Please choose an option:";
+        } else if (msg && !parts.choicePrompt) {
             parts.choicePrompt = msg;
         }
         return;
