@@ -3,12 +3,12 @@ description: Always commit and push after completing code changes in this repo
 alwaysApply: true
 ---
 
-# Commit and push
+# Commit and push (automatic)
 
-When you finish substantive edits the user asked for (features, fixes, refactors in this repository):
+After **every** substantive code change in this repository (features, fixes, refactors the user asked for):
 
-1. **Commit** the relevant files with a clear, accurate message (explain *why* when it helps).
-2. **Push** to the tracked remote branch (usually `origin/main`).
+1. **Commit** immediately — do **not** wait for the user to say "commit and push".
+2. **Push** to the tracked remote branch (usually `origin/main`) in the same turn.
 
 **Do not commit:** secrets (`.env`, private keys, `credentials.json`), `__pycache__/`, or other obvious local-only junk unless the user explicitly asked to track it.
 

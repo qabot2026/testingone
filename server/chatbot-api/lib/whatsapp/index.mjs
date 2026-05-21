@@ -24,6 +24,10 @@ import {
     youtubeThumbnailUrl_,
     isDirectVideoFileUrl_
 } from "../meta-channels/cx-payload.mjs";
+import {
+    youtubeMp4ProxyUrl_,
+    streamYoutubeMp4ToResponse_
+} from "../meta-channels/youtube-mp4-proxy.mjs";
 
 /**
  * Dialogflow-only credentials. Use when Firebase JSON is from another GCP project
@@ -223,12 +227,24 @@ function webChatUrl_() {
     if (explicit) {
         return explicit.replace(/\/+$/, "");
     }
-    const base =
-        trim_(process.env.CONVERSATIONS_PUBLIC_BASE_URL)
-        || (trim_(process.env.RAILWAY_PUBLIC_DOMAIN)
-            ? `https://${trim_(process.env.RAILWAY_PUBLIC_DOMAIN)}`
-            : "");
+    const base = metaApiPublicBaseUrl_();
     return base ? `${base.replace(/\/+$/, "")}/chat-frame.html` : "";
+}
+
+function metaApiPublicBaseUrl_() {
+    const explicit = trim_(process.env.CONVERSATIONS_PUBLIC_BASE_URL);
+    if (explicit) {
+        return explicit.replace(/\/+$/, "");
+    }
+    const dom = trim_(process.env.RAILWAY_PUBLIC_DOMAIN);
+    if (dom) {
+        return `https://${dom.replace(/\/+$/, "")}`;
+    }
+    const staticUrl = trim_(process.env.RAILWAY_STATIC_URL);
+    if (staticUrl) {
+        return staticUrl.replace(/\/+$/, "");
+    }
+    return "";
 }
 
 function waShortTitle_(text, maxLen) {
@@ -553,6 +569,21 @@ async function sendWhatsappCxReply_(input) {
 /**
  * @param {{ to: string, url: string, message?: string }} input
  */
+async function sendWhatsappNativeVideo_(input) {
+    return whatsappGraphPost_({
+        messaging_product: "whatsapp",
+        to: input.to,
+        type: "video",
+        video: {
+            link: input.url,
+            ...(input.message ? { caption: input.message.slice(0, 1024) } : {})
+        }
+    });
+}
+
+/**
+ * @param {{ to: string, url: string, message?: string }} input
+ */
 async function sendWhatsappVideoLink_(input) {
     return whatsappGraphPost_({
         messaging_product: "whatsapp",
@@ -584,17 +615,29 @@ async function sendWhatsappVideo_(input) {
     }
     const message = trim_(input.message);
     const youtubeId = parseYoutubeVideoId_(url);
+    const apiBase = metaApiPublicBaseUrl_();
 
-    if (isDirectVideoFileUrl_(url)) {
+    if (youtubeId && apiBase) {
         try {
-            await whatsappGraphPost_({
-                messaging_product: "whatsapp",
+            await sendWhatsappNativeVideo_({
                 to: input.to,
-                type: "video",
-                video: {
-                    link: url,
-                    ...(message ? { caption: message.slice(0, 1024) } : {})
-                }
+                url: youtubeMp4ProxyUrl_(youtubeId, apiBase),
+                message: message || undefined
+            });
+            return;
+        } catch (e) {
+            log_("wa_youtube_native_skip", {
+                error: e && e.message ? String(e.message).slice(0, 160) : String(e)
+            });
+        }
+    }
+
+    if (isDirectVideoFileUrl_(url) || (!youtubeId && isHttpsUrl_(url))) {
+        try {
+            await sendWhatsappNativeVideo_({
+                to: input.to,
+                url,
+                message: message || undefined
             });
             return;
         } catch (e) {
@@ -871,21 +914,38 @@ async function sendPageVideo_(input) {
     }
     const message = trim_(input.message);
     const youtubeId = parseYoutubeVideoId_(url);
+    const apiBase = metaApiPublicBaseUrl_();
 
-    if (isDirectVideoFileUrl_(url)) {
-        try {
-            if (message) {
-                await sendPageText_(input.recipientId, message);
-            }
-            await sendPageMessage_({
-                recipientId: input.recipientId,
-                message: {
-                    attachment: {
-                        type: "video",
-                        payload: { url, is_reusable: false }
-                    }
+    /** @param {string} videoUrl */
+    async function attachNativeVideo_(videoUrl) {
+        if (message) {
+            await sendPageText_(input.recipientId, message);
+        }
+        await sendPageMessage_({
+            recipientId: input.recipientId,
+            message: {
+                attachment: {
+                    type: "video",
+                    payload: { url: videoUrl, is_reusable: false }
                 }
+            }
+        });
+    }
+
+    if (youtubeId && apiBase) {
+        try {
+            await attachNativeVideo_(youtubeMp4ProxyUrl_(youtubeId, apiBase));
+            return;
+        } catch (e) {
+            log_("page_youtube_native_skip", {
+                error: e && e.message ? String(e.message).slice(0, 160) : String(e)
             });
+        }
+    }
+
+    if (isDirectVideoFileUrl_(url) || (!youtubeId && isHttpsUrl_(url))) {
+        try {
+            await attachNativeVideo_(url);
             return;
         } catch (e) {
             log_("page_video_attach_skip", {
@@ -1437,6 +1497,20 @@ function handleHealth_(req, res) {
 }
 
 /**
+ * Public MP4 proxy so Meta can attach YouTube as native in-app video (WhatsApp player).
+ * @param {import("express").Request} req
+ * @param {import("express").Response} res
+ */
+async function handleYoutubeMp4Proxy_(req, res) {
+    const raw = trim_(req.params.videoId).replace(/\.mp4$/i, "");
+    if (!/^[\w-]{11}$/.test(raw)) {
+        res.status(400).json({ ok: false, error: "Invalid YouTube video id" });
+        return;
+    }
+    await streamYoutubeMp4ToResponse_(raw, res);
+}
+
+/**
  * @param {import("express").Express} app
  */
 export function mountWhatsappRoutes(app) {
@@ -1457,4 +1531,5 @@ export function mountWhatsappRoutes(app) {
     }, handleWebhookPost_);
 
     app.get("/api/whatsapp/health", handleHealth_);
+    app.get("/api/whatsapp/media/youtube/:videoId", handleYoutubeMp4Proxy_);
 }
