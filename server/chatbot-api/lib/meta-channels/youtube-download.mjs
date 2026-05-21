@@ -1,14 +1,19 @@
 /**
- * Download YouTube as MP4 for WhatsApp native video (yt-dlp on server, youtubei.js fallback).
+ * Download YouTube as H.264 MP4 for WhatsApp native in-app video player.
+ * Requires yt-dlp + ffmpeg in the container (see Dockerfile).
  */
 
-import { spawn } from "node:child_process";
-import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
+import { spawn, spawnSync } from "node:child_process";
+import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { Innertube, Platform } from "youtubei.js";
 
 export const WA_VIDEO_MAX_BYTES = 16 * 1024 * 1024;
+
+/** yt-dlp format: 360p combined MP4 (itag 18) — H.264 + AAC, WhatsApp-compatible. */
+const YT_DLP_FORMAT =
+    "18/b[height<=360][ext=mp4][vcodec^=avc1]/b[height<=480][ext=mp4]/b[height<=480]/b";
 
 function trim_(v) {
     return (v == null ? "" : String(v)).trim();
@@ -19,14 +24,10 @@ export function isValidYoutubeVideoId_(id) {
     return /^[\w-]{11}$/.test(trim_(id));
 }
 
-/**
- * @param {string} videoId
- * @param {string} baseUrl
- */
-export function youtubeMp4ProxyUrl_(videoId, baseUrl) {
-    const base = trim_(baseUrl).replace(/\/+$/, "");
-    const id = trim_(videoId);
-    return `${base}/api/whatsapp/media/youtube/${encodeURIComponent(id)}.mp4`;
+/** @returns {boolean} */
+export function isYtDlpAvailable_() {
+    const r = spawnSync("yt-dlp", ["--version"], { encoding: "utf8" });
+    return r.status === 0;
 }
 
 let youtubeiEvalReady_ = false;
@@ -43,7 +44,7 @@ function ensureYoutubeiEval_() {
  * @param {string[]} args
  * @param {number} timeoutMs
  */
-function runCommand_(cmd, args, timeoutMs = 120000) {
+function runCommand_(cmd, args, timeoutMs = 180000) {
     return new Promise((resolve, reject) => {
         const proc = spawn(cmd, args, { stdio: ["ignore", "pipe", "pipe"] });
         /** @type {Buffer[]} */
@@ -74,9 +75,67 @@ function runCommand_(cmd, args, timeoutMs = 120000) {
                 resolve({ stdout, stderr });
                 return;
             }
-            reject(new Error(`${cmd} exited ${code}: ${stderr.slice(-400)}`));
+            reject(new Error(`${cmd} exited ${code}: ${stderr.slice(-500)}`));
         });
     });
+}
+
+/**
+ * @param {string} inputPath
+ * @param {string} outputPath
+ * @param {number} maxBytes
+ */
+async function compressMp4ForWhatsapp_(inputPath, outputPath, maxBytes) {
+    /** Scale down long clips so they fit WhatsApp 16 MB cap. */
+    await runCommand_("ffmpeg", [
+        "-y",
+        "-i",
+        inputPath,
+        "-c:v",
+        "libx264",
+        "-profile:v",
+        "baseline",
+        "-level",
+        "3.0",
+        "-pix_fmt",
+        "yuv420p",
+        "-vf",
+        "scale='min(640,iw)':-2",
+        "-b:v",
+        "600k",
+        "-maxrate",
+        "700k",
+        "-bufsize",
+        "1400k",
+        "-c:a",
+        "aac",
+        "-b:a",
+        "64k",
+        "-ac",
+        "1",
+        "-movflags",
+        "+faststart",
+        outputPath
+    ]);
+    const buf = await readFile(outputPath);
+    if (buf.length > maxBytes) {
+        throw new Error("Video still exceeds WhatsApp 16 MB after compression");
+    }
+    return buf;
+}
+
+/**
+ * @param {string} filePath
+ * @param {number} maxBytes
+ */
+async function readMp4MaybeCompress_(filePath, maxBytes) {
+    let buf = await readFile(filePath);
+    if (buf.length <= maxBytes) {
+        return buf;
+    }
+    const dir = path.dirname(filePath);
+    const compressed = path.join(dir, "compressed.mp4");
+    return compressMp4ForWhatsapp_(filePath, compressed, maxBytes);
 }
 
 /**
@@ -84,20 +143,24 @@ function runCommand_(cmd, args, timeoutMs = 120000) {
  * @param {number} maxBytes
  */
 async function downloadViaYtDlpFile_(watchUrl, maxBytes) {
-    const dir = await mkdtemp(path.join(tmpdir(), "wa-vid-"));
+    const dir = await mkdtemp(path.join(tmpdir(), "wa-yt-"));
     const outTemplate = path.join(dir, "video.%(ext)s");
     try {
         await runCommand_("yt-dlp", [
             watchUrl,
             "-f",
-            "b[ext=mp4]/b/best[height<=480][ext=mp4]/best[height<=480]",
+            YT_DLP_FORMAT,
             "--merge-output-format",
             "mp4",
-            "--max-filesize",
-            String(Math.floor(maxBytes * 0.98)),
+            "--postprocessor-args",
+            "ffmpeg:-movflags +faststart",
             "--no-playlist",
             "--no-warnings",
             "--no-part",
+            "--retries",
+            "3",
+            "--socket-timeout",
+            "30",
             "-o",
             outTemplate
         ]);
@@ -106,10 +169,8 @@ async function downloadViaYtDlpFile_(watchUrl, maxBytes) {
         if (!mp4Name) {
             throw new Error("yt-dlp produced no mp4 file");
         }
-        const buf = await readFile(path.join(dir, mp4Name));
-        if (buf.length > maxBytes) {
-            throw new Error("Video exceeds WhatsApp 16 MB limit");
-        }
+        const filePath = path.join(dir, mp4Name);
+        const buf = await readMp4MaybeCompress_(filePath, maxBytes);
         if (buf.length < 2048) {
             throw new Error("yt-dlp output too small");
         }
@@ -117,33 +178,6 @@ async function downloadViaYtDlpFile_(watchUrl, maxBytes) {
     } finally {
         await rm(dir, { recursive: true, force: true });
     }
-}
-
-/**
- * @param {string} watchUrl
- * @param {number} maxBytes
- */
-async function downloadViaYtDlpStdout_(watchUrl, maxBytes) {
-    const { stdout } = await runCommand_("yt-dlp", [
-        watchUrl,
-        "-f",
-        "b[ext=mp4]/b/best[height<=480][ext=mp4]/best[height<=480]",
-        "--merge-output-format",
-        "mp4",
-        "--max-filesize",
-        String(Math.floor(maxBytes * 0.98)),
-        "--no-playlist",
-        "--no-warnings",
-        "-o",
-        "-"
-    ]);
-    if (stdout.length > maxBytes) {
-        throw new Error("Video exceeds WhatsApp 16 MB limit");
-    }
-    if (stdout.length < 2048) {
-        throw new Error("yt-dlp stdout too small");
-    }
-    return stdout;
 }
 
 /**
@@ -169,12 +203,23 @@ async function downloadViaYoutubei_(videoId, maxBytes) {
             break;
         }
         bytes += value.length;
-        if (bytes > maxBytes) {
-            throw new Error("Video exceeds WhatsApp 16 MB limit");
+        if (bytes > maxBytes * 2) {
+            throw new Error("YouTube stream too large before compression");
         }
         chunks.push(Buffer.from(value));
     }
-    const buf = Buffer.concat(chunks);
+    let buf = Buffer.concat(chunks);
+    if (buf.length > maxBytes) {
+        const dir = await mkdtemp(path.join(tmpdir(), "wa-yt-compress-"));
+        const input = path.join(dir, "input.mp4");
+        const output = path.join(dir, "output.mp4");
+        try {
+            await writeFile(input, buf);
+            buf = await compressMp4ForWhatsapp_(input, output, maxBytes);
+        } finally {
+            await rm(dir, { recursive: true, force: true });
+        }
+    }
     if (buf.length < 2048) {
         throw new Error("youtubei.js download too small");
     }
@@ -202,18 +247,12 @@ export async function downloadYoutubeMp4Buffer_(videoId, maxBytes = WA_VIDEO_MAX
     }
 
     try {
-        return await downloadViaYtDlpStdout_(watchUrl, maxBytes);
-    } catch (e) {
-        errors.push(e instanceof Error ? e : new Error(String(e)));
-    }
-
-    try {
         return await downloadViaYoutubei_(id, maxBytes);
     } catch (e) {
         errors.push(e instanceof Error ? e : new Error(String(e)));
     }
 
-    const detail = errors.map((err) => err.message).join(" | ").slice(0, 400);
+    const detail = errors.map((err) => err.message).join(" | ").slice(0, 500);
     throw new Error(`YouTube download failed: ${detail}`);
 }
 
@@ -222,93 +261,17 @@ export async function downloadYoutubeMp4Buffer_(videoId, maxBytes = WA_VIDEO_MAX
  * @param {import("express").Response} res
  */
 export async function streamYoutubeMp4ToResponse_(videoId, res) {
-    const id = trim_(videoId);
-    if (!isValidYoutubeVideoId_(id)) {
-        res.status(400).json({ ok: false, error: "Invalid YouTube video id" });
-        return;
-    }
-
-    const watchUrl = `https://www.youtube.com/watch?v=${id}`;
     try {
-        const proc = spawn("yt-dlp", [
-            watchUrl,
-            "-f",
-            "b[ext=mp4]/b/best[height<=480][ext=mp4]/best[height<=480]",
-            "--merge-output-format",
-            "mp4",
-            "--max-filesize",
-            String(Math.floor(WA_VIDEO_MAX_BYTES * 0.98)),
-            "--no-playlist",
-            "--no-warnings",
-            "-o",
-            "-"
-        ]);
+        const buf = await downloadYoutubeMp4Buffer_(videoId);
         res.setHeader("Content-Type", "video/mp4");
+        res.setHeader("Content-Length", String(buf.length));
         res.setHeader("Cache-Control", "public, max-age=3600");
-        let bytes = 0;
-        proc.stdout.on("data", (chunk) => {
-            bytes += chunk.length;
-            if (bytes > WA_VIDEO_MAX_BYTES) {
-                proc.kill("SIGKILL");
-                if (!res.headersSent) {
-                    res.status(413).end();
-                } else {
-                    res.end();
-                }
-                return;
-            }
-            res.write(chunk);
-        });
-        proc.stderr.on("data", () => {});
-        proc.on("error", async () => {
-            try {
-                const buf = await downloadYoutubeMp4Buffer_(id);
-                if (!res.headersSent) {
-                    res.setHeader("Content-Length", String(buf.length));
-                }
-                res.end(buf);
-            } catch (e) {
-                if (!res.headersSent) {
-                    res.status(502).json({
-                        ok: false,
-                        error: "Could not stream YouTube video",
-                        detail: e && e.message ? String(e.message).slice(0, 160) : String(e)
-                    });
-                }
-            }
-        });
-        proc.on("close", (code) => {
-            if (code === 0) {
-                res.end();
-                return;
-            }
-            if (!res.headersSent) {
-                downloadYoutubeMp4Buffer_(id)
-                    .then((buf) => {
-                        res.setHeader("Content-Length", String(buf.length));
-                        res.end(buf);
-                    })
-                    .catch((e) => {
-                        res.status(502).json({
-                            ok: false,
-                            error: "Could not stream YouTube video",
-                            detail: e && e.message ? String(e.message).slice(0, 160) : String(e)
-                        });
-                    });
-            }
-        });
+        res.end(buf);
     } catch (e) {
-        try {
-            const buf = await downloadYoutubeMp4Buffer_(id);
-            res.setHeader("Content-Type", "video/mp4");
-            res.setHeader("Content-Length", String(buf.length));
-            res.end(buf);
-        } catch (err) {
-            res.status(502).json({
-                ok: false,
-                error: "Could not stream YouTube video",
-                detail: err && err.message ? String(err.message).slice(0, 160) : String(err)
-            });
-        }
+        res.status(502).json({
+            ok: false,
+            error: "Could not stream YouTube video",
+            detail: e && e.message ? String(e.message).slice(0, 200) : String(e)
+        });
     }
 }

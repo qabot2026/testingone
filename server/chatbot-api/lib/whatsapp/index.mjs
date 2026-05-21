@@ -27,7 +27,8 @@ import {
 import FormData from "form-data";
 import {
     downloadYoutubeMp4Buffer_,
-    streamYoutubeMp4ToResponse_
+    streamYoutubeMp4ToResponse_,
+    isYtDlpAvailable_
 } from "../meta-channels/youtube-download.mjs";
 
 /**
@@ -1402,6 +1403,8 @@ async function handleWebhookPost_(req, res) {
 
     if (objectType === "whatsapp_business_account") {
         const entries = Array.isArray(body.entry) ? body.entry : [];
+        /** @type {Promise<void>[]} */
+        const jobs = [];
         for (const entry of entries) {
             const changes = Array.isArray(entry?.changes) ? entry.changes : [];
             for (const change of changes) {
@@ -1418,35 +1421,41 @@ async function handleWebhookPost_(req, res) {
                     if (!from || !text) {
                         continue;
                     }
-                    try {
-                        await processInboundMetaMessage_({
+                    jobs.push(
+                        processInboundMetaMessage_({
                             channel: "whatsapp",
                             from,
                             text,
                             messageId,
                             sessionId
-                        });
-                    } catch (e) {
-                        const errMsg = e && e.message ? e.message : String(e);
-                        log_("message_error", { channel: "whatsapp", error: errMsg.slice(0, 300) });
-                        try {
-                            await sendWhatsappText_({
-                                to: from,
-                                body: "Sorry, something went wrong. Please try again in a moment."
-                            });
-                        } catch {
-                            /* ignore */
-                        }
-                    }
+                        }).catch(async (e) => {
+                            const errMsg = e && e.message ? e.message : String(e);
+                            log_("message_error", { channel: "whatsapp", error: errMsg.slice(0, 300) });
+                            try {
+                                await sendWhatsappText_({
+                                    to: from,
+                                    body: "Sorry, something went wrong. Please try again in a moment."
+                                });
+                            } catch {
+                                /* ignore */
+                            }
+                        })
+                    );
                 }
             }
         }
-        return res.sendStatus(200);
+        res.sendStatus(200);
+        if (jobs.length) {
+            void Promise.allSettled(jobs);
+        }
+        return;
     }
 
     if (objectType === "page" || objectType === "instagram") {
         const channel = objectType === "instagram" ? "instagram" : "facebook";
         const entries = Array.isArray(body.entry) ? body.entry : [];
+        /** @type {Promise<void>[]} */
+        const jobs = [];
         for (const entry of entries) {
             const messaging = Array.isArray(entry?.messaging) ? entry.messaging : [];
             for (const event of messaging) {
@@ -1463,29 +1472,33 @@ async function handleWebhookPost_(req, res) {
                 if (!from || !text) {
                     continue;
                 }
-                try {
-                    await processInboundMetaMessage_({
+                jobs.push(
+                    processInboundMetaMessage_({
                         channel,
                         from,
                         text,
                         messageId,
                         sessionId
-                    });
-                } catch (e) {
-                    const errMsg = e && e.message ? e.message : String(e);
-                    log_("message_error", { channel, error: errMsg.slice(0, 300) });
-                    try {
-                        await sendPageText_(
-                            from,
-                            "Sorry, something went wrong. Please try again in a moment."
-                        );
-                    } catch {
-                        /* ignore */
-                    }
-                }
+                    }).catch(async (e) => {
+                        const errMsg = e && e.message ? e.message : String(e);
+                        log_("message_error", { channel, error: errMsg.slice(0, 300) });
+                        try {
+                            await sendPageText_(
+                                from,
+                                "Sorry, something went wrong. Please try again in a moment."
+                            );
+                        } catch {
+                            /* ignore */
+                        }
+                    })
+                );
             }
         }
-        return res.sendStatus(200);
+        res.sendStatus(200);
+        if (jobs.length) {
+            void Promise.allSettled(jobs);
+        }
+        return;
     }
 
     return res.sendStatus(200);
@@ -1548,7 +1561,12 @@ function handleHealth_(req, res) {
             "open_form",
             "dfchat_inline_select",
             "request_live_agent"
-        ]
+        ],
+        youtube_whatsapp: {
+            yt_dlp_installed: isYtDlpAvailable_(),
+            player: "native WhatsApp video (download YouTube MP4, upload, in-app player)",
+            max_bytes: 16 * 1024 * 1024
+        }
     });
 }
 
