@@ -350,10 +350,10 @@ async function sendWhatsappChoiceMenu_(input) {
             type: "list",
             body: { text: body },
             action: {
-                button: waShortTitle_("View options", 20),
+                button: waShortTitle_(body.slice(0, 20) || "Menu", 20),
                 sections: [
                     {
-                        title: waShortTitle_("Options", 24),
+                        title: waShortTitle_(body, 24),
                         rows: labels.map((label, i) => ({
                             id: `${idPrefix}_${i}`,
                             title: waShortTitle_(label, 24),
@@ -525,8 +525,9 @@ async function sendWhatsappCxReply_(input) {
     }
 
     if (parts.cardCarousel?.cards?.length) {
-        if (leadText) {
-            await sendWhatsappText_({ to: input.to, body: leadText });
+        const agentText = agentTextBeforePayload_(parts);
+        if (agentText) {
+            await sendWhatsappText_({ to: input.to, body: agentText });
         }
         await sendWhatsappCardCarousel_({
             to: input.to,
@@ -544,8 +545,9 @@ async function sendWhatsappCxReply_(input) {
     }
 
     if (parts.gallery?.urls?.length) {
-        if (leadText) {
-            await sendWhatsappText_({ to: input.to, body: leadText });
+        const agentText = agentTextBeforePayload_(parts);
+        if (agentText) {
+            await sendWhatsappText_({ to: input.to, body: agentText });
         }
         if (!parts.choices.length && trim_(parts.gallery.message)) {
             await sendWhatsappText_({ to: input.to, body: trim_(parts.gallery.message) });
@@ -574,6 +576,7 @@ async function sendWhatsappCxReply_(input) {
         });
         if (parts.choices.length) {
             await sendWhatsappChoicesFromParts_(input.to, input.sessionId, parts, {
+                payloadMessageOnly: Boolean(trim_(parts.choicePrompt)),
                 alreadyShown: [intro, title].filter(Boolean).join("\n\n")
             });
         }
@@ -634,7 +637,47 @@ function isGenericChoicePrompt_(text) {
     return !n
         || n === "please choose an option"
         || n === "choose an option"
-        || n === "select an option";
+        || n === "select an option"
+        || n === "select option"
+        || n.startsWith("select an option")
+        || n.startsWith("choose an option");
+}
+
+/**
+ * Agent text before gallery/carousel/video payload — skip auto CX chip lines and duplicate menu prompts.
+ * @param {CxReplyParts} parts
+ */
+function agentTextBeforePayload_(parts) {
+    const choicePrompt = trim_(parts.choicePrompt);
+    const hasChoices = parts.choices.length > 0;
+    /** @type {string[]} */
+    const blocks = [];
+
+    for (const t of parts.texts) {
+        const s = trim_(t);
+        if (!s) {
+            continue;
+        }
+        if (hasChoices && isGenericChoicePrompt_(s)) {
+            continue;
+        }
+        if (hasChoices && choicePrompt && promptsEquivalent_(s, choicePrompt)) {
+            continue;
+        }
+        if (!blocks.some((b) => promptsEquivalent_(b, s))) {
+            blocks.push(s);
+        }
+    }
+
+    for (const line of supplementalTextBlocks_(parts, webChatUrl_())) {
+        const s = trim_(line);
+        if (!s || blocks.some((b) => promptsEquivalent_(b, s))) {
+            continue;
+        }
+        blocks.push(s);
+    }
+
+    return blocks.join("\n\n");
 }
 
 /**

@@ -41,7 +41,17 @@ function isGenericChoicePrompt_(text) {
     return !n
         || n === "please choose an option"
         || n === "choose an option"
-        || n === "select an option";
+        || n === "select an option"
+        || n === "select option"
+        || n.startsWith("select an option")
+        || n.startsWith("choose an option");
+}
+
+/** @param {string} a @param {string} b */
+function promptsEquivalent_(a, b) {
+    const na = trim_(a).toLowerCase().replace(/\s+/g, " ").replace(/[.:!?…]+$/g, "");
+    const nb = trim_(b).toLowerCase().replace(/\s+/g, " ").replace(/[.:!?…]+$/g, "");
+    return Boolean(na && nb && na === nb);
 }
 
 /** @param {Record<string, unknown>} body */
@@ -404,14 +414,12 @@ function absorbActionPayload_(parts, body) {
                 pushChoice_(parts, o);
             }
             if (choices.length) {
-                if (caption && isGenericChoicePrompt_(caption)) {
+                if (
+                    caption
+                    && !isGenericChoicePrompt_(caption)
+                    && !(title && payloadString_(caption) === title)
+                ) {
                     parts.choicePrompt = caption;
-                } else if (caption && title && payloadString_(caption) === title) {
-                    parts.choicePrompt = "Please choose an option:";
-                } else if (caption) {
-                    parts.choicePrompt = caption;
-                } else {
-                    parts.choicePrompt = "Please choose an option:";
                 }
             }
         }
@@ -564,9 +572,21 @@ export function extractCxResponse_(data) {
         absorbActionPayload_(parts, body);
         absorbRichContent_(parts, body);
 
-        if (payloadString_(body.message) && parts.choices.length && !parts.choicePrompt) {
-            parts.choicePrompt = payloadString_(body.message);
+        const lateMsg = payloadString_(body.message);
+        if (lateMsg && parts.choices.length && !parts.choicePrompt && !isGenericChoicePrompt_(lateMsg)) {
+            parts.choicePrompt = lateMsg;
         }
+    }
+
+    if (parts.choices.length && (parts.gallery || parts.cardCarousel || parts.video)) {
+        const prompt = trim_(parts.choicePrompt);
+        if (isGenericChoicePrompt_(parts.choicePrompt)) {
+            parts.choicePrompt = "";
+        }
+        parts.texts = parts.texts.filter((t) => {
+            const s = trim_(t);
+            return s && !isGenericChoicePrompt_(s) && !(prompt && promptsEquivalent_(s, prompt));
+        });
     }
 
     return parts;
