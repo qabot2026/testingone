@@ -591,6 +591,10 @@ export function extractCxResponse_(data) {
         });
     }
 
+    if (parts.gallery?.options?.length) {
+        parts.choices = parts.gallery.options.map((o) => ({ label: o.label, value: o.value }));
+    }
+
     return parts;
 }
 

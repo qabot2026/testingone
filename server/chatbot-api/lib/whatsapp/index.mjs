@@ -58,6 +58,33 @@ function trim_(v) {
     return (v == null ? "" : String(v)).trim();
 }
 
+/** @param {number} ms */
+function delayMs_(ms) {
+    const n = Number.isFinite(ms) ? Math.max(0, ms) : 0;
+    if (n === 0) {
+        return Promise.resolve();
+    }
+    return new Promise((resolve) => {
+        setTimeout(resolve, n);
+    });
+}
+
+/** Gap between gallery images so WhatsApp groups them into one swipeable album. */
+function galleryImageGapMs_() {
+    const n = Number.parseInt(process.env.WHATSAPP_GALLERY_IMAGE_GAP_MS || "300", 10);
+    return Number.isFinite(n) ? Math.max(0, n) : 300;
+}
+
+/** Wait after the last image before sending the options menu (images deliver slower than buttons). */
+function galleryMenuDelayMs_(imageCount) {
+    const base = Number.parseInt(process.env.WHATSAPP_GALLERY_MENU_DELAY_MS || "3500", 10);
+    const perImage = Number.parseInt(process.env.WHATSAPP_GALLERY_MENU_DELAY_PER_IMAGE_MS || "900", 10);
+    const count = Math.max(1, imageCount || 1);
+    const b = Number.isFinite(base) ? Math.max(0, base) : 3500;
+    const p = Number.isFinite(perImage) ? Math.max(0, perImage) : 900;
+    return b + (count - 1) * p;
+}
+
 /** Strip accidental "Bearer ", quotes, or newlines pasted from Meta docs. */
 function normalizeAccessToken_(raw) {
     let s = trim_(raw).replace(/\s+/g, "");
@@ -599,18 +626,45 @@ async function sendWhatsappChoiceMenuFromOptions_(to, sessionId, options, menuPr
 }
 
 /**
+ * Gallery: batch all images (WhatsApp groups them into a swipeable album), then options menu.
  * @param {string} to
  * @param {string} sessionId
  * @param {CxReplyParts} parts
  */
-async function sendWhatsappGalleryChoices_(to, sessionId, parts) {
+async function sendWhatsappGalleryFull_(to, sessionId, parts) {
     const gallery = parts.gallery;
-    if (!gallery) {
+    if (!gallery?.urls?.length) {
         return;
     }
+    const urls = gallery.urls;
+    const gapMs = galleryImageGapMs_();
+
+    for (let i = 0; i < urls.length; i += 1) {
+        if (i > 0 && gapMs > 0) {
+            await delayMs_(gapMs);
+        }
+        try {
+            await sendWhatsappImage_({ to, link: urls[i] });
+        } catch (e) {
+            log_("gallery_image_skip", {
+                index: i,
+                error: e && e.message ? String(e.message).slice(0, 160) : String(e)
+            });
+        }
+    }
+
     const options = gallery.options?.length ? gallery.options : parts.choices;
     const menuPrompt = trim_(gallery.prompt) || trim_(parts.choicePrompt) || "";
-    await sendWhatsappChoiceMenuFromOptions_(to, sessionId, options, menuPrompt);
+
+    if (options.length || trim_(gallery.message)) {
+        await delayMs_(galleryMenuDelayMs_(urls.length));
+    }
+
+    if (options.length) {
+        await sendWhatsappChoiceMenuFromOptions_(to, sessionId, options, menuPrompt);
+    } else if (trim_(gallery.message)) {
+        await sendWhatsappText_({ to, body: trim_(gallery.message) });
+    }
 }
 
 /**
@@ -722,19 +776,7 @@ async function sendWhatsappCxReply_(input) {
         if (agentText) {
             await sendWhatsappText_({ to: input.to, body: agentText });
         }
-        await sendWhatsappGallery_({
-            to: input.to,
-            message: undefined,
-            urls: parts.gallery.urls
-        });
-        const galleryOptions = parts.gallery.options?.length
-            ? parts.gallery.options
-            : parts.choices;
-        if (galleryOptions.length) {
-            await sendWhatsappGalleryChoices_(input.to, input.sessionId, parts);
-        } else if (trim_(parts.gallery.message)) {
-            await sendWhatsappText_({ to: input.to, body: trim_(parts.gallery.message) });
-        }
+        await sendWhatsappGalleryFull_(input.to, input.sessionId, parts);
         return;
     }
 
