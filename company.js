@@ -11486,9 +11486,8 @@ function normalizeOpenVideoMessage(raw) {
  * @param {string} embedHttpsUrl
  * @param {Array<{label: string, value: string}>} [options]
  * @param {string} [messageText]
- * @param {string} [titleText]
  */
-function scheduleInjectInlineVideoPlayer(dfMessenger, embedHttpsUrl, options, messageText, titleText) {
+function scheduleInjectInlineVideoPlayer(dfMessenger, embedHttpsUrl, options, messageText) {
     const src = typeof embedHttpsUrl === "string" ? embedHttpsUrl.trim() : "";
     if (!src || !/^https:\/\/www\.youtube\.com\/embed\//i.test(src)) {
         return;
@@ -11555,27 +11554,6 @@ function scheduleInjectInlineVideoPlayer(dfMessenger, embedHttpsUrl, options, me
             "width:100%",
             "max-width:100%"
         ].join(";");
-
-        const title = typeof titleText === "string" ? titleText.trim() : "";
-        if (title) {
-            const titleEl = document.createElement("div");
-            titleEl.textContent = title;
-            titleEl.setAttribute("data-dfchat-video-title", "1");
-            titleEl.style.cssText = [
-                "width:100%",
-                "box-sizing:border-box",
-                "color:#0f172a",
-                "font-size:15px",
-                "font-weight:700",
-                "line-height:1.4",
-                "margin:0 0 10px",
-                "padding:6px 4px",
-                "background:rgba(241,245,249,0.95)",
-                "border-radius:8px",
-                "border:1px solid rgba(148,163,184,0.35)"
-            ].join(";");
-            wrap.appendChild(titleEl);
-        }
 
         const actions = document.createElement("div");
         actions.style.cssText = [
@@ -11783,7 +11761,7 @@ function scheduleInjectInlineVideoPlayer(dfMessenger, embedHttpsUrl, options, me
  * Intent gate applied in callers.
  *
  * @param {unknown[]} messages
- * @returns {{ embed: string, options: Array<{label: string, value: string}>, messageText: string, titleText: string } | null}
+ * @returns {{ embed: string, options: Array<{label: string, value: string}>, messageText: string } | null}
  */
 function extractFirstOpenYoutubeEmbedFromCxMessages(messages) {
     if (!Array.isArray(messages) || messages.length === 0) {
@@ -11838,100 +11816,7 @@ function extractFirstOpenYoutubeEmbedFromCxMessages(messages) {
                                     : Object.prototype.hasOwnProperty.call(pl, "caption") ? pl.caption
                                         : null;
             const messageText = normalizeOpenVideoMessage(rawMessage);
-            const rawTitle =
-                Object.prototype.hasOwnProperty.call(pl, "title") ? pl.title
-                    : Object.prototype.hasOwnProperty.call(pl, "label") ? pl.label
-                        : Object.prototype.hasOwnProperty.call(pl, "heading") ? pl.heading
-                            : Object.prototype.hasOwnProperty.call(pl, "name") ? pl.name
-                                : Object.prototype.hasOwnProperty.call(pl, "subtitle") ? pl.subtitle
-                                    : Object.prototype.hasOwnProperty.call(pl, "videoTitle") ? pl.videoTitle
-                                        : Object.prototype.hasOwnProperty.call(pl, "video_title") ? pl.video_title
-                                            : Object.prototype.hasOwnProperty.call(pl, "videoLabel") ? pl.videoLabel
-                                                : Object.prototype.hasOwnProperty.call(pl, "video_label") ? pl.video_label
-                                                    : (pl.parameters && typeof pl.parameters === "object"
-                                                        ? (/** @type {Record<string, unknown>} */ (pl.parameters).title
-                                                            ?? /** @type {Record<string, unknown>} */ (pl.parameters).label
-                                                            ?? /** @type {Record<string, unknown>} */ (pl.parameters).videoTitle)
-                                                        : (pl.video && typeof pl.video === "object"
-                                                            ? (/** @type {Record<string, unknown>} */ (pl.video).title
-                                                                ?? /** @type {Record<string, unknown>} */ (pl.video).label
-                                                                ?? /** @type {Record<string, unknown>} */ (pl.video).subtitle)
-                                                            : null));
-            let titleText = normalizeOpenVideoMessage(rawTitle);
-            if (!titleText && messageText && !/^please choose an option[.!?:]?$/i.test(messageText.trim())) {
-                titleText = messageText;
-            }
-            const displayMessage =
-                titleText && messageText && titleText === messageText ? "" : messageText;
-            return { embed, options, messageText: displayMessage, titleText };
-        }
-    }
-    return null;
-}
-
-/**
- * `richContent` video rows (Dialogflow Messenger format).
- *
- * @param {unknown[]} messages
- * @returns {{ embed: string, options: Array<{label: string, value: string}>, messageText: string, titleText: string } | null}
- */
-function extractRichContentVideoFromCxMessages(messages) {
-    if (!Array.isArray(messages) || messages.length === 0) {
-        return null;
-    }
-    for (let vx = 0; vx < messages.length; vx += 1) {
-        const vm = messages[vx];
-        if (!messageHasFulfillmentPayload(vm)) {
-            continue;
-        }
-        /** @type {Record<string, unknown> | null} */
-        let pl = null;
-        try {
-            pl = extractPayload(/** @type {unknown} */ (vm));
-        } catch {
-            pl = null;
-        }
-        const rc = pl && Array.isArray(pl.richContent) ? pl.richContent : null;
-        if (!rc) {
-            continue;
-        }
-        for (let ri = 0; ri < rc.length; ri += 1) {
-            const row = rc[ri];
-            if (!Array.isArray(row)) {
-                continue;
-            }
-            for (let ii = 0; ii < row.length; ii += 1) {
-                const item = row[ii];
-                if (!item || typeof item !== "object") {
-                    continue;
-                }
-                /** @type {Record<string, unknown>} */
-                const it = /** @type {Record<string, unknown>} */ (item);
-                const typeStr = unwrapPayloadStringField(it.type).toLowerCase();
-                if (typeStr !== "video") {
-                    continue;
-                }
-                const pageUrl = unwrapPayloadStringField(
-                    it.url ?? it.videoUrl ?? it.video_url ?? it.link ?? it.src
-                );
-                const embed = normalizeYoutubeVideoEmbedUrl(pageUrl);
-                if (!embed) {
-                    continue;
-                }
-                const options = normalizeOpenVideoOptions(it.options ?? it.option ?? it.chips);
-                const messageText = normalizeOpenVideoMessage(
-                    it.message ?? it.text ?? it.prompt ?? it.description ?? it.caption
-                );
-                let titleText = normalizeOpenVideoMessage(
-                    it.title ?? it.label ?? it.name ?? it.heading ?? it.subtitle
-                );
-                if (!titleText && messageText && !/^please choose an option[.!?:]?$/i.test(messageText.trim())) {
-                    titleText = messageText;
-                }
-                const displayMessage =
-                    titleText && messageText && titleText === messageText ? "" : messageText;
-                return { embed, options, messageText: displayMessage, titleText };
-            }
+            return { embed, options, messageText };
         }
     }
     return null;
@@ -11946,10 +11831,8 @@ function extractRichContentVideoFromCxMessages(messages) {
  */
 function pruneStaleInlineVideoForCxResponse(messages, event) {
     try {
-        const hasPayload = !!(
-            (extractFirstOpenYoutubeEmbedFromCxMessages(messages)?.embed)
-            || (extractRichContentVideoFromCxMessages(messages)?.embed)
-        );
+        const videoPayload = extractFirstOpenYoutubeEmbedFromCxMessages(messages);
+        const hasPayload = !!(videoPayload && videoPayload.embed);
         const gateOk = passesInlineRichMediaIntentGate(event);
         if (hasPayload && gateOk) {
             return;
@@ -11976,19 +11859,11 @@ function tryOpenVideoFromBotResponseMessages(messages, event) {
         if (!passesInlineRichMediaIntentGate(event)) {
             return;
         }
-        const videoPayload =
-            extractFirstOpenYoutubeEmbedFromCxMessages(messages)
-            || extractRichContentVideoFromCxMessages(messages);
+        const videoPayload = extractFirstOpenYoutubeEmbedFromCxMessages(messages);
         if (!videoPayload || !videoPayload.embed) {
             return;
         }
-        scheduleInjectInlineVideoPlayer(
-            activeDfMessenger,
-            videoPayload.embed,
-            videoPayload.options,
-            videoPayload.messageText,
-            videoPayload.titleText
-        );
+        scheduleInjectInlineVideoPlayer(activeDfMessenger, videoPayload.embed, videoPayload.options, videoPayload.messageText);
     } catch (e) {
         if (typeof console !== "undefined" && typeof console.warn === "function") {
             console.warn("[company.js] Video payload skipped (never breaks bot replies)", e);
@@ -14409,6 +14284,27 @@ function liveAgentShouldPostVisitorToAgent_(text) {
         return true;
     }
     return liveAgentVisitorToAgentInbox_();
+}
+
+/** Fast cache check before async /status refresh (blocks bot flash when agent just connected). */
+function liveAgentShouldBlockDialogflowNow_() {
+    if (!liveAgentHandoffIsActive_() || liveAgentCoPilotAiEnabled_()) {
+        return false;
+    }
+    if (liveAgentHumanChatActive_()) {
+        return true;
+    }
+    if (liveAgentCachedConvStatus === "active" && liveAgentCachedHumanMode === "human") {
+        return true;
+    }
+    if (
+        liveAgentCachedConvStatus === "active"
+        && liveAgentCachedHumanMode !== "ai"
+        && liveAgentCachedAiEnabled === false
+    ) {
+        return true;
+    }
+    return false;
 }
 
 /** Dialogflow when waiting in queue, or when agent turned chatbot back on (co-pilot). */
