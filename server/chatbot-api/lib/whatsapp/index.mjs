@@ -462,12 +462,12 @@ async function sendWhatsappGallery_(input) {
  * @param {string} sessionId
  * @param {CxReplyParts} parts
  */
-async function sendWhatsappChoicesFromParts_(to, sessionId, parts) {
+async function sendWhatsappChoicesFromParts_(to, sessionId, parts, opts = {}) {
     if (!parts.choices.length) {
         return;
     }
     rememberChoiceOptions_(sessionId, choiceLabels_(parts), choiceValues_(parts));
-    const menuPrompt = parts.choicePrompt || "Please choose an option:";
+    const menuPrompt = resolveChoiceMenuPrompt_(parts, opts.alreadyShown || "");
     try {
         await sendWhatsappChoiceMenu_({
             to,
@@ -522,13 +522,16 @@ async function sendWhatsappCxReply_(input) {
     }
 
     if (parts.gallery?.urls?.length) {
+        const galleryMessage = parts.gallery.message || leadText;
         await sendWhatsappGallery_({
             to: input.to,
-            message: parts.gallery.message || leadText,
+            message: galleryMessage,
             urls: parts.gallery.urls
         });
         if (parts.choices.length) {
-            await sendWhatsappChoicesFromParts_(input.to, input.sessionId, parts);
+            await sendWhatsappChoicesFromParts_(input.to, input.sessionId, parts, {
+                alreadyShown: galleryMessage
+            });
         }
         return;
     }
@@ -541,30 +544,9 @@ async function sendWhatsappCxReply_(input) {
             message: intro || undefined
         });
         if (parts.choices.length) {
-            const introTrim = trim_(intro);
-            const promptTrim = trim_(parts.choicePrompt);
-            const menuPrompt =
-                promptTrim && promptTrim !== introTrim
-                    ? promptTrim
-                    : "Please choose an option:";
-            rememberChoiceOptions_(input.sessionId, choiceLabels_(parts), choiceValues_(parts));
-            try {
-                await sendWhatsappChoiceMenu_({
-                    to: input.to,
-                    body: menuPrompt,
-                    labels: choiceLabels_(parts),
-                    idPrefix: "chip"
-                });
-            } catch (e) {
-                const numbered = parts.choices.map((opt, i) => `${i + 1}. ${opt.label}`).join("\n");
-                await sendWhatsappText_({
-                    to: input.to,
-                    body: `${menuPrompt}\n\n${numbered}\n\nReply with the option text.`
-                });
-                log_("chip_menu_fallback", {
-                    error: e && e.message ? String(e.message).slice(0, 200) : String(e)
-                });
-            }
+            await sendWhatsappChoicesFromParts_(input.to, input.sessionId, parts, {
+                alreadyShown: intro
+            });
         }
         return;
     }
@@ -574,7 +556,9 @@ async function sendWhatsappCxReply_(input) {
     }
 
     if (parts.choices.length) {
-        await sendWhatsappChoicesFromParts_(input.to, input.sessionId, parts);
+        await sendWhatsappChoicesFromParts_(input.to, input.sessionId, parts, {
+            alreadyShown: leadText
+        });
         return;
     }
 
@@ -586,16 +570,85 @@ async function sendWhatsappCxReply_(input) {
     }
 }
 
+/** @param {string} s */
+function normalizePrompt_(s) {
+    return trim_(s).toLowerCase().replace(/\s+/g, " ").replace(/[.:!?…]+$/g, "");
+}
+
+/** @param {string} a @param {string} b */
+function promptsEquivalent_(a, b) {
+    const na = normalizePrompt_(a);
+    const nb = normalizePrompt_(b);
+    return Boolean(na && nb && na === nb);
+}
+
+/** @param {string} prompt @param {string} alreadyShown */
+function promptAlreadyShown_(prompt, alreadyShown) {
+    const shown = trim_(alreadyShown);
+    if (!shown || !trim_(prompt)) {
+        return false;
+    }
+    if (promptsEquivalent_(prompt, shown)) {
+        return true;
+    }
+    for (const block of shown.split(/\n\n+/)) {
+        if (promptsEquivalent_(prompt, block)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/** @param {string} text */
+function isGenericChoicePrompt_(text) {
+    const n = normalizePrompt_(text);
+    return !n
+        || n === "please choose an option"
+        || n === "choose an option"
+        || n === "select an option";
+}
+
 /**
- * Intro for open_video: prefer payload message; skip duplicate CX text lines.
+ * Choice menu body: avoid repeating text already shown as intro or lead message.
+ * @param {CxReplyParts} parts
+ * @param {string} [alreadyShown]
+ */
+function resolveChoiceMenuPrompt_(parts, alreadyShown) {
+    const fromPayload = trim_(parts.choicePrompt);
+    const fallback = "Please choose an option:";
+
+    if (fromPayload && !promptAlreadyShown_(fromPayload, alreadyShown)) {
+        return fromPayload;
+    }
+    if (!promptAlreadyShown_(fallback, alreadyShown)) {
+        return fallback;
+    }
+    return "Options:";
+}
+
+/**
+ * Intro for open_video: prefer payload message; skip duplicate CX text and choice prompts.
  * @param {CxReplyParts} parts
  */
 function resolveVideoIntro_(parts) {
     const fromPayload = trim_(parts.video?.message);
+    const choicePrompt = trim_(parts.choicePrompt);
+    const hasChoices = parts.choices.length > 0;
+
     if (fromPayload) {
+        if (hasChoices && (promptsEquivalent_(fromPayload, choicePrompt) || isGenericChoicePrompt_(fromPayload))) {
+            return "";
+        }
         return fromPayload;
     }
-    return parts.texts.map((t) => trim_(t)).filter(Boolean).join("\n\n");
+
+    const texts = parts.texts.map((t) => trim_(t)).filter(Boolean);
+    if (!hasChoices) {
+        return texts.join("\n\n");
+    }
+    return texts
+        .filter((t) => !promptsEquivalent_(t, choicePrompt) && !isGenericChoicePrompt_(t))
+        .join("\n\n");
 }
 
 /**
