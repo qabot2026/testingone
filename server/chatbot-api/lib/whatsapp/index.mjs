@@ -534,13 +534,37 @@ async function sendWhatsappCxReply_(input) {
     }
 
     if (parts.video?.url) {
+        const intro = resolveVideoIntro_(parts);
         await sendWhatsappVideo_({
             to: input.to,
             url: parts.video.url,
-            message: parts.video.message || leadText || undefined
+            message: intro || undefined
         });
         if (parts.choices.length) {
-            await sendWhatsappChoicesFromParts_(input.to, input.sessionId, parts);
+            const introTrim = trim_(intro);
+            const promptTrim = trim_(parts.choicePrompt);
+            const menuPrompt =
+                promptTrim && promptTrim !== introTrim
+                    ? promptTrim
+                    : "Please choose an option:";
+            rememberChoiceOptions_(input.sessionId, choiceLabels_(parts), choiceValues_(parts));
+            try {
+                await sendWhatsappChoiceMenu_({
+                    to: input.to,
+                    body: menuPrompt,
+                    labels: choiceLabels_(parts),
+                    idPrefix: "chip"
+                });
+            } catch (e) {
+                const numbered = parts.choices.map((opt, i) => `${i + 1}. ${opt.label}`).join("\n");
+                await sendWhatsappText_({
+                    to: input.to,
+                    body: `${menuPrompt}\n\n${numbered}\n\nReply with the option text.`
+                });
+                log_("chip_menu_fallback", {
+                    error: e && e.message ? String(e.message).slice(0, 200) : String(e)
+                });
+            }
         }
         return;
     }
@@ -563,20 +587,35 @@ async function sendWhatsappCxReply_(input) {
 }
 
 /**
- * YouTube on WhatsApp: send watch URL with link preview (plays on YouTube when tapped).
- * WhatsApp/Meta do not support YouTube iframe embeds or streaming into the native video player.
+ * Intro for open_video: prefer payload message; skip duplicate CX text lines.
+ * @param {CxReplyParts} parts
+ */
+function resolveVideoIntro_(parts) {
+    const fromPayload = trim_(parts.video?.message);
+    if (fromPayload) {
+        return fromPayload;
+    }
+    return parts.texts.map((t) => trim_(t)).filter(Boolean).join("\n\n");
+}
+
+/**
+ * YouTube on WhatsApp: intro text (optional) + link preview bubble (URL only, no duplicate text).
  * @param {{ to: string, youtubeId: string, message?: string }} input
  */
 async function sendWhatsappYoutubeLink_(input) {
     const watchUrl = youtubeWatchUrl_(input.youtubeId);
     const message = trim_(input.message);
-    const body = message ? `${message}\n\n${watchUrl}` : watchUrl;
+
+    if (message) {
+        await sendWhatsappText_({ to: input.to, body: message });
+    }
+
     return whatsappGraphPost_({
         messaging_product: "whatsapp",
         to: input.to,
         type: "text",
         text: {
-            body: body.slice(0, 4096),
+            body: watchUrl,
             preview_url: true
         }
     });
