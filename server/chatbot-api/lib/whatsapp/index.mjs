@@ -1625,7 +1625,51 @@ async function handleWebhookPost_(req, res) {
     return res.sendStatus(200);
 }
 
-function handleHealth_(req, res) {
+/**
+ * @param {string} accessToken
+ * @param {string} phoneNumberId
+ * @param {string} graphVersion
+ */
+async function probeWhatsappAccessToken_(accessToken, phoneNumberId, graphVersion) {
+    if (!accessToken || !phoneNumberId) {
+        return { valid: false, error: "missing_token_or_phone_number_id" };
+    }
+    try {
+        const url = `https://graph.facebook.com/${graphVersion}/${encodeURIComponent(phoneNumberId)}?fields=display_phone_number,verified_name`;
+        const res = await fetch(url, {
+            headers: { Authorization: `Bearer ${accessToken}` }
+        });
+        const raw = await res.text();
+        let data = {};
+        try {
+            data = raw ? JSON.parse(raw) : {};
+        } catch {
+            data = {};
+        }
+        if (!res.ok) {
+            const err = data?.error && typeof data.error === "object" ? data.error : {};
+            return {
+                valid: false,
+                http_status: res.status,
+                code: err.code ?? null,
+                type: err.type ?? null,
+                message: err.message || raw.slice(0, 200) || `HTTP ${res.status}`
+            };
+        }
+        return {
+            valid: true,
+            display_phone_number: data.display_phone_number ?? null,
+            verified_name: data.verified_name ?? null
+        };
+    } catch (e) {
+        return {
+            valid: false,
+            message: e && e.message ? String(e.message).slice(0, 200) : String(e)
+        };
+    }
+}
+
+async function handleHealth_(req, res) {
     const c = metaConfig_();
     const missing = missingWhatsappEnvKeys_();
     const dfKey = getDialogflowServiceAccountCredentials_();
@@ -1638,8 +1682,13 @@ function handleHealth_(req, res) {
         (trim_(process.env.RAILWAY_PUBLIC_DOMAIN)
             ? `https://${trim_(process.env.RAILWAY_PUBLIC_DOMAIN)}`
             : "");
+    const tokenProbe = await probeWhatsappAccessToken_(
+        c.whatsapp.accessToken,
+        c.whatsapp.phoneNumberId,
+        c.graphVersion
+    );
     return res.status(200).json({
-        ok: missing.length === 0,
+        ok: missing.length === 0 && tokenProbe.valid !== false,
         webhook_path: WEBHOOK_PATH,
         webhook_url_example: webhookUrlHint
             ? `${webhookUrlHint.replace(/\/+$/, "")}${WEBHOOK_PATH}`
@@ -1663,9 +1712,15 @@ function handleHealth_(req, res) {
             phone_number_id_suffix: c.whatsapp.phoneNumberId ? c.whatsapp.phoneNumberId.slice(-6) : "",
             access_token_set: !!c.whatsapp.accessToken,
             access_token_prefix: c.whatsapp.accessToken ? c.whatsapp.accessToken.slice(0, 6) + "…" : "",
+            access_token_valid: tokenProbe.valid === true,
+            access_token_error: tokenProbe.valid ? null : (tokenProbe.message || tokenProbe.error || null),
+            access_token_error_code: tokenProbe.valid ? null : (tokenProbe.code ?? null),
             graph_api_version: c.graphVersion,
             verify_token_set: !!c.verifyToken,
-            app_secret_set: !!c.appSecret
+            app_secret_set: !!c.appSecret,
+            token_fix_hint: tokenProbe.valid
+                ? null
+                : "Regenerate a permanent token in Meta → WhatsApp → API setup, update WHATSAPP_ACCESS_TOKEN on Railway, redeploy."
         },
         facebook_instagram: {
             page_id_set: !!c.page.pageId,
