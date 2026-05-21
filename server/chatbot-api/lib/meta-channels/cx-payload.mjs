@@ -247,7 +247,7 @@ export function normalizeSelectOptions_(opts) {
  *   choices: ChoiceOption[],
  *   choicePrompt: string,
  *   cardCarousel: { message: string, cards: CarouselCard[], explicitOptions?: boolean } | null,
- *   gallery: { message: string, urls: string[] } | null,
+ *   gallery: { message: string, prompt: string, urls: string[], options: ChoiceOption[] } | null,
  *   video: { title: string, message: string, url: string, choices: ChoiceOption[] } | null,
  *   form: { message: string, formId: string, formKey: string } | null,
  *   liveAgent: { message: string } | null
@@ -372,7 +372,9 @@ function absorbActionPayload_(parts, body) {
         if (urls.length) {
             parts.gallery = {
                 message: opts.length ? "" : msg,
-                urls: urls.slice(0, 10)
+                prompt: msg,
+                urls: urls.slice(0, 10),
+                options: [...opts]
             };
         }
         for (const o of opts) {

@@ -555,6 +555,65 @@ async function sendWhatsappCardCarousel_(input) {
 }
 
 /**
+ * @param {string} to
+ * @param {string} sessionId
+ * @param {{ label: string, value: string }[]} options
+ * @param {string} menuPrompt
+ */
+async function sendWhatsappChoiceMenuFromOptions_(to, sessionId, options, menuPrompt) {
+    if (!options.length) {
+        return;
+    }
+    rememberChoiceOptions_(
+        sessionId,
+        options.map((o) => o.label),
+        options.map((o) => o.value)
+    );
+    const prompt = trim_(menuPrompt);
+    const labels = options.map((o) => o.label);
+    const numbered = options.map((opt, i) => `${i + 1}. ${opt.label}`).join("\n");
+    if (!prompt) {
+        await sendWhatsappText_({ to, body: numbered });
+        return;
+    }
+    try {
+        const sent = await sendWhatsappChoiceMenu_({
+            to,
+            body: prompt,
+            labels,
+            idPrefix: "chip",
+            allowDefault: false
+        });
+        if (!sent) {
+            throw new Error("gallery_menu_empty");
+        }
+    } catch (e) {
+        await sendWhatsappText_({
+            to,
+            body: `${prompt}\n\n${numbered}`
+        });
+        log_("gallery_menu_fallback", {
+            error: e && e.message ? String(e.message).slice(0, 200) : String(e)
+        });
+    }
+}
+
+/**
+ * @param {string} to
+ * @param {string} sessionId
+ * @param {CxReplyParts} parts
+ */
+async function sendWhatsappGalleryChoices_(to, sessionId, parts) {
+    const gallery = parts.gallery;
+    if (!gallery) {
+        return;
+    }
+    const options = gallery.options?.length ? gallery.options : parts.choices;
+    const menuPrompt = trim_(gallery.prompt) || trim_(parts.choicePrompt) || "";
+    await sendWhatsappChoiceMenuFromOptions_(to, sessionId, options, menuPrompt);
+}
+
+/**
  * @param {{ to: string, message: string, urls: string[] }} input
  */
 async function sendWhatsappGallery_(input) {
@@ -663,18 +722,18 @@ async function sendWhatsappCxReply_(input) {
         if (agentText) {
             await sendWhatsappText_({ to: input.to, body: agentText });
         }
-        if (!parts.choices.length && trim_(parts.gallery.message)) {
-            await sendWhatsappText_({ to: input.to, body: trim_(parts.gallery.message) });
-        }
         await sendWhatsappGallery_({
             to: input.to,
             message: undefined,
             urls: parts.gallery.urls
         });
-        if (parts.choices.length) {
-            await sendWhatsappChoicesFromParts_(input.to, input.sessionId, parts, {
-                payloadMessageOnly: true
-            });
+        const galleryOptions = parts.gallery.options?.length
+            ? parts.gallery.options
+            : parts.choices;
+        if (galleryOptions.length) {
+            await sendWhatsappGalleryChoices_(input.to, input.sessionId, parts);
+        } else if (trim_(parts.gallery.message)) {
+            await sendWhatsappText_({ to: input.to, body: trim_(parts.gallery.message) });
         }
         return;
     }
@@ -762,8 +821,14 @@ function isGenericChoicePrompt_(text) {
  * @param {CxReplyParts} parts
  */
 function agentTextBeforePayload_(parts) {
-    const choicePrompt = trim_(parts.choicePrompt);
-    const hasChoices = parts.choices.length > 0;
+    const payloadPrompt =
+        trim_(parts.choicePrompt)
+        || trim_(parts.gallery?.prompt)
+        || trim_(parts.cardCarousel?.message)
+        || "";
+    const hasChoices =
+        parts.choices.length > 0
+        || (parts.gallery?.options?.length ?? 0) > 0;
     /** @type {string[]} */
     const blocks = [];
 
@@ -775,7 +840,7 @@ function agentTextBeforePayload_(parts) {
         if (hasChoices && isGenericChoicePrompt_(s)) {
             continue;
         }
-        if (hasChoices && choicePrompt && promptsEquivalent_(s, choicePrompt)) {
+        if (hasChoices && payloadPrompt && promptsEquivalent_(s, payloadPrompt)) {
             continue;
         }
         if (!blocks.some((b) => promptsEquivalent_(b, s))) {
