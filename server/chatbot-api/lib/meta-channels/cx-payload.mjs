@@ -451,3 +451,51 @@ export function supplementalTextBlocks_(parts, webChatUrl) {
     }
     return blocks.filter(Boolean);
 }
+
+/** @param {string} raw */
+export function parseYoutubeVideoId_(raw) {
+    const s = trim_(raw);
+    if (!s) {
+        return "";
+    }
+    try {
+        const u = new URL(s, "https://www.youtube.com");
+        const host = u.hostname.replace(/^www\./i, "").toLowerCase();
+        if (host === "youtu.be") {
+            const id = u.pathname.replace(/^\//, "").split(/[/?#]/)[0];
+            return id && /^[\w-]{11}$/.test(id) ? id : "";
+        }
+        if (host === "youtube.com" || host === "youtube-nocookie.com" || host === "m.youtube.com") {
+            const embedM = u.pathname.match(/\/embed\/([\w-]{11})/);
+            if (embedM?.[1]) {
+                return embedM[1];
+            }
+            const shortsM = u.pathname.match(/\/shorts\/([\w-]{11})/);
+            if (shortsM?.[1]) {
+                return shortsM[1];
+            }
+            const v = u.searchParams.get("v");
+            if (v && /^[\w-]{11}$/.test(v)) {
+                return v;
+            }
+        }
+    } catch {
+        /* ignore */
+    }
+    return "";
+}
+
+/** @param {string} videoId */
+export function youtubeWatchUrl_(videoId) {
+    return `https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`;
+}
+
+/** @param {string} videoId */
+export function youtubeThumbnailUrl_(videoId) {
+    return `https://img.youtube.com/vi/${encodeURIComponent(videoId)}/hqdefault.jpg`;
+}
+
+/** @param {string} raw */
+export function isDirectVideoFileUrl_(raw) {
+    return /^https:\/\/.+\.(mp4|mov|m4v|webm)(\?|$)/i.test(trim_(raw));
+}

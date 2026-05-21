@@ -18,7 +18,11 @@ import {
     extractCxResponse_,
     choiceLabels_,
     choiceValues_,
-    supplementalTextBlocks_
+    supplementalTextBlocks_,
+    parseYoutubeVideoId_,
+    youtubeWatchUrl_,
+    youtubeThumbnailUrl_,
+    isDirectVideoFileUrl_
 } from "../meta-channels/cx-payload.mjs";
 
 /**
@@ -518,13 +522,10 @@ async function sendWhatsappCxReply_(input) {
     }
 
     if (parts.video?.url) {
-        const intro = parts.video.message || leadText;
-        if (intro) {
-            await sendWhatsappText_({ to: input.to, body: intro });
-        }
-        await sendWhatsappText_({
+        await sendWhatsappVideo_({
             to: input.to,
-            body: `Watch: ${parts.video.url}`
+            url: parts.video.url,
+            message: parts.video.message || leadText || undefined
         });
         if (parts.choices.length) {
             await sendWhatsappChoicesFromParts_(input.to, input.sessionId, parts);
@@ -547,6 +548,94 @@ async function sendWhatsappCxReply_(input) {
             body: "Sorry, I could not process that. Please try again."
         });
     }
+}
+
+/**
+ * @param {{ to: string, url: string, message?: string }} input
+ */
+async function sendWhatsappVideoLink_(input) {
+    return whatsappGraphPost_({
+        messaging_product: "whatsapp",
+        to: input.to,
+        type: "interactive",
+        interactive: {
+            type: "cta_url",
+            body: {
+                text: waShortTitle_(input.message || "Tap below to watch the video:", 1024)
+            },
+            action: {
+                name: "cta_url",
+                parameters: {
+                    display_text: waShortTitle_("Watch video", 20),
+                    url: input.url
+                }
+            }
+        }
+    });
+}
+
+/**
+ * @param {{ to: string, url: string, message?: string }} input
+ */
+async function sendWhatsappVideo_(input) {
+    const url = trim_(input.url);
+    if (!url) {
+        return;
+    }
+    const message = trim_(input.message);
+    const youtubeId = parseYoutubeVideoId_(url);
+
+    if (isDirectVideoFileUrl_(url)) {
+        try {
+            await whatsappGraphPost_({
+                messaging_product: "whatsapp",
+                to: input.to,
+                type: "video",
+                video: {
+                    link: url,
+                    ...(message ? { caption: message.slice(0, 1024) } : {})
+                }
+            });
+            return;
+        } catch (e) {
+            log_("wa_video_file_skip", {
+                error: e && e.message ? String(e.message).slice(0, 160) : String(e)
+            });
+        }
+    }
+
+    if (youtubeId) {
+        const watchUrl = youtubeWatchUrl_(youtubeId);
+        const thumb = youtubeThumbnailUrl_(youtubeId);
+        try {
+            await sendWhatsappImage_({
+                to: input.to,
+                link: thumb,
+                caption: message || undefined
+            });
+            await sendWhatsappVideoLink_({
+                to: input.to,
+                url: watchUrl,
+                message: message ? undefined : "Tap below to watch on YouTube:"
+            });
+            return;
+        } catch (e) {
+            log_("wa_youtube_preview_skip", {
+                error: e && e.message ? String(e.message).slice(0, 160) : String(e)
+            });
+        }
+        await sendWhatsappVideoLink_({ to: input.to, url: watchUrl, message });
+        return;
+    }
+
+    if (message) {
+        await sendWhatsappText_({ to: input.to, body: message });
+    }
+    await sendWhatsappVideoLink_({
+        to: input.to,
+        url,
+        message: message ? undefined : "Tap below to watch:"
+    });
 }
 
 async function pageGraphPost_(body) {
@@ -780,11 +869,14 @@ async function sendPageVideo_(input) {
     if (!url) {
         return;
     }
-    if (input.message) {
-        await sendPageText_(input.recipientId, input.message);
-    }
-    if (/\.(mp4|mov|m4v)(\?|$)/i.test(url)) {
+    const message = trim_(input.message);
+    const youtubeId = parseYoutubeVideoId_(url);
+
+    if (isDirectVideoFileUrl_(url)) {
         try {
+            if (message) {
+                await sendPageText_(input.recipientId, message);
+            }
             await sendPageMessage_({
                 recipientId: input.recipientId,
                 message: {
@@ -801,6 +893,48 @@ async function sendPageVideo_(input) {
             });
         }
     }
+
+    const openUrl = youtubeId ? youtubeWatchUrl_(youtubeId) : url;
+    const thumb = youtubeId ? youtubeThumbnailUrl_(youtubeId) : "";
+
+    if (message) {
+        await sendPageText_(input.recipientId, message);
+    }
+
+    if (thumb) {
+        try {
+            await sendPageMessage_({
+                recipientId: input.recipientId,
+                message: {
+                    attachment: {
+                        type: "template",
+                        payload: {
+                            template_type: "generic",
+                            elements: [
+                                {
+                                    title: waShortTitle_("Video", 80),
+                                    image_url: thumb,
+                                    buttons: [
+                                        {
+                                            type: "web_url",
+                                            url: openUrl,
+                                            title: waShortTitle_("Watch video", 20)
+                                        }
+                                    ]
+                                }
+                            ]
+                        }
+                    }
+                }
+            });
+            return;
+        } catch (e) {
+            log_("page_youtube_card_skip", {
+                error: e && e.message ? String(e.message).slice(0, 160) : String(e)
+            });
+        }
+    }
+
     await sendPageMessage_({
         recipientId: input.recipientId,
         message: {
@@ -808,8 +942,8 @@ async function sendPageVideo_(input) {
                 type: "template",
                 payload: {
                     template_type: "button",
-                    text: waShortTitle_("Tap below to watch the video:", 640),
-                    buttons: [{ type: "web_url", url, title: "Watch video" }]
+                    text: waShortTitle_(message || "Tap below to watch the video:", 640),
+                    buttons: [{ type: "web_url", url: openUrl, title: "Watch video" }]
                 }
             }
         }
