@@ -280,10 +280,8 @@ function resolveTextChoiceReply_(sessionId, text) {
     return text;
 }
 
-/** WhatsApp interactive menus require body text — build from option labels when payload has no message. */
-function choiceMenuBodyFromLabels_(labels) {
-    return labels.map((l) => trim_(l)).filter(Boolean).join("\n");
-}
+/** WhatsApp interactive menus require a body; omit option names when payload has no message. */
+const WA_INTERACTIVE_BODY_PLACEHOLDER = "\u200b";
 
 function isHttpsUrl_(raw) {
     return /^https:\/\/.+/i.test(trim_(raw));
@@ -659,11 +657,7 @@ async function sendWhatsappOptions_(to, sessionId, options, menuPrompt, displayM
         return;
     }
 
-    const menuBody = prompt || choiceMenuBodyFromLabels_(labels);
-    if (!menuBody) {
-        log_("choice_menu_empty", { mode: "carousel", reason: "no_body" });
-        return;
-    }
+    const menuBody = prompt || WA_INTERACTIVE_BODY_PLACEHOLDER;
     const sent = await sendWhatsappChoiceMenu_({
         to,
         body: menuBody,

@@ -247,6 +247,9 @@ export function normalizeSelectOptions_(opts) {
  *   choices: ChoiceOption[],
  *   choicePrompt: string,
  *   optionsDisplay: "numbered" | "carousel",
+ *   Numbered → WhatsApp text list (1. 2. 3.); web widget keeps chip buttons.
+ *   Carousel/interactive → WhatsApp button or list menu; web widget keeps chip buttons.
+ *   Set via payload: optionsDisplay "numbered" | "interactive" (aliases: carousel, buttons, chips).
  *   cardCarousel: { message: string, cards: CarouselCard[], explicitOptions?: boolean } | null,
  *   gallery: { message: string, prompt: string, urls: string[], options: ChoiceOption[] } | null,
  *   video: { title: string, message: string, url: string, choices: ChoiceOption[] } | null,
