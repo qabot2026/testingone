@@ -85,6 +85,12 @@ function galleryMenuDelayMs_(imageCount) {
     return b + (count - 1) * p;
 }
 
+/** Gap between card-carousel cards so WhatsApp never groups them into one album. */
+function cardCarouselGapMs_() {
+    const n = Number.parseInt(process.env.WHATSAPP_CARD_CAROUSEL_GAP_MS || "1800", 10);
+    return Number.isFinite(n) ? Math.max(0, n) : 1800;
+}
+
 /** Strip accidental "Bearer ", quotes, or newlines pasted from Meta docs. */
 function normalizeAccessToken_(raw) {
     let s = trim_(raw).replace(/\s+/g, "");
@@ -463,6 +469,44 @@ async function sendWhatsappCardInteractive_(input) {
 }
 
 /**
+ * One card as separate messages: title/subtitle text, then image (never batched into an album).
+ * @param {string} to
+ * @param {WaCarouselCard} card
+ */
+async function sendWhatsappCardDisplay_(to, card) {
+    const caption = formatCardBodyText_(card);
+    if (caption) {
+        await sendWhatsappText_({ to, body: caption });
+    }
+    if (!isHttpsUrl_(card.imageUrl)) {
+        return;
+    }
+    try {
+        await sendWhatsappImage_({ to, link: card.imageUrl });
+    } catch (e) {
+        log_("card_image_skip", {
+            error: e && e.message ? String(e.message).slice(0, 160) : String(e)
+        });
+    }
+}
+
+/**
+ * Card carousel cards one-by-one with spacing — never grouped as a WhatsApp album.
+ * @param {string} to
+ * @param {WaCarouselCard[]} cards
+ */
+async function sendWhatsappCardCarouselSeparated_(to, cards) {
+    const list = cards.slice(0, 10);
+    const gapMs = cardCarouselGapMs_();
+    for (let i = 0; i < list.length; i += 1) {
+        if (i > 0 && gapMs > 0) {
+            await delayMs_(gapMs);
+        }
+        await sendWhatsappCardDisplay_(to, list[i]);
+    }
+}
+
+/**
  * @param {string} to
  * @param {string} sessionId
  * @param {WaCarouselCard[]} cards
@@ -481,7 +525,11 @@ async function sendWhatsappCardCarouselWithOptions_(to, sessionId, cards, parts)
         await sendWhatsappText_({ to, body: intro });
     }
 
+    const gapMs = cardCarouselGapMs_();
     for (let i = 0; i < list.length; i += 1) {
+        if (i > 0 && gapMs > 0) {
+            await delayMs_(gapMs);
+        }
         const card = list[i];
         const caption = formatCardBodyText_(card);
         const buttonLabel = trim_(card.ctaLabel) || trim_(card.title) || "Select";
@@ -491,25 +539,7 @@ async function sendWhatsappCardCarouselWithOptions_(to, sessionId, cards, parts)
                 throw new Error("card_interactive_empty");
             }
         } catch (e) {
-            if (isHttpsUrl_(card.imageUrl)) {
-                try {
-                    await sendWhatsappImage_({
-                        to,
-                        link: card.imageUrl,
-                        caption: caption || undefined
-                    });
-                } catch (imgErr) {
-                    log_("card_image_skip", {
-                        index: i,
-                        error: imgErr && imgErr.message ? String(imgErr.message).slice(0, 160) : String(imgErr)
-                    });
-                    if (caption) {
-                        await sendWhatsappText_({ to, body: caption });
-                    }
-                }
-            } else if (caption) {
-                await sendWhatsappText_({ to, body: caption });
-            }
+            await sendWhatsappCardDisplay_(to, card);
             try {
                 const body = caption || buttonLabel;
                 await whatsappGraphPost_({
@@ -551,34 +581,15 @@ async function sendWhatsappCardCarouselWithOptions_(to, sessionId, cards, parts)
 }
 
 /**
- * Image carousel: intro (optional) → all images → choices handled by caller.
  * @param {{ to: string, message: string, cards: WaCarouselCard[] }} input
+ * @deprecated Use sendWhatsappCardCarouselSeparated_ — plain image batches group in WhatsApp.
  */
 async function sendWhatsappCardCarousel_(input) {
-    const cards = input.cards.slice(0, 10);
     const message = trim_(input.message);
-
     if (message) {
         await sendWhatsappText_({ to: input.to, body: message });
     }
-
-    for (let i = 0; i < cards.length; i += 1) {
-        const card = cards[i];
-        if (!isHttpsUrl_(card.imageUrl)) {
-            continue;
-        }
-        try {
-            await sendWhatsappImage_({
-                to: input.to,
-                link: card.imageUrl
-            });
-        } catch (e) {
-            log_("card_image_skip", {
-                index: i,
-                error: e && e.message ? String(e.message).slice(0, 160) : String(e)
-            });
-        }
-    }
+    await sendWhatsappCardCarouselSeparated_(input.to, input.cards);
 }
 
 /**
@@ -752,11 +763,11 @@ async function sendWhatsappCxReply_(input) {
             await sendWhatsappText_({ to: input.to, body: agentText });
         }
         if (parts.cardCarousel.explicitOptions && parts.choices.length) {
-            await sendWhatsappCardCarousel_({
-                to: input.to,
-                message: undefined,
-                cards: parts.cardCarousel.cards
-            });
+            const intro = trim_(parts.choicePrompt) || trim_(parts.cardCarousel?.message) || "";
+            if (intro) {
+                await sendWhatsappText_({ to: input.to, body: intro });
+            }
+            await sendWhatsappCardCarouselSeparated_(input.to, parts.cardCarousel.cards);
             await sendWhatsappChoicesFromParts_(input.to, input.sessionId, parts, {
                 payloadMessageOnly: true
             });
