@@ -14,6 +14,12 @@ import crypto from "node:crypto";
 import express from "express";
 import { google } from "googleapis";
 import { getServiceAccountCredentials } from "../google-service-account.mjs";
+import {
+    extractCxResponse_,
+    choiceLabels_,
+    choiceValues_,
+    supplementalTextBlocks_
+} from "../meta-channels/cx-payload.mjs";
 
 /**
  * Dialogflow-only credentials. Use when Firebase JSON is from another GCP project
@@ -205,224 +211,20 @@ function isHttpsUrl_(raw) {
     return /^https:\/\/.+/i.test(trim_(raw));
 }
 
-/**
- * @param {unknown} data
- * @returns {{
- *   texts: string[],
- *   chipOptions: string[],
- *   cardCarousel: { message: string, cards: WaCarouselCard[] } | null,
- *   gallery: { message: string, urls: string[] } | null
- * }}
- */
-function extractCxResponse_(data) {
-    const texts = [];
-    const chipOptions = [];
-    const seenChips = new Set();
-    /** @type {{ message: string, cards: WaCarouselCard[] } | null} */
-    let cardCarousel = null;
-    /** @type {{ message: string, urls: string[] } | null} */
-    let gallery = null;
-    const messages = data?.queryResult?.responseMessages;
-    if (!Array.isArray(messages)) {
-        return { texts, chipOptions, cardCarousel, gallery };
-    }
-    for (const m of messages) {
-        const parts = m?.text?.text;
-        if (Array.isArray(parts)) {
-            for (const t of parts) {
-                const s = trim_(t);
-                if (s) {
-                    texts.push(s);
-                }
-            }
-        }
-        const payload = m?.payload;
-        if (payload && typeof payload === "object") {
-            collectChipOptionsFromPayload_(payload, chipOptions, seenChips);
-            if (!cardCarousel) {
-                cardCarousel = extractCardCarouselFromPayload_(payload);
-            }
-            if (!gallery) {
-                gallery = extractGalleryFromPayload_(payload);
-            }
-        }
-    }
-    return { texts, chipOptions, cardCarousel, gallery };
-}
+/** @typedef {import("../meta-channels/cx-payload.mjs").CarouselCard} WaCarouselCard */
+/** @typedef {import("../meta-channels/cx-payload.mjs").CxReplyParts} CxReplyParts */
 
-/**
- * @typedef {{ id: string, title: string, subtitle: string, imageUrl: string, ctaLabel: string, ctaValue: string }} WaCarouselCard
- */
-
-/** @param {unknown} raw */
-function parseJsonObject_(raw) {
-    if (raw && typeof raw === "object") {
-        return raw;
+function webChatUrl_() {
+    const explicit = trim_(process.env.META_CHAT_WEB_URL || process.env.CHAT_WIDGET_URL);
+    if (explicit) {
+        return explicit.replace(/\/+$/, "");
     }
-    if (typeof raw !== "string") {
-        return null;
-    }
-    const s = raw.trim();
-    if (!s) {
-        return null;
-    }
-    try {
-        const o = JSON.parse(s);
-        return o && typeof o === "object" ? o : null;
-    } catch {
-        return null;
-    }
-}
-
-/**
- * @param {unknown} payload
- * @param {string[]} chipOptions
- * @param {Set<string>} seenChips
- */
-function collectChipOptionsFromPayload_(payload, chipOptions, seenChips) {
-    const body = parseJsonObject_(payload);
-    if (!body || typeof body !== "object") {
-        return;
-    }
-    const rc = body.richContent;
-    if (Array.isArray(rc)) {
-        for (const row of rc) {
-            if (!Array.isArray(row)) {
-                continue;
-            }
-            for (const item of row) {
-                if (!item || typeof item !== "object") {
-                    continue;
-                }
-                if (String(item.type || "").toLowerCase() !== "chips") {
-                    continue;
-                }
-                pushChipLabels_(item.options, chipOptions, seenChips);
-            }
-        }
-    }
-    if (Array.isArray(body.options)) {
-        pushChipLabels_(body.options, chipOptions, seenChips);
-    }
-}
-
-/** @param {unknown} v */
-function payloadString_(v) {
-    if (typeof v === "string") {
-        return trim_(v);
-    }
-    if (v && typeof v === "object" && typeof v.stringValue === "string") {
-        return trim_(v.stringValue);
-    }
-    return "";
-}
-
-/**
- * @param {unknown} rawCards
- * @returns {WaCarouselCard[]}
- */
-function normalizeCarouselCards_(rawCards) {
-    if (!Array.isArray(rawCards)) {
-        return [];
-    }
-    /** @type {WaCarouselCard[]} */
-    const out = [];
-    for (let i = 0; i < rawCards.length; i += 1) {
-        const row = rawCards[i];
-        if (!row || typeof row !== "object") {
-            continue;
-        }
-        const title = payloadString_(row.title || row.name || row.heading);
-        const subtitle = payloadString_(row.subtitle || row.description || row.text);
-        const imageUrl = payloadString_(row.imageUrl || row.image_url || row.image || row.img);
-        const ctaLabel = payloadString_(row.ctaLabel || row.cta_label || row.button || row.buttonLabel) || "Select";
-        const ctaValue = payloadString_(row.ctaValue || row.cta_value || row.value || row.query) || title;
-        const id = payloadString_(row.id || row.key || row.card_id || row.cardId) || `${i + 1}`;
-        if (!title && !subtitle && !imageUrl) {
-            continue;
-        }
-        out.push({ id, title, subtitle, imageUrl, ctaLabel, ctaValue });
-    }
-    return out;
-}
-
-/**
- * @param {unknown} payload
- * @returns {{ message: string, cards: WaCarouselCard[] } | null}
- */
-function extractCardCarouselFromPayload_(payload) {
-    const body = parseJsonObject_(payload);
-    if (!body || typeof body !== "object") {
-        return null;
-    }
-    if (payloadString_(body.action).toLowerCase() !== "open_card_carousel") {
-        return null;
-    }
-    const rawCards = body.cards || body.items || body.list;
-    const cards = normalizeCarouselCards_(rawCards).slice(0, 10);
-    if (!cards.length) {
-        return null;
-    }
-    const message =
-        payloadString_(body.message || body.text || body.prompt || body.subtitle || body.description);
-    return { message, cards };
-}
-
-/**
- * @param {unknown} payload
- * @returns {{ message: string, urls: string[] } | null}
- */
-function extractGalleryFromPayload_(payload) {
-    const body = parseJsonObject_(payload);
-    if (!body || typeof body !== "object") {
-        return null;
-    }
-    if (payloadString_(body.action).toLowerCase() !== "open_gallery") {
-        return null;
-    }
-    const rawUrls = body.urls;
-    if (!Array.isArray(rawUrls)) {
-        return null;
-    }
-    const urls = [];
-    for (const rawU of rawUrls) {
-        const s = payloadString_(rawU);
-        if (isHttpsUrl_(s)) {
-            urls.push(s);
-        }
-    }
-    if (!urls.length) {
-        return null;
-    }
-    const message =
-        payloadString_(body.message || body.text || body.prompt || body.subtitle || body.description);
-    return { message, urls: urls.slice(0, 10) };
-}
-
-/**
- * @param {unknown} opts
- * @param {string[]} chipOptions
- * @param {Set<string>} seenChips
- */
-function pushChipLabels_(opts, chipOptions, seenChips) {
-    if (!Array.isArray(opts)) {
-        return;
-    }
-    for (const opt of opts) {
-        let label = "";
-        if (typeof opt === "string") {
-            label = trim_(opt);
-        } else if (opt && typeof opt === "object") {
-            label =
-                trim_(opt.text)
-                || trim_(opt.label)
-                || trim_(opt.title);
-        }
-        if (label && !seenChips.has(label)) {
-            seenChips.add(label);
-            chipOptions.push(label);
-        }
-    }
+    const base =
+        trim_(process.env.CONVERSATIONS_PUBLIC_BASE_URL)
+        || (trim_(process.env.RAILWAY_PUBLIC_DOMAIN)
+            ? `https://${trim_(process.env.RAILWAY_PUBLIC_DOMAIN)}`
+            : "");
+    return base ? `${base.replace(/\/+$/, "")}/chat-frame.html` : "";
 }
 
 function waShortTitle_(text, maxLen) {
@@ -623,67 +425,106 @@ async function sendWhatsappGallery_(input) {
 }
 
 /**
- * @param {{
- *   to: string,
- *   sessionId: string,
- *   texts: string[],
- *   chipOptions: string[],
- *   cardCarousel: { message: string, cards: WaCarouselCard[] } | null,
- *   gallery: { message: string, urls: string[] } | null
- * }} input
+ * @param {string} to
+ * @param {string} sessionId
+ * @param {CxReplyParts} parts
+ */
+async function sendWhatsappChoicesFromParts_(to, sessionId, parts) {
+    if (!parts.choices.length) {
+        return;
+    }
+    rememberChoiceOptions_(sessionId, choiceLabels_(parts), choiceValues_(parts));
+    const menuPrompt = parts.choicePrompt || "Please choose an option:";
+    try {
+        await sendWhatsappChoiceMenu_({
+            to,
+            body: menuPrompt,
+            labels: choiceLabels_(parts),
+            idPrefix: "chip"
+        });
+    } catch (e) {
+        const numbered = parts.choices.map((opt, i) => `${i + 1}. ${opt.label}`).join("\n");
+        await sendWhatsappText_({
+            to,
+            body: `${menuPrompt}\n\n${numbered}\n\nReply with the option text.`
+        });
+        log_("chip_menu_fallback", {
+            error: e && e.message ? String(e.message).slice(0, 200) : String(e)
+        });
+    }
+}
+
+/**
+ * @param {{ to: string, sessionId: string, parts: CxReplyParts }} input
  */
 async function sendWhatsappCxReply_(input) {
-    const texts = input.texts.filter(Boolean);
-    const chips = input.chipOptions.filter(Boolean);
-    const mainText = texts.join("\n\n");
+    const parts = input.parts;
+    const supplemental = supplementalTextBlocks_(parts, webChatUrl_());
+    let leadText = [...parts.texts, ...supplemental].filter(Boolean).join("\n\n");
 
-    if (input.cardCarousel?.cards?.length) {
+    if (!parts.gallery && !parts.cardCarousel && parts.images.length > 0) {
+        if (leadText) {
+            await sendWhatsappText_({ to: input.to, body: leadText });
+            leadText = "";
+        }
+        for (const url of parts.images) {
+            try {
+                await sendWhatsappImage_({ to: input.to, link: url });
+            } catch (e) {
+                log_("rich_image_skip", {
+                    error: e && e.message ? String(e.message).slice(0, 160) : String(e)
+                });
+            }
+        }
+    }
+
+    if (parts.cardCarousel?.cards?.length) {
         await sendWhatsappCardCarousel_({
             to: input.to,
             sessionId: input.sessionId,
-            message: input.cardCarousel.message || mainText,
-            cards: input.cardCarousel.cards
+            message: parts.cardCarousel.message || leadText,
+            cards: parts.cardCarousel.cards
         });
         return;
     }
 
-    if (input.gallery?.urls?.length) {
+    if (parts.gallery?.urls?.length) {
         await sendWhatsappGallery_({
             to: input.to,
-            message: input.gallery.message || mainText,
-            urls: input.gallery.urls
+            message: parts.gallery.message || leadText,
+            urls: parts.gallery.urls
         });
-        return;
-    }
-
-    if (mainText) {
-        await sendWhatsappText_({ to: input.to, body: mainText });
-    }
-
-    if (chips.length > 0) {
-        rememberChoiceOptions_(input.sessionId, chips, chips);
-        const menuPrompt = mainText ? "Please choose an option:" : "How can I help you?";
-        try {
-            await sendWhatsappChoiceMenu_({
-                to: input.to,
-                body: menuPrompt,
-                labels: chips,
-                idPrefix: "chip"
-            });
-        } catch (e) {
-            const numbered = chips.map((opt, i) => `${i + 1}. ${opt}`).join("\n");
-            await sendWhatsappText_({
-                to: input.to,
-                body: `${menuPrompt}\n\n${numbered}\n\nReply with the option text.`
-            });
-            log_("chip_menu_fallback", {
-                error: e && e.message ? String(e.message).slice(0, 200) : String(e)
-            });
+        if (parts.choices.length) {
+            await sendWhatsappChoicesFromParts_(input.to, input.sessionId, parts);
         }
         return;
     }
 
-    if (!mainText) {
+    if (parts.video?.url) {
+        const intro = parts.video.message || leadText;
+        if (intro) {
+            await sendWhatsappText_({ to: input.to, body: intro });
+        }
+        await sendWhatsappText_({
+            to: input.to,
+            body: `Watch: ${parts.video.url}`
+        });
+        if (parts.choices.length) {
+            await sendWhatsappChoicesFromParts_(input.to, input.sessionId, parts);
+        }
+        return;
+    }
+
+    if (leadText) {
+        await sendWhatsappText_({ to: input.to, body: leadText });
+    }
+
+    if (parts.choices.length) {
+        await sendWhatsappChoicesFromParts_(input.to, input.sessionId, parts);
+        return;
+    }
+
+    if (!leadText && parts.images.length === 0) {
         await sendWhatsappText_({
             to: input.to,
             body: "Sorry, I could not process that. Please try again."
@@ -860,81 +701,167 @@ async function sendPageGallery_(input) {
 }
 
 /**
- * @param {{
- *   recipientId: string,
- *   sessionId: string,
- *   texts: string[],
- *   chipOptions: string[],
- *   cardCarousel: { message: string, cards: WaCarouselCard[] } | null,
- *   gallery: { message: string, urls: string[] } | null
- * }} input
+ * @param {string} recipientId
+ * @param {string} sessionId
+ * @param {CxReplyParts} parts
+ */
+async function sendPageChoicesFromParts_(recipientId, sessionId, parts) {
+    if (!parts.choices.length) {
+        return;
+    }
+    const prompt = parts.choicePrompt || (parts.texts.length ? "Please choose an option:" : "How can I help you?");
+    try {
+        await sendPageQuickReplies_({
+            recipientId,
+            sessionId,
+            prompt,
+            labels: choiceLabels_(parts),
+            values: choiceValues_(parts)
+        });
+    } catch (e) {
+        const numbered = parts.choices.map((opt, i) => `${i + 1}. ${opt.label}`).join("\n");
+        await sendPageText_(recipientId, `${prompt}\n\n${numbered}\n\nReply with the option text.`);
+        log_("page_chip_fallback", {
+            error: e && e.message ? String(e.message).slice(0, 200) : String(e)
+        });
+    }
+}
+
+/**
+ * @param {{ recipientId: string, sessionId: string, url: string, message: string }} input
+ */
+async function sendPageVideo_(input) {
+    const url = trim_(input.url);
+    if (!url) {
+        return;
+    }
+    if (input.message) {
+        await sendPageText_(input.recipientId, input.message);
+    }
+    if (/\.(mp4|mov|m4v)(\?|$)/i.test(url)) {
+        try {
+            await sendPageMessage_({
+                recipientId: input.recipientId,
+                message: {
+                    attachment: {
+                        type: "video",
+                        payload: { url, is_reusable: false }
+                    }
+                }
+            });
+            return;
+        } catch (e) {
+            log_("page_video_attach_skip", {
+                error: e && e.message ? String(e.message).slice(0, 160) : String(e)
+            });
+        }
+    }
+    await sendPageMessage_({
+        recipientId: input.recipientId,
+        message: {
+            attachment: {
+                type: "template",
+                payload: {
+                    template_type: "button",
+                    text: waShortTitle_("Tap below to watch the video:", 640),
+                    buttons: [{ type: "web_url", url, title: "Watch video" }]
+                }
+            }
+        }
+    });
+}
+
+/**
+ * @param {{ recipientId: string, sessionId: string, parts: CxReplyParts }} input
  */
 async function sendPageCxReply_(input) {
-    const texts = input.texts.filter(Boolean);
-    const chips = input.chipOptions.filter(Boolean);
-    const mainText = texts.join("\n\n");
+    const parts = input.parts;
+    const supplemental = supplementalTextBlocks_(parts, webChatUrl_());
+    let leadText = [...parts.texts, ...supplemental].filter(Boolean).join("\n\n");
 
-    if (input.cardCarousel?.cards?.length) {
+    if (!parts.gallery && !parts.cardCarousel && parts.images.length > 0) {
+        if (leadText) {
+            await sendPageText_(input.recipientId, leadText);
+            leadText = "";
+        }
+        for (const url of parts.images) {
+            try {
+                await sendPageMessage_({
+                    recipientId: input.recipientId,
+                    message: {
+                        attachment: {
+                            type: "image",
+                            payload: { url, is_reusable: false }
+                        }
+                    }
+                });
+            } catch (e) {
+                log_("page_rich_image_skip", {
+                    error: e && e.message ? String(e.message).slice(0, 160) : String(e)
+                });
+            }
+        }
+    }
+
+    if (parts.cardCarousel?.cards?.length) {
         try {
             await sendPageGenericCarousel_({
                 recipientId: input.recipientId,
-                message: input.cardCarousel.message || mainText,
-                cards: input.cardCarousel.cards
+                message: parts.cardCarousel.message || leadText,
+                cards: parts.cardCarousel.cards
             });
         } catch (e) {
             log_("page_carousel_fallback", {
                 error: e && e.message ? String(e.message).slice(0, 200) : String(e)
             });
-            const lines = input.cardCarousel.cards.map((c, i) => {
+            const lines = parts.cardCarousel.cards.map((c, i) => {
                 const line = [c.title, c.subtitle].filter(Boolean).join(" — ");
                 return `${i + 1}. ${line || `Option ${i + 1}`}`;
             });
             await sendPageText_(
                 input.recipientId,
-                `${input.cardCarousel.message || mainText || "Choose an option:"}\n\n${lines.join("\n")}`
+                `${parts.cardCarousel.message || leadText || "Choose an option:"}\n\n${lines.join("\n")}`
             );
         }
         return;
     }
 
-    if (input.gallery?.urls?.length) {
+    if (parts.gallery?.urls?.length) {
         await sendPageGallery_({
             recipientId: input.recipientId,
-            message: input.gallery.message || mainText,
-            urls: input.gallery.urls
+            message: parts.gallery.message || leadText,
+            urls: parts.gallery.urls
         });
-        return;
-    }
-
-    if (chips.length > 0) {
-        const prompt = mainText || "How can I help you?";
-        try {
-            await sendPageQuickReplies_({
-                recipientId: input.recipientId,
-                sessionId: input.sessionId,
-                prompt,
-                labels: chips,
-                values: chips
-            });
-        } catch (e) {
-            const numbered = chips.map((opt, i) => `${i + 1}. ${opt}`).join("\n");
-            await sendPageText_(
-                input.recipientId,
-                `${prompt}\n\n${numbered}\n\nReply with the option text.`
-            );
-            log_("page_chip_fallback", {
-                error: e && e.message ? String(e.message).slice(0, 200) : String(e)
-            });
+        if (parts.choices.length) {
+            await sendPageChoicesFromParts_(input.recipientId, input.sessionId, parts);
         }
         return;
     }
 
-    if (mainText) {
-        await sendPageText_(input.recipientId, mainText);
+    if (parts.video?.url) {
+        await sendPageVideo_({
+            recipientId: input.recipientId,
+            url: parts.video.url,
+            message: parts.video.message || leadText
+        });
+        if (parts.choices.length) {
+            await sendPageChoicesFromParts_(input.recipientId, input.sessionId, parts);
+        }
         return;
     }
 
-    await sendPageText_(input.recipientId, "Sorry, I could not process that. Please try again.");
+    if (leadText) {
+        await sendPageText_(input.recipientId, leadText);
+    }
+
+    if (parts.choices.length) {
+        await sendPageChoicesFromParts_(input.recipientId, input.sessionId, parts);
+        return;
+    }
+
+    if (!leadText && parts.images.length === 0) {
+        await sendPageText_(input.recipientId, "Sorry, I could not process that. Please try again.");
+    }
 }
 
 /**
@@ -988,25 +915,19 @@ async function processInboundMetaMessage_(input) {
         text: input.text,
         languageCode: c.languageCode
     });
-    const cxReply = extractCxResponse_(cx);
+    const parts = extractCxResponse_(cx);
 
     if (input.channel === "whatsapp") {
         await sendWhatsappCxReply_({
             to: input.from,
             sessionId: input.sessionId,
-            texts: cxReply.texts,
-            chipOptions: cxReply.chipOptions,
-            cardCarousel: cxReply.cardCarousel,
-            gallery: cxReply.gallery
+            parts
         });
     } else {
         await sendPageCxReply_({
             recipientId: input.from,
             sessionId: input.sessionId,
-            texts: cxReply.texts,
-            chipOptions: cxReply.chipOptions,
-            cardCarousel: cxReply.cardCarousel,
-            gallery: cxReply.gallery
+            parts
         });
     }
 
@@ -1014,10 +935,14 @@ async function processInboundMetaMessage_(input) {
         channel: input.channel,
         from_masked: input.from.length > 4 ? `***${input.from.slice(-4)}` : "***",
         sessionId: input.sessionId,
-        text_chars: cxReply.texts.join(" ").length,
-        chip_count: cxReply.chipOptions.length,
-        card_count: cxReply.cardCarousel?.cards?.length || 0,
-        gallery_count: cxReply.gallery?.urls?.length || 0
+        text_chars: parts.texts.join(" ").length,
+        choice_count: parts.choices.length,
+        card_count: parts.cardCarousel?.cards?.length || 0,
+        gallery_count: parts.gallery?.urls?.length || 0,
+        video: !!parts.video?.url,
+        form: !!parts.form,
+        live_agent: !!parts.liveAgent,
+        image_count: parts.images.length
     });
 }
 
@@ -1064,14 +989,6 @@ function sessionIdForWaUser_(waUserId) {
     return sessionIdForChannelUser_("whatsapp", waUserId);
 }
 
-/**
- * @typedef {{
- *   texts: string[],
- *   chipOptions: string[],
- *   cardCarousel: { message: string, cards: WaCarouselCard[] } | null,
- *   gallery: { message: string, urls: string[] } | null
- * }} CxReplyParts
- */
 async function getDialogflowAccessToken_() {
     const key = getDialogflowServiceAccountCredentials_();
     if (!key) {
@@ -1328,7 +1245,15 @@ function handleHealth_(req, res) {
             page_access_token_prefix: c.page.accessToken ? c.page.accessToken.slice(0, 6) + "…" : "",
             note: "Same webhook URL; subscribe Page (messages) and Instagram (messages) in Meta app"
         },
-        supported_payloads: ["richContent chips", "open_card_carousel", "open_gallery"]
+        supported_payloads: [
+            "richContent: chips, info, accordion, description, image",
+            "open_card_carousel",
+            "open_gallery",
+            "open_video",
+            "open_form",
+            "dfchat_inline_select",
+            "request_live_agent"
+        ]
     });
 }
 
