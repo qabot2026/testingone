@@ -246,7 +246,7 @@ export function normalizeSelectOptions_(opts) {
  *   images: string[],
  *   choices: ChoiceOption[],
  *   choicePrompt: string,
- *   cardCarousel: { message: string, cards: CarouselCard[] } | null,
+ *   cardCarousel: { message: string, cards: CarouselCard[], explicitOptions?: boolean } | null,
  *   gallery: { message: string, urls: string[] } | null,
  *   video: { title: string, message: string, url: string, choices: ChoiceOption[] } | null,
  *   form: { message: string, formId: string, formKey: string } | null,
@@ -342,10 +342,10 @@ function absorbActionPayload_(parts, body) {
 
     if (action === "open_card_carousel") {
         const cards = normalizeCarouselCards_(body.cards ?? body.items ?? body.list).slice(0, 10);
-        if (cards.length) {
-            parts.cardCarousel = { message: msg, cards };
-        }
         const opts = normalizeSelectOptions_(body.options ?? body.option ?? body.chips);
+        if (cards.length) {
+            parts.cardCarousel = { message: msg, cards, explicitOptions: opts.length > 0 };
+        }
         for (const o of opts) {
             pushChoice_(parts, o);
         }

@@ -372,8 +372,9 @@ async function sendWhatsappChoiceMenu_(input) {
  */
 function cardCarouselChoiceOptions_(cards) {
     return cards.map((c, i) => {
-        const label = [c.title, c.subtitle].filter(Boolean).join(" — ")
+        const label = c.title
             || c.ctaLabel
+            || [c.subtitle].filter(Boolean).join("")
             || `Option ${i + 1}`;
         const value = c.ctaValue || c.title || c.subtitle || label;
         return { label, value };
@@ -394,19 +395,26 @@ async function sendWhatsappChoicesFromCards_(to, sessionId, cards, parts) {
     }
     rememberChoiceOptions_(sessionId, opts.map((o) => o.label), opts.map((o) => o.value));
     const menuPrompt = trim_(parts.choicePrompt) || trim_(parts.cardCarousel?.message) || "";
+    const numbered = opts.map((opt, i) => `${i + 1}. ${opt.label}`).join("\n");
+    if (!menuPrompt) {
+        await sendWhatsappText_({ to, body: numbered });
+        return;
+    }
     try {
-        await sendWhatsappChoiceMenu_({
+        const sent = await sendWhatsappChoiceMenu_({
             to,
             body: menuPrompt,
             labels: opts.map((o) => o.label),
             idPrefix: "card",
             allowDefault: false
         });
+        if (!sent) {
+            throw new Error("card_menu_empty");
+        }
     } catch (e) {
-        const numbered = opts.map((opt, i) => `${i + 1}. ${opt.label}`).join("\n");
         await sendWhatsappText_({
             to,
-            body: menuPrompt ? `${menuPrompt}\n\n${numbered}` : numbered
+            body: `${menuPrompt}\n\n${numbered}`
         });
         log_("card_menu_fallback", {
             error: e && e.message ? String(e.message).slice(0, 200) : String(e)
@@ -485,7 +493,7 @@ async function sendWhatsappChoicesFromParts_(to, sessionId, parts, opts = {}) {
             idPrefix: "chip",
             allowDefault: !opts.payloadMessageOnly
         });
-        if (!sent && menuPrompt) {
+        if (!sent) {
             throw new Error("choice_menu_empty");
         }
     } catch (e) {
@@ -534,7 +542,7 @@ async function sendWhatsappCxReply_(input) {
             message: undefined,
             cards: parts.cardCarousel.cards
         });
-        if (parts.choices.length) {
+        if (parts.cardCarousel.explicitOptions && parts.choices.length) {
             await sendWhatsappChoicesFromParts_(input.to, input.sessionId, parts, {
                 payloadMessageOnly: true
             });
