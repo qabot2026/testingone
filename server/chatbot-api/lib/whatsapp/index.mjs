@@ -348,6 +348,37 @@ async function sendWhatsappChoiceMenu_(input) {
 }
 
 /**
+ * @param {{ to: string, cardIndex: number, card: WaCarouselCard }} input
+ */
+async function sendWhatsappCardButton_(input) {
+    const buttonTitle = waShortTitle_(input.card.ctaLabel || input.card.title || "View", 20);
+    const bodyText = waShortTitle_(
+        [input.card.title, input.card.subtitle].filter(Boolean).join("\n") || "Tap below:",
+        1024
+    );
+    return whatsappGraphPost_({
+        messaging_product: "whatsapp",
+        to: input.to,
+        type: "interactive",
+        interactive: {
+            type: "button",
+            body: { text: bodyText },
+            action: {
+                buttons: [
+                    {
+                        type: "reply",
+                        reply: {
+                            id: `card_${input.cardIndex}`,
+                            title: buttonTitle
+                        }
+                    }
+                ]
+            }
+        }
+    });
+}
+
+/**
  * @param {{ to: string, sessionId: string, message: string, cards: WaCarouselCard[] }} input
  */
 async function sendWhatsappCardCarousel_(input) {
@@ -360,7 +391,8 @@ async function sendWhatsappCardCarousel_(input) {
         await sendWhatsappText_({ to: input.to, body: input.message });
     }
 
-    for (const card of cards) {
+    for (let i = 0; i < cards.length; i += 1) {
+        const card = cards[i];
         const caption = [card.title, card.subtitle].filter(Boolean).join("\n");
         if (isHttpsUrl_(card.imageUrl)) {
             try {
@@ -371,6 +403,7 @@ async function sendWhatsappCardCarousel_(input) {
                 });
             } catch (e) {
                 log_("card_image_skip", {
+                    index: i,
                     error: e && e.message ? String(e.message).slice(0, 160) : String(e)
                 });
                 if (caption) {
@@ -380,29 +413,18 @@ async function sendWhatsappCardCarousel_(input) {
         } else if (caption) {
             await sendWhatsappText_({ to: input.to, body: caption });
         }
-    }
-
-    try {
-        await sendWhatsappChoiceMenu_({
-            to: input.to,
-            body: cards.length > 1 ? "Tap an option below:" : "Tap to select:",
-            labels,
-            idPrefix: "card"
-        });
-    } catch (e) {
-        const numbered = cards
-            .map((c, i) => {
-                const line = [c.title, c.subtitle].filter(Boolean).join(" — ");
-                return `${i + 1}. ${line || `Option ${i + 1}`}`;
-            })
-            .join("\n");
-        await sendWhatsappText_({
-            to: input.to,
-            body: `Tap an option below:\n\n${numbered}\n\nReply with the option name.`
-        });
-        log_("card_menu_fallback", {
-            error: e && e.message ? String(e.message).slice(0, 200) : String(e)
-        });
+        try {
+            await sendWhatsappCardButton_({ to: input.to, cardIndex: i, card });
+        } catch (e) {
+            log_("card_button_skip", {
+                index: i,
+                error: e && e.message ? String(e.message).slice(0, 160) : String(e)
+            });
+            await sendWhatsappText_({
+                to: input.to,
+                body: `Reply "${card.ctaLabel || card.title || values[i]}" to select this option.`
+            });
+        }
     }
 }
 
@@ -603,48 +625,73 @@ async function sendPageQuickReplies_(input) {
 }
 
 /**
+ * @param {{ recipientId: string, card: WaCarouselCard }} input
+ * @returns {Record<string, unknown> | null}
+ */
+function pageGenericElementForCard_(input) {
+    const card = input.card;
+    const title = waShortTitle_(card.title || card.subtitle || "Option", 80);
+    if (!title) {
+        return null;
+    }
+    /** @type {Record<string, unknown>} */
+    const el = {
+        title,
+        subtitle: waShortTitle_(card.subtitle || "", 80),
+        buttons: [
+            {
+                type: "postback",
+                title: waShortTitle_(card.ctaLabel || "View", 20),
+                payload: (card.ctaValue || card.title || card.subtitle).slice(0, 1000)
+            }
+        ]
+    };
+    if (isHttpsUrl_(card.imageUrl)) {
+        el.image_url = card.imageUrl;
+    }
+    return el;
+}
+
+/**
  * @param {{ recipientId: string, message: string, cards: WaCarouselCard[] }} input
  */
 async function sendPageGenericCarousel_(input) {
     const cards = input.cards.slice(0, 10);
-    const elements = cards
-        .map((card) => {
-            /** @type {Record<string, unknown>} */
-            const el = {
-                title: waShortTitle_(card.title || card.subtitle || "Option", 80),
-                subtitle: waShortTitle_(card.subtitle || "", 80),
-                buttons: [
-                    {
-                        type: "postback",
-                        title: waShortTitle_(card.ctaLabel || "View", 20),
-                        payload: (card.ctaValue || card.title || card.subtitle).slice(0, 1000)
-                    }
-                ]
-            };
-            if (isHttpsUrl_(card.imageUrl)) {
-                el.image_url = card.imageUrl;
-            }
-            return el;
-        })
-        .filter((el) => el.title);
-    if (!elements.length) {
+    if (!cards.length) {
         return null;
     }
     if (input.message) {
         await sendPageText_(input.recipientId, input.message);
     }
-    return sendPageMessage_({
-        recipientId: input.recipientId,
-        message: {
-            attachment: {
-                type: "template",
-                payload: {
-                    template_type: "generic",
-                    elements
+    for (const card of cards) {
+        const el = pageGenericElementForCard_({ recipientId: input.recipientId, card });
+        if (!el) {
+            continue;
+        }
+        try {
+            await sendPageMessage_({
+                recipientId: input.recipientId,
+                message: {
+                    attachment: {
+                        type: "template",
+                        payload: {
+                            template_type: "generic",
+                            elements: [el]
+                        }
+                    }
                 }
+            });
+        } catch (e) {
+            log_("page_card_skip", {
+                error: e && e.message ? String(e.message).slice(0, 160) : String(e)
+            });
+            const line = [card.title, card.subtitle].filter(Boolean).join(" — ");
+            if (line) {
+                await sendPageText_(input.recipientId, line);
             }
         }
-    });
+    }
+    return null;
 }
 
 /**
