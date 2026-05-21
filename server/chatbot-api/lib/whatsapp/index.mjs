@@ -24,15 +24,6 @@ import {
     youtubeThumbnailUrl_,
     isDirectVideoFileUrl_
 } from "../meta-channels/cx-payload.mjs";
-import FormDataPkg from "form-data";
-import {
-    downloadYoutubeMp4Buffer_,
-    streamYoutubeMp4ToResponse_,
-    isYtDlpAvailable_,
-    ytDlpVersion_,
-    youtubeCookiesConfigured_,
-    probeYoutubeDownload_
-} from "../meta-channels/youtube-download.mjs";
 
 /**
  * Dialogflow-only credentials. Use when Firebase JSON is from another GCP project
@@ -572,58 +563,23 @@ async function sendWhatsappCxReply_(input) {
 }
 
 /**
- * @param {Buffer} buffer
- * @param {string} mimeType
+ * YouTube on WhatsApp: send watch URL with link preview (plays on YouTube when tapped).
+ * WhatsApp/Meta do not support YouTube iframe embeds or streaming into the native video player.
+ * @param {{ to: string, youtubeId: string, message?: string }} input
  */
-async function uploadWhatsappMedia_(buffer, mimeType) {
-    const c = whatsappConfig_();
-    const url = `https://graph.facebook.com/${c.graphVersion}/${c.phoneNumberId}/media`;
-
-    /** @type {Response} */
-    let res;
-    try {
-        const nativeForm = new FormData();
-        nativeForm.append("messaging_product", "whatsapp");
-        nativeForm.append("file", new Blob([buffer], { type: mimeType }), "video.mp4");
-        res = await fetch(url, {
-            method: "POST",
-            headers: {
-                Authorization: `Bearer ${c.accessToken}`
-            },
-            body: nativeForm
-        });
-    } catch {
-        const form = new FormDataPkg();
-        form.append("messaging_product", "whatsapp");
-        form.append("file", buffer, {
-            filename: "video.mp4",
-            contentType: mimeType,
-            knownLength: buffer.length
-        });
-        res = await fetch(url, {
-            method: "POST",
-            headers: {
-                Authorization: `Bearer ${c.accessToken}`,
-                ...form.getHeaders()
-            },
-            // @ts-expect-error form-data stream body for fetch
-            body: form
-        });
-    }
-
-    const raw = await res.text();
-    let data = {};
-    try {
-        data = raw ? JSON.parse(raw) : {};
-    } catch {
-        data = {};
-    }
-    if (!res.ok || !data.id) {
-        const err = data?.error && typeof data.error === "object" ? data.error : {};
-        const errMsg = err.message || raw.slice(0, 400) || `HTTP ${res.status}`;
-        throw new Error(`WhatsApp media upload failed: ${errMsg}`);
-    }
-    return String(data.id);
+async function sendWhatsappYoutubeLink_(input) {
+    const watchUrl = youtubeWatchUrl_(input.youtubeId);
+    const message = trim_(input.message);
+    const body = message ? `${message}\n\n${watchUrl}` : watchUrl;
+    return whatsappGraphPost_({
+        messaging_product: "whatsapp",
+        to: input.to,
+        type: "text",
+        text: {
+            body: body.slice(0, 4096),
+            preview_url: true
+        }
+    });
 }
 
 /**
@@ -636,21 +592,6 @@ async function sendWhatsappNativeVideo_(input) {
         type: "video",
         video: {
             link: input.url,
-            ...(input.message ? { caption: input.message.slice(0, 1024) } : {})
-        }
-    });
-}
-
-/**
- * @param {{ to: string, mediaId: string, message?: string }} input
- */
-async function sendWhatsappNativeVideoById_(input) {
-    return whatsappGraphPost_({
-        messaging_product: "whatsapp",
-        to: input.to,
-        type: "video",
-        video: {
-            id: input.mediaId,
             ...(input.message ? { caption: input.message.slice(0, 1024) } : {})
         }
     });
@@ -692,30 +633,10 @@ async function sendWhatsappVideo_(input) {
     const youtubeId = parseYoutubeVideoId_(url);
 
     if (youtubeId) {
-        try {
-            const buffer = await downloadYoutubeMp4Buffer_(youtubeId);
-            log_("wa_youtube_download_ok", {
-                bytes: buffer.length,
-                videoId: youtubeId
-            });
-            const mediaId = await uploadWhatsappMedia_(buffer, "video/mp4");
-            await sendWhatsappNativeVideoById_({
-                to: input.to,
-                mediaId,
-                message: message || undefined
-            });
-            return;
-        } catch (e) {
-            log_("wa_youtube_native_fail", {
-                videoId: youtubeId,
-                error: e && e.message ? String(e.message).slice(0, 240) : String(e)
-            });
-        }
-        await sendWhatsappText_({
+        await sendWhatsappYoutubeLink_({
             to: input.to,
-            body: message
-                ? `${message}\n\nVideo could not be loaded in WhatsApp. Watch here: ${youtubeWatchUrl_(youtubeId)}`
-                : `Video could not be loaded in WhatsApp. Watch here: ${youtubeWatchUrl_(youtubeId)}`
+            youtubeId,
+            message: message || undefined
         });
         return;
     }
@@ -1583,36 +1504,11 @@ function handleHealth_(req, res) {
             "request_live_agent"
         ],
         youtube_whatsapp: {
-            yt_dlp_installed: isYtDlpAvailable_(),
-            yt_dlp_version: ytDlpVersion_(),
-            cookies_configured: youtubeCookiesConfigured_(),
-            player: "native WhatsApp video (download YouTube MP4, upload, in-app player)",
-            max_bytes: 16 * 1024 * 1024,
-            probe_url: "/api/whatsapp/youtube-probe",
-            cookies_hint: "If probe fails with HTTP 403, set YOUTUBE_COOKIES_NETSCAPE in Railway (Netscape cookies.txt for youtube.com)."
+            mode: "link_preview",
+            note: "YouTube cannot embed in WhatsApp like the web widget. open_video sends the YouTube URL with preview_url; tap opens YouTube to play.",
+            native_mp4_player: "direct .mp4 URLs only (not YouTube)"
         }
     });
-}
-
-/** @param {import("express").Request} req @param {import("express").Response} res */
-async function handleYoutubeProbe_(req, res) {
-    const videoId = trim_(req.query.videoId) || "jNQXAC9IVRw";
-    const result = await probeYoutubeDownload_(videoId);
-    res.status(result.ok ? 200 : 502).json(result);
-}
-
-/**
- * Public MP4 proxy so Meta can attach YouTube as native in-app video (WhatsApp player).
- * @param {import("express").Request} req
- * @param {import("express").Response} res
- */
-async function handleYoutubeMp4Proxy_(req, res) {
-    const raw = trim_(req.params.videoId).replace(/\.mp4$/i, "");
-    if (!/^[\w-]{11}$/.test(raw)) {
-        res.status(400).json({ ok: false, error: "Invalid YouTube video id" });
-        return;
-    }
-    await streamYoutubeMp4ToResponse_(raw, res);
 }
 
 /**
@@ -1636,6 +1532,4 @@ export function mountWhatsappRoutes(app) {
     }, handleWebhookPost_);
 
     app.get("/api/whatsapp/health", handleHealth_);
-    app.get("/api/whatsapp/youtube-probe", handleYoutubeProbe_);
-    app.get("/api/whatsapp/media/youtube/:videoId", handleYoutubeMp4Proxy_);
 }

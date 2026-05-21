@@ -18,12 +18,6 @@ FROM node:20-bookworm-slim
 WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=8080
-# Latest yt-dlp + ffmpeg for YouTube → WhatsApp native video.
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends ffmpeg curl ca-certificates \
-  && curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp \
-  && chmod a+rx /usr/local/bin/yt-dlp \
-  && rm -rf /var/lib/apt/lists/*
 # Default ~4GB heap when the service has 8GB RAM. Override in Railway Variables if needed.
 ENV NODE_OPTIONS=--max-old-space-size=4096
 COPY --from=deps /app/node_modules ./node_modules
