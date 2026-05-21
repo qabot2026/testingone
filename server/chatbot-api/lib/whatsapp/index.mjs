@@ -1,14 +1,13 @@
 /**
- * WhatsApp Cloud API webhook → Dialogflow CX → reply on WhatsApp.
+ * Meta messaging webhook → Dialogflow CX → reply on WhatsApp, Facebook Messenger, Instagram.
  *
- * Meta setup:
- *   Callback URL: https://YOUR-API.up.railway.app/api/whatsapp/webhook
- *   Verify token: same as WHATSAPP_VERIFY_TOKEN
- *   Subscribe to: messages
+ * One webhook URL for all Meta channels:
+ *   https://YOUR-API.up.railway.app/api/whatsapp/webhook
  *
- * Railway env: WHATSAPP_VERIFY_TOKEN, WHATSAPP_ACCESS_TOKEN, WHATSAPP_PHONE_NUMBER_ID
- * Dialogflow auth: DIALOGFLOW_CX_SERVICE_ACCOUNT_JSON (recommended) or FIREBASE_SERVICE_ACCOUNT_JSON
- * Optional: WHATSAPP_APP_SECRET (signature check), DIALOGFLOW_CX_* (defaults match company.config.js)
+ * WhatsApp env: WHATSAPP_VERIFY_TOKEN, WHATSAPP_ACCESS_TOKEN, WHATSAPP_PHONE_NUMBER_ID
+ * Facebook Page + Instagram DMs: META_PAGE_ACCESS_TOKEN, META_PAGE_ID
+ *   (aliases: FACEBOOK_PAGE_ACCESS_TOKEN, FACEBOOK_PAGE_ID)
+ * Dialogflow: DIALOGFLOW_CX_SERVICE_ACCOUNT_JSON or FIREBASE_SERVICE_ACCOUNT_JSON
  */
 
 import crypto from "node:crypto";
@@ -36,7 +35,7 @@ function getDialogflowServiceAccountCredentials_() {
     return getServiceAccountCredentials();
 }
 
-const LOG_TAG = "[whatsapp]";
+const LOG_TAG = "[meta-channel]";
 const WEBHOOK_PATH = "/api/whatsapp/webhook";
 const DIALOGFLOW_SCOPE = "https://www.googleapis.com/auth/cloud-platform";
 
@@ -64,32 +63,57 @@ function normalizeAccessToken_(raw) {
     return s;
 }
 
-function whatsappConfig_() {
+function metaConfig_() {
+    const graphVersion = trim_(process.env.WHATSAPP_GRAPH_API_VERSION) || "v25.0";
     return {
         verifyToken: trim_(process.env.WHATSAPP_VERIFY_TOKEN),
-        accessToken: normalizeAccessToken_(process.env.WHATSAPP_ACCESS_TOKEN),
-        phoneNumberId: trim_(process.env.WHATSAPP_PHONE_NUMBER_ID).replace(/\D/g, ""),
         appSecret: trim_(process.env.WHATSAPP_APP_SECRET),
         projectId: trim_(process.env.DIALOGFLOW_CX_PROJECT_ID) || "qabot01",
         location: trim_(process.env.DIALOGFLOW_CX_LOCATION) || "us-central1",
         agentId: trim_(process.env.DIALOGFLOW_CX_AGENT_ID) || "9dbd4886-3cbe-43fc-8eb5-54ee5097f25c",
         languageCode: trim_(process.env.DIALOGFLOW_CX_LANGUAGE_CODE) || "en",
-        graphVersion: trim_(process.env.WHATSAPP_GRAPH_API_VERSION) || "v25.0"
+        graphVersion,
+        whatsapp: {
+            accessToken: normalizeAccessToken_(process.env.WHATSAPP_ACCESS_TOKEN),
+            phoneNumberId: trim_(process.env.WHATSAPP_PHONE_NUMBER_ID).replace(/\D/g, "")
+        },
+        page: {
+            accessToken: normalizeAccessToken_(
+                process.env.META_PAGE_ACCESS_TOKEN || process.env.FACEBOOK_PAGE_ACCESS_TOKEN
+            ),
+            pageId: trim_(process.env.META_PAGE_ID || process.env.FACEBOOK_PAGE_ID).replace(/\D/g, "")
+        }
+    };
+}
+
+/** @deprecated alias */
+function whatsappConfig_() {
+    const c = metaConfig_();
+    return {
+        verifyToken: c.verifyToken,
+        accessToken: c.whatsapp.accessToken,
+        phoneNumberId: c.whatsapp.phoneNumberId,
+        appSecret: c.appSecret,
+        projectId: c.projectId,
+        location: c.location,
+        agentId: c.agentId,
+        languageCode: c.languageCode,
+        graphVersion: c.graphVersion
     };
 }
 
 /** @returns {string[]} */
 export function missingWhatsappEnvKeys_() {
-    const c = whatsappConfig_();
+    const c = metaConfig_();
     const missing = [];
     if (!c.verifyToken) {
         missing.push("WHATSAPP_VERIFY_TOKEN");
     }
-    if (!c.accessToken) {
-        missing.push("WHATSAPP_ACCESS_TOKEN");
-    }
-    if (!c.phoneNumberId) {
-        missing.push("WHATSAPP_PHONE_NUMBER_ID");
+    const hasWhatsapp = !!(c.whatsapp.accessToken && c.whatsapp.phoneNumberId);
+    const hasPage = !!(c.page.accessToken && c.page.pageId);
+    if (!hasWhatsapp && !hasPage) {
+        missing.push("WHATSAPP_ACCESS_TOKEN + WHATSAPP_PHONE_NUMBER_ID (WhatsApp)");
+        missing.push("META_PAGE_ACCESS_TOKEN + META_PAGE_ID (Facebook + Instagram)");
     }
     if (!getDialogflowServiceAccountCredentials_()) {
         missing.push(
@@ -139,46 +163,68 @@ function wasSeenMessage_(id) {
     return false;
 }
 
-/** @type {Map<string, { options: string[], at: number }>} */
-const waSessionChipMap_ = new Map();
-const CHIP_MAP_TTL_MS = 30 * 60 * 1000;
+/** @type {Map<string, { labels: string[], values: string[], at: number }>} */
+const waSessionChoiceMap_ = new Map();
+const CHOICE_MAP_TTL_MS = 30 * 60 * 1000;
 
-function rememberChipOptions_(sessionId, options) {
-    if (!sessionId || !options.length) {
+/**
+ * @param {string} sessionId
+ * @param {string[]} labels Display labels (list/button titles)
+ * @param {string[]} values Sent to Dialogflow on selection (defaults to labels)
+ */
+function rememberChoiceOptions_(sessionId, labels, values) {
+    if (!sessionId || !labels.length) {
         return;
     }
-    waSessionChipMap_.set(sessionId, { options: [...options], at: Date.now() });
+    waSessionChoiceMap_.set(sessionId, {
+        labels: [...labels],
+        values: values.length ? [...values] : [...labels],
+        at: Date.now()
+    });
 }
 
 /**
  * @param {string} sessionId
- * @param {string} chipId e.g. chip_0
+ * @param {string} choiceId e.g. chip_0 or card_2
  * @param {string} fallbackTitle
  */
-function resolveChipSelection_(sessionId, chipId, fallbackTitle) {
-    const cached = waSessionChipMap_.get(sessionId);
-    if (!cached || Date.now() - cached.at > CHIP_MAP_TTL_MS) {
+function resolveChoiceSelection_(sessionId, choiceId, fallbackTitle) {
+    const cached = waSessionChoiceMap_.get(sessionId);
+    if (!cached || Date.now() - cached.at > CHOICE_MAP_TTL_MS) {
         return fallbackTitle;
     }
-    const m = /^chip_(\d+)$/.exec(trim_(chipId));
+    const m = /^(?:chip|card)_(\d+)$/.exec(trim_(choiceId));
     if (!m) {
         return fallbackTitle;
     }
     const idx = Number.parseInt(m[1], 10);
-    return cached.options[idx] || fallbackTitle;
+    return cached.values[idx] || cached.labels[idx] || fallbackTitle;
+}
+
+function isHttpsUrl_(raw) {
+    return /^https:\/\/.+/i.test(trim_(raw));
 }
 
 /**
  * @param {unknown} data
- * @returns {{ texts: string[], chipOptions: string[] }}
+ * @returns {{
+ *   texts: string[],
+ *   chipOptions: string[],
+ *   cardCarousel: { message: string, cards: WaCarouselCard[] } | null,
+ *   gallery: { message: string, urls: string[] } | null
+ * }}
  */
 function extractCxResponse_(data) {
     const texts = [];
     const chipOptions = [];
     const seenChips = new Set();
+    /** @type {{ message: string, cards: WaCarouselCard[] } | null} */
+    let cardCarousel = null;
+    /** @type {{ message: string, urls: string[] } | null} */
+    let gallery = null;
     const messages = data?.queryResult?.responseMessages;
     if (!Array.isArray(messages)) {
-        return { texts, chipOptions };
+        return { texts, chipOptions, cardCarousel, gallery };
     }
     for (const m of messages) {
         const parts = m?.text?.text;
@@ -193,10 +239,20 @@ function extractCxResponse_(data) {
         const payload = m?.payload;
         if (payload && typeof payload === "object") {
             collectChipOptionsFromPayload_(payload, chipOptions, seenChips);
+            if (!cardCarousel) {
+                cardCarousel = extractCardCarouselFromPayload_(payload);
+            }
+            if (!gallery) {
+                gallery = extractGalleryFromPayload_(payload);
+            }
         }
     }
-    return { texts, chipOptions };
+    return { texts, chipOptions, cardCarousel, gallery };
 }
+
+/**
+ * @typedef {{ id: string, title: string, subtitle: string, imageUrl: string, ctaLabel: string, ctaValue: string }} WaCarouselCard
+ */
 
 /** @param {unknown} raw */
 function parseJsonObject_(raw) {
@@ -248,6 +304,99 @@ function collectChipOptionsFromPayload_(payload, chipOptions, seenChips) {
     if (Array.isArray(body.options)) {
         pushChipLabels_(body.options, chipOptions, seenChips);
     }
+}
+
+/** @param {unknown} v */
+function payloadString_(v) {
+    if (typeof v === "string") {
+        return trim_(v);
+    }
+    if (v && typeof v === "object" && typeof v.stringValue === "string") {
+        return trim_(v.stringValue);
+    }
+    return "";
+}
+
+/**
+ * @param {unknown} rawCards
+ * @returns {WaCarouselCard[]}
+ */
+function normalizeCarouselCards_(rawCards) {
+    if (!Array.isArray(rawCards)) {
+        return [];
+    }
+    /** @type {WaCarouselCard[]} */
+    const out = [];
+    for (let i = 0; i < rawCards.length; i += 1) {
+        const row = rawCards[i];
+        if (!row || typeof row !== "object") {
+            continue;
+        }
+        const title = payloadString_(row.title || row.name || row.heading);
+        const subtitle = payloadString_(row.subtitle || row.description || row.text);
+        const imageUrl = payloadString_(row.imageUrl || row.image_url || row.image || row.img);
+        const ctaLabel = payloadString_(row.ctaLabel || row.cta_label || row.button || row.buttonLabel) || "Select";
+        const ctaValue = payloadString_(row.ctaValue || row.cta_value || row.value || row.query) || title;
+        const id = payloadString_(row.id || row.key || row.card_id || row.cardId) || `${i + 1}`;
+        if (!title && !subtitle && !imageUrl) {
+            continue;
+        }
+        out.push({ id, title, subtitle, imageUrl, ctaLabel, ctaValue });
+    }
+    return out;
+}
+
+/**
+ * @param {unknown} payload
+ * @returns {{ message: string, cards: WaCarouselCard[] } | null}
+ */
+function extractCardCarouselFromPayload_(payload) {
+    const body = parseJsonObject_(payload);
+    if (!body || typeof body !== "object") {
+        return null;
+    }
+    if (payloadString_(body.action).toLowerCase() !== "open_card_carousel") {
+        return null;
+    }
+    const rawCards = body.cards || body.items || body.list;
+    const cards = normalizeCarouselCards_(rawCards).slice(0, 10);
+    if (!cards.length) {
+        return null;
+    }
+    const message =
+        payloadString_(body.message || body.text || body.prompt || body.subtitle || body.description);
+    return { message, cards };
+}
+
+/**
+ * @param {unknown} payload
+ * @returns {{ message: string, urls: string[] } | null}
+ */
+function extractGalleryFromPayload_(payload) {
+    const body = parseJsonObject_(payload);
+    if (!body || typeof body !== "object") {
+        return null;
+    }
+    if (payloadString_(body.action).toLowerCase() !== "open_gallery") {
+        return null;
+    }
+    const rawUrls = body.urls;
+    if (!Array.isArray(rawUrls)) {
+        return null;
+    }
+    const urls = [];
+    for (const rawU of rawUrls) {
+        const s = payloadString_(rawU);
+        if (isHttpsUrl_(s)) {
+            urls.push(s);
+        }
+    }
+    if (!urls.length) {
+        return null;
+    }
+    const message =
+        payloadString_(body.message || body.text || body.prompt || body.subtitle || body.description);
+    return { message, urls: urls.slice(0, 10) };
 }
 
 /**
@@ -327,15 +476,32 @@ async function sendWhatsappText_(input) {
 }
 
 /**
- * @param {{ to: string, body: string, options: string[] }} input
+ * @param {{ to: string, link: string, caption?: string }} input
  */
-async function sendWhatsappChipMenu_(input) {
-    const options = input.options.slice(0, 10);
+async function sendWhatsappImage_(input) {
+    const image = { link: input.link };
+    if (input.caption) {
+        image.caption = input.caption.slice(0, 1024);
+    }
+    return whatsappGraphPost_({
+        messaging_product: "whatsapp",
+        to: input.to,
+        type: "image",
+        image
+    });
+}
+
+/**
+ * @param {{ to: string, body: string, labels: string[], idPrefix?: string }} input
+ */
+async function sendWhatsappChoiceMenu_(input) {
+    const labels = input.labels.slice(0, 10);
+    const idPrefix = input.idPrefix || "chip";
     const body = waShortTitle_(input.body || "Please choose an option:", 1024);
-    if (options.length === 0) {
+    if (labels.length === 0) {
         return null;
     }
-    if (options.length <= 3) {
+    if (labels.length <= 3) {
         return whatsappGraphPost_({
             messaging_product: "whatsapp",
             to: input.to,
@@ -344,11 +510,11 @@ async function sendWhatsappChipMenu_(input) {
                 type: "button",
                 body: { text: body },
                 action: {
-                    buttons: options.map((opt, i) => ({
+                    buttons: labels.map((label, i) => ({
                         type: "reply",
                         reply: {
-                            id: `chip_${i}`,
-                            title: waShortTitle_(opt, 20)
+                            id: `${idPrefix}_${i}`,
+                            title: waShortTitle_(label, 20)
                         }
                     }))
                 }
@@ -367,9 +533,9 @@ async function sendWhatsappChipMenu_(input) {
                 sections: [
                     {
                         title: waShortTitle_("Options", 24),
-                        rows: options.map((opt, i) => ({
-                            id: `chip_${i}`,
-                            title: waShortTitle_(opt, 24),
+                        rows: labels.map((label, i) => ({
+                            id: `${idPrefix}_${i}`,
+                            title: waShortTitle_(label, 24),
                             description: ""
                         }))
                     }
@@ -380,24 +546,129 @@ async function sendWhatsappChipMenu_(input) {
 }
 
 /**
- * @param {{ to: string, texts: string[], chipOptions: string[] }} input
+ * @param {{ to: string, sessionId: string, message: string, cards: WaCarouselCard[] }} input
+ */
+async function sendWhatsappCardCarousel_(input) {
+    const cards = input.cards.slice(0, 10);
+    const labels = cards.map((c, i) => c.title || c.subtitle || `Option ${i + 1}`);
+    const values = cards.map((c) => c.ctaValue || c.title || c.subtitle);
+    rememberChoiceOptions_(input.sessionId, labels, values);
+
+    if (input.message) {
+        await sendWhatsappText_({ to: input.to, body: input.message });
+    }
+
+    for (const card of cards) {
+        const caption = [card.title, card.subtitle].filter(Boolean).join("\n");
+        if (isHttpsUrl_(card.imageUrl)) {
+            try {
+                await sendWhatsappImage_({
+                    to: input.to,
+                    link: card.imageUrl,
+                    caption: caption || undefined
+                });
+            } catch (e) {
+                log_("card_image_skip", {
+                    error: e && e.message ? String(e.message).slice(0, 160) : String(e)
+                });
+                if (caption) {
+                    await sendWhatsappText_({ to: input.to, body: caption });
+                }
+            }
+        } else if (caption) {
+            await sendWhatsappText_({ to: input.to, body: caption });
+        }
+    }
+
+    try {
+        await sendWhatsappChoiceMenu_({
+            to: input.to,
+            body: cards.length > 1 ? "Tap an option below:" : "Tap to select:",
+            labels,
+            idPrefix: "card"
+        });
+    } catch (e) {
+        const numbered = cards
+            .map((c, i) => {
+                const line = [c.title, c.subtitle].filter(Boolean).join(" — ");
+                return `${i + 1}. ${line || `Option ${i + 1}`}`;
+            })
+            .join("\n");
+        await sendWhatsappText_({
+            to: input.to,
+            body: `Tap an option below:\n\n${numbered}\n\nReply with the option name.`
+        });
+        log_("card_menu_fallback", {
+            error: e && e.message ? String(e.message).slice(0, 200) : String(e)
+        });
+    }
+}
+
+/**
+ * @param {{ to: string, message: string, urls: string[] }} input
+ */
+async function sendWhatsappGallery_(input) {
+    if (input.message) {
+        await sendWhatsappText_({ to: input.to, body: input.message });
+    }
+    for (const url of input.urls) {
+        try {
+            await sendWhatsappImage_({ to: input.to, link: url });
+        } catch (e) {
+            log_("gallery_image_skip", {
+                error: e && e.message ? String(e.message).slice(0, 160) : String(e)
+            });
+        }
+    }
+}
+
+/**
+ * @param {{
+ *   to: string,
+ *   sessionId: string,
+ *   texts: string[],
+ *   chipOptions: string[],
+ *   cardCarousel: { message: string, cards: WaCarouselCard[] } | null,
+ *   gallery: { message: string, urls: string[] } | null
+ * }} input
  */
 async function sendWhatsappCxReply_(input) {
     const texts = input.texts.filter(Boolean);
     const chips = input.chipOptions.filter(Boolean);
     const mainText = texts.join("\n\n");
 
+    if (input.cardCarousel?.cards?.length) {
+        await sendWhatsappCardCarousel_({
+            to: input.to,
+            sessionId: input.sessionId,
+            message: input.cardCarousel.message || mainText,
+            cards: input.cardCarousel.cards
+        });
+        return;
+    }
+
+    if (input.gallery?.urls?.length) {
+        await sendWhatsappGallery_({
+            to: input.to,
+            message: input.gallery.message || mainText,
+            urls: input.gallery.urls
+        });
+        return;
+    }
+
     if (mainText) {
         await sendWhatsappText_({ to: input.to, body: mainText });
     }
 
     if (chips.length > 0) {
+        rememberChoiceOptions_(input.sessionId, chips, chips);
         const menuPrompt = mainText ? "Please choose an option:" : "How can I help you?";
         try {
-            await sendWhatsappChipMenu_({
+            await sendWhatsappChoiceMenu_({
                 to: input.to,
                 body: menuPrompt,
-                options: chips
+                labels: chips,
+                idPrefix: "chip"
             });
         } catch (e) {
             const numbered = chips.map((opt, i) => `${i + 1}. ${opt}`).join("\n");
@@ -420,6 +691,336 @@ async function sendWhatsappCxReply_(input) {
     }
 }
 
+async function pageGraphPost_(body) {
+    const c = metaConfig_();
+    if (!c.page.accessToken || !c.page.pageId) {
+        throw new Error("META_PAGE_ACCESS_TOKEN and META_PAGE_ID required for Facebook/Instagram");
+    }
+    const url = `https://graph.facebook.com/${c.graphVersion}/${c.page.pageId}/messages`;
+    const res = await fetch(url, {
+        method: "POST",
+        headers: {
+            Authorization: `Bearer ${c.page.accessToken}`,
+            "Content-Type": "application/json"
+        },
+        body: JSON.stringify(body)
+    });
+    const raw = await res.text();
+    let data = {};
+    try {
+        data = raw ? JSON.parse(raw) : {};
+    } catch {
+        data = {};
+    }
+    if (!res.ok) {
+        const err = data?.error && typeof data.error === "object" ? data.error : {};
+        const errMsg = err.message || raw.slice(0, 400) || `HTTP ${res.status}`;
+        const detail = [err.type, err.code, err.error_subcode].filter(Boolean).join(" ");
+        throw new Error(
+            `Messenger send failed: ${errMsg}${detail ? ` (${detail})` : ""}`
+        );
+    }
+    return data;
+}
+
+/**
+ * @param {{ recipientId: string, message: Record<string, unknown> }} input
+ */
+async function sendPageMessage_(input) {
+    return pageGraphPost_({
+        recipient: { id: input.recipientId },
+        messaging_type: "RESPONSE",
+        message: input.message
+    });
+}
+
+async function sendPageText_(recipientId, text) {
+    return sendPageMessage_({
+        recipientId,
+        message: { text: text.slice(0, 2000) }
+    });
+}
+
+/**
+ * @param {{ recipientId: string, sessionId: string, prompt: string, labels: string[], values: string[] }} input
+ */
+async function sendPageQuickReplies_(input) {
+    const labels = input.labels.slice(0, 13);
+    const values = input.values.slice(0, 13);
+    rememberChoiceOptions_(input.sessionId, labels, values.length ? values : labels);
+    return sendPageMessage_({
+        recipientId: input.recipientId,
+        message: {
+            text: waShortTitle_(input.prompt || "Please choose an option:", 2000),
+            quick_replies: labels.map((label, i) => ({
+                content_type: "text",
+                title: waShortTitle_(label, 20),
+                payload: (values[i] || label).slice(0, 1000)
+            }))
+        }
+    });
+}
+
+/**
+ * @param {{ recipientId: string, message: string, cards: WaCarouselCard[] }} input
+ */
+async function sendPageGenericCarousel_(input) {
+    const cards = input.cards.slice(0, 10);
+    const elements = cards
+        .map((card) => {
+            /** @type {Record<string, unknown>} */
+            const el = {
+                title: waShortTitle_(card.title || card.subtitle || "Option", 80),
+                subtitle: waShortTitle_(card.subtitle || "", 80),
+                buttons: [
+                    {
+                        type: "postback",
+                        title: waShortTitle_(card.ctaLabel || "View", 20),
+                        payload: (card.ctaValue || card.title || card.subtitle).slice(0, 1000)
+                    }
+                ]
+            };
+            if (isHttpsUrl_(card.imageUrl)) {
+                el.image_url = card.imageUrl;
+            }
+            return el;
+        })
+        .filter((el) => el.title);
+    if (!elements.length) {
+        return null;
+    }
+    if (input.message) {
+        await sendPageText_(input.recipientId, input.message);
+    }
+    return sendPageMessage_({
+        recipientId: input.recipientId,
+        message: {
+            attachment: {
+                type: "template",
+                payload: {
+                    template_type: "generic",
+                    elements
+                }
+            }
+        }
+    });
+}
+
+/**
+ * @param {{ recipientId: string, message: string, urls: string[] }} input
+ */
+async function sendPageGallery_(input) {
+    if (input.message) {
+        await sendPageText_(input.recipientId, input.message);
+    }
+    const urls = input.urls.filter(isHttpsUrl_).slice(0, 10);
+    if (urls.length >= 2) {
+        const elements = urls.map((url, i) => ({
+            title: `Image ${i + 1}`,
+            image_url: url,
+            buttons: [
+                {
+                    type: "web_url",
+                    url,
+                    title: "Open"
+                }
+            ]
+        }));
+        return sendPageMessage_({
+            recipientId: input.recipientId,
+            message: {
+                attachment: {
+                    type: "template",
+                    payload: {
+                        template_type: "generic",
+                        elements
+                    }
+                }
+            }
+        });
+    }
+    for (const url of urls) {
+        try {
+            await sendPageMessage_({
+                recipientId: input.recipientId,
+                message: {
+                    attachment: {
+                        type: "image",
+                        payload: { url, is_reusable: false }
+                    }
+                }
+            });
+        } catch (e) {
+            log_("page_gallery_image_skip", {
+                error: e && e.message ? String(e.message).slice(0, 160) : String(e)
+            });
+        }
+    }
+    return null;
+}
+
+/**
+ * @param {{
+ *   recipientId: string,
+ *   sessionId: string,
+ *   texts: string[],
+ *   chipOptions: string[],
+ *   cardCarousel: { message: string, cards: WaCarouselCard[] } | null,
+ *   gallery: { message: string, urls: string[] } | null
+ * }} input
+ */
+async function sendPageCxReply_(input) {
+    const texts = input.texts.filter(Boolean);
+    const chips = input.chipOptions.filter(Boolean);
+    const mainText = texts.join("\n\n");
+
+    if (input.cardCarousel?.cards?.length) {
+        try {
+            await sendPageGenericCarousel_({
+                recipientId: input.recipientId,
+                message: input.cardCarousel.message || mainText,
+                cards: input.cardCarousel.cards
+            });
+        } catch (e) {
+            log_("page_carousel_fallback", {
+                error: e && e.message ? String(e.message).slice(0, 200) : String(e)
+            });
+            const lines = input.cardCarousel.cards.map((c, i) => {
+                const line = [c.title, c.subtitle].filter(Boolean).join(" — ");
+                return `${i + 1}. ${line || `Option ${i + 1}`}`;
+            });
+            await sendPageText_(
+                input.recipientId,
+                `${input.cardCarousel.message || mainText || "Choose an option:"}\n\n${lines.join("\n")}`
+            );
+        }
+        return;
+    }
+
+    if (input.gallery?.urls?.length) {
+        await sendPageGallery_({
+            recipientId: input.recipientId,
+            message: input.gallery.message || mainText,
+            urls: input.gallery.urls
+        });
+        return;
+    }
+
+    if (chips.length > 0) {
+        const prompt = mainText || "How can I help you?";
+        try {
+            await sendPageQuickReplies_({
+                recipientId: input.recipientId,
+                sessionId: input.sessionId,
+                prompt,
+                labels: chips,
+                values: chips
+            });
+        } catch (e) {
+            const numbered = chips.map((opt, i) => `${i + 1}. ${opt}`).join("\n");
+            await sendPageText_(
+                input.recipientId,
+                `${prompt}\n\n${numbered}\n\nReply with the option text.`
+            );
+            log_("page_chip_fallback", {
+                error: e && e.message ? String(e.message).slice(0, 200) : String(e)
+            });
+        }
+        return;
+    }
+
+    if (mainText) {
+        await sendPageText_(input.recipientId, mainText);
+        return;
+    }
+
+    await sendPageText_(input.recipientId, "Sorry, I could not process that. Please try again.");
+}
+
+/**
+ * @param {unknown} event
+ * @param {string} sessionId
+ * @returns {string}
+ */
+function extractInboundPageText_(event, sessionId) {
+    if (!event || typeof event !== "object") {
+        return "";
+    }
+    if (event.postback && typeof event.postback === "object") {
+        const payload = trim_(event.postback.payload);
+        if (payload) {
+            return payload;
+        }
+        const title = trim_(event.postback.title);
+        if (title) {
+            return resolveChoiceSelection_(sessionId, "", title) || title;
+        }
+    }
+    const msg = event.message;
+    if (!msg || typeof msg !== "object" || msg.is_echo) {
+        return "";
+    }
+    if (msg.quick_reply && typeof msg.quick_reply === "object") {
+        const payload = trim_(msg.quick_reply.payload);
+        if (payload) {
+            return payload;
+        }
+    }
+    if (typeof msg.text === "string") {
+        return trim_(msg.text);
+    }
+    return "";
+}
+
+/**
+ * @param {{
+ *   channel: "whatsapp" | "facebook" | "instagram",
+ *   from: string,
+ *   text: string,
+ *   messageId: string,
+ *   sessionId: string
+ * }} input
+ */
+async function processInboundMetaMessage_(input) {
+    const c = metaConfig_();
+    const cx = await detectIntentCx_({
+        sessionId: input.sessionId,
+        text: input.text,
+        languageCode: c.languageCode
+    });
+    const cxReply = extractCxResponse_(cx);
+
+    if (input.channel === "whatsapp") {
+        await sendWhatsappCxReply_({
+            to: input.from,
+            sessionId: input.sessionId,
+            texts: cxReply.texts,
+            chipOptions: cxReply.chipOptions,
+            cardCarousel: cxReply.cardCarousel,
+            gallery: cxReply.gallery
+        });
+    } else {
+        await sendPageCxReply_({
+            recipientId: input.from,
+            sessionId: input.sessionId,
+            texts: cxReply.texts,
+            chipOptions: cxReply.chipOptions,
+            cardCarousel: cxReply.cardCarousel,
+            gallery: cxReply.gallery
+        });
+    }
+
+    log_("reply_sent", {
+        channel: input.channel,
+        from_masked: input.from.length > 4 ? `***${input.from.slice(-4)}` : "***",
+        sessionId: input.sessionId,
+        text_chars: cxReply.texts.join(" ").length,
+        chip_count: cxReply.chipOptions.length,
+        card_count: cxReply.cardCarousel?.cards?.length || 0,
+        gallery_count: cxReply.gallery?.urls?.length || 0
+    });
+}
+
 /**
  * @param {unknown} msg
  * @param {string} sessionId
@@ -435,14 +1036,14 @@ function extractInboundWhatsappText_(msg, sessionId) {
     if (msg.type === "interactive" && msg.interactive) {
         const ir = msg.interactive;
         if (ir.type === "button_reply" && ir.button_reply) {
-            return resolveChipSelection_(
+            return resolveChoiceSelection_(
                 sessionId,
                 trim_(ir.button_reply.id),
                 trim_(ir.button_reply.title)
             );
         }
         if (ir.type === "list_reply" && ir.list_reply) {
-            return resolveChipSelection_(
+            return resolveChoiceSelection_(
                 sessionId,
                 trim_(ir.list_reply.id),
                 trim_(ir.list_reply.title)
@@ -452,11 +1053,25 @@ function extractInboundWhatsappText_(msg, sessionId) {
     return "";
 }
 
-function sessionIdForWaUser_(waUserId) {
-    const safe = String(waUserId || "unknown").replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 120);
-    return `wa_${safe}`;
+function sessionIdForChannelUser_(channel, userId) {
+    const prefix =
+        channel === "instagram" ? "ig" : channel === "facebook" ? "fb" : "wa";
+    const safe = String(userId || "unknown").replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 120);
+    return `${prefix}_${safe}`;
 }
 
+function sessionIdForWaUser_(waUserId) {
+    return sessionIdForChannelUser_("whatsapp", waUserId);
+}
+
+/**
+ * @typedef {{
+ *   texts: string[],
+ *   chipOptions: string[],
+ *   cardCarousel: { message: string, cards: WaCarouselCard[] } | null,
+ *   gallery: { message: string, urls: string[] } | null
+ * }} CxReplyParts
+ */
 async function getDialogflowAccessToken_() {
     const key = getDialogflowServiceAccountCredentials_();
     if (!key) {
@@ -554,9 +1169,9 @@ function handleVerify_(req, res) {
     return res.sendStatus(403);
 }
 
-/** POST — incoming WhatsApp events */
+/** POST — incoming Meta events (WhatsApp, Facebook Page, Instagram) */
 async function handleWebhookPost_(req, res) {
-    const c = whatsappConfig_();
+    const c = metaConfig_();
     const rawBody = req.rawBody;
     if (c.appSecret && rawBody) {
         const ok = verifyMetaSignature_(
@@ -571,67 +1186,101 @@ async function handleWebhookPost_(req, res) {
     }
 
     const body = req.body && typeof req.body === "object" ? req.body : {};
-    if (body.object !== "whatsapp_business_account") {
-        return res.sendStatus(200);
-    }
+    const objectType = trim_(body.object);
 
-    const entries = Array.isArray(body.entry) ? body.entry : [];
-    for (const entry of entries) {
-        const changes = Array.isArray(entry?.changes) ? entry.changes : [];
-        for (const change of changes) {
-            const value = change?.value && typeof change.value === "object" ? change.value : {};
-            const messages = Array.isArray(value.messages) ? value.messages : [];
-            for (const msg of messages) {
-                const messageId = trim_(msg.id);
-                if (wasSeenMessage_(messageId)) {
-                    continue;
-                }
-                const from = trim_(msg.from);
-                const sessionId = sessionIdForWaUser_(from);
-                const text = extractInboundWhatsappText_(msg, sessionId);
-                if (!from || !text) {
-                    continue;
-                }
-                try {
-                    const cx = await detectIntentCx_({
-                        sessionId,
-                        text,
-                        languageCode: c.languageCode
-                    });
-                    const cxReply = extractCxResponse_(cx);
-                    rememberChipOptions_(sessionId, cxReply.chipOptions);
-                    await sendWhatsappCxReply_({
-                        to: from,
-                        texts: cxReply.texts,
-                        chipOptions: cxReply.chipOptions
-                    });
-                    log_("reply_sent", {
-                        from_masked: from.length > 4 ? `***${from.slice(-4)}` : "***",
-                        sessionId,
-                        text_chars: cxReply.texts.join(" ").length,
-                        chip_count: cxReply.chipOptions.length
-                    });
-                } catch (e) {
-                    const errMsg = e && e.message ? e.message : String(e);
-                    log_("message_error", { error: errMsg.slice(0, 300) });
+    if (objectType === "whatsapp_business_account") {
+        const entries = Array.isArray(body.entry) ? body.entry : [];
+        for (const entry of entries) {
+            const changes = Array.isArray(entry?.changes) ? entry.changes : [];
+            for (const change of changes) {
+                const value = change?.value && typeof change.value === "object" ? change.value : {};
+                const messages = Array.isArray(value.messages) ? value.messages : [];
+                for (const msg of messages) {
+                    const messageId = trim_(msg.id);
+                    if (wasSeenMessage_(messageId)) {
+                        continue;
+                    }
+                    const from = trim_(msg.from);
+                    const sessionId = sessionIdForChannelUser_("whatsapp", from);
+                    const text = extractInboundWhatsappText_(msg, sessionId);
+                    if (!from || !text) {
+                        continue;
+                    }
                     try {
-                        await sendWhatsappText_({
-                            to: from,
-                            body: "Sorry, something went wrong. Please try again in a moment."
+                        await processInboundMetaMessage_({
+                            channel: "whatsapp",
+                            from,
+                            text,
+                            messageId,
+                            sessionId
                         });
-                    } catch {
-                        /* ignore secondary failure */
+                    } catch (e) {
+                        const errMsg = e && e.message ? e.message : String(e);
+                        log_("message_error", { channel: "whatsapp", error: errMsg.slice(0, 300) });
+                        try {
+                            await sendWhatsappText_({
+                                to: from,
+                                body: "Sorry, something went wrong. Please try again in a moment."
+                            });
+                        } catch {
+                            /* ignore */
+                        }
                     }
                 }
             }
         }
+        return res.sendStatus(200);
+    }
+
+    if (objectType === "page" || objectType === "instagram") {
+        const channel = objectType === "instagram" ? "instagram" : "facebook";
+        const entries = Array.isArray(body.entry) ? body.entry : [];
+        for (const entry of entries) {
+            const messaging = Array.isArray(entry?.messaging) ? entry.messaging : [];
+            for (const event of messaging) {
+                const messageId =
+                    trim_(event?.message?.mid)
+                    || trim_(event?.postback?.mid)
+                    || `${channel}_${event?.timestamp || ""}_${event?.sender?.id || ""}`;
+                if (wasSeenMessage_(messageId)) {
+                    continue;
+                }
+                const from = trim_(event?.sender?.id);
+                const sessionId = sessionIdForChannelUser_(channel, from);
+                const text = extractInboundPageText_(event, sessionId);
+                if (!from || !text) {
+                    continue;
+                }
+                try {
+                    await processInboundMetaMessage_({
+                        channel,
+                        from,
+                        text,
+                        messageId,
+                        sessionId
+                    });
+                } catch (e) {
+                    const errMsg = e && e.message ? e.message : String(e);
+                    log_("message_error", { channel, error: errMsg.slice(0, 300) });
+                    try {
+                        await sendPageText_(
+                            from,
+                            "Sorry, something went wrong. Please try again in a moment."
+                        );
+                    } catch {
+                        /* ignore */
+                    }
+                }
+            }
+        }
+        return res.sendStatus(200);
     }
 
     return res.sendStatus(200);
 }
 
 function handleHealth_(req, res) {
-    const c = whatsappConfig_();
+    const c = metaConfig_();
     const missing = missingWhatsappEnvKeys_();
     const dfKey = getDialogflowServiceAccountCredentials_();
     const dfProjectId =
@@ -664,14 +1313,22 @@ function handleHealth_(req, res) {
                 : ""
         },
         whatsapp: {
-            phone_number_id_set: !!c.phoneNumberId,
-            phone_number_id_suffix: c.phoneNumberId ? c.phoneNumberId.slice(-6) : "",
-            access_token_set: !!c.accessToken,
-            access_token_prefix: c.accessToken ? c.accessToken.slice(0, 6) + "…" : "",
+            phone_number_id_set: !!c.whatsapp.phoneNumberId,
+            phone_number_id_suffix: c.whatsapp.phoneNumberId ? c.whatsapp.phoneNumberId.slice(-6) : "",
+            access_token_set: !!c.whatsapp.accessToken,
+            access_token_prefix: c.whatsapp.accessToken ? c.whatsapp.accessToken.slice(0, 6) + "…" : "",
             graph_api_version: c.graphVersion,
             verify_token_set: !!c.verifyToken,
             app_secret_set: !!c.appSecret
-        }
+        },
+        facebook_instagram: {
+            page_id_set: !!c.page.pageId,
+            page_id_suffix: c.page.pageId ? c.page.pageId.slice(-6) : "",
+            page_access_token_set: !!c.page.accessToken,
+            page_access_token_prefix: c.page.accessToken ? c.page.accessToken.slice(0, 6) + "…" : "",
+            note: "Same webhook URL; subscribe Page (messages) and Instagram (messages) in Meta app"
+        },
+        supported_payloads: ["richContent chips", "open_card_carousel", "open_gallery"]
     });
 }
 
