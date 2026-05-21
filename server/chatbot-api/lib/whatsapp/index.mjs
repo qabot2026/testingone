@@ -7,6 +7,7 @@
  *   Subscribe to: messages
  *
  * Railway env: WHATSAPP_VERIFY_TOKEN, WHATSAPP_ACCESS_TOKEN, WHATSAPP_PHONE_NUMBER_ID
+ * Dialogflow auth: DIALOGFLOW_CX_SERVICE_ACCOUNT_JSON (recommended) or FIREBASE_SERVICE_ACCOUNT_JSON
  * Optional: WHATSAPP_APP_SECRET (signature check), DIALOGFLOW_CX_* (defaults match company.config.js)
  */
 
@@ -14,6 +15,26 @@ import crypto from "node:crypto";
 import express from "express";
 import { google } from "googleapis";
 import { getServiceAccountCredentials } from "../google-service-account.mjs";
+
+/**
+ * Dialogflow-only credentials. Use when Firebase JSON is from another GCP project
+ * or the service account is not visible under qabot01.
+ * @returns {Record<string, unknown> | null}
+ */
+function getDialogflowServiceAccountCredentials_() {
+    const raw = trim_(process.env.DIALOGFLOW_CX_SERVICE_ACCOUNT_JSON);
+    if (raw) {
+        try {
+            const o = JSON.parse(raw);
+            if (o && o.type === "service_account" && typeof o.private_key === "string") {
+                return o;
+            }
+        } catch {
+            /* fall through */
+        }
+    }
+    return getServiceAccountCredentials();
+}
 
 const LOG_TAG = "[whatsapp]";
 const WEBHOOK_PATH = "/api/whatsapp/webhook";
@@ -55,8 +76,10 @@ export function missingWhatsappEnvKeys_() {
     if (!c.phoneNumberId) {
         missing.push("WHATSAPP_PHONE_NUMBER_ID");
     }
-    if (!getServiceAccountCredentials()) {
-        missing.push("FIREBASE_SERVICE_ACCOUNT_JSON (for Dialogflow CX API)");
+    if (!getDialogflowServiceAccountCredentials_()) {
+        missing.push(
+            "DIALOGFLOW_CX_SERVICE_ACCOUNT_JSON or FIREBASE_SERVICE_ACCOUNT_JSON (Dialogflow CX API)"
+        );
     }
     if (!c.projectId) {
         missing.push("DIALOGFLOW_CX_PROJECT_ID");
@@ -131,7 +154,7 @@ function extractCxReplyTexts_(data) {
 }
 
 async function getDialogflowAccessToken_() {
-    const key = getServiceAccountCredentials();
+    const key = getDialogflowServiceAccountCredentials_();
     if (!key) {
         throw new Error("Missing service account JSON for Dialogflow CX");
     }
@@ -341,6 +364,11 @@ async function handleWebhookPost_(req, res) {
 function handleHealth_(req, res) {
     const c = whatsappConfig_();
     const missing = missingWhatsappEnvKeys_();
+    const dfKey = getDialogflowServiceAccountCredentials_();
+    const dfProjectId =
+        dfKey && typeof dfKey.project_id === "string" ? trim_(dfKey.project_id) : "";
+    const dfClientEmail =
+        dfKey && typeof dfKey.client_email === "string" ? trim_(dfKey.client_email) : "";
     const webhookUrlHint =
         trim_(process.env.CONVERSATIONS_PUBLIC_BASE_URL) ||
         (trim_(process.env.RAILWAY_PUBLIC_DOMAIN)
@@ -357,7 +385,14 @@ function handleHealth_(req, res) {
             projectId: c.projectId,
             location: c.location,
             agentId: c.agentId ? `${c.agentId.slice(0, 8)}…` : "",
-            languageCode: c.languageCode
+            languageCode: c.languageCode,
+            credentials_source: trim_(process.env.DIALOGFLOW_CX_SERVICE_ACCOUNT_JSON)
+                ? "DIALOGFLOW_CX_SERVICE_ACCOUNT_JSON"
+                : "FIREBASE_SERVICE_ACCOUNT_JSON",
+            service_account_project_id: dfProjectId,
+            service_account_email: dfClientEmail
+                ? dfClientEmail.replace(/^(.{3}).*(@.+)$/, "$1…$2")
+                : ""
         },
         whatsapp: {
             phone_number_id_set: !!c.phoneNumberId,

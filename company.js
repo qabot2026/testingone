@@ -14286,27 +14286,6 @@ function liveAgentShouldPostVisitorToAgent_(text) {
     return liveAgentVisitorToAgentInbox_();
 }
 
-/** Fast cache check before async /status refresh (blocks bot flash when agent just connected). */
-function liveAgentShouldBlockDialogflowNow_() {
-    if (!liveAgentHandoffIsActive_() || liveAgentCoPilotAiEnabled_()) {
-        return false;
-    }
-    if (liveAgentHumanChatActive_()) {
-        return true;
-    }
-    if (liveAgentCachedConvStatus === "active" && liveAgentCachedHumanMode === "human") {
-        return true;
-    }
-    if (
-        liveAgentCachedConvStatus === "active"
-        && liveAgentCachedHumanMode !== "ai"
-        && liveAgentCachedAiEnabled === false
-    ) {
-        return true;
-    }
-    return false;
-}
-
 /** Dialogflow when waiting in queue, or when agent turned chatbot back on (co-pilot). */
 function liveAgentAllowDialogflowForUserText_() {
     if (!liveAgentHandoffIsActive_()) {
