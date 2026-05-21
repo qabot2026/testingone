@@ -153,7 +153,7 @@ export function normalizeSelectOptions_(opts) {
  *   choicePrompt: string,
  *   cardCarousel: { message: string, cards: CarouselCard[] } | null,
  *   gallery: { message: string, urls: string[] } | null,
- *   video: { message: string, url: string, choices: ChoiceOption[] } | null,
+ *   video: { title: string, message: string, url: string, choices: ChoiceOption[] } | null,
  *   form: { message: string, formId: string, formKey: string } | null,
  *   liveAgent: { message: string } | null
  * }} CxReplyParts
@@ -252,6 +252,7 @@ function absorbActionPayload_(parts, body) {
         const url = payloadString_(body.url ?? body.video_url ?? body.videoUrl);
         if (url) {
             parts.video = {
+                title: payloadString_(body.title ?? body.label ?? body.heading ?? body.name),
                 message: msg,
                 url,
                 choices: normalizeSelectOptions_(body.options ?? body.option ?? body.chips)

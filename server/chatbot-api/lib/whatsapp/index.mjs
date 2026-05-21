@@ -627,28 +627,42 @@ function resolveChoiceMenuPrompt_(parts, alreadyShown) {
 }
 
 /**
- * Intro for open_video: prefer payload message; skip duplicate CX text and choice prompts.
+ * Intro for open_video: agent text + optional title + payload message (deduped).
  * @param {CxReplyParts} parts
  */
 function resolveVideoIntro_(parts) {
-    const fromPayload = trim_(parts.video?.message);
     const choicePrompt = trim_(parts.choicePrompt);
     const hasChoices = parts.choices.length > 0;
+    /** @type {string[]} */
+    const blocks = [];
 
-    if (fromPayload) {
-        if (hasChoices && (promptsEquivalent_(fromPayload, choicePrompt) || isGenericChoicePrompt_(fromPayload))) {
-            return "";
+    /** @param {string} text */
+    function pushUnique(text) {
+        const t = trim_(text);
+        if (!t || blocks.some((b) => promptsEquivalent_(b, t))) {
+            return;
         }
-        return fromPayload;
+        blocks.push(t);
     }
 
-    const texts = parts.texts.map((t) => trim_(t)).filter(Boolean);
-    if (!hasChoices) {
-        return texts.join("\n\n");
+    for (const t of parts.texts) {
+        if (hasChoices && (promptsEquivalent_(t, choicePrompt) || isGenericChoicePrompt_(t))) {
+            continue;
+        }
+        pushUnique(t);
     }
-    return texts
-        .filter((t) => !promptsEquivalent_(t, choicePrompt) && !isGenericChoicePrompt_(t))
-        .join("\n\n");
+
+    pushUnique(parts.video?.title || "");
+
+    const payloadMessage = trim_(parts.video?.message);
+    if (
+        payloadMessage
+        && !(hasChoices && (promptsEquivalent_(payloadMessage, choicePrompt) || isGenericChoicePrompt_(payloadMessage)))
+    ) {
+        pushUnique(payloadMessage);
+    }
+
+    return blocks.join("\n\n");
 }
 
 /**

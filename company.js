@@ -11486,8 +11486,9 @@ function normalizeOpenVideoMessage(raw) {
  * @param {string} embedHttpsUrl
  * @param {Array<{label: string, value: string}>} [options]
  * @param {string} [messageText]
+ * @param {string} [titleText]
  */
-function scheduleInjectInlineVideoPlayer(dfMessenger, embedHttpsUrl, options, messageText) {
+function scheduleInjectInlineVideoPlayer(dfMessenger, embedHttpsUrl, options, messageText, titleText) {
     const src = typeof embedHttpsUrl === "string" ? embedHttpsUrl.trim() : "";
     if (!src || !/^https:\/\/www\.youtube\.com\/embed\//i.test(src)) {
         return;
@@ -11554,6 +11555,23 @@ function scheduleInjectInlineVideoPlayer(dfMessenger, embedHttpsUrl, options, me
             "width:100%",
             "max-width:100%"
         ].join(";");
+
+        const title = typeof titleText === "string" ? titleText.trim() : "";
+        if (title) {
+            const titleEl = document.createElement("div");
+            titleEl.textContent = title;
+            titleEl.style.cssText = [
+                "width:100%",
+                "box-sizing:border-box",
+                "color:#0f172a",
+                "font-size:14px",
+                "font-weight:600",
+                "line-height:1.35",
+                "margin:0 0 8px",
+                "padding:0 2px"
+            ].join(";");
+            wrap.appendChild(titleEl);
+        }
 
         const actions = document.createElement("div");
         actions.style.cssText = [
@@ -11761,7 +11779,7 @@ function scheduleInjectInlineVideoPlayer(dfMessenger, embedHttpsUrl, options, me
  * Intent gate applied in callers.
  *
  * @param {unknown[]} messages
- * @returns {{ embed: string, options: Array<{label: string, value: string}>, messageText: string } | null}
+ * @returns {{ embed: string, options: Array<{label: string, value: string}>, messageText: string, titleText: string } | null}
  */
 function extractFirstOpenYoutubeEmbedFromCxMessages(messages) {
     if (!Array.isArray(messages) || messages.length === 0) {
@@ -11816,7 +11834,14 @@ function extractFirstOpenYoutubeEmbedFromCxMessages(messages) {
                                     : Object.prototype.hasOwnProperty.call(pl, "caption") ? pl.caption
                                         : null;
             const messageText = normalizeOpenVideoMessage(rawMessage);
-            return { embed, options, messageText };
+            const rawTitle =
+                Object.prototype.hasOwnProperty.call(pl, "title") ? pl.title
+                    : Object.prototype.hasOwnProperty.call(pl, "label") ? pl.label
+                        : Object.prototype.hasOwnProperty.call(pl, "heading") ? pl.heading
+                            : Object.prototype.hasOwnProperty.call(pl, "name") ? pl.name
+                                : null;
+            const titleText = normalizeOpenVideoMessage(rawTitle);
+            return { embed, options, messageText, titleText };
         }
     }
     return null;
@@ -11863,7 +11888,13 @@ function tryOpenVideoFromBotResponseMessages(messages, event) {
         if (!videoPayload || !videoPayload.embed) {
             return;
         }
-        scheduleInjectInlineVideoPlayer(activeDfMessenger, videoPayload.embed, videoPayload.options, videoPayload.messageText);
+        scheduleInjectInlineVideoPlayer(
+            activeDfMessenger,
+            videoPayload.embed,
+            videoPayload.options,
+            videoPayload.messageText,
+            videoPayload.titleText
+        );
     } catch (e) {
         if (typeof console !== "undefined" && typeof console.warn === "function") {
             console.warn("[company.js] Video payload skipped (never breaks bot replies)", e);
