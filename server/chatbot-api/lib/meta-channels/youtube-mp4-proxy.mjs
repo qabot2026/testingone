@@ -1,6 +1,6 @@
 /**
- * Stream YouTube as MP4 for Meta channels (WhatsApp native video player, Messenger attach).
- * WhatsApp Cloud API accepts public HTTPS MP4 links up to 16 MB.
+ * Stream or download YouTube as MP4 for Meta channels.
+ * WhatsApp Cloud API accepts uploaded video up to 16 MB.
  */
 
 import ytdl from "@distube/ytdl-core";
@@ -27,7 +27,7 @@ export function youtubeMp4ProxyUrl_(videoId, baseUrl) {
 }
 
 /**
- * @param {Array<{ container?: string, hasVideo?: boolean, hasAudio?: boolean, url?: string, contentLength?: string }>} formats
+ * @param {import("@distube/ytdl-core").videoFormat[]} formats
  */
 function pickSmallMp4Format_(formats) {
     const mp4 = formats.filter(
@@ -46,6 +46,64 @@ function pickSmallMp4Format_(formats) {
 }
 
 /**
+ * @param {import("@distube/ytdl-core").videoFormat[]} formats
+ */
+function chooseYoutubeMp4Format_(formats) {
+    return (
+        ytdl.chooseFormat(formats, {
+            quality: "lowest",
+            filter: (f) => f.container === "mp4" && f.hasVideo && f.hasAudio
+        }) || pickSmallMp4Format_(formats)
+    );
+}
+
+/**
+ * @param {string} videoId
+ */
+export async function getYoutubeVideoInfo_(videoId) {
+    const id = trim_(videoId);
+    if (!isValidYoutubeVideoId_(id)) {
+        throw new Error("Invalid YouTube video id");
+    }
+    return ytdl.getInfo(`https://www.youtube.com/watch?v=${id}`);
+}
+
+/**
+ * @param {string} videoId
+ * @param {number} [maxBytes]
+ * @returns {Promise<Buffer>}
+ */
+export async function downloadYoutubeMp4Buffer_(videoId, maxBytes = WA_VIDEO_MAX_BYTES) {
+    const info = await getYoutubeVideoInfo_(videoId);
+    const format = chooseYoutubeMp4Format_(info.formats);
+    if (!format?.url) {
+        throw new Error("No MP4 stream available for this video");
+    }
+    const declaredLen = Number(format.contentLength || 0);
+    if (declaredLen > maxBytes) {
+        throw new Error("Video exceeds WhatsApp 16 MB limit");
+    }
+
+    return new Promise((resolve, reject) => {
+        /** @type {Buffer[]} */
+        const chunks = [];
+        let bytes = 0;
+        const stream = ytdl.downloadFromInfo(info, { format });
+        stream.on("data", (chunk) => {
+            bytes += chunk.length;
+            if (bytes > maxBytes) {
+                stream.destroy();
+                reject(new Error("Video exceeds WhatsApp 16 MB limit"));
+                return;
+            }
+            chunks.push(chunk);
+        });
+        stream.on("end", () => resolve(Buffer.concat(chunks)));
+        stream.on("error", reject);
+    });
+}
+
+/**
  * @param {string} videoId
  * @param {import("express").Response} res
  */
@@ -58,7 +116,7 @@ export async function streamYoutubeMp4ToResponse_(videoId, res) {
 
     let info;
     try {
-        info = await ytdl.getInfo(`https://www.youtube.com/watch?v=${id}`);
+        info = await getYoutubeVideoInfo_(id);
     } catch (e) {
         res.status(502).json({
             ok: false,
@@ -68,11 +126,7 @@ export async function streamYoutubeMp4ToResponse_(videoId, res) {
         return;
     }
 
-    const format = ytdl.chooseFormat(info.formats, {
-        quality: "lowest",
-        filter: (f) => f.container === "mp4" && f.hasVideo && f.hasAudio
-    }) || pickSmallMp4Format_(info.formats);
-
+    const format = chooseYoutubeMp4Format_(info.formats);
     if (!format?.url) {
         res.status(502).json({ ok: false, error: "No MP4 stream available for this video" });
         return;

@@ -26,7 +26,8 @@ import {
 } from "../meta-channels/cx-payload.mjs";
 import {
     youtubeMp4ProxyUrl_,
-    streamYoutubeMp4ToResponse_
+    streamYoutubeMp4ToResponse_,
+    downloadYoutubeMp4Buffer_
 } from "../meta-channels/youtube-mp4-proxy.mjs";
 
 /**
@@ -567,6 +568,39 @@ async function sendWhatsappCxReply_(input) {
 }
 
 /**
+ * @param {Buffer} buffer
+ * @param {string} mimeType
+ */
+async function uploadWhatsappMedia_(buffer, mimeType) {
+    const c = whatsappConfig_();
+    const form = new FormData();
+    form.append("messaging_product", "whatsapp");
+    form.append("type", mimeType);
+    form.append("file", new Blob([buffer], { type: mimeType }), "video.mp4");
+    const url = `https://graph.facebook.com/${c.graphVersion}/${c.phoneNumberId}/media`;
+    const res = await fetch(url, {
+        method: "POST",
+        headers: {
+            Authorization: `Bearer ${c.accessToken}`
+        },
+        body: form
+    });
+    const raw = await res.text();
+    let data = {};
+    try {
+        data = raw ? JSON.parse(raw) : {};
+    } catch {
+        data = {};
+    }
+    if (!res.ok || !data.id) {
+        const err = data?.error && typeof data.error === "object" ? data.error : {};
+        const errMsg = err.message || raw.slice(0, 400) || `HTTP ${res.status}`;
+        throw new Error(`WhatsApp media upload failed: ${errMsg}`);
+    }
+    return String(data.id);
+}
+
+/**
  * @param {{ to: string, url: string, message?: string }} input
  */
 async function sendWhatsappNativeVideo_(input) {
@@ -578,6 +612,46 @@ async function sendWhatsappNativeVideo_(input) {
             link: input.url,
             ...(input.message ? { caption: input.message.slice(0, 1024) } : {})
         }
+    });
+}
+
+/**
+ * @param {{ to: string, mediaId: string, message?: string }} input
+ */
+async function sendWhatsappNativeVideoById_(input) {
+    return whatsappGraphPost_({
+        messaging_product: "whatsapp",
+        to: input.to,
+        type: "video",
+        video: {
+            id: input.mediaId,
+            ...(input.message ? { caption: input.message.slice(0, 1024) } : {})
+        }
+    });
+}
+
+/**
+ * @param {{ to: string, youtubeId: string, message?: string }} input
+ */
+async function sendWhatsappYoutubePreview_(input) {
+    const watchUrl = youtubeWatchUrl_(input.youtubeId);
+    const thumb = youtubeThumbnailUrl_(input.youtubeId);
+    const message = trim_(input.message);
+    try {
+        await sendWhatsappImage_({
+            to: input.to,
+            link: thumb,
+            caption: message || undefined
+        });
+    } catch (e) {
+        log_("wa_youtube_thumb_skip", {
+            error: e && e.message ? String(e.message).slice(0, 160) : String(e)
+        });
+    }
+    await sendWhatsappVideoLink_({
+        to: input.to,
+        url: watchUrl,
+        message: message ? undefined : "Tap below to watch on YouTube:"
     });
 }
 
@@ -615,24 +689,44 @@ async function sendWhatsappVideo_(input) {
     }
     const message = trim_(input.message);
     const youtubeId = parseYoutubeVideoId_(url);
-    const apiBase = metaApiPublicBaseUrl_();
 
-    if (youtubeId && apiBase) {
+    if (youtubeId) {
         try {
-            await sendWhatsappNativeVideo_({
+            const buffer = await downloadYoutubeMp4Buffer_(youtubeId);
+            const mediaId = await uploadWhatsappMedia_(buffer, "video/mp4");
+            await sendWhatsappNativeVideoById_({
                 to: input.to,
-                url: youtubeMp4ProxyUrl_(youtubeId, apiBase),
+                mediaId,
                 message: message || undefined
             });
             return;
         } catch (e) {
-            log_("wa_youtube_native_skip", {
+            log_("wa_youtube_upload_skip", {
                 error: e && e.message ? String(e.message).slice(0, 160) : String(e)
             });
         }
+        try {
+            await sendWhatsappYoutubePreview_({
+                to: input.to,
+                youtubeId,
+                message: message || undefined
+            });
+            return;
+        } catch (e) {
+            log_("wa_youtube_preview_skip", {
+                error: e && e.message ? String(e.message).slice(0, 160) : String(e)
+            });
+        }
+        await sendWhatsappText_({
+            to: input.to,
+            body: message
+                ? `${message}\n\nWatch: ${youtubeWatchUrl_(youtubeId)}`
+                : `Watch: ${youtubeWatchUrl_(youtubeId)}`
+        });
+        return;
     }
 
-    if (isDirectVideoFileUrl_(url) || (!youtubeId && isHttpsUrl_(url))) {
+    if (isDirectVideoFileUrl_(url) || isHttpsUrl_(url)) {
         try {
             await sendWhatsappNativeVideo_({
                 to: input.to,
@@ -647,38 +741,24 @@ async function sendWhatsappVideo_(input) {
         }
     }
 
-    if (youtubeId) {
-        const watchUrl = youtubeWatchUrl_(youtubeId);
-        const thumb = youtubeThumbnailUrl_(youtubeId);
-        try {
-            await sendWhatsappImage_({
-                to: input.to,
-                link: thumb,
-                caption: message || undefined
-            });
-            await sendWhatsappVideoLink_({
-                to: input.to,
-                url: watchUrl,
-                message: message ? undefined : "Tap below to watch on YouTube:"
-            });
-            return;
-        } catch (e) {
-            log_("wa_youtube_preview_skip", {
-                error: e && e.message ? String(e.message).slice(0, 160) : String(e)
-            });
+    try {
+        if (message) {
+            await sendWhatsappText_({ to: input.to, body: message });
         }
-        await sendWhatsappVideoLink_({ to: input.to, url: watchUrl, message });
-        return;
+        await sendWhatsappVideoLink_({
+            to: input.to,
+            url,
+            message: message ? undefined : "Tap below to watch:"
+        });
+    } catch (e) {
+        log_("wa_video_link_skip", {
+            error: e && e.message ? String(e.message).slice(0, 160) : String(e)
+        });
+        await sendWhatsappText_({
+            to: input.to,
+            body: message ? `${message}\n\nWatch: ${url}` : `Watch: ${url}`
+        });
     }
-
-    if (message) {
-        await sendWhatsappText_({ to: input.to, body: message });
-    }
-    await sendWhatsappVideoLink_({
-        to: input.to,
-        url,
-        message: message ? undefined : "Tap below to watch:"
-    });
 }
 
 async function pageGraphPost_(body) {
@@ -914,7 +994,6 @@ async function sendPageVideo_(input) {
     }
     const message = trim_(input.message);
     const youtubeId = parseYoutubeVideoId_(url);
-    const apiBase = metaApiPublicBaseUrl_();
 
     /** @param {string} videoUrl */
     async function attachNativeVideo_(videoUrl) {
@@ -932,36 +1011,12 @@ async function sendPageVideo_(input) {
         });
     }
 
-    if (youtubeId && apiBase) {
-        try {
-            await attachNativeVideo_(youtubeMp4ProxyUrl_(youtubeId, apiBase));
-            return;
-        } catch (e) {
-            log_("page_youtube_native_skip", {
-                error: e && e.message ? String(e.message).slice(0, 160) : String(e)
-            });
+    if (youtubeId) {
+        const openUrl = youtubeWatchUrl_(youtubeId);
+        const thumb = youtubeThumbnailUrl_(youtubeId);
+        if (message) {
+            await sendPageText_(input.recipientId, message);
         }
-    }
-
-    if (isDirectVideoFileUrl_(url) || (!youtubeId && isHttpsUrl_(url))) {
-        try {
-            await attachNativeVideo_(url);
-            return;
-        } catch (e) {
-            log_("page_video_attach_skip", {
-                error: e && e.message ? String(e.message).slice(0, 160) : String(e)
-            });
-        }
-    }
-
-    const openUrl = youtubeId ? youtubeWatchUrl_(youtubeId) : url;
-    const thumb = youtubeId ? youtubeThumbnailUrl_(youtubeId) : "";
-
-    if (message) {
-        await sendPageText_(input.recipientId, message);
-    }
-
-    if (thumb) {
         try {
             await sendPageMessage_({
                 recipientId: input.recipientId,
@@ -993,8 +1048,36 @@ async function sendPageVideo_(input) {
                 error: e && e.message ? String(e.message).slice(0, 160) : String(e)
             });
         }
+        await sendPageMessage_({
+            recipientId: input.recipientId,
+            message: {
+                attachment: {
+                    type: "template",
+                    payload: {
+                        template_type: "button",
+                        text: waShortTitle_(message || "Tap below to watch the video:", 640),
+                        buttons: [{ type: "web_url", url: openUrl, title: "Watch video" }]
+                    }
+                }
+            }
+        });
+        return;
     }
 
+    if (isDirectVideoFileUrl_(url) || isHttpsUrl_(url)) {
+        try {
+            await attachNativeVideo_(url);
+            return;
+        } catch (e) {
+            log_("page_video_attach_skip", {
+                error: e && e.message ? String(e.message).slice(0, 160) : String(e)
+            });
+        }
+    }
+
+    if (message) {
+        await sendPageText_(input.recipientId, message);
+    }
     await sendPageMessage_({
         recipientId: input.recipientId,
         message: {
@@ -1003,7 +1086,7 @@ async function sendPageVideo_(input) {
                 payload: {
                     template_type: "button",
                     text: waShortTitle_(message || "Tap below to watch the video:", 640),
-                    buttons: [{ type: "web_url", url: openUrl, title: "Watch video" }]
+                    buttons: [{ type: "web_url", url, title: "Watch video" }]
                 }
             }
         }
