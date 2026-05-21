@@ -525,6 +525,9 @@ async function sendWhatsappCxReply_(input) {
     }
 
     if (parts.cardCarousel?.cards?.length) {
+        if (leadText) {
+            await sendWhatsappText_({ to: input.to, body: leadText });
+        }
         await sendWhatsappCardCarousel_({
             to: input.to,
             message: undefined,
@@ -541,6 +544,9 @@ async function sendWhatsappCxReply_(input) {
     }
 
     if (parts.gallery?.urls?.length) {
+        if (leadText) {
+            await sendWhatsappText_({ to: input.to, body: leadText });
+        }
         if (!parts.choices.length && trim_(parts.gallery.message)) {
             await sendWhatsappText_({ to: input.to, body: trim_(parts.gallery.message) });
         }
