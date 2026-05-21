@@ -28,6 +28,50 @@ function payloadMessage_(body) {
     );
 }
 
+/** @param {Record<string, unknown>} body */
+function payloadVideoCaption_(body) {
+    return payloadString_(
+        body.message ?? body.text ?? body.prompt ?? body.description ?? body.caption
+    );
+}
+
+/** @param {string} text */
+function isGenericChoicePrompt_(text) {
+    const n = trim_(text).toLowerCase().replace(/\s+/g, " ").replace(/[.:!?…]+$/g, "");
+    return !n
+        || n === "please choose an option"
+        || n === "choose an option"
+        || n === "select an option";
+}
+
+/** @param {Record<string, unknown>} body */
+function videoTitleFromBody_(body) {
+    const nested =
+        body.video && typeof body.video === "object" && !Array.isArray(body.video)
+            ? /** @type {Record<string, unknown>} */ (body.video)
+            : null;
+    const direct = payloadString_(
+        body.title
+        ?? body.label
+        ?? body.heading
+        ?? body.name
+        ?? body.subtitle
+        ?? body.videoTitle
+        ?? body.video_title
+        ?? body.videoLabel
+        ?? body.video_label
+    );
+    if (direct) {
+        return direct;
+    }
+    if (nested) {
+        return payloadString_(
+            nested.title ?? nested.label ?? nested.heading ?? nested.name ?? nested.subtitle
+        );
+    }
+    return "";
+}
+
 /** @param {unknown} raw */
 function parseJsonObject_(raw) {
     if (raw && typeof raw === "object" && !Array.isArray(raw)) {
@@ -251,17 +295,35 @@ function absorbActionPayload_(parts, body) {
     if (action === "open_video") {
         const url = payloadString_(body.url ?? body.video_url ?? body.videoUrl);
         if (url) {
+            const choices = normalizeSelectOptions_(body.options ?? body.option ?? body.chips);
+            const caption = payloadVideoCaption_(body);
+            let title = videoTitleFromBody_(body);
+            let message = caption;
+
+            if (!title && caption && choices.length && !isGenericChoicePrompt_(caption)) {
+                title = caption;
+                message = "";
+            }
+
             parts.video = {
-                title: payloadString_(body.title ?? body.label ?? body.heading ?? body.name),
-                message: msg,
+                title,
+                message,
                 url,
-                choices: normalizeSelectOptions_(body.options ?? body.option ?? body.chips)
+                choices
             };
             for (const o of parts.video.choices) {
                 pushChoice_(parts, o);
             }
-            if (msg && !parts.choicePrompt) {
-                parts.choicePrompt = msg;
+            if (choices.length) {
+                if (caption && isGenericChoicePrompt_(caption)) {
+                    parts.choicePrompt = caption;
+                } else if (caption && title && payloadString_(caption) === title) {
+                    parts.choicePrompt = "Please choose an option:";
+                } else if (caption) {
+                    parts.choicePrompt = caption;
+                } else {
+                    parts.choicePrompt = "Please choose an option:";
+                }
             }
         }
         return;

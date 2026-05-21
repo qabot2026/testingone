@@ -11839,9 +11839,23 @@ function extractFirstOpenYoutubeEmbedFromCxMessages(messages) {
                     : Object.prototype.hasOwnProperty.call(pl, "label") ? pl.label
                         : Object.prototype.hasOwnProperty.call(pl, "heading") ? pl.heading
                             : Object.prototype.hasOwnProperty.call(pl, "name") ? pl.name
-                                : null;
-            const titleText = normalizeOpenVideoMessage(rawTitle);
-            return { embed, options, messageText, titleText };
+                                : Object.prototype.hasOwnProperty.call(pl, "subtitle") ? pl.subtitle
+                                    : Object.prototype.hasOwnProperty.call(pl, "videoTitle") ? pl.videoTitle
+                                        : Object.prototype.hasOwnProperty.call(pl, "video_title") ? pl.video_title
+                                            : Object.prototype.hasOwnProperty.call(pl, "videoLabel") ? pl.videoLabel
+                                                : Object.prototype.hasOwnProperty.call(pl, "video_label") ? pl.video_label
+                                                    : (pl.video && typeof pl.video === "object"
+                                                        ? (/** @type {Record<string, unknown>} */ (pl.video).title
+                                                            ?? /** @type {Record<string, unknown>} */ (pl.video).label
+                                                            ?? /** @type {Record<string, unknown>} */ (pl.video).subtitle)
+                                                        : null);
+            let titleText = normalizeOpenVideoMessage(rawTitle);
+            if (!titleText && messageText && !/^please choose an option[.!?:]?$/i.test(messageText.trim())) {
+                titleText = messageText;
+            }
+            const displayMessage =
+                titleText && messageText && titleText === messageText ? "" : messageText;
+            return { embed, options, messageText: displayMessage, titleText };
         }
     }
     return null;

@@ -538,14 +538,16 @@ async function sendWhatsappCxReply_(input) {
 
     if (parts.video?.url) {
         const intro = resolveVideoIntro_(parts);
+        const title = trim_(parts.video?.title);
         await sendWhatsappVideo_({
             to: input.to,
             url: parts.video.url,
+            title: title || undefined,
             message: intro || undefined
         });
         if (parts.choices.length) {
             await sendWhatsappChoicesFromParts_(input.to, input.sessionId, parts, {
-                alreadyShown: intro
+                alreadyShown: [intro, title].filter(Boolean).join("\n\n")
             });
         }
         return;
@@ -652,11 +654,11 @@ function resolveVideoIntro_(parts) {
         pushUnique(t);
     }
 
-    pushUnique(parts.video?.title || "");
-
     const payloadMessage = trim_(parts.video?.message);
+    const videoTitle = trim_(parts.video?.title);
     if (
         payloadMessage
+        && !promptsEquivalent_(payloadMessage, videoTitle)
         && !(hasChoices && (promptsEquivalent_(payloadMessage, choicePrompt) || isGenericChoicePrompt_(payloadMessage)))
     ) {
         pushUnique(payloadMessage);
@@ -666,15 +668,19 @@ function resolveVideoIntro_(parts) {
 }
 
 /**
- * YouTube on WhatsApp: intro text (optional) + link preview bubble (URL only, no duplicate text).
- * @param {{ to: string, youtubeId: string, message?: string }} input
+ * YouTube on WhatsApp: agent intro, bold title, then link preview bubble.
+ * @param {{ to: string, youtubeId: string, title?: string, message?: string }} input
  */
 async function sendWhatsappYoutubeLink_(input) {
     const watchUrl = youtubeWatchUrl_(input.youtubeId);
     const message = trim_(input.message);
+    const title = trim_(input.title);
 
     if (message) {
         await sendWhatsappText_({ to: input.to, body: message });
+    }
+    if (title && !promptsEquivalent_(title, message)) {
+        await sendWhatsappText_({ to: input.to, body: `*${title}*` });
     }
 
     return whatsappGraphPost_({
@@ -728,7 +734,7 @@ async function sendWhatsappVideoLink_(input) {
 }
 
 /**
- * @param {{ to: string, url: string, message?: string }} input
+ * @param {{ to: string, url: string, title?: string, message?: string }} input
  */
 async function sendWhatsappVideo_(input) {
     const url = trim_(input.url);
@@ -736,15 +742,21 @@ async function sendWhatsappVideo_(input) {
         return;
     }
     const message = trim_(input.message);
+    const title = trim_(input.title);
     const youtubeId = parseYoutubeVideoId_(url);
 
     if (youtubeId) {
         await sendWhatsappYoutubeLink_({
             to: input.to,
             youtubeId,
+            title: title || undefined,
             message: message || undefined
         });
         return;
+    }
+
+    if (title && !promptsEquivalent_(title, message)) {
+        await sendWhatsappText_({ to: input.to, body: `*${title}*` });
     }
 
     if (isDirectVideoFileUrl_(url) || isHttpsUrl_(url)) {
