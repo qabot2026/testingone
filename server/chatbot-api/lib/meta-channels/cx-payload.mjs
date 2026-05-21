@@ -335,6 +335,13 @@ function absorbActionPayload_(parts, body) {
         if (cards.length) {
             parts.cardCarousel = { message: msg, cards };
         }
+        const opts = normalizeSelectOptions_(body.options ?? body.option ?? body.chips);
+        for (const o of opts) {
+            pushChoice_(parts, o);
+        }
+        if (msg && !parts.choicePrompt && opts.length) {
+            parts.choicePrompt = msg;
+        }
         return;
     }
 
