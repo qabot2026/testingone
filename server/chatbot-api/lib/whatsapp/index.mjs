@@ -24,11 +24,14 @@ import {
     youtubeThumbnailUrl_,
     isDirectVideoFileUrl_
 } from "../meta-channels/cx-payload.mjs";
-import FormData from "form-data";
+import FormDataPkg from "form-data";
 import {
     downloadYoutubeMp4Buffer_,
     streamYoutubeMp4ToResponse_,
-    isYtDlpAvailable_
+    isYtDlpAvailable_,
+    ytDlpVersion_,
+    youtubeCookiesConfigured_,
+    probeYoutubeDownload_
 } from "../meta-channels/youtube-download.mjs";
 
 /**
@@ -574,23 +577,40 @@ async function sendWhatsappCxReply_(input) {
  */
 async function uploadWhatsappMedia_(buffer, mimeType) {
     const c = whatsappConfig_();
-    const form = new FormData();
-    form.append("messaging_product", "whatsapp");
-    form.append("file", buffer, {
-        filename: "video.mp4",
-        contentType: mimeType,
-        knownLength: buffer.length
-    });
     const url = `https://graph.facebook.com/${c.graphVersion}/${c.phoneNumberId}/media`;
-    const res = await fetch(url, {
-        method: "POST",
-        headers: {
-            Authorization: `Bearer ${c.accessToken}`,
-            ...form.getHeaders()
-        },
-        // @ts-expect-error form-data stream body for fetch
-        body: form
-    });
+
+    /** @type {Response} */
+    let res;
+    try {
+        const nativeForm = new FormData();
+        nativeForm.append("messaging_product", "whatsapp");
+        nativeForm.append("file", new Blob([buffer], { type: mimeType }), "video.mp4");
+        res = await fetch(url, {
+            method: "POST",
+            headers: {
+                Authorization: `Bearer ${c.accessToken}`
+            },
+            body: nativeForm
+        });
+    } catch {
+        const form = new FormDataPkg();
+        form.append("messaging_product", "whatsapp");
+        form.append("file", buffer, {
+            filename: "video.mp4",
+            contentType: mimeType,
+            knownLength: buffer.length
+        });
+        res = await fetch(url, {
+            method: "POST",
+            headers: {
+                Authorization: `Bearer ${c.accessToken}`,
+                ...form.getHeaders()
+            },
+            // @ts-expect-error form-data stream body for fetch
+            body: form
+        });
+    }
+
     const raw = await res.text();
     let data = {};
     try {
@@ -1564,10 +1584,21 @@ function handleHealth_(req, res) {
         ],
         youtube_whatsapp: {
             yt_dlp_installed: isYtDlpAvailable_(),
+            yt_dlp_version: ytDlpVersion_(),
+            cookies_configured: youtubeCookiesConfigured_(),
             player: "native WhatsApp video (download YouTube MP4, upload, in-app player)",
-            max_bytes: 16 * 1024 * 1024
+            max_bytes: 16 * 1024 * 1024,
+            probe_url: "/api/whatsapp/youtube-probe",
+            cookies_hint: "If probe fails with HTTP 403, set YOUTUBE_COOKIES_NETSCAPE in Railway (Netscape cookies.txt for youtube.com)."
         }
     });
+}
+
+/** @param {import("express").Request} req @param {import("express").Response} res */
+async function handleYoutubeProbe_(req, res) {
+    const videoId = trim_(req.query.videoId) || "jNQXAC9IVRw";
+    const result = await probeYoutubeDownload_(videoId);
+    res.status(result.ok ? 200 : 502).json(result);
 }
 
 /**
@@ -1605,5 +1636,6 @@ export function mountWhatsappRoutes(app) {
     }, handleWebhookPost_);
 
     app.get("/api/whatsapp/health", handleHealth_);
+    app.get("/api/whatsapp/youtube-probe", handleYoutubeProbe_);
     app.get("/api/whatsapp/media/youtube/:videoId", handleYoutubeMp4Proxy_);
 }

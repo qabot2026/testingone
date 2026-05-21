@@ -1,6 +1,6 @@
 /**
  * Download YouTube as H.264 MP4 for WhatsApp native in-app video player.
- * Requires yt-dlp + ffmpeg in the container (see Dockerfile).
+ * Requires latest yt-dlp + ffmpeg in the container (see Dockerfile).
  */
 
 import { spawn, spawnSync } from "node:child_process";
@@ -28,6 +28,41 @@ export function isValidYoutubeVideoId_(id) {
 export function isYtDlpAvailable_() {
     const r = spawnSync("yt-dlp", ["--version"], { encoding: "utf8" });
     return r.status === 0;
+}
+
+/** @returns {string} */
+export function ytDlpVersion_() {
+    const r = spawnSync("yt-dlp", ["--version"], { encoding: "utf8" });
+    return r.status === 0 ? trim_(r.stdout) : "";
+}
+
+/** @returns {boolean} */
+export function youtubeCookiesConfigured_() {
+    return !!(trim_(process.env.YOUTUBE_COOKIES_FILE) || trim_(process.env.YOUTUBE_COOKIES_NETSCAPE));
+}
+
+/** @type {Promise<string> | null} */
+let cookiesPathPromise_ = null;
+
+/** @returns {Promise<string>} */
+async function youtubeCookiesPath_() {
+    if (!cookiesPathPromise_) {
+        cookiesPathPromise_ = (async () => {
+            const fromFile = trim_(process.env.YOUTUBE_COOKIES_FILE);
+            if (fromFile) {
+                return fromFile;
+            }
+            const netscape = trim_(process.env.YOUTUBE_COOKIES_NETSCAPE);
+            if (!netscape) {
+                return "";
+            }
+            const dir = await mkdtemp(path.join(tmpdir(), "yt-cookies-"));
+            const cookieFile = path.join(dir, "cookies.txt");
+            await writeFile(cookieFile, netscape, "utf8");
+            return cookieFile;
+        })();
+    }
+    return cookiesPathPromise_;
 }
 
 let youtubeiEvalReady_ = false;
@@ -75,9 +110,48 @@ function runCommand_(cmd, args, timeoutMs = 180000) {
                 resolve({ stdout, stderr });
                 return;
             }
-            reject(new Error(`${cmd} exited ${code}: ${stderr.slice(-500)}`));
+            reject(new Error(`${cmd} exited ${code}: ${stderr.slice(-600)}`));
         });
     });
+}
+
+/** @returns {Promise<string[]>} */
+async function ytDlpSharedArgs_() {
+    /** @type {string[]} */
+    const args = [
+        "-f",
+        YT_DLP_FORMAT,
+        "--merge-output-format",
+        "mp4",
+        "--extractor-args",
+        "youtube:player_client=android,web,tv_embedded",
+        "--remote-components",
+        "ejs:github",
+        "--postprocessor-args",
+        "ffmpeg:-movflags +faststart",
+        "--no-playlist",
+        "--no-warnings",
+        "--no-part",
+        "--retries",
+        "3",
+        "--socket-timeout",
+        "30",
+        "--force-ipv4"
+    ];
+    const cookies = await youtubeCookiesPath_();
+    if (cookies) {
+        args.push("--cookies", cookies);
+    }
+    return args;
+}
+
+/**
+ * @param {string} watchUrl
+ * @param {string} outputFlag
+ * @param {string} outputValue
+ */
+async function buildYtDlpArgs_(watchUrl, outputFlag, outputValue) {
+    return [watchUrl, ...(await ytDlpSharedArgs_()), outputFlag, outputValue];
 }
 
 /**
@@ -86,7 +160,6 @@ function runCommand_(cmd, args, timeoutMs = 180000) {
  * @param {number} maxBytes
  */
 async function compressMp4ForWhatsapp_(inputPath, outputPath, maxBytes) {
-    /** Scale down long clips so they fit WhatsApp 16 MB cap. */
     await runCommand_("ffmpeg", [
         "-y",
         "-i",
@@ -129,7 +202,7 @@ async function compressMp4ForWhatsapp_(inputPath, outputPath, maxBytes) {
  * @param {number} maxBytes
  */
 async function readMp4MaybeCompress_(filePath, maxBytes) {
-    let buf = await readFile(filePath);
+    const buf = await readFile(filePath);
     if (buf.length <= maxBytes) {
         return buf;
     }
@@ -146,24 +219,10 @@ async function downloadViaYtDlpFile_(watchUrl, maxBytes) {
     const dir = await mkdtemp(path.join(tmpdir(), "wa-yt-"));
     const outTemplate = path.join(dir, "video.%(ext)s");
     try {
-        await runCommand_("yt-dlp", [
-            watchUrl,
-            "-f",
-            YT_DLP_FORMAT,
-            "--merge-output-format",
-            "mp4",
-            "--postprocessor-args",
-            "ffmpeg:-movflags +faststart",
-            "--no-playlist",
-            "--no-warnings",
-            "--no-part",
-            "--retries",
-            "3",
-            "--socket-timeout",
-            "30",
-            "-o",
-            outTemplate
-        ]);
+        await runCommand_(
+            "yt-dlp",
+            await buildYtDlpArgs_(watchUrl, "-o", outTemplate)
+        );
         const files = await readdir(dir);
         const mp4Name = files.find((f) => f.endsWith(".mp4"));
         if (!mp4Name) {
@@ -252,8 +311,40 @@ export async function downloadYoutubeMp4Buffer_(videoId, maxBytes = WA_VIDEO_MAX
         errors.push(e instanceof Error ? e : new Error(String(e)));
     }
 
-    const detail = errors.map((err) => err.message).join(" | ").slice(0, 500);
+    const detail = errors.map((err) => err.message).join(" | ").slice(0, 600);
     throw new Error(`YouTube download failed: ${detail}`);
+}
+
+/**
+ * Quick probe for health / diagnostics (short public clip).
+ * @param {string} [videoId]
+ */
+export async function probeYoutubeDownload_(videoId = "jNQXAC9IVRw") {
+    const id = trim_(videoId) || "jNQXAC9IVRw";
+    const started = Date.now();
+    try {
+        const buf = await downloadYoutubeMp4Buffer_(id);
+        return {
+            ok: true,
+            videoId: id,
+            bytes: buf.length,
+            ms: Date.now() - started,
+            yt_dlp_version: ytDlpVersion_(),
+            cookies_configured: youtubeCookiesConfigured_()
+        };
+    } catch (e) {
+        return {
+            ok: false,
+            videoId: id,
+            ms: Date.now() - started,
+            yt_dlp_version: ytDlpVersion_(),
+            cookies_configured: youtubeCookiesConfigured_(),
+            error: e && e.message ? String(e.message).slice(0, 400) : String(e),
+            hint: youtubeCookiesConfigured_()
+                ? "Download still failed with cookies — try refreshing YOUTUBE_COOKIES_NETSCAPE."
+                : "YouTube often blocks cloud servers. Set YOUTUBE_COOKIES_NETSCAPE in Railway (Netscape cookies.txt for youtube.com)."
+        };
+    }
 }
 
 /**
@@ -271,7 +362,11 @@ export async function streamYoutubeMp4ToResponse_(videoId, res) {
         res.status(502).json({
             ok: false,
             error: "Could not stream YouTube video",
-            detail: e && e.message ? String(e.message).slice(0, 200) : String(e)
+            detail: e && e.message ? String(e.message).slice(0, 400) : String(e),
+            cookies_configured: youtubeCookiesConfigured_(),
+            hint: youtubeCookiesConfigured_()
+                ? "Refresh YOUTUBE_COOKIES_NETSCAPE in Railway variables."
+                : "Add YOUTUBE_COOKIES_NETSCAPE (Netscape cookies.txt exported from youtube.com in your browser)."
         });
     }
 }
