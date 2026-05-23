@@ -194,39 +194,76 @@ Direct link (App ID badal ke):
 
 ---
 
-#### Step 2 ke baad left menu mein kya dikhna chahiye
+#### App dashboard — left menu check karo
 
-Use cases sahi choose kiye to ye products pehle se dikh sakte hain:
+App banne ke baad **left side menu** dekho. Use cases sahi choose kiye to ye **pehle se** dikh sakte hain:
 
-| Left menu | Matlab |
-|-----------|--------|
-| **WhatsApp** | WhatsApp use case select hua |
-| **Messenger** | Messenger use case select hua |
-| **Instagram** | Instagram use case select hua |
+| Left menu mein dikhe | Matlab |
+|----------------------|--------|
+| **WhatsApp** | WhatsApp ready — Part 2 par jao |
+| **Messenger** | Messenger ready — Part 3 par jao |
+| **Instagram** | Instagram ready — Part 4 par jao |
+| **Webhooks** | Webhook setup — **Step 6** par jao |
 
-**Webhooks hamesha check karo** — agar left menu mein **Webhooks** na ho to Step 3 karo.
+**Agar teeno (WhatsApp, Messenger, Instagram) left menu mein hain → Step 3 skip karo.** Seedha **Step 4** (verify token) ya **Step 6** (webhook) par jao.
 
 ---
 
-### Step 3 — Products add karo (jo missing ho)
+### Step 3 — Sirf tab jab kuch **missing** ho (optional)
 
-Pehle left menu dekho — Step 2 ke use cases se kuch products **pehle se** aa chuke honge.
+> **Zyaada tar log Step 3 skip karte hain** — naye Meta flow mein use cases select karte hi products add ho jate hain. **"Add products" button har app mein nahi dikhta** — ye normal hai.
 
-| Left menu mein dikhe? | Action |
-|-----------------------|--------|
-| **Webhooks** nahi hai | **Add products** → **Webhooks** → **Set up** |
-| **WhatsApp** chahiye par nahi hai | **Add products** → **WhatsApp** → **Set up** |
-| **Messenger** chahiye par nahi hai | **Add products** → **Messenger** → **Set up** |
-| **Instagram** chahiye par nahi hai | **Add products** → **Instagram** → **Set up** |
+#### Pehle ye check karo
 
-| Product | Kab add karna hai |
-|---------|-------------------|
-| **Webhooks** | **Hamesha** — teeno channels ke liye zaroori |
-| **WhatsApp** | WhatsApp chahiye aur menu mein nahi hai |
-| **Messenger** | Facebook Messenger chahiye aur menu mein nahi hai |
-| **Instagram** | Instagram DM chahiye aur menu mein nahi hai |
+1. App dashboard kholo: [developers.facebook.com/apps](https://developers.facebook.com/apps) → apna app
+2. **Left menu** poora scroll karo (neeche tak)
+3. Dhundho: **WhatsApp**, **Messenger**, **Instagram**, **Webhooks**
 
-> **Note:** Instagram ke liye pehle **Facebook Page** chahiye. Page ke saath Instagram Business account link hona chahiye (Part 4 mein detail).
+| Left menu | Action |
+|-----------|--------|
+| Sab dikhe (WhatsApp + Messenger + Instagram) | **Step 3 skip** → Step 4 / Step 6 |
+| **Webhooks** nahi dikhe | Neeche **Path A** ya **Path B** try karo |
+| Koi ek channel missing (jaise Instagram) | Neeche **Path C** |
+
+#### Path A — Webhooks direct link (sabse aasaan)
+
+Browser mein kholo (apna App ID lagao):
+
+```
+https://developers.facebook.com/apps/YOUR_APP_ID/webhooks/
+```
+
+Page khul jaye → **Step 6** follow karo (Callback URL + Verify token).
+
+#### Path B — Use cases se Webhooks
+
+Naye UI mein Webhooks kabhi **Use cases** ke andar hota hai:
+
+1. Left menu → **Use cases** (ya **Customize use cases**)
+2. Koi bhi messaging use case kholo (WhatsApp / Messenger / Instagram)
+3. **Configuration** / **Settings** / **Webhooks** tab dhundho
+4. Callback URL wahi set hota hai jo Step 6 mein hai
+
+#### Path C — Missing channel add karo
+
+Agar left menu mein **WhatsApp / Messenger / Instagram** mein se koi **nahi** hai:
+
+1. Dashboard home par jao
+2. **Add use cases** (ya **Customize** / **Add products**) click karo  
+   *(Purane UI mein "Add products" likha hota tha — naye mein **Add use cases** ho sakta hai)*
+3. Missing wala tick karo → **Set up** / **Save**
+4. Left menu refresh — ab dikhna chahiye
+
+| Missing | Add karo |
+|---------|----------|
+| WhatsApp | Use case: *Connect with customers through WhatsApp* |
+| Messenger | Use case: *Engage with customers on Messenger* |
+| Instagram | Use case: *Manage messaging on Instagram* |
+| Webhooks | Path A link use karo — alag product nahi hota |
+
+> **Note:** Instagram ke liye pehle **Facebook Page** chahiye (Part 4).
+
+**Abhi left menu mein kya-kya dikh raha hai?** (sirf names batao — jaise "WhatsApp, App settings, Use cases") — usse exact next click bataya ja sakta hai.
 
 ---
 
@@ -261,7 +298,8 @@ WHATSAPP_VERIFY_TOKEN=apna-secret-yahan
 
 1. Jao: [developers.facebook.com/apps](https://developers.facebook.com/apps)
 2. Apna **app** kholo
-3. Left menu → **Webhooks**
+3. Left menu → **Webhooks**  
+   *(Left menu mein na ho to direct link: `https://developers.facebook.com/apps/YOUR_APP_ID/webhooks/`)*
 4. **Configure** (ya **Edit**) click karo
 5. Bhari:
 
