@@ -282,8 +282,9 @@ WHATSAPP_VERIFY_TOKEN=apna-secret-yahan
 | **Callback URL** | `https://handsome-amazement-production-7f65.up.railway.app/api/whatsapp/webhook` |
 | **Verify token** | Railway `WHATSAPP_VERIFY_TOKEN` (jaise `geniebot@26`) |
 
-6. Pehle health link kholo:  
-   `https://handsome-amazement-production-7f65.up.railway.app/api/whatsapp/health`
+6. Pehle health link kholo — **`verify_token_set: true`** hona chahiye:  
+   `https://handsome-amazement-production-7f65.up.railway.app/api/whatsapp/health`  
+   Agar `false` / `missing_env` mein `WHATSAPP_VERIFY_TOKEN` ho → **Step 5 pehle complete karo** → redeploy
 7. Meta mein **Verify and save** dabao
 
 #### Messenger webhook (Facebook ke liye)
@@ -577,7 +578,8 @@ Forms (`open_form`) sirf **web** par chalte hain. WhatsApp / Instagram par chat 
 |---------|----------|
 | Webhook **Forbidden** browser mein | Normal — Meta Verify se check karo |
 | **`/webhooks/` page blank** | Naya app — Use cases → Customize → Configuration use karo (Step 6) |
-| Meta **Verify failed** | Token Railway aur Meta mein **exact same**? Redeploy? |
+| Meta **Verify failed** / *couldn't be validated* | Pehle health check — `verify_token_set` **false** ho to Railway mein `WHATSAPP_VERIFY_TOKEN` add karo → redeploy → curl test → phir Meta Verify |
+| Meta **Verify failed** (token set hai) | Token Railway aur Meta mein **exact same**? Extra space? Redeploy? |
 | WhatsApp reply nahi | Naya `WHATSAPP_ACCESS_TOKEN` — purana expire ho sakta hai |
 | Instagram reply nahi | Page token + Instagram **Subscribed**? Tester account? |
 | Sirf Development mein chalta hai | App roles mein user ko **Tester** banao |
