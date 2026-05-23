@@ -6,9 +6,11 @@ let contactFormOpenTimer = null;
 let contactFormOpenPending = false;
 /** Extra keys from the latest `open_form` custom payload; applied when the contact form opens (e.g. name, mobile, email). */
 let pendingOpenFormPrefill = /** @type {Record<string, string> | null} */ (null);
-/** Last gallery / video / carousel / inline-select chip the visitor clicked (feeds `$session.params.intent` + form prefill). */
+/** Last gallery / video / carousel / inline-select chip the visitor clicked (feeds `$session.params.intent`). */
 let dfchatLastInlineOptionSelection_ = /** @type {{ value: string, label: string, atMs: number } | null} */ (null);
 const INLINE_OPTION_SELECTION_TTL_MS = 120000;
+/** Skip treating the next programmatic chip send as a visitor name (e.g. "Upload" → contact form name). */
+let dfchatSuppressNameHintFromChatTextOnce_ = false;
 /**
  * Queue of form keys (`common.form.forms`) to open after each successful submit (FIFO).
  * Populated from Dialogflow `open_form` via `next_form_id`, `next_form_ids`, `following_form_id`, `third_form_id`, …
@@ -5084,8 +5086,7 @@ function sendUserTextViaDfMessenger(dfMessenger, text, shouldRenderCustomTextNow
 }
 
 /**
- * Remember inline option chips (gallery / video / carousel / select) for CX `$session.params.intent`
- * and contact-form prefill when the next turn opens `open_form`.
+ * Remember inline option chips for CX `$session.params.intent` only (not contact-form `name`).
  * @param {string} value
  * @param {string} [label]
  */
@@ -5103,7 +5104,6 @@ function persistInlineOptionSelectionAsIntent_(value, label) {
                 ? { .../** @type {Record<string, unknown>} */ (prev.session_params) }
                 : {};
         prevSp.intent = v;
-        prevSp.name = v;
         persistClientContext({ ...prev, session_params: prevSp });
         if (activeDfMessenger) {
             syncDfMessengerSessionParametersFromClientContext(activeDfMessenger);
@@ -5114,26 +5114,6 @@ function persistInlineOptionSelectionAsIntent_(value, label) {
 }
 
 /**
- * @param {Record<string, string> | null | undefined} prefill
- * @returns {Record<string, string> | null}
- */
-function mergeInlineOptionSelectionIntoOpenFormPrefill_(prefill) {
-    const sel = dfchatLastInlineOptionSelection_;
-    if (!sel || Date.now() - sel.atMs > INLINE_OPTION_SELECTION_TTL_MS) {
-        return prefill && typeof prefill === "object" ? prefill : null;
-    }
-    /** @type {Record<string, string>} */
-    const out = prefill && typeof prefill === "object" ? { ...prefill } : {};
-    if (!dfParameterScalarToString(out.name)) {
-        out.name = sel.value;
-    }
-    if (!dfParameterScalarToString(out.intent)) {
-        out.intent = sel.value;
-    }
-    return Object.keys(out).length ? out : null;
-}
-
-/**
  * @param {HTMLElement | null | undefined} dfMessenger
  * @param {string} value
  * @param {string} [label]
@@ -5141,6 +5121,7 @@ function mergeInlineOptionSelectionIntoOpenFormPrefill_(prefill) {
  */
 function handleInlineSyntheticOptionClick_(dfMessenger, value, label, beforeSend) {
     persistInlineOptionSelectionAsIntent_(value, label);
+    dfchatSuppressNameHintFromChatTextOnce_ = true;
     if (typeof beforeSend === "function") {
         try {
             beforeSend();
@@ -14056,7 +14037,7 @@ function mergeLikelyEmailFromChatText(raw) {
  */
 /** Common chat replies — not treated as a visitor name. */
 const CHAT_NAME_FALSE_POSITIVE_RE =
-    /^(yes|no|ok|okay|hi|hello|hey|thanks|thank\s*you|thx|please|pls|help|skip|none|na|n\/a|cancel|stop|restart|menu|back|next|sure|maybe|done|submit|book|booking|appointment)$/i;
+    /^(yes|no|ok|okay|hi|hello|hey|thanks|thank\s*you|thx|please|pls|help|skip|none|na|n\/a|cancel|stop|restart|menu|back|next|sure|maybe|done|submit|book|booking|appointment|upload|feedback|call\s*me|call)$/i;
 
 /**
  * When the bot asks for a name and the visitor types it in chat (not only via form / CX params).
@@ -14081,6 +14062,10 @@ function sessionRequestsLiveAgent_(ctx) {
 }
 
 function mergeLikelyNameFromChatText_(raw) {
+    if (dfchatSuppressNameHintFromChatTextOnce_) {
+        dfchatSuppressNameHintFromChatTextOnce_ = false;
+        return;
+    }
     const t = typeof raw === "string" ? raw.replace(/\u00a0/g, " ").trim() : "";
     if (!t || t.length < 2 || t.length > 80) {
         return;
@@ -15719,7 +15704,6 @@ async function handleDfResponseReceived(event) {
 
     if (willOpenForm) {
         pendingOpenFormPrefill = extractOpenFormPrefillFromEvent(event);
-        pendingOpenFormPrefill = mergeInlineOptionSelectionIntoOpenFormPrefill_(pendingOpenFormPrefill);
         /** Skip only when name+mobile were already stored before this turn — not when this payload prefills them. */
         const hadNameAndMobileBeforeThisOpenForm = sessionHasNameAndMobileForSkip_();
         if (pendingOpenFormPrefill) {
@@ -16651,12 +16635,6 @@ function applyStoredContactHintsToOpenContactForm_() {
             name: dfParameterScalarToString(stored && stored.name != null ? stored.name : ""),
             email: dfParameterScalarToString(stored && stored.email != null ? stored.email : "")
         };
-        if (!hints.name && stored && stored.session_params && typeof stored.session_params === "object") {
-            const sp = /** @type {Record<string, unknown>} */ (stored.session_params);
-            hints.name =
-                dfParameterScalarToString(sp.intent != null ? sp.intent : "")
-                || dfParameterScalarToString(sp.name != null ? sp.name : "");
-        }
         const cfg = readContactFormConfig();
         const fields = Array.isArray(cfg.fields) ? cfg.fields : [];
         for (let i = 0; i < fields.length; i += 1) {
