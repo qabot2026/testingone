@@ -52,6 +52,106 @@ Jab sab theek ho jaye:
 
 ---
 
+## Part 0 — Fresh start (pehle sab delete karo)
+
+Poora naya setup chahiye to **pehle ye order** follow karo. **App delete** aur **Portfolio delete** alag hain.
+
+| Cheez | Kahan delete hoti hai |
+|-------|------------------------|
+| **Developer App** | [developers.facebook.com/apps](https://developers.facebook.com/apps) |
+| **Business portfolio** | [business.facebook.com/settings](https://business.facebook.com/settings) |
+| **Railway tokens** | [railway.app](https://railway.app) → Variables |
+
+---
+
+### Step 0A — Saari Developer Apps delete karo
+
+Har purani app ke liye:
+
+1. [developers.facebook.com/apps](https://developers.facebook.com/apps)
+2. App kholo → left menu → **App settings** → **Advanced**
+3. Neeche scroll → **Delete app** → confirm
+
+Sab apps delete ho jayein jab tak **Create App** par koi purani app na bache.
+
+---
+
+### Step 0B — Har Business portfolio delete karo (GenieChatbot, Expo Chatapp, …)
+
+**Important:** Portfolio tab tak delete nahi hoga jab tak andar **WhatsApp Business account** connected ho — pehle hatao.
+
+Official guide: [Meta Help — Delete business portfolio](https://www.facebook.com/business/help/1592865014304024)
+
+#### Pehle assets hatao (har portfolio ke liye repeat)
+
+1. Kholo: [business.facebook.com/settings](https://business.facebook.com/settings)
+2. Upar left dropdown se portfolio select karo (**GenieChatbot** ya **Expo Chatapp**)
+3. Left menu → **Accounts** (ya **Business assets**)
+4. Inhe **remove / disconnect** karo (jo connected hon):
+   - **WhatsApp accounts** — **pehle ye** (bina iske portfolio delete block ho sakta hai)
+   - Ad accounts (agar test wale hain)
+   - Instagram accounts (unlink — Instagram app se account delete nahi hota)
+   - **Facebook Page** — Page delete nahi karna agar baad mein use karna hai; sirf portfolio se **remove** karo ya doosre portfolio mein move karo
+
+#### Portfolio permanently delete
+
+1. Same portfolio selected ho ([business.facebook.com/settings](https://business.facebook.com/settings))
+2. Left menu → **Business info** (ya **Business portfolio info**)
+3. Neeche scroll → **Permanently delete business**
+4. Reason select karo → password confirm karo
+5. **Submit**
+
+**Dusra portfolio (Expo Chatapp):** dropdown se switch karo → same steps repeat.
+
+| Note | Detail |
+|------|--------|
+| **24 hours pending** | Delete ke baad 24 ghante wait — tab tak cancel kar sakte ho |
+| **Wapas nahi khulega** | 24 ghante ke baad permanent |
+| **Facebook Page** | Page khud delete nahi hota — sirf portfolio se link hat-ti hai |
+| **Delete option na dikhe** | Full control admin chahiye; ya koi asset ab bhi connected hai |
+
+#### Delete ho gaya verify karo
+
+1. [business.facebook.com/settings](https://business.facebook.com/settings) → **Business portfolios**
+2. List **khali** ho ya sirf naya wala ho
+3. App banate waqt purane naam na dikhein — agar dikhein to 24h wait karo ya **Create a business portfolio** use karo
+
+---
+
+### Step 0C — Railway se purane Meta tokens hatao
+
+Railway → chatbot-api → **Variables** — ye **delete** karo ya khali karo:
+
+```
+WHATSAPP_ACCESS_TOKEN
+WHATSAPP_PHONE_NUMBER_ID
+META_PAGE_ACCESS_TOKEN
+META_PAGE_ID
+WHATSAPP_APP_SECRET
+```
+
+**Rakh sakte ho (naye app mein same use kar sakte ho):**
+
+```
+WHATSAPP_VERIFY_TOKEN
+```
+
+**Redeploy** karo.
+
+Health check ab `Application has been deleted` dikhaye — **theek hai**, naya app banane ke baad fix hoga.
+
+---
+
+### Step 0D — Ab naya setup shuru karo
+
+Sab clean ho jaye to:
+
+```
+Part 0 (delete) → Part 1 (naya app) → Part 2/3/4 (channels) → Test
+```
+
+---
+
 ## Part 1 — Common steps (sab channels ke liye)
 
 Ye steps **ek baar** karo. WhatsApp, Instagram, Facebook — teeno ke liye same.
@@ -154,20 +254,12 @@ Meta likhe: *"unverified portfolio… add later"* — **theek hai**, app bana lo
 
 | Reason | Simple matlab |
 |--------|----------------|
-| **App delete ≠ Portfolio delete** | Aapne shayad sirf **Developer App** delete kiya — **Business portfolio** alag cheez hai, woh delete nahi hua |
-| **Portfolio poora delete nahi hua** | Meta Business Settings se **Remove** kiya ho, par account access ab bhi ho |
-| **30–90 din tak dikhta hai** | Meta kabhi-kabhi deleted portfolio ko kuch time list mein rakhta hai |
-| **Doosra admin ne banaya ho** | Aapke Facebook login ko ab bhi access hai |
+| **App delete ≠ Portfolio delete** | Sirf Developer App delete kiya — portfolio alag hai → **Part 0B** follow karo |
+| **24 ghante pending** | Delete submit kiya par abhi pending period chal raha hai |
+| **Assets ab bhi connected** | WhatsApp / Page hatao, phir delete |
+| **Poora delete nahi hua** | [business.facebook.com/settings](https://business.facebook.com/settings) → **Permanently delete business** dubara try karo |
 
-**Ab kya karo:**
-
-1. Kholo: [business.facebook.com/settings](https://business.facebook.com/settings) → left side **Business portfolios**
-2. Dekho **GenieChatbot** / **Expo Chatapp** ab bhi hain ya nahi
-3. Agar **dono delete** hain ya use nahi karna:
-   - Is screen par click: **Create a business portfolio**
-   - Naya naam do (jaise: `Genie Hospital Bot`)
-   - Naya portfolio select karke app banao
-4. Agar list mein koi purana dikhe aur use karna ho — **ek choose karo** (verified hona zaroori nahi abhi)
+**Fresh start:** Pehle **Part 0** poora karo — phir **Create a business portfolio** se naya portfolio banao.
 
 ---
 
@@ -569,12 +661,13 @@ Forms (`open_form`) sirf **web** par chalte hain. WhatsApp / Instagram par chat 
 
 ## Part 8 — Order of work (recommended)
 
-Naya app ke baad ye order follow karo:
+Poora fresh start:
 
 ```
-1. Part 1 — App + Webhook + Railway verify token + Verify and save
+0. Part 0 — Purani apps + portfolios delete + Railway tokens clear
+1. Part 1 — Naya app + Webhook + Verify and save
 2. Part 2 — WhatsApp (agar chahiye)
-3. Part 3 — Facebook Page + Page token (Instagram ke liye bhi zaroori)
+3. Part 3 — Facebook Page + Page token
 4. Part 4 — Instagram subscribe + test
 5. Health check
 6. Test message har channel par
