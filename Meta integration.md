@@ -2,7 +2,37 @@
 
 Simple step-by-step guide to connect **WhatsApp**, **Instagram**, and **Facebook Messenger** with your chatbot.
 
-Your chatbot backend is already ready. You only need to create a new Meta app and connect it.
+Your chatbot backend is already ready. **GenieChatbot** portfolio mein naya Meta app banao aur connect karo.
+
+---
+
+## Before you start — Existing portfolio
+
+| Point | Detail |
+|-------|--------|
+| **Portfolio** | **GenieChatbot** use karo (Unverified = test ke liye OK) |
+| **Naya app** | Purana Developer app delete ho chuka ho to **same portfolio** mein naya app banao |
+| **Tokens** | Sirf **naye app** se tokens — purane Railway tokens mat use karo |
+
+### Railway — purane tokens badlo (naya app se pehle)
+
+Railway → chatbot-api → **Variables** — purane values **replace** karo (naya app banne ke baad naye daaloge):
+
+```
+WHATSAPP_ACCESS_TOKEN
+WHATSAPP_PHONE_NUMBER_ID
+META_PAGE_ACCESS_TOKEN
+META_PAGE_ID
+WHATSAPP_APP_SECRET
+```
+
+**Pehle se rakh sakte ho (same re-use):**
+
+```
+WHATSAPP_VERIFY_TOKEN
+```
+
+Save → **Redeploy**.
 
 ---
 
@@ -30,15 +60,14 @@ Browser mein health link kholo — JSON dikhega. **`ok: false` matlab server ban
 | Health mein dikhe | Matlab | Kya karo |
 |-------------------|--------|----------|
 | `"ok": false` | WhatsApp token check fail | Naya app se naya token Railway mein daalo |
-| `"access_token_error": "Application has been deleted"` | **Purana Meta app delete ho gaya** — Railway par ab bhi purane tokens hain | **Naya app banao** → naye tokens → Railway update → redeploy |
+| `"access_token_error": "Application has been deleted"` | Purana app delete — Railway par purane tokens hain | Naya app banao → naye tokens → Railway update → redeploy |
 | `"access_token_valid": false` | WhatsApp token expire ya invalid | Part 2 — naya `WHATSAPP_ACCESS_TOKEN` |
 | `"verify_token_set": true` | Webhook secret Railway mein hai | Theek hai |
 | `"page_id_set": true` | Page ID Railway mein hai | Theek hai (lekin token naya app se hona chahiye) |
 | `"page_access_token_set": true` | Page token Railway mein hai | Purana ho sakta hai — **naya app se dubara generate karo** |
 | `"missing_env": []` | Koi variable missing nahi | Theek hai |
 
-**Aapne Meta app delete kiya — isliye ab ye error normal hai.**  
-Purane `WHATSAPP_ACCESS_TOKEN` aur `META_PAGE_ACCESS_TOKEN` kaam nahi karenge. **Part 1 se naya app banao** aur **saare tokens naye** Railway mein daalo.
+Purane tokens kaam nahi karenge jab tak naya app se naye tokens Railway mein na daalo.
 
 Jab sab theek ho jaye:
 
@@ -49,193 +78,6 @@ Jab sab theek ho jaye:
 | `"page_access_token_set": true` | Instagram / Facebook ke liye |
 
 > Instagram / Facebook test ke liye `ok: false` ho to bhi chalega — agar `page_*` true ho aur naya Page token ho. Lekin **Application has been deleted** aaye to **sab tokens naye app se lo**.
-
----
-
-## Part 0 — Fresh start (pehle sab delete karo)
-
-Poora naya setup chahiye to **pehle ye order** follow karo. **App delete** aur **Portfolio delete** alag hain.
-
-| Cheez | Kahan delete hoti hai |
-|-------|------------------------|
-| **Developer App** | [developers.facebook.com/apps](https://developers.facebook.com/apps) |
-| **Business portfolio** | [business.facebook.com/settings](https://business.facebook.com/settings) |
-| **Railway tokens** | [railway.app](https://railway.app) → Variables |
-
----
-
-### Step 0A — Saari Developer Apps delete karo
-
-Har purani app ke liye:
-
-1. [developers.facebook.com/apps](https://developers.facebook.com/apps)
-2. App kholo → left menu → **App settings** → **Advanced**
-3. Neeche scroll → **Delete app** → confirm
-
-Sab apps delete ho jayein jab tak **Create App** par koi purani app na bache.
-
----
-
-### Step 0B — Har Business portfolio delete karo (GenieChatbot, Expo Chatapp, …)
-
-**Important:** Portfolio tab tak delete nahi hoga jab tak andar **WhatsApp Business account** connected ho — pehle hatao.
-
-Official guide: [Meta Help — Delete business portfolio](https://www.facebook.com/business/help/1592865014304024)
-
-#### Pehle assets hatao (har portfolio ke liye repeat)
-
-1. Kholo: [business.facebook.com/settings](https://business.facebook.com/settings)
-2. Upar left dropdown se portfolio select karo (**GenieChatbot** ya **Expo Chatapp**)
-3. Left menu → **Accounts** (ya **Business assets**)
-4. Inhe **remove / disconnect** karo (jo connected hon):
-   - **WhatsApp accounts** — **pehle ye** (bina iske portfolio delete block ho sakta hai)
-   - Ad accounts (agar test wale hain)
-   - Instagram accounts (unlink — Instagram app se account delete nahi hota)
-   - **Facebook Page** — Page delete nahi karna agar baad mein use karna hai; sirf portfolio se **remove** karo ya doosre portfolio mein move karo
-
-#### Portfolio permanently delete
-
-1. Same portfolio selected ho ([business.facebook.com/settings](https://business.facebook.com/settings))
-2. Left menu → **Business info** (ya **Business portfolio info**)
-3. Neeche scroll → **Permanently delete business**
-4. Reason select karo → password confirm karo
-5. **Submit**
-
-**Dusra portfolio (Expo Chatapp):** dropdown se switch karo → same steps repeat.
-
-| Note | Detail |
-|------|--------|
-| **24 hours pending** | Delete ke baad 24 ghante wait — tab tak cancel kar sakte ho |
-| **Wapas nahi khulega** | 24 ghante ke baad permanent |
-| **Facebook Page** | Page khud delete nahi hota — sirf portfolio se link hat-ti hai |
-| **Delete option na dikhe** | Full control admin chahiye; ya koi asset ab bhi connected hai |
-
-#### "Scheduled for deletion — account can't be accessed" (normal hai)
-
-Agar ye message aaye:
-
-> *You scheduled Expo Chatapp for deletion. Your account can't be accessed at this time. If you think that this is a mistake, choose Don't delete business before it's permanently deleted.*
-
-| Matlab | Kya karo |
-|--------|----------|
-| **Delete ho chuka schedule** | Portfolio delete **fail nahi hua** — Meta ne 24 ghante ke liye lock kar diya |
-| **Ab access nahi milega** | Pending period mein us portfolio ko kholna / edit karna **normal se band** hai |
-| **Dubara delete mat try karo** | Already queue mein hai — wait karo |
-| **Don't delete business** | Sirf tab click karo jab cancel karna ho — warna **mat dabao** |
-
-**24 ghante baad** portfolio list se permanently hat jayega. Tab **Part 1** se naya portfolio + naya app banao.
-
-#### "Last admin can't be removed" (galat step par ho)
-
-Agar ye message aaye:
-
-> *This admin can't be removed from the business because they're the last admin on the business. If you want to delete this admin, please add another admin to the business.*
-
-| Matlab | Kya karo |
-|--------|----------|
-| **People / Users se admin hata rahe ho** | Ye **portfolio delete ka step nahi hai** — Meta last admin ko hataane deta hi nahi |
-| **Admin remove mat karo** | Poora portfolio delete karna hai to **Users section chhod do** |
-| **Sahi path** | **Business info** → **Permanently delete business** (neeche scroll) |
-| **Tum last admin ho** | Theek hai — **tum hi** portfolio delete kar sakte ho, pehle kisi aur ko add karne ki zaroorat nahi |
-
-**Short:** Users / People mein kisi ko remove mat karo. Seedha **Business info → Permanently delete business**.
-
-Agar **Permanently delete** par click karte waqt alag error aaye (jaise *system admin*), to batao — uska alag fix hai.
-
-#### Delete ho gaya verify karo
-
-1. [business.facebook.com/settings](https://business.facebook.com/settings) → **Business portfolios**
-2. List **khali** ho ya sirf naya wala ho
-3. App banate waqt purane naam na dikhein — agar dikhein to 24h wait karo ya **Create a business portfolio** use karo
-
----
-
-### Step 0C — Railway se purane Meta tokens hatao
-
-Railway → chatbot-api → **Variables** — ye **delete** karo ya khali karo:
-
-```
-WHATSAPP_ACCESS_TOKEN
-WHATSAPP_PHONE_NUMBER_ID
-META_PAGE_ACCESS_TOKEN
-META_PAGE_ID
-WHATSAPP_APP_SECRET
-```
-
-**Rakh sakte ho (naye app mein same use kar sakte ho):**
-
-```
-WHATSAPP_VERIFY_TOKEN
-```
-
-**Redeploy** karo.
-
-Health check ab `Application has been deleted` dikhaye — **theek hai**, naya app banane ke baad fix hoga.
-
----
-
-### Step 0D — Ab naya setup shuru karo
-
-Sab clean ho jaye to:
-
-```
-Part 0 (delete) → Part 1 (naya app) → Part 2/3/4 (channels) → Test
-```
-
----
-
-### Plan B — Delete skip karo (recommended agar errors aa rahe hon)
-
-**Poora portfolio delete zaroori nahi hai** naya bot chalane ke liye. Meta ke alag-alag pages par errors normal hain — isliye **delete fight mat karo**.
-
-| Question | Answer |
-|----------|--------|
-| **Koi app / agent sab auto kare?** | **Nahi.** Meta password + 2FA tumhe khud confirm karna padta hai. Koi third-party app tumhare account se portfolio delete / app bana nahi sakta (security). |
-| **Cursor / AI agent?** | Sirf **guide** kar sakta hai — Meta UI par click tumhe khud karne padenge. Errors ka screenshot bhejo, step-by-step batate hain. |
-| **Expo Chatapp pending delete?** | Theek hai — **24h wait**, usko chhod do. Dubara mat kholo. |
-| **GenieChatbot delete nahi ho raha?** | **Chhod do abhi** — baad mein delete kar lena. |
-
-**Ab ye karo (2 sites hi use karo):**
-
-| Site | Sirf ye kaam |
-|------|----------------|
-| [developers.facebook.com](https://developers.facebook.com) | Naya app, webhook, tokens |
-| [business.facebook.com/settings](https://business.facebook.com/settings) | Sirf jab Page / WhatsApp naye portfolio se link karna ho |
-
-**Mat ghumo in par (confusion badhta hai):** facebook.com home, Meta Business Suite dashboard, random Settings tabs, People/Users (admin remove).
-
-**Fresh start bina purana delete:**
-
-1. **Step 0C** — Railway purane tokens hatao → redeploy
-2. [developers.facebook.com/apps](https://developers.facebook.com/apps) → **Create App**
-3. Screen B2 par **Create a business portfolio** → naya naam (jaise `Genie Bot 2026`)
-4. **GenieChatbot / Expo Chatapp mat select karo**
-5. App banne ke baad **Part 1** webhook + **Part 2/3/4** channels
-
-Purane portfolio list mein dikhen to **ignore** — naya portfolio alag hai, naya app usse connect hoga.
-
----
-
-### Plan C — Purana portfolio use karo (quota / delete dono fail)
-
-Agar **naya portfolio nahi ban raha** (quota error) aur **purana delete nahi ho raha** — **GenieChatbot mein hi naya app banao**. Ye **bilkul theek hai**.
-
-| Error / situation | Matlab |
-|-------------------|--------|
-| *You've reached the limit of business portfolios* | Meta allow karta hai **max 2 portfolios** per person create karna — tumhare paas GenieChatbot + Expo Chatapp already hain |
-| **Expo Chatapp** pending delete | Count mein ab bhi ho sakta hai jab tak 24h na ho — isliye naya create block |
-| **GenieChatbot — Unverified** | Test ke liye **OK** — verification baad mein |
-| **Purana app delete ho chuka** | Naya app same portfolio mein = **fresh tokens**, purana app se koi link nahi |
-
-**Kya karo:**
-
-1. Screen B2 → **GenieChatbot** select karo → **Next**
-2. App ban jaye → **App ID** save karo (Basic settings)
-3. **Step 0C** — Railway purane tokens hatao → redeploy
-4. **Part 1** se webhook + naye tokens (sab **naye app** se)
-5. WhatsApp / Page / Instagram **GenieChatbot portfolio** ke under hi link rahenge
-
-**Important:** Portfolio purana hai, **app naya hai** — tokens purane mat use karo. Health check ke liye sab naya app se generate karna hai.
 
 ---
 
@@ -307,46 +149,23 @@ Bahut saare cards / checkboxes dikhenge. **Sirf messaging wale select karo** —
 
 ---
 
-#### Screen B2 — Business portfolio connect (ye screen aapko dikh rahi hai)
+#### Screen B2 — Business portfolio (GenieChatbot)
 
 Meta poochega:
 
 > **Which business portfolio do you want to connect to this app?**
 
-**Kya karna hai:**
+1. **GenieChatbot** select karo  
+   *(Unverified business dikhe to ignore — test ke liye OK)*
+2. Click: **Next** (ya **Continue** / **Create app**)
 
-| Option | Kab choose karo |
-|--------|-----------------|
-| **GenieChatbot** (Unverified) | ✅ **Quota error / delete fail ho to yahi use karo (Plan C)** — naya app isi portfolio mein banao |
-| **Expo Chatapp** | ❌ Mat choose — pending delete ya purana test |
-| **Create a business portfolio** | Plan B — sirf tab jab quota allow kare (max 2 portfolios per person) |
+| Note | Detail |
+|------|--------|
+| **GenieChatbot** | Apna existing portfolio — Page / WhatsApp / Instagram yahi se link honge |
+| **Unverified** | Development mode test chalega — verification baad mein |
+| **Dusre portfolio** | Mat choose karo — sirf GenieChatbot |
 
-**Simple rule:** Jis **Business portfolio** ke saath aapka **Facebook Page** aur **Instagram Business** connected hai — **wahi select karo**.
-
-**Verified vs unverified:**
-
-| Type | Abhi test ke liye |
-|------|-------------------|
-| **Unverified** portfolio | ✅ Chalega — Development mode mein bot test kar sakte ho |
-| **Verified** portfolio | Live / public users ke liye baad mein chahiye — abhi skip kar sakte ho |
-
-Meta likhe: *"unverified portfolio… add later"* — **theek hai**, app bana lo, verification baad mein.
-
-8. Apna portfolio **select** karo (radio / checkbox — jo UI ho)
-9. Click: **Next** (ya **Continue** / **Create app**)
-
-**Confusion ho to:** [business.facebook.com/settings](https://business.facebook.com/settings) → **Accounts** → dekho Page kis portfolio ke under hai → wahi portfolio app se connect karo.
-
-**Portfolio delete kiya phir bhi list mein dikhe?**
-
-| Reason | Simple matlab |
-|--------|----------------|
-| **App delete ≠ Portfolio delete** | Sirf Developer App delete kiya — portfolio alag hai → **Part 0B** follow karo |
-| **24 ghante pending** | Delete submit kiya par abhi pending period chal raha hai |
-| **Assets ab bhi connected** | WhatsApp / Page hatao, phir delete |
-| **Poora delete nahi hua** | [business.facebook.com/settings](https://business.facebook.com/settings) → **Permanently delete business** dubara try karo |
-
-**Fresh start:** Pehle **Part 0** poora karo — phir **Create a business portfolio** se naya portfolio banao.
+Page kis portfolio mein hai check karna ho: [business.facebook.com/settings](https://business.facebook.com/settings) → **Accounts**.
 
 ---
 
@@ -742,22 +561,20 @@ Forms (`open_form`) sirf **web** par chalte hain. WhatsApp / Instagram par chat 
 | Sheet mein Web dikhe | Channel fix ho chuka backend mein — naya message bhejo |
 | Health `ok: false` | WhatsApp token expire — ya **Application has been deleted** (purana app delete) → naya app + naye tokens |
 | **Application has been deleted** | Meta app delete kar diya — Railway ke **saare** Meta tokens badlo (WhatsApp + Page) |
-| Use case galat select ho gaya | App delete karke dubara Step 2 — sirf WhatsApp / Instagram / Messenger wale tick karo |
+| Use case galat select ho gaya | App dashboard se products add karo (Step 3) ya naya app banao |
 
 ---
 
 ## Part 8 — Order of work (recommended)
 
-Poora fresh start:
-
 ```
-0. Part 0 — Purani apps + portfolios delete + Railway tokens clear
-1. Part 1 — Naya app + Webhook + Verify and save
-2. Part 2 — WhatsApp (agar chahiye)
-3. Part 3 — Facebook Page + Page token
-4. Part 4 — Instagram subscribe + test
-5. Health check
-6. Test message har channel par
+1. Before you start — Railway tokens ready
+2. Part 1 — GenieChatbot mein naya app + Webhook + Verify and save
+3. Part 2 — WhatsApp (agar chahiye)
+4. Part 3 — Facebook Page + Page token
+5. Part 4 — Instagram subscribe + test
+6. Health check
+7. Test message har channel par
 ```
 
 ---
@@ -777,7 +594,7 @@ Poora fresh start:
 
 ## Summary (ek line mein)
 
-**Ek Meta app → ek webhook URL → Railway mein tokens → Meta mein Subscribe → test message bhejo.**
+**GenieChatbot portfolio mein ek Meta app → ek webhook URL → Railway mein tokens → Meta mein Subscribe → test message bhejo.**
 
 WhatsApp = WhatsApp token.  
 Instagram + Facebook = Page token + Page ID.  
