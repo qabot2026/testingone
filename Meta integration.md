@@ -216,6 +216,29 @@ Purane portfolio list mein dikhen to **ignore** — naya portfolio alag hai, nay
 
 ---
 
+### Plan C — Purana portfolio use karo (quota / delete dono fail)
+
+Agar **naya portfolio nahi ban raha** (quota error) aur **purana delete nahi ho raha** — **GenieChatbot mein hi naya app banao**. Ye **bilkul theek hai**.
+
+| Error / situation | Matlab |
+|-------------------|--------|
+| *You've reached the limit of business portfolios* | Meta allow karta hai **max 2 portfolios** per person create karna — tumhare paas GenieChatbot + Expo Chatapp already hain |
+| **Expo Chatapp** pending delete | Count mein ab bhi ho sakta hai jab tak 24h na ho — isliye naya create block |
+| **GenieChatbot — Unverified** | Test ke liye **OK** — verification baad mein |
+| **Purana app delete ho chuka** | Naya app same portfolio mein = **fresh tokens**, purana app se koi link nahi |
+
+**Kya karo:**
+
+1. Screen B2 → **GenieChatbot** select karo → **Next**
+2. App ban jaye → **App ID** save karo (Basic settings)
+3. **Step 0C** — Railway purane tokens hatao → redeploy
+4. **Part 1** se webhook + naye tokens (sab **naye app** se)
+5. WhatsApp / Page / Instagram **GenieChatbot portfolio** ke under hi link rahenge
+
+**Important:** Portfolio purana hai, **app naya hai** — tokens purane mat use karo. Health check ke liye sab naya app se generate karna hai.
+
+---
+
 ## Part 1 — Common steps (sab channels ke liye)
 
 Ye steps **ek baar** karo. WhatsApp, Instagram, Facebook — teeno ke liye same.
@@ -294,9 +317,9 @@ Meta poochega:
 
 | Option | Kab choose karo |
 |--------|-----------------|
-| **GenieChatbot** (ya jo naam is project ka ho) | ✅ **Yahi choose karo** — agar isi portfolio ke andar aapka Facebook Page / WhatsApp / Instagram linked hai ya aap isi ke liye naya app bana rahe ho |
-| **Expo Chatapp** (ya purana / alag project) | ❌ Mat choose karo — agar ye purana test app hai aur is bot se link nahi |
-| **Create a business portfolio** | ✅ **Plan B (recommended)** — purane delete skip; naya naam se portfolio banao |
+| **GenieChatbot** (Unverified) | ✅ **Quota error / delete fail ho to yahi use karo (Plan C)** — naya app isi portfolio mein banao |
+| **Expo Chatapp** | ❌ Mat choose — pending delete ya purana test |
+| **Create a business portfolio** | Plan B — sirf tab jab quota allow kare (max 2 portfolios per person) |
 
 **Simple rule:** Jis **Business portfolio** ke saath aapka **Facebook Page** aur **Instagram Business** connected hai — **wahi select karo**.
 
