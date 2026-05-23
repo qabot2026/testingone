@@ -110,6 +110,21 @@ Official guide: [Meta Help — Delete business portfolio](https://www.facebook.c
 | **Facebook Page** | Page khud delete nahi hota — sirf portfolio se link hat-ti hai |
 | **Delete option na dikhe** | Full control admin chahiye; ya koi asset ab bhi connected hai |
 
+#### "Scheduled for deletion — account can't be accessed" (normal hai)
+
+Agar ye message aaye:
+
+> *You scheduled Expo Chatapp for deletion. Your account can't be accessed at this time. If you think that this is a mistake, choose Don't delete business before it's permanently deleted.*
+
+| Matlab | Kya karo |
+|--------|----------|
+| **Delete ho chuka schedule** | Portfolio delete **fail nahi hua** — Meta ne 24 ghante ke liye lock kar diya |
+| **Ab access nahi milega** | Pending period mein us portfolio ko kholna / edit karna **normal se band** hai |
+| **Dubara delete mat try karo** | Already queue mein hai — wait karo |
+| **Don't delete business** | Sirf tab click karo jab cancel karna ho — warna **mat dabao** |
+
+**24 ghante baad** portfolio list se permanently hat jayega. Tab **Part 1** se naya portfolio + naya app banao.
+
 #### Delete ho gaya verify karo
 
 1. [business.facebook.com/settings](https://business.facebook.com/settings) → **Business portfolios**
