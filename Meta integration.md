@@ -184,6 +184,38 @@ Part 0 (delete) → Part 1 (naya app) → Part 2/3/4 (channels) → Test
 
 ---
 
+### Plan B — Delete skip karo (recommended agar errors aa rahe hon)
+
+**Poora portfolio delete zaroori nahi hai** naya bot chalane ke liye. Meta ke alag-alag pages par errors normal hain — isliye **delete fight mat karo**.
+
+| Question | Answer |
+|----------|--------|
+| **Koi app / agent sab auto kare?** | **Nahi.** Meta password + 2FA tumhe khud confirm karna padta hai. Koi third-party app tumhare account se portfolio delete / app bana nahi sakta (security). |
+| **Cursor / AI agent?** | Sirf **guide** kar sakta hai — Meta UI par click tumhe khud karne padenge. Errors ka screenshot bhejo, step-by-step batate hain. |
+| **Expo Chatapp pending delete?** | Theek hai — **24h wait**, usko chhod do. Dubara mat kholo. |
+| **GenieChatbot delete nahi ho raha?** | **Chhod do abhi** — baad mein delete kar lena. |
+
+**Ab ye karo (2 sites hi use karo):**
+
+| Site | Sirf ye kaam |
+|------|----------------|
+| [developers.facebook.com](https://developers.facebook.com) | Naya app, webhook, tokens |
+| [business.facebook.com/settings](https://business.facebook.com/settings) | Sirf jab Page / WhatsApp naye portfolio se link karna ho |
+
+**Mat ghumo in par (confusion badhta hai):** facebook.com home, Meta Business Suite dashboard, random Settings tabs, People/Users (admin remove).
+
+**Fresh start bina purana delete:**
+
+1. **Step 0C** — Railway purane tokens hatao → redeploy
+2. [developers.facebook.com/apps](https://developers.facebook.com/apps) → **Create App**
+3. Screen B2 par **Create a business portfolio** → naya naam (jaise `Genie Bot 2026`)
+4. **GenieChatbot / Expo Chatapp mat select karo**
+5. App banne ke baad **Part 1** webhook + **Part 2/3/4** channels
+
+Purane portfolio list mein dikhen to **ignore** — naya portfolio alag hai, naya app usse connect hoga.
+
+---
+
 ## Part 1 — Common steps (sab channels ke liye)
 
 Ye steps **ek baar** karo. WhatsApp, Instagram, Facebook — teeno ke liye same.
@@ -264,7 +296,7 @@ Meta poochega:
 |--------|-----------------|
 | **GenieChatbot** (ya jo naam is project ka ho) | ✅ **Yahi choose karo** — agar isi portfolio ke andar aapka Facebook Page / WhatsApp / Instagram linked hai ya aap isi ke liye naya app bana rahe ho |
 | **Expo Chatapp** (ya purana / alag project) | ❌ Mat choose karo — agar ye purana test app hai aur is bot se link nahi |
-| **Create a business portfolio** | Sirf tab jab **dono list mein galat hon** — naya portfolio banao aur baad mein Page link karo |
+| **Create a business portfolio** | ✅ **Plan B (recommended)** — purane delete skip; naya naam se portfolio banao |
 
 **Simple rule:** Jis **Business portfolio** ke saath aapka **Facebook Page** aur **Instagram Business** connected hai — **wahi select karo**.
 
