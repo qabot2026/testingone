@@ -10081,18 +10081,70 @@ const VIDEO_LIGHTBOX_PANEL_ID = "dfchat-video-lightbox-panel";
 const VIDEO_LIGHTBOX_IFRAME_ID = "dfchat-video-lightbox-iframe";
 const VIDEO_LIGHTBOX_CLOSE_ID = "dfchat-video-lightbox-close";
 
+/**
+ * When the widget runs inside `company-loader.js`'s docked iframe, `96vw`/`92vh` are relative to that
+ * small frame (~440×720). Mount lightboxes on the parent page so images fill the browser viewport.
+ * @returns {Document}
+ */
+function getDfchatLightboxDocument() {
+    try {
+        if (typeof window !== "undefined" && window.parent && window.parent !== window) {
+            const parentDoc = window.parent.document;
+            if (parentDoc && parentDoc.body) {
+                return parentDoc;
+            }
+        }
+    } catch {
+        /* cross-origin parent — keep lightbox in the iframe */
+    }
+    return document;
+}
+
+/** @returns {HTMLElement} */
+function getDfchatLightboxHtmlEl() {
+    return getDfchatLightboxDocument().documentElement;
+}
+
+/** @returns {HTMLElement | null} */
+function getDfchatLightboxBodyEl() {
+    return getDfchatLightboxDocument().body || null;
+}
+
+/** @param {boolean} locked */
+function setDfchatLightboxPageScrollLocked(locked) {
+    /** @type {Document[]} */
+    const docs = [document];
+    try {
+        if (window.parent && window.parent !== window && window.parent.document) {
+            docs.push(window.parent.document);
+        }
+    } catch {
+        /* ignore */
+    }
+    for (let di = 0; di < docs.length; di += 1) {
+        const doc = docs[di];
+        try {
+            doc.documentElement.style.overflow = locked ? "hidden" : "";
+            doc.body.style.overflow = locked ? "hidden" : "";
+        } catch {
+            /* ignore */
+        }
+    }
+}
+
 /** Block stray lightbox/chrome after dismiss; works on desktop + mobile. */
 const DFCHAT_LIGHTBOX_SUPPRESS_AFTER_CLOSE_MS = 1500;
 let dfchatLightboxSuppressUntilMs = 0;
 
 function ensureMobileLightboxParkStyle() {
-    if (!document.head && !document.documentElement) {
+    const doc = getDfchatLightboxDocument();
+    if (!doc.head && !doc.documentElement) {
         return;
     }
-    if (document.getElementById("dfchat-mobile-lb-park-style")) {
+    if (doc.getElementById("dfchat-mobile-lb-park-style")) {
         return;
     }
-    const tag = document.createElement("style");
+    const tag = doc.createElement("style");
     tag.id = "dfchat-mobile-lb-park-style";
     tag.textContent = `
 html.dfchat-mobile-lb-off #${IMAGE_LIGHTBOX_ID},
@@ -10102,13 +10154,13 @@ html.dfchat-mobile-lb-off #${VIDEO_LIGHTBOX_ID} {
   pointer-events: none !important;
 }
 `.trim();
-    (document.head || document.documentElement).appendChild(tag);
+    (doc.head || doc.documentElement).appendChild(tag);
 }
 
 function suppressDfchatLightboxAfterChatDismiss() {
     ensureMobileLightboxParkStyle();
     try {
-        document.documentElement.classList.add("dfchat-mobile-lb-off");
+        getDfchatLightboxHtmlEl().classList.add("dfchat-mobile-lb-off");
     } catch {
         /* ignore */
     }
@@ -10133,7 +10185,7 @@ function syncMobileLightboxParkStateFromChat() {
     const expanded = ms && isChatExpanded(ms);
     if (expanded) {
         try {
-            document.documentElement.classList.remove("dfchat-mobile-lb-off");
+            getDfchatLightboxHtmlEl().classList.remove("dfchat-mobile-lb-off");
         } catch {
             /* ignore */
         }
@@ -10150,10 +10202,11 @@ function setImageLightboxIndex(nextIndex) {
     if (!Array.isArray(imageLightboxSrcs) || imageLightboxSrcs.length === 0) {
         return;
     }
-    const overlay = document.getElementById(IMAGE_LIGHTBOX_ID);
-    const img = document.getElementById(IMAGE_LIGHTBOX_IMG_ID);
-    const prev = document.getElementById(IMAGE_LIGHTBOX_PREV_ID);
-    const next = document.getElementById(IMAGE_LIGHTBOX_NEXT_ID);
+    const lbDoc = getDfchatLightboxDocument();
+    const overlay = lbDoc.getElementById(IMAGE_LIGHTBOX_ID);
+    const img = lbDoc.getElementById(IMAGE_LIGHTBOX_IMG_ID);
+    const prev = lbDoc.getElementById(IMAGE_LIGHTBOX_PREV_ID);
+    const next = lbDoc.getElementById(IMAGE_LIGHTBOX_NEXT_ID);
     if (!overlay || !img) {
         return;
     }
@@ -10354,10 +10407,11 @@ function ensureLightboxImageObserver(dfMessenger) {
 }
 
 function ensureImageLightboxMounted() {
-    if (document.getElementById(IMAGE_LIGHTBOX_ID)) {
+    const lbDoc = getDfchatLightboxDocument();
+    if (lbDoc.getElementById(IMAGE_LIGHTBOX_ID)) {
         return;
     }
-    const overlay = document.createElement("div");
+    const overlay = lbDoc.createElement("div");
     overlay.id = IMAGE_LIGHTBOX_ID;
     overlay.setAttribute("role", "dialog");
     overlay.setAttribute("aria-modal", "true");
@@ -10373,7 +10427,7 @@ function ensureImageLightboxMounted() {
         "z-index:2147483647"
     ].join(";");
 
-    const img = document.createElement("img");
+    const img = lbDoc.createElement("img");
     img.id = IMAGE_LIGHTBOX_IMG_ID;
     img.alt = "";
     img.style.cssText = [
@@ -10387,7 +10441,7 @@ function ensureImageLightboxMounted() {
         "background:#fff"
     ].join(";");
 
-    const closeBtn = document.createElement("button");
+    const closeBtn = lbDoc.createElement("button");
     closeBtn.id = IMAGE_LIGHTBOX_CLOSE_ID;
     closeBtn.type = "button";
     closeBtn.setAttribute("aria-label", "Dismiss");
@@ -10410,7 +10464,7 @@ function ensureImageLightboxMounted() {
     ].join(";");
 
     const mkArrow = (id, label, dir) => {
-        const b = document.createElement("button");
+        const b = lbDoc.createElement("button");
         b.id = id;
         b.type = "button";
         b.setAttribute("aria-label", label);
@@ -10440,7 +10494,10 @@ function ensureImageLightboxMounted() {
     overlay.appendChild(closeBtn);
     overlay.appendChild(prevBtn);
     overlay.appendChild(nextBtn);
-    document.body.appendChild(overlay);
+    const lbBody = getDfchatLightboxBodyEl();
+    if (lbBody) {
+        lbBody.appendChild(overlay);
+    }
 
     overlay.addEventListener("click", (e) => {
         e.preventDefault?.();
@@ -10471,9 +10528,9 @@ function ensureImageLightboxMounted() {
         stepImageLightbox(1);
     });
 
-    document.addEventListener("keydown", (e) => {
+    const onLightboxKeydown = (e) => {
         if (e.key === "Escape") {
-            const videoOverlay = document.getElementById(VIDEO_LIGHTBOX_ID);
+            const videoOverlay = lbDoc.getElementById(VIDEO_LIGHTBOX_ID);
             if (videoOverlay && videoOverlay.style.display === "flex") {
                 closeVideoLightbox();
                 return;
@@ -10481,8 +10538,8 @@ function ensureImageLightboxMounted() {
             closeImageLightbox();
             return;
         }
-        const overlay = document.getElementById(IMAGE_LIGHTBOX_ID);
-        if (!overlay || overlay.style.display === "none") {
+        const overlayEl = lbDoc.getElementById(IMAGE_LIGHTBOX_ID);
+        if (!overlayEl || overlayEl.style.display === "none") {
             return;
         }
         if (e.key === "ArrowLeft") {
@@ -10490,7 +10547,18 @@ function ensureImageLightboxMounted() {
         } else if (e.key === "ArrowRight") {
             stepImageLightbox(1);
         }
-    });
+    };
+    if (window.__dfchatImageLightboxKeydownBound !== true) {
+        window.__dfchatImageLightboxKeydownBound = true;
+        window.addEventListener("keydown", onLightboxKeydown);
+        try {
+            if (window.parent && window.parent !== window) {
+                window.parent.addEventListener("keydown", onLightboxKeydown);
+            }
+        } catch {
+            /* ignore */
+        }
+    }
 }
 
 function openImageLightbox(srcs, index, alt) {
@@ -10499,13 +10567,14 @@ function openImageLightbox(srcs, index, alt) {
         return;
     }
     try {
-        document.documentElement.classList.remove("dfchat-mobile-lb-off");
+        getDfchatLightboxHtmlEl().classList.remove("dfchat-mobile-lb-off");
     } catch {
         /* ignore */
     }
     ensureImageLightboxMounted();
-    const overlay = document.getElementById(IMAGE_LIGHTBOX_ID);
-    const img = document.getElementById(IMAGE_LIGHTBOX_IMG_ID);
+    const lbDoc = getDfchatLightboxDocument();
+    const overlay = lbDoc.getElementById(IMAGE_LIGHTBOX_ID);
+    const img = lbDoc.getElementById(IMAGE_LIGHTBOX_IMG_ID);
     if (!overlay || !img) {
         return;
     }
@@ -10518,17 +10587,13 @@ function openImageLightbox(srcs, index, alt) {
     setImageLightboxIndex(imageLightboxIndex);
     img.alt = typeof alt === "string" ? alt : "";
     overlay.style.display = "flex";
-    try {
-        document.documentElement.style.overflow = "hidden";
-        document.body.style.overflow = "hidden";
-    } catch {
-        /* ignore */
-    }
+    setDfchatLightboxPageScrollLocked(true);
 }
 
 function closeImageLightbox() {
-    const overlay = document.getElementById(IMAGE_LIGHTBOX_ID);
-    const img = document.getElementById(IMAGE_LIGHTBOX_IMG_ID);
+    const lbDoc = getDfchatLightboxDocument();
+    const overlay = lbDoc.getElementById(IMAGE_LIGHTBOX_ID);
+    const img = lbDoc.getElementById(IMAGE_LIGHTBOX_IMG_ID);
     if (img) {
         img.removeAttribute("src");
     }
@@ -10537,19 +10602,18 @@ function closeImageLightbox() {
     if (overlay) {
         overlay.style.display = "none";
     }
-    try {
-        document.documentElement.style.overflow = "";
-        document.body.style.overflow = "";
-    } catch {
-        /* ignore */
+    const videoLb = lbDoc.getElementById(VIDEO_LIGHTBOX_ID);
+    if (!videoLb || videoLb.style.display !== "flex") {
+        setDfchatLightboxPageScrollLocked(false);
     }
 }
 
 function ensureVideoLightboxMounted() {
-    if (document.getElementById(VIDEO_LIGHTBOX_ID)) {
+    const lbDoc = getDfchatLightboxDocument();
+    if (lbDoc.getElementById(VIDEO_LIGHTBOX_ID)) {
         return;
     }
-    const overlay = document.createElement("div");
+    const overlay = lbDoc.createElement("div");
     overlay.id = VIDEO_LIGHTBOX_ID;
     overlay.setAttribute("role", "dialog");
     overlay.setAttribute("aria-modal", "true");
@@ -10568,7 +10632,7 @@ function ensureVideoLightboxMounted() {
         "box-sizing:border-box"
     ].join(";");
 
-    const panel = document.createElement("div");
+    const panel = lbDoc.createElement("div");
     panel.id = VIDEO_LIGHTBOX_PANEL_ID;
     panel.style.cssText = [
         "position:relative",
@@ -10576,7 +10640,7 @@ function ensureVideoLightboxMounted() {
         "max-width:100%"
     ].join(";");
 
-    const ratio = document.createElement("div");
+    const ratio = lbDoc.createElement("div");
     ratio.style.cssText = [
         "position:relative",
         "width:100%",
@@ -10588,7 +10652,7 @@ function ensureVideoLightboxMounted() {
         "box-shadow:0 24px 80px rgba(0,0,0,0.55)"
     ].join(";");
 
-    const iframe = document.createElement("iframe");
+    const iframe = lbDoc.createElement("iframe");
     iframe.id = VIDEO_LIGHTBOX_IFRAME_ID;
     iframe.setAttribute("title", "YouTube video (fullscreen)");
     iframe.setAttribute("allowfullscreen", "");
@@ -10616,7 +10680,7 @@ function ensureVideoLightboxMounted() {
 
     ratio.appendChild(iframe);
 
-    const closeBtn = document.createElement("button");
+    const closeBtn = lbDoc.createElement("button");
     closeBtn.id = VIDEO_LIGHTBOX_CLOSE_ID;
     closeBtn.type = "button";
     closeBtn.setAttribute("aria-label", "Close video");
@@ -10636,7 +10700,7 @@ function ensureVideoLightboxMounted() {
         "flex:0 0 auto"
     ].join(";");
 
-    const ctr = document.createElement("div");
+    const ctr = lbDoc.createElement("div");
     ctr.style.cssText = [
         "display:flex",
         "width:100%",
@@ -10648,7 +10712,10 @@ function ensureVideoLightboxMounted() {
     panel.appendChild(ctr);
     panel.appendChild(ratio);
     overlay.appendChild(panel);
-    document.body.appendChild(overlay);
+    const lbBody = getDfchatLightboxBodyEl();
+    if (lbBody) {
+        lbBody.appendChild(overlay);
+    }
 
     overlay.addEventListener("click", (e) => {
         e.preventDefault?.();
@@ -10677,18 +10744,19 @@ function openVideoLightbox(embedHttpsUrl) {
         return;
     }
     try {
-        document.documentElement.classList.remove("dfchat-mobile-lb-off");
+        getDfchatLightboxHtmlEl().classList.remove("dfchat-mobile-lb-off");
     } catch {
         /* ignore */
     }
     ensureVideoLightboxMounted();
+    const lbDoc = getDfchatLightboxDocument();
     /** @type {HTMLElement | null} */
-    const overlay = document.getElementById(VIDEO_LIGHTBOX_ID);
+    const overlay = lbDoc.getElementById(VIDEO_LIGHTBOX_ID);
     /** @type {HTMLIFrameElement | null} */
-    const iframe = /** @type {HTMLIFrameElement | null} */ (document.getElementById(VIDEO_LIGHTBOX_IFRAME_ID));
+    const iframe = /** @type {HTMLIFrameElement | null} */ (lbDoc.getElementById(VIDEO_LIGHTBOX_IFRAME_ID));
 
     /** @type {HTMLElement | null} */
-    const imageLb = document.getElementById(IMAGE_LIGHTBOX_ID);
+    const imageLb = lbDoc.getElementById(IMAGE_LIGHTBOX_ID);
     try {
         if (imageLb && imageLb.style.display === "flex") {
             closeImageLightbox();
@@ -10711,13 +10779,7 @@ function openVideoLightbox(embedHttpsUrl) {
         iframe.src = src;
     }
     overlay.style.display = "flex";
-
-    try {
-        document.documentElement.style.overflow = "hidden";
-        document.body.style.overflow = "hidden";
-    } catch {
-        /* ignore */
-    }
+    setDfchatLightboxPageScrollLocked(true);
 }
 
 /**
@@ -10758,10 +10820,11 @@ function queryInlineVideoWrapsAwaitingLightboxRestore() {
 }
 
 function closeVideoLightbox() {
+    const lbDoc = getDfchatLightboxDocument();
     /** @type {HTMLIFrameElement | null} */
-    const iframe = /** @type {HTMLIFrameElement | null} */ (document.getElementById(VIDEO_LIGHTBOX_IFRAME_ID));
+    const iframe = /** @type {HTMLIFrameElement | null} */ (lbDoc.getElementById(VIDEO_LIGHTBOX_IFRAME_ID));
     /** @type {HTMLElement | null} */
-    const overlay = document.getElementById(VIDEO_LIGHTBOX_ID);
+    const overlay = lbDoc.getElementById(VIDEO_LIGHTBOX_ID);
 
     if (iframe) {
         iframe.removeAttribute("src");
@@ -10794,12 +10857,9 @@ function closeVideoLightbox() {
 
     try {
         /** Don’t unblock scroll if image lightbox is still supposed to dim the page */
-
-        /** @type {HTMLElement | null} */
-        const imageLb = document.getElementById(IMAGE_LIGHTBOX_ID);
+        const imageLb = lbDoc.getElementById(IMAGE_LIGHTBOX_ID);
         if (!imageLb || imageLb.style.display !== "flex") {
-            document.documentElement.style.overflow = "";
-            document.body.style.overflow = "";
+            setDfchatLightboxPageScrollLocked(false);
         }
     } catch {
         /* ignore */
