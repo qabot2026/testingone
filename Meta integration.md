@@ -432,26 +432,37 @@ Facebook Messenger chahiye to Part 1 + ye steps.
 
 ---
 
-### Step F2 — Messenger product
+### Step F2 — Page connect + token (Messenger use case)
 
-1. App → **Add product** → **Messenger** → **Set up**
-2. **Access tokens** section → **Page** select karo → **Generate token**
-3. Permissions allow karo jab pooche
+**Facebook + Instagram dono yahi se setup hote hain.** Instagram tab mein alag **Configuration** nahi hota — ye normal hai.
 
-| Copy | Railway |
-|------|---------|
-| Page access token | `META_PAGE_ACCESS_TOKEN` |
-| Page ID | `META_PAGE_ID` |
+1. App → **Use cases** → **Messenger** → **Customize**
+2. **Messenger API Setup** section:
+
+| Step | Kya karo |
+|------|----------|
+| **Configure webhooks** | **Same** Callback URL + **Same** Verify token (WhatsApp jaisa) → Verify and save |
+| **Connect Facebook Page** | Apni Page select karo → **Save** |
+| **Generate token** | Page token copy karo |
+
+3. Railway update (naya token ho to):
 
 ```
-META_PAGE_ACCESS_TOKEN=EAAG...page-token...
+META_PAGE_ACCESS_TOKEN=EAAG...page token...
 META_PAGE_ID=123456789012345
 ```
 
-Redeploy.
+> **Important:** `META_PAGE_ID` wahi Page honi chahiye jo yahan connect ki. Health mein `page_id_suffix` match karo.
 
-**Graph API Explorer:** [developers.facebook.com/tools/explorer](https://developers.facebook.com/tools/explorer)  
-→ **Get Page Access Token** → permissions: `pages_messaging`, `pages_manage_metadata`
+4. **Add Subscriptions** dabao → tick karo:
+   - `messages`
+   - `messaging_postbacks`
+5. **Confirm** / Save
+
+Redeploy Railway (agar token badla ho).
+
+**Graph API Explorer (optional check):** [developers.facebook.com/tools/explorer](https://developers.facebook.com/tools/explorer)  
+→ Page token → `POST /{PAGE_ID}/subscribed_apps?subscribed_fields=messages,messaging_postbacks`
 
 ---
 
@@ -491,10 +502,15 @@ Bina Page link ke Instagram bot kaam nahi karega.
 
 ---
 
-### Step I2 — Instagram product app mein
+### Step I2 — Instagram (app mein)
 
-1. App → **Add product** → **Instagram** (Instagram API / messaging wala) → **Set up**
-2. Instagram account connect karo jab pooche
+Instagram tab mein **Configuration option nahi dikhega** — Instagram DM **Messenger + Page** se chalta hai.
+
+1. **Step F2 poora karo** (Page connect + webhook + subscriptions)
+2. App → **Use cases** → **Instagram** → **Customize** — sirf permissions / account link check karo (agar pooche)
+3. [business.facebook.com/settings](https://business.facebook.com/settings) → **Accounts** → **Instagram accounts** → Page se **linked** ho
+
+Bina Page link ke Instagram bot kaam nahi karega.
 
 ---
 
@@ -519,10 +535,13 @@ Token mein ye permissions honi chahiye:
 
 ### Step I4 — Webhook subscribe (Instagram)
 
-1. App → **Use cases** → Instagram → **Customize** → **Configuration**
-2. **`messages`** aur **`messaging_postbacks`** subscribe karo
+**Alag Instagram webhook page nahi hoti.** Page par `messages` subscribe hone se Instagram DM bhi aata hai (Messenger API Setup → **Add Subscriptions**).
 
-*(Purane UI: App → Webhooks → Instagram → Subscribe)*
+Checklist:
+- [ ] Page app se connected (Messenger API Setup)
+- [ ] `messages` + `messaging_postbacks` subscribed
+- [ ] Instagram Business account Page se linked
+- [ ] Railway `META_PAGE_*` usi Page ke hain
 
 ---
 
@@ -581,7 +600,8 @@ Forms (`open_form`) sirf **web** par chalte hain. WhatsApp / Instagram par chat 
 | Meta **Verify failed** / *couldn't be validated* | Pehle health check — `verify_token_set` **false** ho to Railway mein `WHATSAPP_VERIFY_TOKEN` add karo → redeploy → curl test → phir Meta Verify |
 | Meta **Verify failed** (token set hai) | Token Railway aur Meta mein **exact same**? Extra space? Redeploy? |
 | WhatsApp reply nahi | Naya `WHATSAPP_ACCESS_TOKEN` — purana expire ho sakta hai |
-| Instagram reply nahi | Page token + Instagram **Subscribed**? Tester account? |
+| WhatsApp reply, FB/IG nahi | **Messenger API Setup** — Page connect + webhook verify + **Add Subscriptions** (`messages`) |
+| Instagram tab mein Configuration nahi | **Normal** — IG Messenger use case + Page link se chalta hai |
 | Sirf Development mein chalta hai | App roles mein user ko **Tester** banao |
 | Sheet mein Web dikhe | Channel fix ho chuka backend mein — naya message bhejo |
 | Health `ok: false` | WhatsApp token expire — ya **Application has been deleted** (purana app delete) → naya app + naye tokens |
