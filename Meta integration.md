@@ -606,20 +606,195 @@ Forms (`open_form`) sirf **web** par chalte hain. WhatsApp / Instagram par chat 
 | Sheet mein Web dikhe | Channel fix ho chuka backend mein — naya message bhejo |
 | Health `ok: false` | WhatsApp token expire — ya **Application has been deleted** (purana app delete) → naya app + naye tokens |
 | **Application has been deleted** | Meta app delete kar diya — Railway ke **saare** Meta tokens badlo (WhatsApp + Page) |
-| Use case galat select ho gaya | App dashboard se products add karo (Step 3) ya naya app banao |
+| IG typing, no reply (Live mode) | **Part 9 — App Review** (`instagram_manage_messages`) |
 
 ---
 
-## Part 8 — Order of work (recommended)
+## Part 9 — App Review (Instagram + Facebook public ke liye)
+
+**Publish ≠ App Review.** Live mode mein bhi Instagram **reply bhejne** ke liye permissions approve honi chahiye.
+
+Tumhara case: **apne hospital / business ke liye bot** → [Apps For Your Own Business](https://developers.facebook.com/documentation/business-messaging/instagram-messaging/app-review/apps-for-your-own-business) guide follow karo.
+
+---
+
+### Pehle ready karo (submission se pehle)
+
+| Item | Kahan |
+|------|--------|
+| App icon 1024×1024 | App settings → Basic |
+| Privacy policy URL | App settings → Basic (public link) |
+| Category | App settings → Basic |
+| App **Live / Published** | Left menu → Publish |
+| Webhook + tokens working | WhatsApp test OK = backend OK |
+| Business IG → Allow access to messages ON | Instagram app settings |
+
+---
+
+### Step 1 — App Review kholo
+
+1. App dashboard: `https://developers.facebook.com/apps/1681691082959055/`
+2. Left menu → **App Review** → **Requests**
+3. **Edit** (ya **Start submission** / **Continue submission**)
+
+Agar **Ineligible** dikhe → Basic settings (icon, privacy, category) pehle bharo.
+
+---
+
+### Step 2 — Permissions request karo
+
+**Minimum (Instagram + Facebook Messenger):**
+
+| Permission | Kyon |
+|------------|------|
+| `instagram_manage_messages` | Instagram DM read + reply |
+| `instagram_basic` | IG account info |
+| `pages_messaging` | Facebook Page messages + IG send |
+| `pages_manage_metadata` | Page webhook subscribe |
+| `pages_show_list` | Page list (dependency) |
+| `business_management` | Dependency — submission mein likhna |
+
+Har permission par click karo → **Request advanced access** (ya **Get advanced access**).
+
+> WhatsApp ke liye alag permissions ho sakti hain — jo already approved hon unhe dubara mat maango.
+
+---
+
+### Step 3 — Screen recording (video) banao
+
+Meta reviewers ke liye **2–5 minute** video (phone screen record ya desktop):
+
+**Video mein ye dikhao (order mein):**
+
+1. Apna **Instagram business account** kholo
+2. Kisi account se (tester) business ko DM: **`Hi`**
+3. **Bot reply** aata hai — poora message dikhe
+4. (Optional) Ek aur message / menu dikhao
+
+**Agar Instagram reply abhi block ho (typing only):**
+
+- **WhatsApp** par same bot `Hi` → reply dikhao (same backend)
+- Video mein bolo / text overlay: *"Same webhook + Dialogflow bot powers Instagram DMs"*
+- Saath mein Meta dashboard dikhao: webhook URL, `messages` subscribed
+
+Official tips: [Screencast for App Review](https://developers.facebook.com/videos/2021/developing-for-success-how-to-produce-a-screencast-for-app-review/)
+
+---
+
+### Step 4 — `instagram_manage_messages` form bharo
+
+Har permission ke liye Meta form maangega. **instagram_manage_messages** ke liye:
+
+| Field | Kya likho (example) |
+|-------|---------------------|
+| **Description** | Automated chatbot for our hospital Instagram account. Users send messages; bot replies with appointment info and FAQs via Dialogflow. |
+| **How to test** | Open our Instagram business profile → Send DM "Hi" → Bot responds automatically within seconds. |
+| **Test commands** | `Hi`, `Hello`, `Book appointment` |
+| **Instagram account** | Apna business IG **@username** |
+| **Primary Experience** | **Automated** (not Live Agent) |
+| **Screen recording** | Step 3 wala video upload |
+
+---
+
+### Step 5 — `pages_messaging` form
+
+| Field | Example |
+|-------|---------|
+| Description | Same bot replies on our Facebook Page Messenger inbox. |
+| How to test | Facebook Page → Message → send `Hi` → bot reply |
+
+Same screencast upload kar sakte ho (WhatsApp + Page + IG agar sab dikhe).
+
+---
+
+### Step 6 — `business_management`
+
+Description mein likho:
+
+> Requested as dependency for `pages_messaging`, `pages_show_list`, and `instagram_manage_messages`. We only manage our own business Page and Instagram account.
+
+---
+
+### Step 7 — Reviewer instructions (Verification details)
+
+**App Review → Edit submission → Provide reviewer instructions**
+
+```
+Platform: Website
+URL: [apni hospital website ya privacy policy wali site]
+
+Steps for reviewer:
+1. Open Instagram app, search our business account: @[YOUR_IG_HANDLE]
+2. Send direct message: Hi
+3. Within 10 seconds, automated bot reply should appear.
+
+Alternative test (same bot):
+- WhatsApp: message our business WhatsApp number with "Hi"
+- Facebook: open our Page and send "Hi" via Messenger
+
+No login required for Instagram/Facebook test — public DM to our business account.
+Credentials: Not required (leave blank).
+```
+
+---
+
+### Step 8 — Submit
+
+1. Har permission par checkbox — allowed usage agree
+2. **Submit for Review**
+3. Wait: **2–10 business days** (kabhi 24–48 hours)
+
+Status: **App Review → Requests** mein dikhega (Approved / Rejected).
+
+---
+
+### Reject ho to
+
+| Reason | Fix |
+|--------|-----|
+| Screencast mein reply nahi dikha | WhatsApp working video + clear test steps |
+| Privacy policy missing | Public URL fix |
+| Permission use case unclear | Description mein "own business only" likho |
+| Webhook not working | Health `ok: true` + test message pehle |
+
+Reject ke baad **Edit** → fix → **resubmit**.
+
+---
+
+### Approve ke baad
+
+1. Permissions **Advanced Access** = Active check karo
+2. **Messenger API Setup** → naya **Page token** → Railway → redeploy
+3. Instagram + Facebook test — **kisi bhi** user se DM chalega
+4. Permanent **System User token** banao (tokens expire na hon)
+
+---
+
+### Short checklist
+
+```
+☐ Basic settings (icon, privacy, category)
+☐ App Live
+☐ Permissions request (instagram_manage_messages, pages_messaging, …)
+☐ Screencast video (Hi → bot reply)
+☐ Reviewer instructions
+☐ Submit for Review
+☐ After approve → new Page token → Railway redeploy
+```
+
+---
+
+## Part 10 — Order of work (recommended)
 
 ```
 1. Before you start — Railway tokens ready
 2. Part 1 — GenieChatbot mein naya app + Webhook + Verify and save
-3. Part 2 — WhatsApp (agar chahiye)
+3. Part 2 — WhatsApp
 4. Part 3 — Facebook Page + Page token
 5. Part 4 — Instagram subscribe + test
 6. Health check
-7. Test message har channel par
+7. Part 9 — App Review (Instagram/Facebook public)
+8. Test message har channel par
 ```
 
 ---
