@@ -25,6 +25,11 @@ import {
     isDirectVideoFileUrl_
 } from "../meta-channels/cx-payload.mjs";
 import { normalizeLeadChannel } from "../meta-channels/normalize-channel.mjs";
+import {
+    metaContactHintsForCxSession_,
+    rememberMetaContact_,
+    whatsappProfileNameFromContacts_
+} from "../meta-channels/contact-profile.mjs";
 import { syncMetaInboundMessageToSheet_ } from "../meta-channels/sheet-sync.mjs";
 
 /**
@@ -1640,13 +1645,66 @@ function extractInboundPageText_(event, sessionId) {
     return "";
 }
 
+/** @type {Map<string, { name: string, at: number }>} */
+const graphProfileNameCache_ = new Map();
+const GRAPH_PROFILE_TTL_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Facebook / Instagram display name via Graph API (Page access token).
+ * @param {string} userId PSID / IGSID
+ */
+async function fetchGraphUserProfileName_(userId) {
+    const id = trim_(userId);
+    if (!id) {
+        return "";
+    }
+    const cached = graphProfileNameCache_.get(id);
+    if (cached && Date.now() - cached.at < GRAPH_PROFILE_TTL_MS) {
+        return cached.name;
+    }
+    const c = metaConfig_();
+    const token = c.page.accessToken;
+    if (!token) {
+        return "";
+    }
+    const url =
+        `https://graph.facebook.com/${c.graphVersion}/${encodeURIComponent(id)}`
+        + "?fields=name,first_name,last_name";
+    try {
+        const res = await fetch(url, {
+            headers: { Authorization: `Bearer ${token}` }
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+            log_("graph_profile_skip", {
+                status: res.status,
+                error: trim_(data?.error?.message).slice(0, 120)
+            });
+            return "";
+        }
+        const name =
+            trim_(data.name)
+            || [trim_(data.first_name), trim_(data.last_name)].filter(Boolean).join(" ");
+        if (name) {
+            graphProfileNameCache_.set(id, { name, at: Date.now() });
+        }
+        return name;
+    } catch (e) {
+        log_("graph_profile_skip", {
+            error: e && e.message ? String(e.message).slice(0, 120) : String(e)
+        });
+        return "";
+    }
+}
+
 /**
  * @param {{
  *   channel: "whatsapp" | "facebook" | "instagram",
  *   from: string,
  *   text: string,
  *   messageId: string,
- *   sessionId: string
+ *   sessionId: string,
+ *   profileName?: string
  * }} input
  */
 function cxSessionParams_(cx) {
@@ -1669,11 +1727,27 @@ function cxSessionParams_(cx) {
 async function processInboundMetaMessage_(input) {
     const c = metaConfig_();
     const channel = normalizeLeadChannel(input.channel);
+    let profileName = trim_(input.profileName);
+    if (!profileName && (channel === "instagram" || channel === "facebook")) {
+        profileName = await fetchGraphUserProfileName_(input.from);
+    }
+    if (profileName) {
+        rememberMetaContact_(input.sessionId, { name: profileName, channel });
+    }
+
+    const contactHints = metaContactHintsForCxSession_({
+        sessionId: input.sessionId,
+        channel,
+        from: input.from,
+        profileName
+    });
+
     const cx = await detectIntentCx_({
         sessionId: input.sessionId,
         text: input.text,
         languageCode: c.languageCode,
-        channel
+        channel,
+        contactHints
     });
     const parts = extractCxResponse_(cx);
 
@@ -1696,10 +1770,16 @@ async function processInboundMetaMessage_(input) {
         sessionId: input.sessionId,
         from: input.from,
         userText: input.text,
+        profileName,
         cxParams: cxSessionParams_(cx)
     }).then((out) => {
         if (out.ok) {
-            log_("sheet_sync", { channel: out.channel, mode: out.result?.mode || "" });
+            log_("sheet_sync", {
+                channel: out.channel,
+                mode: out.result?.mode || "",
+                has_name: Boolean(out.contact?.name),
+                has_email: Boolean(out.contact?.email)
+            });
         }
     });
 
@@ -1797,7 +1877,7 @@ async function getDialogflowAccessToken_() {
 }
 
 /**
- * @param {{ sessionId: string, text: string, languageCode: string, channel?: string }} input
+ * @param {{ sessionId: string, text: string, languageCode: string, channel?: string, contactHints?: Record<string, string> }} input
  */
 async function detectIntentCx_(input) {
     const c = whatsappConfig_();
@@ -1817,6 +1897,13 @@ async function detectIntentCx_(input) {
     const channel = normalizeLeadChannel(input.channel);
     /** @type {Record<string, string>} */
     const sessionParameters = { channel };
+    const hints = input.contactHints && typeof input.contactHints === "object" ? input.contactHints : {};
+    for (const [k, v] of Object.entries(hints)) {
+        const s = trim_(v);
+        if (s) {
+            sessionParameters[k] = s;
+        }
+    }
     const res = await fetch(url, {
         method: "POST",
         headers: {
@@ -1920,13 +2007,15 @@ async function handleWebhookPost_(req, res) {
                     if (!from || !text) {
                         continue;
                     }
+                    const profileName = whatsappProfileNameFromContacts_(value.contacts, from);
                     jobs.push(
                         processInboundMetaMessage_({
                             channel: "whatsapp",
                             from,
                             text,
                             messageId,
-                            sessionId
+                            sessionId,
+                            profileName
                         }).catch(async (e) => {
                             const errMsg = e && e.message ? e.message : String(e);
                             log_("message_error", { channel: "whatsapp", error: errMsg.slice(0, 300) });

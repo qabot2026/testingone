@@ -7,42 +7,11 @@ import {
     formatConversationTimeForSheet,
     upsertSessionQueriesInSheet
 } from "../sheets.mjs";
+import { resolveMetaContactForSheet_ } from "./contact-profile.mjs";
 import { isMetaLeadChannel, normalizeLeadChannel } from "./normalize-channel.mjs";
 
 function trim_(v) {
     return (v == null ? "" : String(v)).trim();
-}
-
-/** @param {unknown} v */
-function paramStr_(v) {
-    if (typeof v === "string") {
-        return trim_(v);
-    }
-    if (typeof v === "number" || typeof v === "boolean") {
-        return String(v);
-    }
-    return "";
-}
-
-/** @param {Record<string, unknown>} params @param {string[]} keys */
-function firstParam_(params, keys) {
-    for (const k of keys) {
-        const v = paramStr_(params[k]);
-        if (v) {
-            return v;
-        }
-    }
-    return "";
-}
-
-/** @param {string} channel @param {string} from */
-function mobileFromMetaSender_(channel, from) {
-    const ch = normalizeLeadChannel(channel);
-    const digits = trim_(from).replace(/\D/g, "");
-    if (ch === "whatsapp" && digits.length >= 10) {
-        return digits;
-    }
-    return "";
 }
 
 /** @param {string} channel */
@@ -75,6 +44,7 @@ function metaSourceUrl_(channel, from) {
  *   sessionId: string,
  *   from: string,
  *   userText: string,
+ *   profileName?: string,
  *   cxParams?: Record<string, unknown>
  * }} input
  */
@@ -97,13 +67,14 @@ export async function syncMetaInboundMessageToSheet_(input) {
         return { ok: false, skipped: "not_meta_channel" };
     }
 
-    const params = input.cxParams && typeof input.cxParams === "object" ? input.cxParams : {};
-    const name = firstParam_(params, ["name", "Name", "patient_name", "patientName"]);
-    const email = firstParam_(params, ["email", "Email"]);
-    let mobile = firstParam_(params, ["mobile", "Mobile", "phone", "Phone"]);
-    if (!mobile) {
-        mobile = mobileFromMetaSender_(channel, input.from);
-    }
+    const contact = resolveMetaContactForSheet_({
+        sessionId,
+        channel,
+        from: input.from,
+        profileName: input.profileName,
+        cxParams: input.cxParams && typeof input.cxParams === "object" ? input.cxParams : {}
+    });
+    const { name, email, mobile } = contact;
 
     const convAt = new Date();
     /** @type {Parameters<typeof upsertSessionQueriesInSheet>[0]} */
@@ -142,7 +113,7 @@ export async function syncMetaInboundMessageToSheet_(input) {
 
     try {
         const result = await upsertSessionQueriesInSheet(row);
-        return { ok: true, channel, result };
+        return { ok: true, channel, contact: { name, email, mobile }, result };
     } catch (err) {
         const msg = err && err.message ? err.message : String(err);
         console.warn("[meta-channel/sheet-sync]", msg.slice(0, 240));
