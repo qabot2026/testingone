@@ -150,7 +150,28 @@ Meta likhe: *"unverified portfolio… add later"* — **theek hai**, app bana lo
 
 **Confusion ho to:** [business.facebook.com/settings](https://business.facebook.com/settings) → **Accounts** → dekho Page kis portfolio ke under hai → wahi portfolio app se connect karo.
 
+**Portfolio delete kiya phir bhi list mein dikhe?**
+
+| Reason | Simple matlab |
+|--------|----------------|
+| **App delete ≠ Portfolio delete** | Aapne shayad sirf **Developer App** delete kiya — **Business portfolio** alag cheez hai, woh delete nahi hua |
+| **Portfolio poora delete nahi hua** | Meta Business Settings se **Remove** kiya ho, par account access ab bhi ho |
+| **30–90 din tak dikhta hai** | Meta kabhi-kabhi deleted portfolio ko kuch time list mein rakhta hai |
+| **Doosra admin ne banaya ho** | Aapke Facebook login ko ab bhi access hai |
+
+**Ab kya karo:**
+
+1. Kholo: [business.facebook.com/settings](https://business.facebook.com/settings) → left side **Business portfolios**
+2. Dekho **GenieChatbot** / **Expo Chatapp** ab bhi hain ya nahi
+3. Agar **dono delete** hain ya use nahi karna:
+   - Is screen par click: **Create a business portfolio**
+   - Naya naam do (jaise: `Genie Hospital Bot`)
+   - Naya portfolio select karke app banao
+4. Agar list mein koi purana dikhe aur use karna ho — **ek choose karo** (verified hona zaroori nahi abhi)
+
 ---
+
+#### Screen C — Requirements / review (agar aaye)
 
 - Kabhi-kabhi Meta **Business verification** ya extra info maangta hai
 - Jo samajh aaye woh bharo; jo optional ho skip kar sakte ho (Development mode mein test chalega)
