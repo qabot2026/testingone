@@ -125,6 +125,23 @@ Agar ye message aaye:
 
 **24 ghante baad** portfolio list se permanently hat jayega. Tab **Part 1** se naya portfolio + naya app banao.
 
+#### "Last admin can't be removed" (galat step par ho)
+
+Agar ye message aaye:
+
+> *This admin can't be removed from the business because they're the last admin on the business. If you want to delete this admin, please add another admin to the business.*
+
+| Matlab | Kya karo |
+|--------|----------|
+| **People / Users se admin hata rahe ho** | Ye **portfolio delete ka step nahi hai** — Meta last admin ko hataane deta hi nahi |
+| **Admin remove mat karo** | Poora portfolio delete karna hai to **Users section chhod do** |
+| **Sahi path** | **Business info** → **Permanently delete business** (neeche scroll) |
+| **Tum last admin ho** | Theek hai — **tum hi** portfolio delete kar sakte ho, pehle kisi aur ko add karne ki zaroorat nahi |
+
+**Short:** Users / People mein kisi ko remove mat karo. Seedha **Business info → Permanently delete business**.
+
+Agar **Permanently delete** par click karte waqt alag error aaye (jaise *system admin*), to batao — uska alag fix hai.
+
 #### Delete ho gaya verify karo
 
 1. [business.facebook.com/settings](https://business.facebook.com/settings) → **Business portfolios**
