@@ -1986,6 +1986,7 @@ async function handleWebhookPost_(req, res) {
 
     const body = req.body && typeof req.body === "object" ? req.body : {};
     const objectType = trim_(body.object);
+    log_("webhook_post", { object: objectType || "(none)" });
 
     if (objectType === "whatsapp_business_account") {
         const entries = Array.isArray(body.entry) ? body.entry : [];
@@ -2058,6 +2059,12 @@ async function handleWebhookPost_(req, res) {
                 const sessionId = sessionIdForChannelUser_(channel, from);
                 const text = extractInboundPageText_(event, sessionId);
                 if (!from || !text) {
+                    log_("message_skip", {
+                        channel,
+                        reason: !from ? "no_sender" : "no_text",
+                        is_echo: Boolean(event?.message?.is_echo),
+                        has_postback: Boolean(event?.postback)
+                    });
                     continue;
                 }
                 jobs.push(
@@ -2097,6 +2104,98 @@ async function handleWebhookPost_(req, res) {
  * @param {string} phoneNumberId
  * @param {string} graphVersion
  */
+async function probePageAccessToken_(accessToken, pageId, graphVersion) {
+    if (!accessToken || !pageId) {
+        return { valid: false, error: "missing_token_or_page_id" };
+    }
+    try {
+        const fields = "name,instagram_business_account{id,username}";
+        const url =
+            `https://graph.facebook.com/${graphVersion}/${encodeURIComponent(pageId)}` +
+            `?fields=${encodeURIComponent(fields)}`;
+        const res = await fetch(url, {
+            headers: { Authorization: `Bearer ${accessToken}` }
+        });
+        const raw = await res.text();
+        let data = {};
+        try {
+            data = raw ? JSON.parse(raw) : {};
+        } catch {
+            data = {};
+        }
+        if (!res.ok) {
+            const err = data?.error && typeof data.error === "object" ? data.error : {};
+            return {
+                valid: false,
+                http_status: res.status,
+                code: err.code ?? null,
+                type: err.type ?? null,
+                message: err.message || raw.slice(0, 200) || `HTTP ${res.status}`
+            };
+        }
+        const ig =
+            data.instagram_business_account && typeof data.instagram_business_account === "object"
+                ? data.instagram_business_account
+                : null;
+        return {
+            valid: true,
+            page_name: typeof data.name === "string" ? data.name : null,
+            instagram_business_account_id:
+                ig && typeof ig.id === "string" ? ig.id : null,
+            instagram_username:
+                ig && typeof ig.username === "string" ? ig.username : null
+        };
+    } catch (e) {
+        return {
+            valid: false,
+            message: e && e.message ? String(e.message).slice(0, 200) : String(e)
+        };
+    }
+}
+
+async function probePageSubscribedApps_(accessToken, pageId, graphVersion) {
+    if (!accessToken || !pageId) {
+        return { ok: false, error: "missing_token_or_page_id" };
+    }
+    try {
+        const url =
+            `https://graph.facebook.com/${graphVersion}/${encodeURIComponent(pageId)}/subscribed_apps`;
+        const res = await fetch(url, {
+            headers: { Authorization: `Bearer ${accessToken}` }
+        });
+        const raw = await res.text();
+        let data = {};
+        try {
+            data = raw ? JSON.parse(raw) : {};
+        } catch {
+            data = {};
+        }
+        if (!res.ok) {
+            const err = data?.error && typeof data.error === "object" ? data.error : {};
+            return {
+                ok: false,
+                code: err.code ?? null,
+                message: err.message || raw.slice(0, 200) || `HTTP ${res.status}`
+            };
+        }
+        const apps = Array.isArray(data.data) ? data.data : [];
+        return {
+            ok: true,
+            apps: apps.map((app) => ({
+                id: app?.id ?? null,
+                subscribed_fields: Array.isArray(app?.subscribed_fields)
+                    ? app.subscribed_fields
+                    : []
+            }))
+        };
+    } catch (e) {
+        return {
+            ok: false,
+            message: e && e.message ? String(e.message).slice(0, 200) : String(e)
+        };
+    }
+}
+
 async function probeWhatsappAccessToken_(accessToken, phoneNumberId, graphVersion) {
     if (!accessToken || !phoneNumberId) {
         return { valid: false, error: "missing_token_or_phone_number_id" };
@@ -2154,8 +2253,23 @@ async function handleHealth_(req, res) {
         c.whatsapp.phoneNumberId,
         c.graphVersion
     );
+    const pageProbe = await probePageAccessToken_(
+        c.page.accessToken,
+        c.page.pageId,
+        c.graphVersion
+    );
+    const subProbe =
+        pageProbe.valid === true
+            ? await probePageSubscribedApps_(
+                  c.page.accessToken,
+                  c.page.pageId,
+                  c.graphVersion
+              )
+            : null;
+    const channelReady =
+        tokenProbe.valid === true || pageProbe.valid === true;
     return res.status(200).json({
-        ok: missing.length === 0 && tokenProbe.valid !== false,
+        ok: missing.length === 0 && channelReady,
         webhook_path: WEBHOOK_PATH,
         webhook_url_example: webhookUrlHint
             ? `${webhookUrlHint.replace(/\/+$/, "")}${WEBHOOK_PATH}`
@@ -2194,6 +2308,19 @@ async function handleHealth_(req, res) {
             page_id_suffix: c.page.pageId ? c.page.pageId.slice(-6) : "",
             page_access_token_set: !!c.page.accessToken,
             page_access_token_prefix: c.page.accessToken ? c.page.accessToken.slice(0, 6) + "…" : "",
+            page_access_token_valid: pageProbe.valid === true,
+            page_access_token_error: pageProbe.valid ? null : (pageProbe.message || pageProbe.error || null),
+            page_access_token_error_code: pageProbe.valid ? null : (pageProbe.code ?? null),
+            page_name: pageProbe.valid ? (pageProbe.page_name ?? null) : null,
+            instagram_business_account_id: pageProbe.valid
+                ? (pageProbe.instagram_business_account_id ?? null)
+                : null,
+            instagram_username: pageProbe.valid ? (pageProbe.instagram_username ?? null) : null,
+            subscribed_apps: subProbe?.ok ? (subProbe.apps ?? []) : null,
+            subscribed_apps_error: subProbe?.ok === false ? (subProbe.message || subProbe.error || null) : null,
+            token_fix_hint: pageProbe.valid
+                ? null
+                : "Messenger API Setup → Generate token for your Page → update META_PAGE_ACCESS_TOKEN on Railway → redeploy.",
             note: "Same webhook URL; subscribe Page (messages) and Instagram (messages) in Meta app"
         },
         supported_payloads: [
