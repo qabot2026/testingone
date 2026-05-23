@@ -203,67 +203,31 @@ App banne ke baad **left side menu** dekho. Use cases sahi choose kiye to ye **p
 | **WhatsApp** | WhatsApp ready — Part 2 par jao |
 | **Messenger** | Messenger ready — Part 3 par jao |
 | **Instagram** | Instagram ready — Part 4 par jao |
-| **Webhooks** | Webhook setup — **Step 6** par jao |
+| **Use cases** | Webhook yahi se set hota hai — **Step 6** |
 
-**Agar teeno (WhatsApp, Messenger, Instagram) left menu mein hain → Step 3 skip karo.** Seedha **Step 4** (verify token) ya **Step 6** (webhook) par jao.
+**Left menu mein "Webhooks" nahi dikhega** — naye Meta apps mein ye normal hai. Seedha **Step 6** follow karo.
 
 ---
 
-### Step 3 — Sirf tab jab kuch **missing** ho (optional)
+### Step 3 — Sirf tab jab channel **missing** ho (optional)
 
-> **Zyaada tar log Step 3 skip karte hain** — naye Meta flow mein use cases select karte hi products add ho jate hain. **"Add products" button har app mein nahi dikhta** — ye normal hai.
+> Use cases select kiye to WhatsApp / Messenger / Instagram **pehle se** add ho chuke hain. **"Add products" / "Webhooks" menu nahi dikhega** — ignore karo.
 
-#### Pehle ye check karo
+#### Left menu check
 
-1. App dashboard kholo: [developers.facebook.com/apps](https://developers.facebook.com/apps) → apna app
-2. **Left menu** poora scroll karo (neeche tak)
-3. Dhundho: **WhatsApp**, **Messenger**, **Instagram**, **Webhooks**
+1. App kholo: `https://developers.facebook.com/apps/YOUR_APP_ID/`
+2. Left menu scroll karo
 
 | Left menu | Action |
 |-----------|--------|
-| Sab dikhe (WhatsApp + Messenger + Instagram) | **Step 3 skip** → Step 4 / Step 6 |
-| **Webhooks** nahi dikhe | Neeche **Path A** ya **Path B** try karo |
-| Koi ek channel missing (jaise Instagram) | Neeche **Path C** |
+| WhatsApp + Messenger + Instagram sab hain | **Step 3 skip** → Step 6 |
+| Koi ek missing | Dashboard → **Add use cases** → missing wala tick → Set up |
 
-#### Path A — Webhooks direct link (sabse aasaan)
-
-Browser mein kholo (apna App ID lagao):
-
-```
-https://developers.facebook.com/apps/YOUR_APP_ID/webhooks/
-```
-
-Page khul jaye → **Step 6** follow karo (Callback URL + Verify token).
-
-#### Path B — Use cases se Webhooks
-
-Naye UI mein Webhooks kabhi **Use cases** ke andar hota hai:
-
-1. Left menu → **Use cases** (ya **Customize use cases**)
-2. Koi bhi messaging use case kholo (WhatsApp / Messenger / Instagram)
-3. **Configuration** / **Settings** / **Webhooks** tab dhundho
-4. Callback URL wahi set hota hai jo Step 6 mein hai
-
-#### Path C — Missing channel add karo
-
-Agar left menu mein **WhatsApp / Messenger / Instagram** mein se koi **nahi** hai:
-
-1. Dashboard home par jao
-2. **Add use cases** (ya **Customize** / **Add products**) click karo  
-   *(Purane UI mein "Add products" likha hota tha — naye mein **Add use cases** ho sakta hai)*
-3. Missing wala tick karo → **Set up** / **Save**
-4. Left menu refresh — ab dikhna chahiye
-
-| Missing | Add karo |
-|---------|----------|
-| WhatsApp | Use case: *Connect with customers through WhatsApp* |
-| Messenger | Use case: *Engage with customers on Messenger* |
-| Instagram | Use case: *Manage messaging on Instagram* |
-| Webhooks | Path A link use karo — alag product nahi hota |
-
-> **Note:** Instagram ke liye pehle **Facebook Page** chahiye (Part 4).
-
-**Abhi left menu mein kya-kya dikh raha hai?** (sirf names batao — jaise "WhatsApp, App settings, Use cases") — usse exact next click bataya ja sakta hai.
+| Missing | Use case name |
+|---------|---------------|
+| WhatsApp | Connect with customers through WhatsApp |
+| Messenger | Engage with customers on Messenger |
+| Instagram | Manage messaging on Instagram |
 
 ---
 
@@ -294,24 +258,51 @@ WHATSAPP_VERIFY_TOKEN=apna-secret-yahan
 
 ---
 
-### Step 6 — Webhook configure (Meta)
+### Step 6 — Webhook configure (Meta — naya UI, 2025/2026)
 
-1. Jao: [developers.facebook.com/apps](https://developers.facebook.com/apps)
-2. Apna **app** kholo
-3. Left menu → **Webhooks**  
-   *(Left menu mein na ho to direct link: `https://developers.facebook.com/apps/YOUR_APP_ID/webhooks/`)*
-4. **Configure** (ya **Edit**) click karo
+> **`/webhooks/` link purane apps ke liye hai.** Tumhara app use-case wala hai — webhook **Use cases → Customize → Configuration** ke andar hai.
+
+**Tumhara app:** `https://developers.facebook.com/apps/1681691082959055/`
+
+#### WhatsApp webhook (pehle ye karo — sab channels ke liye same URL)
+
+1. App dashboard kholo (login ke baad):  
+   `https://developers.facebook.com/apps/1681691082959055/`
+2. **Option A — Dashboard cards:**  
+   *Connect with customers through WhatsApp* card par **Customize** click karo  
+   **Option B — Left menu:**  
+   **Use cases** → WhatsApp use case → **Customize**
+3. Left side (ya upar tabs) mein **Configuration** kholo  
+   *(kabhi **Settings** ya **Webhook** tab likha ho)*
+4. **Configure webhooks** section dhundho
 5. Bhari:
 
-| Field | Kya paste karna hai |
-|-------|---------------------|
+| Field | Value |
+|-------|-------|
 | **Callback URL** | `https://handsome-amazement-production-7f65.up.railway.app/api/whatsapp/webhook` |
-| **Verify token** | Wahi jo Railway `WHATSAPP_VERIFY_TOKEN` mein hai |
+| **Verify token** | Railway `WHATSAPP_VERIFY_TOKEN` (jaise `geniebot@26`) |
 
-6. Pehle health link browser mein kholo (server warm ho jaye):
+6. Pehle health link kholo:  
    `https://handsome-amazement-production-7f65.up.railway.app/api/whatsapp/health`
-7. Wapas Meta → click **Verify and save**
-8. **Success** aana chahiye
+7. Meta mein **Verify and save** dabao
+
+#### Messenger webhook (Facebook ke liye)
+
+1. Wapas app dashboard → **Use cases**
+2. *Engage with customers on Messenger* → **Customize**
+3. **Messenger API Setup** section → **Configure webhooks**
+4. **Same Callback URL** + **Same Verify token** daalo → Verify and save
+
+#### Instagram
+
+Instagram bhi **Page token** use karta hai (Part 4). WhatsApp/Messenger webhook set ho jaye to Instagram events bhi same server par aa sakte hain — Part 4 mein subscribe karo.
+
+#### `/webhooks/` link kaam kyun nahi karta?
+
+| Purana UI | Naya UI (tumhara app) |
+|-----------|------------------------|
+| Left menu → **Webhooks** | **Use cases → Customize → Configuration** |
+| `.../apps/ID/webhooks/` | Ye page blank / redirect — **ignore karo** |
 
 **Verify fail ho to:**  
 PowerShell mein (apna token lagao):
@@ -321,9 +312,6 @@ curl.exe "https://handsome-amazement-production-7f65.up.railway.app/api/whatsapp
 ```
 
 Answer **`12345`** aana chahiye. Phir Meta mein dubara Verify karo.
-
-**Webhook page direct link:**  
-`https://developers.facebook.com/apps/YOUR_APP_ID/webhooks/`
 
 ---
 
@@ -412,11 +400,10 @@ Redeploy Railway.
 
 ### Step W3 — Webhook subscribe (WhatsApp)
 
-1. App → **Webhooks**
-2. **WhatsApp Business Account** row dhundho
-3. **Subscribe**
-4. Tick karo: **`messages`**
-5. Save
+1. App → **Use cases** → WhatsApp → **Customize** → **Configuration**
+2. Webhook fields / subscriptions mein **`messages`** tick karo → Save
+
+*(Purane UI: App → Webhooks → WhatsApp → Subscribe → messages)*
 
 ---
 
@@ -467,14 +454,13 @@ Redeploy.
 
 ---
 
-### Step F3 — Webhook subscribe (Page)
+### Step F3 — Webhook subscribe (Page / Messenger)
 
-1. App → **Webhooks**
-2. **Page** row → **Subscribe**
-3. Tick:
-   - `messages`
-   - `messaging_postbacks`
-4. Save
+1. App → **Use cases** → Messenger → **Customize** → **Messenger API Setup**
+2. Page connect karo (Step F2) ke baad **Add Subscriptions**
+3. Tick: `messages`, `messaging_postbacks` → Confirm
+
+*(Purane UI: App → Webhooks → Page → Subscribe)*
 
 ---
 
@@ -532,12 +518,10 @@ Token mein ye permissions honi chahiye:
 
 ### Step I4 — Webhook subscribe (Instagram)
 
-1. App → **Webhooks**
-2. **Instagram** row → **Subscribe**
-3. Tick:
-   - `messages`
-   - `messaging_postbacks`
-4. Save
+1. App → **Use cases** → Instagram → **Customize** → **Configuration**
+2. **`messages`** aur **`messaging_postbacks`** subscribe karo
+
+*(Purane UI: App → Webhooks → Instagram → Subscribe)*
 
 ---
 
@@ -592,6 +576,7 @@ Forms (`open_form`) sirf **web** par chalte hain. WhatsApp / Instagram par chat 
 | Problem | Solution |
 |---------|----------|
 | Webhook **Forbidden** browser mein | Normal — Meta Verify se check karo |
+| **`/webhooks/` page blank** | Naya app — Use cases → Customize → Configuration use karo (Step 6) |
 | Meta **Verify failed** | Token Railway aur Meta mein **exact same**? Redeploy? |
 | WhatsApp reply nahi | Naya `WHATSAPP_ACCESS_TOKEN` — purana expire ho sakta hai |
 | Instagram reply nahi | Page token + Instagram **Subscribed**? Tester account? |
