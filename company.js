@@ -8108,6 +8108,139 @@ function capDialogflowChatWindowWidthPx(want) {
 }
 
 /**
+ * Single source of truth for `--df-messenger-chat-window-width/height` (host + bubble).
+ * Dialogflow can reset vars when the panel first expands; re-call on chat open.
+ * @param {HTMLElement | null | undefined} dfMessenger
+ * @param {object} [config]
+ */
+function applyChatWindowDimensionsFromConfig(dfMessenger, config) {
+    if (!dfMessenger) {
+        return;
+    }
+    const root = (config && typeof config === "object" ? config : null) || readCompanyUiConfig();
+    const desktopConfig = getDeviceSection(root, false);
+    const desktopWindow = desktopConfig.chatWindow && typeof desktopConfig.chatWindow === "object"
+        ? desktopConfig.chatWindow
+        : {};
+    const mobileRoot = getDeviceSection(root, true);
+    const mobileConfig = mobileRoot.chatWindow && typeof mobileRoot.chatWindow === "object"
+        ? mobileRoot.chatWindow
+        : {};
+    const bubble = typeof dfMessenger.querySelector === "function"
+        ? dfMessenger.querySelector("df-messenger-chat-bubble")
+        : null;
+
+    /** @param {number} w @param {number} h */
+    const setDims = (w, h) => {
+        const wStr = `${w}px`;
+        const hStr = `${h}px`;
+        dfMessenger.style.setProperty("--df-messenger-chat-window-width", wStr);
+        dfMessenger.style.setProperty("--df-messenger-chat-window-height", hStr);
+        if (bubble && bubble.style) {
+            bubble.style.setProperty("--df-messenger-chat-window-width", wStr);
+            bubble.style.setProperty("--df-messenger-chat-window-height", hStr);
+        }
+    };
+
+    if (!isMobileViewport()) {
+        const desktopWidth = typeof desktopWindow.widthPx === "number" && Number.isFinite(desktopWindow.widthPx)
+            ? desktopWindow.widthPx
+            : 420;
+        const desktopBaseHeight = typeof desktopWindow.heightPx === "number" && Number.isFinite(desktopWindow.heightPx)
+            ? desktopWindow.heightPx
+            : 620;
+        const desktopExtraH = typeof desktopWindow.extraHeightTowardBubblePx === "number" && Number.isFinite(desktopWindow.extraHeightTowardBubblePx)
+            ? desktopWindow.extraHeightTowardBubblePx
+            : 0;
+        const desktopHeight = Math.max(200, Math.round(desktopBaseHeight + desktopExtraH));
+        setDims(capDialogflowChatWindowWidthPx(desktopWidth), desktopHeight);
+        return;
+    }
+
+    const viewport = window.visualViewport;
+    const viewportWidth = viewport ? viewport.width : window.innerWidth;
+    const viewportHeight = viewport ? viewport.height : window.innerHeight;
+    const horizontalInset = typeof mobileConfig.horizontalInsetPx === "number" ? mobileConfig.horizontalInsetPx : 12;
+    const bottomInset = typeof mobileConfig.bottomInsetPx === "number" ? mobileConfig.bottomInsetPx : 10;
+    const topInset = typeof mobileConfig.topInsetPx === "number" ? mobileConfig.topInsetPx : 14;
+    const minWidth = typeof mobileConfig.minWidthPx === "number" ? mobileConfig.minWidthPx : 280;
+    const minHeight = typeof mobileConfig.minHeightPx === "number" ? mobileConfig.minHeightPx : 200;
+    let mobileExtraH = typeof mobileConfig.extraHeightTowardBubblePx === "number" && Number.isFinite(mobileConfig.extraHeightTowardBubblePx)
+        ? mobileConfig.extraHeightTowardBubblePx
+        : 0;
+    if (viewport && Number.isFinite(window.innerHeight) && viewport.height < window.innerHeight * 0.82) {
+        mobileExtraH = 0;
+    }
+    const safeTopReserve = typeof mobileConfig.safeAreaTopReservePx === "number" && Number.isFinite(mobileConfig.safeAreaTopReservePx)
+        ? mobileConfig.safeAreaTopReservePx
+        : 28;
+    const safeInsetTop = getEnvSafeAreaInsetTopPx();
+    const titlebarExtra = typeof mobileConfig.titlebarChromeReservePx === "number" && Number.isFinite(mobileConfig.titlebarChromeReservePx)
+        ? mobileConfig.titlebarChromeReservePx
+        : 48;
+    const availableWidth = Math.max(minWidth, Math.floor(viewportWidth - horizontalInset * 2));
+    const availableHeight = Math.max(
+        minHeight,
+        Math.floor(
+            viewportHeight
+                - topInset
+                - bottomInset
+                - safeTopReserve
+                - safeInsetTop
+                - titlebarExtra
+                + mobileExtraH
+        )
+    );
+    setDims(availableWidth, availableHeight);
+}
+
+/** Re-apply panel size after Dialogflow expand / auto-open (runtime may drop host CSS vars). */
+function scheduleChatWindowDimensionReapply(dfMessenger, config) {
+    if (!dfMessenger) {
+        return;
+    }
+    const cfg = config && typeof config === "object" ? config : readCompanyUiConfig();
+    const run = () => {
+        if (activeDfMessenger !== dfMessenger) {
+            return;
+        }
+        applyChatWindowDimensionsFromConfig(dfMessenger, cfg);
+    };
+    run();
+    [50, 200, 500, 1200].forEach((ms) => {
+        window.setTimeout(run, ms);
+    });
+}
+
+/** @returns {string} Shared inline styles for circular lightbox dismiss buttons. */
+function dfchatLightboxCircleCloseBtnCss() {
+    return [
+        "box-sizing:border-box",
+        "width:44px",
+        "height:44px",
+        "min-width:44px",
+        "min-height:44px",
+        "padding:0",
+        "margin:0",
+        "border-radius:999px",
+        "border:1px solid rgba(255,255,255,0.22)",
+        "background:rgba(15,23,42,0.55)",
+        "color:#fff",
+        "font-size:26px",
+        "font-family:Arial,sans-serif",
+        "font-weight:400",
+        "line-height:1",
+        "display:flex",
+        "align-items:center",
+        "justify-content:center",
+        "text-align:center",
+        "cursor:pointer",
+        "appearance:none",
+        "-webkit-appearance:none"
+    ].join(";");
+}
+
+/**
  * Dialogflow sets `#message-list { overflow: var(--df-messenger-chat-overflow, hidden scroll); }` — the
  * fallback `hidden scroll` is two-value: y is `scroll`, which always reserves/shows a scrollbar. Use
  * `hidden auto` when we want a thin/overlay or hidden track; pair with `chatMessageList` CSS in apply.
@@ -8794,15 +8927,7 @@ function applyDfMessengerThemeConfig(dfMessenger, config) {
     }
 
     const common = config.common && typeof config.common === "object" ? config.common : {};
-    const desk = getDeviceSection(config, false);
-    const desktopWindow = desk.chatWindow && typeof desk.chatWindow === "object" ? desk.chatWindow : {};
-    if (typeof desktopWindow.widthPx === "number" && Number.isFinite(desktopWindow.widthPx)) {
-        const w = capDialogflowChatWindowWidthPx(desktopWindow.widthPx);
-        dfMessenger.style.setProperty("--df-messenger-chat-window-width", `${w}px`);
-    }
-    if (typeof desktopWindow.heightPx === "number" && Number.isFinite(desktopWindow.heightPx)) {
-        dfMessenger.style.setProperty("--df-messenger-chat-window-height", `${desktopWindow.heightPx}px`);
-    }
+    applyChatWindowDimensionsFromConfig(dfMessenger, config);
 
     const theme = common.dfMessengerTheme && typeof common.dfMessengerTheme === "object" ? common.dfMessengerTheme : null;
     if (theme) {
@@ -8822,7 +8947,9 @@ function applyDfMessengerThemeConfig(dfMessenger, config) {
     applyFooterInputBoxConfig(dfMessenger);
 
     // After theme so this wins over a stray `--df-messenger-chat-window-offset` in dfMessengerTheme.
-    setDfMessengerChatWindowOffsetPx(dfMessenger, desktopWindow.chatWindowOffsetPx);
+    const devWin = getDeviceSection(config, isMobileViewport());
+    const chatWindowCfg = devWin.chatWindow && typeof devWin.chatWindow === "object" ? devWin.chatWindow : {};
+    setDfMessengerChatWindowOffsetPx(dfMessenger, chatWindowCfg.chatWindowOffsetPx);
     // After theme: `common.chatMessageList.showScrollbar` controls --df-messenger-chat-overflow (see above).
     applyChatMessageListOverflowVar(dfMessenger);
     const bubble = typeof dfMessenger.querySelector === "function"
@@ -9562,6 +9689,7 @@ function initializeMessengerReadyState(dfMessenger, bubbleNode) {
 
         if (shouldAutoOpenChat) {
             openChatWindow(dfMessenger, bubbleNode);
+            scheduleChatWindowDimensionReapply(dfMessenger, COMPANY_UI_CONFIG);
         }
     });
 }
@@ -9583,6 +9711,7 @@ function openChatWindow(dfMessenger, bubbleNode) {
             tryOpenChatByClick(targetMessenger);
         }
     }, 250);
+    scheduleChatWindowDimensionReapply(targetMessenger, COMPANY_UI_CONFIG);
 }
 
 function scheduleAutoStartConversation(dfMessenger) {
@@ -9731,19 +9860,7 @@ function initializeMobileChatLayout(dfMessenger, config) {
             );
             setDfMessengerChatBubbleAnchorFromDock(dfMessenger, desktopDock, desktopBubble);
 
-            // Keep desktop width/height from config instead of clearing them.
-            const desktopWidth = typeof desktopWindow.widthPx === "number" && Number.isFinite(desktopWindow.widthPx)
-                ? desktopWindow.widthPx
-                : 420;
-            const desktopBaseHeight = typeof desktopWindow.heightPx === "number" && Number.isFinite(desktopWindow.heightPx)
-                ? desktopWindow.heightPx
-                : 620;
-            const desktopExtraH = typeof desktopWindow.extraHeightTowardBubblePx === "number" && Number.isFinite(desktopWindow.extraHeightTowardBubblePx)
-                ? desktopWindow.extraHeightTowardBubblePx
-                : 0;
-            const desktopHeight = Math.max(200, Math.round(desktopBaseHeight + desktopExtraH));
-            dfMessenger.style.setProperty("--df-messenger-chat-window-width", `${capDialogflowChatWindowWidthPx(desktopWidth)}px`);
-            dfMessenger.style.setProperty("--df-messenger-chat-window-height", `${desktopHeight}px`);
+            applyChatWindowDimensionsFromConfig(dfMessenger, config);
             setDfMessengerChatWindowOffsetPx(dfMessenger, desktopWindow.chatWindowOffsetPx);
             scheduleSyncChatActionBarPosition();
             applyDeviceChatbotVisibility(config, dfMessenger);
@@ -9756,41 +9873,9 @@ function initializeMobileChatLayout(dfMessenger, config) {
             return;
         }
 
-        const viewport = window.visualViewport;
-        const viewportWidth = viewport ? viewport.width : window.innerWidth;
-        const viewportHeight = viewport ? viewport.height : window.innerHeight;
         const horizontalInset = typeof mobileConfig.horizontalInsetPx === "number" ? mobileConfig.horizontalInsetPx : 12;
         const bottomInset = typeof mobileConfig.bottomInsetPx === "number" ? mobileConfig.bottomInsetPx : 10;
         const topInset = typeof mobileConfig.topInsetPx === "number" ? mobileConfig.topInsetPx : 14;
-        const minWidth = typeof mobileConfig.minWidthPx === "number" ? mobileConfig.minWidthPx : 280;
-        const minHeight = typeof mobileConfig.minHeightPx === "number" ? mobileConfig.minHeightPx : 200;
-        let mobileExtraH = typeof mobileConfig.extraHeightTowardBubblePx === "number" && Number.isFinite(mobileConfig.extraHeightTowardBubblePx)
-            ? mobileConfig.extraHeightTowardBubblePx
-            : 0;
-        /* Keyboard shrinks visual viewport — do not inflate panel height or the composer clips off-screen. */
-        if (viewport && Number.isFinite(window.innerHeight) && viewport.height < window.innerHeight * 0.82) {
-            mobileExtraH = 0;
-        }
-        const safeTopReserve = typeof mobileConfig.safeAreaTopReservePx === "number" && Number.isFinite(mobileConfig.safeAreaTopReservePx)
-            ? mobileConfig.safeAreaTopReservePx
-            : 28;
-        const safeInsetTop = getEnvSafeAreaInsetTopPx();
-        const titlebarExtra = typeof mobileConfig.titlebarChromeReservePx === "number" && Number.isFinite(mobileConfig.titlebarChromeReservePx)
-            ? mobileConfig.titlebarChromeReservePx
-            : 48;
-        const availableWidth = Math.max(minWidth, Math.floor(viewportWidth - horizontalInset * 2));
-        const availableHeight = Math.max(
-            minHeight,
-            Math.floor(
-                viewportHeight
-                    - topInset
-                    - bottomInset
-                    - safeTopReserve
-                    - safeInsetTop
-                    - titlebarExtra
-                    + mobileExtraH
-            )
-        );
 
         const mobileDock = resolveChatLayoutSide(config);
         const rawMb = mobileConfig.bubblePosition && typeof mobileConfig.bubblePosition === "object"
@@ -9810,8 +9895,7 @@ function initializeMobileChatLayout(dfMessenger, config) {
         );
         setDfMessengerChatBubbleAnchorFromDock(dfMessenger, mobileDock, mobileBubble);
 
-        dfMessenger.style.setProperty("--df-messenger-chat-window-width", `${availableWidth}px`);
-        dfMessenger.style.setProperty("--df-messenger-chat-window-height", `${availableHeight}px`);
+        applyChatWindowDimensionsFromConfig(dfMessenger, config);
         setDfMessengerChatWindowOffsetPx(dfMessenger, mobileConfig.chatWindowOffsetPx);
         scheduleSyncChatActionBarPosition();
         applyDeviceChatbotVisibility(config, dfMessenger);
@@ -9850,6 +9934,9 @@ function initializeMobileChatLayout(dfMessenger, config) {
         if (isTargetInsideChatActionBar(ev.target)) {
             return;
         }
+        if (!isMobileViewport()) {
+            return;
+        }
         applyLayout();
         if (isMobileViewport() && isMessageComposerField(/** @type {Element} */(ev.target)) && isFocusInMessenger(dfMessenger, ev.target)) {
             resetChatActionBarPositionCaches();
@@ -9865,6 +9952,9 @@ function initializeMobileChatLayout(dfMessenger, config) {
     document.addEventListener("focusout", () => {
         window.setTimeout(() => {
             if (isTargetInsideChatActionBar(document.activeElement)) {
+                return;
+            }
+            if (!isMobileViewport()) {
                 return;
             }
             applyLayout();
@@ -9898,6 +9988,7 @@ function initializeChatStateSync(dfMessenger) {
             }
             resetChatActionBarPositionCaches();
             scheduleChatMessageListScrollbarReapply(dfMessenger);
+            scheduleChatWindowDimensionReapply(dfMessenger, readCompanyUiConfig());
             const ui0 = readCompanyUiConfig();
             if (resolveChatLayoutSide(ui0) === "left") {
                 const cwin0 = (() => {
@@ -9958,6 +10049,9 @@ function initializeChatStateSync(dfMessenger) {
         isChatWindowOpen = isChatExpanded(dfMessenger);
         if (isChatWindowOpen) {
             resetBubbleUnreadBadge();
+            if (!wasOpen) {
+                scheduleChatWindowDimensionReapply(dfMessenger, readCompanyUiConfig());
+            }
         }
         if (!isChatWindowOpen) {
             window.setTimeout(() => {
@@ -10408,7 +10502,17 @@ function ensureLightboxImageObserver(dfMessenger) {
 
 function ensureImageLightboxMounted() {
     const lbDoc = getDfchatLightboxDocument();
-    if (lbDoc.getElementById(IMAGE_LIGHTBOX_ID)) {
+    const existing = lbDoc.getElementById(IMAGE_LIGHTBOX_ID);
+    if (existing) {
+        const existingClose = lbDoc.getElementById(IMAGE_LIGHTBOX_CLOSE_ID);
+        if (existingClose) {
+            existingClose.style.cssText = [
+                "position:absolute",
+                "top:14px",
+                "right:14px",
+                dfchatLightboxCircleCloseBtnCss()
+            ].join(";");
+        }
         return;
     }
     const overlay = lbDoc.createElement("div");
@@ -10450,17 +10554,7 @@ function ensureImageLightboxMounted() {
         "position:absolute",
         "top:14px",
         "right:14px",
-        "width:44px",
-        "height:44px",
-        "border-radius:999px",
-        "border:1px solid rgba(255,255,255,0.22)",
-        "background:rgba(15,23,42,0.55)",
-        "color:#fff",
-        "font-size:28px",
-        "line-height:1",
-        "display:grid",
-        "place-items:center",
-        "cursor:pointer"
+        dfchatLightboxCircleCloseBtnCss()
     ].join(";");
 
     const mkArrow = (id, label, dir) => {
@@ -10686,17 +10780,7 @@ function ensureVideoLightboxMounted() {
     closeBtn.setAttribute("aria-label", "Close video");
     closeBtn.textContent = "×";
     closeBtn.style.cssText = [
-        "width:44px",
-        "height:44px",
-        "border-radius:999px",
-        "border:1px solid rgba(255,255,255,0.22)",
-        "background:rgba(15,23,42,0.55)",
-        "color:#fff",
-        "font-size:28px",
-        "line-height:1",
-        "display:grid",
-        "place-items:center",
-        "cursor:pointer",
+        dfchatLightboxCircleCloseBtnCss(),
         "flex:0 0 auto"
     ].join(";");
 
