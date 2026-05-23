@@ -78,8 +78,8 @@ Meta ab pehle **app name + email** leta hai, phir **use cases** dikhata hai. Nee
 2. Click: **Create App**
 3. **App name** daalo (jaise: `Genie Hospital Bot`)
 4. **App contact email** — apna email (dropdown se select ya type)
-5. **Business portfolio** maange to apna business select karo (ya **Create** agar nahi hai)
-6. Click: **Next**
+5. Click: **Next**  
+   *(Business portfolio agla screen **B2** par aata hai — Screen A par skip ho sakta hai)*
 
 ---
 
@@ -120,7 +120,37 @@ Bahut saare cards / checkboxes dikhenge. **Sirf messaging wale select karo** —
 
 ---
 
-#### Screen C — Requirements / review (agar aaye)
+#### Screen B2 — Business portfolio connect (ye screen aapko dikh rahi hai)
+
+Meta poochega:
+
+> **Which business portfolio do you want to connect to this app?**
+
+**Kya karna hai:**
+
+| Option | Kab choose karo |
+|--------|-----------------|
+| **GenieChatbot** (ya jo naam is project ka ho) | ✅ **Yahi choose karo** — agar isi portfolio ke andar aapka Facebook Page / WhatsApp / Instagram linked hai ya aap isi ke liye naya app bana rahe ho |
+| **Expo Chatapp** (ya purana / alag project) | ❌ Mat choose karo — agar ye purana test app hai aur is bot se link nahi |
+| **Create a business portfolio** | Sirf tab jab **dono list mein galat hon** — naya portfolio banao aur baad mein Page link karo |
+
+**Simple rule:** Jis **Business portfolio** ke saath aapka **Facebook Page** aur **Instagram Business** connected hai — **wahi select karo**.
+
+**Verified vs unverified:**
+
+| Type | Abhi test ke liye |
+|------|-------------------|
+| **Unverified** portfolio | ✅ Chalega — Development mode mein bot test kar sakte ho |
+| **Verified** portfolio | Live / public users ke liye baad mein chahiye — abhi skip kar sakte ho |
+
+Meta likhe: *"unverified portfolio… add later"* — **theek hai**, app bana lo, verification baad mein.
+
+8. Apna portfolio **select** karo (radio / checkbox — jo UI ho)
+9. Click: **Next** (ya **Continue** / **Create app**)
+
+**Confusion ho to:** [business.facebook.com/settings](https://business.facebook.com/settings) → **Accounts** → dekho Page kis portfolio ke under hai → wahi portfolio app se connect karo.
+
+---
 
 - Kabhi-kabhi Meta **Business verification** ya extra info maangta hai
 - Jo samajh aaye woh bharo; jo optional ho skip kar sakte ho (Development mode mein test chalega)
