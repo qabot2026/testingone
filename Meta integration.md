@@ -66,37 +66,116 @@ Ye steps **ek baar** karo. WhatsApp, Instagram, Facebook — teeno ke liye same.
 
 ---
 
-### Step 2 — Naya app banao
+### Step 2 — Naya app banao (Meta ka naya flow — 2025/2026)
 
-1. Click: **My Apps** (upar right side)
+Meta ab pehle **app name + email** leta hai, phir **use cases** dikhata hai. Neeche **exact order** follow karo.
+
+---
+
+#### Screen A — App name aur email
+
+1. Click: **My Apps** (upar right)
 2. Click: **Create App**
-3. **Use case** choose karo: **Other** → Next  
-   (ya **Business** agar option aaye)
-4. App type: **Business** → Next
-5. App name daalo (jaise: `Genie Hospital Bot`)
-6. Email select karo → **Create app**
-7. Password / OTP maange to confirm karo
+3. **App name** daalo (jaise: `Genie Hospital Bot`)
+4. **App contact email** — apna email (dropdown se select ya type)
+5. **Business portfolio** maange to apna business select karo (ya **Create** agar nahi hai)
+6. Click: **Next**
 
-**App ID note kar lo:**  
-Left menu → **App settings** → **Basic** → **App ID** (number)
+---
+
+#### Screen B — Use cases choose karo (important)
+
+Bahut saare cards / checkboxes dikhenge. **Sirf messaging wale select karo** — baaki mat chhedo.
+
+**Teeno chahiye (WhatsApp + Instagram + Facebook Messenger):**
+
+| Screen par aisa dikhe (words thode alag ho sakte hain) | Tick karo? |
+|--------------------------------------------------------|------------|
+| **Connect with customers through WhatsApp** | ✅ Haan |
+| **Manage messaging and content on Instagram** (ya *Engage with customers on Instagram*) | ✅ Haan |
+| **Engage with customers on Messenger from Meta** (ya *Messenger*) | ✅ Haan |
+
+**Sirf ek channel chahiye to sirf wahi ek tick karo** (baaki doc ke Part 2 / 3 / 4 baad mein).
+
+**Ye mat select karo** (abhi zaroorat nahi):
+
+| Use case | Kyon skip |
+|----------|-----------|
+| Create & manage ads | Ads ke liye — bot ke liye nahi |
+| Measure ad performance | Analytics ads |
+| Authenticate users / Facebook Login only | Login app — alag kaam |
+| Gaming | Game app |
+| Fundraisers | NGO donations |
+| Business messaging ke alawa koi random use case | Confusion badhega |
+
+**Agar list mein WhatsApp / Instagram / Messenger ka koi card na mile:**
+
+1. Neeche scroll karo — **Other** ya **See all use cases** dhundho
+2. **Other** → Next → phir **Business** type choose karo (agar pooche)
+3. App banne ke baad **Step 3** se products manually add karo
+
+**Multiple use cases ek saath allowed hain** — teeno messaging wale ek hi app mein tick kar sakte ho.
+
+7. Click: **Next**
+
+---
+
+#### Screen C — Requirements / review (agar aaye)
+
+- Kabhi-kabhi Meta **Business verification** ya extra info maangta hai
+- Jo samajh aaye woh bharo; jo optional ho skip kar sakte ho (Development mode mein test chalega)
+- Click: **Create app** (ya **Go to dashboard**)
+
+---
+
+#### Screen D — Password / security
+
+- Facebook password ya OTP maange to confirm karo
+- Dashboard khul jayega — app ready
+
+---
+
+#### App ID save karo
+
+1. Left menu → **App settings** → **Basic**
+2. **App ID** copy karo (sirf number — ye secret nahi hai)
 
 Direct link (App ID badal ke):  
 `https://developers.facebook.com/apps/YOUR_APP_ID/settings/basic/`
 
 ---
 
-### Step 3 — Products add karo (jo chahiye)
+#### Step 2 ke baad left menu mein kya dikhna chahiye
 
-Left side **Add products** (ya dashboard par cards):
+Use cases sahi choose kiye to ye products pehle se dikh sakte hain:
+
+| Left menu | Matlab |
+|-----------|--------|
+| **WhatsApp** | WhatsApp use case select hua |
+| **Messenger** | Messenger use case select hua |
+| **Instagram** | Instagram use case select hua |
+
+**Webhooks hamesha check karo** — agar left menu mein **Webhooks** na ho to Step 3 karo.
+
+---
+
+### Step 3 — Products add karo (jo missing ho)
+
+Pehle left menu dekho — Step 2 ke use cases se kuch products **pehle se** aa chuke honge.
+
+| Left menu mein dikhe? | Action |
+|-----------------------|--------|
+| **Webhooks** nahi hai | **Add products** → **Webhooks** → **Set up** |
+| **WhatsApp** chahiye par nahi hai | **Add products** → **WhatsApp** → **Set up** |
+| **Messenger** chahiye par nahi hai | **Add products** → **Messenger** → **Set up** |
+| **Instagram** chahiye par nahi hai | **Add products** → **Instagram** → **Set up** |
 
 | Product | Kab add karna hai |
 |---------|-------------------|
-| **Webhooks** | **Hamesha** — teeno ke liye zaroori |
-| **WhatsApp** | Sirf WhatsApp chahiye to |
-| **Messenger** | Facebook Messenger chahiye to |
-| **Instagram** | Instagram DM chahiye to |
-
-Har product par **Set up** click karo.
+| **Webhooks** | **Hamesha** — teeno channels ke liye zaroori |
+| **WhatsApp** | WhatsApp chahiye aur menu mein nahi hai |
+| **Messenger** | Facebook Messenger chahiye aur menu mein nahi hai |
+| **Instagram** | Instagram DM chahiye aur menu mein nahi hai |
 
 > **Note:** Instagram ke liye pehle **Facebook Page** chahiye. Page ke saath Instagram Business account link hona chahiye (Part 4 mein detail).
 
@@ -433,6 +512,7 @@ Forms (`open_form`) sirf **web** par chalte hain. WhatsApp / Instagram par chat 
 | Sheet mein Web dikhe | Channel fix ho chuka backend mein — naya message bhejo |
 | Health `ok: false` | WhatsApp token expire — ya **Application has been deleted** (purana app delete) → naya app + naye tokens |
 | **Application has been deleted** | Meta app delete kar diya — Railway ke **saare** Meta tokens badlo (WhatsApp + Page) |
+| Use case galat select ho gaya | App delete karke dubara Step 2 — sirf WhatsApp / Instagram / Messenger wale tick karo |
 
 ---
 
