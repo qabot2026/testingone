@@ -1277,7 +1277,7 @@ export function assembleLeadSheetPayloadFromSources_(incomingRow, sheetExtrasSou
     const metricsComputed = computeConversationMetricsFromClientContext_(ctxEnriched);
     const metrics = conversationMetricsForSheetRow_(metricsComputed, ctxEnriched, row);
 
-    const chRaw = typeof row.channel === "string" && row.channel.trim() ? row.channel.trim() : "web";
+    const chRaw = resolveLeadChannelRawForSheet_(row);
     const ch = formatChannelForSheetDisplay(chRaw);
     const deviceForAppend = formatDeviceTypeForSheetDisplay(
         typeof row.deviceType === "string" ? row.deviceType.trim() : ""
@@ -1337,6 +1337,28 @@ const SHEET_FEEDBACK_MESSAGE_COL_LETTER = "V";
 /** @param {string} s */
 function isLiveAgentChannelLabel_(s) {
     return /^live[\s_-]*agent$/i.test(String(s || "").trim().replace(/\s+/g, " "));
+}
+
+/**
+ * Channel for Sheets: explicit `row.channel`, else infer from meta session id (wa_/ig_/fb_).
+ * @param {{ channel?: unknown, clientSessionId?: unknown }} row
+ */
+function resolveLeadChannelRawForSheet_(row) {
+    const explicit = typeof row.channel === "string" ? row.channel.trim() : "";
+    if (explicit) {
+        return explicit;
+    }
+    const sid = typeof row.clientSessionId === "string" ? row.clientSessionId.trim() : "";
+    if (/^wa_/i.test(sid)) {
+        return "whatsapp";
+    }
+    if (/^ig_/i.test(sid)) {
+        return "instagram";
+    }
+    if (/^fb_/i.test(sid)) {
+        return "facebook";
+    }
+    return "web";
 }
 
 export function formatChannelForSheetDisplay(raw) {
@@ -2714,7 +2736,17 @@ async function updateExistingSessionRow_(sheets, tab, rowNumber, incoming, optio
     const name = contactPatchFor(typeof incoming.name === "string" ? incoming.name : "", 3);
     const mobile = contactPatchFor(typeof incoming.mobile === "string" ? incoming.mobile : "", 4);
     const email = contactPatchFor(typeof incoming.email === "string" ? incoming.email : "", 5);
-    const channelRaw = patchScalarInto(typeof incoming.channel === "string" ? incoming.channel : "", 6);
+    const channelIncoming = typeof incoming.channel === "string" ? incoming.channel.trim() : "";
+    let channelRaw = patchScalarInto(channelIncoming, 6);
+    const sidForChannel =
+        typeof incoming.clientSessionId === "string" ? incoming.clientSessionId.trim() : "";
+    if (
+        channelIncoming
+        && /^(wa|ig|fb)_/i.test(sidForChannel)
+        && /^(whatsapp|instagram|facebook)$/i.test(channelIncoming)
+    ) {
+        channelRaw = channelIncoming;
+    }
     let channel = channelRaw ? formatChannelForSheetDisplay(channelRaw) : "";
     if (channel && /^live\s*agent$/i.test(channel.replace(/\s+/g, " "))) {
         channel = "";
@@ -5028,9 +5060,7 @@ async function appendContactRowToSheet_(row, opts) {
         );
     }
 
-    const chRaw = typeof row.channel === "string" && row.channel.trim()
-        ? row.channel.trim()
-        : "web";
+    const chRaw = resolveLeadChannelRawForSheet_(row);
     const ch = formatChannelForSheetDisplay(chRaw);
     const deviceForAppend = formatDeviceTypeForSheetDisplay(
         typeof row.deviceType === "string" ? row.deviceType.trim() : ""

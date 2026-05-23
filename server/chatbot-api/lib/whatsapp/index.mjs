@@ -24,6 +24,8 @@ import {
     youtubeThumbnailUrl_,
     isDirectVideoFileUrl_
 } from "../meta-channels/cx-payload.mjs";
+import { normalizeLeadChannel } from "../meta-channels/normalize-channel.mjs";
+import { syncMetaInboundMessageToSheet_ } from "../meta-channels/sheet-sync.mjs";
 
 /**
  * Dialogflow-only credentials. Use when Firebase JSON is from another GCP project
@@ -1647,12 +1649,31 @@ function extractInboundPageText_(event, sessionId) {
  *   sessionId: string
  * }} input
  */
+function cxSessionParams_(cx) {
+    const qr = cx && typeof cx === "object" ? /** @type {Record<string, unknown>} */ (cx).queryResult : null;
+    if (!qr || typeof qr !== "object") {
+        return {};
+    }
+    const direct = /** @type {Record<string, unknown>} */ (qr).parameters;
+    if (direct && typeof direct === "object" && !Array.isArray(direct)) {
+        return /** @type {Record<string, unknown>} */ (direct);
+    }
+    const si = /** @type {Record<string, unknown>} */ (qr).sessionInfo;
+    const nested =
+        si && typeof si === "object" && si.parameters && typeof si.parameters === "object"
+            ? si.parameters
+            : null;
+    return nested && !Array.isArray(nested) ? /** @type {Record<string, unknown>} */ (nested) : {};
+}
+
 async function processInboundMetaMessage_(input) {
     const c = metaConfig_();
+    const channel = normalizeLeadChannel(input.channel);
     const cx = await detectIntentCx_({
         sessionId: input.sessionId,
         text: input.text,
-        languageCode: c.languageCode
+        languageCode: c.languageCode,
+        channel
     });
     const parts = extractCxResponse_(cx);
 
@@ -1669,6 +1690,18 @@ async function processInboundMetaMessage_(input) {
             parts
         });
     }
+
+    void syncMetaInboundMessageToSheet_({
+        channel,
+        sessionId: input.sessionId,
+        from: input.from,
+        userText: input.text,
+        cxParams: cxSessionParams_(cx)
+    }).then((out) => {
+        if (out.ok) {
+            log_("sheet_sync", { channel: out.channel, mode: out.result?.mode || "" });
+        }
+    });
 
     log_("reply_sent", {
         channel: input.channel,
@@ -1764,7 +1797,7 @@ async function getDialogflowAccessToken_() {
 }
 
 /**
- * @param {{ sessionId: string, text: string, languageCode: string }} input
+ * @param {{ sessionId: string, text: string, languageCode: string, channel?: string }} input
  */
 async function detectIntentCx_(input) {
     const c = whatsappConfig_();
@@ -1781,6 +1814,9 @@ async function detectIntentCx_(input) {
         input.sessionId
     ].join("/");
     const url = `https://${host}/v3/${sessionPath}:detectIntent`;
+    const channel = normalizeLeadChannel(input.channel);
+    /** @type {Record<string, string>} */
+    const sessionParameters = { channel };
     const res = await fetch(url, {
         method: "POST",
         headers: {
@@ -1791,6 +1827,9 @@ async function detectIntentCx_(input) {
             queryInput: {
                 text: { text: input.text },
                 languageCode: input.languageCode
+            },
+            queryParams: {
+                parameters: sessionParameters
             }
         })
     });

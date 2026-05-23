@@ -271,11 +271,7 @@ const multipart = multer({
     limits: { fileSize: 32 * 1024 * 1024, files: 30 }
 });
 
-/** `client_context.channel`: `web` or `whatsapp` (non-WhatsApp integrations should send `whatsapp` explicitly). */
-function normalizeLeadChannel(raw) {
-    const s = typeof raw === "string" ? raw.trim().toLowerCase() : "";
-    return s === "whatsapp" ? "whatsapp" : "web";
-}
+import { normalizeLeadChannel } from "./lib/meta-channels/normalize-channel.mjs";
 
 /** Source page URL for Sheets (from `company.js` `getClientContext()` + fallbacks). */
 function resolveSourceUrlForSheet(cx) {
