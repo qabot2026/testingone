@@ -6,6 +6,9 @@ let contactFormOpenTimer = null;
 let contactFormOpenPending = false;
 /** Extra keys from the latest `open_form` custom payload; applied when the contact form opens (e.g. name, mobile, email). */
 let pendingOpenFormPrefill = /** @type {Record<string, string> | null} */ (null);
+/** Last gallery / video / carousel / inline-select chip the visitor clicked (feeds `$session.params.intent` + form prefill). */
+let dfchatLastInlineOptionSelection_ = /** @type {{ value: string, label: string, atMs: number } | null} */ (null);
+const INLINE_OPTION_SELECTION_TTL_MS = 120000;
 /**
  * Queue of form keys (`common.form.forms`) to open after each successful submit (FIFO).
  * Populated from Dialogflow `open_form` via `next_form_id`, `next_form_ids`, `following_form_id`, `third_form_id`, …
@@ -5078,6 +5081,74 @@ function sendUserTextViaDfMessenger(dfMessenger, text, shouldRenderCustomTextNow
         }
     );
     return;
+}
+
+/**
+ * Remember inline option chips (gallery / video / carousel / select) for CX `$session.params.intent`
+ * and contact-form prefill when the next turn opens `open_form`.
+ * @param {string} value
+ * @param {string} [label]
+ */
+function persistInlineOptionSelectionAsIntent_(value, label) {
+    const v = typeof value === "string" ? value.trim() : "";
+    if (!v) {
+        return;
+    }
+    const lbl = typeof label === "string" && label.trim() ? label.trim() : v;
+    dfchatLastInlineOptionSelection_ = { value: v, label: lbl, atMs: Date.now() };
+    try {
+        const prev = readStoredClientContext();
+        const prevSp =
+            prev.session_params && typeof prev.session_params === "object" && !Array.isArray(prev.session_params)
+                ? { .../** @type {Record<string, unknown>} */ (prev.session_params) }
+                : {};
+        prevSp.intent = v;
+        prevSp.name = v;
+        persistClientContext({ ...prev, session_params: prevSp });
+        if (activeDfMessenger) {
+            syncDfMessengerSessionParametersFromClientContext(activeDfMessenger);
+        }
+    } catch {
+        /* ignore */
+    }
+}
+
+/**
+ * @param {Record<string, string> | null | undefined} prefill
+ * @returns {Record<string, string> | null}
+ */
+function mergeInlineOptionSelectionIntoOpenFormPrefill_(prefill) {
+    const sel = dfchatLastInlineOptionSelection_;
+    if (!sel || Date.now() - sel.atMs > INLINE_OPTION_SELECTION_TTL_MS) {
+        return prefill && typeof prefill === "object" ? prefill : null;
+    }
+    /** @type {Record<string, string>} */
+    const out = prefill && typeof prefill === "object" ? { ...prefill } : {};
+    if (!dfParameterScalarToString(out.name)) {
+        out.name = sel.value;
+    }
+    if (!dfParameterScalarToString(out.intent)) {
+        out.intent = sel.value;
+    }
+    return Object.keys(out).length ? out : null;
+}
+
+/**
+ * @param {HTMLElement | null | undefined} dfMessenger
+ * @param {string} value
+ * @param {string} [label]
+ * @param {(() => void) | null | undefined} [beforeSend]
+ */
+function handleInlineSyntheticOptionClick_(dfMessenger, value, label, beforeSend) {
+    persistInlineOptionSelectionAsIntent_(value, label);
+    if (typeof beforeSend === "function") {
+        try {
+            beforeSend();
+        } catch {
+            /* ignore */
+        }
+    }
+    sendUserTextViaDfMessenger(dfMessenger, value, true);
 }
 
 function sendUserTextViaDfMessengerAfterLiveAgentRoute_(dfMessenger, text, shouldRenderCustomTextNow) {
@@ -11238,13 +11309,14 @@ function scheduleInjectInlineGalleryCarousel(dfMessenger, urls, messages, option
                     if (!ms) {
                         return;
                     }
-                    try {
-                        removeDfchatLastInlineGalleryIfPresent();
-                        removeDfchatLastInlineVideoIfPresent();
-                    } catch {
-                        /* ignore */
-                    }
-                    sendUserTextViaDfMessenger(ms, value, true);
+                    handleInlineSyntheticOptionClick_(ms, value, label, () => {
+                        try {
+                            removeDfchatLastInlineGalleryIfPresent();
+                            removeDfchatLastInlineVideoIfPresent();
+                        } catch {
+                            /* ignore */
+                        }
+                    });
                 });
                 chips.appendChild(chip);
             }
@@ -11436,13 +11508,14 @@ function updateInlineGalleryWrapUnderTrack(wrapEl, urls, options, messageText) {
                     if (!ms) {
                         return;
                     }
-                    try {
-                        removeDfchatLastInlineGalleryIfPresent();
-                        removeDfchatLastInlineVideoIfPresent();
-                    } catch {
-                        /* ignore */
-                    }
-                    sendUserTextViaDfMessenger(ms, value, true);
+                    handleInlineSyntheticOptionClick_(ms, value, label, () => {
+                        try {
+                            removeDfchatLastInlineGalleryIfPresent();
+                            removeDfchatLastInlineVideoIfPresent();
+                        } catch {
+                            /* ignore */
+                        }
+                    });
                 });
                 chips.appendChild(chip);
             }
@@ -11826,13 +11899,14 @@ function scheduleInjectInlineVideoPlayer(dfMessenger, embedHttpsUrl, options, me
                     if (!ms) {
                         return;
                     }
-                    try {
-                        removeDfchatLastInlineGalleryIfPresent();
-                        removeDfchatLastInlineVideoIfPresent();
-                    } catch {
-                        /* ignore */
-                    }
-                    sendUserTextViaDfMessenger(ms, value, true);
+                    handleInlineSyntheticOptionClick_(ms, value, label, () => {
+                        try {
+                            removeDfchatLastInlineGalleryIfPresent();
+                            removeDfchatLastInlineVideoIfPresent();
+                        } catch {
+                            /* ignore */
+                        }
+                    });
                 });
                 chips.appendChild(chip);
             }
@@ -12806,13 +12880,14 @@ function scheduleInjectInlineCardCarousel(dfMessenger, cards, messageText) {
                 }
 
                 if (ms && c.ctaValue) {
-                    try {
-                        removeDfchatLastInlineGalleryIfPresent();
-                        removeDfchatLastInlineVideoIfPresent();
-                    } catch {
-                        /* ignore */
-                    }
-                    sendUserTextViaDfMessenger(ms, c.ctaValue, true);
+                    handleInlineSyntheticOptionClick_(ms, String(c.ctaValue).trim(), c.ctaLabel || c.title || c.ctaValue, () => {
+                        try {
+                            removeDfchatLastInlineGalleryIfPresent();
+                            removeDfchatLastInlineVideoIfPresent();
+                        } catch {
+                            /* ignore */
+                        }
+                    });
                 }
             });
 
@@ -13099,17 +13174,20 @@ function scheduleInjectInlineSelectDropdown(dfMessenger, options, placeholder, m
             if (!v) {
                 return;
             }
-            sendUserTextViaDfMessenger(msResolved, v, true);
-            try {
-                if (wrap.parentNode && typeof wrap.remove === "function") {
-                    wrap.remove();
-                } else if (wrap.parentNode) {
-                    wrap.parentNode.removeChild(wrap);
+            const picked = list.find((o) => o && String(o.value || "").trim() === v);
+            const pickedLabel = picked && picked.label ? String(picked.label).trim() : v;
+            handleInlineSyntheticOptionClick_(msResolved, v, pickedLabel, () => {
+                try {
+                    if (wrap.parentNode && typeof wrap.remove === "function") {
+                        wrap.remove();
+                    } else if (wrap.parentNode) {
+                        wrap.parentNode.removeChild(wrap);
+                    }
+                } catch {
+                    /* ignore */
                 }
-            } catch {
-                /* ignore */
-            }
-            dfchatLastInlineSelectWrapEl = null;
+                dfchatLastInlineSelectWrapEl = null;
+            });
         });
 
         wrap.appendChild(sel);
@@ -15641,6 +15719,7 @@ async function handleDfResponseReceived(event) {
 
     if (willOpenForm) {
         pendingOpenFormPrefill = extractOpenFormPrefillFromEvent(event);
+        pendingOpenFormPrefill = mergeInlineOptionSelectionIntoOpenFormPrefill_(pendingOpenFormPrefill);
         /** Skip only when name+mobile were already stored before this turn — not when this payload prefills them. */
         const hadNameAndMobileBeforeThisOpenForm = sessionHasNameAndMobileForSkip_();
         if (pendingOpenFormPrefill) {
@@ -16572,6 +16651,12 @@ function applyStoredContactHintsToOpenContactForm_() {
             name: dfParameterScalarToString(stored && stored.name != null ? stored.name : ""),
             email: dfParameterScalarToString(stored && stored.email != null ? stored.email : "")
         };
+        if (!hints.name && stored && stored.session_params && typeof stored.session_params === "object") {
+            const sp = /** @type {Record<string, unknown>} */ (stored.session_params);
+            hints.name =
+                dfParameterScalarToString(sp.intent != null ? sp.intent : "")
+                || dfParameterScalarToString(sp.name != null ? sp.name : "");
+        }
         const cfg = readContactFormConfig();
         const fields = Array.isArray(cfg.fields) ? cfg.fields : [];
         for (let i = 0; i < fields.length; i += 1) {
@@ -21325,6 +21410,7 @@ function syncDfMessengerSessionParametersFromClientContext(dfMessenger) {
         add("appointmenttime");
         add("rating");
         add("message");
+        add("intent");
         const spRaw = /** @type {Record<string, unknown>} */ (cx).session_params;
         if (spRaw && typeof spRaw === "object" && !Array.isArray(spRaw)) {
             for (const [k, val] of Object.entries(spRaw)) {
