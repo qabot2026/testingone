@@ -23,6 +23,33 @@ Your chatbot backend is already ready. You only need to create a new Meta app an
 | Webhook (Meta mein paste karo) | `https://handsome-amazement-production-7f65.up.railway.app/api/whatsapp/webhook` |
 | Health check | `https://handsome-amazement-production-7f65.up.railway.app/api/whatsapp/health` |
 
+### Health link ka jawab kaise padhein (simple)
+
+Browser mein health link kholo — JSON dikhega. **`ok: false` matlab server band nahi hai** — sirf kuch Meta tokens purane / galat hain.
+
+| Health mein dikhe | Matlab | Kya karo |
+|-------------------|--------|----------|
+| `"ok": false` | WhatsApp token check fail | Naya app se naya token Railway mein daalo |
+| `"access_token_error": "Application has been deleted"` | **Purana Meta app delete ho gaya** — Railway par ab bhi purane tokens hain | **Naya app banao** → naye tokens → Railway update → redeploy |
+| `"access_token_valid": false` | WhatsApp token expire ya invalid | Part 2 — naya `WHATSAPP_ACCESS_TOKEN` |
+| `"verify_token_set": true` | Webhook secret Railway mein hai | Theek hai |
+| `"page_id_set": true` | Page ID Railway mein hai | Theek hai (lekin token naya app se hona chahiye) |
+| `"page_access_token_set": true` | Page token Railway mein hai | Purana ho sakta hai — **naya app se dubara generate karo** |
+| `"missing_env": []` | Koi variable missing nahi | Theek hai |
+
+**Aapne Meta app delete kiya — isliye ab ye error normal hai.**  
+Purane `WHATSAPP_ACCESS_TOKEN` aur `META_PAGE_ACCESS_TOKEN` kaam nahi karenge. **Part 1 se naya app banao** aur **saare tokens naye** Railway mein daalo.
+
+Jab sab theek ho jaye:
+
+| Field | Expected |
+|-------|----------|
+| `"ok": true` | WhatsApp token valid |
+| `"access_token_valid": true` | WhatsApp theek |
+| `"page_access_token_set": true` | Instagram / Facebook ke liye |
+
+> Instagram / Facebook test ke liye `ok: false` ho to bhi chalega — agar `page_*` true ho aur naya Page token ho. Lekin **Application has been deleted** aaye to **sab tokens naye app se lo**.
+
 ---
 
 ## Part 1 — Common steps (sab channels ke liye)
@@ -404,7 +431,8 @@ Forms (`open_form`) sirf **web** par chalte hain. WhatsApp / Instagram par chat 
 | Instagram reply nahi | Page token + Instagram **Subscribed**? Tester account? |
 | Sirf Development mein chalta hai | App roles mein user ko **Tester** banao |
 | Sheet mein Web dikhe | Channel fix ho chuka backend mein — naya message bhejo |
-| Health `ok: false` | WhatsApp token expire — Instagram ke liye `page_*` true dekho |
+| Health `ok: false` | WhatsApp token expire — ya **Application has been deleted** (purana app delete) → naya app + naye tokens |
+| **Application has been deleted** | Meta app delete kar diya — Railway ke **saare** Meta tokens badlo (WhatsApp + Page) |
 
 ---
 
