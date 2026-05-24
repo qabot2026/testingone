@@ -11119,18 +11119,85 @@ function resolveGalleryInsertBeforeByCxOrder(messageList) {
 }
 
 /**
+ * @typedef {{ url: string, title: string }} OpenGalleryItem
+ */
+
+/**
+ * @param {OpenGalleryItem} item
+ * @param {number} index
+ * @returns {void}
+ */
+function appendInlineGalleryTrackCell_(track, item, index) {
+    const url = String(item && item.url ? item.url : "").trim();
+    if (!url.startsWith("http://") && !url.startsWith("https://")) {
+        return;
+    }
+    const title = String(item && item.title ? item.title : "").trim().slice(0, 120);
+
+    const cell = document.createElement("div");
+    cell.style.cssText = [
+        "flex:0 0 auto",
+        "scroll-snap-align:start",
+        "width:min(76vw,200px)",
+        "max-width: min(76vw, 200px)",
+        "box-sizing:border-box",
+        "display:flex",
+        "flex-direction:column"
+    ].join(";");
+
+    const img = document.createElement("img");
+    img.src = url;
+    img.alt = title;
+    img.setAttribute("draggable", "false");
+    img.loading = index < 3 ? "eager" : "lazy";
+    img.decoding = "async";
+    img.style.cssText = [
+        "display:block",
+        "width:100%",
+        "height:126px",
+        "object-fit:cover",
+        "border-radius:10px",
+        "cursor:zoom-in",
+        "background:rgba(148,163,184,0.18)",
+        "border:1px solid rgba(148,163,184,0.35)",
+        "box-sizing:border-box"
+    ].join(";");
+
+    cell.appendChild(img);
+
+    if (title) {
+        const cap = document.createElement("div");
+        cap.textContent = title;
+        cap.style.cssText = [
+            "font-size:12px",
+            "line-height:1.3",
+            "color:#0f172a",
+            "margin-top:6px",
+            "padding:0 2px",
+            "text-align:center",
+            "overflow:hidden",
+            "text-overflow:ellipsis",
+            "display:-webkit-box",
+            "-webkit-line-clamp:2",
+            "-webkit-box-orient:vertical",
+            "word-break:break-word",
+            "max-width:100%"
+        ].join(";");
+        cell.appendChild(cap);
+    }
+
+    track.appendChild(cell);
+}
+
+/**
  * Append a horizontal image strip inside the chat transcript (`open_gallery`).
  * Uses inline styles because Dialogflow Messenger lives under shadow DOM (external CSS rarely applies).
  * @param {HTMLElement | null | undefined} dfMessenger
- * @param {string[]} urls
+ * @param {string[] | OpenGalleryItem[]} urlsOrItems
  * @param {unknown[]} [messages]
  */
-function scheduleInjectInlineGalleryCarousel(dfMessenger, urls, messages, options, messageText) {
-    const list = Array.isArray(urls)
-        ? urls
-            .map((u) => String(u || "").trim())
-            .filter((u) => u.startsWith("https://") || u.startsWith("http://"))
-        : [];
+function scheduleInjectInlineGalleryCarousel(dfMessenger, urlsOrItems, messages, options, messageText) {
+    const list = coerceOpenGalleryItemsInput(urlsOrItems);
     if (list.length === 0) {
         return;
     }
@@ -11197,35 +11264,7 @@ function scheduleInjectInlineGalleryCarousel(dfMessenger, urls, messages, option
         ].join(";");
 
         for (let i = 0; i < list.length; i += 1) {
-            const cell = document.createElement("div");
-            cell.style.cssText = [
-                "flex:0 0 auto",
-                "scroll-snap-align:start",
-                "width:min(76vw,200px)",
-                "max-width: min(76vw,200px)",
-                "box-sizing:border-box"
-            ].join(";");
-
-            const img = document.createElement("img");
-            img.src = list[i];
-            img.alt = "";
-            img.setAttribute("draggable", "false");
-            img.loading = i < 3 ? "eager" : "lazy";
-            img.decoding = "async";
-            img.style.cssText = [
-                "display:block",
-                "width:100%",
-                "height:126px",
-                "object-fit:cover",
-                "border-radius:10px",
-                "cursor:zoom-in",
-                "background:rgba(148,163,184,0.18)",
-                "border:1px solid rgba(148,163,184,0.35)",
-                "box-sizing:border-box"
-            ].join(";");
-
-            cell.appendChild(img);
-            track.appendChild(cell);
+            appendInlineGalleryTrackCell_(track, list[i], i);
         }
 
         wrap.appendChild(track);
@@ -11351,7 +11390,7 @@ function scheduleInjectInlineGalleryCarousel(dfMessenger, urls, messages, option
     window.setTimeout(() => {
         if (!injected) {
             try {
-                openImageLightbox(list, 0, "");
+                openImageLightbox(list.map((it) => it.url), 0, "");
             } catch {
                 /* ignore */
             }
@@ -11366,13 +11405,14 @@ function scheduleInjectInlineGalleryCarousel(dfMessenger, urls, messages, option
  * (Used when dedupe blocks reinjection, but we still want the newest gallery content.)
  *
  * @param {HTMLElement} wrapEl
- * @param {string[]} urls Normalized HTTPS URLs
+ * @param {string[] | OpenGalleryItem[]} urlsOrItems Normalized gallery items
  * @param {Array<{label: string, value: string}> | null | undefined} options
  * @param {string | null | undefined} messageText
  * @returns {void}
  */
-function updateInlineGalleryWrapUnderTrack(wrapEl, urls, options, messageText) {
+function updateInlineGalleryWrapUnderTrack(wrapEl, urlsOrItems, options, messageText) {
     try {
+        const items = coerceOpenGalleryItemsInput(urlsOrItems);
         const track = wrapEl.querySelector(`.${DFCHAT_INLINE_GALLERY_CLASS}__track`);
         if (!track) {
             return;
@@ -11396,36 +11436,8 @@ function updateInlineGalleryWrapUnderTrack(wrapEl, urls, options, messageText) {
             /* ignore */
         }
 
-        for (let i = 0; i < urls.length; i += 1) {
-            const cell = document.createElement("div");
-            cell.style.cssText = [
-                "flex:0 0 auto",
-                "scroll-snap-align:start",
-                "width:min(76vw,200px)",
-                "max-width: min(76vw,200px)",
-                "box-sizing:border-box"
-            ].join(";");
-
-            const img = document.createElement("img");
-            img.src = urls[i];
-            img.alt = "";
-            img.setAttribute("draggable", "false");
-            img.loading = i < 3 ? "eager" : "lazy";
-            img.decoding = "async";
-            img.style.cssText = [
-                "display:block",
-                "width:100%",
-                "height:126px",
-                "object-fit:cover",
-                "border-radius:10px",
-                "cursor:zoom-in",
-                "background:rgba(148,163,184,0.18)",
-                "border:1px solid rgba(148,163,184,0.35)",
-                "box-sizing:border-box"
-            ].join(";");
-
-            cell.appendChild(img);
-            track.appendChild(cell);
+        for (let i = 0; i < items.length; i += 1) {
+            appendInlineGalleryTrackCell_(track, items[i], i);
         }
 
         const opts = Array.isArray(options) ? options : [];
@@ -11518,7 +11530,7 @@ function updateInlineGalleryWrapUnderTrack(wrapEl, urls, options, messageText) {
  * @param {string | null | undefined} messageText
  * @returns {void}
  */
-function scheduleEnsureExistingInlineGalleryPosition(dfMessenger, urls, options, messageText) {
+function scheduleEnsureExistingInlineGalleryPosition(dfMessenger, urlsOrItems, options, messageText) {
     let moved = false;
     let msResolved =
         dfMessenger
@@ -11543,7 +11555,7 @@ function scheduleEnsureExistingInlineGalleryPosition(dfMessenger, urls, options,
                 return;
             }
 
-            updateInlineGalleryWrapUnderTrack(dfchatLastInlineGalleryWrapEl, urls, options, messageText);
+            updateInlineGalleryWrapUnderTrack(dfchatLastInlineGalleryWrapEl, urlsOrItems, options, messageText);
 
             const beforeNode = resolveGalleryInsertBeforeByCxOrder(ml);
             if (beforeNode && beforeNode.parentNode === ml && typeof ml.insertBefore === "function") {
@@ -12169,6 +12181,136 @@ function normalizeOpenGalleryUrlList(urls) {
     return out;
 }
 
+/**
+ * @param {string[] | OpenGalleryItem[]} urlsOrItems
+ * @returns {OpenGalleryItem[]}
+ */
+function coerceOpenGalleryItemsInput(urlsOrItems) {
+    if (!Array.isArray(urlsOrItems) || urlsOrItems.length === 0) {
+        return [];
+    }
+    const first = urlsOrItems[0];
+    if (first && typeof first === "object" && typeof /** @type {OpenGalleryItem} */ (first).url === "string") {
+        /** @type {OpenGalleryItem[]} */
+        const out = [];
+        for (let i = 0; i < urlsOrItems.length; i += 1) {
+            const it = /** @type {OpenGalleryItem & { name?: string }} */ (urlsOrItems[i]);
+            const url = String(it && it.url ? it.url : "").trim();
+            if (!url.startsWith("http://") && !url.startsWith("https://")) {
+                continue;
+            }
+            out.push({
+                url,
+                title: String(it && (it.title || it.name) ? (it.title || it.name) : "").trim().slice(0, 120)
+            });
+        }
+        return out;
+    }
+    /** @type {OpenGalleryItem[]} */
+    const out = [];
+    for (let i = 0; i < urlsOrItems.length; i += 1) {
+        const url = String(urlsOrItems[i] || "").trim();
+        if (!url.startsWith("http://") && !url.startsWith("https://")) {
+            continue;
+        }
+        out.push({ url, title: "" });
+    }
+    return out;
+}
+
+/**
+ * Parallel name list for gallery images (`names` / `titles` — separate from chip `options`).
+ * @param {Record<string, unknown>} pl
+ * @returns {string[]}
+ */
+function openGalleryParallelNameListFromPayload_(pl) {
+    const raw =
+        pl.names ?? pl.imageNames ?? pl.image_names
+        ?? pl.titles ?? pl.imageTitles ?? pl.image_titles;
+    if (!Array.isArray(raw)) {
+        return [];
+    }
+    /** @type {string[]} */
+    const out = [];
+    for (let i = 0; i < raw.length; i += 1) {
+        out.push(unwrapPayloadStringField(raw[i]));
+    }
+    return out;
+}
+
+/**
+ * @param {Record<string, unknown>} row
+ * @param {number} index
+ * @param {string[]} nameList
+ * @returns {string}
+ */
+function openGalleryNameFromRow_(row, index, nameList) {
+    const fromRow = unwrapPayloadStringField(row.name ?? row.title ?? row.caption ?? row.label);
+    if (fromRow) {
+        return fromRow;
+    }
+    return nameList[index] || "";
+}
+
+/**
+ * @param {Record<string, unknown> | null | undefined} pl
+ * @returns {OpenGalleryItem[]}
+ */
+function normalizeOpenGalleryItemsFromPayload(pl) {
+    if (!pl || typeof pl !== "object") {
+        return [];
+    }
+    /** @type {OpenGalleryItem[]} */
+    const items = [];
+    const nameList = openGalleryParallelNameListFromPayload_(pl);
+
+    const rawImages = pl.images ?? pl.imageItems ?? pl.image_items;
+    if (Array.isArray(rawImages) && rawImages.length > 0) {
+        for (let i = 0; i < rawImages.length; i += 1) {
+            const row = rawImages[i];
+            if (typeof row === "string") {
+                const u = unwrapPayloadStringField(row);
+                if (u.startsWith("http://") || u.startsWith("https://")) {
+                    items.push({ url: u, title: nameList[i] || "" });
+                }
+                continue;
+            }
+            if (row && typeof row === "object") {
+                const r = /** @type {Record<string, unknown>} */ (row);
+                const u = unwrapPayloadStringField(r.url ?? r.imageUrl ?? r.image_url ?? r.src ?? r.link ?? r.href);
+                if (!u.startsWith("http://") && !u.startsWith("https://")) {
+                    continue;
+                }
+                items.push({ url: u, title: openGalleryNameFromRow_(r, i, nameList) });
+            }
+        }
+    }
+
+    if (items.length === 0) {
+        const rawUrls = Object.prototype.hasOwnProperty.call(pl, "urls") ? pl.urls : null;
+        if (Array.isArray(rawUrls)) {
+            for (let uidx = 0; uidx < rawUrls.length; uidx += 1) {
+                const rawU = rawUrls[uidx];
+                if (rawU != null && typeof rawU === "object" && !Array.isArray(rawU)) {
+                    const r = /** @type {Record<string, unknown>} */ (rawU);
+                    const u = unwrapPayloadStringField(r.url ?? r.imageUrl ?? r.image_url ?? r.src ?? r.stringValue);
+                    if (!u.startsWith("http://") && !u.startsWith("https://")) {
+                        continue;
+                    }
+                    items.push({ url: u, title: openGalleryNameFromRow_(r, uidx, nameList) });
+                } else {
+                    const u = unwrapPayloadStringField(rawU);
+                    if (u.startsWith("http://") || u.startsWith("https://")) {
+                        items.push({ url: u, title: nameList[uidx] || "" });
+                    }
+                }
+            }
+        }
+    }
+
+    return coerceOpenGalleryItemsInput(items);
+}
+
 /** @type {Set<string>} */
 let dfchatOpenGalleryUrlSetSignaturesSeen = new Set();
 
@@ -12398,7 +12540,7 @@ function shouldScheduleInlineGalleryCarouselForNormalizedUrls(normalizedHttpsUrl
  * Dedupe/intent gates are applied elsewhere.
  *
  * @param {unknown[]} messages
- * @returns {{ urls: string[], options: Array<{label: string, value: string}>, messageText: string } | null}
+ * @returns {{ urls: string[], items: OpenGalleryItem[], options: Array<{label: string, value: string}>, messageText: string } | null}
  */
 function extractFirstOpenGalleryNormalizedUrlsFromCxMessages(messages) {
     if (!Array.isArray(messages) || messages.length === 0) {
@@ -12430,26 +12572,8 @@ function extractFirstOpenGalleryNormalizedUrlsFromCxMessages(messages) {
         if (!pl || actionStr !== "open_gallery") {
             continue;
         }
-        /** @type {unknown} */
-        const rawUrls = Object.prototype.hasOwnProperty.call(pl, "urls") ? pl.urls : null;
-        /** @type {string[]} */
-        const list = [];
-        if (Array.isArray(rawUrls)) {
-            for (let uidx = 0; uidx < rawUrls.length; uidx += 1) {
-                const rawU = rawUrls[uidx];
-                const s =
-                    rawU != null && typeof rawU === "object" && typeof rawU.stringValue === "string"
-                        ? rawU.stringValue
-                        : typeof rawU === "string"
-                            ? rawU
-                            : "";
-                const t = String(s).trim();
-                if (t.startsWith("http://") || t.startsWith("https://")) {
-                    list.push(t);
-                }
-            }
-        }
-        const allowed = normalizeOpenGalleryUrlList(list);
+        const items = normalizeOpenGalleryItemsFromPayload(pl);
+        const allowed = items.map((it) => it.url);
         if (allowed.length > 0) {
             const rawOptions =
                 Object.prototype.hasOwnProperty.call(pl, "options") ? pl.options
@@ -12468,7 +12592,7 @@ function extractFirstOpenGalleryNormalizedUrlsFromCxMessages(messages) {
                                         : null;
             const messageText = normalizeOpenVideoMessage(rawMessage);
 
-            return { urls: allowed, options, messageText };
+            return { urls: allowed, items, options, messageText };
         }
     }
     return null;
@@ -12516,12 +12640,13 @@ function tryOpenGalleryFromBotResponseMessages(messages, event) {
         if (!payload || !payload.urls || payload.urls.length === 0) {
             return;
         }
+        const galleryItems = payload.items && payload.items.length ? payload.items : payload.urls;
         const shouldInject = shouldScheduleInlineGalleryCarouselForNormalizedUrls(payload.urls);
         if (!shouldInject) {
             // Dedupe blocked reinjection: still move/update existing gallery so it appears in the right place.
             scheduleEnsureExistingInlineGalleryPosition(
                 activeDfMessenger,
-                payload.urls,
+                galleryItems,
                 payload.options,
                 payload.messageText
             );
@@ -12530,7 +12655,7 @@ function tryOpenGalleryFromBotResponseMessages(messages, event) {
 
         scheduleInjectInlineGalleryCarousel(
             activeDfMessenger,
-            payload.urls,
+            galleryItems,
             messages,
             payload.options,
             payload.messageText
