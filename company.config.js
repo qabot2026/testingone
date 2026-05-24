@@ -243,7 +243,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
          */
         cardCarousel: {
           cardWidthPx: 260,
-          imageHeightPx: 120,
+          imageHeightPx: 220,
           objectFit: "cover"
         },
         // Optional translations for option chips under `open_gallery` / `open_video` payloads.
