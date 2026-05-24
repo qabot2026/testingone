@@ -23482,7 +23482,7 @@ const TITLEBAR_CLOSE_NUDGE_LEFT_PX = 5;
 
 function getTitlebarLayoutCss() {
     const { widthPx, heightPx } = resolveTitlebarIconDimensions_();
-    const minBarH = Math.max(heightPx + 12, 56);
+    const minBarH = Math.max(heightPx + 2, 56);
     return `/* company.js: title/subtitle spacing inside df-messenger-header shadow */
 #titlebar-title img {
   width: ${widthPx}px !important;

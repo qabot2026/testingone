@@ -88,7 +88,7 @@
    --df-messenger-titlebar-border-bottom: 1px solid rgba(4, 58, 90, 0.55);
   --df-messenger-titlebar-font-color: #f0f9ff;
   --df-messenger-titlebar-subtitle-font-color: #bae6fd;
-  --df-messenger-titlebar-padding: 5px 15px;
+  --df-messenger-titlebar-padding: 0 15px;
   --df-messenger-titlebar-title-font-size: 18px;
   --df-messenger-titlebar-title-line-height: 1.2;
   --df-messenger-titlebar-subtitle-font-size: 14px;
@@ -114,7 +114,7 @@
      --df-messenger-message-font-size: 12px !important;
      --df-messenger-input-font-size: 13px !important;
      --df-messenger-chips-font-size: 11px !important;
-     --df-messenger-titlebar-padding: 5px 6px 5px 6px;
+     --df-messenger-titlebar-padding: 0 6px 0 6px;
     --df-messenger-titlebar-title-font-size: 14px !important;
     --df-messenger-titlebar-title-line-height: 1.25;
     --df-messenger-titlebar-subtitle-font-size: 11px !important;
