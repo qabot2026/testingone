@@ -11011,6 +11011,60 @@ const DFCHAT_INLINE_CARD_CAROUSEL_CLASS = "dfchat-inline-card-carousel";
 const DFCHAT_INLINE_SELECT_CLASS = "dfchat-inline-select";
 const DFCHAT_INLINE_BOOKING_CAL_CLASS = "dfchat-inline-booking-calendar";
 
+/** @param {unknown} value @param {number} fallback @param {number} min @param {number} max */
+function sanitizeInlineCarouselPx_(value, fallback, min, max) {
+    const n = typeof value === "number" ? value : Number(value);
+    if (!Number.isFinite(n)) {
+        return fallback;
+    }
+    return Math.max(min, Math.min(max, Math.round(n)));
+}
+
+/** @param {unknown} value @returns {"cover" | "contain"} */
+function sanitizeInlineCarouselObjectFit_(value) {
+    const s = typeof value === "string" ? value.trim().toLowerCase() : "";
+    return s === "contain" ? "contain" : "cover";
+}
+
+/**
+ * Pixel sizes for `open_gallery` thumbnails and `open_card_carousel` card images.
+ * Edit `common.features.inlineGallery.imageCarousel` / `.cardCarousel` in company.config.js.
+ * @returns {{
+ *   galleryWidthPx: number,
+ *   galleryHeightPx: number,
+ *   galleryObjectFit: "cover" | "contain",
+ *   cardWidthPx: number,
+ *   cardImageHeightPx: number,
+ *   cardObjectFit: "cover" | "contain"
+ * }}
+ */
+function readInlineGalleryCarouselSizeConfig() {
+    const feats =
+        COMMON_CONFIG.features && typeof COMMON_CONFIG.features === "object"
+            ? COMMON_CONFIG.features
+            : {};
+    const ig =
+        feats.inlineGallery && typeof feats.inlineGallery === "object"
+            ? feats.inlineGallery
+            : {};
+    const imageCarousel =
+        ig.imageCarousel && typeof ig.imageCarousel === "object"
+            ? ig.imageCarousel
+            : {};
+    const cardCarousel =
+        ig.cardCarousel && typeof ig.cardCarousel === "object"
+            ? ig.cardCarousel
+            : {};
+    return {
+        galleryWidthPx: sanitizeInlineCarouselPx_(imageCarousel.widthPx, 200, 48, 560),
+        galleryHeightPx: sanitizeInlineCarouselPx_(imageCarousel.heightPx, 126, 48, 560),
+        galleryObjectFit: sanitizeInlineCarouselObjectFit_(imageCarousel.objectFit),
+        cardWidthPx: sanitizeInlineCarouselPx_(cardCarousel.cardWidthPx, 260, 120, 560),
+        cardImageHeightPx: sanitizeInlineCarouselPx_(cardCarousel.imageHeightPx, 120, 48, 560),
+        cardObjectFit: sanitizeInlineCarouselObjectFit_(cardCarousel.objectFit)
+    };
+}
+
 /**
  * Remove ALL injected inline galleries across messenger roots.
  * (The message-list shadow root can remount; removing only from the "current" list can miss older nodes.)
@@ -11136,13 +11190,16 @@ function appendInlineGalleryTrackCell_(track, item, index) {
         return;
     }
     const title = String(item && item.title ? item.title : "").trim().slice(0, 120);
+    const size = readInlineGalleryCarouselSizeConfig();
+    const cellW = `${size.galleryWidthPx}px`;
+    const imgH = `${size.galleryHeightPx}px`;
 
     const cell = document.createElement("div");
     cell.style.cssText = [
         "flex:0 0 auto",
         "scroll-snap-align:start",
-        "width:min(76vw,200px)",
-        "max-width: min(76vw, 200px)",
+        `width:${cellW}`,
+        `max-width:${cellW}`,
         "box-sizing:border-box",
         "display:flex",
         "flex-direction:column"
@@ -11156,9 +11213,9 @@ function appendInlineGalleryTrackCell_(track, item, index) {
     img.decoding = "async";
     img.style.cssText = [
         "display:block",
-        "width:100%",
-        "height:126px",
-        "object-fit:cover",
+        `width:${cellW}`,
+        `height:${imgH}`,
+        `object-fit:${size.galleryObjectFit}`,
         "border-radius:10px",
         "cursor:zoom-in",
         "background:rgba(148,163,184,0.18)",
@@ -12853,6 +12910,9 @@ function scheduleInjectInlineCardCarousel(dfMessenger, cards, messageText) {
         ].join(";");
 
         const ms = msResolved || activeDfMessenger;
+        const carouselSize = readInlineGalleryCarouselSizeConfig();
+        const cardCellW = `${carouselSize.cardWidthPx}px`;
+        const cardImgH = `${carouselSize.cardImageHeightPx}px`;
 
         for (let i = 0; i < list.length; i += 1) {
             const c = list[i];
@@ -12861,8 +12921,8 @@ function scheduleInjectInlineCardCarousel(dfMessenger, cards, messageText) {
             cell.style.cssText = [
                 "flex:0 0 auto",
                 "scroll-snap-align:start",
-                "width:min(80vw,260px)",
-                "max-width:min(80vw,260px)",
+                `width:${cardCellW}`,
+                `max-width:${cardCellW}`,
                 "box-sizing:border-box"
             ].join(";");
 
@@ -12895,8 +12955,8 @@ function scheduleInjectInlineCardCarousel(dfMessenger, cards, messageText) {
                 img.style.cssText = [
                     "display:block",
                     "width:100%",
-                    "height:120px",
-                    "object-fit:cover",
+                    `height:${cardImgH}`,
+                    `object-fit:${carouselSize.cardObjectFit}`,
                     "background:rgba(148,163,184,0.18)"
                 ].join(";");
                 card.appendChild(img);

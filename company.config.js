@@ -229,6 +229,23 @@ window.COMPANY_CHAT_UI_CONFIG = {
          * echoing `open_gallery`. Cleared when the user uses **Restart**.
          */
         suppressRepeatedOpenGalleryUrls: true,
+        /**
+         * `open_gallery` horizontal image strip — set width/height in pixels (each thumbnail uses these exact sizes).
+         * objectFit: "cover" (crop to fill) or "contain" (full image visible, may letterbox).
+         */
+        imageCarousel: {
+          widthPx: 200,
+          heightPx: 126,
+          objectFit: "cover"
+        },
+        /**
+         * `open_card_carousel` cards — cardWidthPx = card column width; imageHeightPx = image area height.
+         */
+        cardCarousel: {
+          cardWidthPx: 260,
+          imageHeightPx: 120,
+          objectFit: "cover"
+        },
         // Optional translations for option chips under `open_gallery` / `open_video` payloads.
         // Key = option `value` lowercased (e.g. "location"). Values are labels by language code.
         optionLabelByLanguage: {
