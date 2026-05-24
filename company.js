@@ -263,6 +263,7 @@ const MESSAGE_LIST_SCROLLBAR_STYLE_ID = "dfchat-messagelist-scrollbar-style";
 const MESSAGE_LIST_SQUARE_PANE_STYLE_ID = "dfchat-messagelist-square-pane";
 /** Open whitish chat card (`.chat-wrapper`); optional `common.chatPanel.borderRadius` in company.config.js */
 const CHAT_PANEL_CORNERS_STYLE_ID = "dfchat-chat-panel-corners";
+const TITLEBAR_LAYOUT_STYLE_ID = "dfchat-titlebar-layout";
 const PERSONA_IMAGE_GUARD_STYLE_ID = "dfchat-persona-image-guard";
 /** Dialogflow “jump to bottom” / scroll-hint UI; mirrored onto `df-messenger-chat-bubble` :host. */
 const DF_MESSENGER_CHAT_SCROLL_JUMP_VAR_KEYS = [
@@ -23294,6 +23295,13 @@ function collectShadowRootsUnderHost(host) {
 const MESSAGELIST_SCROLLBAR_CLASS = "dfchat-messagelist-hide-scrollbar";
 const MESSAGELIST_SCROLLBAR_SKIP = new Set(["TEXTAREA", "INPUT", "SELECT", "BUTTON"]);
 
+function getTitlebarLayoutCss() {
+    return `/* company.js: title/subtitle spacing inside df-messenger-header shadow */
+#titlebar-title .title-text {
+  gap: 4px !important;
+}`;
+}
+
 function getMessageListPaneSquareCornersCss() {
     const r = MESSAGE_LIST_PANE_BORDER_RADIUS;
     return `/* company.js: middle strip — Dialogflow sets .message-list-wrapper { border-radius: var(--df-messenger-chat-border-radius) }; override per corner below. */
@@ -23528,10 +23536,12 @@ function applyChatMessageListScrollbarToMessenger(dfMessenger) {
             rem(MESSAGE_LIST_SCROLLBAR_STYLE_ID);
             rem(MESSAGE_LIST_SQUARE_PANE_STYLE_ID);
             rem(CHAT_PANEL_CORNERS_STYLE_ID);
+            rem(TITLEBAR_LAYOUT_STYLE_ID);
         }
     }
     clearMessageListScrollbarHiding(roots);
     const panelCornersCss = getChatPanelBorderRadiusCss();
+    const titlebarLayoutCss = getTitlebarLayoutCss();
     for (const root of roots) {
         if (!root || !(root instanceof ShadowRoot) || typeof root.appendChild !== "function") {
             continue;
@@ -23546,6 +23556,10 @@ function applyChatMessageListScrollbarToMessenger(dfMessenger) {
             stylePl.textContent = panelCornersCss;
             root.appendChild(stylePl);
         }
+        const styleTb = document.createElement("style");
+        styleTb.id = TITLEBAR_LAYOUT_STYLE_ID;
+        styleTb.textContent = titlebarLayoutCss;
+        root.appendChild(styleTb);
     }
     if (SHOW_MESSAGELIST_SCROLLBAR) {
         return;
