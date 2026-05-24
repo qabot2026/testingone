@@ -688,6 +688,34 @@ async function sendWhatsappChoiceMenuFromOptions_(to, sessionId, options, menuPr
 }
 
 /**
+ * @param {{ urls?: string[], items?: Array<{ url?: string, title?: string }> } | null | undefined} gallery
+ * @returns {Array<{ url: string, title: string }>}
+ */
+function galleryItemsFromParts_(gallery) {
+    if (!gallery) {
+        return [];
+    }
+    if (Array.isArray(gallery.items) && gallery.items.length > 0) {
+        /** @type {Array<{ url: string, title: string }>} */
+        const out = [];
+        for (let i = 0; i < gallery.items.length; i += 1) {
+            const row = gallery.items[i];
+            const url = trim_(row && row.url);
+            if (!isHttpsUrl_(url)) {
+                continue;
+            }
+            out.push({ url, title: trim_(row && row.title).slice(0, 120) });
+        }
+        return out;
+    }
+    const urls = Array.isArray(gallery.urls) ? gallery.urls : [];
+    return urls
+        .map((u) => trim_(u))
+        .filter((u) => isHttpsUrl_(u))
+        .map((url) => ({ url, title: "" }));
+}
+
+/**
  * Gallery: batch all images (WhatsApp groups them into a swipeable album), then options menu.
  * @param {string} to
  * @param {string} sessionId
@@ -695,18 +723,23 @@ async function sendWhatsappChoiceMenuFromOptions_(to, sessionId, options, menuPr
  */
 async function sendWhatsappGalleryFull_(to, sessionId, parts) {
     const gallery = parts.gallery;
-    if (!gallery?.urls?.length) {
+    const items = galleryItemsFromParts_(gallery);
+    if (!items.length) {
         return;
     }
-    const urls = gallery.urls;
     const gapMs = galleryImageGapMs_();
 
-    for (let i = 0; i < urls.length; i += 1) {
+    for (let i = 0; i < items.length; i += 1) {
         if (i > 0 && gapMs > 0) {
             await delayMs_(gapMs);
         }
         try {
-            await sendWhatsappImage_({ to, link: urls[i] });
+            const caption = trim_(items[i].title);
+            await sendWhatsappImage_({
+                to,
+                link: items[i].url,
+                ...(caption ? { caption } : {})
+            });
         } catch (e) {
             log_("gallery_image_skip", {
                 index: i,
@@ -715,11 +748,11 @@ async function sendWhatsappGalleryFull_(to, sessionId, parts) {
         }
     }
 
-    const options = gallery.options?.length ? gallery.options : parts.choices;
-    const menuPrompt = trim_(gallery.prompt) || trim_(parts.choicePrompt) || "";
+    const options = gallery?.options?.length ? gallery.options : parts.choices;
+    const menuPrompt = trim_(gallery?.prompt) || trim_(parts.choicePrompt) || "";
 
-    if (options.length || trim_(gallery.message)) {
-        await delayMs_(galleryMenuDelayMs_(urls.length));
+    if (options.length || trim_(gallery?.message)) {
+        await delayMs_(galleryMenuDelayMs_(items.length));
     }
 
     if (options.length) {
@@ -736,16 +769,28 @@ async function sendWhatsappGalleryFull_(to, sessionId, parts) {
 }
 
 /**
- * @param {{ to: string, message: string, urls: string[] }} input
+ * @param {{ to: string, message: string, urls: string[], items?: Array<{ url: string, title?: string }> }} input
  */
 async function sendWhatsappGallery_(input) {
     const message = trim_(input.message);
     if (message) {
         await sendWhatsappText_({ to: input.to, body: message });
     }
-    for (const url of input.urls) {
+    const items = Array.isArray(input.items) && input.items.length
+        ? input.items
+        : (input.urls || []).map((url) => ({ url, title: "" }));
+    for (const row of items) {
+        const link = trim_(row && row.url);
+        if (!isHttpsUrl_(link)) {
+            continue;
+        }
         try {
-            await sendWhatsappImage_({ to: input.to, link: url });
+            const caption = trim_(row && row.title);
+            await sendWhatsappImage_({
+                to: input.to,
+                link,
+                ...(caption ? { caption } : {})
+            });
         } catch (e) {
             log_("gallery_image_skip", {
                 error: e && e.message ? String(e.message).slice(0, 160) : String(e)
@@ -1302,21 +1347,23 @@ async function sendPageGenericCarousel_(input) {
 }
 
 /**
- * @param {{ recipientId: string, message: string, urls: string[] }} input
+ * @param {{ recipientId: string, message: string, urls: string[], items?: Array<{ url: string, title?: string }> }} input
  */
 async function sendPageGallery_(input) {
     if (input.message) {
         await sendPageText_(input.recipientId, input.message);
     }
-    const urls = input.urls.filter(isHttpsUrl_).slice(0, 10);
-    if (urls.length >= 2) {
-        const elements = urls.map((url, i) => ({
-            title: `Image ${i + 1}`,
-            image_url: url,
+    const items = Array.isArray(input.items) && input.items.length
+        ? input.items.filter((row) => isHttpsUrl_(trim_(row && row.url))).slice(0, 10)
+        : input.urls.filter(isHttpsUrl_).slice(0, 10).map((url) => ({ url, title: "" }));
+    if (items.length >= 2) {
+        const elements = items.map((row, i) => ({
+            title: trim_(row.title) || `Image ${i + 1}`,
+            image_url: row.url,
             buttons: [
                 {
                     type: "web_url",
-                    url,
+                    url: row.url,
                     title: "Open"
                 }
             ]
@@ -1334,14 +1381,14 @@ async function sendPageGallery_(input) {
             }
         });
     }
-    for (const url of urls) {
+    for (const row of items) {
         try {
             await sendPageMessage_({
                 recipientId: input.recipientId,
                 message: {
                     attachment: {
                         type: "image",
-                        payload: { url, is_reusable: false }
+                        payload: { url: row.url, is_reusable: false }
                     }
                 }
             });
@@ -1576,7 +1623,8 @@ async function sendPageCxReply_(input) {
         await sendPageGallery_({
             recipientId: input.recipientId,
             message: intro,
-            urls: parts.gallery.urls
+            urls: parts.gallery.urls,
+            items: parts.gallery.items
         });
         if (hasChoices) {
             await sendPageChoicesFromParts_(input.recipientId, input.sessionId, parts);

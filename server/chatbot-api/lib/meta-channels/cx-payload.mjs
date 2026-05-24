@@ -238,6 +238,7 @@ export function normalizeSelectOptions_(opts) {
 }
 
 /**
+ * @typedef {{ url: string, title: string }} GalleryItem
  * @typedef {{ id: string, title: string, subtitle: string, imageUrl: string, ctaLabel: string, ctaValue: string }} CarouselCard
  * @typedef {{ label: string, value: string }} ChoiceOption
  * @typedef {{
@@ -251,12 +252,103 @@ export function normalizeSelectOptions_(opts) {
  *   Carousel/interactive → WhatsApp button or list menu; web widget keeps chip buttons.
  *   Set via payload: optionsDisplay "numbered" | "interactive" (aliases: carousel, buttons, chips).
  *   cardCarousel: { message: string, cards: CarouselCard[], explicitOptions?: boolean } | null,
- *   gallery: { message: string, prompt: string, urls: string[], options: ChoiceOption[] } | null,
+ *   gallery: { message: string, prompt: string, urls: string[], items: GalleryItem[], options: ChoiceOption[] } | null,
  *   video: { title: string, message: string, url: string, choices: ChoiceOption[] } | null,
  *   form: { message: string, formId: string, formKey: string } | null,
  *   liveAgent: { message: string } | null
  * }} CxReplyParts
  */
+
+/**
+ * Parallel name list for gallery images (`names` / `titles` — separate from chip `options`).
+ * @param {Record<string, unknown>} pl
+ * @returns {string[]}
+ */
+function openGalleryParallelNameList_(pl) {
+    const raw =
+        pl.names ?? pl.imageNames ?? pl.image_names
+        ?? pl.titles ?? pl.imageTitles ?? pl.image_titles;
+    if (!Array.isArray(raw)) {
+        return [];
+    }
+    /** @type {string[]} */
+    const out = [];
+    for (let i = 0; i < raw.length; i += 1) {
+        out.push(payloadString_(raw[i]));
+    }
+    return out;
+}
+
+/**
+ * @param {Record<string, unknown>} row
+ * @param {number} index
+ * @param {string[]} nameList
+ * @returns {string}
+ */
+function openGalleryNameFromRow_(row, index, nameList) {
+    const fromRow = payloadString_(row.name ?? row.title ?? row.caption ?? row.label);
+    if (fromRow) {
+        return fromRow.slice(0, 120);
+    }
+    return (nameList[index] || "").slice(0, 120);
+}
+
+/**
+ * Gallery rows for web widget + WhatsApp — mirrors `normalizeOpenGalleryItemsFromPayload` in company.js.
+ * @param {Record<string, unknown>} body
+ * @returns {GalleryItem[]}
+ */
+function normalizeOpenGalleryItems_(body) {
+    /** @type {GalleryItem[]} */
+    const items = [];
+    const nameList = openGalleryParallelNameList_(body);
+
+    const rawImages = body.images ?? body.imageItems ?? body.image_items;
+    if (Array.isArray(rawImages) && rawImages.length > 0) {
+        for (let i = 0; i < rawImages.length; i += 1) {
+            const row = rawImages[i];
+            if (typeof row === "string") {
+                const u = payloadString_(row);
+                if (isHttpsUrl_(u)) {
+                    items.push({ url: u, title: (nameList[i] || "").slice(0, 120) });
+                }
+                continue;
+            }
+            if (row && typeof row === "object") {
+                const r = /** @type {Record<string, unknown>} */ (row);
+                const u = payloadString_(r.url ?? r.imageUrl ?? r.image_url ?? r.src ?? r.link ?? r.href);
+                if (!isHttpsUrl_(u)) {
+                    continue;
+                }
+                items.push({ url: u, title: openGalleryNameFromRow_(r, i, nameList) });
+            }
+        }
+    }
+
+    if (items.length === 0) {
+        const rawUrls = body.urls;
+        if (Array.isArray(rawUrls)) {
+            for (let uidx = 0; uidx < rawUrls.length; uidx += 1) {
+                const rawU = rawUrls[uidx];
+                if (rawU != null && typeof rawU === "object" && !Array.isArray(rawU)) {
+                    const r = /** @type {Record<string, unknown>} */ (rawU);
+                    const u = payloadString_(r.url ?? r.imageUrl ?? r.image_url ?? r.src ?? r.stringValue);
+                    if (!isHttpsUrl_(u)) {
+                        continue;
+                    }
+                    items.push({ url: u, title: openGalleryNameFromRow_(r, uidx, nameList) });
+                } else {
+                    const u = payloadString_(rawU);
+                    if (isHttpsUrl_(u)) {
+                        items.push({ url: u, title: (nameList[uidx] || "").slice(0, 120) });
+                    }
+                }
+            }
+        }
+    }
+
+    return items.slice(0, 10);
+}
 
 /**
  * @param {unknown} rawCards
@@ -396,22 +488,15 @@ function absorbActionPayload_(parts, body) {
     }
 
     if (action === "open_gallery") {
-        const urls = [];
-        const rawUrls = body.urls;
-        if (Array.isArray(rawUrls)) {
-            for (const u of rawUrls) {
-                const s = payloadString_(u);
-                if (isHttpsUrl_(s)) {
-                    urls.push(s);
-                }
-            }
-        }
+        const items = normalizeOpenGalleryItems_(body);
+        const urls = items.map((item) => item.url);
         const opts = normalizeSelectOptions_(body.options ?? body.option ?? body.chips);
         if (urls.length) {
             parts.gallery = {
                 message: opts.length ? "" : msg,
                 prompt: msg,
-                urls: urls.slice(0, 10),
+                urls,
+                items,
                 options: [...opts]
             };
         }
