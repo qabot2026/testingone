@@ -51,6 +51,8 @@ window.COMPANY_CHAT_UI_CONFIG = {
       // Public HTTPS URLs; JPG / PNG / WebP / SVG are fine — bitmaps work reliably as launcher + title icons.
       chatIconUrl: "https://storage.googleapis.com/companybucket/Images/cat.png",
       chatTitleIconUrl: "https://storage.googleapis.com/companybucket/Images/cat-icon.png",
+      // Header logo (title bar) — pixels; also set `mob.titlebarIconSizePx` for phones.
+      titlebarIconSizePx: 96,
       // Base label (no trailing dots): while the agent types, the UI cycles Typing. / Typing.. / Typing...
       botWritingText: "Typing",
       botWritingDotsIntervalMs: 480,
@@ -652,6 +654,9 @@ window.COMPANY_CHAT_UI_CONFIG = {
   // MOB (≤768px)
   // =========================
   mob: {
+    // Header logo size on phones (≤768px). Omitted = uses `common.header.titlebarIconSizePx`.
+    titlebarIconSizePx: 56,
+
     // One switch: show bubble + chat on small screens (e.g. false = desktop-only widget).
     showChatbot: true,
 
@@ -665,7 +670,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
       /* Extra space below the system safe area / status bar. */
       safeAreaTopReservePx: 56,
       /* JS subtracts this from open chat height so the Dialogflow titlebar row is not clipped (optional; default 48 in code). */
-      titlebarChromeReservePx: 70,
+      titlebarChromeReservePx: 84,
       minWidthPx: 260,
       minHeightPx: 200,
 

@@ -609,6 +609,137 @@ const POWERED_BY_STYLE = readPoweredByStyleConfig();
 const HEADER_CONFIG = COMMON_CONFIG.header && typeof COMMON_CONFIG.header === "object" ? COMMON_CONFIG.header : {};
 /** When not `false` (default in config), the chat **title** dismiss control is always ×, never an arrow, all languages. */
 const IS_FORCE_TITLEBAR_CLOSE_X_ENABLED = HEADER_CONFIG.forceCloseIconX !== false;
+
+/** @param {unknown} value @param {number} fallback */
+function sanitizeTitlebarIconPx_(value, fallback) {
+    const n = typeof value === "number" ? value : Number(value);
+    if (!Number.isFinite(n)) {
+        return fallback;
+    }
+    return Math.max(32, Math.min(128, Math.round(n)));
+}
+
+/**
+ * Header logo size — set `common.header.titlebarIconSizePx` (desk) and `mob.titlebarIconSizePx` (phones).
+ * @param {Record<string, unknown> | null | undefined} [config]
+ * @returns {{ widthPx: number, heightPx: number, widthStr: string, heightStr: string }}
+ */
+function resolveTitlebarIconDimensions_(config) {
+    const ui = config && typeof config === "object" ? config : readCompanyUiConfig();
+    const common = ui.common && typeof ui.common === "object" ? ui.common : {};
+    const header = common.header && typeof common.header === "object" ? common.header : HEADER_CONFIG;
+    const dev = getDeviceSection(ui, isMobileViewport());
+    const deskDefault = 96;
+    const mobDefault = 56;
+    let basePx;
+    if (isMobileViewport()) {
+        const mobPx = dev.titlebarIconSizePx;
+        basePx = sanitizeTitlebarIconPx_(
+            mobPx,
+            sanitizeTitlebarIconPx_(header.titlebarIconSizePx, mobDefault)
+        );
+    } else {
+        basePx = sanitizeTitlebarIconPx_(header.titlebarIconSizePx, deskDefault);
+    }
+    const widthPx = sanitizeTitlebarIconPx_(header.titlebarIconWidthPx, basePx);
+    const heightPx = sanitizeTitlebarIconPx_(header.titlebarIconHeightPx, basePx);
+    return {
+        widthPx,
+        heightPx,
+        widthStr: `${widthPx}px`,
+        heightStr: `${heightPx}px`
+    };
+}
+
+/** @param {HTMLElement | null | undefined} dfMessenger @param {Record<string, unknown> | null | undefined} [config] */
+function applyTitlebarIconSizeConfig(dfMessenger, config) {
+    if (!dfMessenger || !dfMessenger.style) {
+        return;
+    }
+    const { widthStr, heightStr } = resolveTitlebarIconDimensions_(config);
+    dfMessenger.style.setProperty("--df-messenger-titlebar-icon-width", widthStr);
+    dfMessenger.style.setProperty("--df-messenger-titlebar-icon-height", heightStr);
+    const bubble = typeof dfMessenger.querySelector === "function"
+        ? dfMessenger.querySelector("df-messenger-chat-bubble")
+        : null;
+    if (bubble && bubble.style) {
+        bubble.style.setProperty("--df-messenger-titlebar-icon-width", widthStr);
+        bubble.style.setProperty("--df-messenger-titlebar-icon-height", heightStr);
+    }
+    refreshTitlebarLayoutStyles(dfMessenger);
+    repatchTitlebarHeaderIcons_(dfMessenger);
+    [80, 250, 700, 1800].forEach((ms) => {
+        window.setTimeout(() => {
+            repatchTitlebarHeaderIcons_(dfMessenger);
+            refreshTitlebarLayoutStyles(dfMessenger);
+        }, ms);
+    });
+}
+
+/** @param {HTMLElement | null | undefined} im */
+function applyTitlebarImgConstraintsToElement_(im) {
+    if (!im || !im.style) {
+        return;
+    }
+    const { widthStr, heightStr } = resolveTitlebarIconDimensions_();
+    im.style.setProperty("width", widthStr, "important");
+    im.style.setProperty("height", heightStr, "important");
+    im.style.setProperty("max-width", widthStr, "important");
+    im.style.setProperty("max-height", heightStr, "important");
+    im.style.setProperty("min-width", widthStr, "important");
+    im.style.setProperty("min-height", heightStr, "important");
+    im.style.setProperty("object-fit", "cover", "important");
+    im.style.setProperty("box-sizing", "border-box", "important");
+    im.style.setProperty("flex-shrink", "0", "important");
+}
+
+/** @param {HTMLElement | null | undefined} dfMessenger */
+function repatchTitlebarHeaderIcons_(dfMessenger) {
+    if (!dfMessenger) {
+        return;
+    }
+    const bubbleHost = typeof dfMessenger.querySelector === "function"
+        ? dfMessenger.querySelector("df-messenger-chat-bubble")
+        : null;
+    const roots = collectSearchRoots(dfMessenger);
+    for (const root of roots) {
+        if (!root || typeof root.querySelectorAll !== "function") {
+            continue;
+        }
+        const bars = root.querySelectorAll("df-messenger-titlebar, df-messenger-header");
+        for (const bar of bars) {
+            const im = bar && typeof bar.querySelector === "function" ? bar.querySelector("img") : null;
+            if (!im) {
+                continue;
+            }
+            if (bubbleHost && bubbleHost.shadowRoot && bubbleHost.shadowRoot.contains(im)) {
+                continue;
+            }
+            applyTitlebarImgConstraintsToElement_(im);
+        }
+    }
+}
+
+/** @param {HTMLElement | null | undefined} dfMessenger */
+function refreshTitlebarLayoutStyles(dfMessenger) {
+    if (!dfMessenger) {
+        return;
+    }
+    const css = getTitlebarLayoutCss();
+    const roots = collectSearchRoots(dfMessenger);
+    for (const root of roots) {
+        if (!root || !(root instanceof ShadowRoot) || typeof root.appendChild !== "function") {
+            continue;
+        }
+        let style = root.getElementById(TITLEBAR_LAYOUT_STYLE_ID);
+        if (!style) {
+            style = document.createElement("style");
+            style.id = TITLEBAR_LAYOUT_STYLE_ID;
+            root.appendChild(style);
+        }
+        style.textContent = css;
+    }
+}
 const BOT_PERSONA_CONFIG = readBotPersonaConfig();
 const CHAT_BUBBLE_LAUNCHER_CONFIG = readChatBubbleLauncherConfig();
 const PERSONA_MARKER_BOT = "dfchat-persona-bot";
@@ -2681,17 +2812,7 @@ function scheduleDfMessengerChatIconImageSrcSync(dfMessenger, chatIconUrl, chatT
     };
 
     const applyTitlebarImgConstraints = (im) => {
-        if (!im || typeof im.style === "undefined") {
-            return;
-        }
-        let w = dfMessenger.style.getPropertyValue("--df-messenger-titlebar-icon-width").trim() || "74px";
-        let h = dfMessenger.style.getPropertyValue("--df-messenger-titlebar-icon-height").trim() || "74px";
-        im.style.setProperty("width", w, "important");
-        im.style.setProperty("height", h, "important");
-        im.style.setProperty("max-width", w, "important");
-        im.style.setProperty("max-height", h, "important");
-        im.style.setProperty("object-fit", "cover", "important");
-        im.style.setProperty("box-sizing", "border-box", "important");
+        applyTitlebarImgConstraintsToElement_(im);
     };
 
     const patch = () => {
@@ -9019,6 +9140,7 @@ function applyDfMessengerThemeConfig(dfMessenger, config) {
     }
     applyChatBubbleLauncherCircleStyle(dfMessenger);
     applyBotPersonaToMessenger(dfMessenger, bubble);
+    applyTitlebarIconSizeConfig(dfMessenger, config);
     applyWidgetCustomCssFromConfig();
 }
 
@@ -23359,7 +23481,23 @@ const MESSAGELIST_SCROLLBAR_SKIP = new Set(["TEXTAREA", "INPUT", "SELECT", "BUTT
 const TITLEBAR_CLOSE_NUDGE_LEFT_PX = 5;
 
 function getTitlebarLayoutCss() {
+    const { widthPx, heightPx } = resolveTitlebarIconDimensions_();
+    const minBarH = Math.max(heightPx + 12, 56);
     return `/* company.js: title/subtitle spacing inside df-messenger-header shadow */
+#titlebar-title img {
+  width: ${widthPx}px !important;
+  height: ${heightPx}px !important;
+  max-width: ${widthPx}px !important;
+  max-height: ${heightPx}px !important;
+  min-width: ${widthPx}px !important;
+  min-height: ${heightPx}px !important;
+  object-fit: cover !important;
+  flex-shrink: 0 !important;
+}
+.titlebar-wrapper {
+  min-height: ${minBarH}px !important;
+  align-items: center !important;
+}
 #titlebar-title .title-text {
   gap: 4px !important;
   padding-left: 10px !important;

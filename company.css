@@ -93,9 +93,9 @@
   --df-messenger-titlebar-title-line-height: 1.2;
   --df-messenger-titlebar-subtitle-font-size: 14px;
   --df-messenger-titlebar-subtitle-line-height: 1.35;
-  --df-messenger-titlebar-icon-height: 74px;
-  --df-messenger-titlebar-icon-width: 74px;
-  --df-messenger-titlebar-icon-padding: 0 16px 0 8px;
+  --df-messenger-titlebar-icon-height: 96px;
+  --df-messenger-titlebar-icon-width: 96px;
+  --df-messenger-titlebar-icon-padding: 0 18px 0 10px;
  
    --df-messenger-chat-bubble-icon-size: 64px;
    --df-messenger-chat-bubble-background: linear-gradient(160deg, #0ea5e9 0%, #0284c7 48%, #0369a1 100%);
@@ -119,9 +119,9 @@
     --df-messenger-titlebar-title-line-height: 1.25;
     --df-messenger-titlebar-subtitle-font-size: 11px !important;
     --df-messenger-titlebar-subtitle-line-height: 1.3;
-    --df-messenger-titlebar-icon-height: 48px;
-    --df-messenger-titlebar-icon-width: 48px;
-     --df-messenger-titlebar-icon-padding: 0 10px 0 6px;
+    --df-messenger-titlebar-icon-height: 56px;
+    --df-messenger-titlebar-icon-width: 56px;
+     --df-messenger-titlebar-icon-padding: 0 12px 0 8px;
      max-height: calc(
        100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 8px
      );
