@@ -2683,8 +2683,8 @@ function scheduleDfMessengerChatIconImageSrcSync(dfMessenger, chatIconUrl, chatT
         if (!im || typeof im.style === "undefined") {
             return;
         }
-        let w = dfMessenger.style.getPropertyValue("--df-messenger-titlebar-icon-width").trim() || "50px";
-        let h = dfMessenger.style.getPropertyValue("--df-messenger-titlebar-icon-height").trim() || "50px";
+        let w = dfMessenger.style.getPropertyValue("--df-messenger-titlebar-icon-width").trim() || "58px";
+        let h = dfMessenger.style.getPropertyValue("--df-messenger-titlebar-icon-height").trim() || "58px";
         im.style.setProperty("width", w, "important");
         im.style.setProperty("height", h, "important");
         im.style.setProperty("max-width", w, "important");
