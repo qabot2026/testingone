@@ -2684,8 +2684,8 @@ function scheduleDfMessengerChatIconImageSrcSync(dfMessenger, chatIconUrl, chatT
         if (!im || typeof im.style === "undefined") {
             return;
         }
-        let w = dfMessenger.style.getPropertyValue("--df-messenger-titlebar-icon-width").trim() || "58px";
-        let h = dfMessenger.style.getPropertyValue("--df-messenger-titlebar-icon-height").trim() || "58px";
+        let w = dfMessenger.style.getPropertyValue("--df-messenger-titlebar-icon-width").trim() || "68px";
+        let h = dfMessenger.style.getPropertyValue("--df-messenger-titlebar-icon-height").trim() || "68px";
         im.style.setProperty("width", w, "important");
         im.style.setProperty("height", h, "important");
         im.style.setProperty("max-width", w, "important");
@@ -23362,6 +23362,7 @@ function getTitlebarLayoutCss() {
     return `/* company.js: title/subtitle spacing inside df-messenger-header shadow */
 #titlebar-title .title-text {
   gap: 4px !important;
+  padding-left: 10px !important;
 }
 button[data-dfchat-native-close-override="1"],
 df-icon-button[data-dfchat-native-close-override="1"] {

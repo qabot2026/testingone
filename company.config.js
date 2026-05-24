@@ -665,7 +665,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
       /* Extra space below the system safe area / status bar. */
       safeAreaTopReservePx: 56,
       /* JS subtracts this from open chat height so the Dialogflow titlebar row is not clipped (optional; default 48 in code). */
-      titlebarChromeReservePx: 58,
+      titlebarChromeReservePx: 66,
       minWidthPx: 260,
       minHeightPx: 200,
 
