@@ -9459,6 +9459,7 @@ function replaceCloseButtonWithXGlyph(button, closeTapPx, closeFontPx) {
     button.style.setProperty("display", "grid", "important");
     button.style.setProperty("place-items", "center", "important");
     button.style.setProperty("font-family", "Manrope, Segoe UI, Arial, sans-serif", "important");
+    button.style.setProperty("transform", `translateX(-${TITLEBAR_CLOSE_NUDGE_LEFT_PX}px)`, "important");
     button.setAttribute("aria-label", "Close");
     button.setAttribute("data-dfchat-no-translate", "true");
     button.setAttribute("data-dfchat-native-close-override", "1");
@@ -23295,10 +23296,16 @@ function collectShadowRootsUnderHost(host) {
 const MESSAGELIST_SCROLLBAR_CLASS = "dfchat-messagelist-hide-scrollbar";
 const MESSAGELIST_SCROLLBAR_SKIP = new Set(["TEXTAREA", "INPUT", "SELECT", "BUTTON"]);
 
+const TITLEBAR_CLOSE_NUDGE_LEFT_PX = 5;
+
 function getTitlebarLayoutCss() {
     return `/* company.js: title/subtitle spacing inside df-messenger-header shadow */
 #titlebar-title .title-text {
   gap: 4px !important;
+}
+button[data-dfchat-native-close-override="1"],
+df-icon-button[data-dfchat-native-close-override="1"] {
+  transform: translateX(-${TITLEBAR_CLOSE_NUDGE_LEFT_PX}px) !important;
 }`;
 }
 
@@ -24216,6 +24223,38 @@ function dfchatResolveMessageStackForPersona_(personaMessage) {
 }
 
 /**
+ * @param {HTMLImageElement | HTMLElement} fromNode
+ * @returns {HTMLElement | null}
+ */
+function resolvePersonaUserMessageElement_(fromNode) {
+    if (!fromNode) {
+        return null;
+    }
+    if (typeof fromNode.closest === "function") {
+        const byCls = /** @type {HTMLElement | null} */ (/** @type {unknown} */ (fromNode.closest(".message.user-message")));
+        if (byCls) {
+            return byCls;
+        }
+        const botLane = /** @type {HTMLElement | null} */ (/** @type {unknown} */ (fromNode.closest(".message.bot-message.markdown.dfchat-user-persona-md")));
+        if (botLane) {
+            return botLane;
+        }
+    }
+    let el = /** @type {HTMLElement | null} */ (fromNode);
+    for (let i = 0; el && i < 50; i += 1) {
+        if (
+            el.classList
+            && el.classList.contains("message")
+            && (el.classList.contains("user-message") || el.classList.contains("dfchat-user-persona-md"))
+        ) {
+            return el;
+        }
+        el = /** @type {HTMLElement | null} */ (dfchatComposeParentElement(el));
+    }
+    return null;
+}
+
+/**
  * @param {HTMLImageElement} imageNode
  * @returns {HTMLElement | null}
  */
@@ -24312,6 +24351,106 @@ function reorderBotPersonaEntryBeforeContiguousBotChunks_(imageNode) {
         entry.dataset.dfchatBotPersonaEntryMoved = "1";
         return true;
     } catch {
+        return false;
+    }
+}
+
+/** @param {HTMLElement | null} el */
+function isUserPersonaCaptionMessage_(el) {
+    if (!el || el.nodeType !== Node.ELEMENT_NODE) {
+        return false;
+    }
+    if (el.classList && el.classList.contains("dfchat-user-persona-md")) {
+        return true;
+    }
+    if (el.dataset && el.dataset.companyPersonaStyled === "user") {
+        return true;
+    }
+    const entry = resolveBotPersonaEntry_(el);
+    if (entry && entry.classList && entry.classList.contains("dfchat-user-persona-caption-bot-entry")) {
+        return true;
+    }
+    return false;
+}
+
+/**
+ * Persona caption is appended after the user bubble on send; move it above the preceding user entry.
+ * @param {HTMLElement | null} personaMessage
+ * @returns {boolean}
+ */
+function reorderUserPersonaBeforeUserMessage_(personaMessage) {
+    if (!personaMessage || personaMessage.dataset.dfchatUserPersonaEntryMoved === "1") {
+        return false;
+    }
+    if (!isUserPersonaCaptionMessage_(personaMessage)) {
+        return false;
+    }
+
+    const entry = resolveBotPersonaEntry_(personaMessage);
+    if (entry && !entry.dataset.dfchatUserPersonaEntryMoved) {
+        const parent = entry.parentElement;
+        if (parent) {
+            let probe = entry.previousElementSibling;
+            /** @type {HTMLElement | null} */
+            let userEntry = null;
+            while (probe && probe.nodeType === Node.ELEMENT_NODE) {
+                const h = /** @type {HTMLElement} */ (probe);
+                if (h.classList && h.classList.contains("entry") && h.classList.contains("user")) {
+                    userEntry = h;
+                    break;
+                }
+                if (h.classList && h.classList.contains("entry")) {
+                    break;
+                }
+                probe = h.previousElementSibling;
+            }
+            if (userEntry) {
+                try {
+                    parent.insertBefore(entry, userEntry);
+                    entry.dataset.dfchatUserPersonaEntryMoved = "1";
+                    personaMessage.dataset.dfchatUserPersonaEntryMoved = "1";
+                    return true;
+                } catch {
+                    /* fall through to row-level move */
+                }
+            }
+        }
+    }
+
+    const personaRow = dfchatResolveListRowHostingMessage_(personaMessage);
+    if (!personaRow || personaRow.dataset.dfchatUserPersonaRowMoved === "1") {
+        personaMessage.dataset.dfchatUserPersonaEntryMoved = "1";
+        return false;
+    }
+    const list = personaRow.parentElement;
+    if (!list) {
+        personaMessage.dataset.dfchatUserPersonaEntryMoved = "1";
+        return false;
+    }
+    let probeRow = personaRow.previousElementSibling;
+    /** @type {HTMLElement | null} */
+    let userRow = null;
+    while (probeRow && probeRow.nodeType === Node.ELEMENT_NODE) {
+        const h = /** @type {HTMLElement} */ (probeRow);
+        const hasUser = !!(h.querySelector && h.querySelector(".message.user-message"))
+            || (h.classList && h.classList.contains("user"));
+        if (hasUser) {
+            userRow = h;
+            break;
+        }
+        probeRow = h.previousElementSibling;
+    }
+    if (!userRow) {
+        personaMessage.dataset.dfchatUserPersonaEntryMoved = "1";
+        return false;
+    }
+    try {
+        list.insertBefore(personaRow, userRow);
+        personaRow.dataset.dfchatUserPersonaRowMoved = "1";
+        personaMessage.dataset.dfchatUserPersonaEntryMoved = "1";
+        return true;
+    } catch {
+        personaMessage.dataset.dfchatUserPersonaEntryMoved = "1";
         return false;
     }
 }
@@ -24579,6 +24718,7 @@ function decorateUserPersonaMarkdownHosts(dfMessenger) {
                 styleUserPersonaMarkdownHost_(container, el);
             }
             applyUserPersonaMarkdownChrome_(el);
+            reorderUserPersonaBeforeUserMessage_(el);
         }
     }
 }
@@ -24618,6 +24758,10 @@ function decoratePersonaMessages(dfMessenger) {
             }
             if (personaType === "user") {
                 applyUserPersonaCaptionChrome_(image);
+                const userMsg = resolvePersonaUserMessageElement_(image);
+                if (userMsg) {
+                    reorderUserPersonaBeforeUserMessage_(userMsg);
+                }
             }
             const container = findPersonaContainer(image, root);
             if (!container) {
@@ -24627,6 +24771,10 @@ function decoratePersonaMessages(dfMessenger) {
             if (image.dataset.companyPersonaStyled === personaType) {
                 if (personaType === "user") {
                     applyUserPersonaCaptionChrome_(image);
+                    const userMsg = resolvePersonaUserMessageElement_(image);
+                    if (userMsg) {
+                        reorderUserPersonaBeforeUserMessage_(userMsg);
+                    }
                 }
                 continue;
             }
@@ -24637,6 +24785,10 @@ function decoratePersonaMessages(dfMessenger) {
             }
             if (personaType === "user") {
                 applyUserPersonaCaptionChrome_(image);
+                const userMsgAfter = resolvePersonaUserMessageElement_(image);
+                if (userMsgAfter) {
+                    reorderUserPersonaBeforeUserMessage_(userMsgAfter);
+                }
             }
         }
     }
