@@ -5642,7 +5642,7 @@ function readContactFormConfig() {
     const subtitleByLanguage = b.subtitleByLanguage && typeof b.subtitleByLanguage === "object" ? b.subtitleByLanguage : null;
     const layoutSideDefault = n(
         o && typeof o.sideInsetPx === "number" ? o.sideInsetPx : c.sideInsetPx,
-        15
+        20
     );
     let sideInsetLeftPx = layoutSideDefault;
     let sideInsetRightPx = layoutSideDefault;
@@ -5676,8 +5676,8 @@ function readContactFormConfig() {
     );
     const rawDockMaxW = o && typeof o.formDockMaxWidthPx === "number" && o.formDockMaxWidthPx > 0
         ? o.formDockMaxWidthPx
-        : (typeof c.formDockMaxWidthPx === "number" && c.formDockMaxWidthPx > 0 ? c.formDockMaxWidthPx : undefined);
-    const formDockMaxWidthPx = n(rawDockMaxW, isMobileViewport() ? 340 : 420);
+        : (typeof c.formDockMaxWidthPx === "number" && c.formDockMaxWidthPx > 0 ? c.formDockMaxWidthPx : null);
+    const formDockMaxWidthPx = rawDockMaxW;
     return {
         formKey: resolved.formKey,
         maxCardHeightPx: maxFromBlock != null ? maxFromBlock : maxCardFallback,
@@ -7640,8 +7640,8 @@ function applyContactFormFallbackFixedPosition(el) {
     el.style.position = "fixed";
     el.style.zIndex = "2147483630";
     if (mobile) {
-        const pl = typeof c0.sideInsetLeftPx === "number" && Number.isFinite(c0.sideInsetLeftPx) ? c0.sideInsetLeftPx : 15;
-        const pr = typeof c0.sideInsetRightPx === "number" && Number.isFinite(c0.sideInsetRightPx) ? c0.sideInsetRightPx : 15;
+        const pl = typeof c0.sideInsetLeftPx === "number" && Number.isFinite(c0.sideInsetLeftPx) ? c0.sideInsetLeftPx : 20;
+        const pr = typeof c0.sideInsetRightPx === "number" && Number.isFinite(c0.sideInsetRightPx) ? c0.sideInsetRightPx : 20;
         el.style.left = `${pl}px`;
         el.style.right = `${pr}px`;
         el.style.width = "auto";
@@ -7703,10 +7703,11 @@ function syncContactFormPosition() {
     const padL = typeof cfg.sideInsetLeftPx === "number" && Number.isFinite(cfg.sideInsetLeftPx) ? cfg.sideInsetLeftPx : cfg.sideInsetPx;
     const padR = typeof cfg.sideInsetRightPx === "number" && Number.isFinite(cfg.sideInsetRightPx) ? cfg.sideInsetRightPx : cfg.sideInsetPx;
     const pad = (padL + padR) / 2;
+    const innerW = Math.max(200, rect.width - padL - padR);
     const formMaxOuter = typeof cfg.formDockMaxWidthPx === "number" && Number.isFinite(cfg.formDockMaxWidthPx) && cfg.formDockMaxWidthPx > 0
         ? cfg.formDockMaxWidthPx
-        : (isMobileViewport() ? 340 : 420);
-    const formW = Math.min(formMaxOuter, Math.max(200, rect.width - padL - padR));
+        : null;
+    const formW = formMaxOuter != null ? Math.min(formMaxOuter, innerW) : innerW;
     const card = el.querySelector(".dfchat-contact-form__card");
     const inputs = el.querySelector(".dfchat-contact-form__inputs");
 

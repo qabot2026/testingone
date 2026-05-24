@@ -583,17 +583,18 @@
    /* Was 106px; +100px toward viewport bottom per product request */
    bottom: 6px;
    z-index: 1000;
-   /* 5px tighter on each side vs before (32px → 42px total horizontal margin) */
-   width: min(300px, calc(100vw - 82px));
+  /* Fallback when not docked to chat; docked width is set in JS (chat width − 40px). */
+  width: calc(100vw - 40px);
+  max-width: calc(100vw - 40px);
    display: none;
  }
  
- /* Undocked: wider panel on large screens (keep in sync with `desk.form.formDockMaxWidthPx`). */
- @media (min-width: 769px) {
-   .dfchat-contact-form {
-     width: min(380px, calc(100vw - 82px));
-   }
- }
+@media (min-width: 769px) {
+  .dfchat-contact-form:not(.dfchat-contact-form--docked) {
+    width: calc(100vw - 40px);
+    max-width: calc(100vw - 40px);
+  }
+}
  
  .dfchat-contact-form.dfchat-is-open {
    display: block;
@@ -973,9 +974,9 @@
  }
  
  @media (max-width: 768px) {
-   .dfchat-contact-form:not(.dfchat-contact-form--docked) {
-     right: 20px;
-     left: 30px;
+  .dfchat-contact-form:not(.dfchat-contact-form--docked) {
+    right: 20px;
+    left: 20px;
      /* Was 92px; moved 100px lower → 8px inset (avoids negative offset) */
      bottom: 8px;
      width: auto;

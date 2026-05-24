@@ -624,11 +624,10 @@ window.COMPANY_CHAT_UI_CONFIG = {
       gapAboveFooterPx: 8,
       titleInsetPx: 48,
       dockNudgeDownPx: 20,
-      sideInsetPx: 15,
+      sideInsetPx: 20,
       maxCardHeightPx: 300,
-      showSubtitle: true,
-      /* Max width when the form is docked in the chat window (right-docked chat = grows to the left). */
-      formDockMaxWidthPx: 380
+      showSubtitle: true
+      /* Omit formDockMaxWidthPx to fill chat width minus sideInsetPx on each side. */
     }
   },
 
@@ -704,12 +703,10 @@ window.COMPANY_CHAT_UI_CONFIG = {
       gapAboveFooterPx: 8,
       titleInsetPx: 48,
       dockNudgeDownPx: 20,
-      sideInsetPx: 15,
+      sideInsetPx: 20,
       maxCardHeightPx: 300,
-      showSubtitle: true,
-      formDockMaxWidthPx: 300,
-      insetLeftPx: 30,
-      insetRightPx: 20
+      showSubtitle: true
+      /* Omit formDockMaxWidthPx to fill chat width minus sideInsetPx on each side. */
     }
   },
 
