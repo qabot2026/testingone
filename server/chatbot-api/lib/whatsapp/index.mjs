@@ -890,18 +890,25 @@ async function sendWhatsappCxReply_(input) {
     let leadText = [...parts.texts, ...supplemental].filter(Boolean).join("\n\n");
 
     if (!parts.gallery && !parts.cardCarousel && parts.images.length > 0) {
-        if (leadText) {
-            await sendWhatsappText_({ to: input.to, body: leadText });
-            leadText = "";
-        }
+        const leadTextFitsCaption = leadText && formatWebMarkdownForWhatsapp_(leadText).length <= 1024;
+        let captionAttached = false;
         for (const url of parts.images) {
             try {
-                await sendWhatsappImage_({ to: input.to, link: url });
+                const caption = leadTextFitsCaption && !captionAttached ? leadText : undefined;
+                await sendWhatsappImage_({ to: input.to, link: url, caption });
+                if (caption) {
+                    leadText = "";
+                    captionAttached = true;
+                }
             } catch (e) {
                 log_("rich_image_skip", {
                     error: e && e.message ? String(e.message).slice(0, 160) : String(e)
                 });
             }
+        }
+        if (leadText) {
+            await sendWhatsappText_({ to: input.to, body: leadText });
+            leadText = "";
         }
     }
 
