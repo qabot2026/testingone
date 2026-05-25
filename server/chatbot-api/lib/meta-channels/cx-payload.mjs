@@ -662,6 +662,13 @@ function absorbRichContent_(parts, body) {
                 if (chipMsg && !parts.choicePrompt) {
                     parts.choicePrompt = chipMsg;
                 }
+            } else if (type === "list") {
+                const listMsg = payloadString_(
+                    item.title ?? item.text ?? item.message ?? item.prompt ?? item.subtitle
+                );
+                if (listMsg && !parts.choicePrompt) {
+                    parts.choicePrompt = listMsg;
+                }
             } else if (type === "info" || type === "accordion") {
                 const title = payloadString_(item.title);
                 const subtitle = payloadString_(item.subtitle);
