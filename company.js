@@ -9,6 +9,9 @@ let pendingOpenFormPrefill = /** @type {Record<string, string> | null} */ (null)
 /** Last gallery / video / carousel / inline-select chip the visitor clicked (feeds `$session.params.intent`). */
 let dfchatLastInlineOptionSelection_ = /** @type {{ value: string, label: string, atMs: number } | null} */ (null);
 const INLINE_OPTION_SELECTION_TTL_MS = 120000;
+/** Web-native Dialogflow chips only send visible text; this maps visible text to CX `value` / `ctaValue`. */
+let dfchatWebNativeChipValueMap_ = /** @type {Map<string, { label: string, value: string, atMs: number }>} */ (new Map());
+let dfchatWebNativeChipValueClickBound_ = false;
 /** Skip treating the next programmatic chip send as a visitor name (e.g. "Upload" → contact form name). */
 let dfchatSuppressNameHintFromChatTextOnce_ = false;
 /**
@@ -11973,6 +11976,155 @@ function normalizeOpenVideoOptions(rawOptions) {
 }
 
 /**
+ * @param {string} text
+ * @returns {string}
+ */
+function normalizeWebNativeChipLabelKey_(text) {
+    return String(text || "").trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+/**
+ * @param {unknown} rawOption
+ * @returns {{ label: string, value: string } | null}
+ */
+function normalizeRichContentChipValueOption_(rawOption) {
+    if (!rawOption || typeof rawOption !== "object" || Array.isArray(rawOption)) {
+        return null;
+    }
+    const opt = /** @type {Record<string, unknown>} */ (rawOption);
+    const label = unwrapPayloadStringField(opt.text ?? opt.label ?? opt.title).trim();
+    const value = unwrapPayloadStringField(
+        opt.value ?? opt.payload ?? opt.ctaValue ?? opt.cta_value ?? opt.query
+    ).trim();
+    if (!label || !value || normalizeWebNativeChipLabelKey_(label) === normalizeWebNativeChipLabelKey_(value)) {
+        return null;
+    }
+    return { label, value };
+}
+
+/**
+ * @param {unknown} node
+ * @param {Map<string, { label: string, value: string, atMs: number }>} out
+ * @param {number} depth
+ * @returns {void}
+ */
+function collectWebNativeChipValueMappingsFromNode_(node, out, depth) {
+    if (depth > 10 || node == null) {
+        return;
+    }
+    if (typeof node === "string") {
+        const t = node.trim();
+        if (t.startsWith("{") && t.includes("richContent")) {
+            try {
+                collectWebNativeChipValueMappingsFromNode_(JSON.parse(t), out, depth + 1);
+            } catch {
+                /* ignore */
+            }
+        }
+        return;
+    }
+    if (Array.isArray(node)) {
+        for (let i = 0; i < node.length; i += 1) {
+            collectWebNativeChipValueMappingsFromNode_(node[i], out, depth + 1);
+        }
+        return;
+    }
+    if (typeof node !== "object") {
+        return;
+    }
+    const obj = /** @type {Record<string, unknown>} */ (node);
+    const type = unwrapPayloadStringField(obj.type).toLowerCase();
+    if (type === "chips" && Array.isArray(obj.options)) {
+        const now = Date.now();
+        for (let i = 0; i < obj.options.length; i += 1) {
+            const mapped = normalizeRichContentChipValueOption_(obj.options[i]);
+            if (!mapped) {
+                continue;
+            }
+            out.set(normalizeWebNativeChipLabelKey_(mapped.label), { ...mapped, atMs: now });
+        }
+    }
+    if (Array.isArray(obj.richContent)) {
+        collectWebNativeChipValueMappingsFromNode_(obj.richContent, out, depth + 1);
+    }
+}
+
+/**
+ * @param {unknown[]} messages
+ * @returns {void}
+ */
+function rememberWebNativeChipValueMappingsFromResponse_(messages) {
+    const next = /** @type {Map<string, { label: string, value: string, atMs: number }>} */ (new Map());
+    if (Array.isArray(messages)) {
+        for (let i = 0; i < messages.length; i += 1) {
+            const message = messages[i];
+            if (messageHasFulfillmentPayload(message)) {
+                try {
+                    collectWebNativeChipValueMappingsFromNode_(extractPayload(message), next, 0);
+                } catch {
+                    /* ignore */
+                }
+            }
+            collectWebNativeChipValueMappingsFromNode_(message, next, 0);
+        }
+    }
+    dfchatWebNativeChipValueMap_ = next;
+    if (next.size > 0) {
+        installWebNativeChipValueClickInterceptor_();
+    }
+}
+
+/**
+ * @param {Event} event
+ * @returns {void}
+ */
+function handleWebNativeChipValueClick_(event) {
+    if (!dfchatWebNativeChipValueMap_.size) {
+        return;
+    }
+    const path = event && typeof event.composedPath === "function" ? event.composedPath() : [];
+    const ms = activeDfMessenger || (typeof document !== "undefined" ? document.querySelector("df-messenger") : null);
+    if (!ms) {
+        return;
+    }
+    if (ms && path.length && !path.includes(ms)) {
+        return;
+    }
+    /** @type {Element | null} */
+    let clickable = null;
+    for (let i = 0; i < path.length; i += 1) {
+        const node = path[i];
+        if (!node || !(node instanceof Element)) {
+            continue;
+        }
+        if (node.matches("button, [role='button'], df-chip, [class*='chip']")) {
+            clickable = node;
+            break;
+        }
+    }
+    if (!clickable) {
+        return;
+    }
+    const key = normalizeWebNativeChipLabelKey_(clickable.textContent || "");
+    const mapped = dfchatWebNativeChipValueMap_.get(key);
+    if (!mapped || Date.now() - mapped.atMs > 10 * 60 * 1000) {
+        return;
+    }
+    event.preventDefault?.();
+    event.stopPropagation?.();
+    event.stopImmediatePropagation?.();
+    handleInlineSyntheticOptionClick_(ms, mapped.value, mapped.label);
+}
+
+function installWebNativeChipValueClickInterceptor_() {
+    if (dfchatWebNativeChipValueClickBound_ || typeof window === "undefined") {
+        return;
+    }
+    dfchatWebNativeChipValueClickBound_ = true;
+    window.addEventListener("click", handleWebNativeChipValueClick_, true);
+}
+
+/**
  * @param {unknown} raw
  * @returns {string}
  */
@@ -16102,6 +16254,7 @@ async function handleDfResponseReceived(event) {
     }
 
     const cxResponseMessagesMerged = mergeCxResponseEnvelopeForGallery(event);
+    rememberWebNativeChipValueMappingsFromResponse_(cxResponseMessagesMerged);
     renderPlainMessagePayloadsFromResponse(cxResponseMessagesMerged);
     pruneStaleInlineGalleryForCxResponse(cxResponseMessagesMerged, event);
     tryOpenGalleryFromBotResponseMessages(cxResponseMessagesMerged, event);
