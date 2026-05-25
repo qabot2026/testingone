@@ -11973,26 +11973,6 @@ function normalizeOpenVideoOptions(rawOptions) {
 }
 
 /**
- * @param {Record<string, unknown> | null | undefined} body
- * @returns {boolean}
- */
-function payloadRequestsInlineMenuOptions_(body) {
-    if (!body || typeof body !== "object") {
-        return false;
-    }
-    const raw = unwrapPayloadStringField(
-        Object.prototype.hasOwnProperty.call(body, "optionsDisplay") ? body.optionsDisplay
-            : Object.prototype.hasOwnProperty.call(body, "options_display") ? body.options_display
-                : Object.prototype.hasOwnProperty.call(body, "optionsFormat") ? body.optionsFormat
-                    : Object.prototype.hasOwnProperty.call(body, "options_format") ? body.options_format
-                        : Object.prototype.hasOwnProperty.call(body, "choiceDisplay") ? body.choiceDisplay
-                            : Object.prototype.hasOwnProperty.call(body, "choice_display") ? body.choice_display
-                                : ""
-    ).toLowerCase();
-    return raw === "menu" || raw === "list" || raw === "list_menu";
-}
-
-/**
  * @param {unknown} raw
  * @returns {string}
  */
@@ -13464,109 +13444,10 @@ function inlineSelectOptionsSignature(options) {
 }
 
 /**
- * @param {unknown} node
- * @param {Record<string, unknown>[]} out
- * @param {number} depth
- * @returns {void}
- */
-function collectRichContentMenuItems_(node, out, depth) {
-    if (depth > 8 || node == null) {
-        return;
-    }
-    if (Array.isArray(node)) {
-        for (let i = 0; i < node.length; i += 1) {
-            collectRichContentMenuItems_(node[i], out, depth + 1);
-        }
-        return;
-    }
-    if (typeof node !== "object") {
-        return;
-    }
-    const item = /** @type {Record<string, unknown>} */ (node);
-    if (Object.prototype.hasOwnProperty.call(item, "type")) {
-        out.push(item);
-    }
-}
-
-/**
- * Dialogflow richContent `{ type: "chips", optionsDisplay: "menu" }` -> web interactive list.
- * @param {Record<string, unknown> | null | undefined} pl
- * @returns {{ options: { label: string, value: string }[], placeholder: string, messageText: string, displayMode: "dropdown" | "list" } | null}
- */
-function extractRichContentInlineMenuFromPayload_(pl) {
-    if (!pl || typeof pl !== "object") {
-        return null;
-    }
-    const topLevelMenu = payloadRequestsInlineMenuOptions_(pl);
-    const richContent = pl.richContent;
-    if (!Array.isArray(richContent)) {
-        if (!topLevelMenu) {
-            return null;
-        }
-        const topOptions = normalizeOpenVideoOptions(pl.options);
-        if (topOptions.length === 0) {
-            return null;
-        }
-        const topMessage = normalizeOpenVideoMessage(pl.message || pl.text || pl.prompt || pl.title);
-        return {
-            options: topOptions,
-            placeholder: unwrapPayloadStringField(pl.placeholder).trim() || "Open menu",
-            messageText: topMessage,
-            displayMode: "list"
-        };
-    }
-
-    /** @type {Record<string, unknown>[]} */
-    const items = [];
-    collectRichContentMenuItems_(richContent, items, 0);
-    let messageText = normalizeOpenVideoMessage(pl.message || pl.text || pl.prompt || pl.title);
-    let placeholder = unwrapPayloadStringField(pl.placeholder).trim();
-
-    for (let i = 0; i < items.length; i += 1) {
-        const item = items[i];
-        const type = unwrapPayloadStringField(item.type).toLowerCase();
-        if (type === "list") {
-            const listTitle = normalizeOpenVideoMessage(
-                item.title || item.text || item.message || item.prompt || item.subtitle
-            );
-            if (listTitle && !messageText) {
-                messageText = listTitle;
-            }
-            if (listTitle && !placeholder) {
-                placeholder = listTitle;
-            }
-        }
-    }
-
-    for (let i = 0; i < items.length; i += 1) {
-        const item = items[i];
-        const type = unwrapPayloadStringField(item.type).toLowerCase();
-        if (type !== "chips") {
-            continue;
-        }
-        if (!topLevelMenu && !payloadRequestsInlineMenuOptions_(item)) {
-            continue;
-        }
-        const options = normalizeOpenVideoOptions(item.options);
-        if (options.length === 0) {
-            continue;
-        }
-        return {
-            options,
-            placeholder: placeholder || "Open menu",
-            messageText,
-            displayMode: "list"
-        };
-    }
-
-    return null;
-}
-
-/**
  * Extract `{ action: "dfchat_inline_select", options: [...] }` from merged CX fulfillment messages.
  *
  * @param {unknown[]} messages
- * @returns {{ options: { label: string, value: string }[], placeholder: string, messageText: string, displayMode?: "dropdown" | "list" } | null}
+ * @returns {{ options: { label: string, value: string }[], placeholder: string, messageText: string } | null}
  */
 function extractFirstDfchatInlineSelectFromCxMessages(messages) {
     if (!Array.isArray(messages) || messages.length === 0) {
@@ -13585,14 +13466,7 @@ function extractFirstDfchatInlineSelectFromCxMessages(messages) {
             pl = null;
         }
         const actionStr = unwrapPayloadStringField(pl && pl.action).toLowerCase();
-        if (!pl) {
-            continue;
-        }
-        if (actionStr !== "dfchat_inline_select") {
-            const richMenu = extractRichContentInlineMenuFromPayload_(pl);
-            if (richMenu) {
-                return richMenu;
-            }
+        if (!pl || actionStr !== "dfchat_inline_select") {
             continue;
         }
         const rawMessage =
@@ -13607,79 +13481,9 @@ function extractFirstDfchatInlineSelectFromCxMessages(messages) {
         if (opts.length === 0) {
             continue;
         }
-        return { options: opts, placeholder, messageText, displayMode: "dropdown" };
+        return { options: opts, placeholder, messageText };
     }
     return null;
-}
-
-/**
- * Hide Dialogflow's native chip buttons for richContent menu payloads after adding our list.
- * @param {HTMLElement | null | undefined} dfMessenger
- * @param {{ label: string, value: string }[]} options
- * @returns {void}
- */
-function hideNativeRichContentMenuChips_(dfMessenger, options) {
-    const labels = new Set(
-        (Array.isArray(options) ? options : [])
-            .map((o) => String((o && (o.label || o.value)) || "").trim().toLowerCase())
-            .filter(Boolean)
-    );
-    if (!labels.size) {
-        return;
-    }
-    const ms =
-        dfMessenger
-        || (typeof activeDfMessenger !== "undefined" ? activeDfMessenger : null)
-        || (typeof document !== "undefined" ? document.querySelector("df-messenger") : null);
-    const roots = ms ? collectSearchRoots(ms) : [];
-    for (let ri = 0; ri < roots.length; ri += 1) {
-        const root = roots[ri];
-        if (!root || typeof root.querySelectorAll !== "function") {
-            continue;
-        }
-        /** @type {Element[]} */
-        let nodes = [];
-        try {
-            nodes = Array.from(root.querySelectorAll("button, [role='button'], df-chip, [class*='chip'], span, div"));
-        } catch {
-            nodes = [];
-        }
-        for (let ni = 0; ni < nodes.length; ni += 1) {
-            const node = nodes[ni];
-            if (!node || node.closest?.(`.${DFCHAT_INLINE_SELECT_CLASS}`)) {
-                continue;
-            }
-            const text = String(node.textContent || "").trim().toLowerCase();
-            if (!text || !labels.has(text)) {
-                continue;
-            }
-            const target =
-                node.closest?.("button, [role='button'], df-chip, [class*='chip']")
-                || node;
-            if (target.closest?.(`.${DFCHAT_INLINE_SELECT_CLASS}`)) {
-                continue;
-            }
-            const el = /** @type {HTMLElement} */ (target);
-            try {
-                el.style.display = "none";
-                el.setAttribute("aria-hidden", "true");
-            } catch {
-                /* ignore */
-            }
-        }
-    }
-}
-
-/**
- * Native Dialogflow chips can render after our custom web menu, so keep hiding them briefly.
- * @param {HTMLElement | null | undefined} dfMessenger
- * @param {{ label: string, value: string }[]} options
- * @returns {void}
- */
-function scheduleHideNativeRichContentMenuChips_(dfMessenger, options) {
-    [0, 120, 360, 900, 1600, 2400, 3600].forEach((delayMs) => {
-        window.setTimeout(() => hideNativeRichContentMenuChips_(dfMessenger, options), delayMs);
-    });
 }
 
 /**
@@ -13687,10 +13491,9 @@ function scheduleHideNativeRichContentMenuChips_(dfMessenger, options) {
  * @param {{ label: string, value: string }[]} options
  * @param {string} placeholder
  * @param {string} messageText
- * @param {"dropdown" | "list"} [displayMode]
  * @returns {void}
  */
-function scheduleInjectInlineSelectDropdown(dfMessenger, options, placeholder, messageText, displayMode) {
+function scheduleInjectInlineSelectDropdown(dfMessenger, options, placeholder, messageText) {
     const injectSeq = (dfchatInlineSelectInjectSeq += 1);
     let injected = false;
     /** @type {number[] | undefined} */
@@ -13699,7 +13502,6 @@ function scheduleInjectInlineSelectDropdown(dfMessenger, options, placeholder, m
     const list = Array.isArray(options) ? options.slice(0, 300) : [];
     const ph = typeof placeholder === "string" && placeholder.trim() ? placeholder.trim() : "Choose…";
     const msg = typeof messageText === "string" ? messageText.trim() : "";
-    const mode = displayMode === "list" ? "list" : "dropdown";
 
     function tryAppend() {
         if (injected) {
@@ -13733,223 +13535,66 @@ function scheduleInjectInlineSelectDropdown(dfMessenger, options, placeholder, m
             "pointer-events:auto"
         ].join(";");
 
-        const headingText = msg || (mode === "list" ? ph : "");
-        if (headingText) {
+        if (msg) {
             const messageEl = document.createElement("div");
             messageEl.style.cssText = "font-size:14px;line-height:1.35;margin:0 0 8px;color:rgba(0,0,0,.82)";
-            messageEl.textContent = headingText;
+            messageEl.textContent = msg;
             wrap.appendChild(messageEl);
         }
 
-        if (mode === "list") {
-            scheduleHideNativeRichContentMenuChips_(msResolved, list);
+        const sel = document.createElement("select");
+        sel.setAttribute("aria-label", ph);
+        sel.style.cssText = [
+            "width:100%",
+            "max-width:100%",
+            "box-sizing:border-box",
+            "font-size:15px",
+            "line-height:1.3",
+            "padding:10px 12px",
+            "border-radius:8px",
+            "border:1px solid rgba(0,0,0,.14)",
+            "background:#fff",
+            "color:rgba(0,0,0,.87)",
+            "cursor:pointer"
+        ].join(";");
 
-            const menuBox = document.createElement("div");
-            menuBox.style.cssText = [
-                "width:100%",
-                "box-sizing:border-box",
-                "border:1px solid rgba(2,132,199,.22)",
-                "border-radius:12px",
-                "background:#fff",
-                "box-shadow:0 8px 22px rgba(15,23,42,.08)",
-                "overflow:hidden"
-            ].join(";");
+        const opt0 = document.createElement("option");
+        opt0.value = "";
+        opt0.textContent = ph;
+        opt0.disabled = true;
+        opt0.selected = true;
+        sel.appendChild(opt0);
 
-            const trigger = document.createElement("div");
-            trigger.setAttribute("role", "button");
-            trigger.setAttribute("tabindex", "0");
-            trigger.setAttribute("aria-expanded", "false");
-            trigger.setAttribute("aria-label", ph);
-            trigger.style.cssText = [
-                "display:flex",
-                "align-items:center",
-                "justify-content:space-between",
-                "gap:12px",
-                "width:100%",
-                "box-sizing:border-box",
-                "padding:12px 14px",
-                "background:#fff",
-                "color:#0f172a",
-                "font-size:14px",
-                "line-height:1.35",
-                "font-weight:600",
-                "cursor:pointer",
-                "user-select:none",
-                "pointer-events:auto"
-            ].join(";");
+        for (let i = 0; i < list.length; i += 1) {
+            const o = list[i];
+            const opt = document.createElement("option");
+            opt.value = o.value;
+            opt.textContent = o.label || o.value;
+            sel.appendChild(opt);
+        }
 
-            const triggerText = document.createElement("span");
-            triggerText.textContent = ph;
-            triggerText.style.cssText = "min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap";
-            const triggerArrow = document.createElement("span");
-            triggerArrow.textContent = "v";
-            triggerArrow.setAttribute("aria-hidden", "true");
-            triggerArrow.style.cssText = "flex:0 0 auto;color:rgba(2,132,199,.75);font-weight:700";
-            trigger.appendChild(triggerText);
-            trigger.appendChild(triggerArrow);
-
-            const listEl = document.createElement("div");
-            listEl.setAttribute("role", "list");
-            listEl.setAttribute("aria-label", ph);
-            listEl.style.cssText = [
-                "width:100%",
-                "box-sizing:border-box",
-                "display:none",
-                "border-top:1px solid rgba(148,163,184,.22)",
-                "background:#fff",
-                "overflow:hidden"
-            ].join(";");
-
-            const toggleList = () => {
-                const isOpen = listEl.style.display !== "none";
-                listEl.style.display = isOpen ? "none" : "block";
-                trigger.setAttribute("aria-expanded", isOpen ? "false" : "true");
-                triggerArrow.textContent = isOpen ? "v" : "^";
+        sel.addEventListener("change", () => {
+            const v = (sel.value || "").trim();
+            if (!v) {
+                return;
+            }
+            const picked = list.find((o) => o && String(o.value || "").trim() === v);
+            const pickedLabel = picked && picked.label ? String(picked.label).trim() : v;
+            handleInlineSyntheticOptionClick_(msResolved, v, pickedLabel, () => {
                 try {
-                    ml.scrollTop = ml.scrollHeight;
+                    if (wrap.parentNode && typeof wrap.remove === "function") {
+                        wrap.remove();
+                    } else if (wrap.parentNode) {
+                        wrap.parentNode.removeChild(wrap);
+                    }
                 } catch {
                     /* ignore */
                 }
-                scheduleHideNativeRichContentMenuChips_(msResolved, list);
-            };
-            trigger.addEventListener("click", (e) => {
-                e.preventDefault?.();
-                e.stopPropagation?.();
-                toggleList();
+                dfchatLastInlineSelectWrapEl = null;
             });
-            trigger.addEventListener("keydown", (e) => {
-                if (e.key !== "Enter" && e.key !== " ") {
-                    return;
-                }
-                e.preventDefault?.();
-                e.stopPropagation?.();
-                toggleList();
-            });
+        });
 
-            for (let i = 0; i < list.length; i += 1) {
-                const item = list[i];
-                const label = String((item && (item.label || item.value)) || "").trim();
-                const value = String((item && item.value) || label).trim();
-                if (!label || !value) {
-                    continue;
-                }
-                const row = document.createElement("div");
-                row.setAttribute("role", "listitem");
-                row.setAttribute("tabindex", "0");
-                row.setAttribute("data-dfchat-opt-key", value.toLowerCase());
-                row.style.cssText = [
-                    "display:flex",
-                    "align-items:center",
-                    "justify-content:space-between",
-                    "gap:12px",
-                    "width:100%",
-                    "box-sizing:border-box",
-                    "padding:12px 14px",
-                    i < list.length - 1 ? "border-bottom:1px solid rgba(148,163,184,.22)" : "border-bottom:0",
-                    "background:#fff",
-                    "color:#0f172a",
-                    "font-size:14px",
-                    "line-height:1.35",
-                    "text-align:left",
-                    "cursor:pointer",
-                    "pointer-events:auto"
-                ].join(";");
-
-                const text = document.createElement("span");
-                text.textContent = resolveInlineOptionLabel(label, value, activeLanguage);
-                text.style.cssText = "min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap";
-                const arrow = document.createElement("span");
-                arrow.textContent = ">";
-                arrow.setAttribute("aria-hidden", "true");
-                arrow.style.cssText = "flex:0 0 auto;color:rgba(2,132,199,.75);font-weight:700";
-                row.appendChild(text);
-                row.appendChild(arrow);
-                const chooseRow = (e) => {
-                    if (e) {
-                        e.preventDefault?.();
-                        e.stopPropagation?.();
-                    }
-                    handleInlineSyntheticOptionClick_(msResolved, value, label, () => {
-                        try {
-                            if (wrap.parentNode && typeof wrap.remove === "function") {
-                                wrap.remove();
-                            } else if (wrap.parentNode) {
-                                wrap.parentNode.removeChild(wrap);
-                            }
-                        } catch {
-                            /* ignore */
-                        }
-                        dfchatLastInlineSelectWrapEl = null;
-                    });
-                };
-                row.addEventListener("click", chooseRow);
-                row.addEventListener("keydown", (e) => {
-                    if (e.key !== "Enter" && e.key !== " ") {
-                        return;
-                    }
-                    chooseRow(e);
-                });
-                listEl.appendChild(row);
-            }
-
-            menuBox.appendChild(trigger);
-            menuBox.appendChild(listEl);
-            wrap.appendChild(menuBox);
-        } else {
-            const sel = document.createElement("select");
-            sel.setAttribute("aria-label", ph);
-            sel.style.cssText = [
-                "width:100%",
-                "max-width:100%",
-                "box-sizing:border-box",
-                "font-size:15px",
-                "line-height:1.3",
-                "padding:10px 12px",
-                "border-radius:8px",
-                "border:1px solid rgba(0,0,0,.14)",
-                "background:#fff",
-                "color:rgba(0,0,0,.87)",
-                "cursor:pointer"
-            ].join(";");
-
-            const opt0 = document.createElement("option");
-            opt0.value = "";
-            opt0.textContent = ph;
-            opt0.disabled = true;
-            opt0.selected = true;
-            sel.appendChild(opt0);
-
-            for (let i = 0; i < list.length; i += 1) {
-                const o = list[i];
-                const opt = document.createElement("option");
-                opt.value = o.value;
-                opt.textContent = o.label || o.value;
-                sel.appendChild(opt);
-            }
-
-            sel.addEventListener("change", () => {
-                const v = (sel.value || "").trim();
-                if (!v) {
-                    return;
-                }
-                const picked = list.find((o) => o && String(o.value || "").trim() === v);
-                const pickedLabel = picked && picked.label ? String(picked.label).trim() : v;
-                handleInlineSyntheticOptionClick_(msResolved, v, pickedLabel, () => {
-                    try {
-                        if (wrap.parentNode && typeof wrap.remove === "function") {
-                            wrap.remove();
-                        } else if (wrap.parentNode) {
-                            wrap.parentNode.removeChild(wrap);
-                        }
-                    } catch {
-                        /* ignore */
-                    }
-                    dfchatLastInlineSelectWrapEl = null;
-                });
-            });
-
-            wrap.appendChild(sel);
-        }
+        wrap.appendChild(sel);
 
         const beforeNode = resolveGalleryInsertBeforeByCxOrder(ml);
         if (beforeNode && beforeNode.parentNode === ml && typeof ml.insertBefore === "function") {
@@ -13958,9 +13603,6 @@ function scheduleInjectInlineSelectDropdown(dfMessenger, options, placeholder, m
             ml.appendChild(wrap);
         }
         dfchatLastInlineSelectWrapEl = wrap;
-        if (mode === "list") {
-            scheduleHideNativeRichContentMenuChips_(msResolved, list);
-        }
 
         injected = true;
         try {
@@ -14039,8 +13681,7 @@ function tryDfchatInlineSelectFromBotResponseMessages(messages, event) {
             activeDfMessenger,
             payload.options,
             payload.placeholder,
-            payload.messageText,
-            payload.displayMode || "dropdown"
+            payload.messageText
         );
     } catch (e) {
         if (typeof console !== "undefined" && typeof console.warn === "function") {
