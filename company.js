@@ -16103,8 +16103,10 @@ async function handleDfResponseReceived(event) {
 
     const cxResponseMessagesMerged = mergeCxResponseEnvelopeForGallery(event);
     renderPlainMessagePayloadsFromResponse(cxResponseMessagesMerged);
-    renderRichContentChipPromptsFromResponse(cxResponseMessagesMerged);
-    renderRichContentChipPromptsFromResponse([event && event.detail].filter(Boolean));
+    scheduleRenderRichContentChipPromptsFromResponse([
+        ...cxResponseMessagesMerged,
+        event && event.detail
+    ].filter(Boolean));
     pruneStaleInlineGalleryForCxResponse(cxResponseMessagesMerged, event);
     tryOpenGalleryFromBotResponseMessages(cxResponseMessagesMerged, event);
     pruneStaleInlineVideoForCxResponse(cxResponseMessagesMerged, event);
@@ -19243,6 +19245,15 @@ function renderRichContentChipPromptsFromResponse(messages) {
         seen.add(text);
         ms.renderCustomText(text, true);
     }
+}
+
+function scheduleRenderRichContentChipPromptsFromResponse(messages) {
+    if (!Array.isArray(messages) || messages.length === 0) {
+        return;
+    }
+    window.setTimeout(() => {
+        renderRichContentChipPromptsFromResponse(messages);
+    }, 900);
 }
 
 function convertStructFieldsToObject(fields) {
