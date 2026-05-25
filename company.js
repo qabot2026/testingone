@@ -772,7 +772,7 @@ function readBotPersonaConfig() {
         ? raw.userPersonaMobileNudgeLeftPx
         : 28;
     /** Extra px toward the previous message (adds to baseline -6px margin-top); negative values move the user persona row down. */
-    const userPersonaNudgeUpPx = typeof raw.userPersonaNudgeUpPx === "number" && Number.isFinite(raw.userPersonaNudgeUpPx) && raw.userPersonaNudgeUpPx >= -6 && raw.userPersonaNudgeUpPx <= 32
+    const userPersonaNudgeUpPx = typeof raw.userPersonaNudgeUpPx === "number" && Number.isFinite(raw.userPersonaNudgeUpPx) && raw.userPersonaNudgeUpPx >= -48 && raw.userPersonaNudgeUpPx <= 32
         ? raw.userPersonaNudgeUpPx
         : 6;
     /**
@@ -895,7 +895,7 @@ function cssUserPersonaTranslateX() {
 
 /** User persona baseline pull is -6px; config adds extra upward nudge, or down when negative. */
 function cssUserPersonaMarginTop() {
-    const extra = Math.max(-6, Math.min(32, BOT_PERSONA_CONFIG.userPersonaNudgeUpPx ?? 6));
+    const extra = Math.max(-48, Math.min(32, BOT_PERSONA_CONFIG.userPersonaNudgeUpPx ?? 6));
     return `${-(6 + extra)}px`;
 }
 

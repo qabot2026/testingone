@@ -76,7 +76,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
       userPersonaShiftRightDeskExtraPx: 10,
       userPersonaMobileNudgeLeftPx: 38,
       // Extra pull upward (adds to baseline -6px margin-top); negative values move the row down.
-      userPersonaNudgeUpPx: -6,
+      userPersonaNudgeUpPx: -21,
       threadAvatarSizePx: 28,
       emojiTime: {
         label: "🤖",
