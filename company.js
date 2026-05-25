@@ -11242,6 +11242,7 @@ const DFCHAT_INLINE_CARD_CAROUSEL_CLASS = "dfchat-inline-card-carousel";
 const DFCHAT_INLINE_SELECT_CLASS = "dfchat-inline-select";
 const DFCHAT_INLINE_BOOKING_CAL_CLASS = "dfchat-inline-booking-calendar";
 const DFCHAT_RICH_INFO_IMAGE_STYLE_ID = "dfchat-rich-info-image-size";
+const richInfoCardImageUrlsToResize_ = new Set();
 
 /** @param {unknown} value @param {number} fallback @param {number} min @param {number} max */
 function sanitizeInlineCarouselPx_(value, fallback, min, max) {
@@ -11321,6 +11322,150 @@ function readRichInfoCardImageSizeConfig_() {
         heightPx: sanitizeInlineCarouselPx_(infoCardImage.heightPx, 72, 24, 360),
         objectFit: sanitizeInlineCarouselObjectFit_(infoCardImage.objectFit)
     };
+}
+
+/** @param {unknown} raw @returns {Record<string, unknown> | null} */
+function normalizeRichInfoPayloadObject_(raw) {
+    if (raw == null) {
+        return null;
+    }
+    let value = raw;
+    if (typeof value === "string") {
+        const s = value.trim();
+        if (!s || !s.startsWith("{")) {
+            return null;
+        }
+        try {
+            value = JSON.parse(s);
+        } catch {
+            return null;
+        }
+    }
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+        return null;
+    }
+    const rec = /** @type {Record<string, unknown>} */ (value);
+    if (rec.fields && typeof rec.fields === "object" && !Array.isArray(rec.fields)) {
+        return convertStructFieldsToObject(/** @type {Record<string, unknown>} */ (rec.fields));
+    }
+    if (rec.structValue && typeof rec.structValue === "object") {
+        const sv = /** @type {Record<string, unknown>} */ (rec.structValue);
+        if (sv.fields && typeof sv.fields === "object" && !Array.isArray(sv.fields)) {
+            return convertStructFieldsToObject(/** @type {Record<string, unknown>} */ (sv.fields));
+        }
+    }
+    return rec;
+}
+
+/** @param {unknown} image @returns {string} */
+function richInfoImageUrlFromImageField_(image) {
+    if (typeof image === "string") {
+        return unwrapPayloadStringField(image);
+    }
+    if (!image || typeof image !== "object" || Array.isArray(image)) {
+        return "";
+    }
+    const img = /** @type {Record<string, unknown>} */ (image);
+    const fromImage = unwrapPayloadStringField(
+        img.rawUrl ?? img.accessRawUrl ?? img.url ?? img.imageUrl ?? img.image_url
+    );
+    if (fromImage) {
+        return fromImage;
+    }
+    const src = img.src;
+    if (typeof src === "string") {
+        return unwrapPayloadStringField(src);
+    }
+    if (src && typeof src === "object" && !Array.isArray(src)) {
+        const s = /** @type {Record<string, unknown>} */ (src);
+        return unwrapPayloadStringField(
+            s.rawUrl ?? s.accessRawUrl ?? s.url ?? s.imageUrl ?? s.image_url
+        );
+    }
+    return "";
+}
+
+/** @param {Record<string, unknown>} item @returns {string} */
+function richInfoImageUrlFromItem_(item) {
+    const direct = unwrapPayloadStringField(
+        item.rawUrl ?? item.accessRawUrl ?? item.imageUrl ?? item.image_url ?? item.img
+    );
+    return direct || richInfoImageUrlFromImageField_(item.image);
+}
+
+/**
+ * @param {unknown} node
+ * @param {Set<string>} out
+ * @param {WeakSet<object>} seen
+ * @param {number} depth
+ */
+function collectRichInfoImageUrlsFromNode_(node, out, seen, depth) {
+    if (depth > 12 || node == null) {
+        return;
+    }
+    if (typeof node === "string") {
+        const s = node.trim();
+        if (s.startsWith("{") && s.includes("richContent")) {
+            try {
+                collectRichInfoImageUrlsFromNode_(JSON.parse(s), out, seen, depth + 1);
+            } catch {
+                // ignore non-JSON strings
+            }
+        }
+        return;
+    }
+    if (typeof node !== "object") {
+        return;
+    }
+    const obj = /** @type {Record<string, unknown>} */ (node);
+    if (seen.has(/** @type {object} */ (obj))) {
+        return;
+    }
+    seen.add(/** @type {object} */ (obj));
+
+    const normalized = normalizeRichInfoPayloadObject_(obj);
+    if (normalized && normalized !== obj) {
+        collectRichInfoImageUrlsFromNode_(normalized, out, seen, depth + 1);
+        return;
+    }
+
+    if (Array.isArray(obj.richContent)) {
+        for (const row of obj.richContent) {
+            if (!Array.isArray(row)) {
+                continue;
+            }
+            for (const item of row) {
+                if (!item || typeof item !== "object" || Array.isArray(item)) {
+                    continue;
+                }
+                const info = /** @type {Record<string, unknown>} */ (item);
+                const type = unwrapPayloadStringField(info.type).toLowerCase();
+                if (type !== "info" && type !== "accordion") {
+                    continue;
+                }
+                const url = richInfoImageUrlFromItem_(info);
+                if (/^https:\/\//i.test(url)) {
+                    out.add(url);
+                }
+            }
+        }
+    }
+
+    for (const value of Object.values(obj)) {
+        collectRichInfoImageUrlsFromNode_(value, out, seen, depth + 1);
+    }
+}
+
+/** @param {unknown[]} messages */
+function rememberRichInfoCardImageUrlsFromResponse_(messages) {
+    const urls = new Set();
+    collectRichInfoImageUrlsFromNode_(messages, urls, new WeakSet(), 0);
+    if (!urls.size) {
+        return;
+    }
+    for (const url of urls) {
+        richInfoCardImageUrlsToResize_.add(url);
+    }
 }
 
 /**
@@ -16129,6 +16274,17 @@ async function handleDfResponseReceived(event) {
     }
 
     const cxResponseMessagesMerged = mergeCxResponseEnvelopeForGallery(event);
+    rememberRichInfoCardImageUrlsFromResponse_(cxResponseMessagesMerged);
+    if (activeDfMessenger) {
+        applyRichInfoCardImageSizingToMessenger_(activeDfMessenger);
+        [80, 250, 600, 1200].forEach((ms) => {
+            window.setTimeout(() => {
+                if (activeDfMessenger) {
+                    applyRichInfoCardImageSizingToMessenger_(activeDfMessenger);
+                }
+            }, ms);
+        });
+    }
     renderPlainMessagePayloadsFromResponse(cxResponseMessagesMerged);
     pruneStaleInlineGalleryForCxResponse(cxResponseMessagesMerged, event);
     tryOpenGalleryFromBotResponseMessages(cxResponseMessagesMerged, event);
@@ -23697,6 +23853,53 @@ ${imageRule}
 }`;
 }
 
+/** @param {string} raw */
+function normalizeRichInfoImageUrlForCompare_(raw) {
+    const s = typeof raw === "string" ? raw.trim() : "";
+    if (!s) {
+        return "";
+    }
+    try {
+        return decodeURIComponent(s);
+    } catch {
+        return s;
+    }
+}
+
+/** @param {HTMLImageElement} img @param {ShadowRoot | Document} root */
+function shouldResizeRichInfoImage_(img, root) {
+    if (isRichInfoCardShadowRoot_(root)) {
+        return true;
+    }
+    const src = normalizeRichInfoImageUrlForCompare_(img.currentSrc || img.src || "");
+    if (!src || !richInfoCardImageUrlsToResize_.size) {
+        return false;
+    }
+    for (const url of richInfoCardImageUrlsToResize_) {
+        const target = normalizeRichInfoImageUrlForCompare_(url);
+        if (target && (src === target || src.includes(target) || target.includes(src))) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/** @param {HTMLImageElement} img */
+function applyRichInfoImageInlineSize_(img) {
+    const cfg = readRichInfoCardImageSizeConfig_();
+    if (!cfg.enabled || !img || !img.style) {
+        return;
+    }
+    img.style.setProperty("width", `${cfg.widthPx}px`, "important");
+    img.style.setProperty("height", `${cfg.heightPx}px`, "important");
+    img.style.setProperty("max-width", `${cfg.widthPx}px`, "important");
+    img.style.setProperty("max-height", `${cfg.heightPx}px`, "important");
+    img.style.setProperty("object-fit", cfg.objectFit, "important");
+    img.style.setProperty("display", "block", "important");
+    img.setAttribute("width", String(cfg.widthPx));
+    img.setAttribute("height", String(cfg.heightPx));
+}
+
 /** @param {HTMLElement | null | undefined} dfMessenger */
 function applyRichInfoCardImageSizingToMessenger_(dfMessenger) {
     if (!dfMessenger) {
@@ -23704,23 +23907,30 @@ function applyRichInfoCardImageSizingToMessenger_(dfMessenger) {
     }
     const roots = collectSearchRoots(dfMessenger);
     for (const root of roots) {
-        if (!root || !(root instanceof ShadowRoot) || typeof root.appendChild !== "function") {
+        if (!root || typeof root.querySelectorAll !== "function") {
             continue;
         }
         const css = getRichInfoCardImageSizeCss_(isRichInfoCardShadowRoot_(root));
-        let style = root.getElementById(DFCHAT_RICH_INFO_IMAGE_STYLE_ID);
-        if (!css) {
-            if (style && style.parentNode) {
-                style.parentNode.removeChild(style);
+        if (root instanceof ShadowRoot && typeof root.appendChild === "function") {
+            let style = root.getElementById(DFCHAT_RICH_INFO_IMAGE_STYLE_ID);
+            if (!css) {
+                if (style && style.parentNode) {
+                    style.parentNode.removeChild(style);
+                }
+            } else {
+                if (!style) {
+                    style = document.createElement("style");
+                    style.id = DFCHAT_RICH_INFO_IMAGE_STYLE_ID;
+                    root.appendChild(style);
+                }
+                style.textContent = css;
             }
-            continue;
         }
-        if (!style) {
-            style = document.createElement("style");
-            style.id = DFCHAT_RICH_INFO_IMAGE_STYLE_ID;
-            root.appendChild(style);
+        for (const img of root.querySelectorAll("img")) {
+            if (img instanceof HTMLImageElement && shouldResizeRichInfoImage_(img, root)) {
+                applyRichInfoImageInlineSize_(img);
+            }
         }
-        style.textContent = css;
     }
 }
 
