@@ -659,7 +659,7 @@ function absorbRichContent_(parts, body) {
                 const chipMsg = payloadString_(
                     item.title ?? item.text ?? item.message ?? item.prompt ?? item.subtitle
                 );
-                if (chipMsg && !parts.choicePrompt && !isGenericChoicePrompt_(chipMsg)) {
+                if (chipMsg && !parts.choicePrompt) {
                     parts.choicePrompt = chipMsg;
                 }
             } else if (type === "info" || type === "accordion") {
