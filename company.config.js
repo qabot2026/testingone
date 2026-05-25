@@ -93,7 +93,9 @@ window.COMPANY_CHAT_UI_CONFIG = {
         timeZone: "Asia/Kolkata",
         // Persona row: nudge avatar/time down (`offsetDownPx`); clock text only (`timeOffsetDownPx`).
         offsetDownPx: 16,
+        offsetRightPx: 5,
         timeOffsetDownPx: 35,
+        timeOffsetRightPx: -5,
         tightenBelowPx: 8,
         // ≤768px: shift bot persona img + time left (translateX) without affecting desktop.
         mobileNudgeLeftPx: 14

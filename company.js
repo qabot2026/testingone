@@ -827,9 +827,17 @@ function readBotPersonaConfig() {
             offsetDownPx: typeof image.offsetDownPx === "number" && Number.isFinite(image.offsetDownPx) && image.offsetDownPx >= 0
                 ? image.offsetDownPx
                 : 6,
+            /** Image+time mode only: nudge the bot avatar horizontally (px); positive = right. */
+            offsetRightPx: typeof image.offsetRightPx === "number" && Number.isFinite(image.offsetRightPx) && image.offsetRightPx >= -120 && image.offsetRightPx <= 120
+                ? image.offsetRightPx
+                : 0,
             /** Image+time mode only: nudge the clock text down (px); does not move the avatar (`offsetDownPx` moves both). */
             timeOffsetDownPx: typeof image.timeOffsetDownPx === "number" && Number.isFinite(image.timeOffsetDownPx) && image.timeOffsetDownPx >= -32 && image.timeOffsetDownPx <= 120
                 ? image.timeOffsetDownPx
+                : 0,
+            /** Image+time mode only: nudge the clock text horizontally (px); positive = right. */
+            timeOffsetRightPx: typeof image.timeOffsetRightPx === "number" && Number.isFinite(image.timeOffsetRightPx) && image.timeOffsetRightPx >= -120 && image.timeOffsetRightPx <= 120
+                ? image.timeOffsetRightPx
                 : 0,
             /** Extra pull toward the reply bubble (adds to base −4px margin under persona row). */
             tightenBelowPx: typeof image.tightenBelowPx === "number" && Number.isFinite(image.tightenBelowPx) && image.tightenBelowPx >= 0
@@ -23301,9 +23309,11 @@ function getPersonaImageGuardCss() {
     const catW = cfg.mode === "image" ? `${img.widthPx}px` : "32px";
     const catH = cfg.mode === "image" ? `${img.heightPx}px` : "32px";
     const personaDown = cfg.mode === "image" ? `${img.offsetDownPx}px` : "0px";
+    const personaRight = cfg.mode === "image" ? `${img.offsetRightPx}px` : "0px";
     const mobY = `${cfg.mode === "image" ? img.offsetDownPx : 0}`;
-    const mobX = `${img.mobileNudgeLeftPx}`;
+    const mobX = `${(cfg.mode === "image" ? img.offsetRightPx : 0) - img.mobileNudgeLeftPx}px`;
     const timeDown = cfg.mode === "image" ? `${img.timeOffsetDownPx}px` : "0px";
+    const timeRight = cfg.mode === "image" ? `${img.timeOffsetRightPx}px` : "0px";
     return `
 img[src*="dfchat-bot-persona"],
 img[src*="%23dfchat-bot-persona"] {
@@ -23315,7 +23325,7 @@ img[src*="%23dfchat-bot-persona"] {
   display: inline-block !important;
   vertical-align: middle !important;
   box-sizing: border-box !important;
-  transform: translateY(${personaDown}) !important;
+  transform: translate(${personaRight}, ${personaDown}) !important;
 }
 .message.bot-message.markdown:has(img[src*="dfchat-bot-persona"]),
 .message.bot-message.markdown:has(img[src*="%23dfchat-bot-persona"]) {
@@ -23334,7 +23344,7 @@ img[src*="%23dfchat-bot-persona"] {
 .message.bot-message.markdown:has(img[src*="%23dfchat-bot-persona"]) p strong {
   display: inline-block !important;
   vertical-align: middle !important;
-  transform: translateY(${timeDown}) !important;
+  transform: translate(${timeRight}, ${timeDown}) !important;
   color: ${PERSONA_TEXT_COLOR} !important;
   font-size: 11px !important;
   font-weight: 600 !important;
@@ -23355,10 +23365,10 @@ img[src*="dfchat-persona-bot-time"] {
 @media (max-width: ${MOBILE_CHAT_BREAKPOINT_PX}px) {
 img[src*="dfchat-bot-persona"],
 img[src*="%23dfchat-bot-persona"] {
-  transform: translateY(${mobY}px) translateX(-${mobX}px) !important;
+  transform: translate(${mobX}, ${mobY}px) !important;
 }
 img[src*="dfchat-persona-bot-time"] {
-  transform: translateY(${mobY}px) translateX(-${mobX}px) !important;
+  transform: translate(${mobX}, ${mobY}px) !important;
 }
 }
 img[src*="dfchat-persona-user|"],
