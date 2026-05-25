@@ -380,41 +380,6 @@ function normalizeCarouselCards_(rawCards) {
 }
 
 /**
- * Dialogflow Messenger `info` cards can nest an image as
- * `{ image: { src: { rawUrl } } }`; WhatsApp needs the direct URL.
- * @param {Record<string, unknown>} item
- */
-function richInfoImageUrl_(item) {
-    const direct = payloadString_(
-        item.rawUrl ?? item.accessRawUrl ?? item.imageUrl ?? item.image_url ?? item.img
-    );
-    if (direct) {
-        return direct;
-    }
-    const image = item.image;
-    if (typeof image === "string") {
-        return payloadString_(image);
-    }
-    if (image && typeof image === "object" && !Array.isArray(image)) {
-        const img = /** @type {Record<string, unknown>} */ (image);
-        const fromImage = payloadString_(
-            img.rawUrl ?? img.accessRawUrl ?? img.url ?? img.imageUrl ?? img.image_url ?? img.src
-        );
-        if (fromImage) {
-            return fromImage;
-        }
-        const src = img.src;
-        if (src && typeof src === "object" && !Array.isArray(src)) {
-            const s = /** @type {Record<string, unknown>} */ (src);
-            return payloadString_(
-                s.rawUrl ?? s.accessRawUrl ?? s.url ?? s.imageUrl ?? s.image_url
-            );
-        }
-    }
-    return "";
-}
-
-/**
  * @param {Record<string, unknown>} item
  * @returns {{ label: string, link: string }[]}
  */
@@ -683,16 +648,12 @@ function absorbRichContent_(parts, body) {
             } else if (type === "info" || type === "accordion") {
                 const title = payloadString_(item.title);
                 const subtitle = payloadString_(item.subtitle);
-                const imgUrl = richInfoImageUrl_(item);
                 if (title && subtitle) {
                     parts.infoLines.push(`${title}\n${subtitle}`);
                 } else if (title) {
                     parts.infoLines.push(title);
                 } else if (subtitle) {
                     parts.infoLines.push(subtitle);
-                }
-                if (isHttpsUrl_(imgUrl)) {
-                    parts.images.push(imgUrl);
                 }
                 for (const button of richInfoButtonLinks_(item)) {
                     parts.infoLines.push(`${button.label}: ${button.link}`);
