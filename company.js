@@ -16103,6 +16103,7 @@ async function handleDfResponseReceived(event) {
 
     const cxResponseMessagesMerged = mergeCxResponseEnvelopeForGallery(event);
     renderPlainMessagePayloadsFromResponse(cxResponseMessagesMerged);
+    renderRichContentChipPromptsFromResponse(cxResponseMessagesMerged);
     pruneStaleInlineGalleryForCxResponse(cxResponseMessagesMerged, event);
     tryOpenGalleryFromBotResponseMessages(cxResponseMessagesMerged, event);
     pruneStaleInlineVideoForCxResponse(cxResponseMessagesMerged, event);
@@ -19082,6 +19083,104 @@ function extractPlainMessagePayloadText(message) {
     return "";
 }
 
+/** @param {unknown} raw */
+function normalizePayloadObjectForWeb_(raw) {
+    if (raw == null) {
+        return null;
+    }
+    let body = raw;
+    if (typeof body === "string") {
+        const s = body.trim();
+        if (!s || !s.startsWith("{")) {
+            return null;
+        }
+        try {
+            body = JSON.parse(s);
+        } catch {
+            return null;
+        }
+    }
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+        return null;
+    }
+    /** @type {Record<string, unknown>} */
+    let rec = /** @type {Record<string, unknown>} */ (body);
+    if (rec.fields) {
+        rec = convertStructFieldsToObject(rec.fields);
+    } else if (rec.structValue && rec.structValue.fields) {
+        rec = convertStructFieldsToObject(rec.structValue.fields);
+    }
+    return rec;
+}
+
+/**
+ * Dialogflow Messenger renders `richContent` chips on web but ignores prompt/message
+ * fields inside the chip object. Render those explicit prompts as a normal bot line.
+ * @param {unknown} node
+ * @param {Set<string>} out
+ * @param {WeakSet<object>} seen
+ * @param {number} depth
+ */
+function collectRichContentChipPrompts_(node, out, seen, depth) {
+    if (depth > 10 || node == null) {
+        return;
+    }
+    const normalized = normalizePayloadObjectForWeb_(node);
+    if (!normalized) {
+        return;
+    }
+    if (seen.has(/** @type {object} */ (normalized))) {
+        return;
+    }
+    seen.add(/** @type {object} */ (normalized));
+
+    if (Array.isArray(normalized.richContent)) {
+        for (const row of normalized.richContent) {
+            if (!Array.isArray(row)) {
+                continue;
+            }
+            for (const item of row) {
+                if (!item || typeof item !== "object" || Array.isArray(item)) {
+                    continue;
+                }
+                const chip = /** @type {Record<string, unknown>} */ (item);
+                const type = unwrapPayloadStringField(chip.type).toLowerCase();
+                if (type !== "chips") {
+                    continue;
+                }
+                const prompt = unwrapPayloadStringField(
+                    chip.title ?? chip.text ?? chip.message ?? chip.prompt ?? chip.subtitle
+                );
+                if (prompt) {
+                    out.add(prompt);
+                }
+            }
+        }
+    }
+
+    const fr = normalized.fulfillment_response;
+    if (fr && typeof fr === "object" && !Array.isArray(fr)) {
+        const msgs = /** @type {{ messages?: unknown[] }} */ (fr).messages;
+        if (Array.isArray(msgs)) {
+            for (const m of msgs) {
+                if (m && typeof m === "object") {
+                    collectRichContentChipPrompts_(/** @type {Record<string, unknown>} */ (m).payload, out, seen, depth + 1);
+                }
+            }
+        }
+    }
+}
+
+function extractRichContentChipPromptText(message) {
+    if (!message || typeof message !== "object") {
+        return "";
+    }
+    const m = /** @type {Record<string, unknown>} */ (message);
+    const prompts = new Set();
+    collectRichContentChipPrompts_(m.payload ?? m.customPayload, prompts, new WeakSet(), 0);
+    return Array.from(prompts).join("\n\n");
+}
+
 function renderPlainMessagePayloadsFromResponse(messages) {
     const ms = activeDfMessenger;
     if (!ms || typeof ms.renderCustomText !== "function" || !Array.isArray(messages)) {
@@ -19091,6 +19190,23 @@ function renderPlainMessagePayloadsFromResponse(messages) {
     const seen = new Set();
     for (const message of messages) {
         const text = extractPlainMessagePayloadText(message);
+        if (!text || seen.has(text)) {
+            continue;
+        }
+        seen.add(text);
+        ms.renderCustomText(text, true);
+    }
+}
+
+function renderRichContentChipPromptsFromResponse(messages) {
+    const ms = activeDfMessenger;
+    if (!ms || typeof ms.renderCustomText !== "function" || !Array.isArray(messages)) {
+        return;
+    }
+    /** @type {Set<string>} */
+    const seen = new Set();
+    for (const message of messages) {
+        const text = extractRichContentChipPromptText(message);
         if (!text || seen.has(text)) {
             continue;
         }
