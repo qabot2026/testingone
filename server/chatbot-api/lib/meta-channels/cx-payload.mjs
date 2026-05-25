@@ -380,33 +380,6 @@ function normalizeCarouselCards_(rawCards) {
 }
 
 /**
- * @param {Record<string, unknown>} item
- * @returns {{ label: string, link: string }[]}
- */
-function richInfoButtonLinks_(item) {
-    const fallbackLink = payloadString_(item.actionLink ?? item.action_link ?? item.link ?? item.href);
-    const buttons = Array.isArray(item.buttons) ? item.buttons : [];
-    /** @type {{ label: string, link: string }[]} */
-    const out = [];
-    for (let i = 0; i < buttons.length; i += 1) {
-        const btn = buttons[i];
-        if (!btn || typeof btn !== "object") {
-            continue;
-        }
-        const b = /** @type {Record<string, unknown>} */ (btn);
-        const label = payloadString_(b.text ?? b.title ?? b.label ?? b.name) || `Open ${i + 1}`;
-        const link = payloadString_(b.actionLink ?? b.action_link ?? b.link ?? b.href) || fallbackLink;
-        if (link) {
-            out.push({ label, link });
-        }
-    }
-    if (!out.length && fallbackLink) {
-        out.push({ label: "Open", link: fallbackLink });
-    }
-    return out;
-}
-
-/**
  * @param {CxReplyParts} parts
  * @param {{ label: string, value: string }} opt
  */
@@ -649,14 +622,11 @@ function absorbRichContent_(parts, body) {
                 const title = payloadString_(item.title);
                 const subtitle = payloadString_(item.subtitle);
                 if (title && subtitle) {
-                    parts.infoLines.push(`${title}\n${subtitle}`);
+                    parts.infoLines.push(`${title} — ${subtitle}`);
                 } else if (title) {
                     parts.infoLines.push(title);
                 } else if (subtitle) {
                     parts.infoLines.push(subtitle);
-                }
-                for (const button of richInfoButtonLinks_(item)) {
-                    parts.infoLines.push(`${button.label}: ${button.link}`);
                 }
             } else if (type === "description") {
                 const title = payloadString_(item.title);

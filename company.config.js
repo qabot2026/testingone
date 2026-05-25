@@ -217,19 +217,6 @@ window.COMPANY_CHAT_UI_CONFIG = {
       },
 
       /**
-       * Dialogflow Messenger `richContent` info-card images, e.g.
-       * `{ "type": "info", "image": { "src": { "rawUrl": "https://..." } } }`.
-       * Change these values to control the web card image size.
-       */
-      richContent: {
-        infoCardImage: {
-          widthPx: 40,
-          heightPx: 20,
-          objectFit: "contain"
-        }
-      },
-
-      /**
        * Inline image carousel (`open_gallery`) + inline YouTube (`open_video`).
        *
        * - **`allowGalleryOnAnyIntent: true`** (default) — show whenever fulfillment sends payloads (recommended
