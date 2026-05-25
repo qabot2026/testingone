@@ -94,7 +94,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
         // Persona row: nudge avatar/time down (`offsetDownPx`); clock text only (`timeOffsetDownPx`).
         offsetDownPx: 16,
         offsetRightPx: 5,
-        timeOffsetDownPx: 35,
+        timeOffsetDownPx: 28,
         timeOffsetRightPx: -5,
         tightenBelowPx: 8,
         // ≤768px: shift bot persona img + time left (translateX) without affecting desktop.
