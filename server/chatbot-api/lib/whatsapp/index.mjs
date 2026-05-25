@@ -92,6 +92,12 @@ function galleryMenuDelayMs_(imageCount) {
     return b + (count - 1) * p;
 }
 
+/** Wait after document sends so following payloads do not overtake WhatsApp's document preview. */
+function documentFollowupDelayMs_() {
+    const n = Number.parseInt(process.env.WHATSAPP_DOCUMENT_FOLLOWUP_DELAY_MS || "2500", 10);
+    return Number.isFinite(n) ? Math.max(0, n) : 2500;
+}
+
 /** Gap between card-carousel cards so WhatsApp never groups them into one album. */
 function cardCarouselGapMs_() {
     const n = Number.parseInt(process.env.WHATSAPP_CARD_CAROUSEL_GAP_MS || "1800", 10);
@@ -929,7 +935,7 @@ async function sendWhatsappCxReply_(input) {
         }
     }
 
-    if (!parts.gallery && !parts.cardCarousel && parts.documents.length > 0) {
+    if (parts.documents.length > 0) {
         if (leadText) {
             await sendWhatsappText_({ to: input.to, body: leadText });
             leadText = "";
@@ -951,7 +957,15 @@ async function sendWhatsappCxReply_(input) {
                 });
             }
         }
-        return;
+        const hasDocumentFollowup = Boolean(
+            parts.cardCarousel?.cards?.length
+            || parts.gallery?.urls?.length
+            || parts.video?.url
+            || parts.choices.length
+        );
+        if (hasDocumentFollowup) {
+            await delayMs_(documentFollowupDelayMs_());
+        }
     }
 
     if (parts.cardCarousel?.cards?.length) {
