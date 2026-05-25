@@ -15982,6 +15982,7 @@ async function handleDfResponseReceived(event) {
     }
 
     const cxResponseMessagesMerged = mergeCxResponseEnvelopeForGallery(event);
+    renderPlainMessagePayloadsFromResponse(cxResponseMessagesMerged);
     pruneStaleInlineGalleryForCxResponse(cxResponseMessagesMerged, event);
     tryOpenGalleryFromBotResponseMessages(cxResponseMessagesMerged, event);
     pruneStaleInlineVideoForCxResponse(cxResponseMessagesMerged, event);
@@ -18911,6 +18912,71 @@ function extractPayload(message) {
     }
 
     return null;
+}
+
+function extractPlainMessagePayloadText(message) {
+    if (!message || typeof message !== "object") {
+        return "";
+    }
+
+    let raw = message.payload;
+    if (raw == null && message.customPayload != null) {
+        raw = message.customPayload;
+    }
+    if (typeof raw === "string") {
+        const t = raw.trim();
+        if (!t.startsWith("{")) {
+            return "";
+        }
+        try {
+            raw = JSON.parse(t);
+        } catch {
+            return "";
+        }
+    }
+    if (!raw || typeof raw !== "object") {
+        return "";
+    }
+
+    /** @type {Record<string, unknown>} */
+    let rec = /** @type {Record<string, unknown>} */ (raw);
+    if (rec.fields) {
+        rec = convertStructFieldsToObject(rec.fields);
+    } else if (rec.structValue && rec.structValue.fields) {
+        rec = convertStructFieldsToObject(rec.structValue.fields);
+    }
+
+    if (typeof rec.action === "string" && rec.action.trim()) {
+        return "";
+    }
+    if (Array.isArray(rec.richContent)) {
+        return "";
+    }
+
+    for (const key of ["message", "text", "prompt", "description", "caption"]) {
+        const v = rec[key];
+        if (typeof v === "string" && v.trim()) {
+            return v.trim();
+        }
+    }
+    return "";
+}
+
+function renderPlainMessagePayloadsFromResponse(messages) {
+    const ms = activeDfMessenger;
+    if (!ms || typeof ms.renderCustomText !== "function" || !Array.isArray(messages)) {
+        return;
+    }
+    /** @type {Set<string>} */
+    const seen = new Set();
+    for (const message of messages) {
+        const text = extractPlainMessagePayloadText(message);
+        if (!text || seen.has(text)) {
+            continue;
+        }
+        seen.add(text);
+        ms.renderCustomText(text, true);
+    }
 }
 
 function convertStructFieldsToObject(fields) {

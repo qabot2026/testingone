@@ -705,6 +705,12 @@ export function extractCxResponse_(data) {
         absorbRichContent_(parts, body);
         absorbOptionsDisplay_(parts, body);
 
+        const bodyAction = payloadString_(body.action);
+        const plainPayloadMsg = payloadMessage_(body);
+        if (!bodyAction && plainPayloadMsg && !Array.isArray(body.richContent)) {
+            parts.texts.push(plainPayloadMsg);
+        }
+
         const lateMsg = payloadString_(body.message);
         if (lateMsg && parts.choices.length && !parts.choicePrompt && !isGenericChoicePrompt_(lateMsg)) {
             parts.choicePrompt = lateMsg;
