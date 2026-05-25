@@ -16103,7 +16103,7 @@ async function handleDfResponseReceived(event) {
 
     const cxResponseMessagesMerged = mergeCxResponseEnvelopeForGallery(event);
     renderPlainMessagePayloadsFromResponse(cxResponseMessagesMerged);
-    scheduleRenderRichContentChipPromptsFromResponse([
+    scheduleAttachRichContentChipPromptsFromResponse([
         ...cxResponseMessagesMerged,
         event && event.detail
     ].filter(Boolean));
@@ -19126,9 +19126,10 @@ function normalizePayloadArrayForWeb_(raw) {
 
 /**
  * Dialogflow Messenger renders `richContent` chips on web but ignores prompt/message
- * fields inside the chip object. Render those explicit prompts as a normal bot line.
+ * fields inside the chip object. We collect the prompt + chip labels so the prompt
+ * can be attached to the rendered chips instead of becoming a separate message.
  * @param {unknown} node
- * @param {Set<string>} out
+ * @param {Array<{ prompt: string, labels: string[] }>} out
  * @param {WeakSet<object>} seen
  * @param {number} depth
  */
@@ -19170,13 +19171,25 @@ function collectRichContentChipPrompts_(node, out, seen, depth) {
                     chip.title ?? chip.text ?? chip.message ?? chip.prompt ?? chip.subtitle
                 );
                 if (prompt) {
-                    out.add(prompt);
+                    const labels = Array.isArray(chip.options)
+                        ? chip.options.map((option) => {
+                            if (typeof option === "string") {
+                                return option.trim();
+                            }
+                            if (!option || typeof option !== "object" || Array.isArray(option)) {
+                                return "";
+                            }
+                            const opt = /** @type {Record<string, unknown>} */ (option);
+                            return unwrapPayloadStringField(opt.text ?? opt.label ?? opt.title);
+                        }).filter(Boolean)
+                        : [];
+                    out.push({ prompt, labels });
                 }
             }
         }
     }
 
-    for (const key of ["payload", "customPayload", "data", "message", "responseMessage"]) {
+    for (const key of ["payload", "customPayload", "data", "raw", "message", "messages", "responseMessage"]) {
         if (Object.prototype.hasOwnProperty.call(normalized, key)) {
             collectRichContentChipPrompts_(normalized[key], out, seen, depth + 1);
         }
@@ -19203,14 +19216,35 @@ function collectRichContentChipPrompts_(node, out, seen, depth) {
     }
 }
 
-function extractRichContentChipPromptText(message) {
+function extractRichContentChipPromptSpecs(message) {
     if (!message || typeof message !== "object") {
-        return "";
+        return [];
     }
     const m = /** @type {Record<string, unknown>} */ (message);
-    const prompts = new Set();
-    collectRichContentChipPrompts_(m.payload ?? m.customPayload ?? m, prompts, new WeakSet(), 0);
-    return Array.from(prompts).join("\n\n");
+    /** @type {Array<{ prompt: string, labels: string[] }>} */
+    const specs = [];
+    collectRichContentChipPrompts_(m.payload ?? m.customPayload ?? m, specs, new WeakSet(), 0);
+    return specs;
+}
+
+function collectRichContentChipPromptSpecsFromResponse(messages) {
+    if (!Array.isArray(messages) || messages.length === 0) {
+        return [];
+    }
+    /** @type {Array<{ prompt: string, labels: string[] }>} */
+    const specs = [];
+    const seen = new Set();
+    for (const message of messages) {
+        for (const spec of extractRichContentChipPromptSpecs(message)) {
+            const key = `${spec.prompt}::${spec.labels.join("|")}`;
+            if (!spec.prompt || seen.has(key)) {
+                continue;
+            }
+            seen.add(key);
+            specs.push(spec);
+        }
+    }
+    return specs;
 }
 
 function renderPlainMessagePayloadsFromResponse(messages) {
@@ -19230,30 +19264,71 @@ function renderPlainMessagePayloadsFromResponse(messages) {
     }
 }
 
-function renderRichContentChipPromptsFromResponse(messages) {
-    const ms = activeDfMessenger;
-    if (!ms || typeof ms.renderCustomText !== "function" || !Array.isArray(messages)) {
-        return;
+/** @param {Element} el @param {string[]} labels */
+function elementLooksLikeChipOption_(el, labels) {
+    if (!labels.length || !(el instanceof HTMLElement)) {
+        return false;
     }
-    /** @type {Set<string>} */
-    const seen = new Set();
-    for (const message of messages) {
-        const text = extractRichContentChipPromptText(message);
-        if (!text || seen.has(text)) {
-            continue;
-        }
-        seen.add(text);
-        ms.renderCustomText(text, true);
+    const txt = (el.textContent || "").trim().replace(/\s+/g, " ");
+    if (!txt) {
+        return false;
     }
+    return labels.some((label) => txt === label || txt.includes(label));
 }
 
-function scheduleRenderRichContentChipPromptsFromResponse(messages) {
-    if (!Array.isArray(messages) || messages.length === 0) {
+/** @param {{ prompt: string, labels: string[] }} spec */
+function attachChipPromptNearRenderedChips_(spec) {
+    const ms = activeDfMessenger;
+    if (!ms || !spec.prompt || !spec.labels.length) {
+        return false;
+    }
+    const roots = collectSearchRoots(ms);
+    for (const root of roots) {
+        if (!root || typeof root.querySelectorAll !== "function") {
+            continue;
+        }
+        const candidates = root.querySelectorAll("button, [role='button'], df-chip, [class*='chip' i]");
+        for (const candidate of candidates) {
+            if (root === document && !ms.contains(candidate)) {
+                continue;
+            }
+            if (!elementLooksLikeChipOption_(candidate, spec.labels)) {
+                continue;
+            }
+            const chipGroup = candidate.parentElement || candidate;
+            const parent = chipGroup.parentElement;
+            if (!parent || parent.querySelector("[data-dfchat-rich-chip-prompt='1']")) {
+                return true;
+            }
+            const prompt = document.createElement("div");
+            prompt.dataset.dfchatRichChipPrompt = "1";
+            prompt.textContent = spec.prompt;
+            prompt.style.cssText = [
+                "font: 500 13px/1.35 Manrope, Segoe UI, sans-serif",
+                "color: #0c4a6e",
+                "margin: 0 0 6px 0",
+                "padding: 0",
+                "white-space: pre-wrap"
+            ].join(";");
+            parent.insertBefore(prompt, chipGroup);
+            return true;
+        }
+    }
+    return false;
+}
+
+function scheduleAttachRichContentChipPromptsFromResponse(messages) {
+    const specs = collectRichContentChipPromptSpecsFromResponse(messages);
+    if (!specs.length) {
         return;
     }
-    window.setTimeout(() => {
-        renderRichContentChipPromptsFromResponse(messages);
-    }, 900);
+    [250, 700, 1400, 2400, 3600].forEach((ms) => {
+        window.setTimeout(() => {
+            for (const spec of specs) {
+                attachChipPromptNearRenderedChips_(spec);
+            }
+        }, ms);
+    });
 }
 
 function convertStructFieldsToObject(fields) {
