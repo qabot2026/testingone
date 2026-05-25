@@ -455,26 +455,16 @@ async function sendWhatsappImage_(input) {
  * @param {{ to: string, link: string, filename?: string, caption?: string }} input
  */
 async function sendWhatsappDocument_(input) {
-    const displayText = waShortTitle_(trim_(input.filename) || "Download", 20);
-    const bodyText = waShortTitle_(
-        formatWebMarkdownForWhatsapp_(input.caption || "Your document is ready."),
-        1024
-    );
+    const document = { link: input.link };
+    const filename = waShortTitle_(trim_(input.filename) || "Document", 240);
+    if (filename) {
+        document.filename = filename;
+    }
     return whatsappGraphPost_({
         messaging_product: "whatsapp",
         to: input.to,
-        type: "interactive",
-        interactive: {
-            type: "cta_url",
-            body: { text: bodyText },
-            action: {
-                name: "cta_url",
-                parameters: {
-                    display_text: displayText,
-                    url: input.link
-                }
-            }
-        }
+        type: "document",
+        document
     });
 }
 
@@ -949,8 +939,7 @@ async function sendWhatsappCxReply_(input) {
                 await sendWhatsappDocument_({
                     to: input.to,
                     link: doc.url,
-                    filename: doc.name,
-                    caption: "Tap below to download the document."
+                    filename: doc.name
                 });
             } catch (e) {
                 log_("rich_document_skip", {
@@ -962,6 +951,7 @@ async function sendWhatsappCxReply_(input) {
                 });
             }
         }
+        return;
     }
 
     if (parts.cardCarousel?.cards?.length) {
