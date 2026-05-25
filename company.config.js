@@ -223,8 +223,8 @@ window.COMPANY_CHAT_UI_CONFIG = {
        */
       richContent: {
         infoCardImage: {
-          widthPx: 60,
-          heightPx: 40,
+          widthPx: 40,
+          heightPx: 20,
           objectFit: "contain"
         }
       },
