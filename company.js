@@ -10343,6 +10343,7 @@ function isClickInMessengerChatTitlebar(eventPath) {
 
 const IMAGE_LIGHTBOX_ID = "dfchat-image-lightbox";
 const IMAGE_LIGHTBOX_IMG_ID = "dfchat-image-lightbox-img";
+const IMAGE_LIGHTBOX_CAPTION_ID = "dfchat-image-lightbox-caption";
 const IMAGE_LIGHTBOX_CLOSE_ID = "dfchat-image-lightbox-close";
 const IMAGE_LIGHTBOX_PREV_ID = "dfchat-image-lightbox-prev";
 const IMAGE_LIGHTBOX_NEXT_ID = "dfchat-image-lightbox-next";
@@ -10467,6 +10468,8 @@ function syncMobileLightboxParkStateFromChat() {
 
 /** @type {string[]} */
 let imageLightboxSrcs = [];
+/** @type {string[]} */
+let imageLightboxTitles = [];
 let imageLightboxIndex = 0;
 
 function setImageLightboxIndex(nextIndex) {
@@ -10476,6 +10479,7 @@ function setImageLightboxIndex(nextIndex) {
     const lbDoc = getDfchatLightboxDocument();
     const overlay = lbDoc.getElementById(IMAGE_LIGHTBOX_ID);
     const img = lbDoc.getElementById(IMAGE_LIGHTBOX_IMG_ID);
+    const caption = lbDoc.getElementById(IMAGE_LIGHTBOX_CAPTION_ID);
     const prev = lbDoc.getElementById(IMAGE_LIGHTBOX_PREV_ID);
     const next = lbDoc.getElementById(IMAGE_LIGHTBOX_NEXT_ID);
     if (!overlay || !img) {
@@ -10485,6 +10489,12 @@ function setImageLightboxIndex(nextIndex) {
     const i = ((nextIndex % n) + n) % n;
     imageLightboxIndex = i;
     img.src = imageLightboxSrcs[i];
+    const title = (imageLightboxTitles[i] || "").trim();
+    img.alt = title;
+    if (caption) {
+        caption.textContent = title;
+        caption.style.display = title ? "block" : "none";
+    }
     if (prev) {
         prev.style.display = n > 1 ? "grid" : "none";
     }
@@ -10561,6 +10571,36 @@ function isInsideMessengerLauncherBubbleGraphic(el) {
     return false;
 }
 
+function imageLightboxTitleFromImage(img) {
+    if (!img || typeof img.getAttribute !== "function") {
+        return "";
+    }
+    const direct = (img.getAttribute("alt") || img.getAttribute("title") || img.getAttribute("aria-label") || "").trim();
+    if (direct) {
+        return direct.slice(0, 160);
+    }
+    const next = img.nextElementSibling;
+    if (next && typeof next.textContent === "string") {
+        const t = next.textContent.trim();
+        if (t) {
+            return t.slice(0, 160);
+        }
+    }
+    const parent = img.parentElement;
+    if (parent) {
+        const afterImg = Array.from(parent.children || []).filter((el) => el !== img);
+        for (const el of afterImg) {
+            if (typeof el.textContent === "string") {
+                const t = el.textContent.trim();
+                if (t) {
+                    return t.slice(0, 160);
+                }
+            }
+        }
+    }
+    return "";
+}
+
 function bindLightboxToMessengerImages(dfMessenger) {
     const ms = dfMessenger || activeDfMessenger;
     if (!ms) {
@@ -10634,20 +10674,27 @@ function bindLightboxToMessengerImages(dfMessenger) {
                     walk = walk.parentElement;
                 }
                 let srcs = [];
+                let titles = [];
                 if (scopeEl && typeof scopeEl.querySelectorAll === "function") {
                     try {
-                        srcs = Array.from(scopeEl.querySelectorAll("img"))
-                            .map((el) => (el.getAttribute ? (el.getAttribute("src") || "") : ""))
-                            .filter((u) => u && !u.includes("dfchat-"));
+                        const scopedImgs = Array.from(scopeEl.querySelectorAll("img"))
+                            .filter((el) => {
+                                const u = el.getAttribute ? (el.getAttribute("src") || "") : "";
+                                return u && !u.includes("dfchat-");
+                            });
+                        srcs = scopedImgs.map((el) => (el.getAttribute ? (el.getAttribute("src") || "") : ""));
+                        titles = scopedImgs.map((el) => imageLightboxTitleFromImage(el));
                     } catch {
                         srcs = [];
+                        titles = [];
                     }
                 }
                 if (!srcs.length) {
                     srcs = [src];
+                    titles = [imageLightboxTitleFromImage(img)];
                 }
                 const idx = Math.max(0, srcs.indexOf(src));
-                openImageLightbox(srcs, idx, img.getAttribute ? img.getAttribute("alt") : "");
+                openImageLightbox(srcs, idx, titles);
             }, true);
         }
     }
@@ -10690,6 +10737,28 @@ function ensureImageLightboxMounted() {
                 dfchatLightboxCircleCloseBtnCss()
             ].join(";");
         }
+        if (!lbDoc.getElementById(IMAGE_LIGHTBOX_CAPTION_ID)) {
+            const caption = lbDoc.createElement("div");
+            caption.id = IMAGE_LIGHTBOX_CAPTION_ID;
+            caption.style.cssText = [
+                "position:absolute",
+                "left:50%",
+                "bottom:18px",
+                "transform:translateX(-50%)",
+                "max-width:min(92vw, 980px)",
+                "box-sizing:border-box",
+                "padding:9px 14px",
+                "border-radius:999px",
+                "background:rgba(15,23,42,0.72)",
+                "color:#fff",
+                "font:700 14px/1.3 Manrope, Segoe UI, system-ui, sans-serif",
+                "text-align:center",
+                "box-shadow:0 12px 36px rgba(0,0,0,0.28)",
+                "display:none",
+                "pointer-events:none"
+            ].join(";");
+            existing.appendChild(caption);
+        }
         return;
     }
     const overlay = lbDoc.createElement("div");
@@ -10713,13 +10782,33 @@ function ensureImageLightboxMounted() {
     img.alt = "";
     img.style.cssText = [
         "max-width:min(96vw, 1100px)",
-        "max-height:92vh",
+        "max-height:calc(92vh - 54px)",
         "width:auto",
         "height:auto",
         "display:block",
         "border-radius:14px",
         "box-shadow:0 24px 80px rgba(0,0,0,0.55)",
         "background:#fff"
+    ].join(";");
+
+    const caption = lbDoc.createElement("div");
+    caption.id = IMAGE_LIGHTBOX_CAPTION_ID;
+    caption.style.cssText = [
+        "position:absolute",
+        "left:50%",
+        "bottom:18px",
+        "transform:translateX(-50%)",
+        "max-width:min(92vw, 980px)",
+        "box-sizing:border-box",
+        "padding:9px 14px",
+        "border-radius:999px",
+        "background:rgba(15,23,42,0.72)",
+        "color:#fff",
+        "font:700 14px/1.3 Manrope, Segoe UI, system-ui, sans-serif",
+        "text-align:center",
+        "box-shadow:0 12px 36px rgba(0,0,0,0.28)",
+        "display:none",
+        "pointer-events:none"
     ].join(";");
 
     const closeBtn = lbDoc.createElement("button");
@@ -10762,6 +10851,7 @@ function ensureImageLightboxMounted() {
     const nextBtn = mkArrow(IMAGE_LIGHTBOX_NEXT_ID, "Next image", "›");
 
     overlay.appendChild(img);
+    overlay.appendChild(caption);
     overlay.appendChild(closeBtn);
     overlay.appendChild(prevBtn);
     overlay.appendChild(nextBtn);
@@ -10832,7 +10922,7 @@ function ensureImageLightboxMounted() {
     }
 }
 
-function openImageLightbox(srcs, index, alt) {
+function openImageLightbox(srcs, index, altOrTitles) {
     ensureMobileLightboxParkStyle();
     if (dfchatLightboxShouldStayClosed()) {
         return;
@@ -10854,9 +10944,14 @@ function openImageLightbox(srcs, index, alt) {
     if (imageLightboxSrcs.length === 0) {
         return;
     }
-    img.alt = typeof alt === "string" ? alt : "";
+    if (Array.isArray(altOrTitles)) {
+        imageLightboxTitles = altOrTitles.map((v) => (typeof v === "string" ? v.trim() : ""));
+    } else {
+        const one = typeof altOrTitles === "string" ? altOrTitles.trim() : "";
+        imageLightboxTitles = imageLightboxSrcs.map((_, i) => (i === imageLightboxIndex ? one : ""));
+    }
+    img.alt = imageLightboxTitles[imageLightboxIndex] || "";
     setImageLightboxIndex(imageLightboxIndex);
-    img.alt = typeof alt === "string" ? alt : "";
     overlay.style.display = "flex";
     setDfchatLightboxPageScrollLocked(true);
 }
@@ -10865,10 +10960,16 @@ function closeImageLightbox() {
     const lbDoc = getDfchatLightboxDocument();
     const overlay = lbDoc.getElementById(IMAGE_LIGHTBOX_ID);
     const img = lbDoc.getElementById(IMAGE_LIGHTBOX_IMG_ID);
+    const caption = lbDoc.getElementById(IMAGE_LIGHTBOX_CAPTION_ID);
     if (img) {
         img.removeAttribute("src");
     }
+    if (caption) {
+        caption.textContent = "";
+        caption.style.display = "none";
+    }
     imageLightboxSrcs = [];
+    imageLightboxTitles = [];
     imageLightboxIndex = 0;
     if (overlay) {
         overlay.style.display = "none";
@@ -11572,7 +11673,11 @@ function scheduleInjectInlineGalleryCarousel(dfMessenger, urlsOrItems, messages,
     window.setTimeout(() => {
         if (!injected) {
             try {
-                openImageLightbox(list.map((it) => it.url), 0, "");
+                openImageLightbox(
+                    list.map((it) => it.url),
+                    0,
+                    list.map((it) => it.title || "")
+                );
             } catch {
                 /* ignore */
             }
@@ -13070,7 +13175,7 @@ function scheduleInjectInlineCardCarousel(dfMessenger, cards, messageText) {
             if (c.imageUrl) {
                 const img = document.createElement("img");
                 img.src = c.imageUrl;
-                img.alt = "";
+                img.alt = c.title || c.subtitle || "";
                 img.loading = i < 3 ? "eager" : "lazy";
                 img.decoding = "async";
                 img.setAttribute("draggable", "false");
@@ -14170,17 +14275,24 @@ function attachImageLightboxClickHandler() {
             }
         }
         let srcs = [];
+        let titles = [];
         if (row) {
             try {
-                srcs = Array.from(row.querySelectorAll("img"))
-                    .map((el) => (el && el.getAttribute ? el.getAttribute("src") : "") || "")
-                    .filter((u) => u && !u.includes("dfchat-"));
+                const rowImgs = Array.from(row.querySelectorAll("img"))
+                    .filter((el) => {
+                        const u = (el && el.getAttribute ? el.getAttribute("src") : "") || "";
+                        return u && !u.includes("dfchat-");
+                    });
+                srcs = rowImgs.map((el) => (el && el.getAttribute ? el.getAttribute("src") : "") || "");
+                titles = rowImgs.map((el) => imageLightboxTitleFromImage(el));
             } catch {
                 srcs = [];
+                titles = [];
             }
         }
         if (!srcs || srcs.length === 0) {
             srcs = [src];
+            titles = [imageLightboxTitleFromImage(t)];
         }
         const fromCarouselRow = !!(row && srcs.length >= 2);
         const fromApprovedBucket = /storage\.googleapis\.com\/companybucket\/Images\//i.test(src);
@@ -14190,7 +14302,7 @@ function attachImageLightboxClickHandler() {
         const idx = Math.max(0, srcs.indexOf(src));
         event.preventDefault?.();
         event.stopPropagation?.();
-        openImageLightbox(srcs, idx, t.getAttribute ? t.getAttribute("alt") : "");
+        openImageLightbox(srcs, idx, titles);
     }, true);
 }
 
