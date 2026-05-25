@@ -241,10 +241,12 @@ export function normalizeSelectOptions_(opts) {
  * @typedef {{ url: string, title: string }} GalleryItem
  * @typedef {{ id: string, title: string, subtitle: string, imageUrl: string, ctaLabel: string, ctaValue: string }} CarouselCard
  * @typedef {{ label: string, value: string }} ChoiceOption
+ * @typedef {{ url: string, name: string }} DocumentFile
  * @typedef {{
  *   texts: string[],
  *   infoLines: string[],
  *   images: string[],
+ *   documents: DocumentFile[],
  *   choices: ChoiceOption[],
  *   choicePrompt: string,
  *   optionsDisplay: "numbered" | "carousel",
@@ -377,6 +379,48 @@ function normalizeCarouselCards_(rawCards) {
         out.push({ id, title, subtitle, imageUrl, ctaLabel, ctaValue });
     }
     return out;
+}
+
+/** @param {Record<string, unknown>} file */
+function documentUrlFromFile_(file) {
+    const direct = payloadString_(
+        file.href ?? file.url ?? file.link ?? file.rawUrl ?? file.downloadUrl ?? file.download_url
+    );
+    if (direct) {
+        return direct;
+    }
+    const anchor = file.anchor;
+    if (anchor && typeof anchor === "object" && !Array.isArray(anchor)) {
+        const a = /** @type {Record<string, unknown>} */ (anchor);
+        return payloadString_(a.href ?? a.url ?? a.link);
+    }
+    return "";
+}
+
+/**
+ * Dialogflow Messenger `files` richContent → WhatsApp document links.
+ * @param {Record<string, unknown>} item
+ * @returns {DocumentFile[]}
+ */
+function normalizeRichFiles_(item) {
+    const rawFiles = Array.isArray(item.files) ? item.files : [item];
+    /** @type {DocumentFile[]} */
+    const out = [];
+    for (const raw of rawFiles) {
+        if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+            continue;
+        }
+        const file = /** @type {Record<string, unknown>} */ (raw);
+        const url = documentUrlFromFile_(file);
+        if (!isHttpsUrl_(url)) {
+            continue;
+        }
+        const name = payloadString_(
+            file.name ?? file.title ?? file.text ?? file.label ?? item.name ?? item.title
+        ) || "Download document";
+        out.push({ url, name: name.slice(0, 240) });
+    }
+    return out.slice(0, 10);
 }
 
 /**
@@ -653,6 +697,8 @@ function absorbRichContent_(parts, body) {
                 if (alt) {
                     parts.infoLines.push(alt);
                 }
+            } else if (type === "files" || type === "file") {
+                parts.documents.push(...normalizeRichFiles_(item));
             } else if (type === "video") {
                 mergeVideoFromItem_(parts, item);
             }
@@ -670,6 +716,7 @@ export function extractCxResponse_(data) {
         texts: [],
         infoLines: [],
         images: [],
+        documents: [],
         choices: [],
         choicePrompt: "",
         optionsDisplay: "carousel",

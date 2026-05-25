@@ -452,6 +452,26 @@ async function sendWhatsappImage_(input) {
 }
 
 /**
+ * @param {{ to: string, link: string, filename?: string, caption?: string }} input
+ */
+async function sendWhatsappDocument_(input) {
+    const document = { link: input.link };
+    const filename = waShortTitle_(trim_(input.filename) || "Document", 240);
+    if (filename) {
+        document.filename = filename;
+    }
+    if (input.caption) {
+        document.caption = formatWebMarkdownForWhatsapp_(input.caption).slice(0, 1024);
+    }
+    return whatsappGraphPost_({
+        messaging_product: "whatsapp",
+        to: input.to,
+        type: "document",
+        document
+    });
+}
+
+/**
  * @param {{ to: string, body: string, labels: string[], idPrefix?: string }} input
  */
 async function sendWhatsappChoiceMenu_(input) {
@@ -912,6 +932,31 @@ async function sendWhatsappCxReply_(input) {
         }
     }
 
+    if (!parts.gallery && !parts.cardCarousel && parts.documents.length > 0) {
+        if (leadText) {
+            await sendWhatsappText_({ to: input.to, body: leadText });
+            leadText = "";
+        }
+        for (const doc of parts.documents) {
+            try {
+                await sendWhatsappDocument_({
+                    to: input.to,
+                    link: doc.url,
+                    filename: doc.name,
+                    caption: doc.name
+                });
+            } catch (e) {
+                log_("rich_document_skip", {
+                    error: e && e.message ? String(e.message).slice(0, 160) : String(e)
+                });
+                await sendWhatsappText_({
+                    to: input.to,
+                    body: `${doc.name}: ${doc.url}`
+                });
+            }
+        }
+    }
+
     if (parts.cardCarousel?.cards?.length) {
         const agentText = agentTextBeforePayload_(parts);
         if (agentText) {
@@ -988,7 +1033,7 @@ async function sendWhatsappCxReply_(input) {
         return;
     }
 
-    if (!leadText && parts.images.length === 0) {
+    if (!leadText && parts.images.length === 0 && parts.documents.length === 0) {
         await sendWhatsappText_({
             to: input.to,
             body: "Sorry, I could not process that. Please try again."
@@ -1657,6 +1702,16 @@ async function sendPageCxReply_(input) {
         }
     }
 
+    if (!parts.gallery && !parts.cardCarousel && parts.documents.length > 0) {
+        const documentLines = parts.documents.map((doc) => `${doc.name}: ${doc.url}`);
+        const documentText = documentLines.join("\n\n");
+        await sendPageText_(
+            input.recipientId,
+            leadText ? `${leadText}\n\n${documentText}` : documentText
+        );
+        leadText = "";
+    }
+
     if (parts.cardCarousel?.cards?.length) {
         try {
             await sendPageGenericCarousel_({
@@ -1723,7 +1778,7 @@ async function sendPageCxReply_(input) {
         return;
     }
 
-    if (!leadText && parts.images.length === 0) {
+    if (!leadText && parts.images.length === 0 && parts.documents.length === 0) {
         await sendPageText_(input.recipientId, "Sorry, I could not process that. Please try again.");
     }
 }
@@ -1913,7 +1968,8 @@ async function processInboundMetaMessage_(input) {
         video_title: trim_(parts.video?.title) || "",
         form: !!parts.form,
         live_agent: !!parts.liveAgent,
-        image_count: parts.images.length
+        image_count: parts.images.length,
+        document_count: parts.documents.length
     });
     if (parts.video?.url && !trim_(parts.video?.title)) {
         /** @type {string[]} */
