@@ -72,11 +72,11 @@ window.COMPANY_CHAT_UI_CONFIG = {
       // Space (px) between the persona row and the assistant message bubble below (0–64).
       gapBelowAssistantPx: 4,
       // User badge: small `translateX` right (px); negative values shift LEFT. On wide viewports adds `userPersonaShiftRightDeskExtraPx`; on ≤768px subtracts half of `userPersonaMobileNudgeLeftPx` (moves strip slightly left on phones).
-      userPersonaShiftRightPx: 6,
+      userPersonaShiftRightPx: 26,
       userPersonaShiftRightDeskExtraPx: 10,
       userPersonaMobileNudgeLeftPx: 38,
-      // Extra pull upward (adds to baseline −6px margin-top); desktop and mobile.
-      userPersonaNudgeUpPx: 4,
+      // Extra pull upward (adds to baseline -6px margin-top); negative values move the row down.
+      userPersonaNudgeUpPx: -6,
       threadAvatarSizePx: 28,
       emojiTime: {
         label: "🤖",
@@ -92,7 +92,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
         showTime: true,
         timeZone: "Asia/Kolkata",
         // Persona row: nudge avatar/time down (`offsetDownPx`); clock text only (`timeOffsetDownPx`).
-        offsetDownPx: 6,
+        offsetDownPx: 21,
         timeOffsetDownPx: 20,
         tightenBelowPx: 8,
         // ≤768px: shift bot persona img + time left (translateX) without affecting desktop.
