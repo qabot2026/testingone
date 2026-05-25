@@ -330,6 +330,40 @@ function waShortTitle_(text, maxLen) {
     return t.slice(0, Math.max(1, maxLen - 1)) + "…";
 }
 
+/**
+ * Convert the web-chat Markdown authored in Dialogflow into WhatsApp's formatting syntax.
+ * Web keeps the original text; this is applied only before sending to WhatsApp.
+ * @param {unknown} value
+ * @returns {string}
+ */
+function formatWebMarkdownForWhatsapp_(value) {
+    let s = value == null ? "" : String(value);
+    s = s.replace(/\r\n?/g, "\n");
+
+    // WhatsApp has no heading sizes. Show headings as bold text without the # markers.
+    s = s.replace(/^\s{0,3}#{1,6}\s+(.+?)\s*#*\s*$/gm, (_m, title) => `**${String(title).trim()}**`);
+
+    // Keep bullet lines valid after single-asterisk italic conversion.
+    s = s.replace(/^(\s*)\*\s+/gm, "$1- ");
+
+    /** @type {string[]} */
+    const tokens = [];
+    const stash = (text) => {
+        const idx = tokens.push(text) - 1;
+        return `\uE000${idx}\uE001`;
+    };
+
+    s = s.replace(/\*\*\*([^*\n]+?)\*\*\*/g, (_m, text) => stash(`*_${text}_*`));
+    s = s.replace(/\*\*([^*\n]+?)\*\*/g, (_m, text) => stash(`*${text}*`));
+    s = s.replace(/~~([^~\n]+?)~~/g, (_m, text) => stash(`~${text}~`));
+    s = s.replace(/`([^`\n]+?)`/g, (_m, text) => stash("```" + text + "```"));
+
+    // Convert remaining single-asterisk spans to WhatsApp italic. Bullet lines were handled above.
+    s = s.replace(/(^|[^*])\*([^*\n]+?)\*(?!\*)/g, (_m, prefix, text) => `${prefix}${stash(`_${text}_`)}`);
+
+    return s.replace(/\uE000(\d+)\uE001/g, (_m, idx) => tokens[Number(idx)] || "");
+}
+
 async function whatsappGraphPost_(payload) {
     const c = whatsappConfig_();
     const url = `https://graph.facebook.com/${c.graphVersion}/${c.phoneNumberId}/messages`;
@@ -364,11 +398,12 @@ async function whatsappGraphPost_(payload) {
  * @param {{ to: string, body: string }} input
  */
 async function sendWhatsappText_(input) {
+    const body = formatWebMarkdownForWhatsapp_(input.body).slice(0, 4096);
     return whatsappGraphPost_({
         messaging_product: "whatsapp",
         to: input.to,
         type: "text",
-        text: { body: input.body.slice(0, 4096) }
+        text: { body }
     });
 }
 
@@ -378,7 +413,7 @@ async function sendWhatsappText_(input) {
 async function sendWhatsappImage_(input) {
     const image = { link: input.link };
     if (input.caption) {
-        image.caption = input.caption.slice(0, 1024);
+        image.caption = formatWebMarkdownForWhatsapp_(input.caption).slice(0, 1024);
     }
     return whatsappGraphPost_({
         messaging_product: "whatsapp",
@@ -394,7 +429,7 @@ async function sendWhatsappImage_(input) {
 async function sendWhatsappChoiceMenu_(input) {
     const labels = input.labels.slice(0, 10);
     const idPrefix = input.idPrefix || "chip";
-    const body = waShortTitle_(trim_(input.body), 1024);
+    const body = waShortTitle_(formatWebMarkdownForWhatsapp_(trim_(input.body)), 1024);
     if (!body || labels.length === 0) {
         return null;
     }
@@ -484,7 +519,7 @@ async function sendWhatsappCardInteractive_(input) {
     /** @type {Record<string, unknown>} */
     const interactive = {
         type: "button",
-        body: { text: bodyText.slice(0, 1024) },
+        body: { text: formatWebMarkdownForWhatsapp_(bodyText).slice(0, 1024) },
         action: {
             buttons: [
                 {
@@ -591,7 +626,7 @@ async function sendWhatsappCardCarouselWithOptions_(to, sessionId, cards, parts)
                     type: "interactive",
                     interactive: {
                         type: "button",
-                        body: { text: body.slice(0, 1024) },
+                        body: { text: formatWebMarkdownForWhatsapp_(body).slice(0, 1024) },
                         action: {
                             buttons: [
                                 {
@@ -1110,7 +1145,7 @@ async function sendWhatsappNativeVideo_(input) {
         type: "video",
         video: {
             link: input.url,
-            ...(input.message ? { caption: input.message.slice(0, 1024) } : {})
+            ...(input.message ? { caption: formatWebMarkdownForWhatsapp_(input.message).slice(0, 1024) } : {})
         }
     });
 }
@@ -1126,7 +1161,7 @@ async function sendWhatsappVideoLink_(input) {
         interactive: {
             type: "cta_url",
             body: {
-                text: waShortTitle_(input.message || "Tap below to watch the video:", 1024)
+                text: waShortTitle_(formatWebMarkdownForWhatsapp_(input.message || "Tap below to watch the video:"), 1024)
             },
             action: {
                 name: "cta_url",
