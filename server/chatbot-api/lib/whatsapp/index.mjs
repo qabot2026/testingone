@@ -364,6 +364,34 @@ function formatWebMarkdownForWhatsapp_(value) {
     return s.replace(/\uE000(\d+)\uE001/g, (_m, idx) => tokens[Number(idx)] || "");
 }
 
+/**
+ * Facebook Messenger / Instagram DMs do not reliably render Markdown. Convert web-authored
+ * Markdown into clean plain text while preserving line breaks and list indentation.
+ * @param {unknown} value
+ * @returns {string}
+ */
+function formatWebMarkdownForPage_(value) {
+    let s = value == null ? "" : String(value);
+    s = s.replace(/\r\n?/g, "\n");
+    s = s.replace(/^\s{0,3}#{1,6}\s+(.+?)\s*#*\s*$/gm, (_m, title) => String(title).trim());
+    s = s.replace(/^(\s*)\*\s+/gm, "$1- ");
+
+    /** @type {string[]} */
+    const tokens = [];
+    const stash = (text) => {
+        const idx = tokens.push(text) - 1;
+        return `\uE000${idx}\uE001`;
+    };
+
+    s = s.replace(/\*\*\*([^*\n]+?)\*\*\*/g, (_m, text) => stash(String(text)));
+    s = s.replace(/\*\*([^*\n]+?)\*\*/g, (_m, text) => stash(String(text)));
+    s = s.replace(/~~([^~\n]+?)~~/g, (_m, text) => stash(String(text)));
+    s = s.replace(/`([^`\n]+?)`/g, (_m, text) => stash(String(text)));
+    s = s.replace(/(^|[^*])\*([^*\n]+?)\*(?!\*)/g, (_m, prefix, text) => `${prefix}${stash(String(text))}`);
+
+    return s.replace(/\uE000(\d+)\uE001/g, (_m, idx) => tokens[Number(idx)] || "");
+}
+
 async function whatsappGraphPost_(payload) {
     const c = whatsappConfig_();
     const url = `https://graph.facebook.com/${c.graphVersion}/${c.phoneNumberId}/messages`;
@@ -1282,7 +1310,7 @@ async function sendPageMessage_(input) {
 async function sendPageText_(recipientId, text) {
     return sendPageMessage_({
         recipientId,
-        message: { text: text.slice(0, 2000) }
+        message: { text: formatWebMarkdownForPage_(text).slice(0, 2000) }
     });
 }
 
@@ -1294,14 +1322,14 @@ async function sendPageQuickReplies_(input) {
     const values = input.values.slice(0, 13);
     rememberChoiceOptions_(input.sessionId, labels, values.length ? values : labels);
     const prompt = trim_(input.prompt);
-    const text = prompt || labels.map((label, i) => `${i + 1}. ${label}`).join("\n");
+    const text = formatWebMarkdownForPage_(prompt || labels.map((label, i) => `${i + 1}. ${label}`).join("\n"));
     return sendPageMessage_({
         recipientId: input.recipientId,
         message: {
             text: waShortTitle_(text, 2000),
             quick_replies: labels.map((label, i) => ({
                 content_type: "text",
-                title: waShortTitle_(label, 20),
+                title: waShortTitle_(formatWebMarkdownForPage_(label), 20),
                 payload: (values[i] || label).slice(0, 1000)
             }))
         }
@@ -1314,18 +1342,18 @@ async function sendPageQuickReplies_(input) {
  */
 function pageGenericElementForCard_(input) {
     const card = input.card;
-    const title = waShortTitle_(card.title || "Option", 80);
+    const title = waShortTitle_(formatWebMarkdownForPage_(card.title || "Option"), 80);
     if (!title) {
         return null;
     }
-    const subtitleRaw = waShortTitle_(card.subtitle || "", 80);
+    const subtitleRaw = waShortTitle_(formatWebMarkdownForPage_(card.subtitle || ""), 80);
     /** @type {Record<string, unknown>} */
     const el = {
         title,
         buttons: [
             {
                 type: "postback",
-                title: waShortTitle_(card.ctaLabel || "View", 20),
+                title: waShortTitle_(formatWebMarkdownForPage_(card.ctaLabel || "View"), 20),
                 payload: (card.ctaValue || card.title || card.subtitle).slice(0, 1000)
             }
         ]
@@ -1393,7 +1421,7 @@ async function sendPageGallery_(input) {
         : input.urls.filter(isHttpsUrl_).slice(0, 10).map((url) => ({ url, title: "" }));
     if (items.length >= 2) {
         const elements = items.map((row, i) => ({
-            title: trim_(row.title) || `Image ${i + 1}`,
+            title: formatWebMarkdownForPage_(trim_(row.title)) || `Image ${i + 1}`,
             image_url: row.url,
             buttons: [
                 {
@@ -1552,7 +1580,7 @@ async function sendPageVideo_(input) {
                     type: "template",
                     payload: {
                         template_type: "button",
-                        text: waShortTitle_(message || "Tap below to watch the video:", 640),
+                        text: waShortTitle_(formatWebMarkdownForPage_(message || "Tap below to watch the video:"), 640),
                         buttons: [{ type: "web_url", url: openUrl, title: "Watch video" }]
                     }
                 }
@@ -1582,7 +1610,7 @@ async function sendPageVideo_(input) {
                 type: "template",
                 payload: {
                     template_type: "button",
-                    text: waShortTitle_(message || "Tap below to watch the video:", 640),
+                    text: waShortTitle_(formatWebMarkdownForPage_(message || "Tap below to watch the video:"), 640),
                     buttons: [{ type: "web_url", url, title: "Watch video" }]
                 }
             }
