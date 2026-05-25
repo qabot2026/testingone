@@ -249,7 +249,7 @@ export function normalizeSelectOptions_(opts) {
  *   documents: DocumentFile[],
  *   choices: ChoiceOption[],
  *   choicePrompt: string,
- *   optionsDisplay: "numbered" | "carousel",
+ *   optionsDisplay: "numbered" | "carousel" | "menu",
  *   Numbered → WhatsApp text list (1. 2. 3.); web widget keeps chip buttons.
  *   Carousel/interactive → WhatsApp button or list menu; web widget keeps chip buttons.
  *   Set via payload: optionsDisplay "numbered" | "interactive" (aliases: carousel, buttons, chips).
@@ -470,7 +470,7 @@ function mergeVideoFromItem_(parts, item) {
 
 /**
  * @param {Record<string, unknown>} body
- * @returns {"numbered" | "carousel" | null}
+ * @returns {"numbered" | "carousel" | "menu" | null}
  */
 export function parseOptionsDisplay_(body) {
     const raw = payloadString_(
@@ -484,7 +484,10 @@ export function parseOptionsDisplay_(body) {
     if (raw === "numbered" || raw === "numbering" || raw === "number" || raw === "numbers") {
         return "numbered";
     }
-    if (raw === "carousel" || raw === "buttons" || raw === "chips" || raw === "menu" || raw === "interactive") {
+    if (raw === "menu" || raw === "list" || raw === "list_menu") {
+        return "menu";
+    }
+    if (raw === "carousel" || raw === "buttons" || raw === "chips" || raw === "interactive") {
         return "carousel";
     }
     return null;
@@ -651,6 +654,7 @@ function absorbRichContent_(parts, body) {
             if (!item || typeof item !== "object") {
                 continue;
             }
+            absorbOptionsDisplay_(parts, /** @type {Record<string, unknown>} */ (item));
             const type = payloadString_(item.type).toLowerCase();
             if (type === "chips") {
                 for (const o of normalizeSelectOptions_(item.options)) {

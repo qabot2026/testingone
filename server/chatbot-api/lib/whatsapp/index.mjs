@@ -475,7 +475,7 @@ async function sendWhatsappDocument_(input) {
 }
 
 /**
- * @param {{ to: string, body: string, labels: string[], idPrefix?: string }} input
+ * @param {{ to: string, body: string, labels: string[], idPrefix?: string, forceList?: boolean }} input
  */
 async function sendWhatsappChoiceMenu_(input) {
     const labels = input.labels.slice(0, 10);
@@ -484,7 +484,7 @@ async function sendWhatsappChoiceMenu_(input) {
     if (!body || labels.length === 0) {
         return null;
     }
-    if (labels.length <= 3) {
+    if (labels.length <= 3 && !input.forceList) {
         return whatsappGraphPost_({
             messaging_product: "whatsapp",
             to: input.to,
@@ -722,7 +722,7 @@ async function sendWhatsappCardCarousel_(input) {
 }
 
 /**
- * @param {"numbered" | "carousel"} displayMode
+ * @param {"numbered" | "carousel" | "menu"} displayMode
  * @param {string} to
  * @param {string} sessionId
  * @param {{ label: string, value: string }[]} options
@@ -740,7 +740,7 @@ async function sendWhatsappOptions_(to, sessionId, options, menuPrompt, displayM
     const prompt = trim_(menuPrompt);
     const labels = options.map((o) => o.label);
     const numbered = options.map((opt, i) => `${i + 1}. ${opt.label}`).join("\n");
-    const mode = displayMode === "numbered" ? "numbered" : "carousel";
+    const mode = displayMode === "numbered" ? "numbered" : displayMode === "menu" ? "menu" : "carousel";
 
     if (mode === "numbered") {
         await sendWhatsappText_({
@@ -755,10 +755,11 @@ async function sendWhatsappOptions_(to, sessionId, options, menuPrompt, displayM
         to,
         body: menuBody,
         labels,
-        idPrefix: "chip"
+        idPrefix: "chip",
+        forceList: mode === "menu"
     });
     if (!sent) {
-        log_("choice_menu_empty", { mode: "carousel" });
+        log_("choice_menu_empty", { mode });
     }
 }
 
@@ -767,7 +768,7 @@ async function sendWhatsappOptions_(to, sessionId, options, menuPrompt, displayM
  * @param {string} sessionId
  * @param {{ label: string, value: string }[]} options
  * @param {string} menuPrompt
- * @param {"numbered" | "carousel"} displayMode
+ * @param {"numbered" | "carousel" | "menu"} displayMode
  */
 async function sendWhatsappChoiceMenuFromOptions_(to, sessionId, options, menuPrompt, displayMode) {
     await sendWhatsappOptions_(to, sessionId, options, menuPrompt, displayMode);
