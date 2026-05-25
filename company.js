@@ -11973,6 +11973,26 @@ function normalizeOpenVideoOptions(rawOptions) {
 }
 
 /**
+ * @param {Record<string, unknown> | null | undefined} body
+ * @returns {boolean}
+ */
+function payloadRequestsInlineMenuOptions_(body) {
+    if (!body || typeof body !== "object") {
+        return false;
+    }
+    const raw = unwrapPayloadStringField(
+        Object.prototype.hasOwnProperty.call(body, "optionsDisplay") ? body.optionsDisplay
+            : Object.prototype.hasOwnProperty.call(body, "options_display") ? body.options_display
+                : Object.prototype.hasOwnProperty.call(body, "optionsFormat") ? body.optionsFormat
+                    : Object.prototype.hasOwnProperty.call(body, "options_format") ? body.options_format
+                        : Object.prototype.hasOwnProperty.call(body, "choiceDisplay") ? body.choiceDisplay
+                            : Object.prototype.hasOwnProperty.call(body, "choice_display") ? body.choice_display
+                                : ""
+    ).toLowerCase();
+    return raw === "menu" || raw === "list" || raw === "list_menu";
+}
+
+/**
  * @param {unknown} raw
  * @returns {string}
  */
@@ -13444,6 +13464,103 @@ function inlineSelectOptionsSignature(options) {
 }
 
 /**
+ * @param {unknown} node
+ * @param {Record<string, unknown>[]} out
+ * @param {number} depth
+ * @returns {void}
+ */
+function collectRichContentMenuItems_(node, out, depth) {
+    if (depth > 8 || node == null) {
+        return;
+    }
+    if (Array.isArray(node)) {
+        for (let i = 0; i < node.length; i += 1) {
+            collectRichContentMenuItems_(node[i], out, depth + 1);
+        }
+        return;
+    }
+    if (typeof node !== "object") {
+        return;
+    }
+    const item = /** @type {Record<string, unknown>} */ (node);
+    if (Object.prototype.hasOwnProperty.call(item, "type")) {
+        out.push(item);
+    }
+}
+
+/**
+ * Dialogflow richContent `{ type: "chips", optionsDisplay: "menu" }` -> web dropdown.
+ * @param {Record<string, unknown> | null | undefined} pl
+ * @returns {{ options: { label: string, value: string }[], placeholder: string, messageText: string } | null}
+ */
+function extractRichContentInlineMenuFromPayload_(pl) {
+    if (!pl || typeof pl !== "object") {
+        return null;
+    }
+    const topLevelMenu = payloadRequestsInlineMenuOptions_(pl);
+    const richContent = pl.richContent;
+    if (!Array.isArray(richContent)) {
+        if (!topLevelMenu) {
+            return null;
+        }
+        const topOptions = normalizeOpenVideoOptions(pl.options);
+        if (topOptions.length === 0) {
+            return null;
+        }
+        const topMessage = normalizeOpenVideoMessage(pl.message || pl.text || pl.prompt || pl.title);
+        return {
+            options: topOptions,
+            placeholder: unwrapPayloadStringField(pl.placeholder).trim() || "Open menu",
+            messageText: topMessage
+        };
+    }
+
+    /** @type {Record<string, unknown>[]} */
+    const items = [];
+    collectRichContentMenuItems_(richContent, items, 0);
+    let messageText = normalizeOpenVideoMessage(pl.message || pl.text || pl.prompt || pl.title);
+    let placeholder = unwrapPayloadStringField(pl.placeholder).trim();
+
+    for (let i = 0; i < items.length; i += 1) {
+        const item = items[i];
+        const type = unwrapPayloadStringField(item.type).toLowerCase();
+        if (type === "list") {
+            const listTitle = normalizeOpenVideoMessage(
+                item.title || item.text || item.message || item.prompt || item.subtitle
+            );
+            if (listTitle && !messageText) {
+                messageText = listTitle;
+            }
+            if (listTitle && !placeholder) {
+                placeholder = listTitle;
+            }
+        }
+    }
+
+    for (let i = 0; i < items.length; i += 1) {
+        const item = items[i];
+        const type = unwrapPayloadStringField(item.type).toLowerCase();
+        if (type !== "chips") {
+            continue;
+        }
+        if (!topLevelMenu && !payloadRequestsInlineMenuOptions_(item)) {
+            continue;
+        }
+        const options = normalizeOpenVideoOptions(item.options);
+        if (options.length === 0) {
+            continue;
+        }
+        return {
+            options,
+            placeholder: placeholder || "Open menu",
+            messageText
+        };
+    }
+
+    return null;
+}
+
+/**
  * Extract `{ action: "dfchat_inline_select", options: [...] }` from merged CX fulfillment messages.
  *
  * @param {unknown[]} messages
@@ -13466,7 +13583,14 @@ function extractFirstDfchatInlineSelectFromCxMessages(messages) {
             pl = null;
         }
         const actionStr = unwrapPayloadStringField(pl && pl.action).toLowerCase();
-        if (!pl || actionStr !== "dfchat_inline_select") {
+        if (!pl) {
+            continue;
+        }
+        if (actionStr !== "dfchat_inline_select") {
+            const richMenu = extractRichContentInlineMenuFromPayload_(pl);
+            if (richMenu) {
+                return richMenu;
+            }
             continue;
         }
         const rawMessage =
@@ -13484,6 +13608,58 @@ function extractFirstDfchatInlineSelectFromCxMessages(messages) {
         return { options: opts, placeholder, messageText };
     }
     return null;
+}
+
+/**
+ * Hide Dialogflow's native chip buttons for richContent menu payloads after adding our dropdown.
+ * @param {HTMLElement | null | undefined} dfMessenger
+ * @param {{ label: string, value: string }[]} options
+ * @returns {void}
+ */
+function hideNativeRichContentMenuChips_(dfMessenger, options) {
+    const labels = new Set(
+        (Array.isArray(options) ? options : [])
+            .map((o) => String((o && (o.label || o.value)) || "").trim().toLowerCase())
+            .filter(Boolean)
+    );
+    if (!labels.size) {
+        return;
+    }
+    const ms =
+        dfMessenger
+        || (typeof activeDfMessenger !== "undefined" ? activeDfMessenger : null)
+        || (typeof document !== "undefined" ? document.querySelector("df-messenger") : null);
+    const roots = ms ? collectSearchRoots(ms) : [];
+    for (let ri = 0; ri < roots.length; ri += 1) {
+        const root = roots[ri];
+        if (!root || typeof root.querySelectorAll !== "function") {
+            continue;
+        }
+        /** @type {Element[]} */
+        let nodes = [];
+        try {
+            nodes = Array.from(root.querySelectorAll("button, [role='button'], df-chip, [class*='chip']"));
+        } catch {
+            nodes = [];
+        }
+        for (let ni = 0; ni < nodes.length; ni += 1) {
+            const node = nodes[ni];
+            if (!node || node.closest?.(`.${DFCHAT_INLINE_SELECT_CLASS}`)) {
+                continue;
+            }
+            const text = String(node.textContent || "").trim().toLowerCase();
+            if (!text || !labels.has(text)) {
+                continue;
+            }
+            const el = /** @type {HTMLElement} */ (node);
+            try {
+                el.style.display = "none";
+                el.setAttribute("aria-hidden", "true");
+            } catch {
+                /* ignore */
+            }
+        }
+    }
 }
 
 /**
@@ -13603,6 +13779,10 @@ function scheduleInjectInlineSelectDropdown(dfMessenger, options, placeholder, m
             ml.appendChild(wrap);
         }
         dfchatLastInlineSelectWrapEl = wrap;
+        hideNativeRichContentMenuChips_(msResolved, list);
+        [120, 360, 900].forEach((delayMs) => {
+            window.setTimeout(() => hideNativeRichContentMenuChips_(msResolved, list), delayMs);
+        });
 
         injected = true;
         try {
