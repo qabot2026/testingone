@@ -11241,6 +11241,7 @@ const DFCHAT_INLINE_VIDEO_CLASS = "dfchat-inline-video";
 const DFCHAT_INLINE_CARD_CAROUSEL_CLASS = "dfchat-inline-card-carousel";
 const DFCHAT_INLINE_SELECT_CLASS = "dfchat-inline-select";
 const DFCHAT_INLINE_BOOKING_CAL_CLASS = "dfchat-inline-booking-calendar";
+const DFCHAT_RICH_INFO_IMAGE_STYLE_ID = "dfchat-rich-info-image-size";
 
 /** @param {unknown} value @param {number} fallback @param {number} min @param {number} max */
 function sanitizeInlineCarouselPx_(value, fallback, min, max) {
@@ -11293,6 +11294,32 @@ function readInlineGalleryCarouselSizeConfig() {
         cardWidthPx: sanitizeInlineCarouselPx_(cardCarousel.cardWidthPx, 260, 120, 560),
         cardImageHeightPx: sanitizeInlineCarouselPx_(cardCarousel.imageHeightPx, 120, 48, 560),
         cardObjectFit: sanitizeInlineCarouselObjectFit_(cardCarousel.objectFit)
+    };
+}
+
+/**
+ * Pixel size for Dialogflow Messenger `richContent` info-card images.
+ * Edit `common.features.richContent.infoCardImage` in company.config.js.
+ * @returns {{ enabled: boolean, widthPx: number, heightPx: number, objectFit: "cover" | "contain" }}
+ */
+function readRichInfoCardImageSizeConfig_() {
+    const feats =
+        COMMON_CONFIG.features && typeof COMMON_CONFIG.features === "object"
+            ? COMMON_CONFIG.features
+            : {};
+    const richContent =
+        feats.richContent && typeof feats.richContent === "object"
+            ? feats.richContent
+            : {};
+    const infoCardImage =
+        richContent.infoCardImage && typeof richContent.infoCardImage === "object"
+            ? richContent.infoCardImage
+            : {};
+    return {
+        enabled: infoCardImage.enabled !== false,
+        widthPx: sanitizeInlineCarouselPx_(infoCardImage.widthPx, 96, 24, 360),
+        heightPx: sanitizeInlineCarouselPx_(infoCardImage.heightPx, 72, 24, 360),
+        objectFit: sanitizeInlineCarouselObjectFit_(infoCardImage.objectFit)
     };
 }
 
@@ -23565,6 +23592,7 @@ function startPersonaDecorator(dfMessenger) {
         if (!ms) {
             return;
         }
+        applyRichInfoCardImageSizingToMessenger_(ms);
         applyPersonaImageGuardToMessenger(ms);
         decoratePersonaMessages(ms);
     };
@@ -23587,6 +23615,7 @@ function startPersonaDecorator(dfMessenger) {
                     moScheduled = false;
                     const ms = activeDfMessenger || dfMessenger;
                     if (ms) {
+                        applyRichInfoCardImageSizingToMessenger_(ms);
                         applyPersonaImageGuardToMessenger(ms);
                         decoratePersonaMessages(ms);
                     }
@@ -23628,6 +23657,71 @@ function collectSearchRoots(dfMessenger) {
     }
 
     return roots;
+}
+
+/** @param {ShadowRoot | Document} root */
+function isRichInfoCardShadowRoot_(root) {
+    const host = root instanceof ShadowRoot ? root.host : null;
+    const tag = host && host.tagName ? host.tagName.toLowerCase() : "";
+    const cls = host && host.className ? String(host.className).toLowerCase() : "";
+    return tag.includes("info") || tag.includes("accordion") || cls.includes("info") || cls.includes("accordion");
+}
+
+/** @param {boolean} hostRoot */
+function getRichInfoCardImageSizeCss_(hostRoot) {
+    const cfg = readRichInfoCardImageSizeConfig_();
+    if (!cfg.enabled) {
+        return "";
+    }
+    const imageRule = `
+  width: ${cfg.widthPx}px !important;
+  height: ${cfg.heightPx}px !important;
+  max-width: ${cfg.widthPx}px !important;
+  max-height: ${cfg.heightPx}px !important;
+  object-fit: ${cfg.objectFit} !important;
+  display: block !important;
+`;
+    if (hostRoot) {
+        return `/* company.js: Dialogflow richContent info-card image size */
+img,
+picture img {
+${imageRule}
+}`;
+    }
+    return `/* company.js: Dialogflow richContent info-card image size */
+df-info-card img,
+df-accordion img,
+[class*="info" i] img,
+[class*="accordion" i] img {
+${imageRule}
+}`;
+}
+
+/** @param {HTMLElement | null | undefined} dfMessenger */
+function applyRichInfoCardImageSizingToMessenger_(dfMessenger) {
+    if (!dfMessenger) {
+        return;
+    }
+    const roots = collectSearchRoots(dfMessenger);
+    for (const root of roots) {
+        if (!root || !(root instanceof ShadowRoot) || typeof root.appendChild !== "function") {
+            continue;
+        }
+        const css = getRichInfoCardImageSizeCss_(isRichInfoCardShadowRoot_(root));
+        let style = root.getElementById(DFCHAT_RICH_INFO_IMAGE_STYLE_ID);
+        if (!css) {
+            if (style && style.parentNode) {
+                style.parentNode.removeChild(style);
+            }
+            continue;
+        }
+        if (!style) {
+            style = document.createElement("style");
+            style.id = DFCHAT_RICH_INFO_IMAGE_STYLE_ID;
+            root.appendChild(style);
+        }
+        style.textContent = css;
+    }
 }
 
 /**
