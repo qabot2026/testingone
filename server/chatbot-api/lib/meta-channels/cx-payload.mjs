@@ -380,6 +380,68 @@ function normalizeCarouselCards_(rawCards) {
 }
 
 /**
+ * Dialogflow Messenger `info` cards can nest an image as
+ * `{ image: { src: { rawUrl } } }`; WhatsApp needs the direct URL.
+ * @param {Record<string, unknown>} item
+ */
+function richInfoImageUrl_(item) {
+    const direct = payloadString_(
+        item.rawUrl ?? item.accessRawUrl ?? item.imageUrl ?? item.image_url ?? item.img
+    );
+    if (direct) {
+        return direct;
+    }
+    const image = item.image;
+    if (typeof image === "string") {
+        return payloadString_(image);
+    }
+    if (image && typeof image === "object" && !Array.isArray(image)) {
+        const img = /** @type {Record<string, unknown>} */ (image);
+        const fromImage = payloadString_(
+            img.rawUrl ?? img.accessRawUrl ?? img.url ?? img.imageUrl ?? img.image_url ?? img.src
+        );
+        if (fromImage) {
+            return fromImage;
+        }
+        const src = img.src;
+        if (src && typeof src === "object" && !Array.isArray(src)) {
+            const s = /** @type {Record<string, unknown>} */ (src);
+            return payloadString_(
+                s.rawUrl ?? s.accessRawUrl ?? s.url ?? s.imageUrl ?? s.image_url
+            );
+        }
+    }
+    return "";
+}
+
+/**
+ * @param {Record<string, unknown>} item
+ * @returns {{ label: string, link: string }[]}
+ */
+function richInfoButtonLinks_(item) {
+    const fallbackLink = payloadString_(item.actionLink ?? item.action_link ?? item.link ?? item.href);
+    const buttons = Array.isArray(item.buttons) ? item.buttons : [];
+    /** @type {{ label: string, link: string }[]} */
+    const out = [];
+    for (let i = 0; i < buttons.length; i += 1) {
+        const btn = buttons[i];
+        if (!btn || typeof btn !== "object") {
+            continue;
+        }
+        const b = /** @type {Record<string, unknown>} */ (btn);
+        const label = payloadString_(b.text ?? b.title ?? b.label ?? b.name) || `Open ${i + 1}`;
+        const link = payloadString_(b.actionLink ?? b.action_link ?? b.link ?? b.href) || fallbackLink;
+        if (link) {
+            out.push({ label, link });
+        }
+    }
+    if (!out.length && fallbackLink) {
+        out.push({ label: "Open", link: fallbackLink });
+    }
+    return out;
+}
+
+/**
  * @param {CxReplyParts} parts
  * @param {{ label: string, value: string }} opt
  */
@@ -621,12 +683,19 @@ function absorbRichContent_(parts, body) {
             } else if (type === "info" || type === "accordion") {
                 const title = payloadString_(item.title);
                 const subtitle = payloadString_(item.subtitle);
+                const imgUrl = richInfoImageUrl_(item);
                 if (title && subtitle) {
-                    parts.infoLines.push(`${title} — ${subtitle}`);
+                    parts.infoLines.push(`${title}\n${subtitle}`);
                 } else if (title) {
                     parts.infoLines.push(title);
                 } else if (subtitle) {
                     parts.infoLines.push(subtitle);
+                }
+                if (isHttpsUrl_(imgUrl)) {
+                    parts.images.push(imgUrl);
+                }
+                for (const button of richInfoButtonLinks_(item)) {
+                    parts.infoLines.push(`${button.label}: ${button.link}`);
                 }
             } else if (type === "description") {
                 const title = payloadString_(item.title);
