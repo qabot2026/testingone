@@ -785,6 +785,95 @@
   flex: 1 1 auto;
   min-width: 0;
 }
+
+.dfchat-contact-form__row .dfchat-contact-form__control--dial-code-native {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+  padding: 0;
+  border: 0;
+}
+
+.dfchat-contact-form__dial-custom {
+  position: relative;
+  flex: 0 0 92px;
+  width: 92px;
+  min-width: 92px;
+  z-index: 2;
+}
+
+.dfchat-contact-form__dial-custom.is-open {
+  flex-basis: 190px;
+  width: 190px;
+  z-index: 20;
+}
+
+.dfchat-contact-form__dial-button {
+  width: 100%;
+  min-height: 34px;
+  box-sizing: border-box;
+  border: 1px solid var(--dfchat-border);
+  border-radius: 10px;
+  padding: 7px 8px;
+  background: #fbfdff;
+  color: var(--dfchat-text);
+  font: inherit;
+  font-size: 0.88rem;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.dfchat-contact-form__dial-menu {
+  position: absolute;
+  left: 0;
+  top: calc(100% + 4px);
+  width: min(240px, 70vw);
+  max-height: 180px;
+  overflow: auto;
+  border: 1px solid var(--dfchat-border);
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.18);
+  padding: 4px;
+}
+
+.dfchat-contact-form__dial-option {
+  width: 100%;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--dfchat-text);
+  padding: 7px 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-align: left;
+  font: inherit;
+  font-size: 0.84rem;
+  cursor: pointer;
+}
+
+.dfchat-contact-form__dial-option:hover,
+.dfchat-contact-form__dial-option[aria-selected="true"] {
+  background: rgba(14, 165, 233, 0.1);
+}
+
+.dfchat-contact-form__dial-flag-img {
+  flex: 0 0 18px;
+  width: 18px;
+  height: 14px;
+  border-radius: 2px;
+  object-fit: cover;
+  box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.08);
+}
+
+.dfchat-contact-form__dial-button-code {
+  white-space: nowrap;
+}
  
  .dfchat-contact-form__fields textarea {
    resize: none;

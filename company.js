@@ -6742,6 +6742,10 @@ function buildContactFormFieldRow(field) {
             op.textContent = o.compactLabel;
             op.dataset.compactLabel = o.compactLabel;
             op.dataset.fullLabel = o.fullLabel;
+            const optionCountryCode = getDialCodePrimaryCountryCodeForValue_(o.value, "");
+            if (optionCountryCode) {
+                op.dataset.countryCode = optionCountryCode;
+            }
             control.appendChild(op);
         }
         if (isDialCodeContactFormField_(field)) {
@@ -6969,6 +6973,13 @@ function buildContactFormPhoneComboRow_(dialField, mobileField) {
     dialControl.classList.add("dfchat-contact-form__control--dial-code");
     mobileControl.classList.add("dfchat-contact-form__control--phone-number");
 
+    const customDialControl =
+        String(dialControl.tagName || "").toLowerCase() === "select"
+            ? buildDialCodeCustomDropdown_(/** @type {HTMLSelectElement} */ (dialControl))
+            : null;
+    if (customDialControl) {
+        combo.appendChild(customDialControl);
+    }
     combo.appendChild(dialControl);
     combo.appendChild(mobileControl);
     row.appendChild(iconWrap);
@@ -21949,6 +21960,42 @@ const DIAL_CODE_FULL_LABEL_BY_VALUE_ = {
     "+52": "🇲🇽 Mexico +52"
 };
 
+const DIAL_CODE_PRIMARY_COUNTRY_BY_VALUE_ = {
+    "+91": "IN",
+    "+1": "US",
+    "+44": "GB",
+    "+971": "AE",
+    "+61": "AU",
+    "+65": "SG",
+    "+966": "SA",
+    "+974": "QA",
+    "+968": "OM",
+    "+965": "KW",
+    "+973": "BH",
+    "+977": "NP",
+    "+880": "BD",
+    "+94": "LK",
+    "+92": "PK",
+    "+60": "MY",
+    "+49": "DE",
+    "+33": "FR",
+    "+39": "IT",
+    "+34": "ES",
+    "+31": "NL",
+    "+353": "IE",
+    "+64": "NZ",
+    "+27": "ZA",
+    "+81": "JP",
+    "+82": "KR",
+    "+86": "CN",
+    "+66": "TH",
+    "+62": "ID",
+    "+63": "PH",
+    "+84": "VN",
+    "+55": "BR",
+    "+52": "MX"
+};
+
 function normalizeDialCodeValue_(value) {
     const raw = String(value == null ? "" : value).trim();
     if (!raw) {
@@ -22008,6 +22055,179 @@ function getDialCodeFullOptionLabel_(compactLabel, dialCode, countryName) {
     return compact || code;
 }
 
+function stripLeadingFlagEmojiFromLabel_(label) {
+    return String(label || "")
+        .replace(/^([\uD83C][\uDDE6-\uDDFF](?:[\uD83C][\uDDE6-\uDDFF])?(?:\/[\uD83C][\uDDE6-\uDDFF](?:[\uD83C][\uDDE6-\uDDFF])?)*)\s*/, "")
+        .trim();
+}
+
+function getDialCodePrimaryCountryCodeForValue_(dialCode, fallbackCountryCode) {
+    const fb = String(fallbackCountryCode || "").trim().slice(0, 2).toUpperCase();
+    if (/^[A-Z]{2}$/.test(fb)) {
+        return fb;
+    }
+    const code = normalizeDialCodeValue_(dialCode);
+    return code && DIAL_CODE_PRIMARY_COUNTRY_BY_VALUE_[code]
+        ? DIAL_CODE_PRIMARY_COUNTRY_BY_VALUE_[code]
+        : "";
+}
+
+function createDialCodeFlagImg_(countryCode) {
+    const cc = String(countryCode || "").trim().slice(0, 2).toLowerCase();
+    if (!/^[a-z]{2}$/.test(cc)) {
+        return null;
+    }
+    const img = document.createElement("img");
+    img.className = "dfchat-contact-form__dial-flag-img";
+    img.src = `https://flagcdn.com/24x18/${cc}.png`;
+    img.srcset = `https://flagcdn.com/48x36/${cc}.png 2x`;
+    img.alt = "";
+    img.loading = "lazy";
+    img.decoding = "async";
+    return img;
+}
+
+function getDialCodeOptionFullText_(option) {
+    if (!option) {
+        return "";
+    }
+    const full = option.dataset && option.dataset.fullLabel ? option.dataset.fullLabel : "";
+    const fallback = option.textContent || option.value || "";
+    return stripLeadingFlagEmojiFromLabel_(full || fallback);
+}
+
+function getDialCodeOptionCompactText_(option) {
+    if (!option) {
+        return "";
+    }
+    const compact = option.dataset && option.dataset.compactLabel ? option.dataset.compactLabel : "";
+    const value = normalizeDialCodeValue_(option.value);
+    return stripLeadingFlagEmojiFromLabel_(compact || value || option.textContent || "");
+}
+
+function syncDialCodeCustomDropdownFromSelect_(selectEl) {
+    if (!selectEl || !selectEl.__dfchatDialCustom) {
+        return;
+    }
+    const api = selectEl.__dfchatDialCustom;
+    if (api && typeof api.refresh === "function") {
+        api.refresh();
+    }
+}
+
+function buildDialCodeCustomDropdown_(selectEl) {
+    if (!selectEl) {
+        return null;
+    }
+    if (selectEl.__dfchatDialCustom && selectEl.__dfchatDialCustom.root) {
+        return selectEl.__dfchatDialCustom.root;
+    }
+    selectEl.classList.add("dfchat-contact-form__control--dial-code-native");
+    selectEl.removeAttribute("required");
+    selectEl.setAttribute("aria-hidden", "true");
+    selectEl.tabIndex = -1;
+
+    const root = document.createElement("div");
+    root.className = "dfchat-contact-form__dial-custom";
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "dfchat-contact-form__dial-button";
+    btn.setAttribute("aria-haspopup", "listbox");
+    btn.setAttribute("aria-expanded", "false");
+
+    const menu = document.createElement("div");
+    menu.className = "dfchat-contact-form__dial-menu";
+    menu.setAttribute("role", "listbox");
+    menu.hidden = true;
+
+    const close = () => {
+        root.classList.remove("is-open");
+        menu.hidden = true;
+        btn.setAttribute("aria-expanded", "false");
+    };
+    const open = () => {
+        root.classList.add("is-open");
+        menu.hidden = false;
+        btn.setAttribute("aria-expanded", "true");
+    };
+    const toggle = () => {
+        if (menu.hidden) {
+            open();
+        } else {
+            close();
+        }
+    };
+    const renderButton = () => {
+        while (btn.firstChild) {
+            btn.removeChild(btn.firstChild);
+        }
+        const selected = selectEl.options[selectEl.selectedIndex] || null;
+        const cc = selected && selected.dataset ? selected.dataset.countryCode : "";
+        const img = createDialCodeFlagImg_(cc);
+        if (img) {
+            btn.appendChild(img);
+        }
+        const span = document.createElement("span");
+        span.className = "dfchat-contact-form__dial-button-code";
+        span.textContent = selected && selected.value
+            ? getDialCodeOptionCompactText_(selected)
+            : getTranslation("dialCodePlaceholder");
+        btn.appendChild(span);
+    };
+    const refresh = () => {
+        renderButton();
+        while (menu.firstChild) {
+            menu.removeChild(menu.firstChild);
+        }
+        for (let i = 0; i < selectEl.options.length; i += 1) {
+            const op = selectEl.options[i];
+            if (!op || !op.value) {
+                continue;
+            }
+            const item = document.createElement("button");
+            item.type = "button";
+            item.className = "dfchat-contact-form__dial-option";
+            item.setAttribute("role", "option");
+            item.setAttribute("aria-selected", op.value === selectEl.value ? "true" : "false");
+            const img = createDialCodeFlagImg_(op.dataset && op.dataset.countryCode ? op.dataset.countryCode : "");
+            if (img) {
+                item.appendChild(img);
+            }
+            const label = document.createElement("span");
+            label.textContent = getDialCodeOptionFullText_(op);
+            item.appendChild(label);
+            item.addEventListener("click", () => {
+                selectEl.value = op.value;
+                try {
+                    selectEl.dispatchEvent(new Event("input", { bubbles: true }));
+                    selectEl.dispatchEvent(new Event("change", { bubbles: true }));
+                } catch {
+                    /* ignore */
+                }
+                refresh();
+                close();
+            });
+            menu.appendChild(item);
+        }
+    };
+
+    btn.addEventListener("click", (event) => {
+        event.preventDefault();
+        toggle();
+    });
+    document.addEventListener("click", (event) => {
+        if (!root.contains(/** @type {Node} */ (event.target))) {
+            close();
+        }
+    });
+    selectEl.addEventListener("change", refresh);
+    root.appendChild(btn);
+    root.appendChild(menu);
+    selectEl.__dfchatDialCustom = { root, refresh };
+    refresh();
+    return root;
+}
+
 function setDialCodeSelectLabelMode_(selectEl, expanded) {
     if (!selectEl || !selectEl.options) {
         return;
@@ -22063,6 +22283,7 @@ function ensureDialCodeOptionExists_(selectEl, dialCode, countryCode, countryNam
     op.dataset.fullLabel = full;
     selectEl.appendChild(op);
     installDialCodeSelectLabelMode_(selectEl);
+    syncDialCodeCustomDropdownFromSelect_(selectEl);
 }
 
 function applyDetectedDialCodeToContactForm_() {
