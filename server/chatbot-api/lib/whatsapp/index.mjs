@@ -910,7 +910,7 @@ async function sendWhatsappChoicesFromParts_(to, sessionId, parts, opts = {}) {
  */
 async function sendWhatsappCxReply_(input) {
     const parts = input.parts;
-    const supplemental = supplementalTextBlocks_(parts, webChatUrl_());
+    const supplemental = whatsappSupplementalTextBlocks_(parts);
     let leadText = [...parts.texts, ...supplemental].filter(Boolean).join("\n\n");
 
     if (!parts.gallery && !parts.cardCarousel && parts.images.length > 0) {
@@ -1045,12 +1045,26 @@ async function sendWhatsappCxReply_(input) {
         return;
     }
 
-    if (!leadText && parts.images.length === 0 && parts.documents.length === 0) {
+    if (!leadText && !parts.form && parts.images.length === 0 && parts.documents.length === 0) {
         await sendWhatsappText_({
             to: input.to,
             body: "Sorry, I could not process that. Please try again."
         });
     }
+}
+
+/**
+ * WhatsApp cannot render web forms. Do not send form fallback/link text here;
+ * CX can ask form questions manually on the WhatsApp-specific path.
+ * @param {CxReplyParts} parts
+ */
+function whatsappSupplementalTextBlocks_(parts) {
+    /** @type {string[]} */
+    const blocks = [...parts.infoLines];
+    if (parts.liveAgent?.message) {
+        blocks.push(parts.liveAgent.message);
+    }
+    return blocks.filter(Boolean);
 }
 
 /** @param {string} s */
@@ -1126,7 +1140,7 @@ function agentTextBeforePayload_(parts) {
         }
     }
 
-    for (const line of supplementalTextBlocks_(parts, webChatUrl_())) {
+    for (const line of whatsappSupplementalTextBlocks_(parts)) {
         const s = trim_(line);
         if (!s || blocks.some((b) => promptsEquivalent_(b, s))) {
             continue;
