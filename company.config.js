@@ -30,8 +30,10 @@ window.COMPANY_CHAT_UI_CONFIG = {
   // COMMON (shared: agent, form field defs, theme, …)
   // =========================
   common: {
-    // Project + Agent settings (Dialogflow CX).
+    // Dialogflow Messenger settings. Default is CX; for ES use:
+    // { engine: "es", agentId: "YOUR_ES_MESSENGER_AGENT_ID", intent: "WELCOME" }
     dialogflow: {
+      engine: "cx",
       projectId: "qabot01",
       location: "us-central1",
       agentId: "9dbd4886-3cbe-43fc-8eb5-54ee5097f25c"

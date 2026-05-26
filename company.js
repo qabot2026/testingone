@@ -2914,8 +2914,15 @@ function createAndMountMessenger() {
     const df = document.createElement("df-messenger");
     activeDfMessenger = df;
     const dialogflowConfig = COMMON_CONFIG.dialogflow || {};
-    df.setAttribute("project-id", dialogflowConfig.projectId || "qabot01");
-    df.setAttribute("location", dialogflowConfig.location || "us-central1");
+    const dialogflowEngine = String(
+        dialogflowConfig.engine || dialogflowConfig.type || dialogflowConfig.edition || "cx"
+    ).trim().toLowerCase();
+    if (dialogflowEngine === "es") {
+        df.setAttribute("intent", dialogflowConfig.intent || "WELCOME");
+    } else {
+        df.setAttribute("project-id", dialogflowConfig.projectId || "qabot01");
+        df.setAttribute("location", dialogflowConfig.location || "us-central1");
+    }
     df.setAttribute("agent-id", dialogflowConfig.agentId || "05ce7add-9025-4534-990c-fd7a25dadde1");
     if (typeof dialogflowConfig.oauthClientId === "string" && dialogflowConfig.oauthClientId.trim()) {
         df.setAttribute("oauth-client-id", dialogflowConfig.oauthClientId.trim());
