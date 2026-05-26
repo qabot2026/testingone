@@ -23,7 +23,7 @@ import {
     youtubeWatchUrl_,
     youtubeThumbnailUrl_,
     isDirectVideoFileUrl_
-} from "../meta-channels/cx-payload.mjs";
+} from "../meta-channels/dialogflow-payload.mjs";
 import { normalizeLeadChannel } from "../meta-channels/normalize-channel.mjs";
 import {
     metaContactHintsForDialogflowSession_,
@@ -302,8 +302,8 @@ function isHttpsUrl_(raw) {
     return /^https:\/\/.+/i.test(trim_(raw));
 }
 
-/** @typedef {import("../meta-channels/cx-payload.mjs").CarouselCard} WaCarouselCard */
-/** @typedef {import("../meta-channels/cx-payload.mjs").ReplyParts} ReplyParts */
+/** @typedef {import("../meta-channels/dialogflow-payload.mjs").CarouselCard} WaCarouselCard */
+/** @typedef {import("../meta-channels/dialogflow-payload.mjs").ReplyParts} ReplyParts */
 
 function webChatUrl_() {
     const explicit = trim_(process.env.META_CHAT_WEB_URL || process.env.CHAT_WIDGET_URL);
