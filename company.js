@@ -5706,12 +5706,12 @@ function getBuiltinDefaultContactFormFields() {
             i18nSummaryLabel: "summaryDialCodeLabel",
             autoDetectDialCode: true,
             options: [
-                { label: "India (+91)", value: "+91" },
-                { label: "United States / Canada (+1)", value: "+1" },
-                { label: "United Kingdom (+44)", value: "+44" },
-                { label: "United Arab Emirates (+971)", value: "+971" },
-                { label: "Australia (+61)", value: "+61" },
-                { label: "Singapore (+65)", value: "+65" }
+                { label: "🇮🇳 +91", value: "+91" },
+                { label: "🇺🇸/🇨🇦 +1", value: "+1" },
+                { label: "🇬🇧 +44", value: "+44" },
+                { label: "🇦🇪 +971", value: "+971" },
+                { label: "🇦🇺 +61", value: "+61" },
+                { label: "🇸🇬 +65", value: "+65" }
             ]
         },
         { id: "contact-mobile", name: "mobile", type: "tel", required: true, icon: "phone", i18nPlaceholder: "mobilePlaceholder", i18nSummaryLabel: "summaryMobileLabel", autocomplete: "tel", inputMode: "tel" },
@@ -21931,6 +21931,17 @@ function dialCodeForCountryCode_(countryCode) {
     return cc && COUNTRY_DIAL_CODE_BY_ISO2_[cc] ? COUNTRY_DIAL_CODE_BY_ISO2_[cc] : "";
 }
 
+function flagEmojiForCountryCode_(countryCode) {
+    const cc = String(countryCode || "").trim().slice(0, 2).toUpperCase();
+    if (!/^[A-Z]{2}$/.test(cc)) {
+        return "";
+    }
+    return cc
+        .split("")
+        .map((ch) => String.fromCodePoint(0x1F1E6 + ch.charCodeAt(0) - 65))
+        .join("");
+}
+
 function ensureDialCodeOptionExists_(selectEl, dialCode, countryCode) {
     if (!selectEl || !dialCode) {
         return;
@@ -21941,7 +21952,8 @@ function ensureDialCodeOptionExists_(selectEl, dialCode, countryCode) {
     }
     const op = document.createElement("option");
     op.value = dialCode;
-    op.textContent = countryCode ? `${countryCode} (${dialCode})` : dialCode;
+    const flag = flagEmojiForCountryCode_(countryCode);
+    op.textContent = flag ? `${flag} ${dialCode}` : dialCode;
     selectEl.appendChild(op);
 }
 
