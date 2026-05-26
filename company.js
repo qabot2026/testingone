@@ -7102,7 +7102,7 @@ function buildContactFormPhoneComboRow_(dialField, mobileField) {
 }
 
 /**
- * Value stored in the hidden field and sent as `appointmentdate`: DD-MM-YYYY.
+ * Value stored in the hidden field and sent as `appointmentdate`: DD/MM/YYYY.
  * Slot APIs still use YYYY-MM-DD from the calendar grid.
  * @param {string} dateISO
  * @returns {string}
@@ -7112,7 +7112,7 @@ function formatAppointmentDateCapturedFromIso_(dateISO) {
     if (!m) {
         return String(dateISO || "").trim();
     }
-    return `${m[3]}-${m[2]}-${m[1]}`;
+    return `${m[3]}/${m[2]}/${m[1]}`;
 }
 
 /**
@@ -20468,6 +20468,28 @@ function formatContactSummaryMobileValue_(payload, mobileValue) {
     return `${dialCode} ${mobile}`;
 }
 
+function isContactSummaryDateField_(key, field) {
+    const keyLower = String(key || "").trim().toLowerCase();
+    const type = String(field && field.type ? field.type : "").trim().toLowerCase();
+    return keyLower.includes("date") || type === "date" || type === "datetime-local";
+}
+
+function formatContactSummaryDateValue_(value) {
+    const raw = String(value == null ? "" : value).trim();
+    if (!raw) {
+        return raw;
+    }
+    let m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw);
+    if (m) {
+        return `${m[3]}/${m[2]}/${m[1]}`;
+    }
+    m = /^(\d{2})[-/](\d{2})[-/](\d{4})$/.exec(raw);
+    if (m) {
+        return `${m[1]}/${m[2]}/${m[3]}`;
+    }
+    return raw;
+}
+
 /**
  * Shared labeled rows for the contact-form confirmation bubble / transcript assistant turn.
  *
@@ -20490,6 +20512,9 @@ function buildContactFormSubmissionSummaryLines_(payload) {
             v = formatContactSummaryMobileValue_(payload, v);
         }
         const field = getContactFormFieldByPayloadName(key);
+        if (isContactSummaryDateField_(key, field) || /^\d{4}-\d{2}-\d{2}$/.test(v) || /^\d{2}[-/]\d{2}[-/]\d{4}$/.test(v)) {
+            v = formatContactSummaryDateValue_(v);
+        }
         const labelKey = field && field.i18nSummaryLabel;
         let label;
         if (labelKey) {
