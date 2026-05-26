@@ -475,12 +475,13 @@ async function sendWhatsappDocument_(input) {
 }
 
 /**
- * @param {{ to: string, body: string, labels: string[], idPrefix?: string, forceList?: boolean }} input
+ * @param {{ to: string, body: string, labels: string[], idPrefix?: string, forceList?: boolean, buttonLabel?: string }} input
  */
 async function sendWhatsappChoiceMenu_(input) {
     const labels = input.labels.slice(0, 10);
     const idPrefix = input.idPrefix || "chip";
     const body = waShortTitle_(formatWebMarkdownForWhatsapp_(trim_(input.body)), 1024);
+    const buttonLabel = waShortTitle_(formatWebMarkdownForWhatsapp_(trim_(input.buttonLabel)), 20);
     if (!body || labels.length === 0) {
         return null;
     }
@@ -512,10 +513,10 @@ async function sendWhatsappChoiceMenu_(input) {
             type: "list",
             body: { text: body },
             action: {
-                button: waShortTitle_(body.slice(0, 20) || "Menu", 20),
+                button: buttonLabel || waShortTitle_(body.slice(0, 20) || "Menu", 20),
                 sections: [
                     {
-                        title: waShortTitle_(body, 24),
+                        title: waShortTitle_(buttonLabel || body, 24),
                         rows: labels.map((label, i) => ({
                             id: `${idPrefix}_${i}`,
                             title: waShortTitle_(label, 24),
@@ -722,13 +723,14 @@ async function sendWhatsappCardCarousel_(input) {
 }
 
 /**
- * @param {"numbered" | "carousel" | "menu"} displayMode
  * @param {string} to
  * @param {string} sessionId
  * @param {{ label: string, value: string }[]} options
  * @param {string} menuPrompt
+ * @param {"numbered" | "carousel" | "menu"} displayMode
+ * @param {string} [menuButtonLabel]
  */
-async function sendWhatsappOptions_(to, sessionId, options, menuPrompt, displayMode) {
+async function sendWhatsappOptions_(to, sessionId, options, menuPrompt, displayMode, menuButtonLabel = "") {
     if (!options.length) {
         return;
     }
@@ -738,6 +740,7 @@ async function sendWhatsappOptions_(to, sessionId, options, menuPrompt, displayM
         options.map((o) => o.value)
     );
     const prompt = trim_(menuPrompt);
+    const buttonLabel = trim_(menuButtonLabel);
     const labels = options.map((o) => o.label);
     const numbered = options.map((opt, i) => `${i + 1}. ${opt.label}`).join("\n");
     const mode = displayMode === "numbered" ? "numbered" : displayMode === "menu" ? "menu" : "carousel";
@@ -756,7 +759,8 @@ async function sendWhatsappOptions_(to, sessionId, options, menuPrompt, displayM
         body: menuBody,
         labels,
         idPrefix: "chip",
-        forceList: mode === "menu"
+        forceList: mode === "menu",
+        buttonLabel
     });
     if (!sent) {
         log_("choice_menu_empty", { mode });
@@ -769,9 +773,10 @@ async function sendWhatsappOptions_(to, sessionId, options, menuPrompt, displayM
  * @param {{ label: string, value: string }[]} options
  * @param {string} menuPrompt
  * @param {"numbered" | "carousel" | "menu"} displayMode
+ * @param {string} [menuButtonLabel]
  */
-async function sendWhatsappChoiceMenuFromOptions_(to, sessionId, options, menuPrompt, displayMode) {
-    await sendWhatsappOptions_(to, sessionId, options, menuPrompt, displayMode);
+async function sendWhatsappChoiceMenuFromOptions_(to, sessionId, options, menuPrompt, displayMode, menuButtonLabel = "") {
+    await sendWhatsappOptions_(to, sessionId, options, menuPrompt, displayMode, menuButtonLabel);
 }
 
 /**
@@ -848,7 +853,8 @@ async function sendWhatsappGalleryFull_(to, sessionId, parts) {
             sessionId,
             options,
             menuPrompt,
-            parts.optionsDisplay || "carousel"
+            parts.optionsDisplay || "carousel",
+            parts.choicePlaceholder || ""
         );
     } else if (trim_(gallery.message)) {
         await sendWhatsappText_({ to, body: trim_(gallery.message) });
@@ -901,7 +907,8 @@ async function sendWhatsappChoicesFromParts_(to, sessionId, parts, opts = {}) {
         sessionId,
         parts.choices,
         menuPrompt,
-        parts.optionsDisplay || "carousel"
+        parts.optionsDisplay || "carousel",
+        parts.choicePlaceholder || ""
     );
 }
 

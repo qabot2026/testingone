@@ -249,6 +249,7 @@ export function normalizeSelectOptions_(opts) {
  *   documents: DocumentFile[],
  *   choices: ChoiceOption[],
  *   choicePrompt: string,
+ *   choicePlaceholder: string,
  *   optionsDisplay: "numbered" | "carousel" | "menu",
  *   Numbered → WhatsApp text list (1. 2. 3.); web widget keeps chip buttons.
  *   Carousel/interactive → WhatsApp button or list menu; web widget keeps chip buttons.
@@ -609,13 +610,15 @@ function absorbActionPayload_(parts, body) {
 
     if (action === "dfchat_inline_select") {
         const opts = normalizeSelectOptions_(body.options);
+        const placeholder = payloadString_(body.placeholder);
         for (const o of opts) {
             pushChoice_(parts, o);
         }
+        if (placeholder) {
+            parts.choicePlaceholder = placeholder;
+        }
         if (msg) {
             parts.choicePrompt = msg;
-        } else if (payloadString_(body.placeholder)) {
-            parts.choicePrompt = payloadString_(body.placeholder);
         }
         return;
     }
@@ -730,6 +733,7 @@ export function extractCxResponse_(data) {
         documents: [],
         choices: [],
         choicePrompt: "",
+        choicePlaceholder: "",
         optionsDisplay: "carousel",
         cardCarousel: null,
         gallery: null,
