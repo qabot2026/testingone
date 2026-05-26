@@ -267,6 +267,7 @@ const MESSAGE_LIST_SQUARE_PANE_STYLE_ID = "dfchat-messagelist-square-pane";
 /** Open whitish chat card (`.chat-wrapper`); optional `common.chatPanel.borderRadius` in company.config.js */
 const CHAT_PANEL_CORNERS_STYLE_ID = "dfchat-chat-panel-corners";
 const TITLEBAR_LAYOUT_STYLE_ID = "dfchat-titlebar-layout";
+const ES_CX_LOOK_STYLE_ID = "dfchat-es-cx-look";
 const PERSONA_IMAGE_GUARD_STYLE_ID = "dfchat-persona-image-guard";
 /** Dialogflow “jump to bottom” / scroll-hint UI; mirrored onto `df-messenger-chat-bubble` :host. */
 const DF_MESSENGER_CHAT_SCROLL_JUMP_VAR_KEYS = [
@@ -8491,10 +8492,14 @@ function applyFixedCornerToMessengerForDock(dfMessenger, bubblePos, horizontalDo
         const r = typeof b.rightPx === "number" && Number.isFinite(b.rightPx) ? b.rightPx : hIn;
         dfMessenger.style.setProperty("right", `${r}px`);
         dfMessenger.style.setProperty("left", "auto");
+        dfMessenger.style.setProperty("--dfchat-es-right", `${r}px`);
+        dfMessenger.style.setProperty("--dfchat-es-left", "auto");
     } else {
         const l = typeof b.leftPx === "number" && Number.isFinite(b.leftPx) ? b.leftPx : hIn;
         dfMessenger.style.setProperty("left", `${l}px`);
         dfMessenger.style.setProperty("right", "auto");
+        dfMessenger.style.setProperty("--dfchat-es-left", `${l}px`);
+        dfMessenger.style.setProperty("--dfchat-es-right", "auto");
     }
 
     if (pinTop) {
@@ -8502,10 +8507,14 @@ function applyFixedCornerToMessengerForDock(dfMessenger, bubblePos, horizontalDo
         const t = typeof b.topPx === "number" && Number.isFinite(b.topPx) ? b.topPx : tIn;
         dfMessenger.style.setProperty("top", `${t}px`);
         dfMessenger.style.removeProperty("bottom");
+        dfMessenger.style.setProperty("--dfchat-es-top", `${t}px`);
+        dfMessenger.style.setProperty("--dfchat-es-bottom", "auto");
     } else {
         const bot = typeof b.bottomPx === "number" && Number.isFinite(b.bottomPx) ? b.bottomPx : bIn;
         dfMessenger.style.setProperty("bottom", `${bot}px`);
         dfMessenger.style.removeProperty("top");
+        dfMessenger.style.setProperty("--dfchat-es-bottom", `${bot}px`);
+        dfMessenger.style.setProperty("--dfchat-es-top", "auto");
     }
 }
 
@@ -9351,6 +9360,7 @@ function applyDfMessengerThemeConfig(dfMessenger, config) {
             }
         }
     }
+    applyDialogflowEsCxLookCompatibility(dfMessenger, theme);
 
     // After `dfMessengerTheme`: footer/composer wrapper variables + shadow overrides.
     applyFooterInputBoxConfig(dfMessenger);
@@ -9376,6 +9386,180 @@ function applyDfMessengerThemeConfig(dfMessenger, config) {
     applyBotPersonaToMessenger(dfMessenger, bubble);
     applyTitlebarIconSizeConfig(dfMessenger, config);
     applyWidgetCustomCssFromConfig();
+}
+
+function cssThemeValue_(theme, key, fallback) {
+    const fromTheme = theme && typeof theme[key] === "string" ? theme[key].trim() : "";
+    if (fromTheme) {
+        return fromTheme;
+    }
+    return fallback;
+}
+
+function solidColorForLegacyMessenger_(value, fallback) {
+    const s = typeof value === "string" ? value.trim() : "";
+    const hex = s.match(/#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})\b/);
+    if (hex) {
+        return hex[0];
+    }
+    const rgb = s.match(/rgba?\([^)]+\)/i);
+    if (rgb) {
+        return rgb[0];
+    }
+    return fallback;
+}
+
+function applyDialogflowEsCxLookCompatibility(dfMessenger, theme) {
+    if (!dfMessenger || !dfMessenger.style) {
+        return;
+    }
+
+    const primary = solidColorForLegacyMessenger_(
+        cssThemeValue_(theme, "--df-messenger-primary-color", "#0284c7"),
+        "#0284c7"
+    );
+    const botBg = cssThemeValue_(theme, "--df-messenger-message-bot-background", "linear-gradient(168deg, #e8f6ff 0%, #bae6fd 100%)");
+    const userBg = cssThemeValue_(theme, "--df-messenger-message-user-background", "linear-gradient(145deg, #0284c7 0%, #0ea5e9 100%)");
+    const botText = cssThemeValue_(theme, "--df-messenger-message-bot-font-color", "#0c4a6e");
+    const userText = cssThemeValue_(theme, "--df-messenger-message-user-font-color", "#f0f9ff");
+    const titleText = cssThemeValue_(theme, "--df-messenger-titlebar-font-color", "#f0f9ff");
+    const chatBg = cssThemeValue_(theme, "--df-messenger-chat-background", "#ffffff");
+    const inputBg = cssThemeValue_(theme, "--df-messenger-input-box-background", "#ffffff");
+    const inputText = cssThemeValue_(theme, "--df-messenger-input-font-color", "#0f172a");
+
+    // ES bootstrap's older widget reads these legacy variable names.
+    dfMessenger.style.setProperty("--df-messenger-bot-message", solidColorForLegacyMessenger_(botBg, "#e8f6ff"));
+    dfMessenger.style.setProperty("--df-messenger-user-message", solidColorForLegacyMessenger_(userBg, primary));
+    dfMessenger.style.setProperty("--df-messenger-chat-background-color", solidColorForLegacyMessenger_(chatBg, "#ffffff"));
+    dfMessenger.style.setProperty("--df-messenger-button-titlebar-color", primary);
+    dfMessenger.style.setProperty("--df-messenger-button-titlebar-font-color", titleText);
+    dfMessenger.style.setProperty("--df-messenger-input-box-color", solidColorForLegacyMessenger_(inputBg, "#ffffff"));
+    dfMessenger.style.setProperty("--df-messenger-input-font-color", inputText);
+    dfMessenger.style.setProperty("--df-messenger-chip-color", primary);
+    dfMessenger.style.setProperty("--df-messenger-chip-border-color", primary);
+    dfMessenger.style.setProperty("--df-messenger-focus-color", primary);
+    dfMessenger.style.setProperty("--df-messenger-focus-color-contrast", titleText);
+
+    const css = `
+:host {
+  font-family: var(--df-messenger-font-family, "Manrope", "Segoe UI", sans-serif) !important;
+}
+.chat-wrapper {
+  width: var(--df-messenger-chat-window-width, 400px) !important;
+  max-width: calc(100vw - 32px) !important;
+  right: var(--dfchat-es-right, 10px) !important;
+  left: var(--dfchat-es-left, auto) !important;
+  top: var(--dfchat-es-top, auto) !important;
+  bottom: calc(var(--dfchat-es-bottom, 20px) + 84px) !important;
+  background: var(--df-messenger-chat-background, #ffffff) !important;
+  border: var(--df-messenger-chat-border, none) !important;
+  border-radius: var(--df-messenger-chat-border-radius, 22px) !important;
+  box-shadow: var(--df-messenger-chat-box-shadow, 0 16px 42px rgba(15, 23, 42, 0.16)) !important;
+  overflow: hidden !important;
+}
+.chat-wrapper.chat-open {
+  height: var(--df-messenger-chat-window-height, 450px) !important;
+  opacity: 1 !important;
+  transform: translateZ(0) scale(1) !important;
+}
+.chat-wrapper.chat-min {
+  width: var(--df-messenger-chat-window-width, 400px) !important;
+}
+#widgetIcon {
+  width: var(--df-messenger-chat-bubble-size, 64px) !important;
+  height: var(--df-messenger-chat-bubble-size, 64px) !important;
+  right: var(--dfchat-es-right, 10px) !important;
+  left: var(--dfchat-es-left, auto) !important;
+  top: var(--dfchat-es-top, auto) !important;
+  bottom: var(--dfchat-es-bottom, 20px) !important;
+  background: var(--df-messenger-chat-bubble-background, linear-gradient(160deg, #0ea5e9 0%, #0284c7 48%, #0369a1 100%)) !important;
+  border-radius: var(--df-messenger-chat-bubble-border-radius, 50%) !important;
+  box-shadow: 0 12px 28px rgba(2, 132, 199, 0.28), 0 4px 12px rgba(15, 23, 42, 0.14) !important;
+  overflow: hidden !important;
+}
+#widgetIcon .df-chat-icon,
+#widgetIcon img {
+  width: var(--df-messenger-chat-bubble-icon-size, 64px) !important;
+  height: var(--df-messenger-chat-bubble-icon-size, 64px) !important;
+  object-fit: cover !important;
+  border-radius: var(--df-messenger-chat-icon-radius, 50%) !important;
+}
+df-messenger-titlebar {
+  min-height: 86px !important;
+  background: var(--df-messenger-titlebar-background, linear-gradient(168deg, #38bdf8 0%, #0284c7 42%, #075985 100%)) !important;
+  color: var(--df-messenger-titlebar-font-color, #f0f9ff) !important;
+  border: var(--df-messenger-titlebar-border, none) !important;
+  border-bottom: var(--df-messenger-titlebar-border-bottom, 1px solid rgba(4, 58, 90, 0.55)) !important;
+}
+df-messenger-list,
+.chat-min df-messenger-list {
+  background: var(--df-messenger-chat-background, #ffffff) !important;
+}
+#messageList .message,
+#messageList df-message {
+  font-family: var(--df-messenger-font-family, "Manrope", "Segoe UI", sans-serif) !important;
+  font-size: var(--df-messenger-message-font-size, 14px) !important;
+  line-height: 1.45 !important;
+  border-radius: 16px !important;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04) !important;
+}
+#messageList .message.bot-message {
+  background: ${botBg} !important;
+  color: ${botText} !important;
+  border-bottom-left-radius: 6px !important;
+}
+#messageList .message.user-message {
+  background: ${userBg} !important;
+  color: ${userText} !important;
+  border-bottom-right-radius: 6px !important;
+}
+df-messenger-user-input {
+  background: var(--df-messenger-input-background, #ffffff) !important;
+  border-top: var(--df-messenger-input-border-top, 1px solid rgba(14, 165, 233, 0.28)) !important;
+}
+textarea,
+input {
+  font-family: var(--df-messenger-font-family, "Manrope", "Segoe UI", sans-serif) !important;
+  color: var(--df-messenger-input-font-color, #0f172a) !important;
+}
+@media screen and (max-width: 500px) {
+  .chat-wrapper {
+    right: 0 !important;
+    left: 0 !important;
+    bottom: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    border-radius: 20px 20px 0 0 !important;
+  }
+  .chat-wrapper.chat-open {
+    height: calc(100dvh - 12px) !important;
+  }
+}`;
+
+    const applyStyle = () => {
+        const roots = collectSearchRoots(dfMessenger);
+        for (const root of roots) {
+            if (!root || !(root instanceof ShadowRoot) || typeof root.appendChild !== "function") {
+                continue;
+            }
+            let style = root.getElementById(ES_CX_LOOK_STYLE_ID);
+            if (!style) {
+                style = document.createElement("style");
+                style.id = ES_CX_LOOK_STYLE_ID;
+                root.appendChild(style);
+            }
+            style.textContent = css;
+        }
+    };
+
+    applyStyle();
+    [80, 240, 700, 1500, 3000].forEach((ms) => {
+        window.setTimeout(() => {
+            if (activeDfMessenger === dfMessenger) {
+                applyStyle();
+            }
+        }, ms);
+    });
 }
 
 function applyBotPersonaToMessenger(dfMessenger, bubble) {
