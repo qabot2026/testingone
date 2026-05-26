@@ -976,7 +976,7 @@ function getChatPanelBorderRadiusCss() {
     if (!r) {
         return "";
     }
-    /* DF injects: `.chat-wrapper{border-radius:var(--df-messenger-chat-border-radius)}` (see gstatic df-messenger.js). Shorthand + longhands beat var(); order vs constructed styles is not reliable — we also set inline in applyChatPanelBorderRadiusToElements. */
+    /* Dialogflow injects: `.chat-wrapper{border-radius:var(--df-messenger-chat-border-radius)}`. Shorthand + longhands beat var(); order vs constructed styles is not reliable — we also set inline in applyChatPanelBorderRadiusToElements. */
     const quad = `${r.topLeft} ${r.topRight} ${r.bottomRight} ${r.bottomLeft}`;
     return `/* company.js: whitish open chat *panel* (not message bubbles) */
 .chat-wrapper,
@@ -2602,7 +2602,7 @@ function runCompanyDomReadyInit() {
 }
 
 /**
- * The widget bundle can load in the same turn as `df-messenger.js` onload. In some browsers the
+ * The widget bundle can load in the same turn as Dialogflow ES bootstrap onload. In some browsers the
  * `df-messenger` custom element is not yet defined when this script first runs; wait for it
  * (embed / Flask `test-embed` and similar).
  */
@@ -2626,7 +2626,7 @@ function runMessengerMountWhenCustomElementReady() {
         }
         if (!customElements.get("df-messenger")) {
             // eslint-disable-next-line no-console
-            console.error("[company chat] df-messenger is still undefined — check Network tab: df-messenger.js must load from Google (not blocked by ad blocker / CSP).");
+            console.error("[company chat] df-messenger is still undefined — check Network tab: Dialogflow ES bootstrap.js must load from Google (not blocked by ad blocker / CSP).");
         }
         didMount = true;
         createAndMountMessenger();
@@ -24187,8 +24187,8 @@ function renderPersona(dfMessenger, personaType, label, timeLabelForUser) {
         typeof timeLabelForUser === "string"
             ? timeLabelForUser
             : getIstTimeLabel();
-    // df-messenger's `renderCustomText` only Markdown-processes when `isBot=true` (see DF_Mti in
-    // df-messenger.js). User lane = `df-text-message` with `<div style="white-space:pre-wrap">` —
+    // df-messenger's `renderCustomText` only Markdown-processes when `isBot=true`.
+    // User lane = `df-text-message` with `<div style="white-space:pre-wrap">` —
     // no Markdown / no <img>, so SVG data-URLs print literally and `**bold**` shows asterisks.
     // We render the persona as Markdown bold text in the *bot* lane (so it actually renders), tag it
     // with an invisible sentinel (USER_PERSONA_TEXT_SENTINEL), then the decorator finds the row,
