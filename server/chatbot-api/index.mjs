@@ -770,33 +770,37 @@ function pickCityFromClientContextMerged_(ctx) {
 }
 
 const GEOIP_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
-/** @type {Map<string, { city: string, ts: number }>} */
+/** @type {Map<string, { city: string, countryCode: string, country: string, ts: number }>} */
 const geoIpCityCache = new Map();
 
-async function resolveCityForRequest(req) {
+async function resolveGeoForRequest(req) {
     const h = req && req.headers ? req.headers : {};
-    // Prefer provider-injected city headers if present (fast/no external call).
-    const fromCf = typeof h["cf-ipcity"] === "string" ? h["cf-ipcity"].trim() : "";
-    if (fromCf) {
-        return fromCf;
-    }
-    const fromVercel = typeof h["x-vercel-ip-city"] === "string" ? h["x-vercel-ip-city"].trim() : "";
-    if (fromVercel) {
-        return fromVercel;
+    const cityFromCf = typeof h["cf-ipcity"] === "string" ? h["cf-ipcity"].trim() : "";
+    const cityFromVercel = typeof h["x-vercel-ip-city"] === "string" ? h["x-vercel-ip-city"].trim() : "";
+    const countryFromCf = typeof h["cf-ipcountry"] === "string" ? h["cf-ipcountry"].trim().toUpperCase() : "";
+    const countryFromVercel = typeof h["x-vercel-ip-country"] === "string" ? h["x-vercel-ip-country"].trim().toUpperCase() : "";
+    const headerCity = cityFromCf || cityFromVercel;
+    const headerCountryCode = countryFromCf || countryFromVercel;
+    if (headerCity || headerCountryCode) {
+        return { city: headerCity, countryCode: headerCountryCode, country: "" };
     }
 
     const ip = extractRequestIp(req);
     if (!ip) {
-        return "";
+        return { city: "", countryCode: "", country: "" };
     }
     const cached = geoIpCityCache.get(ip);
     if (cached && Date.now() - cached.ts <= GEOIP_CACHE_TTL_MS) {
-        return cached.city;
+        return {
+            city: cached.city || "",
+            countryCode: cached.countryCode || "",
+            country: cached.country || ""
+        };
     }
 
     // Best-effort GeoIP: ipapi.co (no token). If fetch is unavailable or it errors, return empty.
     if (typeof fetch !== "function") {
-        return "";
+        return { city: "", countryCode: "", country: "" };
     }
     const ac = new AbortController();
     const timeout = setTimeout(() => ac.abort(), 1500);
@@ -807,17 +811,24 @@ async function resolveCityForRequest(req) {
             signal: ac.signal
         });
         if (!resp.ok) {
-            return "";
+            return { city: "", countryCode: "", country: "" };
         }
         const data = await resp.json().catch(() => null);
         const city = data && typeof data.city === "string" ? data.city.trim() : "";
-        geoIpCityCache.set(ip, { city, ts: Date.now() });
-        return city;
+        const countryCode = data && typeof data.country_code === "string" ? data.country_code.trim().toUpperCase() : "";
+        const country = data && typeof data.country_name === "string" ? data.country_name.trim() : "";
+        geoIpCityCache.set(ip, { city, countryCode, country, ts: Date.now() });
+        return { city, countryCode, country };
     } catch {
-        return "";
+        return { city: "", countryCode: "", country: "" };
     } finally {
         clearTimeout(timeout);
     }
+}
+
+async function resolveCityForRequest(req) {
+    const geo = await resolveGeoForRequest(req);
+    return geo.city || "";
 }
 
 let firebaseInitError = "";
@@ -1174,8 +1185,14 @@ function haversineKm_(lat1, lng1, lat2, lng2) {
 /** Best-effort visitor city from CDN headers or GeoIP (widget stores in `client_context.city`). */
 app.get("/api/visitor-city", async (req, res) => {
     try {
-        const city = await resolveCityForRequest(req);
-        return res.status(200).json({ ok: true, city: city || "" });
+        const geo = await resolveGeoForRequest(req);
+        return res.status(200).json({
+            ok: true,
+            city: geo.city || "",
+            countryCode: geo.countryCode || "",
+            country_code: geo.countryCode || "",
+            country: geo.country || ""
+        });
     } catch (e) {
         const detail = e && e.message ? e.message : String(e);
         return res.status(500).json({ ok: false, error: detail.slice(0, 240) });
@@ -1189,12 +1206,21 @@ app.get("/api/visitor-city", async (req, res) => {
  */
 async function mergeVisitorCityIntoClientContext_(ctx, req) {
     const merged = ctx && typeof ctx === "object" ? { ...ctx } : {};
-    if (pickCityFromClientContextMerged_(merged)) {
+    const hasCity = !!pickCityFromClientContextMerged_(merged);
+    const hasCountryCode = typeof merged.country_code === "string" && merged.country_code.trim()
+        || typeof merged.countryCode === "string" && merged.countryCode.trim();
+    if (hasCity && hasCountryCode) {
         return merged;
     }
-    const city = await resolveCityForRequest(req);
-    if (city) {
-        merged.city = city;
+    const geo = await resolveGeoForRequest(req);
+    if (!hasCity && geo.city) {
+        merged.city = geo.city;
+    }
+    if (!hasCountryCode && geo.countryCode) {
+        merged.country_code = geo.countryCode;
+    }
+    if (geo.country && !(typeof merged.country === "string" && merged.country.trim())) {
+        merged.country = geo.country;
     }
     return merged;
 }

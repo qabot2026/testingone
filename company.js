@@ -2281,11 +2281,13 @@ const UI_TRANSLATIONS = {
         contactFormSubtitle: "Share your contact details.",
         closeFormAria: "Close form",
         namePlaceholder: "Name",
+        dialCodePlaceholder: "Dial code",
         mobilePlaceholder: "Mobile number",
         emailPlaceholder: "Email",
         messagePlaceholder: "How can we help?",
         otpCodePlaceholder: "Enter OTP",
         summaryNameLabel: "Name",
+        summaryDialCodeLabel: "Dial code",
         summaryMobileLabel: "Mobile",
         summaryEmailLabel: "Email",
         summaryDateLabel: "Date",
@@ -2333,11 +2335,13 @@ const UI_TRANSLATIONS = {
         contactFormSubtitle: "अपनी जानकारी साझा करें, हम आपसे संपर्क करेंगे।",
         closeFormAria: "फॉर्म बंद करें",
         namePlaceholder: "नाम",
+        dialCodePlaceholder: "डायल कोड",
         mobilePlaceholder: "मोबाइल नंबर",
         emailPlaceholder: "ईमेल",
         messagePlaceholder: "हम आपकी कैसे मदद कर सकते हैं?",
         otpCodePlaceholder: "OTP दर्ज करें",
         summaryNameLabel: "नाम",
+        summaryDialCodeLabel: "डायल कोड",
         summaryMobileLabel: "मोबाइल",
         summaryEmailLabel: "ईमेल",
         summaryDateLabel: "तिथि",
@@ -2385,11 +2389,13 @@ const UI_TRANSLATIONS = {
         contactFormSubtitle: "तुमची माहिती शेअर करा, आम्ही तुमच्याशी संपर्क करू.",
         closeFormAria: "फॉर्म बंद करा",
         namePlaceholder: "नाव",
+        dialCodePlaceholder: "डायल कोड",
         mobilePlaceholder: "मोबाईल नंबर",
         emailPlaceholder: "ईमेल",
         messagePlaceholder: "आम्ही तुम्हाला कशी मदत करू शकतो?",
         otpCodePlaceholder: "OTP टाका",
         summaryNameLabel: "नाव",
+        summaryDialCodeLabel: "डायल कोड",
         summaryMobileLabel: "मोबाईल",
         summaryEmailLabel: "ईमेल",
         summaryDateLabel: "तारीख",
@@ -5690,6 +5696,24 @@ function contactFormConfigHasFileField() {
 function getBuiltinDefaultContactFormFields() {
     return [
         { id: "contact-name", name: "name", type: "text", required: true, icon: "user", i18nPlaceholder: "namePlaceholder", i18nSummaryLabel: "summaryNameLabel", autocomplete: "name" },
+        {
+            id: "contact-dial-code",
+            name: "dial_code",
+            type: "select",
+            required: true,
+            icon: "phone",
+            i18nPlaceholder: "dialCodePlaceholder",
+            i18nSummaryLabel: "summaryDialCodeLabel",
+            autoDetectDialCode: true,
+            options: [
+                { label: "India (+91)", value: "+91" },
+                { label: "United States / Canada (+1)", value: "+1" },
+                { label: "United Kingdom (+44)", value: "+44" },
+                { label: "United Arab Emirates (+971)", value: "+971" },
+                { label: "Australia (+61)", value: "+61" },
+                { label: "Singapore (+65)", value: "+65" }
+            ]
+        },
         { id: "contact-mobile", name: "mobile", type: "tel", required: true, icon: "phone", i18nPlaceholder: "mobilePlaceholder", i18nSummaryLabel: "summaryMobileLabel", autocomplete: "tel", inputMode: "tel" },
         { id: "contact-email", name: "email", type: "email", required: true, icon: "email", i18nPlaceholder: "emailPlaceholder", i18nSummaryLabel: "summaryEmailLabel", autocomplete: "email" },
         { id: "contact-message", name: "message", type: "textarea", required: true, icon: "message", i18nPlaceholder: "messagePlaceholder", rows: 2 }
@@ -7657,9 +7681,9 @@ function mergeContactIdentityFieldsFromLiveDomIntoStoredContext_() {
         const next = Object.assign({}, prev);
         let changed = false;
         /** @type {Record<string, true>} */
-        const tracked = { name: true, email: true, mobile: true };
+        const tracked = { name: true, email: true, mobile: true, dial_code: true, dialcode: true };
         const nodes = slot.querySelectorAll(
-            "input.dfchat-contact-form__control[name], textarea.dfchat-contact-form__control[name]"
+            "input.dfchat-contact-form__control[name], textarea.dfchat-contact-form__control[name], select.dfchat-contact-form__control[name]"
         );
         for (let i = 0; i < nodes.length; i += 1) {
             const el = nodes[i];
@@ -7717,6 +7741,8 @@ function mountContactFormFieldsFromConfig() {
     syncContactFormAppointmentModeClass_();
     syncAppointmentDoctorHiddenFromSession();
     applyStoredContactHintsToOpenContactForm_();
+    applyDetectedDialCodeToContactForm_();
+    scheduleVisitorCityCapture_();
     syncSuppressAppointmentContactRows_();
 }
 
@@ -17217,7 +17243,9 @@ function applyStoredContactHintsToOpenContactForm_() {
         const hints = {
             mobile: dfParameterScalarToString(stored && stored.mobile != null ? stored.mobile : ""),
             name: dfParameterScalarToString(stored && stored.name != null ? stored.name : ""),
-            email: dfParameterScalarToString(stored && stored.email != null ? stored.email : "")
+            email: dfParameterScalarToString(stored && stored.email != null ? stored.email : ""),
+            dial_code: getStoredDialCodeFromClientContext_(stored)
+                || dialCodeForCountryCode_(getCountryCodeFromClientContext_(stored))
         };
         const cfg = readContactFormConfig();
         const fields = Array.isArray(cfg.fields) ? cfg.fields : [];
@@ -17227,11 +17255,23 @@ function applyStoredContactHintsToOpenContactForm_() {
                 continue;
             }
             const nm = String(def.name).trim();
-            const hint = nm === "mobile" ? hints.mobile : nm === "name" ? hints.name : nm === "email" ? hints.email : "";
+            const hint =
+                nm === "mobile" ? hints.mobile
+                    : nm === "name" ? hints.name
+                        : nm === "email" ? hints.email
+                            : (nm === "dial_code" || nm === "dialcode") ? hints.dial_code
+                                : "";
             if (!hint) {
                 continue;
             }
             const el = document.getElementById(def.id);
+            if (
+                el
+                && String(el.tagName || "").toLowerCase() === "select"
+                && (nm === "dial_code" || nm === "dialcode")
+            ) {
+                ensureDialCodeOptionExists_(/** @type {HTMLSelectElement} */ (el), hint, getCountryCodeFromClientContext_(stored));
+            }
             if (el && "value" in el && !String(el.value || "").trim()) {
                 el.value = hint;
             }
@@ -19318,6 +19358,7 @@ function openContactForm() {
     }
     window.setTimeout(() => {
         applyStoredContactHintsToOpenContactForm_();
+        applyDetectedDialCodeToContactForm_();
         syncSuppressAppointmentContactRows_();
         triggerOtpAutoSendIfNeeded_();
     }, 0);
@@ -21747,8 +21788,129 @@ function derivePagePartsFromHref(href) {
 
 let visitorCityCaptureInFlight_ = false;
 
+const COUNTRY_DIAL_CODE_BY_ISO2_ = {
+    IN: "+91",
+    US: "+1",
+    CA: "+1",
+    GB: "+44",
+    AE: "+971",
+    AU: "+61",
+    SG: "+65",
+    SA: "+966",
+    QA: "+974",
+    OM: "+968",
+    KW: "+965",
+    BH: "+973",
+    NP: "+977",
+    BD: "+880",
+    LK: "+94",
+    PK: "+92",
+    MY: "+60",
+    DE: "+49",
+    FR: "+33",
+    IT: "+39",
+    ES: "+34",
+    NL: "+31",
+    IE: "+353",
+    NZ: "+64",
+    ZA: "+27",
+    JP: "+81",
+    KR: "+82",
+    CN: "+86",
+    TH: "+66",
+    ID: "+62",
+    PH: "+63",
+    VN: "+84",
+    BR: "+55",
+    MX: "+52"
+};
+
+function normalizeDialCodeValue_(value) {
+    const raw = String(value == null ? "" : value).trim();
+    if (!raw) {
+        return "";
+    }
+    const digits = raw.replace(/[^\d]/g, "");
+    return digits ? `+${digits}` : "";
+}
+
+function getStoredDialCodeFromClientContext_(ctx) {
+    if (!ctx || typeof ctx !== "object") {
+        return "";
+    }
+    const raw =
+        ctx.dial_code ?? ctx.dialCode ?? ctx.country_dial_code ?? ctx.countryDialCode ?? "";
+    return normalizeDialCodeValue_(raw);
+}
+
+function getCountryCodeFromClientContext_(ctx) {
+    if (!ctx || typeof ctx !== "object") {
+        return "";
+    }
+    return String(ctx.country_code ?? ctx.countryCode ?? ctx.country ?? "")
+        .trim()
+        .slice(0, 2)
+        .toUpperCase();
+}
+
+function dialCodeForCountryCode_(countryCode) {
+    const cc = String(countryCode || "").trim().slice(0, 2).toUpperCase();
+    return cc && COUNTRY_DIAL_CODE_BY_ISO2_[cc] ? COUNTRY_DIAL_CODE_BY_ISO2_[cc] : "";
+}
+
+function ensureDialCodeOptionExists_(selectEl, dialCode, countryCode) {
+    if (!selectEl || !dialCode) {
+        return;
+    }
+    const existing = Array.from(selectEl.options || []).some((op) => op.value === dialCode);
+    if (existing) {
+        return;
+    }
+    const op = document.createElement("option");
+    op.value = dialCode;
+    op.textContent = countryCode ? `${countryCode} (${dialCode})` : dialCode;
+    selectEl.appendChild(op);
+}
+
+function applyDetectedDialCodeToContactForm_() {
+    try {
+        const stored = readStoredClientContext();
+        const storedDial = getStoredDialCodeFromClientContext_(stored);
+        const countryCode = getCountryCodeFromClientContext_(stored);
+        const detectedDial = storedDial || dialCodeForCountryCode_(countryCode);
+        if (!detectedDial) {
+            return;
+        }
+        const cfg = readContactFormConfig();
+        const fields = Array.isArray(cfg.fields) ? cfg.fields : [];
+        for (let i = 0; i < fields.length; i += 1) {
+            const def = fields[i];
+            if (!def || !def.id) {
+                continue;
+            }
+            const name = typeof def.name === "string" ? def.name.trim().toLowerCase() : "";
+            const shouldApply = def.autoDetectDialCode === true || name === "dial_code" || name === "dialcode";
+            if (!shouldApply) {
+                continue;
+            }
+            const el = document.getElementById(def.id);
+            if (!el || String(el.tagName || "").toLowerCase() !== "select" || !("value" in el)) {
+                continue;
+            }
+            const selectEl = /** @type {HTMLSelectElement} */ (el);
+            if (selectEl.value) {
+                continue;
+            }
+            ensureDialCodeOptionExists_(selectEl, detectedDial, countryCode);
+            selectEl.value = detectedDial;
+        }
+    } catch {
+        /* ignore */
+    }
+}
+
 /**
- * Resolve visitor city once per session (IP/GeoIP on API) and persist to `client_context.city` for Sheets + dashboard.
+ * Resolve visitor city/country once per session (IP/GeoIP on API) and persist for Sheets + dial code defaults.
  */
 function scheduleVisitorCityCapture_() {
     if (visitorCityCaptureInFlight_) {
@@ -21757,7 +21919,10 @@ function scheduleVisitorCityCapture_() {
     try {
         const prev = readStoredClientContext();
         const existing = prev && typeof prev.city === "string" ? prev.city.trim() : "";
-        if (existing) {
+        const countryCode = getCountryCodeFromClientContext_(prev);
+        const dialCode = getStoredDialCodeFromClientContext_(prev) || dialCodeForCountryCode_(countryCode);
+        if (existing && countryCode && dialCode) {
+            applyDetectedDialCodeToContactForm_();
             return;
         }
     } catch {
@@ -21773,15 +21938,36 @@ function scheduleVisitorCityCapture_() {
         .then((json) => {
             const city =
                 json && json.ok && typeof json.city === "string" ? json.city.trim() : "";
-            if (!city) {
+            const countryCode =
+                json && json.ok
+                    ? String(json.countryCode || json.country_code || "").trim().slice(0, 2).toUpperCase()
+                    : "";
+            const country =
+                json && json.ok && typeof json.country === "string" ? json.country.trim() : "";
+            if (!city && !countryCode && !country) {
                 return;
             }
             const prev2 = readStoredClientContext();
-            const have = prev2 && typeof prev2.city === "string" ? prev2.city.trim() : "";
-            if (have) {
-                return;
+            const haveCity = prev2 && typeof prev2.city === "string" ? prev2.city.trim() : "";
+            const haveCountryCode = getCountryCodeFromClientContext_(prev2);
+            const haveDialCode = getStoredDialCodeFromClientContext_(prev2);
+            const detectedDial = dialCodeForCountryCode_(countryCode);
+            /** @type {Record<string, unknown>} */
+            const next = { ...prev2 };
+            if (city && !haveCity) {
+                next.city = city;
             }
-            persistClientContext({ ...prev2, city });
+            if (countryCode && !haveCountryCode) {
+                next.country_code = countryCode;
+            }
+            if (country && !(typeof next.country === "string" && next.country.trim())) {
+                next.country = country;
+            }
+            if (detectedDial && !haveDialCode) {
+                next.dial_code = detectedDial;
+            }
+            persistClientContext(next);
+            applyDetectedDialCodeToContactForm_();
             if (shouldSyncChatSessionToBackend_()) {
                 scheduleSessionQueriesSheetSync_();
             }
@@ -22594,7 +22780,25 @@ function mergeContactHintsFromOpenFormPrefillIntoStoredContext(prefill) {
         if (es && EMAIL_VALIDATION_RE.test(es)) {
             next.email = es;
         }
+        const dialRaw =
+            prefill.dial_code ?? prefill.dialCode ?? prefill.country_dial_code ?? prefill.countryDialCode;
+        const dial = normalizeDialCodeValue_(dialRaw);
+        if (dial) {
+            next.dial_code = dial;
+        }
+        const ccRaw = prefill.country_code ?? prefill.countryCode;
+        const cc = dfParameterScalarToString(ccRaw != null ? ccRaw : "").slice(0, 2).toUpperCase();
+        if (cc) {
+            next.country_code = cc;
+            if (!next.dial_code) {
+                const ccDial = dialCodeForCountryCode_(cc);
+                if (ccDial) {
+                    next.dial_code = ccDial;
+                }
+            }
+        }
         persistClientContext(next);
+        applyDetectedDialCodeToContactForm_();
     } catch {
         /* ignore */
     }
