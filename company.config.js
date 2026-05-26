@@ -210,18 +210,6 @@ window.COMPANY_CHAT_UI_CONFIG = {
         enabled: false
       },
 
-      /**
-       * ChatGPT-style reveal for web bot text responses.
-       * enabled: false → bot replies appear normally at once.
-       * charDelayMs: lower = faster typing; maxChars prevents long responses from animating too slowly.
-       */
-      botResponseTypewriter: {
-        enabled: true,
-        charDelayMs: 14,
-        startDelayMs: 40,
-        maxChars: 1800
-      },
-
       // POST telemetry to `/chat-client-context` on your API base (see `dfchat-api-base-url`). Static sites
       // (GitHub Pages, host-my-page, etc.) have no backend — turn off to avoid 404 in the Network tab.
       clientContextCapture: {

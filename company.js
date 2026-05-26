@@ -267,7 +267,6 @@ const MESSAGE_LIST_SQUARE_PANE_STYLE_ID = "dfchat-messagelist-square-pane";
 /** Open whitish chat card (`.chat-wrapper`); optional `common.chatPanel.borderRadius` in company.config.js */
 const CHAT_PANEL_CORNERS_STYLE_ID = "dfchat-chat-panel-corners";
 const TITLEBAR_LAYOUT_STYLE_ID = "dfchat-titlebar-layout";
-const BOT_TYPEWRITER_STYLE_ID = "dfchat-bot-response-typewriter-style";
 const PERSONA_IMAGE_GUARD_STYLE_ID = "dfchat-persona-image-guard";
 /** Dialogflow “jump to bottom” / scroll-hint UI; mirrored onto `df-messenger-chat-bubble` :host. */
 const DF_MESSENGER_CHAT_SCROLL_JUMP_VAR_KEYS = [
@@ -295,31 +294,9 @@ const FEATURES_CONFIG = COMMON_CONFIG.features && typeof COMMON_CONFIG.features 
 const MULTI_LANGUAGE_CONFIG = FEATURES_CONFIG.multiLanguage && typeof FEATURES_CONFIG.multiLanguage === "object"
     ? FEATURES_CONFIG.multiLanguage
     : {};
-const BOT_RESPONSE_TYPEWRITER_CONFIG = FEATURES_CONFIG.botResponseTypewriter && typeof FEATURES_CONFIG.botResponseTypewriter === "object"
-    ? FEATURES_CONFIG.botResponseTypewriter
-    : {};
 /** When `multiLanguage` is missing, default is false (turn on with `enabled: true`). Re-read so admin/runtime merges apply without reload. */
 function isMultiLanguageEnabled() {
     return isFeatureEnabledFromConfig(MULTI_LANGUAGE_CONFIG, false);
-}
-
-function isBotResponseTypewriterEnabled_() {
-    return isFeatureEnabledFromConfig(BOT_RESPONSE_TYPEWRITER_CONFIG, false);
-}
-
-function getBotResponseTypewriterCharDelayMs_() {
-    const n = Number(BOT_RESPONSE_TYPEWRITER_CONFIG.charDelayMs);
-    return Number.isFinite(n) ? Math.max(4, Math.min(80, Math.floor(n))) : 14;
-}
-
-function getBotResponseTypewriterStartDelayMs_() {
-    const n = Number(BOT_RESPONSE_TYPEWRITER_CONFIG.startDelayMs);
-    return Number.isFinite(n) ? Math.max(0, Math.min(1200, Math.floor(n))) : 40;
-}
-
-function getBotResponseTypewriterMaxChars_() {
-    const n = Number(BOT_RESPONSE_TYPEWRITER_CONFIG.maxChars);
-    return Number.isFinite(n) ? Math.max(80, Math.min(8000, Math.floor(n))) : 1800;
 }
 /** When true, auto-translation (Google) may walk `document.body`; default false = only chat widget shadow roots. */
 const AUTO_TRANSLATE_HOST_PAGE = typeof MULTI_LANGUAGE_CONFIG.autoTranslateHostPage === "boolean"
@@ -3023,7 +3000,6 @@ function createAndMountMessenger() {
     initializeMobileChatLayout(df, COMPANY_UI_CONFIG);
     initializeChatStateSync(df);
     installRenderedBotTranscriptHook_(df);
-    installBotResponseTypewriter_(df);
     attachPersonaHandlers(df);
     // Lightbox is handled via a global click handler (shadow-DOM safe composedPath checks).
     ensureChatActionBar();
@@ -18945,210 +18921,6 @@ function installRenderedBotTranscriptHook_(host) {
         return ret;
     };
     el.dataset.dfchatTranscriptRenderHook = "1";
-}
-
-function installBotResponseTypewriter_(host) {
-    const el = /** @type {{ dataset?: DOMStringMap, _dfchatTypewriterTimer?: number }} */ (host);
-    if (!el || !el.dataset || el.dataset.dfchatTypewriterHook === "1") {
-        return;
-    }
-    el.dataset.dfchatTypewriterHook = "1";
-    if (!isBotResponseTypewriterEnabled_()) {
-        return;
-    }
-    const tick = () => {
-        try {
-            ensureBotTypewriterStyles_(/** @type {HTMLElement} */ (host));
-            applyBotResponseTypewriterToNewMessages_(/** @type {HTMLElement} */ (host));
-        } catch {
-            /* ignore */
-        }
-    };
-    tick();
-    el._dfchatTypewriterTimer = window.setInterval(tick, 180);
-}
-
-function getBotTypewriterCss_() {
-    return `
-.dfchat-typewriter-running::after {
-  content: "";
-  display: inline-block;
-  width: 0.45em;
-  height: 1em;
-  margin-left: 2px;
-  vertical-align: -0.12em;
-  border-right: 2px solid currentColor;
-  animation: dfchat-typewriter-caret 0.85s steps(1) infinite;
-}
-@keyframes dfchat-typewriter-caret {
-  0%, 45% { opacity: 1; }
-  46%, 100% { opacity: 0; }
-}`;
-}
-
-function ensureBotTypewriterStyles_(dfMessenger) {
-    if (!dfMessenger) {
-        return;
-    }
-    const css = getBotTypewriterCss_();
-    const roots = collectSearchRoots(dfMessenger);
-    for (let i = 0; i < roots.length; i += 1) {
-        const root = roots[i];
-        if (!root || root === document || !root.appendChild) {
-            continue;
-        }
-        let style = null;
-        try {
-            style = root.getElementById ? root.getElementById(BOT_TYPEWRITER_STYLE_ID) : null;
-        } catch {
-            style = null;
-        }
-        if (!style) {
-            style = document.createElement("style");
-            style.id = BOT_TYPEWRITER_STYLE_ID;
-            root.appendChild(style);
-        }
-        if (style.textContent !== css) {
-            style.textContent = css;
-        }
-    }
-}
-
-function applyBotResponseTypewriterToNewMessages_(dfMessenger) {
-    if (!dfMessenger || !isBotResponseTypewriterEnabled_()) {
-        return;
-    }
-    const roots = collectSearchRoots(dfMessenger);
-    for (let ri = 0; ri < roots.length; ri += 1) {
-        const root = roots[ri];
-        if (!root || typeof root.querySelectorAll !== "function") {
-            continue;
-        }
-        let messages = [];
-        try {
-            messages = Array.from(root.querySelectorAll(".message.bot-message"));
-        } catch {
-            messages = [];
-        }
-        for (let i = 0; i < messages.length; i += 1) {
-            maybeAnimateBotMessageTypewriter_(messages[i]);
-        }
-    }
-}
-
-function maybeAnimateBotMessageTypewriter_(node) {
-    if (!(node instanceof HTMLElement)) {
-        return;
-    }
-    if (node.dataset.dfchatTypewriter === "done" || node.dataset.dfchatTypewriter === "running") {
-        return;
-    }
-    if (!isEligibleBotTypewriterMessage_(node)) {
-        node.dataset.dfchatTypewriter = "done";
-        return;
-    }
-    const textNodes = collectBotTypewriterTextNodes_(node);
-    const totalChars = textNodes.reduce((sum, item) => sum + item.text.length, 0);
-    const maxChars = getBotResponseTypewriterMaxChars_();
-    if (totalChars < 8 || totalChars > maxChars) {
-        node.dataset.dfchatTypewriter = "done";
-        return;
-    }
-    node.dataset.dfchatTypewriter = "running";
-    window.setTimeout(() => {
-        runBotMessageTypewriter_(node, textNodes);
-    }, getBotResponseTypewriterStartDelayMs_());
-}
-
-function isEligibleBotTypewriterMessage_(node) {
-    if (!node || !node.classList || !node.classList.contains("bot-message")) {
-        return false;
-    }
-    if (node.classList.contains("dfchat-user-persona-md")) {
-        return false;
-    }
-    const text = (node.textContent || "").trim();
-    if (!text || text.includes(USER_PERSONA_TEXT_SENTINEL)) {
-        return false;
-    }
-    if (node.querySelector?.(
-        [
-            "img",
-            "video",
-            "canvas",
-            "iframe",
-            "button",
-            "input",
-            "select",
-            "textarea",
-            ".dfchat-inline-gallery",
-            ".dfchat-inline-video",
-            ".dfchat-inline-booking-calendar"
-        ].join(",")
-    )) {
-        return false;
-    }
-    return true;
-}
-
-function collectBotTypewriterTextNodes_(root) {
-    /** @type {Array<{ node: Text, text: string }>} */
-    const out = [];
-    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
-        acceptNode(textNode) {
-            const txt = textNode && typeof textNode.nodeValue === "string" ? textNode.nodeValue : "";
-            if (!txt || !txt.trim()) {
-                return NodeFilter.FILTER_REJECT;
-            }
-            const parent = textNode.parentElement;
-            if (!parent) {
-                return NodeFilter.FILTER_REJECT;
-            }
-            if (parent.closest("button,a,input,select,textarea,script,style")) {
-                return NodeFilter.FILTER_REJECT;
-            }
-            return NodeFilter.FILTER_ACCEPT;
-        }
-    });
-    let current = walker.nextNode();
-    while (current) {
-        const textNode = /** @type {Text} */ (current);
-        out.push({ node: textNode, text: textNode.nodeValue || "" });
-        current = walker.nextNode();
-    }
-    return out;
-}
-
-function runBotMessageTypewriter_(messageNode, textNodes) {
-    if (!(messageNode instanceof HTMLElement) || !Array.isArray(textNodes) || !textNodes.length) {
-        if (messageNode instanceof HTMLElement) {
-            messageNode.dataset.dfchatTypewriter = "done";
-        }
-        return;
-    }
-    for (let i = 0; i < textNodes.length; i += 1) {
-        textNodes[i].node.nodeValue = "";
-    }
-    messageNode.classList.add("dfchat-typewriter-running");
-    const delay = getBotResponseTypewriterCharDelayMs_();
-    let nodeIndex = 0;
-    let charIndex = 0;
-    const step = () => {
-        if (nodeIndex >= textNodes.length) {
-            messageNode.classList.remove("dfchat-typewriter-running");
-            messageNode.dataset.dfchatTypewriter = "done";
-            return;
-        }
-        const part = textNodes[nodeIndex];
-        charIndex += 1;
-        part.node.nodeValue = part.text.slice(0, charIndex);
-        if (charIndex >= part.text.length) {
-            nodeIndex += 1;
-            charIndex = 0;
-        }
-        window.setTimeout(step, delay);
-    };
-    step();
 }
 
 /**
