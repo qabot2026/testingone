@@ -20441,6 +20441,26 @@ function titleCaseSummaryLabel_(key) {
     return words.map((w) => (w ? w.charAt(0).toUpperCase() + w.slice(1) : w)).join(" ");
 }
 
+function formatContactSummaryMobileValue_(payload, mobileValue) {
+    const mobile = String(mobileValue == null ? "" : mobileValue).trim();
+    if (!mobile || mobile.startsWith("+")) {
+        return mobile;
+    }
+    const source = payload && typeof payload === "object" ? payload : {};
+    const dialCode = normalizeDialCodeValue_(
+        source.dial_code ?? source.dialCode ?? source.dialcode ?? source.country_dial_code ?? source.countryDialCode
+    );
+    if (!dialCode) {
+        return mobile;
+    }
+    const dialDigits = dialCode.replace(/\D/g, "");
+    const mobileDigits = mobile.replace(/\D/g, "");
+    if (dialDigits && mobileDigits.startsWith(dialDigits) && mobileDigits.length > dialDigits.length) {
+        return `${dialCode} ${mobileDigits.slice(dialDigits.length)}`;
+    }
+    return `${dialCode} ${mobile}`;
+}
+
 /**
  * Shared labeled rows for the contact-form confirmation bubble / transcript assistant turn.
  *
@@ -20450,14 +20470,18 @@ function titleCaseSummaryLabel_(key) {
 function buildContactFormSubmissionSummaryLines_(payload) {
     const cfg = readContactFormConfig();
     /** Internal / redundant fields — omit from chat transcript summary (match server `buildContactLeadSummaryTextForTranscript_`). */
-    const skipKeys = new Set(["form_id", "submitted_at", "generalappointmentslotminutes"]);
+    const skipKeys = new Set(["form_id", "submitted_at", "generalappointmentslotminutes", "dial_code", "dialcode"]);
     /** @type {string[]} */
     const lines = [];
     for (const key of cfg.chatSummaryFieldNames) {
-        if (skipKeys.has(String(key || "").trim().toLowerCase())) {
+        const keyLower = String(key || "").trim().toLowerCase();
+        if (skipKeys.has(keyLower)) {
             continue;
         }
-        const v = payload && key in payload ? String(payload[key] || "").trim() : "";
+        let v = payload && key in payload ? String(payload[key] || "").trim() : "";
+        if (keyLower === "mobile") {
+            v = formatContactSummaryMobileValue_(payload, v);
+        }
         const field = getContactFormFieldByPayloadName(key);
         const labelKey = field && field.i18nSummaryLabel;
         let label;

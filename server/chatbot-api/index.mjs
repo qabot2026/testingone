@@ -5629,13 +5629,42 @@ function prettyTranscriptFieldLabel_(key) {
 const CONTACT_FORM_TRANSCRIPT_SKIP_FIELD_KEYS_LOWER_ = new Set([
     "form_id",
     "submitted_at",
-    "generalappointmentslotminutes"
+    "generalappointmentslotminutes",
+    "dial_code",
+    "dialcode"
 ]);
+
+function normalizeTranscriptDialCode_(value) {
+    const digits = scalarFormValue(value).replace(/\D/g, "");
+    return digits ? `+${digits}` : "";
+}
+
+function formatTranscriptMobileWithDialCode_(mobileValue, fields, opt) {
+    const mobile = scalarFormValue(mobileValue);
+    if (!mobile || mobile.startsWith("+")) {
+        return mobile;
+    }
+    const src = fields && typeof fields === "object" ? fields : {};
+    const fallback = opt && typeof opt === "object" ? opt : {};
+    const dialCode = normalizeTranscriptDialCode_(
+        src.dial_code ?? src.dialCode ?? src.dialcode ?? src.country_dial_code ?? src.countryDialCode
+        ?? fallback.dial_code ?? fallback.dialCode ?? fallback.country_dial_code ?? fallback.countryDialCode
+    );
+    if (!dialCode) {
+        return mobile;
+    }
+    const dialDigits = dialCode.replace(/\D/g, "");
+    const mobileDigits = mobile.replace(/\D/g, "");
+    if (dialDigits && mobileDigits.startsWith(dialDigits) && mobileDigits.length > dialDigits.length) {
+        return `${dialCode} ${mobileDigits.slice(dialDigits.length)}`;
+    }
+    return `${dialCode} ${mobile}`;
+}
 
 /**
  * One assistant bubble built from saved lead fields (not Dialogflow wording).
  *
- * @param {{ name?: unknown, email?: unknown, mobile?: unknown, form_id?: unknown, submitted_at?: unknown, fields?: Record<string, unknown> }} opt
+ * @param {{ name?: unknown, email?: unknown, mobile?: unknown, dial_code?: unknown, dialCode?: unknown, country_dial_code?: unknown, countryDialCode?: unknown, form_id?: unknown, submitted_at?: unknown, fields?: Record<string, unknown> }} opt
  */
 function buildContactLeadSummaryTextForTranscript_(opt) {
     const o = opt && typeof opt === "object" ? opt : {};
@@ -5657,8 +5686,8 @@ function buildContactLeadSummaryTextForTranscript_(opt) {
         }
     };
     pushLine("Name", o.name);
+    pushLine("Mobile", formatTranscriptMobileWithDialCode_(o.mobile, fields, o));
     pushLine("Email", o.email);
-    pushLine("Mobile", o.mobile);
     const used = new Set(["name", "email", "mobile"]);
     for (const [k, val] of Object.entries(fields)) {
         const keyLower = typeof k === "string" ? k.trim().toLowerCase() : "";
