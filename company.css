@@ -435,16 +435,31 @@
  #dfchat-hard-language-btn:hover,
  #dfchat-hard-restart-btn:hover,
  #dfchat-contact-form-close:hover {
-   background: rgba(14, 165, 233, 0.1) !important;
+  background: linear-gradient(180deg, #ffffff, rgba(14, 165, 233, 0.12)) !important;
+  transform: translateY(-1px);
+  box-shadow: 0 10px 22px rgba(15, 23, 42, 0.12) !important;
  }
  
  #dfchat-contact-form-close {
    width: 44px !important;
    height: 44px !important;
-   border-radius: 12px !important;
-   font-weight: 500 !important;
+  border-radius: 14px !important;
+  display: grid !important;
+  place-items: center !important;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(238, 246, 247, 0.96)) !important;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08) !important;
    line-height: 1 !important;
-   font-size: 28px !important;
+}
+
+#dfchat-contact-form-close .dfchat-contact-form__close-svg {
+  width: 18px;
+  height: 18px;
+  display: block;
+  transition: transform 0.16s ease;
+}
+
+#dfchat-contact-form-close:hover .dfchat-contact-form__close-svg {
+  transform: rotate(90deg);
  }
  
  #dfchat-hard-language-menu {
@@ -644,14 +659,17 @@
  
  .dfchat-contact-form__icon-button {
    border: 0;
-   border-radius: 999px;
-   width: 30px;
-   height: 30px;
-   background: #eef6f7;
+  border-radius: 14px;
+  width: 36px;
+  height: 36px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(238, 246, 247, 0.96));
    color: var(--dfchat-brand-900);
    cursor: pointer;
-   font: inherit;
-   font-size: 1rem;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
+  transition: background 0.2s ease, transform 0.16s ease, box-shadow 0.16s ease;
  }
  
  .dfchat-contact-form__fields {

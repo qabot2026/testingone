@@ -2460,7 +2460,9 @@ function mountDfchatContactFormHostIfNeeded() {
         + "<p class=\"dfchat-contact-form__subtitle\" data-i18n=\"contactFormSubtitle\">Share your details and we will contact you.</p>"
         + "</div>"
         + "<button id=\"dfchat-contact-form-close\" class=\"dfchat-contact-form__icon-button\" type=\"button\" "
-        + "aria-label=\"Close form\" data-i18n-aria-label=\"closeFormAria\" data-dfchat-no-translate=\"true\">X</button>"
+        + "aria-label=\"Close form\" data-i18n-aria-label=\"closeFormAria\" data-dfchat-no-translate=\"true\">"
+        + getContactFormCloseIconHtml_()
+        + "</button>"
         + "</div>"
         + "<form id=\"dfchat-contact-form-fields\" class=\"dfchat-contact-form__fields dfchat-contact-form__fields--stacked\">"
         + "<div id=\"dfchat-contact-form-inputs\" class=\"dfchat-contact-form__inputs\" data-i18n-aria-label=\"contactFormTitle\"></div>"
@@ -2469,6 +2471,18 @@ function mountDfchatContactFormHostIfNeeded() {
         + "</form>"
         + "</div>";
     document.body.appendChild(section);
+}
+
+function getContactFormCloseIconHtml_() {
+    return "<svg class=\"dfchat-contact-form__close-svg\" xmlns=\"http://www.w3.org/2000/svg\" width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\" focusable=\"false\"><path d=\"M18 6 6 18\"/><path d=\"m6 6 12 12\"/></svg>";
+}
+
+function renderContactFormCloseButtonIcon_(button) {
+    if (!button) {
+        return;
+    }
+    button.setAttribute("data-dfchat-no-translate", "true");
+    button.innerHTML = getContactFormCloseIconHtml_();
 }
 
 const DFCHAT_COMPOSER_TYPING = "dfchat-composer-typing";
@@ -2733,25 +2747,21 @@ function initializeHardActionBar() {
     closeButton.setAttribute("title", "Close");
     closeButton.setAttribute("data-dfchat-close-icon", "x");
     closeButton.setAttribute("data-dfchat-no-translate", "true");
-    closeButton.textContent = "X";
-    closeButton.style.cssText = "width: 44px; height: 44px; border: none; border-radius: 12px; background: transparent; color: #0369a1; display: grid; place-items: center; padding: 0; cursor: pointer; font-size: 28px; margin: 0; transition: background 0.2s ease; font-weight: 500; line-height: 1;";
+    renderContactFormCloseButtonIcon_(closeButton);
+    closeButton.style.cssText = "width: 44px; height: 44px; border: none; border-radius: 14px; background: linear-gradient(180deg, rgba(255,255,255,0.96), rgba(238,246,247,0.96)); color: #0369a1; display: grid; place-items: center; padding: 0; cursor: pointer; margin: 0; transition: background 0.2s ease, transform 0.16s ease, box-shadow 0.16s ease; line-height: 1; box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);";
 
     closeButton.addEventListener("click", () => closeForm({ userDismissedForm: true }));
 
     headerControls.appendChild(closeButton);
 
-    // Keep Latin "X" if DOM translation (or re-renders) try to script-localize the glyph.
-    const ensureCloseButtonIsX = () => {
-        if (closeButton && closeButton.textContent !== "X") {
-            closeButton.textContent = "X";
-            closeButton.style.setProperty("font-weight", "500", "important");
-            closeButton.style.setProperty("line-height", "1", "important");
-            closeButton.style.setProperty("font-size", "28px", "important");
+    // Keep SVG icon if DOM translation (or re-renders) try to alter the close control.
+    const ensureCloseButtonIcon = () => {
+        if (closeButton && !closeButton.querySelector(".dfchat-contact-form__close-svg")) {
+            renderContactFormCloseButtonIcon_(closeButton);
         }
     };
 
-    // Check every 500ms to ensure close button stays as ×
-    setInterval(ensureCloseButtonIsX, 500);
+    setInterval(ensureCloseButtonIcon, 500);
 }
 
 /** Bubble + header chrome icons (dashboard preview must update attrs after merge). */
@@ -17491,8 +17501,7 @@ function initializeContactForm() {
 
     if (closeButton) {
         try {
-            closeButton.setAttribute("data-dfchat-no-translate", "true");
-            closeButton.textContent = "X";
+            renderContactFormCloseButtonIcon_(closeButton);
         } catch {
             /* no-op */
         }
