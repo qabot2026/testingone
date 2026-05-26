@@ -10,7 +10,6 @@
   <title>Chat</title>
   <link rel="stylesheet" href="https://www.gstatic.com/dialogflow-console/fast/df-messenger/prod/v1/themes/df-messenger-default.css" />
   <link rel="stylesheet" href="company.css?v=82" />
-  <script src="https://www.gstatic.com/dialogflow-console/fast/df-messenger/prod/v1/df-messenger.js"></script>
   <script>
     (function () {
       var p = new URLSearchParams(window.location.search);
@@ -50,7 +49,43 @@
   <script src="forms/birthform.js"></script>
   <script src="forms/nearest-branch.js"></script>
   <script src="company.config.js"></script>
-  <script src="company.js"></script>
+  <script>
+    (function () {
+      function getDialogflowEngine() {
+        try {
+          var root = window.COMPANY_CHAT_UI_CONFIG || {};
+          var common = root.common && typeof root.common === "object" ? root.common : {};
+          var df = common.dialogflow && typeof common.dialogflow === "object" ? common.dialogflow : {};
+          var raw = String(df.engine || df.type || df.edition || "cx").trim().toLowerCase();
+          return raw === "es" || raw === "essentials" || raw === "dialogflow_es" ? "es" : "cx";
+        } catch (e) {
+          return "cx";
+        }
+      }
+
+      function loadScript(src, onDone) {
+        var s = document.createElement("script");
+        s.src = src;
+        s.async = false;
+        s.onload = function () { onDone && onDone(); };
+        s.onerror = function () {
+          try {
+            console.error("[chat-frame] failed to load script:", src);
+          } catch (e) { /* ignore */ }
+          onDone && onDone();
+        };
+        document.head.appendChild(s);
+      }
+
+      var messengerSrc = getDialogflowEngine() === "es"
+        ? "https://www.gstatic.com/dialogflow-console/fast/messenger/bootstrap.js?v=1"
+        : "https://www.gstatic.com/dialogflow-console/fast/df-messenger/prod/v1/df-messenger.js";
+
+      loadScript(messengerSrc, function () {
+        loadScript("company.js");
+      });
+    })();
+  </script>
   <script>
     (function () {
       function parseHexRgb(hex) {

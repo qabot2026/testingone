@@ -2917,7 +2917,8 @@ function createAndMountMessenger() {
     const dialogflowEngine = String(
         dialogflowConfig.engine || dialogflowConfig.type || dialogflowConfig.edition || "cx"
     ).trim().toLowerCase();
-    if (dialogflowEngine === "es") {
+    const isDialogflowEs = dialogflowEngine === "es" || dialogflowEngine === "essentials" || dialogflowEngine === "dialogflow_es";
+    if (isDialogflowEs) {
         df.setAttribute("intent", dialogflowConfig.intent || "WELCOME");
     } else {
         df.setAttribute("project-id", dialogflowConfig.projectId || "qabot01");
@@ -2932,13 +2933,15 @@ function createAndMountMessenger() {
     df.setAttribute("url-allowlist", "*");
     df.setAttribute("storage-option", "none");
 
-    const bubble = document.createElement("df-messenger-chat-bubble");
-    activeBubbleNode = bubble;
     const headerConfig = COMMON_CONFIG.header || {};
+    const bubble = isDialogflowEs ? null : document.createElement("df-messenger-chat-bubble");
+    activeBubbleNode = bubble;
     applyMessengerChatIconAttributes(df, bubble, headerConfig);
-    bubble.setAttribute("chat-title", headerConfig.title || "Chat Support");
-    bubble.setAttribute("chat-subtitle", headerConfig.subtitle || "🟢 Online");
-    {
+    if (isDialogflowEs) {
+        df.setAttribute("chat-title", headerConfig.title || "Chat Support");
+    } else if (bubble) {
+        bubble.setAttribute("chat-title", headerConfig.title || "Chat Support");
+        bubble.setAttribute("chat-subtitle", headerConfig.subtitle || "🟢 Online");
         const collapseUrl = (typeof headerConfig.chatCollapseIconUrl === "string" && headerConfig.chatCollapseIconUrl.trim())
             ? headerConfig.chatCollapseIconUrl.trim()
             : CHAT_COLLAPSE_X_ICON_DATA_URL;
@@ -2965,7 +2968,9 @@ function createAndMountMessenger() {
     applyDfMessengerBubbleAnchorString(bubble, anchor0);
 
     initializeMessengerReadyState(df, bubble);
-    df.appendChild(bubble);
+    if (bubble) {
+        df.appendChild(bubble);
+    }
     applyBotWritingTextToChatBubble(bubble);
     scheduleChatInputPlaceholderRefresh(df);
     document.body.appendChild(df);
