@@ -1,5 +1,5 @@
 /**
- * Parse Dialogflow CX responseMessages into channel-neutral reply parts
+ * Parse Dialogflow ES fulfillmentMessages into channel-neutral reply parts
  * (matches payloads handled by company.js on the web widget).
  */
 
@@ -259,11 +259,11 @@ export function normalizeSelectOptions_(opts) {
  *   video: { title: string, message: string, url: string, choices: ChoiceOption[] } | null,
  *   form: { message: string, formId: string, formKey: string } | null,
  *   liveAgent: { message: string } | null
- * }} CxReplyParts
+ * }} ReplyParts
  */
 
 /**
- * @returns {CxReplyParts}
+ * @returns {ReplyParts}
  */
 function makeEmptyReplyParts_() {
     return {
@@ -446,7 +446,7 @@ function normalizeRichFiles_(item) {
 }
 
 /**
- * @param {CxReplyParts} parts
+ * @param {ReplyParts} parts
  * @param {{ label: string, value: string }} opt
  */
 function pushChoice_(parts, opt) {
@@ -462,7 +462,7 @@ function pushChoice_(parts, opt) {
 }
 
 /**
- * @param {CxReplyParts} parts
+ * @param {ReplyParts} parts
  * @param {Record<string, unknown>} item
  */
 function mergeVideoFromItem_(parts, item) {
@@ -516,7 +516,7 @@ export function parseOptionsDisplay_(body) {
 }
 
 /**
- * @param {CxReplyParts} parts
+ * @param {ReplyParts} parts
  * @param {Record<string, unknown>} body
  */
 function absorbOptionsDisplay_(parts, body) {
@@ -527,7 +527,7 @@ function absorbOptionsDisplay_(parts, body) {
 }
 
 /**
- * @param {CxReplyParts} parts
+ * @param {ReplyParts} parts
  * @param {Record<string, unknown>} body
  */
 function absorbActionPayload_(parts, body) {
@@ -657,7 +657,7 @@ function absorbActionPayload_(parts, body) {
 }
 
 /**
- * @param {CxReplyParts} parts
+ * @param {ReplyParts} parts
  * @param {Record<string, unknown>} body
  */
 function absorbRichContent_(parts, body) {
@@ -742,7 +742,7 @@ function absorbRichContent_(parts, body) {
 }
 
 /**
- * @param {CxReplyParts} parts
+ * @param {ReplyParts} parts
  * @param {Record<string, unknown>} message
  */
 function absorbDialogflowMessage_(parts, message) {
@@ -847,7 +847,7 @@ function absorbDialogflowMessage_(parts, message) {
     }
 }
 
-/** @param {CxReplyParts} parts */
+/** @param {ReplyParts} parts */
 function finalizeReplyParts_(parts) {
     if (parts.choices.length && (parts.gallery || parts.cardCarousel || parts.video)) {
         const prompt = trim_(parts.choicePrompt);
@@ -868,34 +868,11 @@ function finalizeReplyParts_(parts) {
 }
 
 /**
- * @param {unknown} data Dialogflow detectIntent response
- * @returns {CxReplyParts}
- */
-export function extractCxResponse_(data) {
-    /** @type {CxReplyParts} */
-    const parts = makeEmptyReplyParts_();
-
-    const messages = data?.queryResult?.responseMessages;
-    if (!Array.isArray(messages)) {
-        return parts;
-    }
-
-    for (const m of messages) {
-        if (!m || typeof m !== "object") {
-            continue;
-        }
-        absorbDialogflowMessage_(parts, /** @type {Record<string, unknown>} */ (m));
-    }
-
-    return finalizeReplyParts_(parts);
-}
-
-/**
  * @param {unknown} data Dialogflow ES detectIntent response
- * @returns {CxReplyParts}
+ * @returns {ReplyParts}
  */
 export function extractEsResponse_(data) {
-    /** @type {CxReplyParts} */
+    /** @type {ReplyParts} */
     const parts = makeEmptyReplyParts_();
     const qr = data?.queryResult && typeof data.queryResult === "object" ? data.queryResult : {};
     const messages = qr?.fulfillmentMessages;
@@ -915,19 +892,19 @@ export function extractEsResponse_(data) {
     return finalizeReplyParts_(parts);
 }
 
-/** @param {CxReplyParts} parts */
+/** @param {ReplyParts} parts */
 export function choiceLabels_(parts) {
     return parts.choices.map((c) => c.label);
 }
 
-/** @param {CxReplyParts} parts */
+/** @param {ReplyParts} parts */
 export function choiceValues_(parts) {
     return parts.choices.map((c) => c.value);
 }
 
 /**
  * Build combined plain-text blocks (info lines, form/live-agent notices).
- * @param {CxReplyParts} parts
+ * @param {ReplyParts} parts
  * @param {string} [webChatUrl]
  */
 export function supplementalTextBlocks_(parts, webChatUrl) {

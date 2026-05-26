@@ -1095,8 +1095,14 @@ function collectDfResponseMessagesForUnread(event) {
     const candidates = [
         d.data && Array.isArray(d.data.messages) ? d.data.messages : null,
         Array.isArray(d.messages) ? d.messages : null,
+        d.data && d.data.queryResult && Array.isArray(d.data.queryResult.fulfillmentMessages)
+            ? d.data.queryResult.fulfillmentMessages
+            : null,
         d.data && d.data.queryResult && Array.isArray(d.data.queryResult.responseMessages)
             ? d.data.queryResult.responseMessages
+            : null,
+        d.raw && d.raw.queryResult && Array.isArray(d.raw.queryResult.fulfillmentMessages)
+            ? d.raw.queryResult.fulfillmentMessages
             : null,
         d.raw && d.raw.queryResult && Array.isArray(d.raw.queryResult.responseMessages)
             ? d.raw.queryResult.responseMessages
@@ -1112,15 +1118,15 @@ function collectDfResponseMessagesForUnread(event) {
 }
 
 /**
- * Gallery / video: **only `queryResult.responseMessages`** — this DetectIntent fulfillment list is scoped
+ * Gallery / video: **only current DetectIntent fulfillment messages** — this list is scoped
  * to the current webhook response. **`detail.data.messages`** is a Messenger UI mirror that commonly
  * re-attaches previously rendered payloads, which made `open_gallery` appear on every subsequent intent.
  *
- * Dedupes object refs shared between **`raw`** and **`data`** `queryResult.responseMessages`.
+ * Dedupes object refs shared between **`raw`** and **`data`** queryResult messages.
  *
  * @param {Event | null | undefined} event
  */
-function mergeCxResponseEnvelopeForGallery(event) {
+function mergeDialogflowResponseEnvelopeForGallery(event) {
     /** @type {unknown[]} */
     const out = [];
     const seenObj = new WeakSet();
@@ -1147,13 +1153,13 @@ function mergeCxResponseEnvelopeForGallery(event) {
         detail
         && detail.raw
         && detail.raw.queryResult
-        && detail.raw.queryResult.responseMessages
+        && (detail.raw.queryResult.fulfillmentMessages || detail.raw.queryResult.responseMessages)
     );
     add(
         detail
         && detail.data
         && detail.data.queryResult
-        && detail.data.queryResult.responseMessages
+        && (detail.data.queryResult.fulfillmentMessages || detail.data.queryResult.responseMessages)
     );
     add(detail && Array.isArray(detail.messages) ? detail.messages : null);
     add(detail && detail.data && Array.isArray(detail.data.messages) ? detail.data.messages : null);
@@ -1162,7 +1168,7 @@ function mergeCxResponseEnvelopeForGallery(event) {
 }
 
 /**
- * Only CX response messages carrying a **`payload`** (or Messenger `customPayload`) can produce
+ * Only Dialogflow response messages carrying a **`payload`** (or Messenger `customPayload`) can produce
  * `extractPayload(...)`. Checking this avoids needless work on plain text blobs.
  *
  * @param {unknown} message
@@ -2914,16 +2920,7 @@ function createAndMountMessenger() {
     const df = document.createElement("df-messenger");
     activeDfMessenger = df;
     const dialogflowConfig = COMMON_CONFIG.dialogflow || {};
-    const dialogflowEngine = String(
-        dialogflowConfig.engine || dialogflowConfig.type || dialogflowConfig.edition || "cx"
-    ).trim().toLowerCase();
-    const isDialogflowEs = dialogflowEngine === "es" || dialogflowEngine === "essentials" || dialogflowEngine === "dialogflow_es";
-    if (isDialogflowEs) {
-        df.setAttribute("intent", dialogflowConfig.intent || "WELCOME");
-    } else {
-        df.setAttribute("project-id", dialogflowConfig.projectId || "qabot01");
-        df.setAttribute("location", dialogflowConfig.location || "us-central1");
-    }
+    df.setAttribute("intent", dialogflowConfig.intent || "WELCOME");
     df.setAttribute("agent-id", dialogflowConfig.agentId || "05ce7add-9025-4534-990c-fd7a25dadde1");
     if (typeof dialogflowConfig.oauthClientId === "string" && dialogflowConfig.oauthClientId.trim()) {
         df.setAttribute("oauth-client-id", dialogflowConfig.oauthClientId.trim());
@@ -2934,23 +2931,10 @@ function createAndMountMessenger() {
     df.setAttribute("storage-option", "none");
 
     const headerConfig = COMMON_CONFIG.header || {};
-    const bubble = isDialogflowEs ? null : document.createElement("df-messenger-chat-bubble");
+    const bubble = null;
     activeBubbleNode = bubble;
     applyMessengerChatIconAttributes(df, bubble, headerConfig);
-    if (isDialogflowEs) {
-        df.setAttribute("chat-title", headerConfig.title || "Chat Support");
-    } else if (bubble) {
-        bubble.setAttribute("chat-title", headerConfig.title || "Chat Support");
-        bubble.setAttribute("chat-subtitle", headerConfig.subtitle || "🟢 Online");
-        const collapseUrl = (typeof headerConfig.chatCollapseIconUrl === "string" && headerConfig.chatCollapseIconUrl.trim())
-            ? headerConfig.chatCollapseIconUrl.trim()
-            : CHAT_COLLAPSE_X_ICON_DATA_URL;
-        try {
-            bubble.setAttribute("chat-collapse-icon", collapseUrl);
-        } catch (e) {
-            /* no-op */
-        }
-    }
+    df.setAttribute("chat-title", headerConfig.title || "Chat Support");
 
     const m0 = isMobileViewport();
     const devWin0 = getDeviceSection(COMPANY_UI_CONFIG, m0);
@@ -12742,7 +12726,7 @@ function pruneStaleInlineVideoForCxResponse(messages, event) {
 /**
  * `{ "action": "open_video", "url": "https://www.youtube.com/watch?v=…" }` → inline iframe in chat (YouTube only).
  *
- * Same merge envelope as gallery: use `mergeCxResponseEnvelopeForGallery(event)`.
+ * Same merge envelope as gallery: use `mergeDialogflowResponseEnvelopeForGallery(event)`.
  *
  * @param {unknown[]} messages
  * @param {Event | null | undefined} [event]
@@ -13287,7 +13271,7 @@ function extractFirstOpenGalleryNormalizedUrlsFromCxMessages(messages) {
  * Drop the previous inline strip when this turn has no allowed `open_gallery` (or intent gate blocks it),
  * so plain-text turns do not keep the last carousel visible.
  *
- * @param {unknown[]} messages Merged CX `responseMessages` (see `mergeCxResponseEnvelopeForGallery`).
+ * @param {unknown[]} messages Merged CX `responseMessages` (see `mergeDialogflowResponseEnvelopeForGallery`).
  * @param {Event | null | undefined} event
  * @returns {void}
  */
@@ -13730,7 +13714,7 @@ function scheduleInjectInlineCardCarousel(dfMessenger, cards, messageText) {
  * Drop the previous inline card carousel when this turn has no allowed `open_card_carousel`,
  * so plain-text turns do not keep the last carousel visible.
  *
- * @param {unknown[]} messages Merged CX `responseMessages` (see `mergeCxResponseEnvelopeForGallery`).
+ * @param {unknown[]} messages Merged CX `responseMessages` (see `mergeDialogflowResponseEnvelopeForGallery`).
  * @param {Event | null | undefined} event
  * @returns {void}
  */
@@ -14024,7 +14008,7 @@ function scheduleInjectInlineSelectDropdown(dfMessenger, options, placeholder, m
 /**
  * Drop the previous inline city dropdown when this turn has no allowed `dfchat_inline_select`.
  *
- * @param {unknown[]} messages Merged CX `responseMessages` (see `mergeCxResponseEnvelopeForGallery`).
+ * @param {unknown[]} messages Merged CX `responseMessages` (see `mergeDialogflowResponseEnvelopeForGallery`).
  * @param {Event | null | undefined} event
  * @returns {void}
  */
@@ -15814,7 +15798,7 @@ function extractLiveAgentHandoffFromEvent_(event) {
     let waitingMessage = "";
     let initialMessage = "";
     let requested = false;
-    const messages = mergeCxResponseEnvelopeForGallery(event);
+    const messages = mergeDialogflowResponseEnvelopeForGallery(event);
     for (let mi = 0; mi < messages.length; mi += 1) {
         const message = messages[mi];
         if (!messageHasFulfillmentPayload(message)) {
@@ -16491,7 +16475,7 @@ async function handleDfResponseReceived(event) {
         }
     }
 
-    const cxResponseMessagesMerged = mergeCxResponseEnvelopeForGallery(event);
+    const cxResponseMessagesMerged = mergeDialogflowResponseEnvelopeForGallery(event);
     rememberWebNativeChipValueMappingsFromResponse_(cxResponseMessagesMerged);
     renderPlainMessagePayloadsFromResponse(cxResponseMessagesMerged);
     pruneStaleInlineGalleryForCxResponse(cxResponseMessagesMerged, event);
@@ -17687,7 +17671,7 @@ function pushAssistantVisibleTextsFromDfMessage_(m, parts, seen, textNorms) {
  */
 function extractAssistantVisibleTextsFromDfResponse_(event) {
     const d = event && event.detail;
-    const responseMessages = mergeCxResponseEnvelopeForGallery(event);
+    const responseMessages = mergeDialogflowResponseEnvelopeForGallery(event);
     const messengerMessages = d && d.data && Array.isArray(d.data.messages) ? d.data.messages : [];
     const topMessages = d && Array.isArray(d.messages) ? d.messages : [];
 
@@ -17885,7 +17869,7 @@ function extractAssistantVisibleTextsDeepFallback_(event) {
     if (!d || typeof d !== "object") {
         return [];
     }
-    const responseMessages = mergeCxResponseEnvelopeForGallery(event);
+    const responseMessages = mergeDialogflowResponseEnvelopeForGallery(event);
     const messengerMessages = d.data && Array.isArray(d.data.messages) ? d.data.messages : [];
     const topMessages = Array.isArray(d.messages) ? d.messages : [];
     /** @type {Set<string>} */
@@ -18237,7 +18221,7 @@ function pushPlainTextLabelsFromTranscriptPayloadBody_(body, labels) {
  */
 function extractAssistantPlainTextFromCxRichContent_(event) {
     const d = event && event.detail;
-    const responseMessages = mergeCxResponseEnvelopeForGallery(event);
+    const responseMessages = mergeDialogflowResponseEnvelopeForGallery(event);
     const messengerMessages = d && d.data && Array.isArray(d.data.messages) ? d.data.messages : [];
     const topMessages = d && Array.isArray(d.messages) ? d.messages : [];
     const allMessages = [...responseMessages, ...messengerMessages, ...topMessages];
@@ -18534,7 +18518,7 @@ function mergeTranscriptRichFromCxMessages_(messages) {
  */
 function extractAssistantTranscriptStructuredTurns_(event) {
     const d = event && event.detail;
-    const responseMessages = mergeCxResponseEnvelopeForGallery(event);
+    const responseMessages = mergeDialogflowResponseEnvelopeForGallery(event);
     const messengerMessages = d && d.data && Array.isArray(d.data.messages) ? d.data.messages : [];
     const topMessages = d && Array.isArray(d.messages) ? d.messages : [];
     const allMessages = [...responseMessages, ...messengerMessages, ...topMessages];
