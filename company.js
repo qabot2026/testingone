@@ -9360,7 +9360,7 @@ function applyDfMessengerThemeConfig(dfMessenger, config) {
             }
         }
     }
-    applyDialogflowEsCxLookCompatibility(dfMessenger, theme);
+    applyDialogflowEsCxLookCompatibility(dfMessenger, theme, common.header);
 
     // After `dfMessengerTheme`: footer/composer wrapper variables + shadow overrides.
     applyFooterInputBoxConfig(dfMessenger);
@@ -9409,7 +9409,7 @@ function solidColorForLegacyMessenger_(value, fallback) {
     return fallback;
 }
 
-function applyDialogflowEsCxLookCompatibility(dfMessenger, theme) {
+function applyDialogflowEsCxLookCompatibility(dfMessenger, theme, headerConfig) {
     if (!dfMessenger || !dfMessenger.style) {
         return;
     }
@@ -9426,6 +9426,11 @@ function applyDialogflowEsCxLookCompatibility(dfMessenger, theme) {
     const chatBg = cssThemeValue_(theme, "--df-messenger-chat-background", "#ffffff");
     const inputBg = cssThemeValue_(theme, "--df-messenger-input-box-background", "#ffffff");
     const inputText = cssThemeValue_(theme, "--df-messenger-input-font-color", "#0f172a");
+    const header = headerConfig && typeof headerConfig === "object" ? headerConfig : {};
+    const headerTitleIcon = typeof header.chatTitleIconUrl === "string" && header.chatTitleIconUrl.trim()
+        ? header.chatTitleIconUrl.trim()
+        : (typeof header.chatIconUrl === "string" && header.chatIconUrl.trim() ? header.chatIconUrl.trim() : "");
+    const headerSubtitle = typeof header.subtitle === "string" ? header.subtitle.trim() : "";
 
     // ES bootstrap's older widget reads these legacy variable names.
     dfMessenger.style.setProperty("--df-messenger-bot-message", solidColorForLegacyMessenger_(botBg, "#e8f6ff"));
@@ -9508,6 +9513,23 @@ df-messenger-titlebar {
   color: var(--df-messenger-titlebar-font-color, #f0f9ff) !important;
   border-radius: var(--df-messenger-chat-border-radius, 22px) var(--df-messenger-chat-border-radius, 22px) 0 0 !important;
   box-shadow: none !important;
+  gap: 12px !important;
+  justify-content: flex-start !important;
+}
+.dfchat-es-title-icon {
+  width: var(--df-messenger-titlebar-icon-width, 64px) !important;
+  height: var(--df-messenger-titlebar-icon-height, 64px) !important;
+  flex: 0 0 auto !important;
+  object-fit: contain !important;
+  border-radius: 50% !important;
+}
+.dfchat-es-title-copy {
+  display: flex !important;
+  min-width: 0 !important;
+  flex: 1 1 auto !important;
+  flex-direction: column !important;
+  justify-content: center !important;
+  gap: 4px !important;
 }
 .title-wrapper h2,
 #dfTitlebar {
@@ -9516,6 +9538,21 @@ df-messenger-titlebar {
   font-size: var(--df-messenger-titlebar-title-font-size, 18px) !important;
   font-weight: 700 !important;
   line-height: var(--df-messenger-titlebar-title-line-height, 1.2) !important;
+}
+.dfchat-es-title-subtitle {
+  color: var(--df-messenger-titlebar-subtitle-font-color, #bae6fd) !important;
+  font-family: var(--df-messenger-font-family, "Manrope", "Segoe UI", sans-serif) !important;
+  font-size: var(--df-messenger-titlebar-subtitle-font-size, 14px) !important;
+  line-height: var(--df-messenger-titlebar-subtitle-line-height, 1.35) !important;
+  font-weight: 600 !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+#minimizeIconButton {
+  visibility: visible !important;
+  margin-left: auto !important;
+  flex: 0 0 auto !important;
 }
 #minimizeIcon {
   fill: var(--df-messenger-titlebar-font-color, #f0f9ff) !important;
@@ -9601,6 +9638,14 @@ input {
                 root.appendChild(style);
             }
             style.textContent = css;
+            try {
+                const title = root.querySelector && root.querySelector(".title-wrapper");
+                if (title) {
+                    syncDialogflowEsTitlebarChrome_(title, headerTitleIcon, headerSubtitle);
+                }
+            } catch {
+                /* ignore */
+            }
         }
     };
 
@@ -9612,6 +9657,65 @@ input {
             }
         }, ms);
     });
+}
+
+function syncDialogflowEsTitlebarChrome_(titleWrapper, iconUrl, subtitleText) {
+    if (!titleWrapper || !titleWrapper.querySelector) {
+        return;
+    }
+    const h2 = titleWrapper.querySelector("#dfTitlebar, h2");
+    if (!h2) {
+        return;
+    }
+
+    let copy = titleWrapper.querySelector(".dfchat-es-title-copy");
+    if (!copy) {
+        copy = document.createElement("div");
+        copy.className = "dfchat-es-title-copy";
+        titleWrapper.insertBefore(copy, h2);
+        copy.appendChild(h2);
+    } else if (h2.parentNode !== copy) {
+        copy.insertBefore(h2, copy.firstChild || null);
+    }
+
+    let icon = titleWrapper.querySelector(".dfchat-es-title-icon");
+    if (iconUrl) {
+        if (!icon) {
+            icon = document.createElement("img");
+            icon.className = "dfchat-es-title-icon";
+            icon.alt = "";
+            titleWrapper.insertBefore(icon, copy);
+        }
+        if (icon.getAttribute("src") !== iconUrl) {
+            icon.setAttribute("src", iconUrl);
+        }
+    } else if (icon && icon.parentNode) {
+        icon.parentNode.removeChild(icon);
+    }
+
+    let sub = copy.querySelector(".dfchat-es-title-subtitle");
+    if (subtitleText) {
+        if (!sub) {
+            sub = document.createElement("div");
+            sub.className = "dfchat-es-title-subtitle";
+            copy.appendChild(sub);
+        }
+        sub.textContent = subtitleText;
+    } else if (sub && sub.parentNode) {
+        sub.parentNode.removeChild(sub);
+    }
+
+    const btn = titleWrapper.querySelector("#minimizeIconButton");
+    if (btn && !btn.dataset.dfchatEsClosePatched) {
+        btn.dataset.dfchatEsClosePatched = "1";
+        btn.setAttribute("aria-label", "Close chat");
+        btn.innerHTML = [
+            '<svg id="minimizeIcon" width="24" height="24" viewBox="0 0 24 24" ',
+            'xmlns="http://www.w3.org/2000/svg" aria-hidden="true">',
+            '<path d="M18.3 5.71 12 12l6.3 6.29-1.41 1.41L10.59 13.41 4.29 19.71 2.88 18.3 9.17 12 2.88 5.71 4.29 4.29 10.59 10.59 16.89 4.29z"/>',
+            '</svg>'
+        ].join("");
+    }
 }
 
 function applyBotPersonaToMessenger(dfMessenger, bubble) {
@@ -17773,17 +17877,28 @@ function initializeClientContextCapture() {
     });
 }
 
+function collectDialogflowTurnMessages_(event) {
+    const merged = mergeDialogflowResponseEnvelopeForGallery(event);
+    const d = event && event.detail;
+    const messengerMessages = d && d.data && Array.isArray(d.data.messages) ? d.data.messages : [];
+    const topMessages = d && Array.isArray(d.messages) ? d.messages : [];
+    const out = [];
+    const seenObj = new WeakSet();
+    for (const message of [...merged, ...messengerMessages, ...topMessages]) {
+        if (message != null && typeof message === "object") {
+            const obj = /** @type {object} */ (message);
+            if (seenObj.has(obj)) {
+                continue;
+            }
+            seenObj.add(obj);
+        }
+        out.push(message);
+    }
+    return out;
+}
+
 function shouldOpenContactForm(event) {
-    const responseMessages = event && event.detail && event.detail.raw && event.detail.raw.queryResult
-        && Array.isArray(event.detail.raw.queryResult.responseMessages)
-        ? event.detail.raw.queryResult.responseMessages
-        : [];
-
-    const messengerMessages = event && event.detail && event.detail.data && Array.isArray(event.detail.data.messages)
-        ? event.detail.data.messages
-        : [];
-
-    return [...responseMessages, ...messengerMessages].some(messageContainsOpenFormAction);
+    return collectDialogflowTurnMessages_(event).some(messageContainsOpenFormAction);
 }
 
 /**
@@ -17796,16 +17911,7 @@ function shouldOpenContactForm(event) {
  * @param {Event & { detail?: { raw?: { queryResult?: { responseMessages?: Array<unknown> } }, data?: { messages?: Array<unknown> } } }} event
  */
 function responseHasVisibleBotText_(event) {
-    const responseMessages = event && event.detail && event.detail.raw && event.detail.raw.queryResult
-        && Array.isArray(event.detail.raw.queryResult.responseMessages)
-        ? event.detail.raw.queryResult.responseMessages
-        : [];
-
-    const messengerMessages = event && event.detail && event.detail.data && Array.isArray(event.detail.data.messages)
-        ? event.detail.data.messages
-        : [];
-
-    for (const m of [...responseMessages, ...messengerMessages]) {
+    for (const m of collectDialogflowTurnMessages_(event)) {
         if (!m || typeof m !== "object") {
             continue;
         }
@@ -19213,16 +19319,7 @@ function messageContainsOpenFormAction(message) {
  * @returns {string} `form_id` from agent payload, or "".
  */
 function extractOpenFormIdFromEvent(event) {
-    const responseMessages = event && event.detail && event.detail.raw && event.detail.raw.queryResult
-        && Array.isArray(event.detail.raw.queryResult.responseMessages)
-        ? event.detail.raw.queryResult.responseMessages
-        : [];
-
-    const messengerMessages = event && event.detail && event.detail.data && Array.isArray(event.detail.data.messages)
-        ? event.detail.data.messages
-        : [];
-
-    for (const message of [...responseMessages, ...messengerMessages]) {
+    for (const message of collectDialogflowTurnMessages_(event)) {
         const payload = extractPayload(message);
         if (!payload || payload.action !== CONTACT_FORM_OPEN_ACTION) {
             continue;
@@ -19272,18 +19369,9 @@ function shallowPrefillFromOpenFormPayload(payload) {
  * @returns {Record<string, string> | null}
  */
 function extractOpenFormPrefillFromEvent(event) {
-    const responseMessages = event && event.detail && event.detail.raw && event.detail.raw.queryResult
-        && Array.isArray(event.detail.raw.queryResult.responseMessages)
-        ? event.detail.raw.queryResult.responseMessages
-        : [];
-
-    const messengerMessages = event && event.detail && event.detail.data && Array.isArray(event.detail.data.messages)
-        ? event.detail.data.messages
-        : [];
-
     /** @type {Record<string, string>} */
     let merged = {};
-    for (const message of [...responseMessages, ...messengerMessages]) {
+    for (const message of collectDialogflowTurnMessages_(event)) {
         const payload = extractPayload(message);
         if (!payload || payload.action !== CONTACT_FORM_OPEN_ACTION) {
             continue;
@@ -19321,14 +19409,7 @@ function pushCanonicalChainId_(chain, raw) {
  * @returns {string[]}
  */
 function extractNextFormChainFromOpenFormEvent_(event) {
-    const responseMessages = event && event.detail && event.detail.raw && event.detail.raw.queryResult
-        && Array.isArray(event.detail.raw.queryResult.responseMessages)
-        ? event.detail.raw.queryResult.responseMessages
-        : [];
-    const messengerMessages = event && event.detail && event.detail.data && Array.isArray(event.detail.data.messages)
-        ? event.detail.data.messages
-        : [];
-    for (const message of [...responseMessages, ...messengerMessages]) {
+    for (const message of collectDialogflowTurnMessages_(event)) {
         const payload = extractPayload(message);
         if (!payload || payload.action !== CONTACT_FORM_OPEN_ACTION) {
             continue;
@@ -19438,21 +19519,12 @@ function coerceOpenFormMessengerFollowup_(s) {
  * @returns {{ submit: string | null, cancel: string | null }}
  */
 function extractOpenFormMessengerFollowupsFromEvent_(event) {
-    const responseMessages = event && event.detail && event.detail.raw && event.detail.raw.queryResult
-        && Array.isArray(event.detail.raw.queryResult.responseMessages)
-        ? event.detail.raw.queryResult.responseMessages
-        : [];
-
-    const messengerMessages = event && event.detail && event.detail.data && Array.isArray(event.detail.data.messages)
-        ? event.detail.data.messages
-        : [];
-
     /** @type {string | null} */
     let submit = null;
     /** @type {string | null} */
     let cancel = null;
 
-    for (const message of [...responseMessages, ...messengerMessages]) {
+    for (const message of collectDialogflowTurnMessages_(event)) {
         const payload = extractPayload(message);
         if (!payload || payload.action !== CONTACT_FORM_OPEN_ACTION) {
             continue;
