@@ -9444,6 +9444,14 @@ function applyDialogflowEsCxLookCompatibility(dfMessenger, theme) {
 :host {
   font-family: var(--df-messenger-font-family, "Manrope", "Segoe UI", sans-serif) !important;
 }
+.df-messenger-wrapper {
+  right: var(--dfchat-es-right, 10px) !important;
+  left: var(--dfchat-es-left, auto) !important;
+  top: var(--dfchat-es-top, auto) !important;
+  bottom: var(--dfchat-es-bottom, 20px) !important;
+  background: transparent !important;
+  z-index: 999 !important;
+}
 .chat-wrapper {
   width: var(--df-messenger-chat-window-width, 400px) !important;
   max-width: calc(100vw - 32px) !important;
@@ -9468,10 +9476,10 @@ function applyDialogflowEsCxLookCompatibility(dfMessenger, theme) {
 #widgetIcon {
   width: var(--df-messenger-chat-bubble-size, 64px) !important;
   height: var(--df-messenger-chat-bubble-size, 64px) !important;
-  right: var(--dfchat-es-right, 10px) !important;
-  left: var(--dfchat-es-left, auto) !important;
-  top: var(--dfchat-es-top, auto) !important;
-  bottom: var(--dfchat-es-bottom, 20px) !important;
+  right: 0 !important;
+  left: auto !important;
+  top: auto !important;
+  bottom: 0 !important;
   background: var(--df-messenger-chat-bubble-background, linear-gradient(160deg, #0ea5e9 0%, #0284c7 48%, #0369a1 100%)) !important;
   border-radius: var(--df-messenger-chat-bubble-border-radius, 50%) !important;
   box-shadow: 0 12px 28px rgba(2, 132, 199, 0.28), 0 4px 12px rgba(15, 23, 42, 0.14) !important;
@@ -9491,8 +9499,31 @@ df-messenger-titlebar {
   border: var(--df-messenger-titlebar-border, none) !important;
   border-bottom: var(--df-messenger-titlebar-border-bottom, 1px solid rgba(4, 58, 90, 0.55)) !important;
 }
-df-messenger-list,
-.chat-min df-messenger-list {
+.title-wrapper {
+  min-height: 86px !important;
+  height: 86px !important;
+  box-sizing: border-box !important;
+  padding: 0 15px !important;
+  background: var(--df-messenger-titlebar-background, linear-gradient(168deg, #38bdf8 0%, #0284c7 42%, #075985 100%)) !important;
+  color: var(--df-messenger-titlebar-font-color, #f0f9ff) !important;
+  border-radius: var(--df-messenger-chat-border-radius, 22px) var(--df-messenger-chat-border-radius, 22px) 0 0 !important;
+  box-shadow: none !important;
+}
+.title-wrapper h2,
+#dfTitlebar {
+  color: var(--df-messenger-titlebar-font-color, #f0f9ff) !important;
+  font-family: var(--df-messenger-font-family, "Manrope", "Segoe UI", sans-serif) !important;
+  font-size: var(--df-messenger-titlebar-title-font-size, 18px) !important;
+  font-weight: 700 !important;
+  line-height: var(--df-messenger-titlebar-title-line-height, 1.2) !important;
+}
+#minimizeIcon {
+  fill: var(--df-messenger-titlebar-font-color, #f0f9ff) !important;
+}
+df-message-list,
+.chat-min df-message-list,
+.message-list-wrapper,
+#messageList {
   background: var(--df-messenger-chat-background, #ffffff) !important;
 }
 #messageList .message,
@@ -9517,12 +9548,33 @@ df-messenger-user-input {
   background: var(--df-messenger-input-background, #ffffff) !important;
   border-top: var(--df-messenger-input-border-top, 1px solid rgba(14, 165, 233, 0.28)) !important;
 }
+.input-box-wrapper {
+  min-height: 64px !important;
+  height: 64px !important;
+  background: var(--df-messenger-input-box-background, #ffffff) !important;
+  border-top: var(--df-messenger-input-border-top, 1px solid rgba(14, 165, 233, 0.28)) !important;
+  font-family: var(--df-messenger-font-family, "Manrope", "Segoe UI", sans-serif) !important;
+}
+.input-container input {
+  color: var(--df-messenger-input-font-color, #0f172a) !important;
+  font-family: var(--df-messenger-font-family, "Manrope", "Segoe UI", sans-serif) !important;
+  font-size: var(--df-messenger-input-font-size, 16px) !important;
+  font-weight: var(--df-messenger-input-font-weight, 600) !important;
+}
+#sendIcon {
+  fill: var(--df-messenger-primary-color, #0284c7) !important;
+}
 textarea,
 input {
   font-family: var(--df-messenger-font-family, "Manrope", "Segoe UI", sans-serif) !important;
   color: var(--df-messenger-input-font-color, #0f172a) !important;
 }
 @media screen and (max-width: 500px) {
+  .df-messenger-wrapper {
+    right: 12px !important;
+    left: auto !important;
+    bottom: 10px !important;
+  }
   .chat-wrapper {
     right: 0 !important;
     left: 0 !important;
