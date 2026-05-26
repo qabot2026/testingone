@@ -38,7 +38,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
       // location: "us-central1",
       agentId:"07ccbfd0-4cad-4898-8323-e6baeec80fc1",
       // agentId: "9dbd4886-3cbe-43fc-8eb5-54ee5097f25c",
-      intent: "WELCOME"
+      intent: "FRESH"
     },
 
     // -------------------------------------------------------------------------
