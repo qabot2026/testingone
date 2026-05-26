@@ -1162,6 +1162,12 @@ function mergeDialogflowResponseEnvelopeForGallery(event) {
         && detail.data.queryResult
         && (detail.data.queryResult.fulfillmentMessages || detail.data.queryResult.responseMessages)
     );
+    add(
+        detail
+        && detail.response
+        && detail.response.queryResult
+        && (detail.response.queryResult.fulfillmentMessages || detail.response.queryResult.responseMessages)
+    );
     add(detail && Array.isArray(detail.messages) ? detail.messages : null);
     add(detail && detail.data && Array.isArray(detail.data.messages) ? detail.data.messages : null);
 
@@ -9458,20 +9464,30 @@ function applyDialogflowEsCxLookCompatibility(dfMessenger, theme, headerConfig) 
   z-index: 999 !important;
 }
 .chat-wrapper {
+  position: fixed !important;
   width: var(--df-messenger-chat-window-width, 400px) !important;
+  height: var(--df-messenger-chat-window-height, 450px) !important;
+  min-height: var(--df-messenger-chat-window-height, 450px) !important;
+  max-height: calc(100dvh - var(--dfchat-es-bottom, 20px) - 104px) !important;
   max-width: calc(100vw - 32px) !important;
   right: var(--dfchat-es-right, 10px) !important;
   left: var(--dfchat-es-left, auto) !important;
-  top: var(--dfchat-es-top, auto) !important;
-  bottom: calc(var(--dfchat-es-bottom, 20px) + 84px) !important;
+  top: auto !important;
+  bottom: calc(var(--dfchat-es-bottom, 20px) + var(--df-messenger-chat-window-offset, 0px) + 84px) !important;
   background: var(--df-messenger-chat-background, #ffffff) !important;
   border: var(--df-messenger-chat-border, none) !important;
   border-radius: var(--df-messenger-chat-border-radius, 22px) !important;
   box-shadow: var(--df-messenger-chat-box-shadow, 0 16px 42px rgba(15, 23, 42, 0.16)) !important;
   overflow: hidden !important;
+  display: flex !important;
+  flex-direction: column !important;
 }
-.chat-wrapper.chat-open {
+.chat-wrapper.chat-open,
+.chat-wrapper.opened,
+.chat-wrapper.is-open,
+.chat-wrapper[opened] {
   height: var(--df-messenger-chat-window-height, 450px) !important;
+  min-height: var(--df-messenger-chat-window-height, 450px) !important;
   opacity: 1 !important;
   transform: translateZ(0) scale(1) !important;
 }
@@ -9564,6 +9580,7 @@ df-message-list,
   background: var(--df-messenger-chat-background, #ffffff) !important;
 }
 #messageList .message,
+#message-list .message,
 #messageList df-message {
   font-family: var(--df-messenger-font-family, "Manrope", "Segoe UI", sans-serif) !important;
   font-size: var(--df-messenger-message-font-size, 14px) !important;
@@ -9571,12 +9588,14 @@ df-message-list,
   border-radius: 16px !important;
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04) !important;
 }
-#messageList .message.bot-message {
+#messageList .message.bot-message,
+#message-list .message.bot-message {
   background: ${botBg} !important;
   color: ${botText} !important;
   border-bottom-left-radius: 6px !important;
 }
-#messageList .message.user-message {
+#messageList .message.user-message,
+#message-list .message.user-message {
   background: ${userBg} !important;
   color: ${userText} !important;
   border-bottom-right-radius: 6px !important;
@@ -9613,11 +9632,15 @@ input {
     bottom: 10px !important;
   }
   .chat-wrapper {
+    position: fixed !important;
     right: 0 !important;
     left: 0 !important;
     bottom: 0 !important;
+    top: auto !important;
     width: 100% !important;
     max-width: 100% !important;
+    min-height: calc(100dvh - 12px) !important;
+    max-height: calc(100dvh - 12px) !important;
     border-radius: 20px 20px 0 0 !important;
   }
   .chat-wrapper.chat-open {
@@ -16808,8 +16831,9 @@ async function handleDfResponseReceived(event) {
     const messages = event.detail && event.detail.data && Array.isArray(event.detail.data.messages)
         ? event.detail.data.messages
         : [];
+    const currentTurnMessages = collectDialogflowTurnMessages_(event);
 
-    if (messages.length > 0 && !isFormOnlyOpenResponse_(event)) {
+    if ((messages.length > 0 || currentTurnMessages.length > 0) && !isFormOnlyOpenResponse_(event)) {
         const ms = activeDfMessenger;
         if (ms && typeof ms.renderCustomText === "function") {
             renderBotPersona(ms, Date.now());
@@ -25760,7 +25784,7 @@ function reorderBotPersonaListRowBeforeContiguousBotRows_(imageNode) {
     }
     if (BOT_PERSONA_CONFIG.mode !== "emojiTime") {
         const src = imageNode.getAttribute("src") || "";
-        if (!src.includes(`#${PERSONA_URL_MARKER_BOT_IMG}`)) {
+        if (!srcHasBotPersonaImageMarker_(src)) {
             return false;
         }
     }
@@ -25914,7 +25938,7 @@ function reorderBotPersonaEntryBeforeContiguousBotChunks_(imageNode) {
     }
     if (BOT_PERSONA_CONFIG.mode !== "emojiTime") {
         const src = imageNode.getAttribute("src") || "";
-        if (!src.includes(`#${PERSONA_URL_MARKER_BOT_IMG}`)) {
+        if (!srcHasBotPersonaImageMarker_(src)) {
             return false;
         }
     }
@@ -26112,7 +26136,7 @@ function reorderBotPersonaMarkdownToTopOfStack_(imageNode) {
     }
     if (BOT_PERSONA_CONFIG.mode !== "emojiTime") {
         const src = imageNode.getAttribute("src") || "";
-        if (!src.includes(`#${PERSONA_URL_MARKER_BOT_IMG}`)) {
+        if (!srcHasBotPersonaImageMarker_(src)) {
             return false;
         }
     }
@@ -26428,7 +26452,7 @@ function getPersonaType(imageNode) {
         return "user";
     }
 
-    if (source.includes(`#${PERSONA_URL_MARKER_BOT_IMG}`)) {
+    if (srcHasBotPersonaImageMarker_(source)) {
         return "bot";
     }
 
@@ -26456,6 +26480,11 @@ function getPersonaType(imageNode) {
     }
 
     return null;
+}
+
+function srcHasBotPersonaImageMarker_(source) {
+    const s = typeof source === "string" ? source : "";
+    return s.includes(`#${PERSONA_URL_MARKER_BOT_IMG}`) || s.includes(`%23${PERSONA_URL_MARKER_BOT_IMG}`);
 }
 
 function findPersonaContainer(imageNode, root) {
@@ -26504,7 +26533,7 @@ function stylePersonaContainer(container, imageNode, personaType) {
     const src = imageNode.getAttribute("src") || "";
     if (personaType === "bot" && BOT_PERSONA_CONFIG.mode === "image") {
         const { widthPx, heightPx, showTime } = BOT_PERSONA_CONFIG.image;
-        const isCat = src.includes(`#${PERSONA_URL_MARKER_BOT_IMG}`);
+        const isCat = srcHasBotPersonaImageMarker_(src);
         const isTime = src.includes(PERSONA_MARKER_BOT_TIME);
         imageNode.style.display = "inline-block";
         imageNode.style.verticalAlign = "middle";
