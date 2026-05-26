@@ -6905,6 +6905,68 @@ function buildContactFormFieldRow(field) {
     return row;
 }
 
+function isDialCodeContactFormField_(field) {
+    if (!field || typeof field !== "object") {
+        return false;
+    }
+    const name = typeof field.name === "string" ? field.name.trim().toLowerCase() : "";
+    const type = String(field.type || "").toLowerCase();
+    return type === "select" && (field.autoDetectDialCode === true || name === "dial_code" || name === "dialcode");
+}
+
+function isMobileNumberContactFormField_(field) {
+    if (!field || typeof field !== "object") {
+        return false;
+    }
+    const name = typeof field.name === "string" ? field.name.trim().toLowerCase() : "";
+    const type = String(field.type || "").toLowerCase();
+    return (name === "mobile" || name === "phone") && (type === "tel" || type === "text" || !type);
+}
+
+function findContactFormControlInDetachedRow_(row, field) {
+    if (!row || !field || !field.id) {
+        return null;
+    }
+    const nodes = row.querySelectorAll(".dfchat-contact-form__control");
+    for (let i = 0; i < nodes.length; i += 1) {
+        const node = nodes[i];
+        if (node && typeof node.getAttribute === "function" && node.getAttribute("id") === field.id) {
+            return /** @type {HTMLElement} */ (node);
+        }
+    }
+    return null;
+}
+
+function buildContactFormPhoneComboRow_(dialField, mobileField) {
+    const dialRow = buildContactFormFieldRow(dialField);
+    const mobileRow = buildContactFormFieldRow(mobileField);
+    const dialControl = findContactFormControlInDetachedRow_(dialRow, dialField);
+    const mobileControl = findContactFormControlInDetachedRow_(mobileRow, mobileField);
+    if (!dialControl || !mobileControl) {
+        return null;
+    }
+
+    const row = document.createElement("div");
+    row.className = "dfchat-contact-form__row dfchat-contact-form__row--phone-combo";
+    row.setAttribute("data-icon", "phone");
+
+    const iconWrap = document.createElement("span");
+    iconWrap.className = "dfchat-contact-form__row-icon";
+    iconWrap.innerHTML = CONTACT_FORM_SVG_ICONS.phone;
+
+    const combo = document.createElement("div");
+    combo.className = "dfchat-contact-form__phone-combo";
+
+    dialControl.classList.add("dfchat-contact-form__control--dial-code");
+    mobileControl.classList.add("dfchat-contact-form__control--phone-number");
+
+    combo.appendChild(dialControl);
+    combo.appendChild(mobileControl);
+    row.appendChild(iconWrap);
+    row.appendChild(combo);
+    return row;
+}
+
 /**
  * Value stored in the hidden field and sent as `appointmentdate`: DD-MM-YYYY.
  * Slot APIs still use YYYY-MM-DD from the calendar grid.
@@ -7730,7 +7792,18 @@ function mountContactFormFieldsFromConfig() {
         slot.removeChild(slot.firstChild);
     }
 
-    for (const field of readContactFormConfig().fields) {
+    const fields = readContactFormConfig().fields;
+    for (let i = 0; i < fields.length; i += 1) {
+        const field = fields[i];
+        const nextField = fields[i + 1];
+        if (isDialCodeContactFormField_(field) && isMobileNumberContactFormField_(nextField)) {
+            const comboRow = buildContactFormPhoneComboRow_(field, nextField);
+            if (comboRow) {
+                slot.appendChild(comboRow);
+                i += 1;
+                continue;
+            }
+        }
         const row = buildContactFormFieldRow(field);
         if (row) {
             slot.appendChild(row);

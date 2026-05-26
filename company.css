@@ -758,6 +758,27 @@
    font-size: 0.88rem;
    color: var(--dfchat-text);
  }
+
+.dfchat-contact-form__phone-combo {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  width: 100%;
+  gap: 6px;
+}
+
+.dfchat-contact-form__row .dfchat-contact-form__control--dial-code {
+  flex: 0 0 92px;
+  width: 92px;
+  max-width: 38%;
+  padding-left: 7px;
+  padding-right: 6px;
+}
+
+.dfchat-contact-form__row .dfchat-contact-form__control--phone-number {
+  flex: 1 1 auto;
+  min-width: 0;
+}
  
  .dfchat-contact-form__fields textarea {
    resize: none;
