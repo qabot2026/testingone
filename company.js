@@ -2935,6 +2935,7 @@ function createAndMountMessenger() {
     activeBubbleNode = bubble;
     applyMessengerChatIconAttributes(df, bubble, headerConfig);
     df.setAttribute("chat-title", headerConfig.title || "Chat Support");
+    df.setAttribute("chat-subtitle", headerConfig.subtitle || "🟢 Online");
 
     const m0 = isMobileViewport();
     const devWin0 = getDeviceSection(COMPANY_UI_CONFIG, m0);
