@@ -6706,13 +6706,17 @@ function buildContactFormFieldRow(field) {
             control.setAttribute("required", "");
         }
 
-        /** @type {Array<{ label: string, value: string }>} */
+        /** @type {Array<{ label: string, value: string, compactLabel: string, fullLabel: string }>} */
         const opts = Array.isArray(field.options)
             ? field.options
-                .map((o) => ({
-                    label: String(o && o.label != null ? o.label : "").trim(),
-                    value: String(o && o.value != null ? o.value : "").trim()
-                }))
+                .map((o) => {
+                    const label = String(o && o.label != null ? o.label : "").trim();
+                    const value = String(o && o.value != null ? o.value : "").trim();
+                    const compactLabel = String(o && o.compactLabel != null ? o.compactLabel : label).trim();
+                    const fullLabel = String(o && o.fullLabel != null ? o.fullLabel : "").trim()
+                        || getDialCodeFullOptionLabel_(compactLabel || label, value);
+                    return { label, value, compactLabel: compactLabel || label, fullLabel };
+                })
                 .filter((o) => o.label && o.value)
             : [];
 
@@ -6735,8 +6739,13 @@ function buildContactFormFieldRow(field) {
         for (const o of opts) {
             const op = document.createElement("option");
             op.value = o.value;
-            op.textContent = o.label;
+            op.textContent = o.compactLabel;
+            op.dataset.compactLabel = o.compactLabel;
+            op.dataset.fullLabel = o.fullLabel;
             control.appendChild(op);
+        }
+        if (isDialCodeContactFormField_(field)) {
+            installDialCodeSelectLabelMode_(/** @type {HTMLSelectElement} */ (control));
         }
     } else if (t === "file") {
         control = document.createElement("input");
@@ -17343,7 +17352,13 @@ function applyStoredContactHintsToOpenContactForm_() {
                 && String(el.tagName || "").toLowerCase() === "select"
                 && (nm === "dial_code" || nm === "dialcode")
             ) {
-                ensureDialCodeOptionExists_(/** @type {HTMLSelectElement} */ (el), hint, getCountryCodeFromClientContext_(stored));
+                const countryName = stored && typeof stored.country === "string" ? stored.country.trim() : "";
+                ensureDialCodeOptionExists_(
+                    /** @type {HTMLSelectElement} */ (el),
+                    hint,
+                    getCountryCodeFromClientContext_(stored),
+                    countryName
+                );
             }
             if (el && "value" in el && !String(el.value || "").trim()) {
                 el.value = hint;
@@ -21898,6 +21913,42 @@ const COUNTRY_DIAL_CODE_BY_ISO2_ = {
     MX: "+52"
 };
 
+const DIAL_CODE_FULL_LABEL_BY_VALUE_ = {
+    "+91": "🇮🇳 India +91",
+    "+1": "🇺🇸/🇨🇦 United States / Canada +1",
+    "+44": "🇬🇧 United Kingdom +44",
+    "+971": "🇦🇪 United Arab Emirates +971",
+    "+61": "🇦🇺 Australia +61",
+    "+65": "🇸🇬 Singapore +65",
+    "+966": "🇸🇦 Saudi Arabia +966",
+    "+974": "🇶🇦 Qatar +974",
+    "+968": "🇴🇲 Oman +968",
+    "+965": "🇰🇼 Kuwait +965",
+    "+973": "🇧🇭 Bahrain +973",
+    "+977": "🇳🇵 Nepal +977",
+    "+880": "🇧🇩 Bangladesh +880",
+    "+94": "🇱🇰 Sri Lanka +94",
+    "+92": "🇵🇰 Pakistan +92",
+    "+60": "🇲🇾 Malaysia +60",
+    "+49": "🇩🇪 Germany +49",
+    "+33": "🇫🇷 France +33",
+    "+39": "🇮🇹 Italy +39",
+    "+34": "🇪🇸 Spain +34",
+    "+31": "🇳🇱 Netherlands +31",
+    "+353": "🇮🇪 Ireland +353",
+    "+64": "🇳🇿 New Zealand +64",
+    "+27": "🇿🇦 South Africa +27",
+    "+81": "🇯🇵 Japan +81",
+    "+82": "🇰🇷 South Korea +82",
+    "+86": "🇨🇳 China +86",
+    "+66": "🇹🇭 Thailand +66",
+    "+62": "🇮🇩 Indonesia +62",
+    "+63": "🇵🇭 Philippines +63",
+    "+84": "🇻🇳 Vietnam +84",
+    "+55": "🇧🇷 Brazil +55",
+    "+52": "🇲🇽 Mexico +52"
+};
+
 function normalizeDialCodeValue_(value) {
     const raw = String(value == null ? "" : value).trim();
     if (!raw) {
@@ -21942,7 +21993,59 @@ function flagEmojiForCountryCode_(countryCode) {
         .join("");
 }
 
-function ensureDialCodeOptionExists_(selectEl, dialCode, countryCode) {
+function getDialCodeFullOptionLabel_(compactLabel, dialCode, countryName) {
+    const code = normalizeDialCodeValue_(dialCode);
+    if (code && DIAL_CODE_FULL_LABEL_BY_VALUE_[code]) {
+        return DIAL_CODE_FULL_LABEL_BY_VALUE_[code];
+    }
+    const compact = String(compactLabel || "").trim();
+    const flagMatch = /^([\uD83C][\uDDE6-\uDDFF](?:[\uD83C][\uDDE6-\uDDFF])?(?:\/[\uD83C][\uDDE6-\uDDFF](?:[\uD83C][\uDDE6-\uDDFF])?)*)/.exec(compact);
+    const flag = flagMatch ? flagMatch[1] : "";
+    const name = String(countryName || "").trim();
+    if (flag && name && code) {
+        return `${flag} ${name} ${code}`;
+    }
+    return compact || code;
+}
+
+function setDialCodeSelectLabelMode_(selectEl, expanded) {
+    if (!selectEl || !selectEl.options) {
+        return;
+    }
+    for (let i = 0; i < selectEl.options.length; i += 1) {
+        const op = selectEl.options[i];
+        const compact = op.dataset && op.dataset.compactLabel ? op.dataset.compactLabel : "";
+        const full = op.dataset && op.dataset.fullLabel ? op.dataset.fullLabel : "";
+        if (!compact && !full) {
+            continue;
+        }
+        op.textContent = expanded && full ? full : (compact || full);
+    }
+    selectEl.classList.toggle("is-expanded", expanded === true);
+}
+
+function installDialCodeSelectLabelMode_(selectEl) {
+    if (!selectEl || selectEl.dataset.dialCodeLabelModeBound === "true") {
+        return;
+    }
+    selectEl.dataset.dialCodeLabelModeBound = "true";
+    const expand = () => setDialCodeSelectLabelMode_(selectEl, true);
+    const collapse = () => window.setTimeout(() => setDialCodeSelectLabelMode_(selectEl, false), 80);
+    selectEl.addEventListener("pointerdown", expand);
+    selectEl.addEventListener("mousedown", expand);
+    selectEl.addEventListener("focus", expand);
+    selectEl.addEventListener("keydown", (event) => {
+        const key = event && typeof event.key === "string" ? event.key : "";
+        if (key === " " || key === "Enter" || key === "ArrowDown" || key === "ArrowUp") {
+            expand();
+        }
+    });
+    selectEl.addEventListener("change", collapse);
+    selectEl.addEventListener("blur", collapse);
+    setDialCodeSelectLabelMode_(selectEl, false);
+}
+
+function ensureDialCodeOptionExists_(selectEl, dialCode, countryCode, countryName) {
     if (!selectEl || !dialCode) {
         return;
     }
@@ -21953,8 +22056,13 @@ function ensureDialCodeOptionExists_(selectEl, dialCode, countryCode) {
     const op = document.createElement("option");
     op.value = dialCode;
     const flag = flagEmojiForCountryCode_(countryCode);
-    op.textContent = flag ? `${flag} ${dialCode}` : dialCode;
+    const compact = flag ? `${flag} ${dialCode}` : dialCode;
+    const full = getDialCodeFullOptionLabel_(compact, dialCode, countryName);
+    op.textContent = compact;
+    op.dataset.compactLabel = compact;
+    op.dataset.fullLabel = full;
     selectEl.appendChild(op);
+    installDialCodeSelectLabelMode_(selectEl);
 }
 
 function applyDetectedDialCodeToContactForm_() {
@@ -21962,6 +22070,7 @@ function applyDetectedDialCodeToContactForm_() {
         const stored = readStoredClientContext();
         const storedDial = getStoredDialCodeFromClientContext_(stored);
         const countryCode = getCountryCodeFromClientContext_(stored);
+        const countryName = stored && typeof stored.country === "string" ? stored.country.trim() : "";
         const detectedDial = storedDial || dialCodeForCountryCode_(countryCode);
         if (!detectedDial) {
             return;
@@ -21986,7 +22095,7 @@ function applyDetectedDialCodeToContactForm_() {
             if (selectEl.value) {
                 continue;
             }
-            ensureDialCodeOptionExists_(selectEl, detectedDial, countryCode);
+            ensureDialCodeOptionExists_(selectEl, detectedDial, countryCode, countryName);
             selectEl.value = detectedDial;
         }
     } catch {

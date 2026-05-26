@@ -775,6 +775,12 @@
   padding-right: 6px;
 }
 
+.dfchat-contact-form__row .dfchat-contact-form__control--dial-code.is-expanded {
+  flex-basis: 190px;
+  width: 190px;
+  max-width: 70%;
+}
+
 .dfchat-contact-form__row .dfchat-contact-form__control--phone-number {
   flex: 1 1 auto;
   min-width: 0;
