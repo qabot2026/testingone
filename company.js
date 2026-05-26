@@ -5653,6 +5653,28 @@ const CONTACT_FORM_INPUT_TYPES = new Set([
 
 const EMAIL_VALIDATION_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PHONE_DEFAULT_PATTERN = "^[+]?[0-9\\s\\-]{7,20}$";
+const DIAL_CODE_PHONE_VALIDATION_RULES_ = {
+    "+91": { lengths: [10], pattern: "^[6-9]\\d{9}$" },
+    "+1": { lengths: [10], pattern: "^[2-9]\\d{2}[2-9]\\d{6}$" },
+    "+44": { lengths: [10], pattern: "^7\\d{9}$" },
+    "+971": { lengths: [9], pattern: "^5[024568]\\d{7}$" },
+    "+61": { lengths: [9], pattern: "^4\\d{8}$" },
+    "+65": { lengths: [8], pattern: "^[89]\\d{7}$" },
+    "+966": { lengths: [9], pattern: "^5\\d{8}$" },
+    "+974": { lengths: [8], pattern: "^[3567]\\d{7}$" },
+    "+968": { lengths: [8], pattern: "^[79]\\d{7}$" },
+    "+965": { lengths: [8], pattern: "^[569]\\d{7}$" },
+    "+973": { lengths: [8], pattern: "^[36]\\d{7}$" },
+    "+977": { lengths: [10], pattern: "^9[78]\\d{8}$" },
+    "+880": { lengths: [10], pattern: "^1[3-9]\\d{8}$" },
+    "+94": { lengths: [9], pattern: "^7\\d{8}$" },
+    "+92": { lengths: [10], pattern: "^3\\d{9}$" },
+    "+60": { lengths: [9, 10], pattern: "^1\\d{8,9}$" },
+    "+49": { lengths: [10, 11], pattern: "^1[5-7]\\d{8,9}$" },
+    "+33": { lengths: [9], pattern: "^[67]\\d{8}$" },
+    "+39": { lengths: [9, 10], pattern: "^3\\d{8,9}$" },
+    "+34": { lengths: [9], pattern: "^[67]\\d{8}$" }
+};
 
 /** @type {Set<string>} Lowercase extension without dot — blocks common video types (server should still verify). */
 const CONTACT_FORM_VIDEO_UPLOAD_EXTENSIONS = new Set([
@@ -6441,6 +6463,71 @@ function applyContactFormHeaderFromConfig() {
     }
 }
 
+function getSelectedContactFormDialCode_() {
+    try {
+        const cfg = readContactFormConfig();
+        const fields = Array.isArray(cfg.fields) ? cfg.fields : [];
+        for (let i = 0; i < fields.length; i += 1) {
+            const def = fields[i];
+            if (!isDialCodeContactFormField_(def) || !def.id) {
+                continue;
+            }
+            const el = document.getElementById(def.id);
+            const v = normalizeDialCodeValue_(el && "value" in el ? el.value : "");
+            if (v) {
+                return v;
+            }
+        }
+    } catch {
+        /* ignore */
+    }
+    return "";
+}
+
+function normalizeContactPhoneDigitsForDialCode_(rawPhone, dialCode) {
+    let digits = String(rawPhone || "").replace(/\D+/g, "");
+    const codeDigits = normalizeDialCodeValue_(dialCode).replace(/\D+/g, "");
+    if (!digits) {
+        return "";
+    }
+    if (codeDigits) {
+        if (digits.startsWith(`00${codeDigits}`)) {
+            digits = digits.slice(codeDigits.length + 2);
+        } else if (digits.startsWith(codeDigits) && digits.length > codeDigits.length + 6) {
+            digits = digits.slice(codeDigits.length);
+        }
+    }
+    while (digits.length > 1 && digits.charAt(0) === "0") {
+        digits = digits.slice(1);
+    }
+    return digits;
+}
+
+function validatePhoneForSelectedDialCode_(rawPhone, dialCode) {
+    const code = normalizeDialCodeValue_(dialCode);
+    const rule = code && DIAL_CODE_PHONE_VALIDATION_RULES_[code]
+        ? DIAL_CODE_PHONE_VALIDATION_RULES_[code]
+        : null;
+    if (!rule) {
+        return null;
+    }
+    const digits = normalizeContactPhoneDigitsForDialCode_(rawPhone, code);
+    if (!digits) {
+        return false;
+    }
+    if (Array.isArray(rule.lengths) && rule.lengths.indexOf(digits.length) < 0) {
+        return false;
+    }
+    if (typeof rule.pattern === "string" && rule.pattern.trim()) {
+        try {
+            return new RegExp(rule.pattern).test(digits);
+        } catch {
+            return false;
+        }
+    }
+    return true;
+}
+
 /**
  * @param {Record<string, unknown>} def
  * @param {string} raw
@@ -6482,6 +6569,16 @@ function validateContactFormField(def, raw) {
                 : "invalidEmail" };
         }
         if (validateAs === "phone") {
+            const selectedDialCode = getSelectedContactFormDialCode_();
+            const dialCheck = validatePhoneForSelectedDialCode_(v, selectedDialCode);
+            if (dialCheck === false) {
+                return { valid: false, messageKey: typeof def.i18nInvalidMessage === "string" && def.i18nInvalidMessage.trim()
+                    ? def.i18nInvalidMessage.trim()
+                    : "invalidPhone" };
+            }
+            if (dialCheck === true) {
+                return { valid: true };
+            }
             const pat = typeof def.defaultPattern === "string" && def.defaultPattern.trim() ? def.defaultPattern.trim() : PHONE_DEFAULT_PATTERN;
             if (!new RegExp(pat).test(v)) {
                 return { valid: false, messageKey: typeof def.i18nInvalidMessage === "string" && def.i18nInvalidMessage.trim()
