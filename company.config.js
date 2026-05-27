@@ -585,7 +585,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
 
     chatWindow: {
       widthPx: 400,
-      heightPx: 450,
+      heightPx: 500,
 
       // right + bottom (matches `common.chatLayout.side: "right"`).
       bubblePosition: { rightPx: 10, bottomPx: 20, leftPx: null, topPx: null },
@@ -679,7 +679,8 @@ window.COMPANY_CHAT_UI_CONFIG = {
       // Optional: set only the bubble–window gap: `chatWindowOffsetPx: 10` (see desk).
 
       // Add to the panel height; optional, separate from `chatWindowOffsetPx`.
-      extraHeightTowardBubblePx: 20
+      /* +50px vs previous default (20) for taller open panel on phones */
+      extraHeightTowardBubblePx: 70
     },
 
     autoOpenChat: {

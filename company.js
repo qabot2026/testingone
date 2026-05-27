@@ -9585,9 +9585,10 @@ function applyDialogflowEsCxLookCompatibility(dfMessenger, theme, headerConfig) 
 .chat-wrapper {
   position: fixed !important;
   width: var(--df-messenger-chat-window-width, 400px) !important;
-  height: var(--df-messenger-chat-window-height, 450px) !important;
-  min-height: var(--df-messenger-chat-window-height, 450px) !important;
-  max-height: var(--df-messenger-chat-window-height, 450px) !important;
+  height: var(--df-messenger-chat-window-height, 500px) !important;
+  min-height: var(--df-messenger-chat-window-height, 500px) !important;
+  max-height: min(var(--df-messenger-chat-window-height, 500px), calc(100dvh - 100px)) !important;
+  contain: layout style !important;
   max-width: calc(100vw - 32px) !important;
   right: var(--dfchat-es-right, 10px) !important;
   left: var(--dfchat-es-left, auto) !important;
@@ -9608,9 +9609,9 @@ function applyDialogflowEsCxLookCompatibility(dfMessenger, theme, headerConfig) 
 .chat-wrapper.opened,
 .chat-wrapper.is-open,
 .chat-wrapper[opened] {
-  height: var(--df-messenger-chat-window-height, 450px) !important;
-  min-height: var(--df-messenger-chat-window-height, 450px) !important;
-  max-height: var(--df-messenger-chat-window-height, 450px) !important;
+  height: var(--df-messenger-chat-window-height, 500px) !important;
+  min-height: var(--df-messenger-chat-window-height, 500px) !important;
+  max-height: min(var(--df-messenger-chat-window-height, 500px), calc(100dvh - 100px)) !important;
   opacity: 1 !important;
   transform: none !important;
 }
@@ -9653,6 +9654,8 @@ df-message-list {
   overflow-x: hidden !important;
   overflow-y: auto !important;
   -webkit-overflow-scrolling: touch !important;
+  overscroll-behavior-y: contain !important;
+  touch-action: pan-y !important;
   box-sizing: border-box !important;
 }
 #messageList,
@@ -9780,6 +9783,23 @@ df-message-list,
   background: ${userBg} !important;
   color: ${userText} !important;
   border-bottom-right-radius: 6px !important;
+  max-width: min(88%, 340px) !important;
+  width: fit-content !important;
+  margin-left: auto !important;
+  margin-right: 10px !important;
+  box-sizing: border-box !important;
+  word-break: break-word !important;
+  overflow-wrap: anywhere !important;
+}
+#messageList df-message[type="user"],
+#messageList df-message[type="human"],
+#message-list df-message[type="user"] {
+  align-self: flex-end !important;
+  max-width: min(90%, 348px) !important;
+  width: auto !important;
+  margin-left: auto !important;
+  margin-right: 8px !important;
+  box-sizing: border-box !important;
 }
 df-messenger-user-input {
   flex: 0 0 auto !important;
