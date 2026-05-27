@@ -1794,7 +1794,7 @@ const originalTextNodeContent = new Map();
 const originalElementAttributes = new Map();
 const googleTranslationCache = new Map();
 
-const COMPANY_JS_BUILD_TAG = "20260518-liveagent";
+const COMPANY_JS_BUILD_TAG = "20260527-es-gallery-detectintent";
 const COMPANY_DEBUG_QUERY_FLAG = "dfchatDebug";
 let debugMountAttemptSeq = 0;
 let debugBadgeLastRenderAt = 0;
@@ -2589,6 +2589,7 @@ function runCompanyDomReadyInit() {
         syncMobileLightboxParkStateFromChat();
     }, { passive: true });
     attachImageLightboxClickHandler();
+    installDialogflowDetectIntentGalleryHook_();
     ensureComposerHeaderCollapseBehavior();
     // Mount chat before the inline form and other UI — if form init throws, the bubble should still show.
     runMessengerMountWhenCustomElementReady();
@@ -9620,6 +9621,13 @@ df-messenger-user-input {
 #sendIcon {
   fill: var(--df-messenger-primary-color, #0284c7) !important;
 }
+.dfchat-inline-gallery {
+  display: block !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+}
 .dfchat-inline-gallery,
 .dfchat-inline-gallery__track {
   max-width: 100% !important;
@@ -11977,12 +11985,14 @@ function queryMessengerMessageListInRoot(root) {
     }
     if (!el) {
         const dfList = root.querySelector("df-message-list");
-        if (dfList && typeof dfList.querySelector === "function") {
-            el =
-                /** @type {HTMLElement | null} */ (dfList.querySelector("#messageList"))
-                || /** @type {HTMLElement | null} */ (dfList.querySelector("#message-list"));
-            if (!el) {
-                el = /** @type {HTMLElement | null} */ (dfList);
+        if (dfList) {
+            if (dfList.shadowRoot) {
+                el = queryMessengerMessageListInRoot(dfList.shadowRoot);
+            }
+            if (!el && typeof dfList.querySelector === "function") {
+                el =
+                    /** @type {HTMLElement | null} */ (dfList.querySelector("#messageList"))
+                    || /** @type {HTMLElement | null} */ (dfList.querySelector("#message-list"));
             }
         }
     }
@@ -12058,8 +12068,22 @@ function isDfchatInlineSyntheticRow(el) {
  * @param {HTMLElement} messageList
  * @returns {Element | null}
  */
+function isDfchatMessengerTranscriptRow(el) {
+    if (!el || !(el instanceof Element) || isDfchatInlineSyntheticRow(el)) {
+        return false;
+    }
+    const tag = el.tagName ? el.tagName.toUpperCase() : "";
+    if (tag === "DF-MESSAGE") {
+        return true;
+    }
+    if (el.classList && el.classList.contains("message")) {
+        return true;
+    }
+    return !!(el.querySelector && el.querySelector("df-message, .message"));
+}
+
 function resolveGalleryInsertBeforeByCxOrder(messageList) {
-    const realRows = Array.from(messageList.children).filter((el) => !isDfchatInlineSyntheticRow(el));
+    const realRows = Array.from(messageList.children).filter((el) => isDfchatMessengerTranscriptRow(el));
     if (realRows.length < 2) {
         return null;
     }
@@ -12322,7 +12346,7 @@ function scheduleInjectInlineGalleryCarousel(dfMessenger, urlsOrItems, messages,
         }
     }
 
-    const delaysMs = [72, 180, 400, 800, 1600];
+    const delaysMs = [72, 180, 400, 800, 1600, 2800, 4500];
 
     delaysMs.forEach((delayMs) => {
         const tid = window.setTimeout(() => {
@@ -12333,6 +12357,12 @@ function scheduleInjectInlineGalleryCarousel(dfMessenger, urlsOrItems, messages,
         }
         pendingTimers.push(tid);
     });
+
+    window.setTimeout(() => {
+        if (!injected) {
+            tryAppend();
+        }
+    }, 5200);
 
     window.setTimeout(() => {
         if (!injected) {
@@ -13435,6 +13465,13 @@ let dfchatInlineVideoInjectSeq = 0;
 /** Invalidate pending inline-gallery append attempts between turns. */
 let dfchatInlineGalleryInjectSeq = 0;
 
+/**
+ * Last `open_gallery` parsed from Dialogflow `detectIntent` HTTP JSON (ES Messenger may not echo
+ * custom payloads on `df-response-received`).
+ * @type {{ urls: string[], items: OpenGalleryItem[], options: Array<{label: string, value: string}>, messageText: string } | null}
+ */
+let dfchatPendingDetectIntentGallery_ = null;
+
 /** Invalidate pending inline-card-carousel append attempts between turns. */
 let dfchatInlineCardCarouselInjectSeq = 0;
 
@@ -13457,6 +13494,7 @@ let dfchatInlineSelectInjectSeq = 0;
 let dfchatInlineSelectSignaturesSeen = new Set();
 
 function clearOpenGalleryUrlDedupeState() {
+    dfchatPendingDetectIntentGallery_ = null;
     dfchatOpenGalleryUrlSetSignaturesSeen = new Set();
     dfchatLastInlineGalleryWrapEl = null;
     dfchatLastInlineVideoWrapEl = null;
@@ -13636,6 +13674,45 @@ function shouldScheduleInlineGalleryCarouselForNormalizedUrls(normalizedHttpsUrl
 }
 
 /**
+ * @param {Record<string, unknown> | null | undefined} pl
+ * @returns {string}
+ */
+function openGalleryPayloadActionNorm_(pl) {
+    if (!pl || typeof pl !== "object") {
+        return "";
+    }
+    return unwrapPayloadStringField(pl.action).trim().toLowerCase();
+}
+
+/**
+ * @param {Record<string, unknown>} pl
+ * @returns {{ urls: string[], items: OpenGalleryItem[], options: Array<{label: string, value: string}>, messageText: string } | null}
+ */
+function normalizedOpenGalleryFromPayloadBody_(pl) {
+    const items = normalizeOpenGalleryItemsFromPayload(pl);
+    const allowed = items.map((it) => it.url);
+    if (allowed.length === 0) {
+        return null;
+    }
+    const rawOptions =
+        Object.prototype.hasOwnProperty.call(pl, "options") ? pl.options
+            : Object.prototype.hasOwnProperty.call(pl, "option") ? pl.option
+                : Object.prototype.hasOwnProperty.call(pl, "chips") ? pl.chips
+                    : null;
+    const options = normalizeOpenVideoOptions(rawOptions);
+    const rawMessage =
+        Object.prototype.hasOwnProperty.call(pl, "message") ? pl.message
+            : Object.prototype.hasOwnProperty.call(pl, "text") ? pl.text
+                : Object.prototype.hasOwnProperty.call(pl, "prompt") ? pl.prompt
+                    : Object.prototype.hasOwnProperty.call(pl, "subtitle") ? pl.subtitle
+                        : Object.prototype.hasOwnProperty.call(pl, "description") ? pl.description
+                            : Object.prototype.hasOwnProperty.call(pl, "caption") ? pl.caption
+                                : null;
+    const messageText = normalizeOpenVideoMessage(rawMessage);
+    return { urls: allowed, items, options, messageText };
+}
+
+/**
  * First `open_gallery` custom payload from merged CX fulfillment messages (`extractPayload`).
  * Dedupe/intent gates are applied elsewhere.
  *
@@ -13646,6 +13723,16 @@ function extractOpenGalleryPayloadFromMessage(cand) {
     if (!cand || typeof cand !== "object") {
         return null;
     }
+    /** @type {Record<string, unknown>[]} */
+    const bodies = [];
+    collectTranscriptPayloadBodiesFromMessage_(cand, bodies, new WeakSet());
+    for (let bi = 0; bi < bodies.length; bi += 1) {
+        const body = unwrapTranscriptPayloadObject_(bodies[bi]) || bodies[bi];
+        if (openGalleryPayloadActionNorm_(body) === "open_gallery"
+            && normalizeOpenGalleryItemsFromPayload(body).length > 0) {
+            return body;
+        }
+    }
     /** @type {Record<string, unknown> | null} */
     let pl = null;
     try {
@@ -13653,15 +13740,92 @@ function extractOpenGalleryPayloadFromMessage(cand) {
     } catch {
         pl = null;
     }
-    if (!pl) {
-        /** @type {Record<string, unknown>} */
-        const m = /** @type {Record<string, unknown>} */ (cand);
-        const act = typeof m.action === "string" ? m.action.trim().toLowerCase() : "";
-        if (act === "open_gallery") {
-            pl = m;
+    if (pl && openGalleryPayloadActionNorm_(pl) === "open_gallery") {
+        return pl;
+    }
+    /** @type {Record<string, unknown>} */
+    const m = /** @type {Record<string, unknown>} */ (cand);
+    const unwrapped = unwrapTranscriptPayloadObject_(m.payload ?? m.customPayload);
+    if (unwrapped && openGalleryPayloadActionNorm_(unwrapped) === "open_gallery") {
+        return unwrapped;
+    }
+    if (openGalleryPayloadActionNorm_(m) === "open_gallery") {
+        return m;
+    }
+    return null;
+}
+
+/**
+ * ES may nest the webhook JSON under `detail` without a standard `payload` envelope.
+ *
+ * @param {unknown} node
+ * @param {WeakSet<object>} seen
+ * @param {number} depth
+ * @returns {Record<string, unknown> | null}
+ */
+function findOpenGalleryPayloadDeep_(node, seen, depth) {
+    if (!node || depth > 18) {
+        return null;
+    }
+    if (typeof node !== "object") {
+        return null;
+    }
+    if (Array.isArray(node)) {
+        for (let i = 0; i < node.length; i += 1) {
+            const hit = findOpenGalleryPayloadDeep_(node[i], seen, depth + 1);
+            if (hit) {
+                return hit;
+            }
+        }
+        return null;
+    }
+    if (seen.has(node)) {
+        return null;
+    }
+    seen.add(node);
+    /** @type {Record<string, unknown>} */
+    const rec = /** @type {Record<string, unknown>} */ (node);
+    if (openGalleryPayloadActionNorm_(rec) === "open_gallery") {
+        const body = unwrapTranscriptPayloadObject_(rec) || rec;
+        if (normalizeOpenGalleryItemsFromPayload(body).length > 0) {
+            return body;
         }
     }
-    return pl;
+    /** @type {string[]} */
+    const keys = [
+        "payload",
+        "customPayload",
+        "fulfillment_response",
+        "fulfillmentResponse",
+        "messages",
+        "fulfillmentMessages",
+        "responseMessages",
+        "queryResult",
+        "data",
+        "raw",
+        "response",
+        "fields",
+        "structValue"
+    ];
+    for (let ki = 0; ki < keys.length; ki += 1) {
+        const k = keys[ki];
+        if (!Object.prototype.hasOwnProperty.call(rec, k)) {
+            continue;
+        }
+        const hit = findOpenGalleryPayloadDeep_(rec[k], seen, depth + 1);
+        if (hit) {
+            return hit;
+        }
+    }
+    if (depth < 5) {
+        for (const v of Object.values(rec)) {
+            const hit = findOpenGalleryPayloadDeep_(v, seen, depth + 1);
+            if (hit) {
+                return hit;
+            }
+        }
+    }
+    return null;
 }
 
 /**
@@ -13674,45 +13838,144 @@ function extractFirstOpenGalleryNormalizedUrlsFromCxMessages(messages) {
     }
     /** Fast path — same protobuf → JSON flattening as Contact form / language (extractPayload). */
     for (let gx = 0; gx < messages.length; gx += 1) {
-        const cand = messages[gx];
-        const pl = extractOpenGalleryPayloadFromMessage(cand);
-        const act =
-            pl && typeof /** @type {{ action?: unknown }} */ (pl).action !== "undefined"
-                ? /** @type {{ action?: unknown }} */ (pl).action
-                : null;
-        const actionStr =
-            typeof act === "string"
-                ? act.trim().toLowerCase()
-                : act != null && typeof act === "object" && typeof /** @type {{ stringValue?: string }} */ (act).stringValue === "string"
-                    ? /** @type {{ stringValue?: string }} */ (act).stringValue.trim().toLowerCase()
-                    : "";
-        if (!pl || actionStr !== "open_gallery") {
+        const pl = extractOpenGalleryPayloadFromMessage(messages[gx]);
+        if (!pl || openGalleryPayloadActionNorm_(pl) !== "open_gallery") {
             continue;
         }
-        const items = normalizeOpenGalleryItemsFromPayload(pl);
-        const allowed = items.map((it) => it.url);
-        if (allowed.length > 0) {
-            const rawOptions =
-                Object.prototype.hasOwnProperty.call(pl, "options") ? pl.options
-                    : Object.prototype.hasOwnProperty.call(pl, "option") ? pl.option
-                        : Object.prototype.hasOwnProperty.call(pl, "chips") ? pl.chips
-                            : null;
-            const options = normalizeOpenVideoOptions(rawOptions);
-
-            const rawMessage =
-                Object.prototype.hasOwnProperty.call(pl, "message") ? pl.message
-                    : Object.prototype.hasOwnProperty.call(pl, "text") ? pl.text
-                        : Object.prototype.hasOwnProperty.call(pl, "prompt") ? pl.prompt
-                            : Object.prototype.hasOwnProperty.call(pl, "subtitle") ? pl.subtitle
-                                : Object.prototype.hasOwnProperty.call(pl, "description") ? pl.description
-                                    : Object.prototype.hasOwnProperty.call(pl, "caption") ? pl.caption
-                                        : null;
-            const messageText = normalizeOpenVideoMessage(rawMessage);
-
-            return { urls: allowed, items, options, messageText };
+        const normalized = normalizedOpenGalleryFromPayloadBody_(pl);
+        if (normalized) {
+            return normalized;
         }
     }
     return null;
+}
+
+/**
+ * @param {Event | null | undefined} event
+ * @returns {{ urls: string[], items: OpenGalleryItem[], options: Array<{label: string, value: string}>, messageText: string } | null}
+ */
+function resolveOpenGalleryFromDialogflowEvent_(event) {
+    const turnMessages = collectDialogflowTurnMessages_(event);
+    let payload = extractFirstOpenGalleryNormalizedUrlsFromCxMessages(turnMessages);
+    if (payload) {
+        return payload;
+    }
+    const merged = mergeDialogflowResponseEnvelopeForGallery(event);
+    if (merged !== turnMessages) {
+        payload = extractFirstOpenGalleryNormalizedUrlsFromCxMessages(merged);
+        if (payload) {
+            return payload;
+        }
+    }
+    const deepPl = findOpenGalleryPayloadDeep_(event && event.detail, new WeakSet(), 0);
+    if (deepPl) {
+        return normalizedOpenGalleryFromPayloadBody_(deepPl);
+    }
+    return null;
+}
+
+/**
+ * @param {unknown} json
+ * @returns {void}
+ */
+function rememberOpenGalleryFromDetectIntentJson_(json) {
+    const pl = findOpenGalleryPayloadDeep_(json, new WeakSet(), 0);
+    if (!pl) {
+        return;
+    }
+    const norm = normalizedOpenGalleryFromPayloadBody_(pl);
+    if (norm) {
+        dfchatPendingDetectIntentGallery_ = norm;
+    }
+}
+
+/**
+ * Inject carousel when ES Messenger omits custom payloads from `df-response-received` but
+ * `detectIntent` JSON still contains `open_gallery`.
+ * @returns {void}
+ */
+function scheduleInjectInlineGalleryFromDetectIntentStash_() {
+    const payload = dfchatPendingDetectIntentGallery_;
+    if (!payload || !payload.urls || payload.urls.length === 0) {
+        return;
+    }
+    if (!passesInlineRichMediaIntentGate(null)) {
+        return;
+    }
+    const galleryItems = payload.items && payload.items.length ? payload.items : payload.urls;
+    if (!shouldScheduleInlineGalleryCarouselForNormalizedUrls(payload.urls)) {
+        scheduleEnsureExistingInlineGalleryPosition(
+            activeDfMessenger,
+            galleryItems,
+            payload.options,
+            payload.messageText
+        );
+        return;
+    }
+    scheduleInjectInlineGalleryCarousel(
+        activeDfMessenger,
+        galleryItems,
+        [],
+        payload.options,
+        payload.messageText
+    );
+}
+
+/**
+ * Parse Dialogflow `detectIntent` responses for `open_gallery` (bootstrap.js often hides custom payloads).
+ * @returns {void}
+ */
+function installDialogflowDetectIntentGalleryHook_() {
+    if (typeof window === "undefined" || window.__dfchatDetectIntentGalleryHook) {
+        return;
+    }
+    const origFetch = window.fetch;
+    if (typeof origFetch !== "function") {
+        return;
+    }
+    window.__dfchatDetectIntentGalleryHook = true;
+    window.fetch = function dfchatPatchedFetchForGallery(input, init) {
+        const resPromise = origFetch.call(this, input, init);
+        try {
+            const url =
+                typeof input === "string"
+                    ? input
+                    : input && typeof input === "object" && "url" in input
+                        ? String(/** @type {{ url?: string }} */ (input).url || "")
+                        : "";
+            if (url.indexOf("dialogflow") >= 0 && url.indexOf("detectIntent") >= 0) {
+                resPromise.then((res) => {
+                    try {
+                        const ct =
+                            res.headers && typeof res.headers.get === "function"
+                                ? res.headers.get("content-type") || ""
+                                : "";
+                        if (ct.indexOf("json") < 0) {
+                            return;
+                        }
+                        res.clone().json().then((json) => {
+                            rememberOpenGalleryFromDetectIntentJson_(json);
+                            scheduleInjectInlineGalleryFromDetectIntentStash_();
+                            [120, 400, 900, 1800].forEach((ms) => {
+                                window.setTimeout(() => {
+                                    scheduleInjectInlineGalleryFromDetectIntentStash_();
+                                }, ms);
+                            });
+                        }).catch(() => {
+                            /* ignore */
+                        });
+                    } catch {
+                        /* ignore */
+                    }
+                }).catch(() => {
+                    /* ignore */
+                });
+            }
+        } catch {
+            /* ignore */
+        }
+        return resPromise;
+    };
 }
 
 /**
@@ -13725,7 +13988,9 @@ function extractFirstOpenGalleryNormalizedUrlsFromCxMessages(messages) {
  */
 function pruneStaleInlineGalleryForCxResponse(messages, event) {
     try {
-        const payload = extractFirstOpenGalleryNormalizedUrlsFromCxMessages(messages);
+        const payload =
+            resolveOpenGalleryFromDialogflowEvent_(event)
+            || extractFirstOpenGalleryNormalizedUrlsFromCxMessages(messages);
         const hasPayload = !!(payload && payload.urls && payload.urls.length > 0);
         const gateOk = passesInlineRichMediaIntentGate(event);
         if (hasPayload && gateOk) {
@@ -13747,15 +14012,18 @@ function pruneStaleInlineGalleryForCxResponse(messages, event) {
  */
 function tryOpenGalleryFromBotResponseMessages(messages, event) {
     try {
-        if (!Array.isArray(messages) || messages.length === 0) {
-            return;
-        }
         if (!passesInlineRichMediaIntentGate(event)) {
             return;
         }
-        const payload = extractFirstOpenGalleryNormalizedUrlsFromCxMessages(messages);
+        let payload =
+            resolveOpenGalleryFromDialogflowEvent_(event)
+            || extractFirstOpenGalleryNormalizedUrlsFromCxMessages(messages)
+            || dfchatPendingDetectIntentGallery_;
         if (!payload || !payload.urls || payload.urls.length === 0) {
             return;
+        }
+        if (payload === dfchatPendingDetectIntentGallery_) {
+            dfchatPendingDetectIntentGallery_ = null;
         }
         const galleryItems = payload.items && payload.items.length ? payload.items : payload.urls;
         const shouldInject = shouldScheduleInlineGalleryCarouselForNormalizedUrls(payload.urls);
@@ -19811,7 +20079,11 @@ function extractPayload(message) {
         return unpacked ?? /** @type {Record<string, unknown>} */ (c);
     }
 
-    if (typeof rec.action === "string") {
+    const actionNorm = unwrapPayloadStringField(rec.action).trim().toLowerCase();
+    if (actionNorm) {
+        if (typeof rec.action !== "string") {
+            rec.action = actionNorm;
+        }
         return rec;
     }
 
