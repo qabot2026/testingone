@@ -271,6 +271,8 @@ const CHAT_PANEL_CORNERS_STYLE_ID = "dfchat-chat-panel-corners";
 const TITLEBAR_LAYOUT_STYLE_ID = "dfchat-titlebar-layout";
 const ES_CX_LOOK_STYLE_ID = "dfchat-es-cx-look";
 const ES_CHAT_PANEL_LAYOUT_STYLE_ID = "dfchat-es-panel-layout";
+/** Injected into each `df-message-list` shadow (transcript scroll lives here, not in `df-messenger-chat` shadow). */
+const ES_MESSAGE_LIST_SHADOW_LAYOUT_STYLE_ID = "dfchat-es-message-list-layout";
 const PERSONA_IMAGE_GUARD_STYLE_ID = "dfchat-persona-image-guard";
 /** Dialogflow “jump to bottom” / scroll-hint UI; mirrored onto `df-messenger-chat-bubble` :host. */
 const DF_MESSENGER_CHAT_SCROLL_JUMP_VAR_KEYS = [
@@ -25712,6 +25714,136 @@ df-messenger-user-input {
 }
 
 /**
+ * ES bootstrap scroll stack: `df-message-list` shadow → `.message-list-wrapper` → `#messageList`.
+ * @returns {string}
+ */
+function getEsMessageListShadowLayoutCss_() {
+    return `
+.message-list-wrapper {
+  display: flex !important;
+  flex: 1 1 auto !important;
+  flex-direction: column !important;
+  min-height: 0 !important;
+  min-width: 0 !important;
+  overflow: hidden !important;
+  box-sizing: border-box !important;
+}
+#messageList,
+#message-list {
+  display: flex !important;
+  flex: 1 1 auto !important;
+  flex-direction: column !important;
+  min-height: 0 !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  -webkit-overflow-scrolling: touch !important;
+  overscroll-behavior-y: contain !important;
+  box-sizing: border-box !important;
+}`;
+}
+
+/**
+ * @param {HTMLElement | null | undefined} dfMessenger
+ * @returns {void}
+ */
+function ensureEsMessageListShadowLayoutStyles_(dfMessenger) {
+    const ms =
+        dfMessenger
+        || (typeof activeDfMessenger !== "undefined" ? activeDfMessenger : null);
+    if (!ms || !isDialogflowEsMessenger_(ms)) {
+        return;
+    }
+    const css = getEsMessageListShadowLayoutCss_();
+    const roots = collectSearchRoots(ms);
+    for (let ri = 0; ri < roots.length; ri += 1) {
+        const root = roots[ri];
+        if (!root || !root.querySelectorAll) {
+            continue;
+        }
+        let hosts = [];
+        try {
+            hosts = Array.from(root.querySelectorAll("df-message-list"));
+        } catch {
+            hosts = [];
+        }
+        for (let hi = 0; hi < hosts.length; hi += 1) {
+            const host = hosts[hi];
+            const shadow = host && host.shadowRoot;
+            if (!shadow || typeof shadow.appendChild !== "function") {
+                continue;
+            }
+            let tag = shadow.getElementById(ES_MESSAGE_LIST_SHADOW_LAYOUT_STYLE_ID);
+            if (!tag) {
+                tag = document.createElement("style");
+                tag.id = ES_MESSAGE_LIST_SHADOW_LAYOUT_STYLE_ID;
+                shadow.appendChild(tag);
+            }
+            if (tag.textContent !== css) {
+                tag.textContent = css;
+            }
+        }
+    }
+}
+
+/**
+ * @param {HTMLElement | null | undefined} dfMessenger
+ * @returns {void}
+ */
+function reinforceEsMessageListScrollHosts_(dfMessenger) {
+    const ms =
+        dfMessenger
+        || (typeof activeDfMessenger !== "undefined" ? activeDfMessenger : null);
+    if (!ms) {
+        return;
+    }
+    const roots = collectSearchRoots(ms);
+    for (let ri = 0; ri < roots.length; ri += 1) {
+        const root = roots[ri];
+        if (!root || !root.querySelectorAll) {
+            continue;
+        }
+        let nodes = [];
+        try {
+            nodes = Array.from(
+                root.querySelectorAll(".message-list-wrapper, #messageList, #message-list")
+            );
+        } catch {
+            nodes = [];
+        }
+        for (let ni = 0; ni < nodes.length; ni += 1) {
+            const el = nodes[ni];
+            if (!el || !el.style) {
+                continue;
+            }
+            const isScroller =
+                (el.id === "messageList" || el.id === "message-list")
+                || (el.classList && el.classList.contains("message-list-wrapper"));
+            if (!isScroller) {
+                continue;
+            }
+            try {
+                if (el.classList.contains("message-list-wrapper")) {
+                    el.style.setProperty("display", "flex", "important");
+                    el.style.setProperty("flex", "1 1 auto", "important");
+                    el.style.setProperty("flex-direction", "column", "important");
+                    el.style.setProperty("min-height", "0", "important");
+                    el.style.setProperty("overflow", "hidden", "important");
+                } else {
+                    el.style.setProperty("flex", "1 1 auto", "important");
+                    el.style.setProperty("min-height", "0", "important");
+                    el.style.setProperty("overflow-y", "auto", "important");
+                    el.style.setProperty("overflow-x", "hidden", "important");
+                }
+                el.style.removeProperty("height");
+                el.style.removeProperty("max-height");
+            } catch {
+                /* ignore */
+            }
+        }
+    }
+}
+
+/**
  * @returns {string}
  */
 function getEsChatPanelLayoutCss_() {
@@ -25759,7 +25891,8 @@ ${getEsNativePanelLayoutCss_()}
 }
 
 /**
- * Strip JS-measured heights ES clears when new messages mount (they caused collapse after 2–3 turns).
+ * Strip JS-measured heights on transcript hosts when new messages mount. Do not remove flex/overflow —
+ * that broke the inner scroll stack after ~10 turns (footer floated up with empty space below).
  * @param {HTMLElement | null | undefined} dfMessenger
  * @returns {void}
  */
@@ -25771,7 +25904,7 @@ function clearEsPanelLayoutInlineOverrides_(dfMessenger) {
         return;
     }
     const roots = collectSearchRoots(ms);
-    const props = ["height", "min-height", "max-height", "flex", "overflow", "overflow-y", "overflow-x"];
+    const props = ["height", "min-height", "max-height"];
     for (let ri = 0; ri < roots.length; ri += 1) {
         const root = roots[ri];
         if (!root || !root.querySelectorAll) {
@@ -25882,6 +26015,8 @@ function applyEsChatPanelLayoutDomFixes_(dfMessenger) {
         return;
     }
     clearEsPanelLayoutInlineOverrides_(dfMessenger);
+    ensureEsMessageListShadowLayoutStyles_(dfMessenger);
+    reinforceEsMessageListScrollHosts_(dfMessenger);
     const roots = collectSearchRoots(dfMessenger);
     for (let ri = 0; ri < roots.length; ri += 1) {
         const root = roots[ri];
