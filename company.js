@@ -3943,7 +3943,6 @@ function syncChatActionBarPosition() {
         } else {
             bar.style.display = "none";
         }
-        applyEsChatPanelLayoutDomFixes_(messenger);
         return;
     }
 
@@ -4568,11 +4567,13 @@ function mountChatActionBarInline(messenger, bar) {
     }
 
     const cs = window.getComputedStyle(parent);
+    const msForBar = messenger || activeDfMessenger;
     const parentLooksLikeTranscriptHost =
         typeof parent.querySelector === "function"
         && !!(parent.querySelector(".message-list-wrapper, df-message-list, #messageList, #message-list"));
     if (
-        !parentLooksLikeTranscriptHost
+        !isDialogflowEsMessenger_(msForBar)
+        && !parentLooksLikeTranscriptHost
         && cs.display === "flex"
         && (cs.flexDirection === "row" || cs.flexDirection === "row-reverse")
     ) {
@@ -25674,33 +25675,48 @@ function scheduleEsBotPersonaDomRepair_(dfMessenger, whenMs) {
 function getEsNativePanelLayoutCss_() {
     return `
 .chat-wrapper {
-  display: flex !important;
-  flex-direction: column !important;
   box-sizing: border-box !important;
+  overflow: hidden !important;
 }
 .chat-wrapper.chat-open,
 .chat-wrapper.opened,
 .chat-wrapper.is-open,
 .chat-wrapper[opened] {
-  display: flex !important;
-  flex-direction: column !important;
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) !important;
+  grid-template-rows: auto minmax(0, 1fr) auto !important;
+  align-content: stretch !important;
   height: var(--df-messenger-chat-window-height, 560px) !important;
   min-height: var(--df-messenger-chat-window-height, 560px) !important;
   max-height: min(var(--df-messenger-chat-window-height, 560px), calc(100dvh - 100px)) !important;
   opacity: 1 !important;
   transform: translateZ(0) scale(1) !important;
+  overflow: hidden !important;
 }
 df-messenger-titlebar {
+  grid-row: 1 !important;
+  grid-column: 1 !important;
   flex: 0 0 auto !important;
   flex-shrink: 0 !important;
+  min-height: 0 !important;
 }
 df-message-list {
-  flex: 1 1 auto !important;
+  grid-row: 2 !important;
+  grid-column: 1 !important;
   min-height: 0 !important;
   min-width: 0 !important;
+  height: auto !important;
+  max-height: none !important;
   display: flex !important;
   flex-direction: column !important;
   overflow: hidden !important;
+  align-self: stretch !important;
+}
+df-messenger-user-input,
+.chat-wrapper > #dfchat-chat-action-bar,
+.chat-wrapper > .dfchat-chat-action-bar--inline {
+  grid-row: 3 !important;
+  grid-column: 1 !important;
 }
 df-messenger-user-input {
   flex: 0 0 auto !important;
@@ -25710,7 +25726,108 @@ df-messenger-user-input {
   position: relative !important;
   top: auto !important;
   bottom: auto !important;
+  align-self: end !important;
+}
+.chat-wrapper > #dfchat-chat-action-bar,
+.chat-wrapper > .dfchat-chat-action-bar--inline {
+  align-self: end !important;
+  justify-self: stretch !important;
 }`;
+}
+
+/**
+ * Lock open panel height so content growth cannot push the shell upward (fixed `bottom` anchor).
+ * @param {HTMLElement} panel
+ * @param {HTMLElement | null | undefined} dfMessenger
+ * @returns {void}
+ */
+function pinEsOpenChatPanelGrid_(panel, dfMessenger) {
+    if (!panel || !panel.style) {
+        return;
+    }
+    const isOpen =
+        (panel.classList && (
+            panel.classList.contains("chat-open")
+            || panel.classList.contains("opened")
+            || panel.classList.contains("is-open")
+        ))
+        || panel.hasAttribute("opened");
+    if (!isOpen) {
+        return;
+    }
+    const ms = dfMessenger || activeDfMessenger;
+    let hVar = "560px";
+    if (ms && ms.style) {
+        const raw = ms.style.getPropertyValue("--df-messenger-chat-window-height").trim();
+        if (raw) {
+            hVar = raw;
+        }
+    }
+    const maxH = `min(${hVar}, calc(100dvh - 100px))`;
+    try {
+        panel.style.setProperty("display", "grid", "important");
+        panel.style.setProperty("grid-template-columns", "minmax(0, 1fr)", "important");
+        panel.style.setProperty("grid-template-rows", "auto minmax(0, 1fr) auto", "important");
+        panel.style.setProperty("height", hVar, "important");
+        panel.style.setProperty("min-height", hVar, "important");
+        panel.style.setProperty("max-height", maxH, "important");
+        panel.style.setProperty("overflow", "hidden", "important");
+        panel.style.removeProperty("flex");
+        panel.style.removeProperty("flex-direction");
+    } catch {
+        /* ignore */
+    }
+    const title = panel.querySelector("df-messenger-titlebar");
+    const msgList = panel.querySelector("df-message-list");
+    const composer = panel.querySelector("df-messenger-user-input");
+    if (title && title.style) {
+        try {
+            title.style.setProperty("grid-row", "1", "important");
+            title.style.setProperty("grid-column", "1", "important");
+        } catch {
+            /* ignore */
+        }
+    }
+    if (msgList && msgList.style) {
+        try {
+            msgList.style.setProperty("grid-row", "2", "important");
+            msgList.style.setProperty("grid-column", "1", "important");
+            msgList.style.setProperty("min-height", "0", "important");
+            msgList.style.setProperty("display", "flex", "important");
+            msgList.style.setProperty("flex-direction", "column", "important");
+            msgList.style.setProperty("overflow", "hidden", "important");
+            msgList.style.removeProperty("height");
+            msgList.style.removeProperty("max-height");
+            msgList.style.removeProperty("flex");
+        } catch {
+            /* ignore */
+        }
+    }
+    if (composer && composer.style) {
+        try {
+            composer.style.setProperty("grid-row", "3", "important");
+            composer.style.setProperty("grid-column", "1", "important");
+            composer.style.setProperty("flex", "0 0 auto", "important");
+            composer.style.removeProperty("margin-top");
+            composer.style.removeProperty("transform");
+            composer.style.removeProperty("position");
+        } catch {
+            /* ignore */
+        }
+    }
+    const actionBar = panel.querySelector("#dfchat-chat-action-bar");
+    if (actionBar && actionBar.style) {
+        try {
+            actionBar.style.setProperty("grid-row", "3", "important");
+            actionBar.style.setProperty("grid-column", "1", "important");
+            actionBar.style.setProperty("position", "static", "important");
+            actionBar.style.removeProperty("top");
+            actionBar.style.removeProperty("bottom");
+            actionBar.style.removeProperty("transform");
+        } catch {
+            /* ignore */
+        }
+    }
 }
 
 /**
@@ -25891,50 +26008,6 @@ ${getEsNativePanelLayoutCss_()}
 }
 
 /**
- * Strip JS-measured heights on transcript hosts when new messages mount. Do not remove flex/overflow —
- * that broke the inner scroll stack after ~10 turns (footer floated up with empty space below).
- * @param {HTMLElement | null | undefined} dfMessenger
- * @returns {void}
- */
-function clearEsPanelLayoutInlineOverrides_(dfMessenger) {
-    const ms =
-        dfMessenger
-        || (typeof activeDfMessenger !== "undefined" ? activeDfMessenger : null);
-    if (!ms) {
-        return;
-    }
-    const roots = collectSearchRoots(ms);
-    const props = ["height", "min-height", "max-height"];
-    for (let ri = 0; ri < roots.length; ri += 1) {
-        const root = roots[ri];
-        if (!root || !root.querySelectorAll) {
-            continue;
-        }
-        let nodes = [];
-        try {
-            nodes = Array.from(
-                root.querySelectorAll(".message-list-wrapper, df-message-list, #messageList, #message-list")
-            );
-        } catch {
-            nodes = [];
-        }
-        for (let ni = 0; ni < nodes.length; ni += 1) {
-            const el = nodes[ni];
-            if (!el || !el.style) {
-                continue;
-            }
-            for (let pi = 0; pi < props.length; pi += 1) {
-                try {
-                    el.style.removeProperty(props[pi]);
-                } catch {
-                    /* ignore */
-                }
-            }
-        }
-    }
-}
-
-/**
  * @param {HTMLElement | null | undefined} dfMessenger
  * @returns {void}
  */
@@ -25950,8 +26023,8 @@ function scheduleEsChatPanelLayoutRepair_(dfMessenger) {
     }
     esPanelLayoutRepairTimer_ = window.setTimeout(() => {
         esPanelLayoutRepairTimer_ = null;
-        applyEsChatPanelLayoutToMessenger_(ms);
-    }, 40);
+        applyEsChatPanelLayoutDomFixes_(ms);
+    }, 80);
 }
 
 /**
@@ -25972,33 +26045,14 @@ function ensureEsChatPanelLayoutWatcher_(dfMessenger) {
     };
     try {
         const mo = new MutationObserver(schedule);
-        mo.observe(dfMessenger, { childList: true, subtree: true, attributes: true, attributeFilter: ["class", "style", "open"] });
+        mo.observe(dfMessenger, { childList: true, subtree: true });
         dfMessenger._companyEsPanelLayoutMo = mo;
     } catch {
         /* ignore */
     }
-    if (typeof ResizeObserver === "function") {
-        try {
-            const ro = new ResizeObserver(schedule);
-            ro.observe(dfMessenger);
-            dfMessenger._companyEsPanelLayoutRo = ro;
-            const roots = collectSearchRoots(dfMessenger);
-            for (let ri = 0; ri < roots.length; ri += 1) {
-                const root = roots[ri];
-                if (!root || !root.querySelectorAll) {
-                    continue;
-                }
-                const wrappers = root.querySelectorAll(".chat-wrapper");
-                for (let wi = 0; wi < wrappers.length; wi += 1) {
-                    ro.observe(wrappers[wi]);
-                }
-            }
-        } catch {
-            /* ignore */
-        }
-    }
     window.addEventListener("df-response-received", schedule, true);
     window.addEventListener("df-chat-open-changed", schedule);
+    window.addEventListener("df-user-input-entered", schedule, true);
 }
 
 /**
@@ -26014,8 +26068,8 @@ function applyEsChatPanelLayoutDomFixes_(dfMessenger) {
     if (!dfMessenger || !isDialogflowEsMessenger_(dfMessenger)) {
         return;
     }
-    clearEsPanelLayoutInlineOverrides_(dfMessenger);
     ensureEsMessageListShadowLayoutStyles_(dfMessenger);
+    stripEsTranscriptMeasuredHeights_(dfMessenger);
     reinforceEsMessageListScrollHosts_(dfMessenger);
     const roots = collectSearchRoots(dfMessenger);
     for (let ri = 0; ri < roots.length; ri += 1) {
@@ -26027,41 +26081,48 @@ function applyEsChatPanelLayoutDomFixes_(dfMessenger) {
         if (!panel) {
             continue;
         }
-        if (panel.style) {
-            try {
-                panel.style.setProperty("display", "flex", "important");
-                panel.style.setProperty("flex-direction", "column", "important");
-                panel.style.removeProperty("grid-template-rows");
-                panel.style.removeProperty("grid-template-columns");
-            } catch {
-                /* ignore */
-            }
+        pinEsOpenChatPanelGrid_(panel, dfMessenger);
+    }
+}
+
+/**
+ * Remove only measured heights on inner scroll hosts (never flex/overflow on hosts).
+ * @param {HTMLElement | null | undefined} dfMessenger
+ * @returns {void}
+ */
+function stripEsTranscriptMeasuredHeights_(dfMessenger) {
+    const ms =
+        dfMessenger
+        || (typeof activeDfMessenger !== "undefined" ? activeDfMessenger : null);
+    if (!ms) {
+        return;
+    }
+    const roots = collectSearchRoots(ms);
+    const props = ["height", "min-height", "max-height"];
+    for (let ri = 0; ri < roots.length; ri += 1) {
+        const root = roots[ri];
+        if (!root || !root.querySelectorAll) {
+            continue;
         }
-        const msgList = panel.querySelector("df-message-list");
-        if (msgList && msgList.style) {
-            try {
-                msgList.style.setProperty("flex", "1 1 auto", "important");
-                msgList.style.setProperty("min-height", "0", "important");
-                msgList.style.setProperty("display", "flex", "important");
-                msgList.style.setProperty("flex-direction", "column", "important");
-                msgList.style.removeProperty("grid-row");
-                msgList.style.removeProperty("height");
-                msgList.style.removeProperty("max-height");
-            } catch {
-                /* ignore */
-            }
+        let nodes = [];
+        try {
+            nodes = Array.from(
+                root.querySelectorAll(".message-list-wrapper, #messageList, #message-list")
+            );
+        } catch {
+            nodes = [];
         }
-        const composer = panel.querySelector("df-messenger-user-input");
-        if (composer && composer.style) {
-            try {
-                composer.style.setProperty("flex", "0 0 auto", "important");
-                composer.style.setProperty("flex-shrink", "0", "important");
-                composer.style.removeProperty("margin-top");
-                composer.style.removeProperty("transform");
-                composer.style.removeProperty("position");
-                composer.style.removeProperty("grid-row");
-            } catch {
-                /* ignore */
+        for (let ni = 0; ni < nodes.length; ni += 1) {
+            const el = nodes[ni];
+            if (!el || !el.style) {
+                continue;
+            }
+            for (let pi = 0; pi < props.length; pi += 1) {
+                try {
+                    el.style.removeProperty(props[pi]);
+                } catch {
+                    /* ignore */
+                }
             }
         }
     }
