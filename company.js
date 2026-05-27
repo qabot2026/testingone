@@ -1794,7 +1794,7 @@ const originalTextNodeContent = new Map();
 const originalElementAttributes = new Map();
 const googleTranslationCache = new Map();
 
-const COMPANY_JS_BUILD_TAG = "20260527-lightbox-chrome-fix";
+const COMPANY_JS_BUILD_TAG = "20260527-es-persona-repair";
 const COMPANY_DEBUG_QUERY_FLAG = "dfchatDebug";
 let debugMountAttemptSeq = 0;
 let debugBadgeLastRenderAt = 0;
@@ -2589,6 +2589,7 @@ function runCompanyDomReadyInit() {
         syncMobileLightboxParkStateFromChat();
     }, { passive: true });
     attachImageLightboxClickHandler();
+    removeLegacyParentPageLightboxNodes_();
     installDialogflowDetectIntentGalleryHook_();
     ensureComposerHeaderCollapseBehavior();
     // Mount chat before the inline form and other UI — if form init throws, the bubble should still show.
@@ -11043,8 +11044,10 @@ function restoreChatChromeAfterLightboxClose_() {
                         ? common.dfMessengerTheme
                         : null;
                 applyDialogflowEsCxLookCompatibility(ms, theme, common && common.header);
+                applyBotPersonaToMessenger(ms, activeBubbleNode);
                 scheduleChatMessageListScrollbarReapply(ms);
                 scheduleFooterInputBoxShadowOverrides(ms);
+                schedulePersonaShadowFix(ms);
             }
         } catch {
             /* ignore */
@@ -17302,14 +17305,16 @@ async function handleDfResponseReceived(event) {
         : [];
     const currentTurnMessages = collectDialogflowTurnMessages_(event);
 
-    if ((messages.length > 0 || currentTurnMessages.length > 0) && !isFormOnlyOpenResponse_(event)) {
+    const cxResponseMessagesMerged = mergeDialogflowResponseEnvelopeForGallery(event);
+
+    if (!isFormOnlyOpenResponse_(event)) {
         const ms = activeDfMessenger;
-        if (ms && typeof ms.renderCustomText === "function") {
-            renderBotPersona(ms, Date.now());
+        if (ms && typeof ms.renderCustomText === "function"
+            && (messages.length > 0 || currentTurnMessages.length > 0 || cxResponseMessagesMerged.length > 0)) {
+            scheduleBotPersonaAfterEsResponse_(ms, event);
         }
     }
 
-    const cxResponseMessagesMerged = mergeDialogflowResponseEnvelopeForGallery(event);
     rememberWebNativeChipValueMappingsFromResponse_(cxResponseMessagesMerged);
     renderPlainMessagePayloadsFromResponse(cxResponseMessagesMerged);
     pruneStaleInlineGalleryForCxResponse(cxResponseMessagesMerged, event);
@@ -24933,6 +24938,39 @@ function renderBotPersona(dfMessenger, messageInstantMs) {
     schedulePersonaShadowFix(dfMessenger);
 }
 
+/**
+ * ES Messenger paints bot text after `df-response-received`; render persona after the row exists
+ * and re-run decorator passes so avatar + clock sit above the reply (not below it).
+ *
+ * @param {HTMLElement} dfMessenger
+ * @param {Event | null | undefined} event
+ * @returns {void}
+ */
+function scheduleBotPersonaAfterEsResponse_(dfMessenger, event) {
+    if (!dfMessenger || typeof dfMessenger.renderCustomText !== "function") {
+        return;
+    }
+    if (event && isFormOnlyOpenResponse_(event)) {
+        return;
+    }
+    const when = Date.now();
+    const run = () => {
+        try {
+            renderBotPersona(dfMessenger, when);
+            schedulePersonaShadowFix(dfMessenger);
+        } catch {
+            /* ignore */
+        }
+    };
+    run();
+    if (typeof requestAnimationFrame === "function") {
+        requestAnimationFrame(run);
+    }
+    [50, 150, 350, 700, 1200, 2000].forEach((ms) => {
+        window.setTimeout(run, ms);
+    });
+}
+
 function getIstTimeLabel() {
     return new Intl.DateTimeFormat("en-IN", {
         timeZone: "Asia/Kolkata",
@@ -25032,6 +25070,66 @@ function createPersonaBadgeDataUrl(label, timeLabel, nonce = "", personaDescMark
     return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
 }
 
+/**
+ * @returns {string}
+ */
+function getBotPersonaImageBaseUrl_() {
+    if (BOT_PERSONA_CONFIG.mode !== "image") {
+        return "";
+    }
+    const raw = BOT_PERSONA_CONFIG.image && typeof BOT_PERSONA_CONFIG.image.url === "string"
+        ? BOT_PERSONA_CONFIG.image.url
+        : "";
+    return raw.split("#")[0].trim();
+}
+
+/**
+ * @param {ParentNode | null | undefined} row
+ * @param {string} selector
+ * @returns {Element | null}
+ */
+function dfchatQueryWithinRow_(row, selector) {
+    if (!row || typeof selector !== "string" || !selector.trim()) {
+        return null;
+    }
+    try {
+        if (typeof row.querySelector === "function") {
+            const hit = row.querySelector(selector);
+            if (hit) {
+                return hit;
+            }
+        }
+        if (row instanceof Element && row.shadowRoot && typeof row.shadowRoot.querySelector === "function") {
+            const inShadow = row.shadowRoot.querySelector(selector);
+            if (inShadow) {
+                return inShadow;
+            }
+        }
+    } catch {
+        /* ignore */
+    }
+    return null;
+}
+
+/**
+ * @param {Element | null | undefined} row
+ * @returns {boolean}
+ */
+function dfchatRowIsEsAgentMessageHost_(row) {
+    if (!row || !(row instanceof Element)) {
+        return false;
+    }
+    const tag = row.tagName ? row.tagName.toUpperCase() : "";
+    if (tag !== "DF-MESSAGE") {
+        return false;
+    }
+    const role = (row.getAttribute("type") || row.getAttribute("data-type") || "").trim().toLowerCase();
+    if (role === "user" || role === "human") {
+        return false;
+    }
+    return role === "agent" || role === "bot" || !!dfchatQueryWithinRow_(row, ".message.bot-message");
+}
+
 function getPersonaImageGuardCss() {
     const cfg = BOT_PERSONA_CONFIG;
     const img = cfg.image;
@@ -25080,6 +25178,65 @@ img[src*="%23dfchat-bot-persona"] {
   filter: blur(${PERSONA_SOFT_BLUR}) !important;
   opacity: ${PERSONA_OPACITY} !important;
 }
+#messageList df-message img[src*="dfchat-bot-persona"],
+#messageList df-message img[src*="%23dfchat-bot-persona"],
+#messageList df-message img[src*="cat-icon.png"] {
+  width: ${catW} !important;
+  height: ${catH} !important;
+  max-width: ${catW} !important;
+  max-height: ${catH} !important;
+  object-fit: contain !important;
+  display: inline-block !important;
+  vertical-align: middle !important;
+  box-sizing: border-box !important;
+  transform: translate(${personaRight}, ${personaDown}) !important;
+}
+#messageList df-message:has(img[src*="dfchat-bot-persona"]),
+#messageList df-message:has(img[src*="%23dfchat-bot-persona"]),
+#messageList df-message:has(img[src*="cat-icon.png"]) {
+  margin-bottom: ${BOT_PERSONA_CONFIG.gapBelowAssistantPx}px !important;
+}
+#messageList df-message:has(img[src*="dfchat-bot-persona"]) .message.bot-message.markdown,
+#messageList df-message:has(img[src*="%23dfchat-bot-persona"]) .message.bot-message.markdown,
+#messageList df-message:has(img[src*="cat-icon.png"]) .message.bot-message.markdown {
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  border: none !important;
+  padding: 0 8px !important;
+  margin: 0 !important;
+}
+#messageList df-message:has(img[src*="dfchat-bot-persona"]) .message.bot-message.markdown p strong,
+#messageList df-message:has(img[src*="%23dfchat-bot-persona"]) .message.bot-message.markdown p strong,
+#messageList df-message:has(img[src*="cat-icon.png"]) .message.bot-message.markdown p strong {
+  display: inline-block !important;
+  vertical-align: middle !important;
+  transform: translate(${timeRight}, ${timeDown}) !important;
+  color: ${PERSONA_TEXT_COLOR} !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  filter: blur(${PERSONA_SOFT_BLUR}) !important;
+  opacity: ${PERSONA_OPACITY} !important;
+}
+${cfg.mode === "image" ? `
+#messageList df-message:has(img[src*="dfchat-bot-persona"]) .message-actor,
+#messageList df-message:has(img[src*="%23dfchat-bot-persona"]) .message-actor,
+#messageList df-message:has(img[src*="cat-icon.png"]) .message-actor,
+#messageList df-message:has(img[src*="dfchat-bot-persona"]) [class*="actor"]:not(.message):not(.message-stack),
+#messageList df-message:has(img[src*="%23dfchat-bot-persona"]) [class*="actor"]:not(.message):not(.message-stack),
+#messageList df-message:has(img[src*="cat-icon.png"]) [class*="actor"]:not(.message):not(.message-stack) {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  max-width: 0 !important;
+  max-height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  visibility: hidden !important;
+}
+` : ""}
 img[src*="dfchat-persona-bot-time"] {
   height: 28px !important;
   width: auto !important;
@@ -26220,28 +26377,66 @@ function dfchatResolveListRowHostingMessage_(messageEl) {
     return null;
 }
 
+/**
+ * @param {ParentNode | null | undefined} row
+ * @returns {boolean}
+ */
+function dfchatRowContainsBotPersonaImg_(row) {
+    if (!row) {
+        return false;
+    }
+    /** @type {ParentNode[]} */
+    const scanRoots = [row];
+    if (row instanceof Element && row.shadowRoot) {
+        scanRoots.push(row.shadowRoot);
+    }
+    for (let ri = 0; ri < scanRoots.length; ri += 1) {
+        const r = scanRoots[ri];
+        if (!r || typeof r.querySelectorAll !== "function") {
+            continue;
+        }
+        let imgs = [];
+        try {
+            imgs = Array.from(r.querySelectorAll("img"));
+        } catch {
+            imgs = [];
+        }
+        for (let ii = 0; ii < imgs.length; ii += 1) {
+            const src = imgs[ii].getAttribute ? (imgs[ii].getAttribute("src") || "") : "";
+            if (srcHasBotPersonaImageMarker_(src)) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 /** @param {HTMLElement} row */
 function dfchatRowHasPersonaAvatar_(row) {
-    if (
-        row.querySelector?.(`img[src*='#${PERSONA_URL_MARKER_BOT_IMG}']`)
-        || row.querySelector?.(`img[src*='%23${PERSONA_URL_MARKER_BOT_IMG}']`)
-    ) {
-        return true;
-    }
-    return !!(row.querySelector?.("img[src*='dfchat-persona-bot|']")
-        || row.querySelector?.("img[src*='dfchat-persona-bot%7C']"));
+    return dfchatRowContainsBotPersonaImg_(row)
+        || !!(row.querySelector?.("img[src*='dfchat-persona-bot|']")
+            || row.querySelector?.("img[src*='dfchat-persona-bot%7C']"));
 }
 
 /**
  * @param {HTMLElement} row
  */
 function dfchatRowLooksLikeCxBotAssistantRow_(row) {
-    if (!row.querySelectorAll) {
+    if (!row) {
         return false;
     }
-    const hasBot = !!row.querySelector(".message.bot-message");
-    const hasUser = !!(row.querySelector(".message.user-message") || row.classList?.contains("user"));
-    if (!hasBot || hasUser) {
+    const role = row instanceof Element && row.tagName === "DF-MESSAGE"
+        ? (row.getAttribute("type") || row.getAttribute("data-type") || "").trim().toLowerCase()
+        : "";
+    const hasUser = !!(dfchatQueryWithinRow_(row, ".message.user-message")
+        || row.classList?.contains("user")
+        || role === "user"
+        || role === "human");
+    if (hasUser) {
+        return false;
+    }
+    const hasBot = !!dfchatQueryWithinRow_(row, ".message.bot-message") || dfchatRowIsEsAgentMessageHost_(row);
+    if (!hasBot) {
         return false;
     }
     return !dfchatRowHasPersonaAvatar_(row);
@@ -26392,6 +26587,12 @@ function resolvePersonaBotMessageElement_(imageNode) {
             && el.classList.contains("bot-message")
         ) {
             return el;
+        }
+        if (el.tagName === "DF-MESSAGE" && el.shadowRoot) {
+            const inner = el.shadowRoot.querySelector(".message.bot-message");
+            if (inner) {
+                return /** @type {HTMLElement} */ (inner);
+            }
         }
         el = /** @type {HTMLElement | null} */ (dfchatComposeParentElement(el));
     }
@@ -26859,7 +27060,37 @@ function decoratePersonaMessages(dfMessenger) {
                 `img[src*='${BOT_PERSONA_TOKEN}']`
             ].join(", ")
         );
+        /** @type {HTMLImageElement[]} */
+        const personaImageList = [];
+        const seenPersonaImg = new WeakSet();
         for (const image of personaImages) {
+            if (image && !seenPersonaImg.has(image)) {
+                seenPersonaImg.add(image);
+                personaImageList.push(/** @type {HTMLImageElement} */ (image));
+            }
+        }
+        const personaBase = getBotPersonaImageBaseUrl_();
+        if (personaBase) {
+            let extraImgs = [];
+            try {
+                extraImgs = Array.from(root.querySelectorAll("img"));
+            } catch {
+                extraImgs = [];
+            }
+            for (let ei = 0; ei < extraImgs.length; ei += 1) {
+                const img = extraImgs[ei];
+                if (!img || seenPersonaImg.has(img)) {
+                    continue;
+                }
+                const src = img.getAttribute("src") || "";
+                if (!srcHasBotPersonaImageMarker_(src)) {
+                    continue;
+                }
+                seenPersonaImg.add(img);
+                personaImageList.push(img);
+            }
+        }
+        for (const image of personaImageList) {
             const personaType = getPersonaType(image);
             if (!personaType) {
                 continue;
@@ -26957,7 +27188,15 @@ function getPersonaType(imageNode) {
 
 function srcHasBotPersonaImageMarker_(source) {
     const s = typeof source === "string" ? source : "";
-    return s.includes(`#${PERSONA_URL_MARKER_BOT_IMG}`) || s.includes(`%23${PERSONA_URL_MARKER_BOT_IMG}`);
+    if (s.includes(`#${PERSONA_URL_MARKER_BOT_IMG}`) || s.includes(`%23${PERSONA_URL_MARKER_BOT_IMG}`)) {
+        return true;
+    }
+    const base = getBotPersonaImageBaseUrl_();
+    if (!base) {
+        return false;
+    }
+    const norm = s.split("#")[0].split("?")[0].trim();
+    return norm === base;
 }
 
 function findPersonaContainer(imageNode, root) {
