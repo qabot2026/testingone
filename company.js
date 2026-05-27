@@ -3928,6 +3928,23 @@ function syncChatActionBarPosition() {
         return;
     }
 
+    if (isDialogflowEsMessenger_(messenger)) {
+        const mountedInline =
+            mountChatActionBarInline(messenger, bar) || mountChatActionBarEsFallback_(messenger, bar);
+        if (mountedInline) {
+            bar.classList.remove("dfchat-chat-action-bar--body-fixed");
+            bar.setAttribute("data-dfchat-anchor", "below-input");
+            bar.style.zIndex = "";
+            refreshChatActionBarLanguageState(bar);
+            bar.style.display = "inline-flex";
+            applyChatActionBarInlineTransform(bar);
+        } else {
+            bar.style.display = "none";
+        }
+        applyEsChatPanelLayoutDomFixes_(messenger);
+        return;
+    }
+
     // Prefer mounting *below* the type-your-message row (`.input-box-wrapper`); not beside Send (that sits inside the input strip).
     if (mountChatActionBarInline(messenger, bar)) {
         bar.classList.remove("dfchat-chat-action-bar--body-fixed");
@@ -3936,9 +3953,6 @@ function syncChatActionBarPosition() {
         refreshChatActionBarLanguageState(bar);
         bar.style.display = "inline-flex";
         applyChatActionBarInlineTransform(bar);
-        if (isDialogflowEsMessenger_(messenger)) {
-            applyEsChatPanelLayoutDomFixes_(messenger);
-        }
         return;
     }
 
@@ -4481,6 +4495,50 @@ function syncPoweredByStripPosition() {
         : window.innerHeight;
     const topClamped = Math.max(4, Math.min(rawTopFb, vh0 - lineH - 4));
     setPoweredByStripGeometry(el, L, r, topClamped);
+}
+
+/**
+ * ES fallback: keep Language/Restart under the composer (never `position:fixed` on ES).
+ * @param {Element} messenger
+ * @param {HTMLElement} bar
+ * @returns {boolean}
+ */
+function mountChatActionBarEsFallback_(messenger, bar) {
+    if (!messenger || !bar) {
+        return false;
+    }
+    const roots = collectSearchRoots(messenger);
+    for (let ri = 0; ri < roots.length; ri += 1) {
+        const root = roots[ri];
+        if (!root || typeof root.querySelector !== "function") {
+            continue;
+        }
+        const composer = root.querySelector("df-messenger-user-input");
+        if (!composer || !composer.parentElement) {
+            continue;
+        }
+        const parent = composer.parentElement;
+        try {
+            bar.classList.add("dfchat-chat-action-bar--inline");
+            bar.classList.remove("dfchat-chat-action-bar--body-fixed");
+            bar.style.position = "static";
+            bar.style.left = "";
+            bar.style.right = "";
+            bar.style.bottom = "";
+            bar.style.top = "auto";
+            bar.style.zIndex = "";
+            bar.style.display = "inline-flex";
+            if (composer.nextSibling) {
+                parent.insertBefore(bar, composer.nextSibling);
+            } else {
+                parent.appendChild(bar);
+            }
+            return true;
+        } catch {
+            /* ignore */
+        }
+    }
+    return false;
 }
 
 function mountChatActionBarInline(messenger, bar) {
@@ -9951,8 +10009,6 @@ function applyDialogflowEsCxLookCompatibility(dfMessenger, theme, headerConfig) 
   border-radius: var(--df-messenger-chat-border-radius, 22px) !important;
   box-shadow: var(--df-messenger-chat-box-shadow, 0 16px 42px rgba(15, 23, 42, 0.16)) !important;
   overflow: hidden !important;
-  display: flex !important;
-  flex-direction: column !important;
   box-sizing: border-box !important;
   transform: none !important;
 }
@@ -9966,63 +10022,12 @@ function applyDialogflowEsCxLookCompatibility(dfMessenger, theme, headerConfig) 
   opacity: 1 !important;
   transform: none !important;
 }
-.chat-wrapper > df-messenger-titlebar,
-.chat-wrapper > .title-wrapper {
-  flex: 0 0 auto !important;
-}
-.chat-wrapper > df-messenger-chat {
-  flex: 1 1 0 !important;
-  min-height: 0 !important;
-  height: auto !important;
-  max-height: none !important;
-  align-self: stretch !important;
-  overflow: hidden !important;
-  display: flex !important;
-  flex-direction: column !important;
-}
-.chat-wrapper > .message-list-wrapper,
-.chat-wrapper > df-message-list {
-  flex: 1 1 0 !important;
-  min-height: 0 !important;
-  overflow-x: hidden !important;
-  overflow-y: auto !important;
-}
-.chat-wrapper > df-messenger-user-input {
-  flex: 0 0 auto !important;
-}
-df-messenger-chat {
-  display: flex !important;
-  flex-direction: column !important;
-  flex: 1 1 0 !important;
-  min-height: 0 !important;
-  height: 100% !important;
-  max-height: 100% !important;
-  overflow: hidden !important;
-  box-sizing: border-box !important;
-}
-df-messenger-chat > df-messenger-titlebar,
-df-messenger-chat > .title-wrapper {
-  flex: 0 0 auto !important;
-  flex-shrink: 0 !important;
-}
-df-messenger-chat > df-messenger-user-input,
-df-messenger-chat > #dfchat-chat-action-bar,
-df-messenger-chat .dfchat-chat-action-bar--inline,
-df-messenger-chat .input-box-wrapper,
-df-messenger-chat > .input-box-wrapper {
-  flex: 0 0 auto !important;
-  flex-shrink: 0 !important;
-}
-df-messenger-chat > df-messenger-user-input {
-  margin-top: auto !important;
-}
-${getEsChatPanelFlatDockCss_()}
+${getEsChatPanelGridDockCss_()}
 .message-list-wrapper,
 df-message-list {
   display: block !important;
-  flex: 1 1 0 !important;
   min-height: 0 !important;
-  max-height: 100% !important;
+  max-height: none !important;
   overflow-x: hidden !important;
   overflow-y: auto !important;
   -webkit-overflow-scrolling: touch !important;
@@ -25730,24 +25735,63 @@ function esChatShellHostsTranscript_(chatShell) {
 }
 
 /**
- * Flex docking for ES flat/hybrid panels. Grid + empty `df-messenger-chat` leaves a dead 1fr row and
- * lifts the composer off the bottom.
+ * Single ES panel grid: header / scrollable transcript / footer. `display:contents` hoists body+footer
+ * when they live inside `df-messenger-chat`; empty shells are removed from layout.
  * @returns {string}
  */
-function getEsChatPanelFlatDockCss_() {
+function getEsChatPanelGridDockCss_() {
     return `
-.chat-wrapper.dfchat-es-flat-chat-panel,
-.chat-wrapper:not(:has(> df-messenger-chat)),
-.chat-wrapper:has(> .message-list-wrapper):has(> df-messenger-user-input) {
-  display: flex !important;
-  flex-direction: column !important;
-  grid-template-rows: none !important;
-  grid-template-columns: none !important;
+.chat-wrapper,
+.chat-wrapper.chat-open,
+.chat-wrapper.opened,
+.chat-wrapper.is-open,
+.chat-wrapper[opened],
+.chat-wrapper.dfchat-es-flat-chat-panel {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) !important;
+  grid-template-rows: auto minmax(0, 1fr) auto !important;
+  align-content: stretch !important;
 }
-.chat-wrapper:has(> .message-list-wrapper):has(> df-messenger-user-input) > df-messenger-chat:not(:has(.message-list-wrapper, df-message-list, #messageList, #message-list)),
-.chat-wrapper.dfchat-es-flat-chat-panel > df-messenger-chat:not(:has(.message-list-wrapper, df-message-list, #messageList, #message-list)) {
+.chat-wrapper > .title-wrapper,
+.chat-wrapper > df-messenger-titlebar,
+.chat-wrapper > df-messenger-chat > .title-wrapper,
+.chat-wrapper > df-messenger-chat > df-messenger-titlebar {
+  grid-row: 1 !important;
+  grid-column: 1 !important;
+}
+.chat-wrapper > .message-list-wrapper,
+.chat-wrapper > df-message-list,
+.chat-wrapper > df-messenger-chat > .message-list-wrapper,
+.chat-wrapper > df-messenger-chat > df-message-list {
+  grid-row: 2 !important;
+  grid-column: 1 !important;
+  min-height: 0 !important;
+  height: auto !important;
+  max-height: none !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  -webkit-overflow-scrolling: touch !important;
+  overscroll-behavior-y: contain !important;
+  touch-action: pan-y !important;
+  align-self: stretch !important;
+  box-sizing: border-box !important;
+}
+.chat-wrapper > df-messenger-user-input,
+.chat-wrapper > df-messenger-chat > df-messenger-user-input {
+  grid-row: 3 !important;
+  grid-column: 1 !important;
+  margin-top: 0 !important;
+  transform: none !important;
+  position: relative !important;
+  top: auto !important;
+  bottom: auto !important;
+  align-self: end !important;
+}
+.chat-wrapper > df-messenger-chat:has(.message-list-wrapper, df-message-list, #messageList, #message-list) {
+  display: contents !important;
+}
+.chat-wrapper > df-messenger-chat:not(:has(.message-list-wrapper, df-message-list, #messageList, #message-list)) {
   display: none !important;
-  flex: 0 0 0 !important;
   height: 0 !important;
   min-height: 0 !important;
   max-height: 0 !important;
@@ -25756,39 +25800,6 @@ function getEsChatPanelFlatDockCss_() {
   padding: 0 !important;
   visibility: hidden !important;
   pointer-events: none !important;
-}
-.chat-wrapper.dfchat-es-flat-chat-panel > .title-wrapper,
-.chat-wrapper.dfchat-es-flat-chat-panel > df-messenger-titlebar,
-.chat-wrapper:not(:has(> df-messenger-chat)) > .title-wrapper,
-.chat-wrapper:not(:has(> df-messenger-chat)) > df-messenger-titlebar,
-.chat-wrapper:has(> .message-list-wrapper):has(> df-messenger-user-input) > .title-wrapper,
-.chat-wrapper:has(> .message-list-wrapper):has(> df-messenger-user-input) > df-messenger-titlebar {
-  flex: 0 0 auto !important;
-}
-.chat-wrapper.dfchat-es-flat-chat-panel > .message-list-wrapper,
-.chat-wrapper.dfchat-es-flat-chat-panel > df-message-list,
-.chat-wrapper:not(:has(> df-messenger-chat)) > .message-list-wrapper,
-.chat-wrapper:not(:has(> df-messenger-chat)) > df-message-list,
-.chat-wrapper:has(> .message-list-wrapper):has(> df-messenger-user-input) > .message-list-wrapper,
-.chat-wrapper:has(> .message-list-wrapper):has(> df-messenger-user-input) > df-message-list {
-  flex: 1 1 0 !important;
-  min-height: 0 !important;
-  height: auto !important;
-  max-height: none !important;
-  align-self: stretch !important;
-  overflow-x: hidden !important;
-  overflow-y: auto !important;
-  -webkit-overflow-scrolling: touch !important;
-  overscroll-behavior-y: contain !important;
-  touch-action: pan-y !important;
-  box-sizing: border-box !important;
-}
-.chat-wrapper.dfchat-es-flat-chat-panel > df-messenger-user-input,
-.chat-wrapper:not(:has(> df-messenger-chat)) > df-messenger-user-input,
-.chat-wrapper:has(> .message-list-wrapper):has(> df-messenger-user-input) > df-messenger-user-input {
-  flex: 0 0 auto !important;
-  margin-top: 0 !important;
-  align-self: stretch !important;
 }`;
 }
 
@@ -25806,70 +25817,18 @@ function getEsChatPanelLayoutCss_() {
 .chat-wrapper.opened,
 .chat-wrapper.is-open,
 .chat-wrapper[opened] {
-  display: flex !important;
-  flex-direction: column !important;
   overflow: hidden !important;
   position: fixed !important;
   transform: none !important;
   will-change: auto !important;
   box-sizing: border-box !important;
 }
-.chat-wrapper > df-messenger-titlebar,
-.chat-wrapper > .title-wrapper {
-  flex: 0 0 auto !important;
-}
-.chat-wrapper > df-messenger-chat {
-  flex: 1 1 0 !important;
-  min-height: 0 !important;
-  height: auto !important;
-  max-height: none !important;
-  align-self: stretch !important;
-  overflow: hidden !important;
-  display: flex !important;
-  flex-direction: column !important;
-}
-.chat-wrapper > .message-list-wrapper,
-.chat-wrapper > df-message-list {
-  flex: 1 1 0 !important;
-  min-height: 0 !important;
-  overflow-x: hidden !important;
-  overflow-y: auto !important;
-}
-.chat-wrapper > df-messenger-user-input {
-  flex: 0 0 auto !important;
-}
-df-messenger-chat {
-  display: flex !important;
-  flex-direction: column !important;
-  flex: 1 1 0 !important;
-  min-height: 0 !important;
-  height: 100% !important;
-  max-height: 100% !important;
-  overflow: hidden !important;
-  box-sizing: border-box !important;
-}
-df-messenger-chat > df-messenger-titlebar,
-df-messenger-chat > .title-wrapper {
-  flex: 0 0 auto !important;
-  flex-shrink: 0 !important;
-}
-df-messenger-chat > df-messenger-user-input,
-df-messenger-chat > #dfchat-chat-action-bar,
-df-messenger-chat .dfchat-chat-action-bar--inline,
-df-messenger-chat .input-box-wrapper,
-df-messenger-chat > .input-box-wrapper {
-  flex: 0 0 auto !important;
-  flex-shrink: 0 !important;
-}
-df-messenger-chat > df-messenger-user-input {
-  margin-top: auto !important;
-}
+${getEsChatPanelGridDockCss_()}
 .message-list-wrapper,
 df-message-list {
   display: block !important;
-  flex: 1 1 0 !important;
   min-height: 0 !important;
-  max-height: 100% !important;
+  max-height: none !important;
   overflow-x: hidden !important;
   overflow-y: auto !important;
   -webkit-overflow-scrolling: touch !important;
@@ -25921,8 +25880,7 @@ df-message-list {
   filter: blur(${PERSONA_SOFT_BLUR}) !important;
   opacity: ${PERSONA_OPACITY} !important;
   margin-left: 4px !important;
-}
-${getEsChatPanelFlatDockCss_()}`;
+}`;
 }
 
 /**
@@ -26080,29 +26038,42 @@ function applyEsChatPanelLayoutDomFixes_(dfMessenger) {
             }
             if (wrapper.style) {
                 try {
-                    wrapper.style.setProperty("display", "flex", "important");
-                    wrapper.style.setProperty("flex-direction", "column", "important");
+                    wrapper.style.setProperty("display", "grid", "important");
+                    wrapper.style.setProperty("grid-template-columns", "minmax(0, 1fr)", "important");
+                    wrapper.style.setProperty("grid-template-rows", "auto minmax(0, 1fr) auto", "important");
+                } catch {
+                    /* ignore */
+                }
+            }
+            let titleEl = null;
+            try {
+                titleEl = wrapper.querySelector(
+                    ":scope > .title-wrapper, :scope > df-messenger-titlebar"
+                );
+            } catch {
+                titleEl = null;
+            }
+            if (titleEl && titleEl.style) {
+                try {
+                    titleEl.style.setProperty("grid-row", "1", "important");
+                    titleEl.style.setProperty("grid-column", "1", "important");
                 } catch {
                     /* ignore */
                 }
             }
             if (chatShell && chatShell.style) {
                 try {
-                    if (isFlat && !esChatShellHostsTranscript_(chatShell)) {
+                    if (esChatShellHostsTranscript_(chatShell)) {
+                        chatShell.style.setProperty("display", "contents", "important");
+                        chatShell.style.removeProperty("flex");
+                        chatShell.style.removeProperty("height");
+                        chatShell.style.removeProperty("min-height");
+                        chatShell.style.removeProperty("max-height");
+                    } else if (isFlat || !esChatShellHostsTranscript_(chatShell)) {
                         chatShell.style.setProperty("display", "none", "important");
-                        chatShell.style.setProperty("flex", "0 0 0", "important");
                         chatShell.style.setProperty("height", "0", "important");
                         chatShell.style.setProperty("min-height", "0", "important");
                         chatShell.style.setProperty("max-height", "0", "important");
-                        chatShell.style.setProperty("overflow", "hidden", "important");
-                    } else {
-                        chatShell.style.removeProperty("display");
-                        chatShell.style.setProperty("display", "flex", "important");
-                        chatShell.style.setProperty("flex-direction", "column", "important");
-                        chatShell.style.setProperty("flex", "1 1 0", "important");
-                        chatShell.style.setProperty("min-height", "0", "important");
-                        chatShell.style.removeProperty("height");
-                        chatShell.style.removeProperty("max-height");
                         chatShell.style.setProperty("overflow", "hidden", "important");
                     }
                 } catch {
@@ -26135,11 +26106,13 @@ function applyEsChatPanelLayoutDomFixes_(dfMessenger) {
         }
         if (scroller && scroller.style) {
             try {
-                scroller.style.setProperty("flex", "1 1 0", "important");
+                scroller.style.setProperty("grid-row", "2", "important");
+                scroller.style.setProperty("grid-column", "1", "important");
                 scroller.style.setProperty("min-height", "0", "important");
-                scroller.style.setProperty("max-height", "100%", "important");
                 scroller.style.setProperty("overflow-y", "auto", "important");
                 scroller.style.removeProperty("height");
+                scroller.style.removeProperty("max-height");
+                scroller.style.removeProperty("flex");
             } catch {
                 /* ignore */
             }
@@ -26147,9 +26120,12 @@ function applyEsChatPanelLayoutDomFixes_(dfMessenger) {
         const composer = root.querySelector("df-messenger-user-input");
         if (composer && composer.style) {
             try {
-                composer.style.setProperty("flex", "0 0 auto", "important");
-                const flatPanel = composer.closest(".dfchat-es-flat-chat-panel");
-                composer.style.setProperty("margin-top", flatPanel ? "0" : "auto", "important");
+                composer.style.setProperty("grid-row", "3", "important");
+                composer.style.setProperty("grid-column", "1", "important");
+                composer.style.removeProperty("flex");
+                composer.style.removeProperty("margin-top");
+                composer.style.removeProperty("transform");
+                composer.style.removeProperty("position");
             } catch {
                 /* ignore */
             }
@@ -27741,6 +27717,10 @@ function applyUserInputVerticalNudge(dfMessenger) {
 
 function scheduleUserInputVerticalNudge(dfMessenger) {
     if (!dfMessenger) {
+        return;
+    }
+    if (isDialogflowEsMessenger_(dfMessenger)) {
+        applyUserInputVerticalNudge(dfMessenger);
         return;
     }
     const run = () => {
