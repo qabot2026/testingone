@@ -10007,6 +10007,7 @@ df-messenger-chat > .input-box-wrapper {
 df-messenger-chat > df-messenger-user-input {
   margin-top: auto !important;
 }
+${getEsChatPanelFlatDockCss_()}
 .message-list-wrapper,
 df-message-list {
   display: block !important;
@@ -25684,6 +25685,44 @@ function scheduleEsBotPersonaDomRepair_(dfMessenger, whenMs) {
 }
 
 /**
+ * ES bootstrap often omits `df-messenger-chat`; transcript + composer sit directly under `.chat-wrapper`.
+ * Without these rules the 1fr grid row stays empty and the footer floats upward with a gap at the bottom.
+ * @returns {string}
+ */
+function getEsChatPanelFlatDockCss_() {
+    return `
+.chat-wrapper:not(:has(> df-messenger-chat)),
+.chat-wrapper.dfchat-es-flat-chat-panel {
+  grid-template-rows: auto minmax(0, 1fr) auto !important;
+}
+.chat-wrapper:not(:has(> df-messenger-chat)) > .message-list-wrapper,
+.chat-wrapper:not(:has(> df-messenger-chat)) > df-message-list,
+.chat-wrapper.dfchat-es-flat-chat-panel > .message-list-wrapper,
+.chat-wrapper.dfchat-es-flat-chat-panel > df-message-list {
+  grid-row: 2 !important;
+  grid-column: 1 !important;
+  min-height: 0 !important;
+  height: 100% !important;
+  max-height: 100% !important;
+  align-self: stretch !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  -webkit-overflow-scrolling: touch !important;
+  overscroll-behavior-y: contain !important;
+  touch-action: pan-y !important;
+  box-sizing: border-box !important;
+}
+.chat-wrapper:not(:has(> df-messenger-chat)) > df-messenger-user-input,
+.chat-wrapper.dfchat-es-flat-chat-panel > df-messenger-user-input {
+  grid-row: 3 !important;
+  grid-column: 1 !important;
+  align-self: end !important;
+  flex: 0 0 auto !important;
+  margin-top: 0 !important;
+}`;
+}
+
+/**
  * @returns {string}
  */
 function getEsChatPanelLayoutCss_() {
@@ -25801,7 +25840,8 @@ df-message-list {
   filter: blur(${PERSONA_SOFT_BLUR}) !important;
   opacity: ${PERSONA_OPACITY} !important;
   margin-left: 4px !important;
-}`;
+}
+${getEsChatPanelFlatDockCss_()}`;
 }
 
 /**
@@ -25930,6 +25970,33 @@ function applyEsChatPanelLayoutDomFixes_(dfMessenger) {
         if (!root || typeof root.querySelector !== "function") {
             continue;
         }
+        let wrappers = [];
+        try {
+            wrappers = Array.from(root.querySelectorAll(".chat-wrapper"));
+        } catch {
+            wrappers = [];
+        }
+        for (let wi = 0; wi < wrappers.length; wi += 1) {
+            const wrapper = wrappers[wi];
+            if (!wrapper || !wrapper.classList) {
+                continue;
+            }
+            let hasNestedChatCol = false;
+            try {
+                hasNestedChatCol = !!wrapper.querySelector(":scope > df-messenger-chat");
+            } catch {
+                hasNestedChatCol = false;
+            }
+            try {
+                if (hasNestedChatCol) {
+                    wrapper.classList.remove("dfchat-es-flat-chat-panel");
+                } else {
+                    wrapper.classList.add("dfchat-es-flat-chat-panel");
+                }
+            } catch {
+                /* ignore */
+            }
+        }
         const chatCol = root.querySelector("df-messenger-chat");
         if (chatCol && chatCol.style) {
             try {
@@ -25963,7 +26030,8 @@ function applyEsChatPanelLayoutDomFixes_(dfMessenger) {
         if (composer && composer.style) {
             try {
                 composer.style.setProperty("flex", "0 0 auto", "important");
-                composer.style.setProperty("margin-top", "auto", "important");
+                const flatPanel = composer.closest(".dfchat-es-flat-chat-panel");
+                composer.style.setProperty("margin-top", flatPanel ? "0" : "auto", "important");
             } catch {
                 /* ignore */
             }
@@ -27534,6 +27602,11 @@ function applyUserInputVerticalNudge(dfMessenger) {
         const userInputHosts = root.querySelectorAll("df-messenger-user-input");
         for (const el of userInputHosts) {
             if (!el || !el.style) {
+                continue;
+            }
+            if (isDialogflowEsMessenger_(dfMessenger)) {
+                el.style.removeProperty("transform");
+                el.style.removeProperty("position");
                 continue;
             }
             if (USER_INPUT_NUDGE_UP_PX === 0) {
