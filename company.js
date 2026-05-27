@@ -866,29 +866,53 @@ function readBotPersonaConfig() {
     };
 }
 
-/**
- * Dismiss floating menu unless the click originated inside Shadow DOM-safe path (for inline action bars / overlays).
- * @param {{ toggle: HTMLElement, menu: HTMLElement, wrapper?: HTMLElement | null }} refs
- */
-function bindCloseFloatingMenuOnDocumentClick_(refs) {
-    const { toggle, menu, wrapper } = refs;
-    if (!toggle || !menu) {
+/** Tracks the open language menu (portaled to `document.body` so shadow `overflow` cannot clip it). */
+const dfchatLanguageMenuState = {
+    menu: /** @type {HTMLElement | null} */ (null),
+    toggle: /** @type {HTMLElement | null} */ (null),
+    suppressDismissUntil: 0
+};
+
+let dfchatLanguageMenuDismissHooked = false;
+
+function ensureLanguageMenuDismissHandler_() {
+    if (dfchatLanguageMenuDismissHooked) {
         return;
     }
+    dfchatLanguageMenuDismissHooked = true;
     document.addEventListener("click", (e) => {
-        const path = typeof e.composedPath === "function" ? e.composedPath() : [];
-        const inToggle = path.includes(toggle);
-        const inMenu = path.includes(menu);
-        const inWrap = wrapper ? path.includes(wrapper) : false;
-        if (inToggle || inMenu || inWrap) {
+        if (Date.now() < dfchatLanguageMenuState.suppressDismissUntil) {
             return;
         }
-        menu.style.display = "none";
+        const menu = dfchatLanguageMenuState.menu;
+        if (!menu || menu.style.display === "none") {
+            return;
+        }
+        const path = typeof e.composedPath === "function" ? e.composedPath() : [];
+        const toggle = dfchatLanguageMenuState.toggle;
+        if (path.includes(menu) || (toggle && path.includes(toggle))) {
+            return;
+        }
+        closeDfchatLanguageMenu_(menu);
     }, false);
 }
 
 /**
- * Open a language menu with `position: fixed` so it is not clipped by `overflow: hidden` on the chat panel.
+ * @param {HTMLElement | null | undefined} menu
+ */
+function closeDfchatLanguageMenu_(menu) {
+    if (!menu) {
+        return;
+    }
+    menu.style.display = "none";
+    if (dfchatLanguageMenuState.menu === menu) {
+        dfchatLanguageMenuState.menu = null;
+        dfchatLanguageMenuState.toggle = null;
+    }
+}
+
+/**
+ * Position and show a language menu on `document.body` (not clipped by chat panel overflow / shadow).
  * @param {HTMLElement} toggleBtn
  * @param {HTMLElement} menu
  */
@@ -896,24 +920,78 @@ function openFloatingLanguageMenu_(toggleBtn, menu) {
     if (!toggleBtn || !menu) {
         return;
     }
+    ensureLanguageMenuDismissHandler_();
+    try {
+        if (menu.parentElement !== document.body) {
+            document.body.appendChild(menu);
+        }
+    } catch {
+        /* ignore */
+    }
     menu.style.display = "block";
     menu.style.position = "fixed";
     menu.style.right = "auto";
     menu.style.bottom = "auto";
     menu.style.zIndex = "2147483647";
     menu.style.pointerEvents = "auto";
-    const rect = toggleBtn.getBoundingClientRect();
-    const menuH = menu.offsetHeight > 0 ? menu.offsetHeight : 140;
-    const menuW = menu.offsetWidth > 0 ? menu.offsetWidth : 160;
-    let left = Math.round(rect.left);
-    let top = Math.round(rect.top - menuH - 8);
-    const pad = 8;
-    const vw = window.innerWidth || 360;
-    const vh = window.innerHeight || 640;
-    left = Math.max(pad, Math.min(left, vw - menuW - pad));
-    top = Math.max(pad, Math.min(top, vh - menuH - pad));
-    menu.style.left = `${left}px`;
-    menu.style.top = `${top}px`;
+    dfchatLanguageMenuState.menu = menu;
+    dfchatLanguageMenuState.toggle = toggleBtn;
+    dfchatLanguageMenuState.suppressDismissUntil = Date.now() + 160;
+
+    const place = () => {
+        const rect = toggleBtn.getBoundingClientRect();
+        const menuH = menu.offsetHeight > 0 ? menu.offsetHeight : 140;
+        const menuW = menu.offsetWidth > 0 ? menu.offsetWidth : 160;
+        let left = Math.round(rect.left);
+        let top = Math.round(rect.top - menuH - 8);
+        const pad = 8;
+        const vw = window.innerWidth || 360;
+        const vh = window.innerHeight || 640;
+        left = Math.max(pad, Math.min(left, vw - menuW - pad));
+        top = Math.max(pad, Math.min(top, vh - menuH - pad));
+        menu.style.left = `${left}px`;
+        menu.style.top = `${top}px`;
+    };
+    place();
+    if (typeof requestAnimationFrame === "function") {
+        requestAnimationFrame(place);
+    }
+}
+
+/**
+ * @param {HTMLElement} toggleBtn
+ * @param {HTMLElement} menu
+ */
+function toggleDfchatLanguageMenu_(toggleBtn, menu) {
+    if (!toggleBtn || !menu) {
+        return;
+    }
+    const open = menu.style.display !== "none" && menu.style.display !== "";
+    if (open) {
+        closeDfchatLanguageMenu_(menu);
+        return;
+    }
+    window.setTimeout(() => openFloatingLanguageMenu_(toggleBtn, menu), 0);
+}
+
+/**
+ * @param {HTMLElement} labelEl
+ */
+function applyEsBotPersonaLabelOffsets_(labelEl) {
+    if (!labelEl || !labelEl.style) {
+        return;
+    }
+    const img = BOT_PERSONA_CONFIG.image;
+    const down = typeof img.labelOffsetDownPx === "number" ? img.labelOffsetDownPx : 0;
+    const left = typeof img.labelOffsetLeftPx === "number" ? img.labelOffsetLeftPx : 0;
+    try {
+        labelEl.style.setProperty("display", "inline-block", "important");
+        labelEl.style.setProperty("transform", `translate(${-left}px, ${down}px)`, "important");
+        labelEl.style.setProperty("vertical-align", "middle", "important");
+    } catch {
+        labelEl.style.display = "inline-block";
+        labelEl.style.transform = `translate(${-left}px, ${down}px)`;
+    }
 }
 
 /**
@@ -2775,10 +2853,11 @@ function initializeHardActionBar() {
             option.textContent = getLanguageOptionDisplayLabel(lang);
             option.style.cssText = "width: 100%; height: auto; text-align: left; border: 0; background: transparent; color: #0f172a; border-radius: 10px; padding: 8px 10px; font: 600 12px 'Manrope', 'Segoe UI', sans-serif; cursor: pointer; transition: background 0.2s ease;";
 
-            option.addEventListener("click", () => {
+            option.addEventListener("click", (ev) => {
+                ev.stopPropagation();
                 const code = option.getAttribute("data-lang") || "en";
                 applyLanguage(code);
-                menu.style.display = "none";
+                closeDfchatLanguageMenu_(menu);
             });
 
             menu.appendChild(option);
@@ -2786,17 +2865,12 @@ function initializeHardActionBar() {
 
         langButton.addEventListener("click", (event) => {
             event.stopPropagation();
-            menu.style.display = menu.style.display === "none" ? "block" : "none";
+            toggleDfchatLanguageMenu_(langButton, menu);
         });
 
         langWrap.appendChild(langButton);
         langWrap.appendChild(menu);
         headerControls.appendChild(langWrap);
-
-        /* Bubble phase: capture would run before the button and clear the menu, breaking toggle on 2nd click. */
-        document.addEventListener("click", () => {
-            menu.style.display = "none";
-        }, false);
     }
 
     if (isRestartChatEnabled()) {
@@ -3380,9 +3454,10 @@ function mountFooterOverlayControls(restartConfig, restartEnabled) {
             item.style.cursor = "pointer";
             item.style.font = "600 12px Manrope, Segoe UI, sans-serif";
             item.style.color = normalizeLanguage(optionData.code) === activeLanguage ? "#0369a1" : "#0f172a";
-            item.addEventListener("click", () => {
-                menu.style.display = "none";
+            item.addEventListener("click", (ev) => {
+                ev.stopPropagation();
                 applyLanguage(optionData.code);
+                closeDfchatLanguageMenu_(menu);
             });
             item.addEventListener("mouseenter", () => {
                 item.style.background = "rgba(15, 118, 110, 0.08)";
@@ -3412,14 +3487,8 @@ function mountFooterOverlayControls(restartConfig, restartEnabled) {
 
         languageButton.addEventListener("click", (e) => {
             e.stopPropagation();
-            if (menu.style.display === "none") {
-                openFloatingLanguageMenu_(languageButton, menu);
-            } else {
-                menu.style.display = "none";
-            }
+            toggleDfchatLanguageMenu_(languageButton, menu);
         });
-
-        bindCloseFloatingMenuOnDocumentClick_({ toggle: languageButton, menu, wrapper: langWrapper });
 
         overlay.appendChild(langWrapper);
     }
@@ -3659,9 +3728,10 @@ function ensureChatActionBar() {
                     optionButton.dataset.active = "true";
                     optionButton.style.color = "#0369a1";
                 }
-                optionButton.addEventListener("click", () => {
+                optionButton.addEventListener("click", (ev) => {
+                    ev.stopPropagation();
                     applyLanguage(optionData.code);
-                    languageMenu.style.display = "none";
+                    closeDfchatLanguageMenu_(languageMenu);
                     buildLanguageMenu();
                 });
                 optionButton.addEventListener("mouseenter", () => {
@@ -3677,22 +3747,12 @@ function ensureChatActionBar() {
 
         languageButton.addEventListener("click", (event) => {
             event.stopPropagation();
-            if (languageMenu.style.display === "none") {
-                openFloatingLanguageMenu_(languageButton, languageMenu);
-            } else {
-                languageMenu.style.display = "none";
-            }
+            toggleDfchatLanguageMenu_(languageButton, languageMenu);
         });
 
         langWrapper.appendChild(languageButton);
         langWrapper.appendChild(languageMenu);
         bar.appendChild(langWrapper);
-
-        bindCloseFloatingMenuOnDocumentClick_({
-            toggle: languageButton,
-            menu: languageMenu,
-            wrapper: langWrapper
-        });
     }
 
     if (isRestartChatEnabled()) {
@@ -26059,6 +26119,7 @@ function buildEsBotPersonaDomRow_(messageInstantMs) {
             const lb = document.createElement("span");
             lb.className = `${DFCHAT_ES_BOT_PERSONA_CLASS}__label`;
             lb.textContent = label;
+            applyEsBotPersonaLabelOffsets_(lb);
             cap.appendChild(lb);
         }
         if (timeLabel) {
@@ -26107,6 +26168,9 @@ function injectEsBotPersonaRow_(dfMessenger, messageInstantMs) {
         && agentRow.previousElementSibling instanceof Element
         && agentRow.previousElementSibling.classList.contains(DFCHAT_ES_BOT_PERSONA_CLASS)
     ) {
+        const prev = agentRow.previousElementSibling;
+        const lb = prev.querySelector(`.${DFCHAT_ES_BOT_PERSONA_CLASS}__label`);
+        applyEsBotPersonaLabelOffsets_(lb);
         schedulePersonaShadowFix(ms);
         return true;
     }
@@ -26140,8 +26204,13 @@ function buildBotPersonaImageMarkdownWithTime_(baseUrl, label, timeLabel) {
     if (!t && !l) {
         return imgMd;
     }
-    const inner = l && t ? `${l}  ${t}` : l || t;
-    return `${imgMd} **${inner}**`;
+    if (l && t) {
+        return `${imgMd}\n\n${l}\n\n**${t}**`;
+    }
+    if (l) {
+        return `${imgMd}\n\n${l}`;
+    }
+    return `${imgMd}\n\n**${t}**`;
 }
 
 /**
@@ -26424,8 +26493,8 @@ img[src*="%23dfchat-bot-persona"] {
 .message.bot-message.markdown:has(img[src*="%23dfchat-bot-persona"]) {
   margin-bottom: ${BOT_PERSONA_CONFIG.gapBelowAssistantPx}px !important;
 }
-.message.bot-message.markdown:has(img[src*="dfchat-bot-persona"]) p + p,
-.message.bot-message.markdown:has(img[src*="%23dfchat-bot-persona"]) p + p {
+.message.bot-message.markdown:has(img[src*="dfchat-bot-persona"]) p + p:not(:has(strong)),
+.message.bot-message.markdown:has(img[src*="%23dfchat-bot-persona"]) p + p:not(:has(strong)) {
   display: inline-block !important;
   color: ${PERSONA_TEXT_COLOR} !important;
   font-size: 11px !important;
