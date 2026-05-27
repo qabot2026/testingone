@@ -5591,19 +5591,9 @@ function sendUserTextViaDfMessengerAfterLiveAgentRoute_(dfMessenger, text, shoul
                 }
             }, 650);
         }
-        if (typeof dfMessenger.sendQuery === "function") {
-            const r = dfMessenger.sendQuery(t);
-            if (r && typeof r.catch === "function") {
-                r.catch(() => {});
-            }
+        if (dispatchDfMessengerUserQuery_(dfMessenger, t)) {
             scheduleClearDfMessengerComposerInput_();
             return;
-        }
-        if (typeof dfMessenger.sendRequest === "function") {
-            const r = dfMessenger.sendRequest("query", t);
-            if (r && typeof r.catch === "function") {
-                r.catch(() => {});
-            }
         }
         scheduleClearDfMessengerComposerInput_();
     } catch (e) {
@@ -9230,6 +9220,118 @@ function writeComposerInputValue(el, value) {
             /* ignore */
         }
     }
+}
+
+/**
+ * ES bootstrap: programmatic `sendQuery` often no-ops; prefer `sendRequest("query")` or native Send.
+ * @param {HTMLElement | null | undefined} dfMessenger
+ * @returns {boolean}
+ */
+function trySubmitComposerNativeSend_(dfMessenger) {
+    const ms = dfMessenger || activeDfMessenger;
+    if (!ms) {
+        return false;
+    }
+    try {
+        const roots = collectSearchRoots(ms);
+        for (let ri = 0; ri < roots.length; ri += 1) {
+            const root = roots[ri];
+            if (!root || typeof root.querySelectorAll !== "function") {
+                continue;
+            }
+            const hosts = root.querySelectorAll("df-messenger-user-input");
+            for (let hi = 0; hi < hosts.length; hi += 1) {
+                const mount = getUserInputComposerMountRoot_(hosts[hi]);
+                if (!mount || typeof mount.querySelector !== "function") {
+                    continue;
+                }
+                const sendBtn = mount.querySelector(
+                    "#send-icon-button, #sendIcon, .send-icon-button-wrapper button, button.send-icon"
+                );
+                if (sendBtn instanceof HTMLElement) {
+                    sendBtn.click();
+                    return true;
+                }
+                const wrap = mount.querySelector(".send-icon-button-wrapper");
+                if (wrap instanceof HTMLElement) {
+                    wrap.click();
+                    return true;
+                }
+            }
+        }
+    } catch {
+        /* ignore */
+    }
+    return false;
+}
+
+/**
+ * Send user text to Dialogflow (gallery/video/card chips + programmatic sends).
+ * @param {HTMLElement | null | undefined} dfMessenger
+ * @param {string} text
+ * @returns {boolean} true when a send path ran
+ */
+function dispatchDfMessengerUserQuery_(dfMessenger, text) {
+    const t = typeof text === "string" ? text.trim() : "";
+    const ms = dfMessenger || activeDfMessenger;
+    if (!t || !ms) {
+        return false;
+    }
+    const es = isDialogflowEsMessenger_(ms);
+    try {
+        if (es && typeof ms.sendRequest === "function") {
+            const r = ms.sendRequest("query", t);
+            if (r && typeof r.catch === "function") {
+                r.catch(() => {});
+            }
+            return true;
+        }
+        if (!es && typeof ms.sendQuery === "function") {
+            const r = ms.sendQuery(t);
+            if (r && typeof r.catch === "function") {
+                r.catch(() => {});
+            }
+            return true;
+        }
+        if (typeof ms.sendRequest === "function") {
+            const r = ms.sendRequest("query", t);
+            if (r && typeof r.catch === "function") {
+                r.catch(() => {});
+            }
+            return true;
+        }
+        if (typeof ms.sendQuery === "function") {
+            const r = ms.sendQuery(t);
+            if (r && typeof r.catch === "function") {
+                r.catch(() => {});
+            }
+            return true;
+        }
+        if (es) {
+            const roots = collectSearchRoots(ms);
+            for (let ri = 0; ri < roots.length; ri += 1) {
+                const root = roots[ri];
+                if (!root || typeof root.querySelectorAll !== "function") {
+                    continue;
+                }
+                const hosts = root.querySelectorAll("df-messenger-user-input");
+                for (let hi = 0; hi < hosts.length; hi += 1) {
+                    const mount = getUserInputComposerMountRoot_(hosts[hi]);
+                    const field = resolveComposerInputInsideUserInputShadow(mount);
+                    if (!field) {
+                        continue;
+                    }
+                    writeComposerInputValue(field, t);
+                    if (trySubmitComposerNativeSend_(ms)) {
+                        return true;
+                    }
+                }
+            }
+        }
+    } catch {
+        /* ignore */
+    }
+    return false;
 }
 
 /**
@@ -13373,6 +13475,14 @@ function handleWebNativeChipValueClick_(event) {
         }
     }
     if (!clickable) {
+        return;
+    }
+    if (
+        typeof clickable.closest === "function"
+        && clickable.closest(
+            `.${DFCHAT_INLINE_GALLERY_CLASS}, .${DFCHAT_INLINE_VIDEO_CLASS}, .${DFCHAT_INLINE_CARD_CAROUSEL_CLASS}`
+        )
+    ) {
         return;
     }
     const key = normalizeWebNativeChipLabelKey_(clickable.textContent || "");
@@ -20585,12 +20695,8 @@ function dispatchPendingOpenFormFollowup_(kind) {
                 return;
             }
         }
-        if (typeof /** @type {{ sendQuery?: (q: string) => unknown }} */ (ms).sendQuery === "function") {
-            /** @type {{ sendQuery: (q: string) => unknown }} */ (ms).sendQuery(coerced.value);
+        if (dispatchDfMessengerUserQuery_(ms, coerced.value)) {
             return;
-        }
-        if (typeof /** @type {{ sendRequest?: (t: string, p: string) => unknown }} */ (ms).sendRequest === "function") {
-            /** @type {{ sendRequest: (t: string, p: string) => unknown }} */ (ms).sendRequest("query", coerced.value);
         }
     } catch {
         /* ignore */
