@@ -1794,7 +1794,7 @@ const originalTextNodeContent = new Map();
 const originalElementAttributes = new Map();
 const googleTranslationCache = new Map();
 
-const COMPANY_JS_BUILD_TAG = "20260527-es-gallery-detectintent";
+const COMPANY_JS_BUILD_TAG = "20260527-lightbox-chrome-fix";
 const COMPANY_DEBUG_QUERY_FLAG = "dfchatDebug";
 let debugMountAttemptSeq = 0;
 let debugBadgeLastRenderAt = 0;
@@ -10970,22 +10970,91 @@ const VIDEO_LIGHTBOX_IFRAME_ID = "dfchat-video-lightbox-iframe";
 const VIDEO_LIGHTBOX_CLOSE_ID = "dfchat-video-lightbox-close";
 
 /**
- * When the widget runs inside `company-loader.js`'s docked iframe, `96vw`/`92vh` are relative to that
- * small frame (~440×720). Mount lightboxes on the parent page so images fill the browser viewport.
+ * Always mount lightboxes in the chat frame (`document`). Parent-page mounting + scroll lock
+ * disturbed host headers/footers and ES messenger chrome after dismiss.
  * @returns {Document}
  */
 function getDfchatLightboxDocument() {
+    return document;
+}
+
+/** Nested open/close (duplicate click handlers) must not strand scroll lock. */
+let dfchatLightboxScrollLockDepth_ = 0;
+/** @type {{ html: string, body: string } | null} */
+let dfchatLightboxScrollLockSnapshot_ = null;
+
+/**
+ * Remove legacy overlays created when lightboxes mounted on `window.parent`.
+ * @returns {void}
+ */
+function removeLegacyParentPageLightboxNodes_() {
     try {
-        if (typeof window !== "undefined" && window.parent && window.parent !== window) {
-            const parentDoc = window.parent.document;
-            if (parentDoc && parentDoc.body) {
-                return parentDoc;
+        if (!window.parent || window.parent === window || !window.parent.document) {
+            return;
+        }
+        const pdoc = window.parent.document;
+        for (const id of [IMAGE_LIGHTBOX_ID, VIDEO_LIGHTBOX_ID]) {
+            const el = pdoc.getElementById(id);
+            if (el) {
+                el.remove();
             }
         }
+        pdoc.documentElement.style.overflow = "";
+        if (pdoc.body) {
+            pdoc.body.style.overflow = "";
+        }
     } catch {
-        /* cross-origin parent — keep lightbox in the iframe */
+        /* cross-origin parent */
     }
-    return document;
+}
+
+/**
+ * @returns {boolean}
+ */
+function isDfchatImageLightboxOpen_() {
+    const overlay = document.getElementById(IMAGE_LIGHTBOX_ID);
+    return !!(overlay && overlay.style.display === "flex");
+}
+
+/**
+ * @returns {boolean}
+ */
+function isDfchatVideoLightboxOpen_() {
+    const overlay = document.getElementById(VIDEO_LIGHTBOX_ID);
+    return !!(overlay && overlay.style.display === "flex");
+}
+
+/**
+ * Re-apply ES panel chrome after lightbox dismiss (scroll lock used to leave header/footer misaligned).
+ * @returns {void}
+ */
+function restoreChatChromeAfterLightboxClose_() {
+    const run = () => {
+        try {
+            scheduleSyncChatActionBarPosition();
+            const ms = activeDfMessenger || document.querySelector("df-messenger");
+            if (ms) {
+                const common =
+                    COMPANY_UI_CONFIG && typeof COMPANY_UI_CONFIG === "object" && COMPANY_UI_CONFIG.common
+                        ? COMPANY_UI_CONFIG.common
+                        : null;
+                const theme =
+                    common && common.dfMessengerTheme && typeof common.dfMessengerTheme === "object"
+                        ? common.dfMessengerTheme
+                        : null;
+                applyDialogflowEsCxLookCompatibility(ms, theme, common && common.header);
+                scheduleChatMessageListScrollbarReapply(ms);
+                scheduleFooterInputBoxShadowOverrides(ms);
+            }
+        } catch {
+            /* ignore */
+        }
+    };
+    if (typeof requestAnimationFrame === "function") {
+        requestAnimationFrame(run);
+    } else {
+        window.setTimeout(run, 0);
+    }
 }
 
 /** @returns {HTMLElement} */
@@ -11000,24 +11069,45 @@ function getDfchatLightboxBodyEl() {
 
 /** @param {boolean} locked */
 function setDfchatLightboxPageScrollLocked(locked) {
-    /** @type {Document[]} */
-    const docs = [document];
-    try {
-        if (window.parent && window.parent !== window && window.parent.document) {
-            docs.push(window.parent.document);
-        }
-    } catch {
-        /* ignore */
+    const html = document.documentElement;
+    const body = document.body;
+    if (!html || !body) {
+        return;
     }
-    for (let di = 0; di < docs.length; di += 1) {
-        const doc = docs[di];
-        try {
-            doc.documentElement.style.overflow = locked ? "hidden" : "";
-            doc.body.style.overflow = locked ? "hidden" : "";
-        } catch {
-            /* ignore */
+    if (locked) {
+        dfchatLightboxScrollLockDepth_ += 1;
+        if (dfchatLightboxScrollLockDepth_ > 1) {
+            return;
         }
+        dfchatLightboxScrollLockSnapshot_ = {
+            html: html.style.overflow || "",
+            body: body.style.overflow || ""
+        };
+        html.classList.add("dfchat-lightbox-scroll-lock");
+        body.classList.add("dfchat-lightbox-scroll-lock");
+        html.style.overflow = "hidden";
+        body.style.overflow = "hidden";
+        return;
     }
+    if (dfchatLightboxScrollLockDepth_ <= 0) {
+        return;
+    }
+    dfchatLightboxScrollLockDepth_ -= 1;
+    if (dfchatLightboxScrollLockDepth_ > 0) {
+        return;
+    }
+    const snap = dfchatLightboxScrollLockSnapshot_;
+    dfchatLightboxScrollLockSnapshot_ = null;
+    html.classList.remove("dfchat-lightbox-scroll-lock");
+    body.classList.remove("dfchat-lightbox-scroll-lock");
+    html.style.overflow = snap ? snap.html : "";
+    body.style.overflow = snap ? snap.body : "";
+}
+
+/** @returns {void} */
+function forceReleaseDfchatLightboxScrollLock_() {
+    dfchatLightboxScrollLockDepth_ = 0;
+    setDfchatLightboxPageScrollLocked(false);
 }
 
 /** Block stray lightbox/chrome after dismiss; works on desktop + mobile. */
@@ -11035,6 +11125,11 @@ function ensureMobileLightboxParkStyle() {
     const tag = doc.createElement("style");
     tag.id = "dfchat-mobile-lb-park-style";
     tag.textContent = `
+html.dfchat-lightbox-scroll-lock,
+html.dfchat-lightbox-scroll-lock body {
+  overflow: hidden !important;
+  overscroll-behavior: none !important;
+}
 html.dfchat-mobile-lb-off #${IMAGE_LIGHTBOX_ID},
 html.dfchat-mobile-lb-off #${VIDEO_LIGHTBOX_ID} {
   display: none !important;
@@ -11058,6 +11153,7 @@ function suppressDfchatLightboxAfterChatDismiss() {
     } catch {
         /* ignore */
     }
+    forceReleaseDfchatLightboxScrollLock_();
     dfchatLightboxSuppressUntilMs = Date.now() + DFCHAT_LIGHTBOX_SUPPRESS_AFTER_CLOSE_MS;
 }
 
@@ -11255,6 +11351,9 @@ function bindLightboxToMessengerImages(dfMessenger) {
             img.dataset.dfchatLightboxBound = "1";
             img.style.cursor = "zoom-in";
             img.addEventListener("click", (e) => {
+                if (isDfchatImageLightboxOpen_() || isDfchatVideoLightboxOpen_()) {
+                    return;
+                }
                 const ep = typeof e.composedPath === "function" ? e.composedPath() : [];
                 try {
                     if (didUserCloseChat(e) || isClickInMessengerChatTitlebar(ep)) {
@@ -11269,6 +11368,7 @@ function bindLightboxToMessengerImages(dfMessenger) {
                 }
                 e.preventDefault?.();
                 e.stopPropagation?.();
+                e.stopImmediatePropagation?.();
                 // Safety: never open for launcher FAB / chrome even if bound somehow.
                 if (isInsideMessengerLauncherBubbleGraphic(img)
                     || isInShadowHostChain(img, "df-messenger-header")
@@ -11341,6 +11441,7 @@ function ensureLightboxImageObserver(dfMessenger) {
 }
 
 function ensureImageLightboxMounted() {
+    removeLegacyParentPageLightboxNodes_();
     const lbDoc = getDfchatLightboxDocument();
     const existing = lbDoc.getElementById(IMAGE_LIGHTBOX_ID);
     if (existing) {
@@ -11593,10 +11694,12 @@ function closeImageLightbox() {
     const videoLb = lbDoc.getElementById(VIDEO_LIGHTBOX_ID);
     if (!videoLb || videoLb.style.display !== "flex") {
         setDfchatLightboxPageScrollLocked(false);
+        restoreChatChromeAfterLightboxClose_();
     }
 }
 
 function ensureVideoLightboxMounted() {
+    removeLegacyParentPageLightboxNodes_();
     const lbDoc = getDfchatLightboxDocument();
     if (lbDoc.getElementById(VIDEO_LIGHTBOX_ID)) {
         return;
@@ -11838,6 +11941,7 @@ function closeVideoLightbox() {
         const imageLb = lbDoc.getElementById(IMAGE_LIGHTBOX_ID);
         if (!imageLb || imageLb.style.display !== "flex") {
             setDfchatLightboxPageScrollLocked(false);
+            restoreChatChromeAfterLightboxClose_();
         }
     } catch {
         /* ignore */
@@ -15272,6 +15376,19 @@ function attachImageLightboxClickHandler() {
     document.addEventListener("click", (event) => {
         const path = event && typeof event.composedPath === "function" ? event.composedPath() : [];
         ensureMobileLightboxParkStyle();
+        if (isDfchatImageLightboxOpen_() || isDfchatVideoLightboxOpen_()) {
+            return;
+        }
+        for (let pi = 0; pi < path.length; pi += 1) {
+            const node = path[pi];
+            if (!node || !(node instanceof Element)) {
+                continue;
+            }
+            if (node.id === IMAGE_LIGHTBOX_ID || node.id === VIDEO_LIGHTBOX_ID
+                || node.closest?.(`#${IMAGE_LIGHTBOX_ID}, #${VIDEO_LIGHTBOX_ID}`)) {
+                return;
+            }
+        }
         try {
             // Dismiss our overlays only — never block the native collapse/close handler on df-messenger.
             if (didUserCloseChat(event) || isClickInMessengerChatTitlebar(path)) {
