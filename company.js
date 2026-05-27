@@ -25711,6 +25711,8 @@ df-message-list {
   flex-direction: column !important;
   overflow: hidden !important;
   align-self: stretch !important;
+  padding-bottom: var(--dfchat-es-footer-stack-px, 112px) !important;
+  box-sizing: border-box !important;
 }
 .chat-wrapper.chat-open > .message-list-wrapper,
 .chat-wrapper.opened > .message-list-wrapper,
@@ -25724,26 +25726,143 @@ df-messenger-user-input {
   order: 3 !important;
   margin-top: 0 !important;
   transform: none !important;
-  position: relative !important;
+  position: absolute !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
   top: auto !important;
-  bottom: auto !important;
-  left: auto !important;
-  right: auto !important;
-  align-self: stretch !important;
+  z-index: 5 !important;
   width: 100% !important;
   box-sizing: border-box !important;
 }
 .chat-wrapper > #dfchat-chat-action-bar,
 .chat-wrapper > .dfchat-chat-action-bar--inline {
-  flex: 0 0 auto !important;
-  order: 4 !important;
-  position: static !important;
+  position: absolute !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
   top: auto !important;
-  bottom: auto !important;
-  align-self: stretch !important;
+  z-index: 6 !important;
   width: 100% !important;
   box-sizing: border-box !important;
 }`;
+}
+
+/**
+ * @param {HTMLElement} panel
+ * @returns {number}
+ */
+function measureEsFooterStackHeightPx_(panel) {
+    if (!panel || typeof panel.querySelector !== "function") {
+        return 112;
+    }
+    const composer = panel.querySelector(":scope > df-messenger-user-input");
+    if (!composer) {
+        return 112;
+    }
+    let stackPx = 0;
+    try {
+        const bar = panel.querySelector(":scope > #dfchat-chat-action-bar");
+        if (bar && bar.parentElement === panel && bar instanceof HTMLElement) {
+            const bh = bar.offsetHeight || 0;
+            if (bh > 0) {
+                stackPx += bh;
+            }
+        }
+        const ch = composer.offsetHeight || 0;
+        if (ch > 0) {
+            stackPx += ch;
+        }
+        if (stackPx < 48) {
+            const cr = composer.getBoundingClientRect();
+            if (cr && cr.height > 0) {
+                stackPx = Math.ceil(cr.height);
+            }
+        }
+    } catch {
+        stackPx = 0;
+    }
+    return Math.max(64, Math.min(240, Math.ceil(stackPx) || 112));
+}
+
+/**
+ * Pin composer (and optional panel-level action bar) to the bottom of the open panel.
+ * Flex alone leaves a growing empty band under the footer when the transcript is long.
+ * @param {HTMLElement} panel
+ * @returns {void}
+ */
+function dockEsOpenPanelFooter_(panel) {
+    if (!panel || typeof panel.querySelector !== "function") {
+        return;
+    }
+    const composer = panel.querySelector(":scope > df-messenger-user-input");
+    const msgList = panel.querySelector(":scope > df-message-list");
+    if (!composer || !msgList || !composer.style || !msgList.style) {
+        return;
+    }
+    const stackPx = measureEsFooterStackHeightPx_(panel);
+    try {
+        panel.style.setProperty("--dfchat-es-footer-stack-px", `${stackPx}px`, "important");
+    } catch {
+        /* ignore */
+    }
+    try {
+        msgList.style.setProperty("flex", "1 1 auto", "important");
+        msgList.style.setProperty("min-height", "0", "important");
+        msgList.style.setProperty("padding-bottom", `${stackPx}px`, "important");
+        msgList.style.setProperty("box-sizing", "border-box", "important");
+        msgList.style.removeProperty("height");
+        msgList.style.removeProperty("max-height");
+    } catch {
+        /* ignore */
+    }
+    const bar = panel.querySelector(":scope > #dfchat-chat-action-bar");
+    let composerBottomPx = 0;
+    if (bar && bar.parentElement === panel && bar instanceof HTMLElement && bar.style) {
+        try {
+            const bh = Math.ceil(bar.offsetHeight || 0);
+            composerBottomPx = bh > 0 ? bh : 0;
+            bar.style.setProperty("position", "absolute", "important");
+            bar.style.setProperty("left", "0", "important");
+            bar.style.setProperty("right", "0", "important");
+            bar.style.setProperty("bottom", "0", "important");
+            bar.style.setProperty("top", "auto", "important");
+            bar.style.setProperty("z-index", "6", "important");
+            bar.style.removeProperty("flex");
+            bar.style.removeProperty("order");
+        } catch {
+            /* ignore */
+        }
+    }
+    try {
+        composer.style.setProperty("position", "absolute", "important");
+        composer.style.setProperty("left", "0", "important");
+        composer.style.setProperty("right", "0", "important");
+        composer.style.setProperty("bottom", `${composerBottomPx}px`, "important");
+        composer.style.setProperty("top", "auto", "important");
+        composer.style.setProperty("z-index", "5", "important");
+        composer.style.setProperty("width", "100%", "important");
+        composer.style.setProperty("box-sizing", "border-box", "important");
+        composer.style.removeProperty("flex");
+        composer.style.removeProperty("order");
+        composer.style.removeProperty("margin-top");
+        composer.style.removeProperty("transform");
+    } catch {
+        /* ignore */
+    }
+    window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => {
+            try {
+                const remeasured = measureEsFooterStackHeightPx_(panel);
+                if (remeasured > 0 && remeasured !== stackPx) {
+                    panel.style.setProperty("--dfchat-es-footer-stack-px", `${remeasured}px`, "important");
+                    msgList.style.setProperty("padding-bottom", `${remeasured}px`, "important");
+                }
+            } catch {
+                /* ignore */
+            }
+        });
+    });
 }
 
 /**
@@ -25775,16 +25894,9 @@ function clearEsFooterChromeInsets_(el) {
         }
     }
     try {
-        const pos = window.getComputedStyle(el).position;
-        if (pos === "absolute" || pos === "fixed") {
-            el.style.setProperty("position", "relative", "important");
-        }
+        el.style.removeProperty("position");
     } catch {
-        try {
-            el.style.removeProperty("position");
-        } catch {
-            /* ignore */
-        }
+        /* ignore */
     }
 }
 
@@ -25867,33 +25979,7 @@ function pinEsOpenChatPanelGrid_(panel, dfMessenger) {
     } catch {
         /* ignore */
     }
-    if (composer && composer.style) {
-        try {
-            composer.style.setProperty("flex", "0 0 auto", "important");
-            composer.style.setProperty("order", "3", "important");
-            composer.style.removeProperty("grid-row");
-            composer.style.removeProperty("grid-column");
-            clearEsFooterChromeInsets_(composer);
-        } catch {
-            /* ignore */
-        }
-    }
-    const actionBar = panel.querySelector("#dfchat-chat-action-bar");
-    if (actionBar && actionBar.style) {
-        try {
-            actionBar.style.setProperty("flex", "0 0 auto", "important");
-            actionBar.style.setProperty("order", "4", "important");
-            actionBar.style.setProperty("position", "static", "important");
-            actionBar.style.removeProperty("grid-row");
-            actionBar.style.removeProperty("grid-column");
-            actionBar.style.removeProperty("top");
-            actionBar.style.removeProperty("bottom");
-            actionBar.style.removeProperty("left");
-            actionBar.style.removeProperty("right");
-        } catch {
-            /* ignore */
-        }
-    }
+    dockEsOpenPanelFooter_(panel);
 }
 
 /**
@@ -26140,6 +26226,7 @@ function scheduleEsChatPanelLayoutRepair_(dfMessenger) {
                 let panelHeightCss = "";
                 let composerPosCss = "";
                 let composerBottomCss = "";
+                let footerStackPx = "";
                 let wrapperKids = -1;
                 try {
                     if (panel) {
@@ -26147,6 +26234,7 @@ function scheduleEsChatPanelLayoutRepair_(dfMessenger) {
                         panelBottomCss = cs && typeof cs.bottom === "string" ? cs.bottom : "";
                         panelHeightCss = cs && typeof cs.height === "string" ? cs.height : "";
                         wrapperKids = panel.children ? panel.children.length : -1;
+                        footerStackPx = panel.style.getPropertyValue("--dfchat-es-footer-stack-px").trim();
                     }
                     if (composer) {
                         const ccs = window.getComputedStyle(composer);
@@ -26169,7 +26257,7 @@ function scheduleEsChatPanelLayoutRepair_(dfMessenger) {
                     `panel css: height=${panelHeightCss || "?"} bottom=${panelBottomCss || "?"}`,
                     `df-message-list h=${mr ? Math.round(mr.height) : "?"}`,
                     `#messageList h=${lr ? Math.round(lr.height) : "?"} children=${count}`,
-                    `wrapperKids=${wrapperKids}`,
+                    `wrapperKids=${wrapperKids} footerStack=${footerStackPx || "?"}`,
                     `composer bottom=${cr ? Math.round(cr.bottom) : "?"} gapBelow=${gapBelowFooter == null ? "?" : gapBelowFooter} pos=${composerPosCss || "?"} cssBottom=${composerBottomCss || "?"}`,
                     `actionBar bottom=${ar ? Math.round(ar.bottom) : "?"} gapBelow=${gapBelowBar == null ? "?" : gapBelowBar}`,
                     `scrollTop=${list ? Math.round(list.scrollTop || 0) : "?"} scrollH=${list ? Math.round(list.scrollHeight || 0) : "?"}`
