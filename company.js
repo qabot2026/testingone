@@ -9620,6 +9620,17 @@ df-messenger-user-input {
 #sendIcon {
   fill: var(--df-messenger-primary-color, #0284c7) !important;
 }
+.dfchat-inline-gallery,
+.dfchat-inline-gallery__track {
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+}
+.dfchat-inline-gallery__track {
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+  -webkit-overflow-scrolling: touch !important;
+  touch-action: pan-x !important;
+}
 textarea,
 input {
   font-family: var(--df-messenger-font-family, "Manrope", "Segoe UI", sans-serif) !important;
@@ -11928,6 +11939,82 @@ function removeAllDfchatInlineGalleries(dfMessenger) {
 }
 
 /**
+ * ES bootstrap uses `#messageList`; legacy CX used `#message-list`.
+ * @param {ParentNode & { querySelector?: (sel: string) => Element | null, getElementById?: (id: string) => Element | null }} root
+ * @returns {HTMLElement | null}
+ */
+function queryMessengerMessageListInRoot(root) {
+    if (!root || typeof root.querySelector !== "function") {
+        return null;
+    }
+    /** @type {HTMLElement | null} */
+    let el =
+        /** @type {HTMLElement | null} */ (root.querySelector("#messageList"))
+        || /** @type {HTMLElement | null} */ (root.querySelector("#message-list"))
+        || /** @type {HTMLElement | null} */ (root.querySelector('[data-testid="message-list"]'))
+        || null;
+    if (!el) {
+        try {
+            if (typeof root.getElementById === "function") {
+                el =
+                    /** @type {HTMLElement | null} */ (root.getElementById("messageList"))
+                    || /** @type {HTMLElement | null} */ (root.getElementById("message-list"));
+            }
+        } catch {
+            /* ignore */
+        }
+    }
+    if (!el) {
+        const host =
+            root.querySelector("df-message-list")
+            || root.querySelector(".message-list-wrapper");
+        if (host && typeof host.querySelector === "function") {
+            el =
+                /** @type {HTMLElement | null} */ (host.querySelector("#messageList"))
+                || /** @type {HTMLElement | null} */ (host.querySelector("#message-list"))
+                || /** @type {HTMLElement | null} */ (host.querySelector('[data-testid="message-list"]'));
+        }
+    }
+    if (!el) {
+        const dfList = root.querySelector("df-message-list");
+        if (dfList && typeof dfList.querySelector === "function") {
+            el =
+                /** @type {HTMLElement | null} */ (dfList.querySelector("#messageList"))
+                || /** @type {HTMLElement | null} */ (dfList.querySelector("#message-list"));
+            if (!el) {
+                el = /** @type {HTMLElement | null} */ (dfList);
+            }
+        }
+    }
+    return el;
+}
+
+/**
+ * Scroll the transcript pane after injecting inline rich media (ES scrolls `.message-list-wrapper`).
+ * @param {HTMLElement | null | undefined} messageList
+ * @returns {void}
+ */
+function scrollMessengerMessageListToBottom(messageList) {
+    if (!messageList) {
+        return;
+    }
+    try {
+        /** @type {HTMLElement} */
+        const scroller =
+            (messageList.classList && messageList.classList.contains("message-list-wrapper")
+                ? messageList
+                : null)
+            || (typeof messageList.closest === "function"
+                ? /** @type {HTMLElement | null} */ (messageList.closest(".message-list-wrapper"))
+                : null)
+            || messageList;
+        scroller.scrollTop = scroller.scrollHeight;
+    } catch {
+        /* ignore */
+    }
+}
+
+/**
  * Locate the Messenger scroll pane so we can append a horizontally scrollable carousel.
  * @param {HTMLElement | null | undefined} dfMessenger
  * @returns {HTMLElement | null}
@@ -11942,23 +12029,7 @@ function findMessengerMessageListRoot(dfMessenger) {
     }
     const roots = collectSearchRoots(ms);
     for (let ri = 0; ri < roots.length; ri += 1) {
-        const root = roots[ri];
-        if (!root || typeof root.querySelector !== "function") {
-            continue;
-        }
-        /** @type {HTMLElement | null} */
-        let el =
-            root.querySelector("#message-list")
-            || root.querySelector('[data-testid="message-list"]')
-            || root.querySelector("df-message-list")
-            ;
-        try {
-            if (!el && root.getElementById) {
-                el = /** @type {HTMLElement | null} */ (root.getElementById("message-list"));
-            }
-        } catch {
-            /* ignore */
-        }
+        const el = queryMessengerMessageListInRoot(roots[ri]);
         if (el) {
             return el;
         }
@@ -12234,11 +12305,7 @@ function scheduleInjectInlineGalleryCarousel(dfMessenger, urlsOrItems, messages,
         dfchatLastInlineGalleryWrapEl = wrap;
 
         injected = true;
-        try {
-            ml.scrollTop = ml.scrollHeight;
-        } catch {
-            /* ignore */
-        }
+        scrollMessengerMessageListToBottom(ml);
         const host = msResolved;
         try {
             if (host && typeof requestAnimationFrame === "function") {
@@ -13572,6 +13639,32 @@ function shouldScheduleInlineGalleryCarouselForNormalizedUrls(normalizedHttpsUrl
  * First `open_gallery` custom payload from merged CX fulfillment messages (`extractPayload`).
  * Dedupe/intent gates are applied elsewhere.
  *
+ * @param {unknown} cand
+ * @returns {Record<string, unknown> | null}
+ */
+function extractOpenGalleryPayloadFromMessage(cand) {
+    if (!cand || typeof cand !== "object") {
+        return null;
+    }
+    /** @type {Record<string, unknown> | null} */
+    let pl = null;
+    try {
+        pl = extractPayload(cand);
+    } catch {
+        pl = null;
+    }
+    if (!pl) {
+        /** @type {Record<string, unknown>} */
+        const m = /** @type {Record<string, unknown>} */ (cand);
+        const act = typeof m.action === "string" ? m.action.trim().toLowerCase() : "";
+        if (act === "open_gallery") {
+            pl = m;
+        }
+    }
+    return pl;
+}
+
+/**
  * @param {unknown[]} messages
  * @returns {{ urls: string[], items: OpenGalleryItem[], options: Array<{label: string, value: string}>, messageText: string } | null}
  */
@@ -13582,16 +13675,7 @@ function extractFirstOpenGalleryNormalizedUrlsFromCxMessages(messages) {
     /** Fast path — same protobuf → JSON flattening as Contact form / language (extractPayload). */
     for (let gx = 0; gx < messages.length; gx += 1) {
         const cand = messages[gx];
-        if (!messageHasFulfillmentPayload(cand)) {
-            continue;
-        }
-        /** @type {Record<string, unknown> | null} */
-        let pl = null;
-        try {
-            pl = extractPayload(/** @type {unknown} */ (cand));
-        } catch {
-            pl = null;
-        }
+        const pl = extractOpenGalleryPayloadFromMessage(cand);
         const act =
             pl && typeof /** @type {{ action?: unknown }} */ (pl).action !== "undefined"
                 ? /** @type {{ action?: unknown }} */ (pl).action
@@ -15009,7 +15093,7 @@ function attachImageLightboxClickHandler() {
                     if (node instanceof Element) {
                         const id = typeof node.id === "string" ? node.id : "";
                         const tag = node.tagName ? String(node.tagName).toLowerCase() : "";
-                        if (id === "message-list" || tag === "df-message-list") {
+                        if (id === "message-list" || id === "messageList" || tag === "df-message-list") {
                             continue;
                         }
                     }
@@ -25707,7 +25791,7 @@ function dfchatFindMessageListAncestor_(from) {
     let el = from;
     for (let i = 0; el && i < 55; i += 1) {
         const tag = el.tagName ? el.tagName.toUpperCase() : "";
-        if (el.id === "message-list" || tag === "DF-MESSENGER-MESSAGE-LIST") {
+        if (el.id === "message-list" || el.id === "messageList" || tag === "DF-MESSENGER-MESSAGE-LIST") {
             return el;
         }
         const p = el.parentElement;
