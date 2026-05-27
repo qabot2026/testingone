@@ -268,6 +268,7 @@ const MESSAGE_LIST_SQUARE_PANE_STYLE_ID = "dfchat-messagelist-square-pane";
 const CHAT_PANEL_CORNERS_STYLE_ID = "dfchat-chat-panel-corners";
 const TITLEBAR_LAYOUT_STYLE_ID = "dfchat-titlebar-layout";
 const ES_CX_LOOK_STYLE_ID = "dfchat-es-cx-look";
+const ES_CHAT_PANEL_LAYOUT_STYLE_ID = "dfchat-es-panel-layout";
 const PERSONA_IMAGE_GUARD_STYLE_ID = "dfchat-persona-image-guard";
 /** Dialogflow “jump to bottom” / scroll-hint UI; mirrored onto `df-messenger-chat-bubble` :host. */
 const DF_MESSENGER_CHAT_SCROLL_JUMP_VAR_KEYS = [
@@ -1794,7 +1795,7 @@ const originalTextNodeContent = new Map();
 const originalElementAttributes = new Map();
 const googleTranslationCache = new Map();
 
-const COMPANY_JS_BUILD_TAG = "20260527-es-persona-panel-fix";
+const COMPANY_JS_BUILD_TAG = "20260527-es-persona-markdown-guard";
 const COMPANY_DEBUG_QUERY_FLAG = "dfchatDebug";
 let debugMountAttemptSeq = 0;
 let debugBadgeLastRenderAt = 0;
@@ -9550,6 +9551,11 @@ df-message-list {
   border-radius: var(--df-messenger-chat-icon-radius, 50%) !important;
 }
 df-messenger-titlebar {
+  flex: 0 0 auto !important;
+  flex-shrink: 0 !important;
+  position: sticky !important;
+  top: 0 !important;
+  z-index: 6 !important;
   min-height: 86px !important;
   background: var(--df-messenger-titlebar-background, linear-gradient(168deg, #38bdf8 0%, #0284c7 42%, #075985 100%)) !important;
   color: var(--df-messenger-titlebar-font-color, #f0f9ff) !important;
@@ -9557,6 +9563,8 @@ df-messenger-titlebar {
   border-bottom: var(--df-messenger-titlebar-border-bottom, 1px solid rgba(4, 58, 90, 0.55)) !important;
 }
 .title-wrapper {
+  flex: 0 0 auto !important;
+  flex-shrink: 0 !important;
   min-height: 86px !important;
   height: 86px !important;
   box-sizing: border-box !important;
@@ -9637,6 +9645,10 @@ df-message-list,
   border-bottom-right-radius: 6px !important;
 }
 df-messenger-user-input {
+  flex: 0 0 auto !important;
+  flex-shrink: 0 !important;
+  position: relative !important;
+  z-index: 5 !important;
   background: var(--df-messenger-input-background, #ffffff) !important;
   border-top: var(--df-messenger-input-border-top, 1px solid rgba(14, 165, 233, 0.28)) !important;
 }
@@ -9727,10 +9739,12 @@ input {
     };
 
     applyStyle();
+    applyEsChatPanelLayoutToMessenger_(dfMessenger);
     [80, 240, 700, 1500, 3000].forEach((ms) => {
         window.setTimeout(() => {
             if (activeDfMessenger === dfMessenger) {
                 applyStyle();
+                applyEsChatPanelLayoutToMessenger_(dfMessenger);
             }
         }, ms);
     });
@@ -11080,6 +11094,7 @@ function restoreChatChromeAfterLightboxClose_() {
                 applyDialogflowEsCxLookCompatibility(ms, theme, common && common.header);
                 applyBotPersonaToMessenger(ms, activeBubbleNode);
                 scheduleChatMessageListScrollbarReapply(ms);
+                applyEsChatPanelLayoutToMessenger_(ms);
                 scheduleFooterInputBoxShadowOverrides(ms);
                 schedulePersonaShadowFix(ms);
             }
@@ -19782,11 +19797,27 @@ function installRenderedBotTranscriptHook_(host) {
     }
     const orig = /** @type {(text: unknown, isBot?: boolean) => unknown} */ (el.renderCustomText.bind(el));
     el.renderCustomText = (text, isBot) => {
+        try {
+            if (
+                isBot !== false
+                && typeof text === "string"
+                && isBotPersonaMarkdownText_(text)
+                && isDialogflowEsMessenger_(/** @type {HTMLElement} */ (el))
+            ) {
+                scheduleEsBotPersonaDomRepair_(/** @type {HTMLElement} */ (el), Date.now());
+                return undefined;
+            }
+        } catch {
+            /* ignore */
+        }
         const ret = orig(text, isBot);
         try {
             // df-messenger often renders agent markdown with a single-arg call (`isBot` omitted).
             // User lane uses `renderCustomText(t, false)`; user persona uses `(md, true)` but carries USER_PERSONA_TEXT_SENTINEL (filtered below).
             if (isBot !== false && typeof text === "string") {
+                if (isDialogflowEsMessenger_(/** @type {HTMLElement} */ (el))) {
+                    schedulePruneEsRawBotPersonaMarkdown_(/** @type {HTMLElement} */ (el));
+                }
                 maybeRecordRenderedBotMarkdownForTranscript_(text);
                 scheduleDomBotTranscriptCapture_(host);
             }
@@ -24914,7 +24945,288 @@ function stripUserPersonaSentinelFromDom_(hostEl) {
 }
 
 /**
- * Dialogflow ES bootstrap (`#messageList` + `df-message` rows). CX legacy uses `#message-list` + `.entry`.
+ * @param {string} text
+ * @returns {boolean}
+ */
+function isBotPersonaMarkdownText_(text) {
+    const s = typeof text === "string" ? text.trim() : "";
+    if (!s) {
+        return false;
+    }
+    if (s.includes(USER_PERSONA_TEXT_SENTINEL)) {
+        return false;
+    }
+    if (s.includes(`#${PERSONA_URL_MARKER_BOT_IMG}`) || s.includes(`%23${PERSONA_URL_MARKER_BOT_IMG}`)) {
+        return true;
+    }
+    const base = getBotPersonaImageBaseUrl_();
+    if (base && s.includes(base) && (s.includes("![](") || s.includes("**"))) {
+        return true;
+    }
+    return !!(s.includes("![](") && s.includes("dfchat-bot-persona"));
+}
+
+/**
+ * ES bootstrap often prints bot persona markdown as plain text (no markdown renderer).
+ * @param {Element} row
+ * @returns {boolean}
+ */
+function isEsRawPersonaMarkdownRow_(row) {
+    if (!row || !(row instanceof Element)) {
+        return false;
+    }
+    if (row.classList && row.classList.contains(DFCHAT_ES_BOT_PERSONA_CLASS)) {
+        return false;
+    }
+    const txt = (row.textContent || "").trim();
+    if (!txt || !txt.includes("![](")) {
+        return false;
+    }
+    if (!txt.includes(PERSONA_URL_MARKER_BOT_IMG) && !txt.includes("cat-icon.png")) {
+        return false;
+    }
+    try {
+        const imgs = row.querySelectorAll ? row.querySelectorAll("img") : [];
+        for (let i = 0; i < imgs.length; i += 1) {
+            const src = imgs[i].getAttribute("src") || "";
+            if (srcHasBotPersonaImageMarker_(src) && imgs[i].offsetWidth > 10 && imgs[i].offsetHeight > 10) {
+                return false;
+            }
+        }
+    } catch {
+        /* ignore */
+    }
+    return true;
+}
+
+/**
+ * Remove leaked `![](cat-icon…#dfchat-bot-persona) **Demo …**` plain-text rows from ES `#messageList`.
+ * @param {HTMLElement | null | undefined} dfMessenger
+ * @returns {number}
+ */
+function pruneEsRawBotPersonaMarkdownRows_(dfMessenger) {
+    const ms =
+        dfMessenger
+        || (typeof activeDfMessenger !== "undefined" ? activeDfMessenger : null);
+    if (!ms || !isDialogflowEsMessenger_(ms)) {
+        return 0;
+    }
+    const list = findMessengerMessageListRoot(ms);
+    if (!list) {
+        return 0;
+    }
+    let removed = 0;
+    const scanRoots = [list];
+    try {
+        const wraps = list.querySelectorAll(".message-list-wrapper, df-message-list");
+        for (let wi = 0; wi < wraps.length; wi += 1) {
+            scanRoots.push(wraps[wi]);
+        }
+    } catch {
+        /* ignore */
+    }
+    for (let ri = 0; ri < scanRoots.length; ri += 1) {
+        const root = scanRoots[ri];
+        if (!root || typeof root.querySelectorAll !== "function") {
+            continue;
+        }
+        let candidates = [];
+        try {
+            candidates = Array.from(root.querySelectorAll("df-message, .message.bot-message"));
+        } catch {
+            candidates = [];
+        }
+        if (root === list && root.children) {
+            for (let ci = 0; ci < root.children.length; ci += 1) {
+                const ch = root.children[ci];
+                if (ch && candidates.indexOf(ch) === -1) {
+                    candidates.push(ch);
+                }
+            }
+        }
+        for (let ci = 0; ci < candidates.length; ci += 1) {
+            const row = candidates[ci];
+            if (!isEsRawPersonaMarkdownRow_(row)) {
+                continue;
+            }
+            try {
+                row.remove();
+                removed += 1;
+            } catch {
+                /* ignore */
+            }
+        }
+    }
+    return removed;
+}
+
+/**
+ * @param {HTMLElement | null | undefined} dfMessenger
+ * @returns {void}
+ */
+function schedulePruneEsRawBotPersonaMarkdown_(dfMessenger) {
+    if (!dfMessenger) {
+        return;
+    }
+    const run = () => {
+        try {
+            pruneEsRawBotPersonaMarkdownRows_(dfMessenger);
+        } catch {
+            /* ignore */
+        }
+    };
+    run();
+    [0, 40, 120, 300, 700].forEach((ms) => {
+        window.setTimeout(run, ms);
+    });
+}
+
+/**
+ * Prune raw persona markdown, then inject the DOM persona row (ES image mode).
+ * @param {HTMLElement} dfMessenger
+ * @param {number | undefined} whenMs
+ * @returns {void}
+ */
+function scheduleEsBotPersonaDomRepair_(dfMessenger, whenMs) {
+    if (!dfMessenger) {
+        return;
+    }
+    const when =
+        typeof whenMs === "number" && Number.isFinite(whenMs) ? whenMs : Date.now();
+    const run = () => {
+        try {
+            pruneEsRawBotPersonaMarkdownRows_(dfMessenger);
+            injectEsBotPersonaRow_(dfMessenger, when);
+        } catch {
+            /* ignore */
+        }
+    };
+    run();
+    if (typeof requestAnimationFrame === "function") {
+        requestAnimationFrame(run);
+    }
+    [30, 90, 200, 450, 900, 1600].forEach((ms) => {
+        window.setTimeout(run, ms);
+    });
+}
+
+/**
+ * Pin header/footer; only the message list scrolls (stops transcript sliding under titlebar).
+ * @param {HTMLElement | null | undefined} dfMessenger
+ * @returns {void}
+ */
+function applyEsChatPanelLayoutToMessenger_(dfMessenger) {
+    const ms =
+        dfMessenger
+        || (typeof activeDfMessenger !== "undefined" ? activeDfMessenger : null);
+    if (!ms || !isDialogflowEsMessenger_(ms)) {
+        return;
+    }
+    const layoutCss = `
+.chat-wrapper {
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+}
+df-messenger-titlebar,
+.title-wrapper {
+  flex: 0 0 auto !important;
+  flex-shrink: 0 !important;
+}
+df-messenger-chat {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+}
+.message-list-wrapper,
+df-message-list {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+#messageList {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+}
+df-messenger-user-input,
+.input-box-wrapper {
+  flex: 0 0 auto !important;
+  flex-shrink: 0 !important;
+}`;
+    const roots = collectSearchRoots(ms);
+    for (let ri = 0; ri < roots.length; ri += 1) {
+        const root = roots[ri];
+        if (!root || !(root instanceof ShadowRoot) || typeof root.appendChild !== "function") {
+            continue;
+        }
+        let tag = root.getElementById(ES_CHAT_PANEL_LAYOUT_STYLE_ID);
+        if (!tag) {
+            tag = document.createElement("style");
+            tag.id = ES_CHAT_PANEL_LAYOUT_STYLE_ID;
+            root.appendChild(tag);
+        }
+        if (tag.textContent !== layoutCss) {
+            tag.textContent = layoutCss;
+        }
+    }
+    const pinFlexColumn = (el) => {
+        if (!el || !el.style) {
+            return;
+        }
+        try {
+            el.style.setProperty("display", "flex", "important");
+            el.style.setProperty("flex-direction", "column", "important");
+            el.style.setProperty("overflow", "hidden", "important");
+            el.style.setProperty("min-height", "0", "important");
+        } catch {
+            /* ignore */
+        }
+    };
+    const pinScrollList = (el) => {
+        if (!el || !el.style) {
+            return;
+        }
+        try {
+            el.style.setProperty("flex", "1 1 auto", "important");
+            el.style.setProperty("min-height", "0", "important");
+            el.style.setProperty("overflow-y", "auto", "important");
+            el.style.setProperty("overflow-x", "hidden", "important");
+        } catch {
+            /* ignore */
+        }
+    };
+    for (let ri = 0; ri < roots.length; ri += 1) {
+        const root = roots[ri];
+        if (!root || !root.querySelectorAll) {
+            continue;
+        }
+        const wrappers = root.querySelectorAll(".chat-wrapper");
+        for (let wi = 0; wi < wrappers.length; wi += 1) {
+            pinFlexColumn(wrappers[wi]);
+        }
+        const chats = root.querySelectorAll("df-messenger-chat");
+        for (let ci = 0; ci < chats.length; ci += 1) {
+            pinFlexColumn(chats[ci]);
+        }
+        const listWraps = root.querySelectorAll(".message-list-wrapper, df-message-list");
+        for (let li = 0; li < listWraps.length; li += 1) {
+            pinFlexColumn(listWraps[li]);
+        }
+        const lists = root.querySelectorAll("#messageList, #message-list");
+        for (let mi = 0; mi < lists.length; mi += 1) {
+            pinScrollList(lists[mi]);
+        }
+    }
+}
+
+/**
+ * Dialogflow ES bootstrap (`agent-id` + `#messageList` / `df-message`). CX legacy uses `#message-list` + `.entry`.
  * @param {HTMLElement | null | undefined} dfMessenger
  * @returns {boolean}
  */
@@ -24925,6 +25237,14 @@ function isDialogflowEsMessenger_(dfMessenger) {
         || (typeof document !== "undefined" ? document.querySelector("df-messenger") : null);
     if (!ms) {
         return false;
+    }
+    try {
+        const agentId = ms.getAttribute && ms.getAttribute("agent-id");
+        if (agentId && String(agentId).trim()) {
+            return true;
+        }
+    } catch {
+        /* ignore */
     }
     const list = findMessengerMessageListRoot(ms);
     if (!list) {
@@ -25053,6 +25373,7 @@ function injectEsBotPersonaRow_(dfMessenger, messageInstantMs) {
     if (!ms || !isDialogflowEsMessenger_(ms)) {
         return false;
     }
+    pruneEsRawBotPersonaMarkdownRows_(ms);
     if (BOT_PERSONA_CONFIG.mode === "emojiTime") {
         if (typeof ms.renderCustomText === "function") {
             ms.renderCustomText(buildBotPersonaMarkdown_(messageInstantMs), true);
@@ -25149,7 +25470,11 @@ function renderBotPersona(dfMessenger, messageInstantMs) {
         return;
     }
     if (isDialogflowEsMessenger_(dfMessenger)) {
-        injectEsBotPersonaRow_(dfMessenger, messageInstantMs);
+        if (BOT_PERSONA_CONFIG.mode === "image") {
+            scheduleEsBotPersonaDomRepair_(dfMessenger, messageInstantMs);
+        } else {
+            injectEsBotPersonaRow_(dfMessenger, messageInstantMs);
+        }
         return;
     }
     if (typeof dfMessenger.renderCustomText !== "function") {
@@ -25177,7 +25502,9 @@ function scheduleBotPersonaAfterEsResponse_(dfMessenger, event) {
     const run = () => {
         try {
             if (isDialogflowEsMessenger_(dfMessenger)) {
+                pruneEsRawBotPersonaMarkdownRows_(dfMessenger);
                 injectEsBotPersonaRow_(dfMessenger, when);
+                applyEsChatPanelLayoutToMessenger_(dfMessenger);
             } else {
                 renderBotPersona(dfMessenger, when);
             }
@@ -25717,6 +26044,10 @@ function schedulePersonaShadowFix(dfMessenger) {
         return;
     }
     const run = () => {
+        if (isDialogflowEsMessenger_(dfMessenger)) {
+            pruneEsRawBotPersonaMarkdownRows_(dfMessenger);
+            applyEsChatPanelLayoutToMessenger_(dfMessenger);
+        }
         applyPersonaImageGuardToMessenger(dfMessenger);
         decoratePersonaMessages(dfMessenger);
     };
@@ -25732,6 +26063,10 @@ function startPersonaDecorator(dfMessenger) {
         const ms = activeDfMessenger || dfMessenger;
         if (!ms) {
             return;
+        }
+        if (isDialogflowEsMessenger_(ms)) {
+            pruneEsRawBotPersonaMarkdownRows_(ms);
+            applyEsChatPanelLayoutToMessenger_(ms);
         }
         applyPersonaImageGuardToMessenger(ms);
         decoratePersonaMessages(ms);
@@ -26177,6 +26512,7 @@ function scheduleChatMessageListScrollbarReapply(dfMessenger) {
     }
     const run = () => {
         applyChatMessageListScrollbarToMessenger(dfMessenger);
+        applyEsChatPanelLayoutToMessenger_(dfMessenger);
     };
     run();
     [50, 150, 400, 900, 1800, 3500, 7000, 12000].forEach((ms) => {
