@@ -1,5 +1,5 @@
 /**
- * Meta messaging webhook → Dialogflow ES → reply on WhatsApp, Facebook Messenger, Instagram.
+ * Meta messaging webhook → Dialogflow CX → reply on WhatsApp, Facebook Messenger, Instagram.
  *
  * One webhook URL for all Meta channels:
  *   https://YOUR-API.up.railway.app/api/whatsapp/webhook
@@ -7,7 +7,7 @@
  * WhatsApp env: WHATSAPP_VERIFY_TOKEN, WHATSAPP_ACCESS_TOKEN, WHATSAPP_PHONE_NUMBER_ID
  * Facebook Page + Instagram DMs: META_PAGE_ACCESS_TOKEN, META_PAGE_ID
  *   (aliases: FACEBOOK_PAGE_ACCESS_TOKEN, FACEBOOK_PAGE_ID)
- * Dialogflow ES: DIALOGFLOW_PROJECT_ID or DIALOGFLOW_ES_PROJECT_ID, plus service account JSON.
+ * Dialogflow: DIALOGFLOW_CX_SERVICE_ACCOUNT_JSON or FIREBASE_SERVICE_ACCOUNT_JSON
  */
 
 import crypto from "node:crypto";
@@ -15,7 +15,7 @@ import express from "express";
 import { google } from "googleapis";
 import { getServiceAccountCredentials } from "../google-service-account.mjs";
 import {
-    extractEsResponse_,
+    extractCxResponse_,
     choiceLabels_,
     choiceValues_,
     supplementalTextBlocks_,
@@ -23,10 +23,10 @@ import {
     youtubeWatchUrl_,
     youtubeThumbnailUrl_,
     isDirectVideoFileUrl_
-} from "../meta-channels/dialogflow-payload.mjs";
+} from "../meta-channels/cx-payload.mjs";
 import { normalizeLeadChannel } from "../meta-channels/normalize-channel.mjs";
 import {
-    metaContactHintsForDialogflowSession_,
+    metaContactHintsForCxSession_,
     rememberMetaContact_,
     whatsappProfileNameFromContacts_
 } from "../meta-channels/contact-profile.mjs";
@@ -38,10 +38,7 @@ import { syncMetaInboundMessageToSheet_ } from "../meta-channels/sheet-sync.mjs"
  * @returns {Record<string, unknown> | null}
  */
 function getDialogflowServiceAccountCredentials_() {
-    const raw = trim_(
-        process.env.DIALOGFLOW_SERVICE_ACCOUNT_JSON
-        || process.env.DIALOGFLOW_ES_SERVICE_ACCOUNT_JSON
-    );
+    const raw = trim_(process.env.DIALOGFLOW_CX_SERVICE_ACCOUNT_JSON);
     if (raw) {
         try {
             const o = JSON.parse(raw);
@@ -127,14 +124,10 @@ function metaConfig_() {
     return {
         verifyToken: trim_(process.env.WHATSAPP_VERIFY_TOKEN),
         appSecret: trim_(process.env.WHATSAPP_APP_SECRET),
-        projectId: trim_(
-            process.env.DIALOGFLOW_PROJECT_ID
-            || process.env.DIALOGFLOW_ES_PROJECT_ID
-        ) || "qabot01",
-        languageCode: trim_(
-            process.env.DIALOGFLOW_LANGUAGE_CODE
-            || process.env.DIALOGFLOW_ES_LANGUAGE_CODE
-        ) || "en",
+        projectId: trim_(process.env.DIALOGFLOW_CX_PROJECT_ID) || "qabot01",
+        location: trim_(process.env.DIALOGFLOW_CX_LOCATION) || "us-central1",
+        agentId: trim_(process.env.DIALOGFLOW_CX_AGENT_ID) || "9dbd4886-3cbe-43fc-8eb5-54ee5097f25c",
+        languageCode: trim_(process.env.DIALOGFLOW_CX_LANGUAGE_CODE) || "en",
         graphVersion,
         whatsapp: {
             accessToken: normalizeAccessToken_(process.env.WHATSAPP_ACCESS_TOKEN),
@@ -158,6 +151,8 @@ function whatsappConfig_() {
         phoneNumberId: c.whatsapp.phoneNumberId,
         appSecret: c.appSecret,
         projectId: c.projectId,
+        location: c.location,
+        agentId: c.agentId,
         languageCode: c.languageCode,
         graphVersion: c.graphVersion
     };
@@ -178,11 +173,14 @@ export function missingWhatsappEnvKeys_() {
     }
     if (!getDialogflowServiceAccountCredentials_()) {
         missing.push(
-            "DIALOGFLOW_SERVICE_ACCOUNT_JSON, DIALOGFLOW_ES_SERVICE_ACCOUNT_JSON, or FIREBASE_SERVICE_ACCOUNT_JSON"
+            "DIALOGFLOW_CX_SERVICE_ACCOUNT_JSON or FIREBASE_SERVICE_ACCOUNT_JSON (Dialogflow CX API)"
         );
     }
     if (!c.projectId) {
-        missing.push("DIALOGFLOW_ES_PROJECT_ID or DIALOGFLOW_PROJECT_ID");
+        missing.push("DIALOGFLOW_CX_PROJECT_ID");
+    }
+    if (!c.agentId) {
+        missing.push("DIALOGFLOW_CX_AGENT_ID");
     }
     return missing;
 }
@@ -302,8 +300,8 @@ function isHttpsUrl_(raw) {
     return /^https:\/\/.+/i.test(trim_(raw));
 }
 
-/** @typedef {import("../meta-channels/dialogflow-payload.mjs").CarouselCard} WaCarouselCard */
-/** @typedef {import("../meta-channels/dialogflow-payload.mjs").ReplyParts} ReplyParts */
+/** @typedef {import("../meta-channels/cx-payload.mjs").CarouselCard} WaCarouselCard */
+/** @typedef {import("../meta-channels/cx-payload.mjs").CxReplyParts} CxReplyParts */
 
 function webChatUrl_() {
     const explicit = trim_(process.env.META_CHAT_WEB_URL || process.env.CHAT_WIDGET_URL);
@@ -642,7 +640,7 @@ async function sendWhatsappCardCarouselSeparated_(to, cards) {
  * @param {string} to
  * @param {string} sessionId
  * @param {WaCarouselCard[]} cards
- * @param {ReplyParts} parts
+ * @param {CxReplyParts} parts
  */
 async function sendWhatsappCardCarouselWithOptions_(to, sessionId, cards, parts) {
     const list = cards.slice(0, 10);
@@ -813,7 +811,7 @@ function galleryItemsFromParts_(gallery) {
  * Gallery: batch all images (WhatsApp groups them into a swipeable album), then options menu.
  * @param {string} to
  * @param {string} sessionId
- * @param {ReplyParts} parts
+ * @param {CxReplyParts} parts
  */
 async function sendWhatsappGalleryFull_(to, sessionId, parts) {
     const gallery = parts.gallery;
@@ -897,7 +895,7 @@ async function sendWhatsappGallery_(input) {
 /**
  * @param {string} to
  * @param {string} sessionId
- * @param {ReplyParts} parts
+ * @param {CxReplyParts} parts
  */
 async function sendWhatsappChoicesFromParts_(to, sessionId, parts, opts = {}) {
     if (!parts.choices.length) {
@@ -915,9 +913,9 @@ async function sendWhatsappChoicesFromParts_(to, sessionId, parts, opts = {}) {
 }
 
 /**
- * @param {{ to: string, sessionId: string, parts: ReplyParts }} input
+ * @param {{ to: string, sessionId: string, parts: CxReplyParts }} input
  */
-async function sendWhatsappMetaReply_(input) {
+async function sendWhatsappCxReply_(input) {
     const parts = input.parts;
     const supplemental = whatsappSupplementalTextBlocks_(parts);
     let leadText = [...parts.texts, ...supplemental].filter(Boolean).join("\n\n");
@@ -1064,8 +1062,8 @@ async function sendWhatsappMetaReply_(input) {
 
 /**
  * WhatsApp cannot render web forms. Do not send form fallback/link text here;
- * Dialogflow can ask form questions manually on the WhatsApp-specific path.
- * @param {ReplyParts} parts
+ * CX can ask form questions manually on the WhatsApp-specific path.
+ * @param {CxReplyParts} parts
  */
 function whatsappSupplementalTextBlocks_(parts) {
     /** @type {string[]} */
@@ -1118,8 +1116,8 @@ function isGenericChoicePrompt_(text) {
 }
 
 /**
- * Agent text before gallery/carousel/video payload — skip auto chip lines and duplicate menu prompts.
- * @param {ReplyParts} parts
+ * Agent text before gallery/carousel/video payload — skip auto CX chip lines and duplicate menu prompts.
+ * @param {CxReplyParts} parts
  */
 function agentTextBeforePayload_(parts) {
     const payloadPrompt =
@@ -1162,7 +1160,7 @@ function agentTextBeforePayload_(parts) {
 
 /**
  * Choice menu body from payload message only — no backend default prompts.
- * @param {ReplyParts} parts
+ * @param {CxReplyParts} parts
  * @param {string} [alreadyShown]
  */
 function resolveChoiceMenuPrompt_(parts, alreadyShown) {
@@ -1175,7 +1173,7 @@ function resolveChoiceMenuPrompt_(parts, alreadyShown) {
 
 /**
  * Intro for open_video: agent text + optional title + payload message (deduped).
- * @param {ReplyParts} parts
+ * @param {CxReplyParts} parts
  */
 function resolveVideoIntro_(parts) {
     const choicePrompt = trim_(parts.choicePrompt);
@@ -1554,7 +1552,7 @@ async function sendPageGallery_(input) {
 /**
  * @param {string} recipientId
  * @param {string} sessionId
- * @param {ReplyParts} parts
+ * @param {CxReplyParts} parts
  */
 async function sendPageChoicesFromParts_(recipientId, sessionId, parts) {
     if (!parts.choices.length) {
@@ -1706,9 +1704,9 @@ async function sendPageVideo_(input) {
 }
 
 /**
- * @param {{ recipientId: string, sessionId: string, parts: ReplyParts }} input
+ * @param {{ recipientId: string, sessionId: string, parts: CxReplyParts }} input
  */
-async function sendPageMetaReply_(input) {
+async function sendPageCxReply_(input) {
     const parts = input.parts;
     const supplemental = supplementalTextBlocks_(parts, webChatUrl_());
     let leadText = [...parts.texts, ...supplemental].filter(Boolean).join("\n\n");
@@ -1915,8 +1913,8 @@ async function fetchGraphUserProfileName_(userId) {
  *   profileName?: string
  * }} input
  */
-function dialogflowSessionParams_(response) {
-    const qr = response && typeof response === "object" ? /** @type {Record<string, unknown>} */ (response).queryResult : null;
+function cxSessionParams_(cx) {
+    const qr = cx && typeof cx === "object" ? /** @type {Record<string, unknown>} */ (cx).queryResult : null;
     if (!qr || typeof qr !== "object") {
         return {};
     }
@@ -1929,25 +1927,7 @@ function dialogflowSessionParams_(response) {
         si && typeof si === "object" && si.parameters && typeof si.parameters === "object"
             ? si.parameters
             : null;
-    if (nested && !Array.isArray(nested)) {
-        return /** @type {Record<string, unknown>} */ (nested);
-    }
-    const outputContexts = /** @type {Record<string, unknown>} */ (qr).outputContexts;
-    if (Array.isArray(outputContexts)) {
-        /** @type {Record<string, unknown>} */
-        const merged = {};
-        for (const ctx of outputContexts) {
-            if (!ctx || typeof ctx !== "object") {
-                continue;
-            }
-            const params = /** @type {Record<string, unknown>} */ (ctx).parameters;
-            if (params && typeof params === "object" && !Array.isArray(params)) {
-                Object.assign(merged, params);
-            }
-        }
-        return merged;
-    }
-    return {};
+    return nested && !Array.isArray(nested) ? /** @type {Record<string, unknown>} */ (nested) : {};
 }
 
 async function processInboundMetaMessage_(input) {
@@ -1961,30 +1941,30 @@ async function processInboundMetaMessage_(input) {
         rememberMetaContact_(input.sessionId, { name: profileName, channel });
     }
 
-    const contactHints = metaContactHintsForDialogflowSession_({
+    const contactHints = metaContactHintsForCxSession_({
         sessionId: input.sessionId,
         channel,
         from: input.from,
         profileName
     });
 
-    const df = await detectIntentEs_({
+    const cx = await detectIntentCx_({
         sessionId: input.sessionId,
         text: input.text,
         languageCode: c.languageCode,
         channel,
         contactHints
     });
-    const parts = extractEsResponse_(df);
+    const parts = extractCxResponse_(cx);
 
     if (input.channel === "whatsapp") {
-        await sendWhatsappMetaReply_({
+        await sendWhatsappCxReply_({
             to: input.from,
             sessionId: input.sessionId,
             parts
         });
     } else {
-        await sendPageMetaReply_({
+        await sendPageCxReply_({
             recipientId: input.from,
             sessionId: input.sessionId,
             parts
@@ -1997,7 +1977,7 @@ async function processInboundMetaMessage_(input) {
         from: input.from,
         userText: input.text,
         profileName,
-        dialogflowParams: dialogflowSessionParams_(df)
+        cxParams: cxSessionParams_(cx)
     }).then((out) => {
         if (out.ok) {
             log_("sheet_sync", {
@@ -2027,7 +2007,7 @@ async function processInboundMetaMessage_(input) {
     if (parts.video?.url && !trim_(parts.video?.title)) {
         /** @type {string[]} */
         const payloadKeys = [];
-        const rawMsgs = df?.queryResult?.fulfillmentMessages;
+        const rawMsgs = cx?.queryResult?.responseMessages;
         if (Array.isArray(rawMsgs)) {
             for (const m of rawMsgs) {
                 const p = m?.payload;
@@ -2088,7 +2068,7 @@ function sessionIdForWaUser_(waUserId) {
 async function getDialogflowAccessToken_() {
     const key = getDialogflowServiceAccountCredentials_();
     if (!key) {
-        throw new Error("Missing service account JSON for Dialogflow");
+        throw new Error("Missing service account JSON for Dialogflow CX");
     }
     const auth = new google.auth.GoogleAuth({
         credentials: key,
@@ -2106,31 +2086,31 @@ async function getDialogflowAccessToken_() {
 /**
  * @param {{ sessionId: string, text: string, languageCode: string, channel?: string, contactHints?: Record<string, string> }} input
  */
-async function detectIntentEs_(input) {
+async function detectIntentCx_(input) {
     const c = whatsappConfig_();
     const accessToken = await getDialogflowAccessToken_();
-    const safeSessionId = String(input.sessionId || "meta_session")
-        .replace(/[^a-zA-Z0-9_-]/g, "_")
-        .slice(0, 120);
+    const host = `${c.location}-dialogflow.googleapis.com`;
     const sessionPath = [
         "projects",
         c.projectId,
-        "agent",
+        "locations",
+        c.location,
+        "agents",
+        c.agentId,
         "sessions",
-        safeSessionId
+        input.sessionId
     ].join("/");
-    const url = `https://dialogflow.googleapis.com/v2/${sessionPath}:detectIntent`;
+    const url = `https://${host}/v3/${sessionPath}:detectIntent`;
     const channel = normalizeLeadChannel(input.channel);
     /** @type {Record<string, string>} */
-    const parameters = { channel };
+    const sessionParameters = { channel };
     const hints = input.contactHints && typeof input.contactHints === "object" ? input.contactHints : {};
     for (const [k, v] of Object.entries(hints)) {
         const s = trim_(v);
         if (s) {
-            parameters[k] = s;
+            sessionParameters[k] = s;
         }
     }
-    const contextName = `${sessionPath}/contexts/meta_channel`;
     const res = await fetch(url, {
         method: "POST",
         headers: {
@@ -2139,20 +2119,11 @@ async function detectIntentEs_(input) {
         },
         body: JSON.stringify({
             queryInput: {
-                text: {
-                    text: input.text,
-                    languageCode: input.languageCode
-                }
+                text: { text: input.text },
+                languageCode: input.languageCode
             },
             queryParams: {
-                payload: parameters,
-                contexts: [
-                    {
-                        name: contextName,
-                        lifespanCount: 50,
-                        parameters
-                    }
-                ]
+                parameters: sessionParameters
             }
         })
     });
@@ -2166,7 +2137,7 @@ async function detectIntentEs_(input) {
     if (!res.ok) {
         const errMsg =
             data?.error?.message || data?.message || raw.slice(0, 400) || `HTTP ${res.status}`;
-        throw new Error(`Dialogflow ES detectIntent failed: ${errMsg}`);
+        throw new Error(`Dialogflow detectIntent failed: ${errMsg}`);
     }
     return data;
 }
@@ -2513,12 +2484,12 @@ async function handleHealth_(req, res) {
         missing_env: missing,
         dialogflow: {
             projectId: c.projectId,
+            location: c.location,
+            agentId: c.agentId ? `${c.agentId.slice(0, 8)}…` : "",
             languageCode: c.languageCode,
-            credentials_source: trim_(process.env.DIALOGFLOW_SERVICE_ACCOUNT_JSON)
-                ? "DIALOGFLOW_SERVICE_ACCOUNT_JSON"
-                : (trim_(process.env.DIALOGFLOW_ES_SERVICE_ACCOUNT_JSON)
-                    ? "DIALOGFLOW_ES_SERVICE_ACCOUNT_JSON"
-                    : "FIREBASE_SERVICE_ACCOUNT_JSON"),
+            credentials_source: trim_(process.env.DIALOGFLOW_CX_SERVICE_ACCOUNT_JSON)
+                ? "DIALOGFLOW_CX_SERVICE_ACCOUNT_JSON"
+                : "FIREBASE_SERVICE_ACCOUNT_JSON",
             service_account_project_id: dfProjectId,
             service_account_email: dfClientEmail
                 ? dfClientEmail.replace(/^(.{3}).*(@.+)$/, "$1…$2")

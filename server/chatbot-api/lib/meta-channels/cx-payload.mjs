@@ -1,5 +1,5 @@
 /**
- * Parse Dialogflow ES fulfillmentMessages into channel-neutral reply parts
+ * Parse Dialogflow CX responseMessages into channel-neutral reply parts
  * (matches payloads handled by company.js on the web widget).
  */
 
@@ -259,29 +259,8 @@ export function normalizeSelectOptions_(opts) {
  *   video: { title: string, message: string, url: string, choices: ChoiceOption[] } | null,
  *   form: { message: string, formId: string, formKey: string } | null,
  *   liveAgent: { message: string } | null
- * }} ReplyParts
+ * }} CxReplyParts
  */
-
-/**
- * @returns {ReplyParts}
- */
-function makeEmptyReplyParts_() {
-    return {
-        texts: [],
-        infoLines: [],
-        images: [],
-        documents: [],
-        choices: [],
-        choicePrompt: "",
-        choicePlaceholder: "",
-        optionsDisplay: "carousel",
-        cardCarousel: null,
-        gallery: null,
-        video: null,
-        form: null,
-        liveAgent: null
-    };
-}
 
 /**
  * Parallel name list for gallery images (`names` / `titles` — separate from chip `options`).
@@ -446,7 +425,7 @@ function normalizeRichFiles_(item) {
 }
 
 /**
- * @param {ReplyParts} parts
+ * @param {CxReplyParts} parts
  * @param {{ label: string, value: string }} opt
  */
 function pushChoice_(parts, opt) {
@@ -462,7 +441,7 @@ function pushChoice_(parts, opt) {
 }
 
 /**
- * @param {ReplyParts} parts
+ * @param {CxReplyParts} parts
  * @param {Record<string, unknown>} item
  */
 function mergeVideoFromItem_(parts, item) {
@@ -516,7 +495,7 @@ export function parseOptionsDisplay_(body) {
 }
 
 /**
- * @param {ReplyParts} parts
+ * @param {CxReplyParts} parts
  * @param {Record<string, unknown>} body
  */
 function absorbOptionsDisplay_(parts, body) {
@@ -527,7 +506,7 @@ function absorbOptionsDisplay_(parts, body) {
 }
 
 /**
- * @param {ReplyParts} parts
+ * @param {CxReplyParts} parts
  * @param {Record<string, unknown>} body
  */
 function absorbActionPayload_(parts, body) {
@@ -657,7 +636,7 @@ function absorbActionPayload_(parts, body) {
 }
 
 /**
- * @param {ReplyParts} parts
+ * @param {CxReplyParts} parts
  * @param {Record<string, unknown>} body
  */
 function absorbRichContent_(parts, body) {
@@ -742,113 +721,64 @@ function absorbRichContent_(parts, body) {
 }
 
 /**
- * @param {ReplyParts} parts
- * @param {Record<string, unknown>} message
+ * @param {unknown} data Dialogflow detectIntent response
+ * @returns {CxReplyParts}
  */
-function absorbDialogflowMessage_(parts, message) {
-    const textParts = message?.text?.text;
-    if (Array.isArray(textParts)) {
-        for (const t of textParts) {
-            const s = trim_(t);
-            if (s) {
-                parts.texts.push(s);
-            }
-        }
+export function extractCxResponse_(data) {
+    /** @type {CxReplyParts} */
+    const parts = {
+        texts: [],
+        infoLines: [],
+        images: [],
+        documents: [],
+        choices: [],
+        choicePrompt: "",
+        choicePlaceholder: "",
+        optionsDisplay: "carousel",
+        cardCarousel: null,
+        gallery: null,
+        video: null,
+        form: null,
+        liveAgent: null
+    };
+
+    const messages = data?.queryResult?.responseMessages;
+    if (!Array.isArray(messages)) {
+        return parts;
     }
 
-    const quickReplies = message?.quickReplies;
-    if (quickReplies && typeof quickReplies === "object" && !Array.isArray(quickReplies)) {
-        const title = payloadString_(/** @type {Record<string, unknown>} */ (quickReplies).title);
-        const replies = /** @type {Record<string, unknown>} */ (quickReplies).quickReplies;
-        if (title && !parts.choicePrompt) {
-            parts.choicePrompt = title;
-        }
-        if (Array.isArray(replies)) {
-            for (const reply of replies) {
-                const label = payloadString_(reply);
-                if (label) {
-                    pushChoice_(parts, { label, value: label });
+    for (const m of messages) {
+        const textParts = m?.text?.text;
+        if (Array.isArray(textParts)) {
+            for (const t of textParts) {
+                const s = trim_(t);
+                if (s) {
+                    parts.texts.push(s);
                 }
             }
         }
-    }
 
-    const card = message?.card;
-    if (card && typeof card === "object" && !Array.isArray(card)) {
-        const c = /** @type {Record<string, unknown>} */ (card);
-        const title = payloadString_(c.title);
-        const subtitle = payloadString_(c.subtitle);
-        const imageUrl = payloadString_(c.imageUri ?? c.imageUrl ?? c.image_url);
-        const buttons = Array.isArray(c.buttons) ? c.buttons : [];
-        const firstButton =
-            buttons.length && buttons[0] && typeof buttons[0] === "object"
-                ? /** @type {Record<string, unknown>} */ (buttons[0])
-                : {};
-        if (title || subtitle || imageUrl) {
-            parts.cardCarousel = {
-                message: parts.choicePrompt || "",
-                cards: [{
-                    id: title || "1",
-                    title,
-                    subtitle,
-                    imageUrl,
-                    ctaLabel: payloadString_(firstButton.text) || "Select",
-                    ctaValue: payloadString_(firstButton.postback) || title || subtitle
-                }],
-                explicitOptions: false
-            };
+        const body = normalizePayloadBody_(m?.payload);
+        if (!body) {
+            continue;
         }
-        for (const btn of buttons) {
-            if (!btn || typeof btn !== "object") {
-                continue;
-            }
-            const b = /** @type {Record<string, unknown>} */ (btn);
-            const label = payloadString_(b.text);
-            const value = payloadString_(b.postback) || label;
-            if (label && value) {
-                pushChoice_(parts, { label, value });
-            }
+
+        absorbActionPayload_(parts, body);
+        absorbRichContent_(parts, body);
+        absorbOptionsDisplay_(parts, body);
+
+        const bodyAction = payloadString_(body.action);
+        const plainPayloadMsg = payloadMessage_(body);
+        if (!bodyAction && plainPayloadMsg && !Array.isArray(body.richContent)) {
+            parts.texts.push(plainPayloadMsg);
         }
-        if (buttons.length && parts.cardCarousel) {
-            parts.cardCarousel.explicitOptions = true;
+
+        const lateMsg = payloadString_(body.message);
+        if (lateMsg && parts.choices.length && !parts.choicePrompt && !isGenericChoicePrompt_(lateMsg)) {
+            parts.choicePrompt = lateMsg;
         }
     }
 
-    const image = message?.image;
-    if (image && typeof image === "object" && !Array.isArray(image)) {
-        const imageUrl = payloadString_(
-            /** @type {Record<string, unknown>} */ (image).imageUri
-            ?? /** @type {Record<string, unknown>} */ (image).imageUrl
-            ?? /** @type {Record<string, unknown>} */ (image).url
-        );
-        if (isHttpsUrl_(imageUrl)) {
-            parts.images.push(imageUrl);
-        }
-    }
-
-    const body = normalizePayloadBody_(message?.payload);
-    if (!body) {
-        return;
-    }
-
-    absorbActionPayload_(parts, body);
-    absorbRichContent_(parts, body);
-    absorbOptionsDisplay_(parts, body);
-
-    const bodyAction = payloadString_(body.action);
-    const plainPayloadMsg = payloadMessage_(body);
-    if (!bodyAction && plainPayloadMsg && !Array.isArray(body.richContent)) {
-        parts.texts.push(plainPayloadMsg);
-    }
-
-    const lateMsg = payloadString_(body.message);
-    if (lateMsg && parts.choices.length && !parts.choicePrompt && !isGenericChoicePrompt_(lateMsg)) {
-        parts.choicePrompt = lateMsg;
-    }
-}
-
-/** @param {ReplyParts} parts */
-function finalizeReplyParts_(parts) {
     if (parts.choices.length && (parts.gallery || parts.cardCarousel || parts.video)) {
         const prompt = trim_(parts.choicePrompt);
         if (isGenericChoicePrompt_(parts.choicePrompt)) {
@@ -867,44 +797,19 @@ function finalizeReplyParts_(parts) {
     return parts;
 }
 
-/**
- * @param {unknown} data Dialogflow ES detectIntent response
- * @returns {ReplyParts}
- */
-export function extractEsResponse_(data) {
-    /** @type {ReplyParts} */
-    const parts = makeEmptyReplyParts_();
-    const qr = data?.queryResult && typeof data.queryResult === "object" ? data.queryResult : {};
-    const messages = qr?.fulfillmentMessages;
-    if (Array.isArray(messages)) {
-        for (const m of messages) {
-            if (!m || typeof m !== "object") {
-                continue;
-            }
-            absorbDialogflowMessage_(parts, /** @type {Record<string, unknown>} */ (m));
-        }
-    }
-    const fulfillmentText = trim_(qr?.fulfillmentText);
-    if (fulfillmentText && !parts.texts.some((t) => promptsEquivalent_(t, fulfillmentText))) {
-        parts.texts.push(fulfillmentText);
-    }
-
-    return finalizeReplyParts_(parts);
-}
-
-/** @param {ReplyParts} parts */
+/** @param {CxReplyParts} parts */
 export function choiceLabels_(parts) {
     return parts.choices.map((c) => c.label);
 }
 
-/** @param {ReplyParts} parts */
+/** @param {CxReplyParts} parts */
 export function choiceValues_(parts) {
     return parts.choices.map((c) => c.value);
 }
 
 /**
  * Build combined plain-text blocks (info lines, form/live-agent notices).
- * @param {ReplyParts} parts
+ * @param {CxReplyParts} parts
  * @param {string} [webChatUrl]
  */
 export function supplementalTextBlocks_(parts, webChatUrl) {

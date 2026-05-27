@@ -45,7 +45,7 @@ function metaSourceUrl_(channel, from) {
  *   from: string,
  *   userText: string,
  *   profileName?: string,
- *   dialogflowParams?: Record<string, unknown>
+ *   cxParams?: Record<string, unknown>
  * }} input
  */
 export async function syncMetaInboundMessageToSheet_(input) {
@@ -72,7 +72,7 @@ export async function syncMetaInboundMessageToSheet_(input) {
         channel,
         from: input.from,
         profileName: input.profileName,
-        dialogflowParams: input.dialogflowParams && typeof input.dialogflowParams === "object" ? input.dialogflowParams : {}
+        cxParams: input.cxParams && typeof input.cxParams === "object" ? input.cxParams : {}
     });
     const { name, email, mobile } = contact;
 

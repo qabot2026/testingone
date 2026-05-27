@@ -1,6 +1,4 @@
 let personaRefreshTimer = null;
-/** @type {number | null} */
-let esPanelLayoutRepairTimer_ = null;
 let personaSequence = 0;
 let lastUserPersonaRenderAt = 0;
 let companyPersonaWindowListenersAttached = false;
@@ -269,10 +267,6 @@ const MESSAGE_LIST_SQUARE_PANE_STYLE_ID = "dfchat-messagelist-square-pane";
 /** Open whitish chat card (`.chat-wrapper`); optional `common.chatPanel.borderRadius` in company.config.js */
 const CHAT_PANEL_CORNERS_STYLE_ID = "dfchat-chat-panel-corners";
 const TITLEBAR_LAYOUT_STYLE_ID = "dfchat-titlebar-layout";
-const ES_CX_LOOK_STYLE_ID = "dfchat-es-cx-look";
-const ES_CHAT_PANEL_LAYOUT_STYLE_ID = "dfchat-es-panel-layout";
-/** Injected into each `df-message-list` shadow (transcript scroll lives here, not in `df-messenger-chat` shadow). */
-const ES_MESSAGE_LIST_SHADOW_LAYOUT_STYLE_ID = "dfchat-es-message-list-layout";
 const PERSONA_IMAGE_GUARD_STYLE_ID = "dfchat-persona-image-guard";
 /** Dialogflow “jump to bottom” / scroll-hint UI; mirrored onto `df-messenger-chat-bubble` :host. */
 const DF_MESSENGER_CHAT_SCROLL_JUMP_VAR_KEYS = [
@@ -855,145 +849,9 @@ function readBotPersonaConfig() {
             /** Narrow viewports: translate bot persona imgs left by this many px (`translateX(-n)`). */
             mobileNudgeLeftPx: typeof image.mobileNudgeLeftPx === "number" && Number.isFinite(image.mobileNudgeLeftPx) && image.mobileNudgeLeftPx >= 0
                 ? image.mobileNudgeLeftPx
-                : 14,
-            /** ES DOM persona row only: nudge caption label down (px). Does not affect {@link img.timeOffset*} / clock. */
-            labelOffsetDownPx: typeof image.labelOffsetDownPx === "number" && Number.isFinite(image.labelOffsetDownPx) && image.labelOffsetDownPx >= -32 && image.labelOffsetDownPx <= 120
-                ? image.labelOffsetDownPx
-                : 0,
-            /** ES DOM persona row only: nudge caption label toward the left (px). Applied as negative translateX. */
-            labelOffsetLeftPx: typeof image.labelOffsetLeftPx === "number" && Number.isFinite(image.labelOffsetLeftPx) && image.labelOffsetLeftPx >= 0 && image.labelOffsetLeftPx <= 120
-                ? image.labelOffsetLeftPx
-                : 0
+                : 14
         }
     };
-}
-
-/** Tracks the open language menu (portaled to `document.body` so shadow `overflow` cannot clip it). */
-const dfchatLanguageMenuState = {
-    menu: /** @type {HTMLElement | null} */ (null),
-    toggle: /** @type {HTMLElement | null} */ (null),
-    suppressDismissUntil: 0
-};
-
-let dfchatLanguageMenuDismissHooked = false;
-
-function ensureLanguageMenuDismissHandler_() {
-    if (dfchatLanguageMenuDismissHooked) {
-        return;
-    }
-    dfchatLanguageMenuDismissHooked = true;
-    document.addEventListener("click", (e) => {
-        if (Date.now() < dfchatLanguageMenuState.suppressDismissUntil) {
-            return;
-        }
-        const menu = dfchatLanguageMenuState.menu;
-        if (!menu || menu.style.display === "none") {
-            return;
-        }
-        const path = typeof e.composedPath === "function" ? e.composedPath() : [];
-        const toggle = dfchatLanguageMenuState.toggle;
-        if (path.includes(menu) || (toggle && path.includes(toggle))) {
-            return;
-        }
-        closeDfchatLanguageMenu_(menu);
-    }, false);
-}
-
-/**
- * @param {HTMLElement | null | undefined} menu
- */
-function closeDfchatLanguageMenu_(menu) {
-    if (!menu) {
-        return;
-    }
-    menu.style.display = "none";
-    if (dfchatLanguageMenuState.menu === menu) {
-        dfchatLanguageMenuState.menu = null;
-        dfchatLanguageMenuState.toggle = null;
-    }
-}
-
-/**
- * Position and show a language menu on `document.body` (not clipped by chat panel overflow / shadow).
- * @param {HTMLElement} toggleBtn
- * @param {HTMLElement} menu
- */
-function openFloatingLanguageMenu_(toggleBtn, menu) {
-    if (!toggleBtn || !menu) {
-        return;
-    }
-    ensureLanguageMenuDismissHandler_();
-    try {
-        if (menu.parentElement !== document.body) {
-            document.body.appendChild(menu);
-        }
-    } catch {
-        /* ignore */
-    }
-    menu.style.display = "block";
-    menu.style.position = "fixed";
-    menu.style.right = "auto";
-    menu.style.bottom = "auto";
-    menu.style.zIndex = "2147483647";
-    menu.style.pointerEvents = "auto";
-    dfchatLanguageMenuState.menu = menu;
-    dfchatLanguageMenuState.toggle = toggleBtn;
-    dfchatLanguageMenuState.suppressDismissUntil = Date.now() + 160;
-
-    const place = () => {
-        const rect = toggleBtn.getBoundingClientRect();
-        const menuH = menu.offsetHeight > 0 ? menu.offsetHeight : 140;
-        const menuW = menu.offsetWidth > 0 ? menu.offsetWidth : 160;
-        let left = Math.round(rect.left);
-        let top = Math.round(rect.top - menuH - 8);
-        const pad = 8;
-        const vw = window.innerWidth || 360;
-        const vh = window.innerHeight || 640;
-        left = Math.max(pad, Math.min(left, vw - menuW - pad));
-        top = Math.max(pad, Math.min(top, vh - menuH - pad));
-        menu.style.left = `${left}px`;
-        menu.style.top = `${top}px`;
-    };
-    place();
-    if (typeof requestAnimationFrame === "function") {
-        requestAnimationFrame(place);
-    }
-}
-
-/**
- * @param {HTMLElement} toggleBtn
- * @param {HTMLElement} menu
- */
-function toggleDfchatLanguageMenu_(toggleBtn, menu) {
-    if (!toggleBtn || !menu) {
-        return;
-    }
-    const open = menu.style.display !== "none" && menu.style.display !== "";
-    if (open) {
-        closeDfchatLanguageMenu_(menu);
-        return;
-    }
-    window.setTimeout(() => openFloatingLanguageMenu_(toggleBtn, menu), 0);
-}
-
-/**
- * @param {HTMLElement} labelEl
- */
-function applyEsBotPersonaLabelOffsets_(labelEl) {
-    if (!labelEl || !labelEl.style) {
-        return;
-    }
-    const img = BOT_PERSONA_CONFIG.image;
-    const down = typeof img.labelOffsetDownPx === "number" ? img.labelOffsetDownPx : 0;
-    const left = typeof img.labelOffsetLeftPx === "number" ? img.labelOffsetLeftPx : 0;
-    try {
-        labelEl.style.setProperty("display", "inline-block", "important");
-        labelEl.style.setProperty("transform", `translate(${-left}px, ${down}px)`, "important");
-        labelEl.style.setProperty("vertical-align", "middle", "important");
-    } catch {
-        labelEl.style.display = "inline-block";
-        labelEl.style.transform = `translate(${-left}px, ${down}px)`;
-    }
 }
 
 /**
@@ -1117,7 +975,7 @@ function getChatPanelBorderRadiusCss() {
     if (!r) {
         return "";
     }
-    /* Dialogflow injects: `.chat-wrapper{border-radius:var(--df-messenger-chat-border-radius)}`. Shorthand + longhands beat var(); order vs constructed styles is not reliable — we also set inline in applyChatPanelBorderRadiusToElements. */
+    /* DF injects: `.chat-wrapper{border-radius:var(--df-messenger-chat-border-radius)}` (see gstatic df-messenger.js). Shorthand + longhands beat var(); order vs constructed styles is not reliable — we also set inline in applyChatPanelBorderRadiusToElements. */
     const quad = `${r.topLeft} ${r.topRight} ${r.bottomRight} ${r.bottomLeft}`;
     return `/* company.js: whitish open chat *panel* (not message bubbles) */
 .chat-wrapper,
@@ -1237,14 +1095,8 @@ function collectDfResponseMessagesForUnread(event) {
     const candidates = [
         d.data && Array.isArray(d.data.messages) ? d.data.messages : null,
         Array.isArray(d.messages) ? d.messages : null,
-        d.data && d.data.queryResult && Array.isArray(d.data.queryResult.fulfillmentMessages)
-            ? d.data.queryResult.fulfillmentMessages
-            : null,
         d.data && d.data.queryResult && Array.isArray(d.data.queryResult.responseMessages)
             ? d.data.queryResult.responseMessages
-            : null,
-        d.raw && d.raw.queryResult && Array.isArray(d.raw.queryResult.fulfillmentMessages)
-            ? d.raw.queryResult.fulfillmentMessages
             : null,
         d.raw && d.raw.queryResult && Array.isArray(d.raw.queryResult.responseMessages)
             ? d.raw.queryResult.responseMessages
@@ -1260,15 +1112,15 @@ function collectDfResponseMessagesForUnread(event) {
 }
 
 /**
- * Gallery / video: **only current DetectIntent fulfillment messages** — this list is scoped
+ * Gallery / video: **only `queryResult.responseMessages`** — this DetectIntent fulfillment list is scoped
  * to the current webhook response. **`detail.data.messages`** is a Messenger UI mirror that commonly
  * re-attaches previously rendered payloads, which made `open_gallery` appear on every subsequent intent.
  *
- * Dedupes object refs shared between **`raw`** and **`data`** queryResult messages.
+ * Dedupes object refs shared between **`raw`** and **`data`** `queryResult.responseMessages`.
  *
  * @param {Event | null | undefined} event
  */
-function mergeDialogflowResponseEnvelopeForGallery(event) {
+function mergeCxResponseEnvelopeForGallery(event) {
     /** @type {unknown[]} */
     const out = [];
     const seenObj = new WeakSet();
@@ -1295,19 +1147,13 @@ function mergeDialogflowResponseEnvelopeForGallery(event) {
         detail
         && detail.raw
         && detail.raw.queryResult
-        && (detail.raw.queryResult.fulfillmentMessages || detail.raw.queryResult.responseMessages)
+        && detail.raw.queryResult.responseMessages
     );
     add(
         detail
         && detail.data
         && detail.data.queryResult
-        && (detail.data.queryResult.fulfillmentMessages || detail.data.queryResult.responseMessages)
-    );
-    add(
-        detail
-        && detail.response
-        && detail.response.queryResult
-        && (detail.response.queryResult.fulfillmentMessages || detail.response.queryResult.responseMessages)
+        && detail.data.queryResult.responseMessages
     );
     add(detail && Array.isArray(detail.messages) ? detail.messages : null);
     add(detail && detail.data && Array.isArray(detail.data.messages) ? detail.data.messages : null);
@@ -1316,7 +1162,7 @@ function mergeDialogflowResponseEnvelopeForGallery(event) {
 }
 
 /**
- * Only Dialogflow response messages carrying a **`payload`** (or Messenger `customPayload`) can produce
+ * Only CX response messages carrying a **`payload`** (or Messenger `customPayload`) can produce
  * `extractPayload(...)`. Checking this avoids needless work on plain text blobs.
  *
  * @param {unknown} message
@@ -1935,7 +1781,7 @@ const originalTextNodeContent = new Map();
 const originalElementAttributes = new Map();
 const googleTranslationCache = new Map();
 
-const COMPANY_JS_BUILD_TAG = "20260527-es-user-persona-icons-panel";
+const COMPANY_JS_BUILD_TAG = "20260518-liveagent";
 const COMPANY_DEBUG_QUERY_FLAG = "dfchatDebug";
 let debugMountAttemptSeq = 0;
 let debugBadgeLastRenderAt = 0;
@@ -1971,8 +1817,8 @@ let overlayStatusNode = null;
 const CHAT_ACTION_BAR_ID = "dfchat-chat-action-bar";
 /** @type {HTMLDivElement | null} */
 let poweredByStripNode = null;
-/** Shift the user input / footer row: positive = up (`translateY(-n)`), negative = down, 0 = default. ES uses native flex footer — no nudge. */
-const USER_INPUT_NUDGE_UP_PX = 0;
+/** Shift the user input / footer row: positive = up (`translateY(-n)`), negative = down, 0 = default. */
+const USER_INPUT_NUDGE_UP_PX = -20;
 let chatActionBarSyncTimer = null;
 /** @type {{ left: number, top: number } | null} */
 let chatActionBarFixedPos = null;
@@ -2730,8 +2576,6 @@ function runCompanyDomReadyInit() {
         syncMobileLightboxParkStateFromChat();
     }, { passive: true });
     attachImageLightboxClickHandler();
-    removeLegacyParentPageLightboxNodes_();
-    installDialogflowDetectIntentGalleryHook_();
     ensureComposerHeaderCollapseBehavior();
     // Mount chat before the inline form and other UI — if form init throws, the bubble should still show.
     runMessengerMountWhenCustomElementReady();
@@ -2751,7 +2595,7 @@ function runCompanyDomReadyInit() {
 }
 
 /**
- * The widget bundle can load in the same turn as Dialogflow ES bootstrap onload. In some browsers the
+ * The widget bundle can load in the same turn as `df-messenger.js` onload. In some browsers the
  * `df-messenger` custom element is not yet defined when this script first runs; wait for it
  * (embed / Flask `test-embed` and similar).
  */
@@ -2775,7 +2619,7 @@ function runMessengerMountWhenCustomElementReady() {
         }
         if (!customElements.get("df-messenger")) {
             // eslint-disable-next-line no-console
-            console.error("[company chat] df-messenger is still undefined — check Network tab: Dialogflow ES bootstrap.js must load from Google (not blocked by ad blocker / CSP).");
+            console.error("[company chat] df-messenger is still undefined — check Network tab: df-messenger.js must load from Google (not blocked by ad blocker / CSP).");
         }
         didMount = true;
         createAndMountMessenger();
@@ -2855,11 +2699,10 @@ function initializeHardActionBar() {
             option.textContent = getLanguageOptionDisplayLabel(lang);
             option.style.cssText = "width: 100%; height: auto; text-align: left; border: 0; background: transparent; color: #0f172a; border-radius: 10px; padding: 8px 10px; font: 600 12px 'Manrope', 'Segoe UI', sans-serif; cursor: pointer; transition: background 0.2s ease;";
 
-            option.addEventListener("click", (ev) => {
-                ev.stopPropagation();
+            option.addEventListener("click", () => {
                 const code = option.getAttribute("data-lang") || "en";
                 applyLanguage(code);
-                closeDfchatLanguageMenu_(menu);
+                menu.style.display = "none";
             });
 
             menu.appendChild(option);
@@ -2867,12 +2710,17 @@ function initializeHardActionBar() {
 
         langButton.addEventListener("click", (event) => {
             event.stopPropagation();
-            toggleDfchatLanguageMenu_(langButton, menu);
+            menu.style.display = menu.style.display === "none" ? "block" : "none";
         });
 
         langWrap.appendChild(langButton);
         langWrap.appendChild(menu);
         headerControls.appendChild(langWrap);
+
+        /* Bubble phase: capture would run before the button and clear the menu, breaking toggle on 2nd click. */
+        document.addEventListener("click", () => {
+            menu.style.display = "none";
+        }, false);
     }
 
     if (isRestartChatEnabled()) {
@@ -2917,71 +2765,6 @@ function initializeHardActionBar() {
 }
 
 /** Bubble + header chrome icons (dashboard preview must update attrs after merge). */
-/**
- * ES bootstrap nests `df-messenger-chat-bubble` inside `df-messenger` (no separate bubble element we create).
- * @param {HTMLElement | null | undefined} dfMessenger
- * @returns {HTMLElement | null}
- */
-function resolveAndCacheEsBubbleHost_(dfMessenger) {
-    const ms =
-        dfMessenger
-        || (typeof activeDfMessenger !== "undefined" ? activeDfMessenger : null);
-    if (!ms || typeof ms.querySelector !== "function") {
-        return activeBubbleNode;
-    }
-    const bubble = ms.querySelector("df-messenger-chat-bubble");
-    if (bubble) {
-        activeBubbleNode = /** @type {HTMLElement} */ (bubble);
-    }
-    return activeBubbleNode;
-}
-
-/**
- * @param {HTMLElement | null | undefined} dfMessenger
- * @returns {void}
- */
-function scheduleEsTitlebarAndBubbleIconSync_(dfMessenger) {
-    const ms =
-        dfMessenger
-        || (typeof activeDfMessenger !== "undefined" ? activeDfMessenger : null);
-    if (!ms || !isDialogflowEsMessenger_(ms)) {
-        return;
-    }
-    const headerConfig = COMMON_CONFIG.header || {};
-    const { chatIconUrl, chatTitleIconUrl } = resolveMessengerChatIconUrls(headerConfig);
-    const subtitle = typeof headerConfig.subtitle === "string" ? headerConfig.subtitle.trim() : "";
-    const bubble = resolveAndCacheEsBubbleHost_(ms);
-    applyMessengerChatIconAttributes(ms, bubble, headerConfig);
-
-    const syncTitle = () => {
-        const roots = collectSearchRoots(ms);
-        for (let ri = 0; ri < roots.length; ri += 1) {
-            const root = roots[ri];
-            if (!root || !root.querySelectorAll) {
-                continue;
-            }
-            const wrappers = root.querySelectorAll(".title-wrapper, df-messenger-titlebar");
-            for (let wi = 0; wi < wrappers.length; wi += 1) {
-                const tw = wrappers[wi];
-                if (tw && tw.querySelector) {
-                    syncDialogflowEsTitlebarChrome_(tw, chatTitleIconUrl, subtitle);
-                }
-            }
-        }
-    };
-
-    syncTitle();
-    scheduleDfMessengerChatIconImageSrcSync(ms, chatIconUrl, chatTitleIconUrl);
-    [80, 240, 600, 1200, 2500, 4500].forEach((ms) => {
-        window.setTimeout(() => {
-            if (activeDfMessenger === ms) {
-                syncTitle();
-                scheduleDfMessengerChatIconImageSrcSync(ms, chatIconUrl, chatTitleIconUrl);
-            }
-        }, ms);
-    });
-}
-
 function resolveMessengerChatIconUrls(headerConfig) {
     const h = headerConfig && typeof headerConfig === "object" ? headerConfig : {};
     const fallback = "https://storage.googleapis.com/companybucket/Images/cat.png";
@@ -3060,53 +2843,20 @@ function scheduleDfMessengerChatIconImageSrcSync(dfMessenger, chatIconUrl, chatT
     };
 
     const patch = () => {
-        const hosts = [];
-        if (bubbleHost) {
-            hosts.push(bubbleHost);
-        }
-        if (typeof dfMessenger.shadowRoot !== "undefined" && dfMessenger.shadowRoot) {
-            hosts.push(dfMessenger.shadowRoot);
-        }
-        const roots = collectSearchRoots(dfMessenger);
-        for (let ri = 0; ri < roots.length; ri += 1) {
-            if (roots[ri] instanceof ShadowRoot) {
-                hosts.push(roots[ri]);
-            }
-        }
-
-        if (typeof chatIconUrl === "string" && chatIconUrl.trim()) {
-            const url = chatIconUrl.trim();
-            for (let hi = 0; hi < hosts.length; hi += 1) {
-                const sr = hosts[hi];
-                if (!sr || typeof sr.querySelector !== "function") {
-                    continue;
-                }
-                const launcherImg =
-                    sr.querySelector("#widgetIcon img")
-                    || sr.querySelector("#widgetIcon .df-chat-icon")
-                    || sr.querySelector(".bubble img")
-                    || sr.querySelector(".bubble button img")
-                    || sr.querySelector(".bubble [role=\"button\"] img");
-                if (launcherImg) {
-                    try {
-                        launcherImg.removeAttribute("src");
-                        launcherImg.setAttribute("src", url);
-                        launcherImg.src = url;
-                        applyLauncherImgConstraints(launcherImg);
-                    } catch {
-                        /* no-op */
-                    }
-                }
-                const widget = sr.querySelector("#widgetIcon");
-                if (widget && widget.style) {
-                    try {
-                        widget.style.setProperty("background-image", `url("${url.replace(/"/g, "%22")}")`, "important");
-                        widget.style.setProperty("background-size", "cover", "important");
-                        widget.style.setProperty("background-position", "center", "important");
-                        widget.style.setProperty("background-repeat", "no-repeat", "important");
-                    } catch {
-                        /* no-op */
-                    }
+        const sr = bubbleHost && bubbleHost.shadowRoot;
+        if (sr && typeof chatIconUrl === "string" && chatIconUrl.trim()) {
+            // Only the launcher FAB — broad `img` queries can hit full-panel artwork.
+            const launcherImg = sr.querySelector(".bubble img")
+                || sr.querySelector(".bubble button img")
+                || sr.querySelector(".bubble [role=\"button\"] img");
+            if (launcherImg) {
+                try {
+                    launcherImg.removeAttribute("src");
+                    launcherImg.setAttribute("src", chatIconUrl);
+                    launcherImg.src = chatIconUrl;
+                    applyLauncherImgConstraints(launcherImg);
+                } catch {
+                    /* no-op */
                 }
             }
         }
@@ -3115,13 +2865,13 @@ function scheduleDfMessengerChatIconImageSrcSync(dfMessenger, chatIconUrl, chatT
             return;
         }
 
-        const searchRoots = collectSearchRoots(dfMessenger);
-        for (let r = 0; r < searchRoots.length; r += 1) {
-            const root = searchRoots[r];
+        const roots = collectSearchRoots(dfMessenger);
+        for (let r = 0; r < roots.length; r += 1) {
+            const root = roots[r];
             if (!root || typeof root.querySelectorAll !== "function") {
                 continue;
             }
-            const bars = root.querySelectorAll("df-messenger-titlebar, df-messenger-header, .title-wrapper");
+            const bars = root.querySelectorAll("df-messenger-titlebar, df-messenger-header");
             for (let i = 0; i < bars.length; i += 1) {
                 const bar = bars[i];
                 const im = bar && typeof bar.querySelector === "function" ? bar.querySelector("img") : null;
@@ -3164,7 +2914,8 @@ function createAndMountMessenger() {
     const df = document.createElement("df-messenger");
     activeDfMessenger = df;
     const dialogflowConfig = COMMON_CONFIG.dialogflow || {};
-    df.setAttribute("intent", dialogflowConfig.intent || "WELCOME");
+    df.setAttribute("project-id", dialogflowConfig.projectId || "qabot01");
+    df.setAttribute("location", dialogflowConfig.location || "us-central1");
     df.setAttribute("agent-id", dialogflowConfig.agentId || "05ce7add-9025-4534-990c-fd7a25dadde1");
     if (typeof dialogflowConfig.oauthClientId === "string" && dialogflowConfig.oauthClientId.trim()) {
         df.setAttribute("oauth-client-id", dialogflowConfig.oauthClientId.trim());
@@ -3174,12 +2925,22 @@ function createAndMountMessenger() {
     df.setAttribute("url-allowlist", "*");
     df.setAttribute("storage-option", "none");
 
-    const headerConfig = COMMON_CONFIG.header || {};
-    const bubble = null;
+    const bubble = document.createElement("df-messenger-chat-bubble");
     activeBubbleNode = bubble;
+    const headerConfig = COMMON_CONFIG.header || {};
     applyMessengerChatIconAttributes(df, bubble, headerConfig);
-    df.setAttribute("chat-title", headerConfig.title || "Chat Support");
-    df.setAttribute("chat-subtitle", headerConfig.subtitle || "🟢 Online");
+    bubble.setAttribute("chat-title", headerConfig.title || "Chat Support");
+    bubble.setAttribute("chat-subtitle", headerConfig.subtitle || "🟢 Online");
+    {
+        const collapseUrl = (typeof headerConfig.chatCollapseIconUrl === "string" && headerConfig.chatCollapseIconUrl.trim())
+            ? headerConfig.chatCollapseIconUrl.trim()
+            : CHAT_COLLAPSE_X_ICON_DATA_URL;
+        try {
+            bubble.setAttribute("chat-collapse-icon", collapseUrl);
+        } catch (e) {
+            /* no-op */
+        }
+    }
 
     const m0 = isMobileViewport();
     const devWin0 = getDeviceSection(COMPANY_UI_CONFIG, m0);
@@ -3197,14 +2958,10 @@ function createAndMountMessenger() {
     applyDfMessengerBubbleAnchorString(bubble, anchor0);
 
     initializeMessengerReadyState(df, bubble);
-    if (bubble) {
-        df.appendChild(bubble);
-    }
+    df.appendChild(bubble);
     applyBotWritingTextToChatBubble(bubble);
     scheduleChatInputPlaceholderRefresh(df);
     document.body.appendChild(df);
-    resolveAndCacheEsBubbleHost_(df);
-    scheduleEsTitlebarAndBubbleIconSync_(df);
 
     restartBotWritingDotsTimer();
 
@@ -3220,8 +2977,6 @@ function createAndMountMessenger() {
             }
             ensureBubbleVisible(df);
             applyChatBubbleLauncherCircleStyle(df);
-            resolveAndCacheEsBubbleHost_(df);
-            scheduleEsTitlebarAndBubbleIconSync_(df);
         }, ms);
     });
     if (IS_FORCE_TITLEBAR_CLOSE_X_ENABLED) {
@@ -3246,8 +3001,6 @@ function createAndMountMessenger() {
     initializeChatStateSync(df);
     installRenderedBotTranscriptHook_(df);
     attachPersonaHandlers(df);
-    ensureEsChatPanelLayoutWatcher_(df);
-    scheduleEsChatPanelLayoutRepair_(df);
     // Lightbox is handled via a global click handler (shadow-DOM safe composedPath checks).
     ensureChatActionBar();
     ensurePoweredByStrip();
@@ -3261,8 +3014,6 @@ function createAndMountMessenger() {
         if (activeDfMessenger !== df) {
             return;
         }
-        scheduleEsTitlebarAndBubbleIconSync_(df);
-        scheduleEsChatPanelLayoutRepair_(df);
         scheduleChatMessageListScrollbarReapply(df);
         scheduleComposerSpeechMicAttach(df);
         [50, 200, 500, 1200].forEach((ms) => {
@@ -3456,10 +3207,9 @@ function mountFooterOverlayControls(restartConfig, restartEnabled) {
             item.style.cursor = "pointer";
             item.style.font = "600 12px Manrope, Segoe UI, sans-serif";
             item.style.color = normalizeLanguage(optionData.code) === activeLanguage ? "#0369a1" : "#0f172a";
-            item.addEventListener("click", (ev) => {
-                ev.stopPropagation();
+            item.addEventListener("click", () => {
+                menu.style.display = "none";
                 applyLanguage(optionData.code);
-                closeDfchatLanguageMenu_(menu);
             });
             item.addEventListener("mouseenter", () => {
                 item.style.background = "rgba(15, 118, 110, 0.08)";
@@ -3487,10 +3237,17 @@ function mountFooterOverlayControls(restartConfig, restartEnabled) {
         langWrapper.appendChild(languageButton);
         langWrapper.appendChild(menu);
 
+        const toggleMenu = () => {
+            menu.style.display = menu.style.display === "none" ? "block" : "none";
+        };
         languageButton.addEventListener("click", (e) => {
             e.stopPropagation();
-            toggleDfchatLanguageMenu_(languageButton, menu);
+            toggleMenu();
         });
+
+        document.addEventListener("click", () => {
+            menu.style.display = "none";
+        }, false);
 
         overlay.appendChild(langWrapper);
     }
@@ -3730,10 +3487,9 @@ function ensureChatActionBar() {
                     optionButton.dataset.active = "true";
                     optionButton.style.color = "#0369a1";
                 }
-                optionButton.addEventListener("click", (ev) => {
-                    ev.stopPropagation();
+                optionButton.addEventListener("click", () => {
                     applyLanguage(optionData.code);
-                    closeDfchatLanguageMenu_(languageMenu);
+                    languageMenu.style.display = "none";
                     buildLanguageMenu();
                 });
                 optionButton.addEventListener("mouseenter", () => {
@@ -3749,12 +3505,16 @@ function ensureChatActionBar() {
 
         languageButton.addEventListener("click", (event) => {
             event.stopPropagation();
-            toggleDfchatLanguageMenu_(languageButton, languageMenu);
+            languageMenu.style.display = languageMenu.style.display === "none" ? "block" : "none";
         });
 
         langWrapper.appendChild(languageButton);
         langWrapper.appendChild(languageMenu);
         bar.appendChild(langWrapper);
+
+        document.addEventListener("click", () => {
+            languageMenu.style.display = "none";
+        }, false);
     }
 
     if (isRestartChatEnabled()) {
@@ -3883,16 +3643,6 @@ function applyChatActionBarInlineTransform(bar) {
     if (!bar) {
         return;
     }
-    const rx = CHAT_ACTION_BAR_GLOBAL_RIGHT_PX;
-    const ms = activeDfMessenger || document.querySelector("df-messenger");
-    if (ms && isDialogflowEsMessenger_(ms)) {
-        try {
-            bar.style.setProperty("transform", `translate(${rx}px, 0)`, "important");
-        } catch {
-            bar.style.transform = `translate(${rx}px, 0)`;
-        }
-        return;
-    }
     const nu = FOOTER_ACTION_BAR_LAYOUT.nudgeUpPx;
     const nudge = typeof nu === "number" && Number.isFinite(nu) ? nu : 0;
     const totalUpPx = Math.max(
@@ -3902,6 +3652,7 @@ function applyChatActionBarInlineTransform(bar) {
             + nudge
             - CHAT_ACTION_BAR_GLOBAL_DOWN_PX
     );
+    const rx = CHAT_ACTION_BAR_GLOBAL_RIGHT_PX;
     try {
         bar.style.setProperty("transform", `translate(${rx}px, -${totalUpPx}px)`, "important");
     } catch {
@@ -3927,23 +3678,6 @@ function syncChatActionBarPosition() {
         bar.style.display = "none";
         bar.removeAttribute("data-dfchat-anchor");
         resetChatActionBarPositionCaches();
-        return;
-    }
-
-    if (isDialogflowEsMessenger_(messenger)) {
-        const mountedInline =
-            mountChatActionBarInline(messenger, bar) || mountChatActionBarEsFallback_(messenger, bar);
-        if (mountedInline) {
-            bar.classList.remove("dfchat-chat-action-bar--body-fixed");
-            bar.setAttribute("data-dfchat-anchor", "below-input");
-            bar.style.zIndex = "";
-            refreshChatActionBarLanguageState(bar);
-            bar.style.display = "inline-flex";
-            applyChatActionBarInlineTransform(bar);
-            scheduleEsChatPanelLayoutRepair_(messenger);
-        } else {
-            bar.style.display = "none";
-        }
         return;
     }
 
@@ -4499,50 +4233,6 @@ function syncPoweredByStripPosition() {
     setPoweredByStripGeometry(el, L, r, topClamped);
 }
 
-/**
- * ES fallback: keep Language/Restart under the composer (never `position:fixed` on ES).
- * @param {Element} messenger
- * @param {HTMLElement} bar
- * @returns {boolean}
- */
-function mountChatActionBarEsFallback_(messenger, bar) {
-    if (!messenger || !bar) {
-        return false;
-    }
-    const roots = collectSearchRoots(messenger);
-    for (let ri = 0; ri < roots.length; ri += 1) {
-        const root = roots[ri];
-        if (!root || typeof root.querySelector !== "function") {
-            continue;
-        }
-        const composer = root.querySelector("df-messenger-user-input");
-        if (!composer || !composer.parentElement) {
-            continue;
-        }
-        const parent = composer.parentElement;
-        try {
-            bar.classList.add("dfchat-chat-action-bar--inline");
-            bar.classList.remove("dfchat-chat-action-bar--body-fixed");
-            bar.style.position = "static";
-            bar.style.left = "";
-            bar.style.right = "";
-            bar.style.bottom = "";
-            bar.style.top = "auto";
-            bar.style.zIndex = "";
-            bar.style.display = "inline-flex";
-            if (composer.nextSibling) {
-                parent.insertBefore(bar, composer.nextSibling);
-            } else {
-                parent.appendChild(bar);
-            }
-            return true;
-        } catch {
-            /* ignore */
-        }
-    }
-    return false;
-}
-
 function mountChatActionBarInline(messenger, bar) {
     const mp = findFooterBelowInputMountPoint(messenger);
     if (!mp || !mp.parent || !mp.afterEl) {
@@ -4568,16 +4258,7 @@ function mountChatActionBarInline(messenger, bar) {
     }
 
     const cs = window.getComputedStyle(parent);
-    const msForBar = messenger || activeDfMessenger;
-    const parentLooksLikeTranscriptHost =
-        typeof parent.querySelector === "function"
-        && !!(parent.querySelector(".message-list-wrapper, df-message-list, #messageList, #message-list"));
-    if (
-        !isDialogflowEsMessenger_(msForBar)
-        && !parentLooksLikeTranscriptHost
-        && cs.display === "flex"
-        && (cs.flexDirection === "row" || cs.flexDirection === "row-reverse")
-    ) {
+    if (cs.display === "flex" && (cs.flexDirection === "row" || cs.flexDirection === "row-reverse")) {
         try {
             parent.style.flexDirection = "column";
             parent.style.alignItems = "stretch";
@@ -5665,9 +5346,19 @@ function sendUserTextViaDfMessengerAfterLiveAgentRoute_(dfMessenger, text, shoul
                 }
             }, 650);
         }
-        if (dispatchDfMessengerUserQuery_(dfMessenger, t)) {
+        if (typeof dfMessenger.sendQuery === "function") {
+            const r = dfMessenger.sendQuery(t);
+            if (r && typeof r.catch === "function") {
+                r.catch(() => {});
+            }
             scheduleClearDfMessengerComposerInput_();
             return;
+        }
+        if (typeof dfMessenger.sendRequest === "function") {
+            const r = dfMessenger.sendRequest("query", t);
+            if (r && typeof r.catch === "function") {
+                r.catch(() => {});
+            }
         }
         scheduleClearDfMessengerComposerInput_();
     } catch (e) {
@@ -7404,7 +7095,7 @@ function buildContactFormPhoneComboRow_(dialField, mobileField) {
 }
 
 /**
- * Value stored in the hidden field and sent as `appointmentdate`: DD/MM/YYYY.
+ * Value stored in the hidden field and sent as `appointmentdate`: DD-MM-YYYY.
  * Slot APIs still use YYYY-MM-DD from the calendar grid.
  * @param {string} dateISO
  * @returns {string}
@@ -7414,7 +7105,7 @@ function formatAppointmentDateCapturedFromIso_(dateISO) {
     if (!m) {
         return String(dateISO || "").trim();
     }
-    return `${m[3]}/${m[2]}/${m[1]}`;
+    return `${m[3]}-${m[2]}-${m[1]}`;
 }
 
 /**
@@ -8803,14 +8494,10 @@ function applyFixedCornerToMessengerForDock(dfMessenger, bubblePos, horizontalDo
         const r = typeof b.rightPx === "number" && Number.isFinite(b.rightPx) ? b.rightPx : hIn;
         dfMessenger.style.setProperty("right", `${r}px`);
         dfMessenger.style.setProperty("left", "auto");
-        dfMessenger.style.setProperty("--dfchat-es-right", `${r}px`);
-        dfMessenger.style.setProperty("--dfchat-es-left", "auto");
     } else {
         const l = typeof b.leftPx === "number" && Number.isFinite(b.leftPx) ? b.leftPx : hIn;
         dfMessenger.style.setProperty("left", `${l}px`);
         dfMessenger.style.setProperty("right", "auto");
-        dfMessenger.style.setProperty("--dfchat-es-left", `${l}px`);
-        dfMessenger.style.setProperty("--dfchat-es-right", "auto");
     }
 
     if (pinTop) {
@@ -8818,14 +8505,10 @@ function applyFixedCornerToMessengerForDock(dfMessenger, bubblePos, horizontalDo
         const t = typeof b.topPx === "number" && Number.isFinite(b.topPx) ? b.topPx : tIn;
         dfMessenger.style.setProperty("top", `${t}px`);
         dfMessenger.style.removeProperty("bottom");
-        dfMessenger.style.setProperty("--dfchat-es-top", `${t}px`);
-        dfMessenger.style.setProperty("--dfchat-es-bottom", "auto");
     } else {
         const bot = typeof b.bottomPx === "number" && Number.isFinite(b.bottomPx) ? b.bottomPx : bIn;
         dfMessenger.style.setProperty("bottom", `${bot}px`);
         dfMessenger.style.removeProperty("top");
-        dfMessenger.style.setProperty("--dfchat-es-bottom", `${bot}px`);
-        dfMessenger.style.setProperty("--dfchat-es-top", "auto");
     }
 }
 
@@ -9206,220 +8889,17 @@ function stopComposerSpeechRecognition() {
 }
 
 /**
- * Dialogflow ES may use `textarea`, `input`, or a `contenteditable` node for the composer.
- * @param {ShadowRoot | null | undefined} sr
- * @returns {HTMLElement | null}
- */
-function resolveComposerInputInsideUserInputShadow(sr) {
-    if (!sr || typeof sr.querySelector !== "function") {
-        return null;
-    }
-    const ta = sr.querySelector("textarea");
-    if (ta instanceof HTMLTextAreaElement) {
-        return ta;
-    }
-    try {
-        const inputs = sr.querySelectorAll("input");
-        for (let i = 0; i < inputs.length; i += 1) {
-            const inp = inputs[i];
-            if (!(inp instanceof HTMLInputElement)) {
-                continue;
-            }
-            const t = (inp.getAttribute("type") || "text").toLowerCase();
-            if (t === "text" || t === "search" || t === "" || !inp.hasAttribute("type")) {
-                return inp;
-            }
-        }
-    } catch {
-        /* ignore */
-    }
-    const ce = sr.querySelector("[contenteditable=\"true\"]");
-    if (ce instanceof HTMLElement) {
-        return ce;
-    }
-    const ce2 = sr.querySelector("[contenteditable=\"\"]");
-    if (ce2 instanceof HTMLElement) {
-        return ce2;
-    }
-    const role = sr.querySelector("[role=\"textbox\"]");
-    if (role instanceof HTMLElement) {
-        return role;
-    }
-    return null;
-}
-
-/**
- * @param {HTMLElement | null | undefined} el
- * @returns {string}
- */
-function readComposerInputValue(el) {
-    if (!el) {
-        return "";
-    }
-    if (el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement) {
-        return typeof el.value === "string" ? el.value : "";
-    }
-    try {
-        const raw = el.textContent != null ? String(el.textContent) : "";
-        return raw;
-    } catch {
-        return "";
-    }
-}
-
-/**
- * @param {HTMLElement | null | undefined} el
- * @param {string} value
- */
-function writeComposerInputValue(el, value) {
-    if (!el) {
-        return;
-    }
-    const v = typeof value === "string" ? value : "";
-    if (el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement) {
-        el.value = v;
-    } else {
-        try {
-            el.textContent = v;
-        } catch {
-            return;
-        }
-    }
-    try {
-        el.dispatchEvent(new InputEvent("input", { bubbles: true, composed: true }));
-    } catch {
-        try {
-            el.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
-        } catch {
-            /* ignore */
-        }
-    }
-}
-
-/**
- * ES bootstrap: programmatic `sendQuery` often no-ops; prefer `sendRequest("query")` or native Send.
- * @param {HTMLElement | null | undefined} dfMessenger
- * @returns {boolean}
- */
-function trySubmitComposerNativeSend_(dfMessenger) {
-    const ms = dfMessenger || activeDfMessenger;
-    if (!ms) {
-        return false;
-    }
-    try {
-        const roots = collectSearchRoots(ms);
-        for (let ri = 0; ri < roots.length; ri += 1) {
-            const root = roots[ri];
-            if (!root || typeof root.querySelectorAll !== "function") {
-                continue;
-            }
-            const hosts = root.querySelectorAll("df-messenger-user-input");
-            for (let hi = 0; hi < hosts.length; hi += 1) {
-                const mount = getUserInputComposerMountRoot_(hosts[hi]);
-                if (!mount || typeof mount.querySelector !== "function") {
-                    continue;
-                }
-                const sendBtn = mount.querySelector(
-                    "#send-icon-button, #sendIcon, .send-icon-button-wrapper button, button.send-icon"
-                );
-                if (sendBtn instanceof HTMLElement) {
-                    sendBtn.click();
-                    return true;
-                }
-                const wrap = mount.querySelector(".send-icon-button-wrapper");
-                if (wrap instanceof HTMLElement) {
-                    wrap.click();
-                    return true;
-                }
-            }
-        }
-    } catch {
-        /* ignore */
-    }
-    return false;
-}
-
-/**
- * Send user text to Dialogflow (gallery/video/card chips + programmatic sends).
- * @param {HTMLElement | null | undefined} dfMessenger
- * @param {string} text
- * @returns {boolean} true when a send path ran
- */
-function dispatchDfMessengerUserQuery_(dfMessenger, text) {
-    const t = typeof text === "string" ? text.trim() : "";
-    const ms = dfMessenger || activeDfMessenger;
-    if (!t || !ms) {
-        return false;
-    }
-    const es = isDialogflowEsMessenger_(ms);
-    try {
-        if (es && typeof ms.sendRequest === "function") {
-            const r = ms.sendRequest("query", t);
-            if (r && typeof r.catch === "function") {
-                r.catch(() => {});
-            }
-            return true;
-        }
-        if (!es && typeof ms.sendQuery === "function") {
-            const r = ms.sendQuery(t);
-            if (r && typeof r.catch === "function") {
-                r.catch(() => {});
-            }
-            return true;
-        }
-        if (typeof ms.sendRequest === "function") {
-            const r = ms.sendRequest("query", t);
-            if (r && typeof r.catch === "function") {
-                r.catch(() => {});
-            }
-            return true;
-        }
-        if (typeof ms.sendQuery === "function") {
-            const r = ms.sendQuery(t);
-            if (r && typeof r.catch === "function") {
-                r.catch(() => {});
-            }
-            return true;
-        }
-        if (es) {
-            const roots = collectSearchRoots(ms);
-            for (let ri = 0; ri < roots.length; ri += 1) {
-                const root = roots[ri];
-                if (!root || typeof root.querySelectorAll !== "function") {
-                    continue;
-                }
-                const hosts = root.querySelectorAll("df-messenger-user-input");
-                for (let hi = 0; hi < hosts.length; hi += 1) {
-                    const mount = getUserInputComposerMountRoot_(hosts[hi]);
-                    const field = resolveComposerInputInsideUserInputShadow(mount);
-                    if (!field) {
-                        continue;
-                    }
-                    writeComposerInputValue(field, t);
-                    if (trySubmitComposerNativeSend_(ms)) {
-                        return true;
-                    }
-                }
-            }
-        }
-    } catch {
-        /* ignore */
-    }
-    return false;
-}
-
-/**
- * @param {HTMLElement} field
+ * @param {HTMLTextAreaElement} textarea
  * @param {HTMLButtonElement} btn
  */
-function startComposerSpeechRecognition(field, btn) {
+function startComposerSpeechRecognition(textarea, btn) {
     const Ctor = getSpeechRecognitionConstructor();
-    if (!Ctor || !field || !btn) {
+    if (!Ctor || !textarea || !btn) {
         return;
     }
     stopComposerSpeechRecognition();
-    const snapshot = readComposerInputValue(field);
-    composerSpeechSession.textarea = field;
+    const snapshot = typeof textarea.value === "string" ? textarea.value : "";
+    composerSpeechSession.textarea = textarea;
     composerSpeechSession.button = btn;
     composerSpeechSession.snapshot = snapshot;
 
@@ -9452,7 +8932,8 @@ function startComposerSpeechRecognition(field, btn) {
                 }
             }
             const base = composerSpeechSession.snapshot;
-            writeComposerInputValue(ta, base + committed + interim);
+            ta.value = base + committed + interim;
+            ta.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
         } catch {
             /* ignore */
         }
@@ -9479,27 +8960,19 @@ function onComposerSpeechMicButtonClick(ev) {
         return;
     }
     const root = typeof btn.getRootNode === "function" ? btn.getRootNode() : null;
-    let mount = null;
-    if (root && root.nodeType === Node.DOCUMENT_FRAGMENT_NODE) {
-        mount = root;
-    } else if (root && root.nodeType === Node.ELEMENT_NODE) {
-        const host = /** @type {Element} */ (root).closest
-            ? /** @type {Element} */ (root).closest("df-messenger-user-input")
-            : null;
-        mount = getUserInputComposerMountRoot_(host);
-    }
-    if (!mount || typeof mount.querySelector !== "function") {
+    const sr = root && root.nodeType === Node.DOCUMENT_FRAGMENT_NODE ? root : null;
+    if (!sr) {
         return;
     }
-    const field = resolveComposerInputInsideUserInputShadow(mount);
-    if (!field) {
+    const textarea = sr.querySelector("textarea");
+    if (!textarea) {
         return;
     }
     if (composerSpeechSession.recognition && composerSpeechSession.button === btn) {
         stopComposerSpeechRecognition();
         return;
     }
-    startComposerSpeechRecognition(field, btn);
+    startComposerSpeechRecognition(textarea, btn);
 }
 
 function ensureComposerSpeechMicShadowStyle(shadowRoot) {
@@ -9536,7 +9009,7 @@ function removeComposerSpeechMicsInsideMessenger(dfMessenger) {
         const hosts = root.querySelectorAll("df-messenger-user-input");
         for (let hi = 0; hi < hosts.length; hi += 1) {
             const host = hosts[hi];
-            const sr = getUserInputComposerMountRoot_(host);
+            const sr = host && host.shadowRoot;
             if (!sr) {
                 continue;
             }
@@ -9558,25 +9031,7 @@ function removeComposerSpeechMicsInsideMessenger(dfMessenger) {
     }
 }
 
-/**
- * Shadow root or light-DOM host for `df-messenger-user-input` (ES bootstrap may omit shadow).
- * @param {Element | null | undefined} host
- * @returns {DocumentFragment | Element | null}
- */
-function getUserInputComposerMountRoot_(host) {
-    if (!host) {
-        return null;
-    }
-    if (host.shadowRoot && typeof host.shadowRoot.querySelector === "function") {
-        return host.shadowRoot;
-    }
-    if (typeof host.querySelector === "function") {
-        return host;
-    }
-    return null;
-}
-
-/** Mount or remove microphone next to Dialogflow composer (inside `df-messenger-user-input`). */
+/** Mount or remove microphone next to Dialogflow textarea (inside `df-messenger-user-input` shadow roots). */
 function applyComposerSpeechMicToMessenger(dfMessenger) {
     if (!dfMessenger) {
         return;
@@ -9599,7 +9054,7 @@ function applyComposerSpeechMicToMessenger(dfMessenger) {
         const hosts = root.querySelectorAll("df-messenger-user-input");
         for (let hi = 0; hi < hosts.length; hi += 1) {
             const host = hosts[hi];
-            const sr = getUserInputComposerMountRoot_(host);
+            const sr = host && host.shadowRoot;
             if (!sr || typeof sr.querySelector !== "function") {
                 continue;
             }
@@ -9899,7 +9354,6 @@ function applyDfMessengerThemeConfig(dfMessenger, config) {
             }
         }
     }
-    applyDialogflowEsCxLookCompatibility(dfMessenger, theme, common.header);
 
     // After `dfMessengerTheme`: footer/composer wrapper variables + shadow overrides.
     applyFooterInputBoxConfig(dfMessenger);
@@ -9925,406 +9379,6 @@ function applyDfMessengerThemeConfig(dfMessenger, config) {
     applyBotPersonaToMessenger(dfMessenger, bubble);
     applyTitlebarIconSizeConfig(dfMessenger, config);
     applyWidgetCustomCssFromConfig();
-}
-
-function cssThemeValue_(theme, key, fallback) {
-    const fromTheme = theme && typeof theme[key] === "string" ? theme[key].trim() : "";
-    if (fromTheme) {
-        return fromTheme;
-    }
-    return fallback;
-}
-
-function solidColorForLegacyMessenger_(value, fallback) {
-    const s = typeof value === "string" ? value.trim() : "";
-    const hex = s.match(/#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})\b/);
-    if (hex) {
-        return hex[0];
-    }
-    const rgb = s.match(/rgba?\([^)]+\)/i);
-    if (rgb) {
-        return rgb[0];
-    }
-    return fallback;
-}
-
-function applyDialogflowEsCxLookCompatibility(dfMessenger, theme, headerConfig) {
-    if (!dfMessenger || !dfMessenger.style) {
-        return;
-    }
-
-    const primary = solidColorForLegacyMessenger_(
-        cssThemeValue_(theme, "--df-messenger-primary-color", "#0284c7"),
-        "#0284c7"
-    );
-    const botBg = cssThemeValue_(theme, "--df-messenger-message-bot-background", "linear-gradient(168deg, #e8f6ff 0%, #bae6fd 100%)");
-    const userBg = cssThemeValue_(theme, "--df-messenger-message-user-background", "linear-gradient(145deg, #0284c7 0%, #0ea5e9 100%)");
-    const botText = cssThemeValue_(theme, "--df-messenger-message-bot-font-color", "#0c4a6e");
-    const userText = cssThemeValue_(theme, "--df-messenger-message-user-font-color", "#f0f9ff");
-    const titleText = cssThemeValue_(theme, "--df-messenger-titlebar-font-color", "#f0f9ff");
-    const chatBg = cssThemeValue_(theme, "--df-messenger-chat-background", "#ffffff");
-    const inputBg = cssThemeValue_(theme, "--df-messenger-input-box-background", "#ffffff");
-    const inputText = cssThemeValue_(theme, "--df-messenger-input-font-color", "#0f172a");
-    const header = headerConfig && typeof headerConfig === "object" ? headerConfig : {};
-    const headerTitleIcon = typeof header.chatTitleIconUrl === "string" && header.chatTitleIconUrl.trim()
-        ? header.chatTitleIconUrl.trim()
-        : (typeof header.chatIconUrl === "string" && header.chatIconUrl.trim() ? header.chatIconUrl.trim() : "");
-    const headerSubtitle = typeof header.subtitle === "string" ? header.subtitle.trim() : "";
-
-    // ES bootstrap's older widget reads these legacy variable names.
-    dfMessenger.style.setProperty("--df-messenger-bot-message", solidColorForLegacyMessenger_(botBg, "#e8f6ff"));
-    dfMessenger.style.setProperty("--df-messenger-user-message", solidColorForLegacyMessenger_(userBg, primary));
-    dfMessenger.style.setProperty("--df-messenger-chat-background-color", solidColorForLegacyMessenger_(chatBg, "#ffffff"));
-    dfMessenger.style.setProperty("--df-messenger-button-titlebar-color", primary);
-    dfMessenger.style.setProperty("--df-messenger-button-titlebar-font-color", titleText);
-    dfMessenger.style.setProperty("--df-messenger-input-box-color", solidColorForLegacyMessenger_(inputBg, "#ffffff"));
-    dfMessenger.style.setProperty("--df-messenger-input-font-color", inputText);
-    dfMessenger.style.setProperty("--df-messenger-chip-color", primary);
-    dfMessenger.style.setProperty("--df-messenger-chip-border-color", primary);
-    dfMessenger.style.setProperty("--df-messenger-focus-color", primary);
-    dfMessenger.style.setProperty("--df-messenger-focus-color-contrast", titleText);
-
-    const css = `
-:host {
-  font-family: var(--df-messenger-font-family, "Manrope", "Segoe UI", sans-serif) !important;
-}
-.df-messenger-wrapper {
-  position: fixed !important;
-  right: var(--dfchat-es-right, 10px) !important;
-  left: var(--dfchat-es-left, auto) !important;
-  top: var(--dfchat-es-top, auto) !important;
-  bottom: var(--dfchat-es-bottom, 20px) !important;
-  background: transparent !important;
-  z-index: 999 !important;
-}
-.chat-wrapper {
-  position: fixed !important;
-  width: var(--df-messenger-chat-window-width, 400px) !important;
-  max-width: calc(100vw - 32px) !important;
-  right: var(--dfchat-es-right, 10px) !important;
-  left: var(--dfchat-es-left, auto) !important;
-  top: auto !important;
-  bottom: calc(var(--dfchat-es-bottom, 20px) + var(--df-messenger-chat-window-offset, 0px) + 84px) !important;
-  background: var(--df-messenger-chat-background-color, #fafafa) !important;
-  border: var(--df-messenger-chat-border, none) !important;
-  border-radius: var(--df-messenger-chat-border-radius, 22px) !important;
-  box-shadow: var(--df-messenger-chat-box-shadow, 0 16px 42px rgba(15, 23, 42, 0.16)) !important;
-  overflow: hidden !important;
-  box-sizing: border-box !important;
-}
-${getEsNativePanelLayoutCss_()}
-.chat-wrapper.chat-min {
-  width: var(--df-messenger-chat-window-width, 400px) !important;
-}
-#widgetIcon {
-  width: var(--df-messenger-chat-bubble-size, 64px) !important;
-  height: var(--df-messenger-chat-bubble-size, 64px) !important;
-  right: 0 !important;
-  left: auto !important;
-  top: auto !important;
-  bottom: 0 !important;
-  background: var(--df-messenger-chat-bubble-background, linear-gradient(160deg, #0ea5e9 0%, #0284c7 48%, #0369a1 100%)) !important;
-  border-radius: var(--df-messenger-chat-bubble-border-radius, 50%) !important;
-  box-shadow: 0 12px 28px rgba(2, 132, 199, 0.28), 0 4px 12px rgba(15, 23, 42, 0.14) !important;
-  overflow: hidden !important;
-}
-#widgetIcon .df-chat-icon,
-#widgetIcon img {
-  width: var(--df-messenger-chat-bubble-icon-size, 64px) !important;
-  height: var(--df-messenger-chat-bubble-icon-size, 64px) !important;
-  object-fit: cover !important;
-  border-radius: var(--df-messenger-chat-icon-radius, 50%) !important;
-}
-df-messenger-titlebar {
-  display: flex !important;
-  flex-direction: row !important;
-  align-items: center !important;
-  flex-wrap: nowrap !important;
-  flex: 0 0 auto !important;
-  flex-shrink: 0 !important;
-  position: relative !important;
-  top: auto !important;
-  z-index: 2 !important;
-  min-height: 0 !important;
-  box-sizing: border-box !important;
-  padding: 0 !important;
-  background: var(--df-messenger-titlebar-background, linear-gradient(168deg, #38bdf8 0%, #0284c7 42%, #075985 100%)) !important;
-  color: var(--df-messenger-titlebar-font-color, #f0f9ff) !important;
-  border: var(--df-messenger-titlebar-border, none) !important;
-  border-bottom: var(--df-messenger-titlebar-border-bottom, 1px solid rgba(4, 58, 90, 0.55)) !important;
-}
-.title-wrapper {
-  display: flex !important;
-  flex-direction: row !important;
-  align-items: center !important;
-  flex-wrap: nowrap !important;
-  flex: 0 0 auto !important;
-  flex-shrink: 0 !important;
-  width: 100% !important;
-  min-height: 0 !important;
-  height: auto !important;
-  box-sizing: border-box !important;
-  padding: 8px 12px !important;
-  background: var(--df-messenger-titlebar-background, linear-gradient(168deg, #38bdf8 0%, #0284c7 42%, #075985 100%)) !important;
-  color: var(--df-messenger-titlebar-font-color, #f0f9ff) !important;
-  border-radius: var(--df-messenger-chat-border-radius, 22px) var(--df-messenger-chat-border-radius, 22px) 0 0 !important;
-  box-shadow: none !important;
-  gap: 12px !important;
-  justify-content: flex-start !important;
-}
-.dfchat-es-title-icon {
-  width: var(--df-messenger-titlebar-icon-width, 64px) !important;
-  height: var(--df-messenger-titlebar-icon-height, 64px) !important;
-  flex: 0 0 auto !important;
-  object-fit: contain !important;
-  border-radius: 50% !important;
-}
-.dfchat-es-title-copy {
-  display: flex !important;
-  min-width: 0 !important;
-  flex: 1 1 auto !important;
-  flex-direction: column !important;
-  justify-content: center !important;
-  gap: 4px !important;
-}
-.title-wrapper h2,
-#dfTitlebar {
-  color: var(--df-messenger-titlebar-font-color, #f0f9ff) !important;
-  font-family: var(--df-messenger-font-family, "Manrope", "Segoe UI", sans-serif) !important;
-  font-size: var(--df-messenger-titlebar-title-font-size, 18px) !important;
-  font-weight: 700 !important;
-  line-height: var(--df-messenger-titlebar-title-line-height, 1.2) !important;
-}
-.dfchat-es-title-subtitle {
-  color: var(--df-messenger-titlebar-subtitle-font-color, #bae6fd) !important;
-  font-family: var(--df-messenger-font-family, "Manrope", "Segoe UI", sans-serif) !important;
-  font-size: var(--df-messenger-titlebar-subtitle-font-size, 14px) !important;
-  line-height: var(--df-messenger-titlebar-subtitle-line-height, 1.35) !important;
-  font-weight: 600 !important;
-  white-space: nowrap !important;
-  overflow: hidden !important;
-  text-overflow: ellipsis !important;
-}
-#minimizeIconButton {
-  visibility: visible !important;
-  margin-left: auto !important;
-  flex: 0 0 auto !important;
-}
-#minimizeIcon {
-  fill: var(--df-messenger-titlebar-font-color, #f0f9ff) !important;
-}
-df-message-list,
-.chat-min df-message-list,
-.message-list-wrapper,
-#messageList {
-  background: var(--df-messenger-chat-background, #ffffff) !important;
-}
-#messageList .message,
-#message-list .message,
-#messageList df-message {
-  font-family: var(--df-messenger-font-family, "Manrope", "Segoe UI", sans-serif) !important;
-  font-size: var(--df-messenger-message-font-size, 14px) !important;
-  line-height: 1.45 !important;
-  border-radius: 16px !important;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04) !important;
-}
-#messageList .message.bot-message,
-#message-list .message.bot-message {
-  background: ${botBg} !important;
-  color: ${botText} !important;
-  border-bottom-left-radius: 6px !important;
-}
-#messageList .message.user-message,
-#message-list .message.user-message {
-  background: ${userBg} !important;
-  color: ${userText} !important;
-  border-bottom-right-radius: 6px !important;
-  max-width: min(88%, 340px) !important;
-  width: fit-content !important;
-  margin-left: auto !important;
-  margin-right: 10px !important;
-  box-sizing: border-box !important;
-  word-break: break-word !important;
-  overflow-wrap: anywhere !important;
-}
-#messageList df-message[type="user"],
-#messageList df-message[type="human"],
-#message-list df-message[type="user"] {
-  align-self: flex-end !important;
-  max-width: min(90%, 348px) !important;
-  width: auto !important;
-  margin-left: auto !important;
-  margin-right: 8px !important;
-  box-sizing: border-box !important;
-}
-df-messenger-user-input {
-  flex: 0 0 auto !important;
-  flex-shrink: 0 !important;
-  position: relative !important;
-  z-index: 5 !important;
-  background: var(--df-messenger-input-background, #ffffff) !important;
-  border-top: var(--df-messenger-input-border-top, 1px solid rgba(14, 165, 233, 0.28)) !important;
-}
-.input-box-wrapper {
-  min-height: 64px !important;
-  height: 64px !important;
-  background: var(--df-messenger-input-box-background, #ffffff) !important;
-  border-top: var(--df-messenger-input-border-top, 1px solid rgba(14, 165, 233, 0.28)) !important;
-  font-family: var(--df-messenger-font-family, "Manrope", "Segoe UI", sans-serif) !important;
-}
-.input-container input {
-  color: var(--df-messenger-input-font-color, #0f172a) !important;
-  font-family: var(--df-messenger-font-family, "Manrope", "Segoe UI", sans-serif) !important;
-  font-size: var(--df-messenger-input-font-size, 16px) !important;
-  font-weight: var(--df-messenger-input-font-weight, 600) !important;
-}
-#sendIcon {
-  fill: var(--df-messenger-primary-color, #0284c7) !important;
-}
-.dfchat-inline-gallery {
-  display: block !important;
-  visibility: visible !important;
-  opacity: 1 !important;
-  max-width: 100% !important;
-  box-sizing: border-box !important;
-}
-.dfchat-inline-gallery,
-.dfchat-inline-gallery__track {
-  max-width: 100% !important;
-  box-sizing: border-box !important;
-}
-.dfchat-inline-gallery {
-  touch-action: pan-y !important;
-}
-.dfchat-inline-gallery__track {
-  overflow-x: auto !important;
-  overflow-y: hidden !important;
-  -webkit-overflow-scrolling: touch !important;
-  touch-action: pan-x pan-y !important;
-}
-textarea,
-input {
-  font-family: var(--df-messenger-font-family, "Manrope", "Segoe UI", sans-serif) !important;
-  color: var(--df-messenger-input-font-color, #0f172a) !important;
-}
-@media screen and (max-width: 500px) {
-  .df-messenger-wrapper {
-    right: 12px !important;
-    left: auto !important;
-    bottom: 10px !important;
-  }
-  .chat-wrapper {
-    position: fixed !important;
-    right: 0 !important;
-    left: 0 !important;
-    bottom: 0 !important;
-    top: auto !important;
-    width: 100% !important;
-    max-width: 100% !important;
-    min-height: calc(100dvh - 12px) !important;
-    max-height: calc(100dvh - 12px) !important;
-    border-radius: 20px 20px 0 0 !important;
-  }
-  .chat-wrapper.chat-open {
-    height: calc(100dvh - 12px) !important;
-  }
-}`;
-
-    const applyStyle = () => {
-        const roots = collectSearchRoots(dfMessenger);
-        for (const root of roots) {
-            if (!root || !(root instanceof ShadowRoot) || typeof root.appendChild !== "function") {
-                continue;
-            }
-            let style = root.getElementById(ES_CX_LOOK_STYLE_ID);
-            if (!style) {
-                style = document.createElement("style");
-                style.id = ES_CX_LOOK_STYLE_ID;
-                root.appendChild(style);
-            }
-            style.textContent = css;
-            try {
-                const title = root.querySelector && root.querySelector(".title-wrapper");
-                if (title) {
-                    syncDialogflowEsTitlebarChrome_(title, headerTitleIcon, headerSubtitle);
-                }
-            } catch {
-                /* ignore */
-            }
-        }
-    };
-
-    applyStyle();
-    applyEsChatPanelLayoutToMessenger_(dfMessenger);
-    scheduleEsTitlebarAndBubbleIconSync_(dfMessenger);
-    [80, 240, 700, 1500, 3000].forEach((ms) => {
-        window.setTimeout(() => {
-            if (activeDfMessenger === dfMessenger) {
-                applyStyle();
-                applyEsChatPanelLayoutToMessenger_(dfMessenger);
-                scheduleEsTitlebarAndBubbleIconSync_(dfMessenger);
-            }
-        }, ms);
-    });
-}
-
-function syncDialogflowEsTitlebarChrome_(titleWrapper, iconUrl, subtitleText) {
-    if (!titleWrapper || !titleWrapper.querySelector) {
-        return;
-    }
-    const h2 = titleWrapper.querySelector("#dfTitlebar, h2");
-    if (!h2) {
-        return;
-    }
-
-    let copy = titleWrapper.querySelector(".dfchat-es-title-copy");
-    if (!copy) {
-        copy = document.createElement("div");
-        copy.className = "dfchat-es-title-copy";
-        titleWrapper.insertBefore(copy, h2);
-        copy.appendChild(h2);
-    } else if (h2.parentNode !== copy) {
-        copy.insertBefore(h2, copy.firstChild || null);
-    }
-
-    let icon = titleWrapper.querySelector(".dfchat-es-title-icon");
-    if (iconUrl) {
-        if (!icon) {
-            icon = document.createElement("img");
-            icon.className = "dfchat-es-title-icon";
-            icon.alt = "";
-            titleWrapper.insertBefore(icon, copy);
-        }
-        if (icon.getAttribute("src") !== iconUrl) {
-            icon.setAttribute("src", iconUrl);
-        }
-    } else if (icon && icon.parentNode) {
-        icon.parentNode.removeChild(icon);
-    }
-
-    let sub = copy.querySelector(".dfchat-es-title-subtitle");
-    if (subtitleText) {
-        if (!sub) {
-            sub = document.createElement("div");
-            sub.className = "dfchat-es-title-subtitle";
-            copy.appendChild(sub);
-        }
-        sub.textContent = subtitleText;
-    } else if (sub && sub.parentNode) {
-        sub.parentNode.removeChild(sub);
-    }
-
-    const btn = titleWrapper.querySelector("#minimizeIconButton");
-    if (btn && !btn.dataset.dfchatEsClosePatched) {
-        btn.dataset.dfchatEsClosePatched = "1";
-        btn.setAttribute("aria-label", "Close chat");
-        btn.innerHTML = [
-            '<svg id="minimizeIcon" width="24" height="24" viewBox="0 0 24 24" ',
-            'xmlns="http://www.w3.org/2000/svg" aria-hidden="true">',
-            '<path d="M18.3 5.71 12 12l6.3 6.29-1.41 1.41L10.59 13.41 4.29 19.71 2.88 18.3 9.17 12 2.88 5.71 4.29 4.29 10.59 10.59 16.89 4.29z"/>',
-            '</svg>'
-        ].join("");
-    }
 }
 
 function applyBotPersonaToMessenger(dfMessenger, bubble) {
@@ -11044,11 +10098,8 @@ function initializeMessengerReadyState(dfMessenger, bubbleNode) {
         isMessengerLoaded = true;
         syncDfMessengerSessionParametersFromClientContext(dfMessenger);
         reapplyChatWindowOffsetFromConfig(dfMessenger);
-        resolveAndCacheEsBubbleHost_(dfMessenger);
-        scheduleEsTitlebarAndBubbleIconSync_(dfMessenger);
         scheduleChatMessageListScrollbarReapply(dfMessenger);
         schedulePersonaShadowFix(dfMessenger);
-        applyEsChatPanelLayoutToMessenger_(dfMessenger);
 
         if (shouldAutoOpenChat) {
             openChatWindow(dfMessenger, bubbleNode);
@@ -11540,94 +10591,22 @@ const VIDEO_LIGHTBOX_IFRAME_ID = "dfchat-video-lightbox-iframe";
 const VIDEO_LIGHTBOX_CLOSE_ID = "dfchat-video-lightbox-close";
 
 /**
- * Always mount lightboxes in the chat frame (`document`). Parent-page mounting + scroll lock
- * disturbed host headers/footers and ES messenger chrome after dismiss.
+ * When the widget runs inside `company-loader.js`'s docked iframe, `96vw`/`92vh` are relative to that
+ * small frame (~440×720). Mount lightboxes on the parent page so images fill the browser viewport.
  * @returns {Document}
  */
 function getDfchatLightboxDocument() {
-    return document;
-}
-
-/** Nested open/close (duplicate click handlers) must not strand scroll lock. */
-let dfchatLightboxScrollLockDepth_ = 0;
-/** @type {{ html: string, body: string } | null} */
-let dfchatLightboxScrollLockSnapshot_ = null;
-
-/**
- * Remove legacy overlays created when lightboxes mounted on `window.parent`.
- * @returns {void}
- */
-function removeLegacyParentPageLightboxNodes_() {
     try {
-        if (!window.parent || window.parent === window || !window.parent.document) {
-            return;
-        }
-        const pdoc = window.parent.document;
-        for (const id of [IMAGE_LIGHTBOX_ID, VIDEO_LIGHTBOX_ID]) {
-            const el = pdoc.getElementById(id);
-            if (el) {
-                el.remove();
+        if (typeof window !== "undefined" && window.parent && window.parent !== window) {
+            const parentDoc = window.parent.document;
+            if (parentDoc && parentDoc.body) {
+                return parentDoc;
             }
-        }
-        pdoc.documentElement.style.overflow = "";
-        if (pdoc.body) {
-            pdoc.body.style.overflow = "";
         }
     } catch {
-        /* cross-origin parent */
+        /* cross-origin parent — keep lightbox in the iframe */
     }
-}
-
-/**
- * @returns {boolean}
- */
-function isDfchatImageLightboxOpen_() {
-    const overlay = document.getElementById(IMAGE_LIGHTBOX_ID);
-    return !!(overlay && overlay.style.display === "flex");
-}
-
-/**
- * @returns {boolean}
- */
-function isDfchatVideoLightboxOpen_() {
-    const overlay = document.getElementById(VIDEO_LIGHTBOX_ID);
-    return !!(overlay && overlay.style.display === "flex");
-}
-
-/**
- * Re-apply ES panel chrome after lightbox dismiss (scroll lock used to leave header/footer misaligned).
- * @returns {void}
- */
-function restoreChatChromeAfterLightboxClose_() {
-    const run = () => {
-        try {
-            scheduleSyncChatActionBarPosition();
-            const ms = activeDfMessenger || document.querySelector("df-messenger");
-            if (ms) {
-                const common =
-                    COMPANY_UI_CONFIG && typeof COMPANY_UI_CONFIG === "object" && COMPANY_UI_CONFIG.common
-                        ? COMPANY_UI_CONFIG.common
-                        : null;
-                const theme =
-                    common && common.dfMessengerTheme && typeof common.dfMessengerTheme === "object"
-                        ? common.dfMessengerTheme
-                        : null;
-                applyDialogflowEsCxLookCompatibility(ms, theme, common && common.header);
-                applyBotPersonaToMessenger(ms, activeBubbleNode);
-                scheduleChatMessageListScrollbarReapply(ms);
-                applyEsChatPanelLayoutToMessenger_(ms);
-                scheduleFooterInputBoxShadowOverrides(ms);
-                schedulePersonaShadowFix(ms);
-            }
-        } catch {
-            /* ignore */
-        }
-    };
-    if (typeof requestAnimationFrame === "function") {
-        requestAnimationFrame(run);
-    } else {
-        window.setTimeout(run, 0);
-    }
+    return document;
 }
 
 /** @returns {HTMLElement} */
@@ -11642,45 +10621,24 @@ function getDfchatLightboxBodyEl() {
 
 /** @param {boolean} locked */
 function setDfchatLightboxPageScrollLocked(locked) {
-    const html = document.documentElement;
-    const body = document.body;
-    if (!html || !body) {
-        return;
-    }
-    if (locked) {
-        dfchatLightboxScrollLockDepth_ += 1;
-        if (dfchatLightboxScrollLockDepth_ > 1) {
-            return;
+    /** @type {Document[]} */
+    const docs = [document];
+    try {
+        if (window.parent && window.parent !== window && window.parent.document) {
+            docs.push(window.parent.document);
         }
-        dfchatLightboxScrollLockSnapshot_ = {
-            html: html.style.overflow || "",
-            body: body.style.overflow || ""
-        };
-        html.classList.add("dfchat-lightbox-scroll-lock");
-        body.classList.add("dfchat-lightbox-scroll-lock");
-        html.style.overflow = "hidden";
-        body.style.overflow = "hidden";
-        return;
+    } catch {
+        /* ignore */
     }
-    if (dfchatLightboxScrollLockDepth_ <= 0) {
-        return;
+    for (let di = 0; di < docs.length; di += 1) {
+        const doc = docs[di];
+        try {
+            doc.documentElement.style.overflow = locked ? "hidden" : "";
+            doc.body.style.overflow = locked ? "hidden" : "";
+        } catch {
+            /* ignore */
+        }
     }
-    dfchatLightboxScrollLockDepth_ -= 1;
-    if (dfchatLightboxScrollLockDepth_ > 0) {
-        return;
-    }
-    const snap = dfchatLightboxScrollLockSnapshot_;
-    dfchatLightboxScrollLockSnapshot_ = null;
-    html.classList.remove("dfchat-lightbox-scroll-lock");
-    body.classList.remove("dfchat-lightbox-scroll-lock");
-    html.style.overflow = snap ? snap.html : "";
-    body.style.overflow = snap ? snap.body : "";
-}
-
-/** @returns {void} */
-function forceReleaseDfchatLightboxScrollLock_() {
-    dfchatLightboxScrollLockDepth_ = 0;
-    setDfchatLightboxPageScrollLocked(false);
 }
 
 /** Block stray lightbox/chrome after dismiss; works on desktop + mobile. */
@@ -11698,11 +10656,6 @@ function ensureMobileLightboxParkStyle() {
     const tag = doc.createElement("style");
     tag.id = "dfchat-mobile-lb-park-style";
     tag.textContent = `
-html.dfchat-lightbox-scroll-lock,
-html.dfchat-lightbox-scroll-lock body {
-  overflow: hidden !important;
-  overscroll-behavior: none !important;
-}
 html.dfchat-mobile-lb-off #${IMAGE_LIGHTBOX_ID},
 html.dfchat-mobile-lb-off #${VIDEO_LIGHTBOX_ID} {
   display: none !important;
@@ -11726,7 +10679,6 @@ function suppressDfchatLightboxAfterChatDismiss() {
     } catch {
         /* ignore */
     }
-    forceReleaseDfchatLightboxScrollLock_();
     dfchatLightboxSuppressUntilMs = Date.now() + DFCHAT_LIGHTBOX_SUPPRESS_AFTER_CLOSE_MS;
 }
 
@@ -11924,9 +10876,6 @@ function bindLightboxToMessengerImages(dfMessenger) {
             img.dataset.dfchatLightboxBound = "1";
             img.style.cursor = "zoom-in";
             img.addEventListener("click", (e) => {
-                if (isDfchatImageLightboxOpen_() || isDfchatVideoLightboxOpen_()) {
-                    return;
-                }
                 const ep = typeof e.composedPath === "function" ? e.composedPath() : [];
                 try {
                     if (didUserCloseChat(e) || isClickInMessengerChatTitlebar(ep)) {
@@ -11941,7 +10890,6 @@ function bindLightboxToMessengerImages(dfMessenger) {
                 }
                 e.preventDefault?.();
                 e.stopPropagation?.();
-                e.stopImmediatePropagation?.();
                 // Safety: never open for launcher FAB / chrome even if bound somehow.
                 if (isInsideMessengerLauncherBubbleGraphic(img)
                     || isInShadowHostChain(img, "df-messenger-header")
@@ -12014,7 +10962,6 @@ function ensureLightboxImageObserver(dfMessenger) {
 }
 
 function ensureImageLightboxMounted() {
-    removeLegacyParentPageLightboxNodes_();
     const lbDoc = getDfchatLightboxDocument();
     const existing = lbDoc.getElementById(IMAGE_LIGHTBOX_ID);
     if (existing) {
@@ -12267,12 +11214,10 @@ function closeImageLightbox() {
     const videoLb = lbDoc.getElementById(VIDEO_LIGHTBOX_ID);
     if (!videoLb || videoLb.style.display !== "flex") {
         setDfchatLightboxPageScrollLocked(false);
-        restoreChatChromeAfterLightboxClose_();
     }
 }
 
 function ensureVideoLightboxMounted() {
-    removeLegacyParentPageLightboxNodes_();
     const lbDoc = getDfchatLightboxDocument();
     if (lbDoc.getElementById(VIDEO_LIGHTBOX_ID)) {
         return;
@@ -12514,7 +11459,6 @@ function closeVideoLightbox() {
         const imageLb = lbDoc.getElementById(IMAGE_LIGHTBOX_ID);
         if (!imageLb || imageLb.style.display !== "flex") {
             setDfchatLightboxPageScrollLocked(false);
-            restoreChatChromeAfterLightboxClose_();
         }
     } catch {
         /* ignore */
@@ -12526,10 +11470,6 @@ const DFCHAT_INLINE_VIDEO_CLASS = "dfchat-inline-video";
 const DFCHAT_INLINE_CARD_CAROUSEL_CLASS = "dfchat-inline-card-carousel";
 const DFCHAT_INLINE_SELECT_CLASS = "dfchat-inline-select";
 const DFCHAT_INLINE_BOOKING_CAL_CLASS = "dfchat-inline-booking-calendar";
-/** ES `#messageList` bot persona row (DOM injection; bootstrap does not always surface `renderCustomText` markdown). */
-const DFCHAT_ES_BOT_PERSONA_CLASS = "dfchat-es-bot-persona";
-/** ES `#messageList` user persona caption (right-aligned; not the bot-markdown lane). */
-const DFCHAT_ES_USER_PERSONA_CLASS = "dfchat-es-user-persona";
 
 /** @param {unknown} value @param {number} fallback @param {number} min @param {number} max */
 function sanitizeInlineCarouselPx_(value, fallback, min, max) {
@@ -12628,97 +11568,6 @@ function removeAllDfchatInlineGalleries(dfMessenger) {
 }
 
 /**
- * ES bootstrap uses `#messageList`; legacy CX used `#message-list`.
- * @param {ParentNode & { querySelector?: (sel: string) => Element | null, getElementById?: (id: string) => Element | null }} root
- * @returns {HTMLElement | null}
- */
-function queryMessengerMessageListInRoot(root) {
-    if (!root || typeof root.querySelector !== "function") {
-        return null;
-    }
-    /** @type {HTMLElement | null} */
-    let el =
-        /** @type {HTMLElement | null} */ (root.querySelector("#messageList"))
-        || /** @type {HTMLElement | null} */ (root.querySelector("#message-list"))
-        || /** @type {HTMLElement | null} */ (root.querySelector('[data-testid="message-list"]'))
-        || null;
-    if (!el) {
-        try {
-            if (typeof root.getElementById === "function") {
-                el =
-                    /** @type {HTMLElement | null} */ (root.getElementById("messageList"))
-                    || /** @type {HTMLElement | null} */ (root.getElementById("message-list"));
-            }
-        } catch {
-            /* ignore */
-        }
-    }
-    if (!el) {
-        const host =
-            root.querySelector("df-message-list")
-            || root.querySelector(".message-list-wrapper");
-        if (host && typeof host.querySelector === "function") {
-            el =
-                /** @type {HTMLElement | null} */ (host.querySelector("#messageList"))
-                || /** @type {HTMLElement | null} */ (host.querySelector("#message-list"))
-                || /** @type {HTMLElement | null} */ (host.querySelector('[data-testid="message-list"]'));
-        }
-    }
-    if (!el) {
-        const dfList = root.querySelector("df-message-list");
-        if (dfList) {
-            if (dfList.shadowRoot) {
-                el = queryMessengerMessageListInRoot(dfList.shadowRoot);
-            }
-            if (!el && typeof dfList.querySelector === "function") {
-                el =
-                    /** @type {HTMLElement | null} */ (dfList.querySelector("#messageList"))
-                    || /** @type {HTMLElement | null} */ (dfList.querySelector("#message-list"));
-            }
-        }
-    }
-    return el;
-}
-
-/**
- * Scroll the transcript pane after injecting inline rich media (ES scrolls `.message-list-wrapper`).
- * @param {HTMLElement | null | undefined} messageList
- * @returns {void}
- */
-function scrollMessengerMessageListToBottom(messageList) {
-    if (!messageList) {
-        return;
-    }
-    try {
-        /** @type {HTMLElement | null} */
-        let scroller = null;
-        if (messageList.classList && messageList.classList.contains("message-list-wrapper")) {
-            scroller = messageList;
-        } else if (typeof messageList.closest === "function") {
-            scroller =
-                /** @type {HTMLElement | null} */ (messageList.closest(".message-list-wrapper"))
-                || /** @type {HTMLElement | null} */ (messageList.closest("df-message-list"));
-        }
-        if (!scroller && messageList.id !== "messageList" && messageList.id !== "message-list") {
-            const inner =
-                messageList.querySelector && messageList.querySelector("#messageList, #message-list");
-            if (inner && typeof inner.closest === "function") {
-                scroller =
-                    /** @type {HTMLElement | null} */ (inner.closest(".message-list-wrapper"))
-                    || /** @type {HTMLElement | null} */ (inner.closest("df-message-list"));
-            }
-        }
-        if (!scroller) {
-            scroller = messageList;
-        }
-        scroller.scrollTop = scroller.scrollHeight;
-        scheduleEsChatPanelLayoutRepair_(activeDfMessenger || null);
-    } catch {
-        /* ignore */
-    }
-}
-
-/**
  * Locate the Messenger scroll pane so we can append a horizontally scrollable carousel.
  * @param {HTMLElement | null | undefined} dfMessenger
  * @returns {HTMLElement | null}
@@ -12733,7 +11582,23 @@ function findMessengerMessageListRoot(dfMessenger) {
     }
     const roots = collectSearchRoots(ms);
     for (let ri = 0; ri < roots.length; ri += 1) {
-        const el = queryMessengerMessageListInRoot(roots[ri]);
+        const root = roots[ri];
+        if (!root || typeof root.querySelector !== "function") {
+            continue;
+        }
+        /** @type {HTMLElement | null} */
+        let el =
+            root.querySelector("#message-list")
+            || root.querySelector('[data-testid="message-list"]')
+            || root.querySelector("df-message-list")
+            ;
+        try {
+            if (!el && root.getElementById) {
+                el = /** @type {HTMLElement | null} */ (root.getElementById("message-list"));
+            }
+        } catch {
+            /* ignore */
+        }
         if (el) {
             return el;
         }
@@ -12751,9 +11616,7 @@ function isDfchatInlineSyntheticRow(el) {
         && el.classList
         && (el.classList.contains(DFCHAT_INLINE_GALLERY_CLASS)
             || el.classList.contains(DFCHAT_INLINE_VIDEO_CLASS)
-            || el.classList.contains(DFCHAT_INLINE_BOOKING_CAL_CLASS)
-            || el.classList.contains(DFCHAT_ES_BOT_PERSONA_CLASS)
-            || el.classList.contains(DFCHAT_ES_USER_PERSONA_CLASS)));
+            || el.classList.contains(DFCHAT_INLINE_BOOKING_CAL_CLASS)));
 }
 
 /**
@@ -12764,22 +11627,8 @@ function isDfchatInlineSyntheticRow(el) {
  * @param {HTMLElement} messageList
  * @returns {Element | null}
  */
-function isDfchatMessengerTranscriptRow(el) {
-    if (!el || !(el instanceof Element) || isDfchatInlineSyntheticRow(el)) {
-        return false;
-    }
-    const tag = el.tagName ? el.tagName.toUpperCase() : "";
-    if (tag === "DF-MESSAGE") {
-        return true;
-    }
-    if (el.classList && el.classList.contains("message")) {
-        return true;
-    }
-    return !!(el.querySelector && el.querySelector("df-message, .message"));
-}
-
 function resolveGalleryInsertBeforeByCxOrder(messageList) {
-    const realRows = Array.from(messageList.children).filter((el) => isDfchatMessengerTranscriptRow(el));
+    const realRows = Array.from(messageList.children).filter((el) => !isDfchatInlineSyntheticRow(el));
     if (realRows.length < 2) {
         return null;
     }
@@ -13025,7 +11874,11 @@ function scheduleInjectInlineGalleryCarousel(dfMessenger, urlsOrItems, messages,
         dfchatLastInlineGalleryWrapEl = wrap;
 
         injected = true;
-        scrollMessengerMessageListToBottom(ml);
+        try {
+            ml.scrollTop = ml.scrollHeight;
+        } catch {
+            /* ignore */
+        }
         const host = msResolved;
         try {
             if (host && typeof requestAnimationFrame === "function") {
@@ -13042,7 +11895,7 @@ function scheduleInjectInlineGalleryCarousel(dfMessenger, urlsOrItems, messages,
         }
     }
 
-    const delaysMs = [72, 180, 400, 800, 1600, 2800, 4500];
+    const delaysMs = [72, 180, 400, 800, 1600];
 
     delaysMs.forEach((delayMs) => {
         const tid = window.setTimeout(() => {
@@ -13053,12 +11906,6 @@ function scheduleInjectInlineGalleryCarousel(dfMessenger, urlsOrItems, messages,
         }
         pendingTimers.push(tid);
     });
-
-    window.setTimeout(() => {
-        if (!injected) {
-            tryAppend();
-        }
-    }, 5200);
 
     window.setTimeout(() => {
         if (!injected) {
@@ -13484,14 +12331,6 @@ function handleWebNativeChipValueClick_(event) {
     if (!clickable) {
         return;
     }
-    if (
-        typeof clickable.closest === "function"
-        && clickable.closest(
-            `.${DFCHAT_INLINE_GALLERY_CLASS}, .${DFCHAT_INLINE_VIDEO_CLASS}, .${DFCHAT_INLINE_CARD_CAROUSEL_CLASS}`
-        )
-    ) {
-        return;
-    }
     const key = normalizeWebNativeChipLabelKey_(clickable.textContent || "");
     const mapped = dfchatWebNativeChipValueMap_.get(key);
     if (!mapped || Date.now() - mapped.atMs > 10 * 60 * 1000) {
@@ -13891,7 +12730,7 @@ function pruneStaleInlineVideoForCxResponse(messages, event) {
 /**
  * `{ "action": "open_video", "url": "https://www.youtube.com/watch?v=…" }` → inline iframe in chat (YouTube only).
  *
- * Same merge envelope as gallery: use `mergeDialogflowResponseEnvelopeForGallery(event)`.
+ * Same merge envelope as gallery: use `mergeCxResponseEnvelopeForGallery(event)`.
  *
  * @param {unknown[]} messages
  * @param {Event | null | undefined} [event]
@@ -14169,13 +13008,6 @@ let dfchatInlineVideoInjectSeq = 0;
 /** Invalidate pending inline-gallery append attempts between turns. */
 let dfchatInlineGalleryInjectSeq = 0;
 
-/**
- * Last `open_gallery` parsed from Dialogflow `detectIntent` HTTP JSON (ES Messenger may not echo
- * custom payloads on `df-response-received`).
- * @type {{ urls: string[], items: OpenGalleryItem[], options: Array<{label: string, value: string}>, messageText: string } | null}
- */
-let dfchatPendingDetectIntentGallery_ = null;
-
 /** Invalidate pending inline-card-carousel append attempts between turns. */
 let dfchatInlineCardCarouselInjectSeq = 0;
 
@@ -14198,7 +13030,6 @@ let dfchatInlineSelectInjectSeq = 0;
 let dfchatInlineSelectSignaturesSeen = new Set();
 
 function clearOpenGalleryUrlDedupeState() {
-    dfchatPendingDetectIntentGallery_ = null;
     dfchatOpenGalleryUrlSetSignaturesSeen = new Set();
     dfchatLastInlineGalleryWrapEl = null;
     dfchatLastInlineVideoWrapEl = null;
@@ -14378,161 +13209,9 @@ function shouldScheduleInlineGalleryCarouselForNormalizedUrls(normalizedHttpsUrl
 }
 
 /**
- * @param {Record<string, unknown> | null | undefined} pl
- * @returns {string}
- */
-function openGalleryPayloadActionNorm_(pl) {
-    if (!pl || typeof pl !== "object") {
-        return "";
-    }
-    return unwrapPayloadStringField(pl.action).trim().toLowerCase();
-}
-
-/**
- * @param {Record<string, unknown>} pl
- * @returns {{ urls: string[], items: OpenGalleryItem[], options: Array<{label: string, value: string}>, messageText: string } | null}
- */
-function normalizedOpenGalleryFromPayloadBody_(pl) {
-    const items = normalizeOpenGalleryItemsFromPayload(pl);
-    const allowed = items.map((it) => it.url);
-    if (allowed.length === 0) {
-        return null;
-    }
-    const rawOptions =
-        Object.prototype.hasOwnProperty.call(pl, "options") ? pl.options
-            : Object.prototype.hasOwnProperty.call(pl, "option") ? pl.option
-                : Object.prototype.hasOwnProperty.call(pl, "chips") ? pl.chips
-                    : null;
-    const options = normalizeOpenVideoOptions(rawOptions);
-    const rawMessage =
-        Object.prototype.hasOwnProperty.call(pl, "message") ? pl.message
-            : Object.prototype.hasOwnProperty.call(pl, "text") ? pl.text
-                : Object.prototype.hasOwnProperty.call(pl, "prompt") ? pl.prompt
-                    : Object.prototype.hasOwnProperty.call(pl, "subtitle") ? pl.subtitle
-                        : Object.prototype.hasOwnProperty.call(pl, "description") ? pl.description
-                            : Object.prototype.hasOwnProperty.call(pl, "caption") ? pl.caption
-                                : null;
-    const messageText = normalizeOpenVideoMessage(rawMessage);
-    return { urls: allowed, items, options, messageText };
-}
-
-/**
  * First `open_gallery` custom payload from merged CX fulfillment messages (`extractPayload`).
  * Dedupe/intent gates are applied elsewhere.
  *
- * @param {unknown} cand
- * @returns {Record<string, unknown> | null}
- */
-function extractOpenGalleryPayloadFromMessage(cand) {
-    if (!cand || typeof cand !== "object") {
-        return null;
-    }
-    /** @type {Record<string, unknown>[]} */
-    const bodies = [];
-    collectTranscriptPayloadBodiesFromMessage_(cand, bodies, new WeakSet());
-    for (let bi = 0; bi < bodies.length; bi += 1) {
-        const body = unwrapTranscriptPayloadObject_(bodies[bi]) || bodies[bi];
-        if (openGalleryPayloadActionNorm_(body) === "open_gallery"
-            && normalizeOpenGalleryItemsFromPayload(body).length > 0) {
-            return body;
-        }
-    }
-    /** @type {Record<string, unknown> | null} */
-    let pl = null;
-    try {
-        pl = extractPayload(cand);
-    } catch {
-        pl = null;
-    }
-    if (pl && openGalleryPayloadActionNorm_(pl) === "open_gallery") {
-        return pl;
-    }
-    /** @type {Record<string, unknown>} */
-    const m = /** @type {Record<string, unknown>} */ (cand);
-    const unwrapped = unwrapTranscriptPayloadObject_(m.payload ?? m.customPayload);
-    if (unwrapped && openGalleryPayloadActionNorm_(unwrapped) === "open_gallery") {
-        return unwrapped;
-    }
-    if (openGalleryPayloadActionNorm_(m) === "open_gallery") {
-        return m;
-    }
-    return null;
-}
-
-/**
- * ES may nest the webhook JSON under `detail` without a standard `payload` envelope.
- *
- * @param {unknown} node
- * @param {WeakSet<object>} seen
- * @param {number} depth
- * @returns {Record<string, unknown> | null}
- */
-function findOpenGalleryPayloadDeep_(node, seen, depth) {
-    if (!node || depth > 18) {
-        return null;
-    }
-    if (typeof node !== "object") {
-        return null;
-    }
-    if (Array.isArray(node)) {
-        for (let i = 0; i < node.length; i += 1) {
-            const hit = findOpenGalleryPayloadDeep_(node[i], seen, depth + 1);
-            if (hit) {
-                return hit;
-            }
-        }
-        return null;
-    }
-    if (seen.has(node)) {
-        return null;
-    }
-    seen.add(node);
-    /** @type {Record<string, unknown>} */
-    const rec = /** @type {Record<string, unknown>} */ (node);
-    if (openGalleryPayloadActionNorm_(rec) === "open_gallery") {
-        const body = unwrapTranscriptPayloadObject_(rec) || rec;
-        if (normalizeOpenGalleryItemsFromPayload(body).length > 0) {
-            return body;
-        }
-    }
-    /** @type {string[]} */
-    const keys = [
-        "payload",
-        "customPayload",
-        "fulfillment_response",
-        "fulfillmentResponse",
-        "messages",
-        "fulfillmentMessages",
-        "responseMessages",
-        "queryResult",
-        "data",
-        "raw",
-        "response",
-        "fields",
-        "structValue"
-    ];
-    for (let ki = 0; ki < keys.length; ki += 1) {
-        const k = keys[ki];
-        if (!Object.prototype.hasOwnProperty.call(rec, k)) {
-            continue;
-        }
-        const hit = findOpenGalleryPayloadDeep_(rec[k], seen, depth + 1);
-        if (hit) {
-            return hit;
-        }
-    }
-    if (depth < 5) {
-        for (const v of Object.values(rec)) {
-            const hit = findOpenGalleryPayloadDeep_(v, seen, depth + 1);
-            if (hit) {
-                return hit;
-            }
-        }
-    }
-    return null;
-}
-
-/**
  * @param {unknown[]} messages
  * @returns {{ urls: string[], items: OpenGalleryItem[], options: Array<{label: string, value: string}>, messageText: string } | null}
  */
@@ -14542,159 +13221,67 @@ function extractFirstOpenGalleryNormalizedUrlsFromCxMessages(messages) {
     }
     /** Fast path — same protobuf → JSON flattening as Contact form / language (extractPayload). */
     for (let gx = 0; gx < messages.length; gx += 1) {
-        const pl = extractOpenGalleryPayloadFromMessage(messages[gx]);
-        if (!pl || openGalleryPayloadActionNorm_(pl) !== "open_gallery") {
+        const cand = messages[gx];
+        if (!messageHasFulfillmentPayload(cand)) {
             continue;
         }
-        const normalized = normalizedOpenGalleryFromPayloadBody_(pl);
-        if (normalized) {
-            return normalized;
-        }
-    }
-    return null;
-}
-
-/**
- * @param {Event | null | undefined} event
- * @returns {{ urls: string[], items: OpenGalleryItem[], options: Array<{label: string, value: string}>, messageText: string } | null}
- */
-function resolveOpenGalleryFromDialogflowEvent_(event) {
-    const turnMessages = collectDialogflowTurnMessages_(event);
-    let payload = extractFirstOpenGalleryNormalizedUrlsFromCxMessages(turnMessages);
-    if (payload) {
-        return payload;
-    }
-    const merged = mergeDialogflowResponseEnvelopeForGallery(event);
-    if (merged !== turnMessages) {
-        payload = extractFirstOpenGalleryNormalizedUrlsFromCxMessages(merged);
-        if (payload) {
-            return payload;
-        }
-    }
-    const deepPl = findOpenGalleryPayloadDeep_(event && event.detail, new WeakSet(), 0);
-    if (deepPl) {
-        return normalizedOpenGalleryFromPayloadBody_(deepPl);
-    }
-    return null;
-}
-
-/**
- * @param {unknown} json
- * @returns {void}
- */
-function rememberOpenGalleryFromDetectIntentJson_(json) {
-    const pl = findOpenGalleryPayloadDeep_(json, new WeakSet(), 0);
-    if (!pl) {
-        return;
-    }
-    const norm = normalizedOpenGalleryFromPayloadBody_(pl);
-    if (norm) {
-        dfchatPendingDetectIntentGallery_ = norm;
-    }
-}
-
-/**
- * Inject carousel when ES Messenger omits custom payloads from `df-response-received` but
- * `detectIntent` JSON still contains `open_gallery`.
- * @returns {void}
- */
-function scheduleInjectInlineGalleryFromDetectIntentStash_() {
-    const payload = dfchatPendingDetectIntentGallery_;
-    if (!payload || !payload.urls || payload.urls.length === 0) {
-        return;
-    }
-    if (!passesInlineRichMediaIntentGate(null)) {
-        return;
-    }
-    const galleryItems = payload.items && payload.items.length ? payload.items : payload.urls;
-    if (!shouldScheduleInlineGalleryCarouselForNormalizedUrls(payload.urls)) {
-        scheduleEnsureExistingInlineGalleryPosition(
-            activeDfMessenger,
-            galleryItems,
-            payload.options,
-            payload.messageText
-        );
-        return;
-    }
-    scheduleInjectInlineGalleryCarousel(
-        activeDfMessenger,
-        galleryItems,
-        [],
-        payload.options,
-        payload.messageText
-    );
-}
-
-/**
- * Parse Dialogflow `detectIntent` responses for `open_gallery` (bootstrap.js often hides custom payloads).
- * @returns {void}
- */
-function installDialogflowDetectIntentGalleryHook_() {
-    if (typeof window === "undefined" || window.__dfchatDetectIntentGalleryHook) {
-        return;
-    }
-    const origFetch = window.fetch;
-    if (typeof origFetch !== "function") {
-        return;
-    }
-    window.__dfchatDetectIntentGalleryHook = true;
-    window.fetch = function dfchatPatchedFetchForGallery(input, init) {
-        const resPromise = origFetch.call(this, input, init);
+        /** @type {Record<string, unknown> | null} */
+        let pl = null;
         try {
-            const url =
-                typeof input === "string"
-                    ? input
-                    : input && typeof input === "object" && "url" in input
-                        ? String(/** @type {{ url?: string }} */ (input).url || "")
-                        : "";
-            if (url.indexOf("dialogflow") >= 0 && url.indexOf("detectIntent") >= 0) {
-                resPromise.then((res) => {
-                    try {
-                        const ct =
-                            res.headers && typeof res.headers.get === "function"
-                                ? res.headers.get("content-type") || ""
-                                : "";
-                        if (ct.indexOf("json") < 0) {
-                            return;
-                        }
-                        res.clone().json().then((json) => {
-                            rememberOpenGalleryFromDetectIntentJson_(json);
-                            scheduleInjectInlineGalleryFromDetectIntentStash_();
-                            [120, 400, 900, 1800].forEach((ms) => {
-                                window.setTimeout(() => {
-                                    scheduleInjectInlineGalleryFromDetectIntentStash_();
-                                }, ms);
-                            });
-                        }).catch(() => {
-                            /* ignore */
-                        });
-                    } catch {
-                        /* ignore */
-                    }
-                }).catch(() => {
-                    /* ignore */
-                });
-            }
+            pl = extractPayload(/** @type {unknown} */ (cand));
         } catch {
-            /* ignore */
+            pl = null;
         }
-        return resPromise;
-    };
+        const act =
+            pl && typeof /** @type {{ action?: unknown }} */ (pl).action !== "undefined"
+                ? /** @type {{ action?: unknown }} */ (pl).action
+                : null;
+        const actionStr =
+            typeof act === "string"
+                ? act.trim().toLowerCase()
+                : act != null && typeof act === "object" && typeof /** @type {{ stringValue?: string }} */ (act).stringValue === "string"
+                    ? /** @type {{ stringValue?: string }} */ (act).stringValue.trim().toLowerCase()
+                    : "";
+        if (!pl || actionStr !== "open_gallery") {
+            continue;
+        }
+        const items = normalizeOpenGalleryItemsFromPayload(pl);
+        const allowed = items.map((it) => it.url);
+        if (allowed.length > 0) {
+            const rawOptions =
+                Object.prototype.hasOwnProperty.call(pl, "options") ? pl.options
+                    : Object.prototype.hasOwnProperty.call(pl, "option") ? pl.option
+                        : Object.prototype.hasOwnProperty.call(pl, "chips") ? pl.chips
+                            : null;
+            const options = normalizeOpenVideoOptions(rawOptions);
+
+            const rawMessage =
+                Object.prototype.hasOwnProperty.call(pl, "message") ? pl.message
+                    : Object.prototype.hasOwnProperty.call(pl, "text") ? pl.text
+                        : Object.prototype.hasOwnProperty.call(pl, "prompt") ? pl.prompt
+                            : Object.prototype.hasOwnProperty.call(pl, "subtitle") ? pl.subtitle
+                                : Object.prototype.hasOwnProperty.call(pl, "description") ? pl.description
+                                    : Object.prototype.hasOwnProperty.call(pl, "caption") ? pl.caption
+                                        : null;
+            const messageText = normalizeOpenVideoMessage(rawMessage);
+
+            return { urls: allowed, items, options, messageText };
+        }
+    }
+    return null;
 }
 
 /**
  * Drop the previous inline strip when this turn has no allowed `open_gallery` (or intent gate blocks it),
  * so plain-text turns do not keep the last carousel visible.
  *
- * @param {unknown[]} messages Merged CX `responseMessages` (see `mergeDialogflowResponseEnvelopeForGallery`).
+ * @param {unknown[]} messages Merged CX `responseMessages` (see `mergeCxResponseEnvelopeForGallery`).
  * @param {Event | null | undefined} event
  * @returns {void}
  */
 function pruneStaleInlineGalleryForCxResponse(messages, event) {
     try {
-        const payload =
-            resolveOpenGalleryFromDialogflowEvent_(event)
-            || extractFirstOpenGalleryNormalizedUrlsFromCxMessages(messages);
+        const payload = extractFirstOpenGalleryNormalizedUrlsFromCxMessages(messages);
         const hasPayload = !!(payload && payload.urls && payload.urls.length > 0);
         const gateOk = passesInlineRichMediaIntentGate(event);
         if (hasPayload && gateOk) {
@@ -14716,18 +13303,15 @@ function pruneStaleInlineGalleryForCxResponse(messages, event) {
  */
 function tryOpenGalleryFromBotResponseMessages(messages, event) {
     try {
+        if (!Array.isArray(messages) || messages.length === 0) {
+            return;
+        }
         if (!passesInlineRichMediaIntentGate(event)) {
             return;
         }
-        let payload =
-            resolveOpenGalleryFromDialogflowEvent_(event)
-            || extractFirstOpenGalleryNormalizedUrlsFromCxMessages(messages)
-            || dfchatPendingDetectIntentGallery_;
+        const payload = extractFirstOpenGalleryNormalizedUrlsFromCxMessages(messages);
         if (!payload || !payload.urls || payload.urls.length === 0) {
             return;
-        }
-        if (payload === dfchatPendingDetectIntentGallery_) {
-            dfchatPendingDetectIntentGallery_ = null;
         }
         const galleryItems = payload.items && payload.items.length ? payload.items : payload.urls;
         const shouldInject = shouldScheduleInlineGalleryCarouselForNormalizedUrls(payload.urls);
@@ -15134,7 +13718,7 @@ function scheduleInjectInlineCardCarousel(dfMessenger, cards, messageText) {
  * Drop the previous inline card carousel when this turn has no allowed `open_card_carousel`,
  * so plain-text turns do not keep the last carousel visible.
  *
- * @param {unknown[]} messages Merged CX `responseMessages` (see `mergeDialogflowResponseEnvelopeForGallery`).
+ * @param {unknown[]} messages Merged CX `responseMessages` (see `mergeCxResponseEnvelopeForGallery`).
  * @param {Event | null | undefined} event
  * @returns {void}
  */
@@ -15428,7 +14012,7 @@ function scheduleInjectInlineSelectDropdown(dfMessenger, options, placeholder, m
 /**
  * Drop the previous inline city dropdown when this turn has no allowed `dfchat_inline_select`.
  *
- * @param {unknown[]} messages Merged CX `responseMessages` (see `mergeDialogflowResponseEnvelopeForGallery`).
+ * @param {unknown[]} messages Merged CX `responseMessages` (see `mergeCxResponseEnvelopeForGallery`).
  * @param {Event | null | undefined} event
  * @returns {void}
  */
@@ -15976,19 +14560,6 @@ function attachImageLightboxClickHandler() {
     document.addEventListener("click", (event) => {
         const path = event && typeof event.composedPath === "function" ? event.composedPath() : [];
         ensureMobileLightboxParkStyle();
-        if (isDfchatImageLightboxOpen_() || isDfchatVideoLightboxOpen_()) {
-            return;
-        }
-        for (let pi = 0; pi < path.length; pi += 1) {
-            const node = path[pi];
-            if (!node || !(node instanceof Element)) {
-                continue;
-            }
-            if (node.id === IMAGE_LIGHTBOX_ID || node.id === VIDEO_LIGHTBOX_ID
-                || node.closest?.(`#${IMAGE_LIGHTBOX_ID}, #${VIDEO_LIGHTBOX_ID}`)) {
-                return;
-            }
-        }
         try {
             // Dismiss our overlays only — never block the native collapse/close handler on df-messenger.
             if (didUserCloseChat(event) || isClickInMessengerChatTitlebar(path)) {
@@ -16078,7 +14649,7 @@ function attachImageLightboxClickHandler() {
                     if (node instanceof Element) {
                         const id = typeof node.id === "string" ? node.id : "";
                         const tag = node.tagName ? String(node.tagName).toLowerCase() : "";
-                        if (id === "message-list" || id === "messageList" || tag === "df-message-list") {
+                        if (id === "message-list" || tag === "df-message-list") {
                             continue;
                         }
                     }
@@ -17231,7 +15802,7 @@ function extractLiveAgentHandoffFromEvent_(event) {
     let waitingMessage = "";
     let initialMessage = "";
     let requested = false;
-    const messages = mergeDialogflowResponseEnvelopeForGallery(event);
+    const messages = mergeCxResponseEnvelopeForGallery(event);
     for (let mi = 0; mi < messages.length; mi += 1) {
         const message = messages[mi];
         if (!messageHasFulfillmentPayload(message)) {
@@ -17900,19 +16471,15 @@ async function handleDfResponseReceived(event) {
     const messages = event.detail && event.detail.data && Array.isArray(event.detail.data.messages)
         ? event.detail.data.messages
         : [];
-    const currentTurnMessages = collectDialogflowTurnMessages_(event);
 
-    const cxResponseMessagesMerged = mergeDialogflowResponseEnvelopeForGallery(event);
-
-    if (!isFormOnlyOpenResponse_(event)) {
+    if (messages.length > 0 && !isFormOnlyOpenResponse_(event)) {
         const ms = activeDfMessenger;
-        const hasTurnContent =
-            messages.length > 0 || currentTurnMessages.length > 0 || cxResponseMessagesMerged.length > 0;
-        if (ms && hasTurnContent && (isDialogflowEsMessenger_(ms) || typeof ms.renderCustomText === "function")) {
-            scheduleBotPersonaAfterEsResponse_(ms, event);
+        if (ms && typeof ms.renderCustomText === "function") {
+            renderBotPersona(ms, Date.now());
         }
     }
 
+    const cxResponseMessagesMerged = mergeCxResponseEnvelopeForGallery(event);
     rememberWebNativeChipValueMappingsFromResponse_(cxResponseMessagesMerged);
     renderPlainMessagePayloadsFromResponse(cxResponseMessagesMerged);
     pruneStaleInlineGalleryForCxResponse(cxResponseMessagesMerged, event);
@@ -18973,28 +17540,17 @@ function initializeClientContextCapture() {
     });
 }
 
-function collectDialogflowTurnMessages_(event) {
-    const merged = mergeDialogflowResponseEnvelopeForGallery(event);
-    const d = event && event.detail;
-    const messengerMessages = d && d.data && Array.isArray(d.data.messages) ? d.data.messages : [];
-    const topMessages = d && Array.isArray(d.messages) ? d.messages : [];
-    const out = [];
-    const seenObj = new WeakSet();
-    for (const message of [...merged, ...messengerMessages, ...topMessages]) {
-        if (message != null && typeof message === "object") {
-            const obj = /** @type {object} */ (message);
-            if (seenObj.has(obj)) {
-                continue;
-            }
-            seenObj.add(obj);
-        }
-        out.push(message);
-    }
-    return out;
-}
-
 function shouldOpenContactForm(event) {
-    return collectDialogflowTurnMessages_(event).some(messageContainsOpenFormAction);
+    const responseMessages = event && event.detail && event.detail.raw && event.detail.raw.queryResult
+        && Array.isArray(event.detail.raw.queryResult.responseMessages)
+        ? event.detail.raw.queryResult.responseMessages
+        : [];
+
+    const messengerMessages = event && event.detail && event.detail.data && Array.isArray(event.detail.data.messages)
+        ? event.detail.data.messages
+        : [];
+
+    return [...responseMessages, ...messengerMessages].some(messageContainsOpenFormAction);
 }
 
 /**
@@ -19007,7 +17563,16 @@ function shouldOpenContactForm(event) {
  * @param {Event & { detail?: { raw?: { queryResult?: { responseMessages?: Array<unknown> } }, data?: { messages?: Array<unknown> } } }} event
  */
 function responseHasVisibleBotText_(event) {
-    for (const m of collectDialogflowTurnMessages_(event)) {
+    const responseMessages = event && event.detail && event.detail.raw && event.detail.raw.queryResult
+        && Array.isArray(event.detail.raw.queryResult.responseMessages)
+        ? event.detail.raw.queryResult.responseMessages
+        : [];
+
+    const messengerMessages = event && event.detail && event.detail.data && Array.isArray(event.detail.data.messages)
+        ? event.detail.data.messages
+        : [];
+
+    for (const m of [...responseMessages, ...messengerMessages]) {
         if (!m || typeof m !== "object") {
             continue;
         }
@@ -19110,7 +17675,7 @@ function pushAssistantVisibleTextsFromDfMessage_(m, parts, seen, textNorms) {
  */
 function extractAssistantVisibleTextsFromDfResponse_(event) {
     const d = event && event.detail;
-    const responseMessages = mergeDialogflowResponseEnvelopeForGallery(event);
+    const responseMessages = mergeCxResponseEnvelopeForGallery(event);
     const messengerMessages = d && d.data && Array.isArray(d.data.messages) ? d.data.messages : [];
     const topMessages = d && Array.isArray(d.messages) ? d.messages : [];
 
@@ -19308,7 +17873,7 @@ function extractAssistantVisibleTextsDeepFallback_(event) {
     if (!d || typeof d !== "object") {
         return [];
     }
-    const responseMessages = mergeDialogflowResponseEnvelopeForGallery(event);
+    const responseMessages = mergeCxResponseEnvelopeForGallery(event);
     const messengerMessages = d.data && Array.isArray(d.data.messages) ? d.data.messages : [];
     const topMessages = Array.isArray(d.messages) ? d.messages : [];
     /** @type {Set<string>} */
@@ -19660,7 +18225,7 @@ function pushPlainTextLabelsFromTranscriptPayloadBody_(body, labels) {
  */
 function extractAssistantPlainTextFromCxRichContent_(event) {
     const d = event && event.detail;
-    const responseMessages = mergeDialogflowResponseEnvelopeForGallery(event);
+    const responseMessages = mergeCxResponseEnvelopeForGallery(event);
     const messengerMessages = d && d.data && Array.isArray(d.data.messages) ? d.data.messages : [];
     const topMessages = d && Array.isArray(d.messages) ? d.messages : [];
     const allMessages = [...responseMessages, ...messengerMessages, ...topMessages];
@@ -19957,7 +18522,7 @@ function mergeTranscriptRichFromCxMessages_(messages) {
  */
 function extractAssistantTranscriptStructuredTurns_(event) {
     const d = event && event.detail;
-    const responseMessages = mergeDialogflowResponseEnvelopeForGallery(event);
+    const responseMessages = mergeCxResponseEnvelopeForGallery(event);
     const messengerMessages = d && d.data && Array.isArray(d.data.messages) ? d.data.messages : [];
     const topMessages = d && Array.isArray(d.messages) ? d.messages : [];
     const allMessages = [...responseMessages, ...messengerMessages, ...topMessages];
@@ -20342,36 +18907,11 @@ function installRenderedBotTranscriptHook_(host) {
     }
     const orig = /** @type {(text: unknown, isBot?: boolean) => unknown} */ (el.renderCustomText.bind(el));
     el.renderCustomText = (text, isBot) => {
-        try {
-            if (
-                isBot !== false
-                && typeof text === "string"
-                && isBotPersonaMarkdownText_(text)
-                && isDialogflowEsMessenger_(/** @type {HTMLElement} */ (el))
-            ) {
-                scheduleEsBotPersonaDomRepair_(/** @type {HTMLElement} */ (el), Date.now());
-                return undefined;
-            }
-            if (
-                isBot !== false
-                && typeof text === "string"
-                && isUserPersonaMarkdownText_(text)
-                && isDialogflowEsMessenger_(/** @type {HTMLElement} */ (el))
-            ) {
-                scheduleEsUserPersonaDomRepair_(/** @type {HTMLElement} */ (el));
-                return undefined;
-            }
-        } catch {
-            /* ignore */
-        }
         const ret = orig(text, isBot);
         try {
             // df-messenger often renders agent markdown with a single-arg call (`isBot` omitted).
             // User lane uses `renderCustomText(t, false)`; user persona uses `(md, true)` but carries USER_PERSONA_TEXT_SENTINEL (filtered below).
             if (isBot !== false && typeof text === "string") {
-                if (isDialogflowEsMessenger_(/** @type {HTMLElement} */ (el))) {
-                    schedulePruneEsRawBotPersonaMarkdown_(/** @type {HTMLElement} */ (el));
-                }
                 maybeRecordRenderedBotMarkdownForTranscript_(text);
                 scheduleDomBotTranscriptCapture_(host);
             }
@@ -20440,7 +18980,16 @@ function messageContainsOpenFormAction(message) {
  * @returns {string} `form_id` from agent payload, or "".
  */
 function extractOpenFormIdFromEvent(event) {
-    for (const message of collectDialogflowTurnMessages_(event)) {
+    const responseMessages = event && event.detail && event.detail.raw && event.detail.raw.queryResult
+        && Array.isArray(event.detail.raw.queryResult.responseMessages)
+        ? event.detail.raw.queryResult.responseMessages
+        : [];
+
+    const messengerMessages = event && event.detail && event.detail.data && Array.isArray(event.detail.data.messages)
+        ? event.detail.data.messages
+        : [];
+
+    for (const message of [...responseMessages, ...messengerMessages]) {
         const payload = extractPayload(message);
         if (!payload || payload.action !== CONTACT_FORM_OPEN_ACTION) {
             continue;
@@ -20490,9 +19039,18 @@ function shallowPrefillFromOpenFormPayload(payload) {
  * @returns {Record<string, string> | null}
  */
 function extractOpenFormPrefillFromEvent(event) {
+    const responseMessages = event && event.detail && event.detail.raw && event.detail.raw.queryResult
+        && Array.isArray(event.detail.raw.queryResult.responseMessages)
+        ? event.detail.raw.queryResult.responseMessages
+        : [];
+
+    const messengerMessages = event && event.detail && event.detail.data && Array.isArray(event.detail.data.messages)
+        ? event.detail.data.messages
+        : [];
+
     /** @type {Record<string, string>} */
     let merged = {};
-    for (const message of collectDialogflowTurnMessages_(event)) {
+    for (const message of [...responseMessages, ...messengerMessages]) {
         const payload = extractPayload(message);
         if (!payload || payload.action !== CONTACT_FORM_OPEN_ACTION) {
             continue;
@@ -20530,7 +19088,14 @@ function pushCanonicalChainId_(chain, raw) {
  * @returns {string[]}
  */
 function extractNextFormChainFromOpenFormEvent_(event) {
-    for (const message of collectDialogflowTurnMessages_(event)) {
+    const responseMessages = event && event.detail && event.detail.raw && event.detail.raw.queryResult
+        && Array.isArray(event.detail.raw.queryResult.responseMessages)
+        ? event.detail.raw.queryResult.responseMessages
+        : [];
+    const messengerMessages = event && event.detail && event.detail.data && Array.isArray(event.detail.data.messages)
+        ? event.detail.data.messages
+        : [];
+    for (const message of [...responseMessages, ...messengerMessages]) {
         const payload = extractPayload(message);
         if (!payload || payload.action !== CONTACT_FORM_OPEN_ACTION) {
             continue;
@@ -20640,12 +19205,21 @@ function coerceOpenFormMessengerFollowup_(s) {
  * @returns {{ submit: string | null, cancel: string | null }}
  */
 function extractOpenFormMessengerFollowupsFromEvent_(event) {
+    const responseMessages = event && event.detail && event.detail.raw && event.detail.raw.queryResult
+        && Array.isArray(event.detail.raw.queryResult.responseMessages)
+        ? event.detail.raw.queryResult.responseMessages
+        : [];
+
+    const messengerMessages = event && event.detail && event.detail.data && Array.isArray(event.detail.data.messages)
+        ? event.detail.data.messages
+        : [];
+
     /** @type {string | null} */
     let submit = null;
     /** @type {string | null} */
     let cancel = null;
 
-    for (const message of collectDialogflowTurnMessages_(event)) {
+    for (const message of [...responseMessages, ...messengerMessages]) {
         const payload = extractPayload(message);
         if (!payload || payload.action !== CONTACT_FORM_OPEN_ACTION) {
             continue;
@@ -20702,8 +19276,12 @@ function dispatchPendingOpenFormFollowup_(kind) {
                 return;
             }
         }
-        if (dispatchDfMessengerUserQuery_(ms, coerced.value)) {
+        if (typeof /** @type {{ sendQuery?: (q: string) => unknown }} */ (ms).sendQuery === "function") {
+            /** @type {{ sendQuery: (q: string) => unknown }} */ (ms).sendQuery(coerced.value);
             return;
+        }
+        if (typeof /** @type {{ sendRequest?: (t: string, p: string) => unknown }} */ (ms).sendRequest === "function") {
+            /** @type {{ sendRequest: (t: string, p: string) => unknown }} */ (ms).sendRequest("query", coerced.value);
         }
     } catch {
         /* ignore */
@@ -20820,11 +19398,7 @@ function extractPayload(message) {
         return unpacked ?? /** @type {Record<string, unknown>} */ (c);
     }
 
-    const actionNorm = unwrapPayloadStringField(rec.action).trim().toLowerCase();
-    if (actionNorm) {
-        if (typeof rec.action !== "string") {
-            rec.action = actionNorm;
-        }
+    if (typeof rec.action === "string") {
         return rec;
     }
 
@@ -21887,28 +20461,6 @@ function formatContactSummaryMobileValue_(payload, mobileValue) {
     return `${dialCode} ${mobile}`;
 }
 
-function isContactSummaryDateField_(key, field) {
-    const keyLower = String(key || "").trim().toLowerCase();
-    const type = String(field && field.type ? field.type : "").trim().toLowerCase();
-    return keyLower.includes("date") || type === "date" || type === "datetime-local";
-}
-
-function formatContactSummaryDateValue_(value) {
-    const raw = String(value == null ? "" : value).trim();
-    if (!raw) {
-        return raw;
-    }
-    let m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw);
-    if (m) {
-        return `${m[3]}/${m[2]}/${m[1]}`;
-    }
-    m = /^(\d{2})[-/](\d{2})[-/](\d{4})$/.exec(raw);
-    if (m) {
-        return `${m[1]}/${m[2]}/${m[3]}`;
-    }
-    return raw;
-}
-
 /**
  * Shared labeled rows for the contact-form confirmation bubble / transcript assistant turn.
  *
@@ -21931,9 +20483,6 @@ function buildContactFormSubmissionSummaryLines_(payload) {
             v = formatContactSummaryMobileValue_(payload, v);
         }
         const field = getContactFormFieldByPayloadName(key);
-        if (isContactSummaryDateField_(key, field) || /^\d{4}-\d{2}-\d{2}$/.test(v) || /^\d{2}[-/]\d{2}[-/]\d{4}$/.test(v)) {
-            v = formatContactSummaryDateValue_(v);
-        }
         const labelKey = field && field.i18nSummaryLabel;
         let label;
         if (labelKey) {
@@ -25409,21 +23958,15 @@ function getScreenResolution() {
 
 function renderUserPersona(dfMessenger) {
     const ms = dfMessenger && dfMessenger === activeDfMessenger ? dfMessenger : activeDfMessenger;
-    if (!ms) {
+    if (!ms || typeof ms.renderCustomText !== "function") {
         return;
     }
     const now = Date.now();
     if (now - lastUserPersonaRenderAt < 300) {
         return;
     }
+
     lastUserPersonaRenderAt = now;
-    if (isDialogflowEsMessenger_(ms)) {
-        scheduleEsUserPersonaDomRepair_(ms);
-        return;
-    }
-    if (typeof ms.renderCustomText !== "function") {
-        return;
-    }
     const u = USER_PERSONA_CONFIG;
     const timeLabel = u.showTime ? getPersonaTimeLabel(u.timeZone) : "";
     renderPersona(ms, "user", u.label, timeLabel);
@@ -25438,8 +23981,8 @@ function renderPersona(dfMessenger, personaType, label, timeLabelForUser) {
         typeof timeLabelForUser === "string"
             ? timeLabelForUser
             : getIstTimeLabel();
-    // df-messenger's `renderCustomText` only Markdown-processes when `isBot=true`.
-    // User lane = `df-text-message` with `<div style="white-space:pre-wrap">` —
+    // df-messenger's `renderCustomText` only Markdown-processes when `isBot=true` (see DF_Mti in
+    // df-messenger.js). User lane = `df-text-message` with `<div style="white-space:pre-wrap">` —
     // no Markdown / no <img>, so SVG data-URLs print literally and `**bold**` shows asterisks.
     // We render the persona as Markdown bold text in the *bot* lane (so it actually renders), tag it
     // with an invisible sentinel (USER_PERSONA_TEXT_SENTINEL), then the decorator finds the row,
@@ -25501,1396 +24044,6 @@ function stripUserPersonaSentinelFromDom_(hostEl) {
 }
 
 /**
- * @param {string} text
- * @returns {boolean}
- */
-function isBotPersonaMarkdownText_(text) {
-    const s = typeof text === "string" ? text.trim() : "";
-    if (!s) {
-        return false;
-    }
-    if (s.includes(USER_PERSONA_TEXT_SENTINEL)) {
-        return false;
-    }
-    if (s.includes(`#${PERSONA_URL_MARKER_BOT_IMG}`) || s.includes(`%23${PERSONA_URL_MARKER_BOT_IMG}`)) {
-        return true;
-    }
-    const base = getBotPersonaImageBaseUrl_();
-    if (base && s.includes(base) && (s.includes("![](") || s.includes("**"))) {
-        return true;
-    }
-    return !!(s.includes("![](") && s.includes("dfchat-bot-persona"));
-}
-
-/**
- * ES bootstrap often prints bot persona markdown as plain text (no markdown renderer).
- * @param {Element} row
- * @returns {boolean}
- */
-function isEsRawPersonaMarkdownRow_(row) {
-    if (!row || !(row instanceof Element)) {
-        return false;
-    }
-    if (row.classList && row.classList.contains(DFCHAT_ES_BOT_PERSONA_CLASS)) {
-        return false;
-    }
-    const txt = (row.textContent || "").trim();
-    if (!txt || !txt.includes("![](")) {
-        return false;
-    }
-    if (!txt.includes(PERSONA_URL_MARKER_BOT_IMG) && !txt.includes("cat-icon.png")) {
-        return false;
-    }
-    try {
-        const imgs = row.querySelectorAll ? row.querySelectorAll("img") : [];
-        for (let i = 0; i < imgs.length; i += 1) {
-            const src = imgs[i].getAttribute("src") || "";
-            if (srcHasBotPersonaImageMarker_(src) && imgs[i].offsetWidth > 10 && imgs[i].offsetHeight > 10) {
-                return false;
-            }
-        }
-    } catch {
-        /* ignore */
-    }
-    return true;
-}
-
-/**
- * Remove leaked `![](cat-icon…#dfchat-bot-persona) **Demo …**` plain-text rows from ES `#messageList`.
- * @param {HTMLElement | null | undefined} dfMessenger
- * @returns {number}
- */
-function pruneEsRawBotPersonaMarkdownRows_(dfMessenger) {
-    const ms =
-        dfMessenger
-        || (typeof activeDfMessenger !== "undefined" ? activeDfMessenger : null);
-    if (!ms || !isDialogflowEsMessenger_(ms)) {
-        return 0;
-    }
-    const list = findMessengerMessageListRoot(ms);
-    if (!list) {
-        return 0;
-    }
-    let removed = 0;
-    const scanRoots = [list];
-    try {
-        const wraps = list.querySelectorAll(".message-list-wrapper, df-message-list");
-        for (let wi = 0; wi < wraps.length; wi += 1) {
-            scanRoots.push(wraps[wi]);
-        }
-    } catch {
-        /* ignore */
-    }
-    for (let ri = 0; ri < scanRoots.length; ri += 1) {
-        const root = scanRoots[ri];
-        if (!root || typeof root.querySelectorAll !== "function") {
-            continue;
-        }
-        let candidates = [];
-        try {
-            candidates = Array.from(root.querySelectorAll("df-message, .message.bot-message"));
-        } catch {
-            candidates = [];
-        }
-        if (root === list && root.children) {
-            for (let ci = 0; ci < root.children.length; ci += 1) {
-                const ch = root.children[ci];
-                if (ch && candidates.indexOf(ch) === -1) {
-                    candidates.push(ch);
-                }
-            }
-        }
-        for (let ci = 0; ci < candidates.length; ci += 1) {
-            const row = candidates[ci];
-            if (!isEsRawPersonaMarkdownRow_(row)) {
-                continue;
-            }
-            try {
-                row.remove();
-                removed += 1;
-            } catch {
-                /* ignore */
-            }
-        }
-    }
-    return removed;
-}
-
-/**
- * @param {HTMLElement | null | undefined} dfMessenger
- * @returns {void}
- */
-function schedulePruneEsRawBotPersonaMarkdown_(dfMessenger) {
-    if (!dfMessenger) {
-        return;
-    }
-    const run = () => {
-        try {
-            pruneEsRawBotPersonaMarkdownRows_(dfMessenger);
-        } catch {
-            /* ignore */
-        }
-    };
-    run();
-    [0, 40, 120, 300, 700].forEach((ms) => {
-        window.setTimeout(run, ms);
-    });
-}
-
-/**
- * Prune raw persona markdown, then inject the DOM persona row (ES image mode).
- * @param {HTMLElement} dfMessenger
- * @param {number | undefined} whenMs
- * @returns {void}
- */
-function scheduleEsBotPersonaDomRepair_(dfMessenger, whenMs) {
-    if (!dfMessenger) {
-        return;
-    }
-    const when =
-        typeof whenMs === "number" && Number.isFinite(whenMs) ? whenMs : Date.now();
-    const run = () => {
-        try {
-            pruneEsRawBotPersonaMarkdownRows_(dfMessenger);
-            injectEsBotPersonaRow_(dfMessenger, when);
-        } catch {
-            /* ignore */
-        }
-    };
-    run();
-    if (typeof requestAnimationFrame === "function") {
-        requestAnimationFrame(run);
-    }
-    [30, 90, 200, 450, 900, 1600].forEach((ms) => {
-        window.setTimeout(run, ms);
-    });
-}
-
-/**
- * ES Messenger (bootstrap.js) layout inside `df-messenger-chat` shadow:
- * `.chat-wrapper` > `df-messenger-titlebar` + `df-message-list` + `df-messenger-user-input`.
- * Google uses flex column + `df-message-list { flex: 1 1 auto }` — do not apply CX grid/`df-messenger-chat` child rules.
- * @see https://cloud.google.com/dialogflow/es/docs/integrations/dialogflow-messenger
- * @returns {string}
- */
-function getEsNativePanelLayoutCss_() {
-    return `
-.chat-wrapper {
-  box-sizing: border-box !important;
-  overflow: hidden !important;
-}
-.chat-wrapper.chat-open,
-.chat-wrapper.opened,
-.chat-wrapper.is-open,
-.chat-wrapper[opened] {
-  display: flex !important;
-  flex-direction: column !important;
-  align-items: stretch !important;
-  justify-content: flex-start !important;
-  height: var(--df-messenger-chat-window-height, 560px) !important;
-  min-height: var(--df-messenger-chat-window-height, 560px) !important;
-  max-height: min(var(--df-messenger-chat-window-height, 560px), calc(100dvh - 100px)) !important;
-  opacity: 1 !important;
-  transform: translateZ(0) scale(1) !important;
-  overflow: hidden !important;
-  padding-top: 0 !important;
-  padding-bottom: 0 !important;
-}
-df-messenger-titlebar {
-  flex: 0 0 auto !important;
-  flex-shrink: 0 !important;
-  order: 1 !important;
-  min-height: 0 !important;
-}
-df-message-list {
-  flex: 1 1 auto !important;
-  order: 2 !important;
-  min-height: 0 !important;
-  min-width: 0 !important;
-  height: auto !important;
-  max-height: none !important;
-  display: flex !important;
-  flex-direction: column !important;
-  overflow: hidden !important;
-  align-self: stretch !important;
-  padding-bottom: var(--dfchat-es-footer-stack-px, 112px) !important;
-  box-sizing: border-box !important;
-}
-.chat-wrapper.chat-open > .message-list-wrapper,
-.chat-wrapper.opened > .message-list-wrapper,
-.chat-wrapper.is-open > .message-list-wrapper,
-.chat-wrapper[opened] > .message-list-wrapper {
-  display: none !important;
-}
-df-messenger-user-input {
-  flex: 0 0 auto !important;
-  flex-shrink: 0 !important;
-  order: 3 !important;
-  margin-top: 0 !important;
-  transform: none !important;
-  z-index: 5 !important;
-  width: 100% !important;
-  box-sizing: border-box !important;
-}
-.chat-wrapper > #dfchat-chat-action-bar,
-.chat-wrapper > .dfchat-chat-action-bar--inline {
-  z-index: 6 !important;
-  width: 100% !important;
-  box-sizing: border-box !important;
-}`;
-}
-
-/**
- * @param {HTMLElement} panel
- * @returns {number}
- */
-function measureEsFooterStackHeightPx_(panel) {
-    if (!panel || typeof panel.querySelector !== "function") {
-        return 112;
-    }
-    const composer = panel.querySelector(":scope > df-messenger-user-input");
-    if (!composer) {
-        return 112;
-    }
-    let stackPx = 0;
-    try {
-        const bar = panel.querySelector(":scope > #dfchat-chat-action-bar");
-        if (bar && bar.parentElement === panel && bar instanceof HTMLElement) {
-            const bh = bar.offsetHeight || 0;
-            if (bh > 0) {
-                stackPx += bh;
-            }
-        }
-        const ch = composer.offsetHeight || 0;
-        if (ch > 0) {
-            stackPx += ch;
-        }
-        if (stackPx < 48) {
-            const cr = composer.getBoundingClientRect();
-            if (cr && cr.height > 0) {
-                stackPx = Math.ceil(cr.height);
-            }
-        }
-    } catch {
-        stackPx = 0;
-    }
-    return Math.max(64, Math.min(240, Math.ceil(stackPx) || 112));
-}
-
-/**
- * Dialogflow's inner containing block is shorter than `.chat-wrapper` (padding / nested stack), so
- * `position:absolute;bottom:0` on the composer leaves a band under the footer. Pin to the panel's
- * viewport rect with `position:fixed` instead.
- * @param {HTMLElement} panel
- * @param {HTMLElement} composer
- * @param {HTMLElement | null | undefined} panelLevelBar
- * @returns {{ stackPx: number, gapPx: number }}
- */
-function syncEsFooterViewportFixedDock_(panel, composer, panelLevelBar) {
-    const pr = panel.getBoundingClientRect();
-    if (!pr || pr.height < 40 || pr.width < 40 || !composer || !composer.style) {
-        return { stackPx: 112, gapPx: 0 };
-    }
-    const vh =
-        window.visualViewport && Number.isFinite(window.visualViewport.height)
-            ? window.visualViewport.height
-            : window.innerHeight;
-    const panelBottomVp = Math.max(0, Math.round(vh - pr.bottom));
-    const leftPx = Math.round(pr.left);
-    const widthPx = Math.max(40, Math.round(pr.width));
-
-    let barH = 0;
-    if (panelLevelBar && panelLevelBar.style) {
-        try {
-            barH = Math.ceil(panelLevelBar.offsetHeight || panelLevelBar.getBoundingClientRect().height || 0);
-            panelLevelBar.style.setProperty("position", "fixed", "important");
-            panelLevelBar.style.setProperty("left", `${leftPx}px`, "important");
-            panelLevelBar.style.setProperty("width", `${widthPx}px`, "important");
-            panelLevelBar.style.setProperty("right", "auto", "important");
-            panelLevelBar.style.setProperty("bottom", `${panelBottomVp}px`, "important");
-            panelLevelBar.style.setProperty("top", "auto", "important");
-            panelLevelBar.style.setProperty("z-index", "1001", "important");
-            panelLevelBar.style.removeProperty("transform");
-        } catch {
-            /* ignore */
-        }
-    }
-
-    let bottomVp = panelBottomVp + barH;
-    try {
-        composer.style.setProperty("position", "fixed", "important");
-        composer.style.setProperty("left", `${leftPx}px`, "important");
-        composer.style.setProperty("width", `${widthPx}px`, "important");
-        composer.style.setProperty("right", "auto", "important");
-        composer.style.setProperty("bottom", `${bottomVp}px`, "important");
-        composer.style.setProperty("top", "auto", "important");
-        composer.style.setProperty("z-index", "1000", "important");
-        composer.style.setProperty("box-sizing", "border-box", "important");
-        composer.style.removeProperty("flex");
-        composer.style.removeProperty("order");
-        composer.style.removeProperty("margin-top");
-        composer.style.removeProperty("transform");
-    } catch {
-        /* ignore */
-    }
-
-    let gapPx = 0;
-    try {
-        const cr = composer.getBoundingClientRect();
-        gapPx = Math.round(pr.bottom - cr.bottom);
-        if (gapPx > 2) {
-            bottomVp += gapPx;
-            composer.style.setProperty("bottom", `${bottomVp}px`, "important");
-            const cr2 = composer.getBoundingClientRect();
-            gapPx = Math.round(pr.bottom - cr2.bottom);
-        }
-    } catch {
-        /* ignore */
-    }
-
-    let stackPx = measureEsFooterStackHeightPx_(panel);
-    try {
-        const cr = composer.getBoundingClientRect();
-        if (cr && cr.height > 0) {
-            stackPx = Math.max(stackPx, Math.ceil(cr.height) + barH);
-        }
-    } catch {
-        /* ignore */
-    }
-    return { stackPx, gapPx };
-}
-
-/**
- * Pin composer (and optional panel-level action bar) to the bottom of the open panel.
- * @param {HTMLElement} panel
- * @returns {void}
- */
-function dockEsOpenPanelFooter_(panel) {
-    if (!panel || typeof panel.querySelector !== "function") {
-        return;
-    }
-    const composer = panel.querySelector(":scope > df-messenger-user-input");
-    const msgList = panel.querySelector(":scope > df-message-list");
-    if (!composer || !msgList || !composer.style || !msgList.style) {
-        return;
-    }
-    try {
-        panel.style.setProperty("padding-top", "0", "important");
-        panel.style.setProperty("padding-bottom", "0", "important");
-        panel.style.setProperty("box-sizing", "border-box", "important");
-    } catch {
-        /* ignore */
-    }
-    const bar = panel.querySelector(":scope > #dfchat-chat-action-bar");
-    const panelLevelBar =
-        bar && bar.parentElement === panel && bar instanceof HTMLElement ? bar : null;
-    let stackPx = 112;
-    try {
-        const docked = syncEsFooterViewportFixedDock_(panel, composer, panelLevelBar);
-        stackPx = docked.stackPx;
-        panel.style.setProperty("--dfchat-es-footer-stack-px", `${stackPx}px`, "important");
-        panel.style.setProperty("--dfchat-es-footer-dock-gap-px", `${docked.gapPx}px`, "important");
-    } catch {
-        /* ignore */
-    }
-    const title = panel.querySelector(":scope > df-messenger-titlebar");
-    const titleH =
-        title && title instanceof HTMLElement ? Math.ceil(title.offsetHeight || 0) : 0;
-    const panelH = Math.ceil(panel.clientHeight || panel.offsetHeight || 0);
-    const listMax = Math.max(96, panelH - titleH - stackPx);
-    try {
-        msgList.style.setProperty("flex", "1 1 auto", "important");
-        msgList.style.setProperty("order", "2", "important");
-        msgList.style.setProperty("min-height", "0", "important");
-        msgList.style.setProperty("max-height", `${listMax}px`, "important");
-        msgList.style.setProperty("height", `${listMax}px`, "important");
-        msgList.style.setProperty("padding-bottom", `${stackPx}px`, "important");
-        msgList.style.setProperty("box-sizing", "border-box", "important");
-        msgList.style.setProperty("overflow", "hidden", "important");
-    } catch {
-        /* ignore */
-    }
-    const finishDock = () => {
-        try {
-            const docked = syncEsFooterViewportFixedDock_(panel, composer, panelLevelBar);
-            if (docked.stackPx > 0 && docked.stackPx !== stackPx) {
-                stackPx = docked.stackPx;
-                panel.style.setProperty("--dfchat-es-footer-stack-px", `${stackPx}px`, "important");
-                msgList.style.setProperty("padding-bottom", `${stackPx}px`, "important");
-                const listMax2 = Math.max(96, panelH - titleH - stackPx);
-                msgList.style.setProperty("max-height", `${listMax2}px`, "important");
-                msgList.style.setProperty("height", `${listMax2}px`, "important");
-            }
-            panel.style.setProperty("--dfchat-es-footer-dock-gap-px", `${docked.gapPx}px`, "important");
-        } catch {
-            /* ignore */
-        }
-    };
-    window.requestAnimationFrame(() => {
-        window.requestAnimationFrame(finishDock);
-    });
-}
-
-/**
- * Bootstrap sometimes sets inline `bottom` on the composer as the transcript grows, which lifts the
- * footer and leaves a white band (gapBelow ≈ bottom px). Clear those insets on every repair pass.
- * @param {HTMLElement | null | undefined} el
- * @returns {void}
- */
-function clearEsFooterChromeInsets_(el) {
-    if (!el || !el.style) {
-        return;
-    }
-    const props = [
-        "bottom",
-        "top",
-        "left",
-        "right",
-        "inset",
-        "inset-block-end",
-        "inset-block-start",
-        "margin-top",
-        "transform"
-    ];
-    for (let pi = 0; pi < props.length; pi += 1) {
-        try {
-            el.style.removeProperty(props[pi]);
-        } catch {
-            /* ignore */
-        }
-    }
-    try {
-        el.style.removeProperty("position");
-    } catch {
-        /* ignore */
-    }
-}
-
-/**
- * Lock open panel height so content growth cannot push the shell upward (fixed `bottom` anchor).
- * @param {HTMLElement} panel
- * @param {HTMLElement | null | undefined} dfMessenger
- * @returns {void}
- */
-function pinEsOpenChatPanelGrid_(panel, dfMessenger) {
-    if (!panel || !panel.style) {
-        return;
-    }
-    const isOpen =
-        (panel.classList && (
-            panel.classList.contains("chat-open")
-            || panel.classList.contains("opened")
-            || panel.classList.contains("is-open")
-        ))
-        || panel.hasAttribute("opened");
-    if (!isOpen) {
-        return;
-    }
-    const ms = dfMessenger || activeDfMessenger;
-    let hVar = "560px";
-    if (ms && ms.style) {
-        const raw = ms.style.getPropertyValue("--df-messenger-chat-window-height").trim();
-        if (raw) {
-            hVar = raw;
-        }
-    }
-    const maxH = `min(${hVar}, calc(100dvh - 100px))`;
-    try {
-        panel.style.setProperty("display", "flex", "important");
-        panel.style.setProperty("flex-direction", "column", "important");
-        panel.style.setProperty("align-items", "stretch", "important");
-        panel.style.setProperty("height", hVar, "important");
-        panel.style.setProperty("min-height", hVar, "important");
-        panel.style.setProperty("max-height", maxH, "important");
-        panel.style.setProperty("overflow", "hidden", "important");
-        panel.style.removeProperty("grid-template-columns");
-        panel.style.removeProperty("grid-template-rows");
-    } catch {
-        /* ignore */
-    }
-    const title = panel.querySelector("df-messenger-titlebar");
-    const msgList = panel.querySelector("df-message-list");
-    const composer = panel.querySelector("df-messenger-user-input");
-    if (title && title.style) {
-        try {
-            title.style.setProperty("flex", "0 0 auto", "important");
-            title.style.setProperty("order", "1", "important");
-            title.style.removeProperty("grid-row");
-            title.style.removeProperty("grid-column");
-        } catch {
-            /* ignore */
-        }
-    }
-    if (msgList && msgList.style) {
-        try {
-            msgList.style.setProperty("flex", "1 1 auto", "important");
-            msgList.style.setProperty("order", "2", "important");
-            msgList.style.setProperty("min-height", "0", "important");
-            msgList.style.setProperty("display", "flex", "important");
-            msgList.style.setProperty("flex-direction", "column", "important");
-            msgList.style.setProperty("overflow", "hidden", "important");
-            msgList.style.removeProperty("height");
-            msgList.style.removeProperty("max-height");
-            msgList.style.removeProperty("grid-row");
-            msgList.style.removeProperty("grid-column");
-        } catch {
-            /* ignore */
-        }
-    }
-    try {
-        const orphanWrap = panel.querySelector(":scope > .message-list-wrapper");
-        if (orphanWrap && orphanWrap instanceof HTMLElement && msgList) {
-            orphanWrap.style.setProperty("display", "none", "important");
-        }
-    } catch {
-        /* ignore */
-    }
-    dockEsOpenPanelFooter_(panel);
-}
-
-/**
- * ES bootstrap scroll stack: `df-message-list` shadow → `.message-list-wrapper` → `#messageList`.
- * @returns {string}
- */
-function getEsMessageListShadowLayoutCss_() {
-    return `
-.message-list-wrapper {
-  display: flex !important;
-  flex: 1 1 auto !important;
-  flex-direction: column !important;
-  min-height: 0 !important;
-  min-width: 0 !important;
-  overflow: hidden !important;
-  box-sizing: border-box !important;
-}
-#messageList,
-#message-list {
-  display: flex !important;
-  flex: 1 1 auto !important;
-  flex-direction: column !important;
-  min-height: 0 !important;
-  overflow-x: hidden !important;
-  overflow-y: auto !important;
-  -webkit-overflow-scrolling: touch !important;
-  overscroll-behavior-y: contain !important;
-  box-sizing: border-box !important;
-}`;
-}
-
-/**
- * @param {HTMLElement | null | undefined} dfMessenger
- * @returns {void}
- */
-function ensureEsMessageListShadowLayoutStyles_(dfMessenger) {
-    const ms =
-        dfMessenger
-        || (typeof activeDfMessenger !== "undefined" ? activeDfMessenger : null);
-    if (!ms || !isDialogflowEsMessenger_(ms)) {
-        return;
-    }
-    const css = getEsMessageListShadowLayoutCss_();
-    const roots = collectSearchRoots(ms);
-    for (let ri = 0; ri < roots.length; ri += 1) {
-        const root = roots[ri];
-        if (!root || !root.querySelectorAll) {
-            continue;
-        }
-        let hosts = [];
-        try {
-            hosts = Array.from(root.querySelectorAll("df-message-list"));
-        } catch {
-            hosts = [];
-        }
-        for (let hi = 0; hi < hosts.length; hi += 1) {
-            const host = hosts[hi];
-            const shadow = host && host.shadowRoot;
-            if (!shadow || typeof shadow.appendChild !== "function") {
-                continue;
-            }
-            let tag = shadow.getElementById(ES_MESSAGE_LIST_SHADOW_LAYOUT_STYLE_ID);
-            if (!tag) {
-                tag = document.createElement("style");
-                tag.id = ES_MESSAGE_LIST_SHADOW_LAYOUT_STYLE_ID;
-                shadow.appendChild(tag);
-            }
-            if (tag.textContent !== css) {
-                tag.textContent = css;
-            }
-        }
-    }
-}
-
-/**
- * @param {HTMLElement | null | undefined} dfMessenger
- * @returns {void}
- */
-function reinforceEsMessageListScrollHosts_(dfMessenger) {
-    const ms =
-        dfMessenger
-        || (typeof activeDfMessenger !== "undefined" ? activeDfMessenger : null);
-    if (!ms) {
-        return;
-    }
-    const roots = collectSearchRoots(ms);
-    for (let ri = 0; ri < roots.length; ri += 1) {
-        const root = roots[ri];
-        if (!root || !root.querySelectorAll) {
-            continue;
-        }
-        let nodes = [];
-        try {
-            nodes = Array.from(
-                root.querySelectorAll(".message-list-wrapper, #messageList, #message-list")
-            );
-        } catch {
-            nodes = [];
-        }
-        for (let ni = 0; ni < nodes.length; ni += 1) {
-            const el = nodes[ni];
-            if (!el || !el.style) {
-                continue;
-            }
-            const isScroller =
-                (el.id === "messageList" || el.id === "message-list")
-                || (el.classList && el.classList.contains("message-list-wrapper"));
-            if (!isScroller) {
-                continue;
-            }
-            try {
-                if (el.classList.contains("message-list-wrapper")) {
-                    el.style.setProperty("display", "flex", "important");
-                    el.style.setProperty("flex", "1 1 auto", "important");
-                    el.style.setProperty("flex-direction", "column", "important");
-                    el.style.setProperty("min-height", "0", "important");
-                    el.style.setProperty("overflow", "hidden", "important");
-                } else {
-                    el.style.setProperty("flex", "1 1 auto", "important");
-                    el.style.setProperty("min-height", "0", "important");
-                    el.style.setProperty("overflow-y", "auto", "important");
-                    el.style.setProperty("overflow-x", "hidden", "important");
-                }
-                el.style.removeProperty("height");
-                el.style.removeProperty("max-height");
-            } catch {
-                /* ignore */
-            }
-        }
-    }
-}
-
-/**
- * @returns {string}
- */
-function getEsChatPanelLayoutCss_() {
-    return `
-.df-messenger-wrapper {
-  position: fixed !important;
-  transform: none !important;
-}
-${getEsNativePanelLayoutCss_()}
-.${DFCHAT_ES_USER_PERSONA_CLASS} {
-  display: flex !important;
-  justify-content: flex-end !important;
-  align-items: center !important;
-  width: 100% !important;
-  box-sizing: border-box !important;
-  margin: 2px 10px 4px !important;
-  padding: 0 !important;
-  background: transparent !important;
-}
-.${DFCHAT_ES_USER_PERSONA_CLASS}__inner {
-  display: inline-flex !important;
-  flex-direction: row !important;
-  align-items: center !important;
-  justify-content: flex-end !important;
-  gap: 6px !important;
-  margin-left: auto !important;
-  max-width: 100% !important;
-}
-.${DFCHAT_ES_USER_PERSONA_CLASS}__caption,
-.${DFCHAT_ES_USER_PERSONA_CLASS}__label {
-  color: ${PERSONA_TEXT_COLOR} !important;
-  font-size: 11px !important;
-  font-weight: 600 !important;
-  line-height: 1.25 !important;
-  white-space: nowrap !important;
-}
-.${DFCHAT_ES_USER_PERSONA_CLASS}__time {
-  color: ${PERSONA_TEXT_COLOR} !important;
-  font-size: 11px !important;
-  font-weight: 600 !important;
-  filter: blur(${PERSONA_SOFT_BLUR}) !important;
-  opacity: ${PERSONA_OPACITY} !important;
-  margin-left: 4px !important;
-}`;
-}
-
-/**
- * @param {HTMLElement | null | undefined} dfMessenger
- * @returns {void}
- */
-function scheduleEsChatPanelLayoutRepair_(dfMessenger) {
-    const ms =
-        dfMessenger
-        || (typeof activeDfMessenger !== "undefined" ? activeDfMessenger : null);
-    if (!ms || !isDialogflowEsMessenger_(ms)) {
-        return;
-    }
-    if (esPanelLayoutRepairTimer_ !== null) {
-        window.clearTimeout(esPanelLayoutRepairTimer_);
-    }
-    esPanelLayoutRepairTimer_ = window.setTimeout(() => {
-        esPanelLayoutRepairTimer_ = null;
-        applyEsChatPanelLayoutDomFixes_(ms);
-        try {
-            if (isCompanyDebugEnabled && isCompanyDebugEnabled()) {
-                const roots = collectSearchRoots(ms);
-                /** @type {HTMLElement | null} */
-                let panel = null;
-                /** @type {HTMLElement | null} */
-                let msgListHost = null;
-                /** @type {HTMLElement | null} */
-                let listWrapper = null;
-                /** @type {HTMLElement | null} */
-                let list = null;
-                for (const root of roots) {
-                    if (!root || typeof root.querySelector !== "function") {
-                        continue;
-                    }
-                    panel = panel || /** @type {HTMLElement | null} */ (root.querySelector(".chat-wrapper"));
-                    msgListHost = msgListHost || /** @type {HTMLElement | null} */ (root.querySelector("df-message-list"));
-                    listWrapper = listWrapper || /** @type {HTMLElement | null} */ (root.querySelector(".message-list-wrapper"));
-                    list = list || /** @type {HTMLElement | null} */ (root.querySelector("#messageList, #message-list"));
-                    if (panel && msgListHost && listWrapper && list) {
-                        break;
-                    }
-                }
-                const pr = panel && panel.getBoundingClientRect ? panel.getBoundingClientRect() : null;
-                const mr = msgListHost && msgListHost.getBoundingClientRect ? msgListHost.getBoundingClientRect() : null;
-                const lr = list && list.getBoundingClientRect ? list.getBoundingClientRect() : null;
-                /** @type {HTMLElement | null} */
-                let composer = null;
-                /** @type {HTMLElement | null} */
-                let actionBar = null;
-                for (const root of roots) {
-                    if (!root || typeof root.querySelector !== "function") {
-                        continue;
-                    }
-                    composer =
-                        composer
-                        || /** @type {HTMLElement | null} */ (
-                            panel && panel.querySelector(":scope > df-messenger-user-input")
-                        )
-                        || /** @type {HTMLElement | null} */ (root.querySelector("df-messenger-user-input"));
-                    actionBar = actionBar || /** @type {HTMLElement | null} */ (root.querySelector("#dfchat-chat-action-bar"));
-                    if (composer && actionBar) {
-                        break;
-                    }
-                }
-                const cr = composer && composer.getBoundingClientRect ? composer.getBoundingClientRect() : null;
-                const ar = actionBar && actionBar.getBoundingClientRect ? actionBar.getBoundingClientRect() : null;
-                const gapBelowFooter =
-                    pr && cr ? Math.round(pr.bottom - cr.bottom) : null;
-                const gapBelowBar =
-                    pr && ar ? Math.round(pr.bottom - ar.bottom) : null;
-                let panelBottomCss = "";
-                let panelHeightCss = "";
-                let composerPosCss = "";
-                let composerBottomCss = "";
-                let footerStackPx = "";
-                let footerDockGapPx = "";
-                let wrapperKids = -1;
-                try {
-                    if (panel) {
-                        const cs = window.getComputedStyle(panel);
-                        panelBottomCss = cs && typeof cs.bottom === "string" ? cs.bottom : "";
-                        panelHeightCss = cs && typeof cs.height === "string" ? cs.height : "";
-                        wrapperKids = panel.children ? panel.children.length : -1;
-                        footerStackPx = panel.style.getPropertyValue("--dfchat-es-footer-stack-px").trim();
-                        footerDockGapPx = panel.style.getPropertyValue("--dfchat-es-footer-dock-gap-px").trim();
-                    }
-                    if (composer) {
-                        const ccs = window.getComputedStyle(composer);
-                        composerPosCss = ccs && typeof ccs.position === "string" ? ccs.position : "";
-                        composerBottomCss = ccs && typeof ccs.bottom === "string" ? ccs.bottom : "";
-                        if (composer.style && composer.style.bottom) {
-                            composerBottomCss = `${composerBottomCss} inline:${composer.style.bottom}`;
-                        }
-                    }
-                } catch {
-                    /* ignore */
-                }
-                const count =
-                    list && list.children && typeof list.children.length === "number"
-                        ? list.children.length
-                        : -1;
-                updateCompanyDebugBadge([
-                    "ES layout",
-                    `panel h=${pr ? Math.round(pr.height) : "?"} top=${pr ? Math.round(pr.top) : "?"} bottom=${pr ? Math.round(pr.bottom) : "?"}`,
-                    `panel css: height=${panelHeightCss || "?"} bottom=${panelBottomCss || "?"}`,
-                    `df-message-list h=${mr ? Math.round(mr.height) : "?"}`,
-                    `#messageList h=${lr ? Math.round(lr.height) : "?"} children=${count}`,
-                    `wrapperKids=${wrapperKids} footerStack=${footerStackPx || "?"} dockGap=${footerDockGapPx || "?"}`,
-                    `composer bottom=${cr ? Math.round(cr.bottom) : "?"} gapBelow=${gapBelowFooter == null ? "?" : gapBelowFooter} pos=${composerPosCss || "?"} cssBottom=${composerBottomCss || "?"}`,
-                    `actionBar bottom=${ar ? Math.round(ar.bottom) : "?"} gapBelow=${gapBelowBar == null ? "?" : gapBelowBar}`,
-                    `scrollTop=${list ? Math.round(list.scrollTop || 0) : "?"} scrollH=${list ? Math.round(list.scrollHeight || 0) : "?"}`
-                ]);
-            }
-        } catch {
-            /* ignore */
-        }
-    }, 80);
-}
-
-/**
- * Re-apply grid/flex layout when ES mutates the transcript (new df-message rows, action bar mount).
- * @param {HTMLElement} dfMessenger
- * @returns {void}
- */
-function ensureEsChatPanelLayoutWatcher_(dfMessenger) {
-    if (!dfMessenger || !isDialogflowEsMessenger_(dfMessenger)) {
-        return;
-    }
-    if (dfMessenger._companyEsPanelLayoutWatcher === "1") {
-        return;
-    }
-    dfMessenger._companyEsPanelLayoutWatcher = "1";
-    const schedule = () => {
-        scheduleEsChatPanelLayoutRepair_(dfMessenger);
-    };
-    try {
-        const mo = new MutationObserver(schedule);
-        mo.observe(dfMessenger, { childList: true, subtree: true });
-        dfMessenger._companyEsPanelLayoutMo = mo;
-    } catch {
-        /* ignore */
-    }
-    window.addEventListener("df-response-received", schedule, true);
-    window.addEventListener("df-chat-open-changed", schedule);
-    window.addEventListener("df-user-input-entered", schedule, true);
-    if (!dfMessenger._companyEsPanelLayoutResize) {
-        dfMessenger._companyEsPanelLayoutResize = "1";
-        window.addEventListener("resize", schedule, { passive: true });
-        try {
-            if (window.visualViewport) {
-                window.visualViewport.addEventListener("resize", schedule, { passive: true });
-                window.visualViewport.addEventListener("scroll", schedule, { passive: true });
-            }
-        } catch {
-            /* ignore */
-        }
-    }
-}
-
-/**
- * Pin header/footer; only the message list scrolls (CSS grid — no per-turn inline heights).
- * @param {HTMLElement | null | undefined} dfMessenger
- * @returns {void}
- */
-/**
- * Reinforce flex column fill when ES/bootstrap sets inline heights on the transcript host.
- * @param {HTMLElement} dfMessenger
- */
-function applyEsChatPanelLayoutDomFixes_(dfMessenger) {
-    if (!dfMessenger || !isDialogflowEsMessenger_(dfMessenger)) {
-        return;
-    }
-    ensureEsMessageListShadowLayoutStyles_(dfMessenger);
-    stripEsTranscriptMeasuredHeights_(dfMessenger);
-    reinforceEsMessageListScrollHosts_(dfMessenger);
-    const roots = collectSearchRoots(dfMessenger);
-    for (let ri = 0; ri < roots.length; ri += 1) {
-        const root = roots[ri];
-        if (!root || typeof root.querySelector !== "function") {
-            continue;
-        }
-        const panel = root.querySelector(".chat-wrapper");
-        if (!panel) {
-            continue;
-        }
-        pinEsOpenChatPanelGrid_(panel, dfMessenger);
-    }
-}
-
-/**
- * Remove only measured heights on inner scroll hosts (never flex/overflow on hosts).
- * @param {HTMLElement | null | undefined} dfMessenger
- * @returns {void}
- */
-function stripEsTranscriptMeasuredHeights_(dfMessenger) {
-    const ms =
-        dfMessenger
-        || (typeof activeDfMessenger !== "undefined" ? activeDfMessenger : null);
-    if (!ms) {
-        return;
-    }
-    const roots = collectSearchRoots(ms);
-    const props = ["height", "min-height", "max-height"];
-    for (let ri = 0; ri < roots.length; ri += 1) {
-        const root = roots[ri];
-        if (!root || !root.querySelectorAll) {
-            continue;
-        }
-        let nodes = [];
-        try {
-            nodes = Array.from(
-                root.querySelectorAll(
-                    "df-message-list, .message-list-wrapper, #messageList, #message-list"
-                )
-            );
-        } catch {
-            nodes = [];
-        }
-        for (let ni = 0; ni < nodes.length; ni += 1) {
-            const el = nodes[ni];
-            if (!el || !el.style) {
-                continue;
-            }
-            for (let pi = 0; pi < props.length; pi += 1) {
-                try {
-                    el.style.removeProperty(props[pi]);
-                } catch {
-                    /* ignore */
-                }
-            }
-        }
-        let composers = [];
-        try {
-            composers = Array.from(root.querySelectorAll("df-messenger-user-input"));
-        } catch {
-            composers = [];
-        }
-        for (let ci = 0; ci < composers.length; ci += 1) {
-            clearEsFooterChromeInsets_(/** @type {HTMLElement} */ (composers[ci]));
-        }
-    }
-}
-
-function applyEsChatPanelLayoutToMessenger_(dfMessenger) {
-    const ms =
-        dfMessenger
-        || (typeof activeDfMessenger !== "undefined" ? activeDfMessenger : null);
-    if (!ms || !isDialogflowEsMessenger_(ms)) {
-        return;
-    }
-    const layoutCss = getEsChatPanelLayoutCss_();
-    const roots = collectSearchRoots(ms);
-    for (let ri = 0; ri < roots.length; ri += 1) {
-        const root = roots[ri];
-        if (!root || !(root instanceof ShadowRoot) || typeof root.appendChild !== "function") {
-            continue;
-        }
-        let tag = root.getElementById(ES_CHAT_PANEL_LAYOUT_STYLE_ID);
-        if (!tag) {
-            tag = document.createElement("style");
-            tag.id = ES_CHAT_PANEL_LAYOUT_STYLE_ID;
-            root.appendChild(tag);
-        }
-        if (tag.textContent !== layoutCss) {
-            tag.textContent = layoutCss;
-        }
-    }
-    applyEsChatPanelLayoutDomFixes_(ms);
-    ensureEsChatPanelLayoutWatcher_(ms);
-}
-
-/**
- * Dialogflow ES bootstrap (`agent-id` + `#messageList` / `df-message`). CX legacy uses `#message-list` + `.entry`.
- * @param {HTMLElement | null | undefined} dfMessenger
- * @returns {boolean}
- */
-function isDialogflowEsMessenger_(dfMessenger) {
-    const ms =
-        dfMessenger
-        || (typeof activeDfMessenger !== "undefined" ? activeDfMessenger : null)
-        || (typeof document !== "undefined" ? document.querySelector("df-messenger") : null);
-    if (!ms) {
-        return false;
-    }
-    try {
-        const agentId = ms.getAttribute && ms.getAttribute("agent-id");
-        if (agentId && String(agentId).trim()) {
-            return true;
-        }
-    } catch {
-        /* ignore */
-    }
-    const list = findMessengerMessageListRoot(ms);
-    if (!list) {
-        return false;
-    }
-    if (list.id === "messageList") {
-        return true;
-    }
-    try {
-        if (list.querySelector("df-message")) {
-            return true;
-        }
-    } catch {
-        /* ignore */
-    }
-    return false;
-}
-
-/**
- * @param {HTMLElement} list
- * @returns {Element | null}
- */
-function findLastEsAgentMessageChild_(list) {
-    if (!list || !list.children) {
-        return null;
-    }
-    const ch = list.children;
-    for (let i = ch.length - 1; i >= 0; i -= 1) {
-        const el = ch[i];
-        if (!el || !(el instanceof Element)) {
-            continue;
-        }
-        if (el.classList && el.classList.contains(DFCHAT_ES_BOT_PERSONA_CLASS)) {
-            continue;
-        }
-        if (isDfchatInlineSyntheticRow(el)) {
-            continue;
-        }
-        const tag = el.tagName ? el.tagName.toUpperCase() : "";
-        if (tag === "DF-MESSAGE") {
-            const role = (el.getAttribute("type") || el.getAttribute("data-type") || "").trim().toLowerCase();
-            if (role === "user" || role === "human") {
-                continue;
-            }
-            return el;
-        }
-        if (typeof el.querySelector === "function") {
-            const inner = el.querySelector('df-message:not([type="user"]):not([type="human"])');
-            if (inner) {
-                return el;
-            }
-        }
-    }
-    return null;
-}
-
-/**
- * @param {HTMLElement} list
- * @returns {Element | null}
- */
-function findLastEsUserMessageChild_(list) {
-    if (!list || !list.children) {
-        return null;
-    }
-    const ch = list.children;
-    for (let i = ch.length - 1; i >= 0; i -= 1) {
-        const el = ch[i];
-        if (!el || !(el instanceof Element)) {
-            continue;
-        }
-        if (el.classList && (el.classList.contains(DFCHAT_ES_USER_PERSONA_CLASS) || el.classList.contains(DFCHAT_ES_BOT_PERSONA_CLASS))) {
-            continue;
-        }
-        if (isDfchatInlineSyntheticRow(el)) {
-            continue;
-        }
-        const tag = el.tagName ? el.tagName.toUpperCase() : "";
-        if (tag === "DF-MESSAGE") {
-            const role = (el.getAttribute("type") || el.getAttribute("data-type") || "").trim().toLowerCase();
-            if (role === "user" || role === "human") {
-                return el;
-            }
-            continue;
-        }
-        if (typeof el.querySelector === "function") {
-            const inner = el.querySelector('df-message[type="user"], df-message[type="human"], df-message[data-type="user"]');
-            if (inner) {
-                return el;
-            }
-            const userMsg = el.querySelector(".message.user-message");
-            if (userMsg) {
-                return el;
-            }
-        }
-    }
-    return null;
-}
-
-/**
- * @returns {HTMLElement | null}
- */
-function buildEsUserPersonaDomRow_() {
-    const u = USER_PERSONA_CONFIG;
-    const label = typeof u.label === "string" ? u.label.trim() : "🙂";
-    const timeLabel = u.showTime ? getPersonaTimeLabel(u.timeZone) : "";
-    const row = document.createElement("div");
-    row.className = DFCHAT_ES_USER_PERSONA_CLASS;
-    row.setAttribute("data-dfchat-es-persona", "user");
-    const inner = document.createElement("div");
-    inner.className = `${DFCHAT_ES_USER_PERSONA_CLASS}__inner`;
-    const cap = document.createElement("span");
-    cap.className = `${DFCHAT_ES_USER_PERSONA_CLASS}__caption`;
-    const lb = document.createElement("span");
-    lb.className = `${DFCHAT_ES_USER_PERSONA_CLASS}__label`;
-    lb.textContent = label;
-    cap.appendChild(lb);
-    if (timeLabel) {
-        const tm = document.createElement("strong");
-        tm.className = `${DFCHAT_ES_USER_PERSONA_CLASS}__time`;
-        tm.textContent = timeLabel;
-        cap.appendChild(tm);
-    }
-    inner.appendChild(cap);
-    row.appendChild(inner);
-    return row;
-}
-
-/**
- * Remove bot-lane markdown user persona (shows on the left on ES).
- * @param {HTMLElement | null | undefined} dfMessenger
- * @returns {number}
- */
-function pruneEsLeakedUserPersonaMarkdownRows_(dfMessenger) {
-    const ms =
-        dfMessenger
-        || (typeof activeDfMessenger !== "undefined" ? activeDfMessenger : null);
-    if (!ms || !isDialogflowEsMessenger_(ms)) {
-        return 0;
-    }
-    const list = findMessengerMessageListRoot(ms);
-    if (!list) {
-        return 0;
-    }
-    const sentinel = USER_PERSONA_TEXT_SENTINEL;
-    const label = String(USER_PERSONA_CONFIG.label || "").trim();
-    let removed = 0;
-    let rows = [];
-    try {
-        rows = Array.from(list.querySelectorAll("df-message, .message.bot-message.markdown, .message.user-message"));
-    } catch {
-        rows = [];
-    }
-    for (let ci = 0; ci < list.children.length; ci += 1) {
-        const ch = list.children[ci];
-        if (ch && rows.indexOf(ch) === -1) {
-            rows.push(ch);
-        }
-    }
-    for (let ri = 0; ri < rows.length; ri += 1) {
-        const row = rows[ri];
-        if (!row || row.classList?.contains(DFCHAT_ES_USER_PERSONA_CLASS)) {
-            continue;
-        }
-        const txt = (row.textContent || "").trim();
-        if (!txt) {
-            continue;
-        }
-        const hasSentinel = txt.includes(sentinel);
-        const hasLabel = label && txt.includes(label);
-        if (!hasSentinel && !hasLabel) {
-            continue;
-        }
-        if (row.classList?.contains(DFCHAT_ES_BOT_PERSONA_CLASS)) {
-            continue;
-        }
-        const isUserDf = row.tagName === "DF-MESSAGE"
-            && (row.getAttribute("type") || "").toLowerCase() === "user";
-        if (isUserDf) {
-            continue;
-        }
-        try {
-            row.remove();
-            removed += 1;
-        } catch {
-            /* ignore */
-        }
-    }
-    return removed;
-}
-
-/**
- * @param {HTMLElement | null | undefined} dfMessenger
- * @returns {boolean}
- */
-function injectEsUserPersonaRow_(dfMessenger) {
-    const ms =
-        dfMessenger
-        || (typeof activeDfMessenger !== "undefined" ? activeDfMessenger : null);
-    if (!ms || !isDialogflowEsMessenger_(ms)) {
-        return false;
-    }
-    pruneEsLeakedUserPersonaMarkdownRows_(ms);
-    const list = findMessengerMessageListRoot(ms);
-    if (!list) {
-        return false;
-    }
-    const userRow = findLastEsUserMessageChild_(list);
-    if (
-        userRow
-        && userRow.previousElementSibling
-        && userRow.previousElementSibling instanceof Element
-        && userRow.previousElementSibling.classList.contains(DFCHAT_ES_USER_PERSONA_CLASS)
-    ) {
-        return true;
-    }
-    const row = buildEsUserPersonaDomRow_();
-    if (!row) {
-        return false;
-    }
-    if (userRow && userRow.parentNode === list) {
-        list.insertBefore(row, userRow);
-    } else {
-        list.appendChild(row);
-    }
-    schedulePersonaShadowFix(ms);
-    scrollMessengerMessageListToBottom(list);
-    return true;
-}
-
-/**
- * @param {HTMLElement | null | undefined} dfMessenger
- * @returns {void}
- */
-function scheduleEsUserPersonaDomRepair_(dfMessenger) {
-    if (!dfMessenger) {
-        return;
-    }
-    const run = () => {
-        try {
-            pruneEsLeakedUserPersonaMarkdownRows_(dfMessenger);
-            injectEsUserPersonaRow_(dfMessenger);
-        } catch {
-            /* ignore */
-        }
-    };
-    run();
-    if (typeof requestAnimationFrame === "function") {
-        requestAnimationFrame(run);
-    }
-    [30, 90, 200, 450, 900].forEach((ms) => {
-        window.setTimeout(run, ms);
-    });
-}
-
-/**
- * @param {string} text
- * @returns {boolean}
- */
-function isUserPersonaMarkdownText_(text) {
-    const s = typeof text === "string" ? text : "";
-    return s.includes(USER_PERSONA_TEXT_SENTINEL);
-}
-
-/**
- * @param {number | undefined} messageInstantMs
- * @returns {HTMLElement | null}
- */
-function buildEsBotPersonaDomRow_(messageInstantMs) {
-    const cfg = BOT_PERSONA_CONFIG;
-    if (cfg.mode !== "image") {
-        return null;
-    }
-    const imgCfg = cfg.image;
-    const baseUrl = getBotPersonaImageBaseUrl_();
-    if (!baseUrl) {
-        return null;
-    }
-    const when =
-        typeof messageInstantMs === "number" && Number.isFinite(messageInstantMs)
-            ? messageInstantMs
-            : Date.now();
-    const incDate = cfg.messageTimeIncludesDate !== false;
-    const label = typeof imgCfg.label === "string" ? imgCfg.label.trim() : "";
-    const timeLabel = imgCfg.showTime
-        ? getBotPersonaMessageTimeLabel(imgCfg.timeZone, when, incDate)
-        : "";
-
-    const row = document.createElement("div");
-    row.className = DFCHAT_ES_BOT_PERSONA_CLASS;
-    row.setAttribute("data-dfchat-es-persona", "bot");
-
-    const inner = document.createElement("div");
-    inner.className = `${DFCHAT_ES_BOT_PERSONA_CLASS}__inner`;
-
-    const imgEl = document.createElement("img");
-    imgEl.src = `${baseUrl}#${PERSONA_URL_MARKER_BOT_IMG}`;
-    imgEl.alt = "";
-    imgEl.setAttribute("draggable", "false");
-    inner.appendChild(imgEl);
-
-    if (label || timeLabel) {
-        const cap = document.createElement("span");
-        cap.className = `${DFCHAT_ES_BOT_PERSONA_CLASS}__caption`;
-        if (label) {
-            const lb = document.createElement("span");
-            lb.className = `${DFCHAT_ES_BOT_PERSONA_CLASS}__label`;
-            lb.textContent = label;
-            applyEsBotPersonaLabelOffsets_(lb);
-            cap.appendChild(lb);
-        }
-        if (timeLabel) {
-            const tm = document.createElement("strong");
-            tm.className = `${DFCHAT_ES_BOT_PERSONA_CLASS}__time`;
-            tm.textContent = timeLabel;
-            cap.appendChild(tm);
-        }
-        inner.appendChild(cap);
-    }
-
-    row.appendChild(inner);
-    return row;
-}
-
-/**
- * Inject bot persona directly into ES `#messageList` (reliable on bootstrap; markdown lane often missing).
- * @param {HTMLElement | null | undefined} dfMessenger
- * @param {number | undefined} messageInstantMs
- * @returns {boolean}
- */
-function injectEsBotPersonaRow_(dfMessenger, messageInstantMs) {
-    const ms =
-        dfMessenger
-        || (typeof activeDfMessenger !== "undefined" ? activeDfMessenger : null);
-    if (!ms || !isDialogflowEsMessenger_(ms)) {
-        return false;
-    }
-    pruneEsRawBotPersonaMarkdownRows_(ms);
-    if (BOT_PERSONA_CONFIG.mode === "emojiTime") {
-        if (typeof ms.renderCustomText === "function") {
-            ms.renderCustomText(buildBotPersonaMarkdown_(messageInstantMs), true);
-            schedulePersonaShadowFix(ms);
-            return true;
-        }
-        return false;
-    }
-    const list = findMessengerMessageListRoot(ms);
-    if (!list) {
-        return false;
-    }
-    const agentRow = findLastEsAgentMessageChild_(list);
-    if (
-        agentRow
-        && agentRow.previousElementSibling
-        && agentRow.previousElementSibling instanceof Element
-        && agentRow.previousElementSibling.classList.contains(DFCHAT_ES_BOT_PERSONA_CLASS)
-    ) {
-        const prev = agentRow.previousElementSibling;
-        const lb = prev.querySelector(`.${DFCHAT_ES_BOT_PERSONA_CLASS}__label`);
-        applyEsBotPersonaLabelOffsets_(lb);
-        schedulePersonaShadowFix(ms);
-        return true;
-    }
-    const row = buildEsBotPersonaDomRow_(messageInstantMs);
-    if (!row) {
-        return false;
-    }
-    if (agentRow && agentRow.parentNode === list) {
-        list.insertBefore(row, agentRow);
-    } else {
-        list.appendChild(row);
-    }
-    schedulePersonaShadowFix(ms);
-    scrollMessengerMessageListToBottom(list);
-    return true;
-}
-
-/**
  * External avatar + optional caption label + message time as one bold markdown span on the same
  * line as the image (single `<p>` keeps the existing `p strong` chrome rules in
  * {@link getPersonaImageGuardCss} matching for blur / colour / vertical nudge).
@@ -26906,13 +24059,8 @@ function buildBotPersonaImageMarkdownWithTime_(baseUrl, label, timeLabel) {
     if (!t && !l) {
         return imgMd;
     }
-    if (l && t) {
-        return `${imgMd}\n\n${l}\n\n**${t}**`;
-    }
-    if (l) {
-        return `${imgMd}\n\n${l}`;
-    }
-    return `${imgMd}\n\n**${t}**`;
+    const inner = l && t ? `${l}  ${t}` : l || t;
+    return `${imgMd} **${inner}**`;
 }
 
 /**
@@ -26951,59 +24099,11 @@ function buildBotPersonaMarkdown_(messageInstantMs) {
 }
 
 function renderBotPersona(dfMessenger, messageInstantMs) {
-    if (!dfMessenger) {
-        return;
-    }
-    if (isDialogflowEsMessenger_(dfMessenger)) {
-        if (BOT_PERSONA_CONFIG.mode === "image") {
-            scheduleEsBotPersonaDomRepair_(dfMessenger, messageInstantMs);
-        } else {
-            injectEsBotPersonaRow_(dfMessenger, messageInstantMs);
-        }
-        return;
-    }
-    if (typeof dfMessenger.renderCustomText !== "function") {
+    if (!dfMessenger || typeof dfMessenger.renderCustomText !== "function") {
         return;
     }
     dfMessenger.renderCustomText(buildBotPersonaMarkdown_(messageInstantMs), true);
     schedulePersonaShadowFix(dfMessenger);
-}
-
-/**
- * ES Messenger paints bot text after `df-response-received`; inject persona after the agent row exists.
- *
- * @param {HTMLElement} dfMessenger
- * @param {Event | null | undefined} event
- * @returns {void}
- */
-function scheduleBotPersonaAfterEsResponse_(dfMessenger, event) {
-    if (!dfMessenger) {
-        return;
-    }
-    if (event && isFormOnlyOpenResponse_(event)) {
-        return;
-    }
-    const when = Date.now();
-    const run = () => {
-        try {
-            if (isDialogflowEsMessenger_(dfMessenger)) {
-                pruneEsRawBotPersonaMarkdownRows_(dfMessenger);
-                injectEsBotPersonaRow_(dfMessenger, when);
-                scheduleEsChatPanelLayoutRepair_(dfMessenger);
-            } else {
-                renderBotPersona(dfMessenger, when);
-            }
-        } catch {
-            /* ignore */
-        }
-    };
-    run();
-    if (typeof requestAnimationFrame === "function") {
-        requestAnimationFrame(run);
-    }
-    [50, 150, 350, 700, 1200, 2000].forEach((ms) => {
-        window.setTimeout(run, ms);
-    });
 }
 
 function getIstTimeLabel() {
@@ -27105,66 +24205,6 @@ function createPersonaBadgeDataUrl(label, timeLabel, nonce = "", personaDescMark
     return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
 }
 
-/**
- * @returns {string}
- */
-function getBotPersonaImageBaseUrl_() {
-    if (BOT_PERSONA_CONFIG.mode !== "image") {
-        return "";
-    }
-    const raw = BOT_PERSONA_CONFIG.image && typeof BOT_PERSONA_CONFIG.image.url === "string"
-        ? BOT_PERSONA_CONFIG.image.url
-        : "";
-    return raw.split("#")[0].trim();
-}
-
-/**
- * @param {ParentNode | null | undefined} row
- * @param {string} selector
- * @returns {Element | null}
- */
-function dfchatQueryWithinRow_(row, selector) {
-    if (!row || typeof selector !== "string" || !selector.trim()) {
-        return null;
-    }
-    try {
-        if (typeof row.querySelector === "function") {
-            const hit = row.querySelector(selector);
-            if (hit) {
-                return hit;
-            }
-        }
-        if (row instanceof Element && row.shadowRoot && typeof row.shadowRoot.querySelector === "function") {
-            const inShadow = row.shadowRoot.querySelector(selector);
-            if (inShadow) {
-                return inShadow;
-            }
-        }
-    } catch {
-        /* ignore */
-    }
-    return null;
-}
-
-/**
- * @param {Element | null | undefined} row
- * @returns {boolean}
- */
-function dfchatRowIsEsAgentMessageHost_(row) {
-    if (!row || !(row instanceof Element)) {
-        return false;
-    }
-    const tag = row.tagName ? row.tagName.toUpperCase() : "";
-    if (tag !== "DF-MESSAGE") {
-        return false;
-    }
-    const role = (row.getAttribute("type") || row.getAttribute("data-type") || "").trim().toLowerCase();
-    if (role === "user" || role === "human") {
-        return false;
-    }
-    return role === "agent" || role === "bot" || !!dfchatQueryWithinRow_(row, ".message.bot-message");
-}
-
 function getPersonaImageGuardCss() {
     const cfg = BOT_PERSONA_CONFIG;
     const img = cfg.image;
@@ -27176,8 +24216,6 @@ function getPersonaImageGuardCss() {
     const mobX = `${(cfg.mode === "image" ? img.offsetRightPx : 0) - img.mobileNudgeLeftPx}px`;
     const timeDown = cfg.mode === "image" ? `${img.timeOffsetDownPx}px` : "0px";
     const timeRight = cfg.mode === "image" ? `${img.timeOffsetRightPx}px` : "0px";
-    const labelDown = cfg.mode === "image" ? `${img.labelOffsetDownPx}px` : "0px";
-    const labelTx = cfg.mode === "image" ? `${-img.labelOffsetLeftPx}px` : "0px";
     return `
 img[src*="dfchat-bot-persona"],
 img[src*="%23dfchat-bot-persona"] {
@@ -27195,16 +24233,14 @@ img[src*="%23dfchat-bot-persona"] {
 .message.bot-message.markdown:has(img[src*="%23dfchat-bot-persona"]) {
   margin-bottom: ${BOT_PERSONA_CONFIG.gapBelowAssistantPx}px !important;
 }
-.message.bot-message.markdown:has(img[src*="dfchat-bot-persona"]) p + p:not(:has(strong)),
-.message.bot-message.markdown:has(img[src*="%23dfchat-bot-persona"]) p + p:not(:has(strong)) {
-  display: inline-block !important;
+.message.bot-message.markdown:has(img[src*="dfchat-bot-persona"]) p + p,
+.message.bot-message.markdown:has(img[src*="%23dfchat-bot-persona"]) p + p {
   color: ${PERSONA_TEXT_COLOR} !important;
   font-size: 11px !important;
   font-weight: 600 !important;
   margin: 0 !important;
   padding: 0 !important;
   line-height: 1.25 !important;
-  transform: translate(${labelTx}, ${labelDown}) !important;
 }
 .message.bot-message.markdown:has(img[src*="dfchat-bot-persona"]) p strong,
 .message.bot-message.markdown:has(img[src*="%23dfchat-bot-persona"]) p strong {
@@ -27216,132 +24252,6 @@ img[src*="%23dfchat-bot-persona"] {
   font-weight: 600 !important;
   filter: blur(${PERSONA_SOFT_BLUR}) !important;
   opacity: ${PERSONA_OPACITY} !important;
-}
-#messageList df-message img[src*="dfchat-bot-persona"],
-#messageList df-message img[src*="%23dfchat-bot-persona"],
-#messageList df-message img[src*="cat-icon.png"] {
-  width: ${catW} !important;
-  height: ${catH} !important;
-  max-width: ${catW} !important;
-  max-height: ${catH} !important;
-  object-fit: contain !important;
-  display: inline-block !important;
-  vertical-align: middle !important;
-  box-sizing: border-box !important;
-  transform: translate(${personaRight}, ${personaDown}) !important;
-}
-#messageList df-message:has(img[src*="dfchat-bot-persona"]),
-#messageList df-message:has(img[src*="%23dfchat-bot-persona"]),
-#messageList df-message:has(img[src*="cat-icon.png"]) {
-  margin-bottom: ${BOT_PERSONA_CONFIG.gapBelowAssistantPx}px !important;
-}
-#messageList df-message:has(img[src*="dfchat-bot-persona"]) .message.bot-message.markdown,
-#messageList df-message:has(img[src*="%23dfchat-bot-persona"]) .message.bot-message.markdown,
-#messageList df-message:has(img[src*="cat-icon.png"]) .message.bot-message.markdown {
-  background: transparent !important;
-  background-color: transparent !important;
-  background-image: none !important;
-  box-shadow: none !important;
-  border: none !important;
-  padding: 0 8px !important;
-  margin: 0 !important;
-}
-#messageList df-message:has(img[src*="dfchat-bot-persona"]) .message.bot-message.markdown p strong,
-#messageList df-message:has(img[src*="%23dfchat-bot-persona"]) .message.bot-message.markdown p strong,
-#messageList df-message:has(img[src*="cat-icon.png"]) .message.bot-message.markdown p strong {
-  display: inline-block !important;
-  vertical-align: middle !important;
-  transform: translate(${timeRight}, ${timeDown}) !important;
-  color: ${PERSONA_TEXT_COLOR} !important;
-  font-size: 11px !important;
-  font-weight: 600 !important;
-  filter: blur(${PERSONA_SOFT_BLUR}) !important;
-  opacity: ${PERSONA_OPACITY} !important;
-}
-${cfg.mode === "image" ? `
-#messageList df-message:has(img[src*="dfchat-bot-persona"]) .message-actor,
-#messageList df-message:has(img[src*="%23dfchat-bot-persona"]) .message-actor,
-#messageList df-message:has(img[src*="cat-icon.png"]) .message-actor,
-#messageList df-message:has(img[src*="dfchat-bot-persona"]) [class*="actor"]:not(.message):not(.message-stack),
-#messageList df-message:has(img[src*="%23dfchat-bot-persona"]) [class*="actor"]:not(.message):not(.message-stack),
-#messageList df-message:has(img[src*="cat-icon.png"]) [class*="actor"]:not(.message):not(.message-stack) {
-  display: none !important;
-  width: 0 !important;
-  height: 0 !important;
-  max-width: 0 !important;
-  max-height: 0 !important;
-  margin: 0 !important;
-  padding: 0 !important;
-  overflow: hidden !important;
-  visibility: hidden !important;
-}
-` : ""}
-.${DFCHAT_ES_BOT_PERSONA_CLASS} {
-  display: block !important;
-  visibility: visible !important;
-  opacity: 1 !important;
-  width: 100% !important;
-  box-sizing: border-box !important;
-  margin: 0 0 ${BOT_PERSONA_CONFIG.gapBelowAssistantPx}px 8px !important;
-  padding: 0 !important;
-  background: transparent !important;
-  border: none !important;
-  box-shadow: none !important;
-}
-.${DFCHAT_ES_BOT_PERSONA_CLASS}__inner {
-  display: inline-flex !important;
-  align-items: center !important;
-  gap: 6px !important;
-  flex-wrap: nowrap !important;
-  max-width: 100% !important;
-}
-.${DFCHAT_ES_BOT_PERSONA_CLASS} img {
-  width: ${catW} !important;
-  height: ${catH} !important;
-  max-width: ${catW} !important;
-  max-height: ${catH} !important;
-  object-fit: contain !important;
-  display: inline-block !important;
-  vertical-align: middle !important;
-  flex: 0 0 auto !important;
-  transform: translate(${personaRight}, ${personaDown}) !important;
-  filter: blur(${PERSONA_SOFT_BLUR}) !important;
-  opacity: ${PERSONA_OPACITY} !important;
-}
-.${DFCHAT_ES_BOT_PERSONA_CLASS}__caption {
-  color: ${PERSONA_TEXT_COLOR} !important;
-  font-size: 11px !important;
-  font-weight: 600 !important;
-  line-height: 1.25 !important;
-  white-space: nowrap !important;
-}
-.${DFCHAT_ES_BOT_PERSONA_CLASS}__label {
-  display: inline-block !important;
-  color: ${PERSONA_TEXT_COLOR} !important;
-  font-size: 11px !important;
-  font-weight: 600 !important;
-  line-height: 1.25 !important;
-  white-space: nowrap !important;
-  transform: translate(${labelTx}, ${labelDown}) !important;
-}
-.${DFCHAT_ES_BOT_PERSONA_CLASS}__time {
-  display: inline-block !important;
-  vertical-align: middle !important;
-  transform: translate(${timeRight}, ${timeDown}) !important;
-  color: ${PERSONA_TEXT_COLOR} !important;
-  font-size: 11px !important;
-  font-weight: 600 !important;
-  filter: blur(${PERSONA_SOFT_BLUR}) !important;
-  opacity: ${PERSONA_OPACITY} !important;
-  margin-left: 4px !important;
-}
-@media (max-width: ${MOBILE_CHAT_BREAKPOINT_PX}px) {
-.${DFCHAT_ES_BOT_PERSONA_CLASS} img {
-  transform: translate(${mobX}, ${mobY}px) !important;
-}
-.${DFCHAT_ES_BOT_PERSONA_CLASS}__time {
-  transform: translate(${mobX}, ${mobY}px) !important;
-}
 }
 img[src*="dfchat-persona-bot-time"] {
   height: 28px !important;
@@ -27541,11 +24451,6 @@ function schedulePersonaShadowFix(dfMessenger) {
         return;
     }
     const run = () => {
-        if (isDialogflowEsMessenger_(dfMessenger)) {
-            pruneEsRawBotPersonaMarkdownRows_(dfMessenger);
-            scheduleEsChatPanelLayoutRepair_(dfMessenger);
-            scheduleEsTitlebarAndBubbleIconSync_(dfMessenger);
-        }
         applyPersonaImageGuardToMessenger(dfMessenger);
         decoratePersonaMessages(dfMessenger);
     };
@@ -27561,9 +24466,6 @@ function startPersonaDecorator(dfMessenger) {
         const ms = activeDfMessenger || dfMessenger;
         if (!ms) {
             return;
-        }
-        if (isDialogflowEsMessenger_(ms)) {
-            pruneEsRawBotPersonaMarkdownRows_(ms);
         }
         applyPersonaImageGuardToMessenger(ms);
         decoratePersonaMessages(ms);
@@ -28009,7 +24911,6 @@ function scheduleChatMessageListScrollbarReapply(dfMessenger) {
     }
     const run = () => {
         applyChatMessageListScrollbarToMessenger(dfMessenger);
-        applyEsChatPanelLayoutToMessenger_(dfMessenger);
     };
     run();
     [50, 150, 400, 900, 1800, 3500, 7000, 12000].forEach((ms) => {
@@ -28031,11 +24932,6 @@ function applyUserInputVerticalNudge(dfMessenger) {
             if (!el || !el.style) {
                 continue;
             }
-            if (isDialogflowEsMessenger_(dfMessenger)) {
-                el.style.removeProperty("transform");
-                el.style.removeProperty("position");
-                continue;
-            }
             if (USER_INPUT_NUDGE_UP_PX === 0) {
                 el.style.removeProperty("transform");
                 el.style.removeProperty("position");
@@ -28050,10 +24946,6 @@ function applyUserInputVerticalNudge(dfMessenger) {
 
 function scheduleUserInputVerticalNudge(dfMessenger) {
     if (!dfMessenger) {
-        return;
-    }
-    if (isDialogflowEsMessenger_(dfMessenger)) {
-        applyUserInputVerticalNudge(dfMessenger);
         return;
     }
     const run = () => {
@@ -28461,7 +25353,7 @@ function dfchatFindMessageListAncestor_(from) {
     let el = from;
     for (let i = 0; el && i < 55; i += 1) {
         const tag = el.tagName ? el.tagName.toUpperCase() : "";
-        if (el.id === "message-list" || el.id === "messageList" || tag === "DF-MESSENGER-MESSAGE-LIST") {
+        if (el.id === "message-list" || tag === "DF-MESSENGER-MESSAGE-LIST") {
             return el;
         }
         const p = el.parentElement;
@@ -28501,66 +25393,28 @@ function dfchatResolveListRowHostingMessage_(messageEl) {
     return null;
 }
 
-/**
- * @param {ParentNode | null | undefined} row
- * @returns {boolean}
- */
-function dfchatRowContainsBotPersonaImg_(row) {
-    if (!row) {
-        return false;
-    }
-    /** @type {ParentNode[]} */
-    const scanRoots = [row];
-    if (row instanceof Element && row.shadowRoot) {
-        scanRoots.push(row.shadowRoot);
-    }
-    for (let ri = 0; ri < scanRoots.length; ri += 1) {
-        const r = scanRoots[ri];
-        if (!r || typeof r.querySelectorAll !== "function") {
-            continue;
-        }
-        let imgs = [];
-        try {
-            imgs = Array.from(r.querySelectorAll("img"));
-        } catch {
-            imgs = [];
-        }
-        for (let ii = 0; ii < imgs.length; ii += 1) {
-            const src = imgs[ii].getAttribute ? (imgs[ii].getAttribute("src") || "") : "";
-            if (srcHasBotPersonaImageMarker_(src)) {
-                return true;
-            }
-        }
-    }
-    return false;
-}
-
 /** @param {HTMLElement} row */
 function dfchatRowHasPersonaAvatar_(row) {
-    return dfchatRowContainsBotPersonaImg_(row)
-        || !!(row.querySelector?.("img[src*='dfchat-persona-bot|']")
-            || row.querySelector?.("img[src*='dfchat-persona-bot%7C']"));
+    if (
+        row.querySelector?.(`img[src*='#${PERSONA_URL_MARKER_BOT_IMG}']`)
+        || row.querySelector?.(`img[src*='%23${PERSONA_URL_MARKER_BOT_IMG}']`)
+    ) {
+        return true;
+    }
+    return !!(row.querySelector?.("img[src*='dfchat-persona-bot|']")
+        || row.querySelector?.("img[src*='dfchat-persona-bot%7C']"));
 }
 
 /**
  * @param {HTMLElement} row
  */
 function dfchatRowLooksLikeCxBotAssistantRow_(row) {
-    if (!row) {
+    if (!row.querySelectorAll) {
         return false;
     }
-    const role = row instanceof Element && row.tagName === "DF-MESSAGE"
-        ? (row.getAttribute("type") || row.getAttribute("data-type") || "").trim().toLowerCase()
-        : "";
-    const hasUser = !!(dfchatQueryWithinRow_(row, ".message.user-message")
-        || row.classList?.contains("user")
-        || role === "user"
-        || role === "human");
-    if (hasUser) {
-        return false;
-    }
-    const hasBot = !!dfchatQueryWithinRow_(row, ".message.bot-message") || dfchatRowIsEsAgentMessageHost_(row);
-    if (!hasBot) {
+    const hasBot = !!row.querySelector(".message.bot-message");
+    const hasUser = !!(row.querySelector(".message.user-message") || row.classList?.contains("user"));
+    if (!hasBot || hasUser) {
         return false;
     }
     return !dfchatRowHasPersonaAvatar_(row);
@@ -28576,7 +25430,7 @@ function reorderBotPersonaListRowBeforeContiguousBotRows_(imageNode) {
     }
     if (BOT_PERSONA_CONFIG.mode !== "emojiTime") {
         const src = imageNode.getAttribute("src") || "";
-        if (!srcHasBotPersonaImageMarker_(src)) {
+        if (!src.includes(`#${PERSONA_URL_MARKER_BOT_IMG}`)) {
             return false;
         }
     }
@@ -28712,12 +25566,6 @@ function resolvePersonaBotMessageElement_(imageNode) {
         ) {
             return el;
         }
-        if (el.tagName === "DF-MESSAGE" && el.shadowRoot) {
-            const inner = el.shadowRoot.querySelector(".message.bot-message");
-            if (inner) {
-                return /** @type {HTMLElement} */ (inner);
-            }
-        }
         el = /** @type {HTMLElement | null} */ (dfchatComposeParentElement(el));
     }
     return null;
@@ -28736,7 +25584,7 @@ function reorderBotPersonaEntryBeforeContiguousBotChunks_(imageNode) {
     }
     if (BOT_PERSONA_CONFIG.mode !== "emojiTime") {
         const src = imageNode.getAttribute("src") || "";
-        if (!srcHasBotPersonaImageMarker_(src)) {
+        if (!src.includes(`#${PERSONA_URL_MARKER_BOT_IMG}`)) {
             return false;
         }
     }
@@ -28934,7 +25782,7 @@ function reorderBotPersonaMarkdownToTopOfStack_(imageNode) {
     }
     if (BOT_PERSONA_CONFIG.mode !== "emojiTime") {
         const src = imageNode.getAttribute("src") || "";
-        if (!srcHasBotPersonaImageMarker_(src)) {
+        if (!src.includes(`#${PERSONA_URL_MARKER_BOT_IMG}`)) {
             return false;
         }
     }
@@ -29184,64 +26032,15 @@ function decoratePersonaMessages(dfMessenger) {
                 `img[src*='${BOT_PERSONA_TOKEN}']`
             ].join(", ")
         );
-        /** @type {HTMLImageElement[]} */
-        const personaImageList = [];
-        const seenPersonaImg = new WeakSet();
         for (const image of personaImages) {
-            if (image && !seenPersonaImg.has(image)) {
-                seenPersonaImg.add(image);
-                personaImageList.push(/** @type {HTMLImageElement} */ (image));
-            }
-        }
-        let esPersonaImgs = [];
-        try {
-            esPersonaImgs = Array.from(root.querySelectorAll(`.${DFCHAT_ES_BOT_PERSONA_CLASS} img`));
-        } catch {
-            esPersonaImgs = [];
-        }
-        for (let pi = 0; pi < esPersonaImgs.length; pi += 1) {
-            const img = esPersonaImgs[pi];
-            if (!img || seenPersonaImg.has(img)) {
-                continue;
-            }
-            seenPersonaImg.add(img);
-            personaImageList.push(img);
-        }
-        const personaBase = getBotPersonaImageBaseUrl_();
-        if (personaBase) {
-            let extraImgs = [];
-            try {
-                extraImgs = Array.from(root.querySelectorAll("img"));
-            } catch {
-                extraImgs = [];
-            }
-            for (let ei = 0; ei < extraImgs.length; ei += 1) {
-                const img = extraImgs[ei];
-                if (!img || seenPersonaImg.has(img)) {
-                    continue;
-                }
-                const src = img.getAttribute("src") || "";
-                if (!srcHasBotPersonaImageMarker_(src)) {
-                    continue;
-                }
-                seenPersonaImg.add(img);
-                personaImageList.push(img);
-            }
-        }
-        for (const image of personaImageList) {
             const personaType = getPersonaType(image);
             if (!personaType) {
                 continue;
             }
             if (personaType === "bot") {
-                const inEsDomPersonaRow =
-                    typeof image.closest === "function"
-                    && image.closest(`.${DFCHAT_ES_BOT_PERSONA_CLASS}`);
-                if (!inEsDomPersonaRow) {
-                    reorderBotPersonaMarkdownToTopOfStack_(image);
-                    reorderBotPersonaEntryBeforeContiguousBotChunks_(image);
-                    reorderBotPersonaListRowBeforeContiguousBotRows_(image);
-                }
+                reorderBotPersonaMarkdownToTopOfStack_(image);
+                reorderBotPersonaEntryBeforeContiguousBotChunks_(image);
+                reorderBotPersonaListRowBeforeContiguousBotRows_(image);
             }
             if (personaType === "bot" && BOT_PERSONA_CONFIG.mode === "emojiTime") {
                 applyBotEmojiPersonaCaptionChrome(image);
@@ -29299,7 +26098,7 @@ function getPersonaType(imageNode) {
         return "user";
     }
 
-    if (srcHasBotPersonaImageMarker_(source)) {
+    if (source.includes(`#${PERSONA_URL_MARKER_BOT_IMG}`)) {
         return "bot";
     }
 
@@ -29327,19 +26126,6 @@ function getPersonaType(imageNode) {
     }
 
     return null;
-}
-
-function srcHasBotPersonaImageMarker_(source) {
-    const s = typeof source === "string" ? source : "";
-    if (s.includes(`#${PERSONA_URL_MARKER_BOT_IMG}`) || s.includes(`%23${PERSONA_URL_MARKER_BOT_IMG}`)) {
-        return true;
-    }
-    const base = getBotPersonaImageBaseUrl_();
-    if (!base) {
-        return false;
-    }
-    const norm = s.split("#")[0].split("?")[0].trim();
-    return norm === base;
 }
 
 function findPersonaContainer(imageNode, root) {
@@ -29388,7 +26174,7 @@ function stylePersonaContainer(container, imageNode, personaType) {
     const src = imageNode.getAttribute("src") || "";
     if (personaType === "bot" && BOT_PERSONA_CONFIG.mode === "image") {
         const { widthPx, heightPx, showTime } = BOT_PERSONA_CONFIG.image;
-        const isCat = srcHasBotPersonaImageMarker_(src);
+        const isCat = src.includes(`#${PERSONA_URL_MARKER_BOT_IMG}`);
         const isTime = src.includes(PERSONA_MARKER_BOT_TIME);
         imageNode.style.display = "inline-block";
         imageNode.style.verticalAlign = "middle";

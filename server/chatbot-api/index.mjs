@@ -5661,31 +5661,6 @@ function formatTranscriptMobileWithDialCode_(mobileValue, fields, opt) {
     return `${dialCode} ${mobile}`;
 }
 
-function formatTranscriptDateValue_(value) {
-    const raw = scalarFormValue(value);
-    if (!raw) {
-        return raw;
-    }
-    let m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw);
-    if (m) {
-        return `${m[3]}/${m[2]}/${m[1]}`;
-    }
-    m = /^(\d{2})[-/](\d{2})[-/](\d{4})$/.exec(raw);
-    if (m) {
-        return `${m[1]}/${m[2]}/${m[3]}`;
-    }
-    return raw;
-}
-
-function formatTranscriptFieldValue_(key, value) {
-    const raw = scalarFormValue(value);
-    const keyLower = typeof key === "string" ? key.trim().toLowerCase() : "";
-    if (keyLower.includes("date") || /^\d{4}-\d{2}-\d{2}$/.test(raw) || /^\d{2}[-/]\d{2}[-/]\d{4}$/.test(raw)) {
-        return formatTranscriptDateValue_(raw);
-    }
-    return raw;
-}
-
 /**
  * One assistant bubble built from saved lead fields (not Dialogflow wording).
  *
@@ -5719,7 +5694,7 @@ function buildContactLeadSummaryTextForTranscript_(opt) {
         if (!keyLower || used.has(keyLower) || CONTACT_FORM_TRANSCRIPT_SKIP_FIELD_KEYS_LOWER_.has(keyLower)) {
             continue;
         }
-        const sv = formatTranscriptFieldValue_(k, val);
+        const sv = scalarFormValue(val);
         if (!sv) {
             continue;
         }

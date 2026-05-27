@@ -1,6 +1,6 @@
 /**
  * Per-session contact hints for Meta channels (WhatsApp / Instagram / Facebook).
- * Mobile from sender id; name from WhatsApp profile or Graph API; email from Dialogflow when user shares it.
+ * Mobile from sender id; name from WhatsApp profile or Graph API; email from CX when user shares it.
  */
 
 import { normalizeLeadChannel } from "./normalize-channel.mjs";
@@ -79,7 +79,7 @@ export function whatsappProfileNameFromContacts_(contacts, waId) {
 }
 
 /** @param {Record<string, unknown>} params */
-export function contactFieldsFromDialogflowParams_(params) {
+export function contactFieldsFromCxParams_(params) {
     const name = pickFirstNonEmpty_(
         paramStr_(params.name),
         paramStr_(params.Name),
@@ -160,27 +160,27 @@ export function getMetaContact_(sessionId) {
 }
 
 /**
- * Merge profile, cached session contact, and Dialogflow parameters.
- * Dialogflow values win when present (user shared name/email in chat).
+ * Merge profile, cached session contact, and CX session parameters.
+ * CX values win when present (user shared name/email in chat).
  *
  * @param {{
  *   sessionId: string,
  *   channel: string,
  *   from: string,
  *   profileName?: string,
- *   dialogflowParams?: Record<string, unknown>
+ *   cxParams?: Record<string, unknown>
  * }} input
  */
 export function resolveMetaContactForSheet_(input) {
     const cached = getMetaContact_(input.sessionId);
-    const fromDialogflow = contactFieldsFromDialogflowParams_(input.dialogflowParams || {});
+    const fromCx = contactFieldsFromCxParams_(input.cxParams || {});
     const mobile = pickFirstNonEmpty_(
-        fromDialogflow.mobile,
+        fromCx.mobile,
         cached.mobile,
         mobileFromMetaSender_(input.channel, input.from)
     );
-    const name = pickFirstNonEmpty_(fromDialogflow.name, cached.name, input.profileName);
-    const email = pickFirstNonEmpty_(fromDialogflow.email, cached.email);
+    const name = pickFirstNonEmpty_(fromCx.name, cached.name, input.profileName);
+    const email = pickFirstNonEmpty_(fromCx.email, cached.email);
 
     rememberMetaContact_(input.sessionId, {
         name,
@@ -196,7 +196,7 @@ export function resolveMetaContactForSheet_(input) {
  * Contact hints to seed Dialogflow `$session.params` before detectIntent.
  * @param {{ sessionId: string, channel: string, from: string, profileName?: string }} input
  */
-export function metaContactHintsForDialogflowSession_(input) {
+export function metaContactHintsForCxSession_(input) {
     const cached = getMetaContact_(input.sessionId);
     const mobile = pickFirstNonEmpty_(
         cached.mobile,

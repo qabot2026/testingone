@@ -30,10 +30,11 @@ window.COMPANY_CHAT_UI_CONFIG = {
   // COMMON (shared: agent, form field defs, theme, …)
   // =========================
   common: {
-    // Dialogflow ES Messenger settings.
+    // Project + Agent settings (Dialogflow CX).
     dialogflow: {
-      agentId: "07ccbfd0-4cad-4898-8323-e6baeec80fc1",
-      intent: "FRESH"
+      projectId: "qabot01",
+      location: "us-central1",
+      agentId: "9dbd4886-3cbe-43fc-8eb5-54ee5097f25c"
     },
 
     // -------------------------------------------------------------------------
@@ -95,9 +96,6 @@ window.COMPANY_CHAT_UI_CONFIG = {
         offsetRightPx: 5,
         timeOffsetDownPx: 28,
         timeOffsetRightPx: -5,
-        // ES DOM persona row: nudge "Demo" caption only (clock uses timeOffset* above).
-        labelOffsetDownPx: 10,
-        labelOffsetLeftPx: 10,
         tightenBelowPx: 8,
         // ≤768px: shift bot persona img + time left (translateX) without affecting desktop.
         mobileNudgeLeftPx: 14
@@ -159,9 +157,9 @@ window.COMPANY_CHAT_UI_CONFIG = {
 
       /**
        * Live human-agent handoff (Railway `/api/live-agent/*` + agent desk `/live-agent`).
-       * Handoff is driven by Dialogflow ES payloads — not by matching phrases in the browser.
+       * Handoff is driven by Dialogflow CX — not by matching phrases in the browser.
        *
-       * ES setup (after contact form / lead capture in your flow):
+       * CX setup (after contact form / lead capture in your flow):
        * 1. Fulfillment → Custom payload (JSON):
        *    `{ "action": "request_live_agent", "message": "Connecting you with an agent. Please wait…" }`
        * 2. Or webhook fulfillment tag: `request_live_agent` (see server/chatbot-api `/webhook`).
@@ -176,7 +174,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
 
       /**
        * After the visitor interacts once (message or chip), if they send nothing for `idleMs`, the widget
-       * sends `dialogflowEvent` to Dialogflow. Welcome-only sessions do not sync transcript/Sheet/Firestore and do
+       * sends `dialogflowEvent` to CX. Welcome-only sessions do not sync transcript/Sheet/Firestore and do
        * not trigger the idle event. Timer resets only on user actions — bot replies do not reset it.
        */
       idleEndConversation: {
@@ -191,7 +189,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
        * on `df-user-input-entered` / `df-request-sent` when the browser allows it. Set `enabled: false` to turn off.
        *
        * When the limit is hit, the bot shows `blockMessage` and opens the contact form (see `openContactFormOnBlock`).
-       * Optional `dialogflowEventOnBlock`: ES event name sent after the form opens.
+       * Optional `dialogflowEventOnBlock`: CX custom event name sent after the form opens (define the same event in CX).
        */
       blockChatWithoutMobile: {
         enabled: false,
@@ -221,8 +219,9 @@ window.COMPANY_CHAT_UI_CONFIG = {
       /**
        * Inline image carousel (`open_gallery`) + inline YouTube (`open_video`).
        *
-       * - **`allowGalleryOnAnyIntent: true`** (default) — show whenever fulfillment sends payloads.
-       * - **`allowGalleryOnAnyIntent: false`** — only when the Dialogflow intent display name matches a substring in
+       * - **`allowGalleryOnAnyIntent: true`** (default) — show whenever fulfillment sends payloads (recommended
+       *   with merge limited to **`queryResult.responseMessages`** only — not `detail.data.messages`).
+       * - **`allowGalleryOnAnyIntent: false`** — only when the CX intent display name matches a substring in
        *   **`restrictToIntentDisplayNames`**. Use if the webhook incorrectly sends `open_gallery` on every turn.
        */
       inlineGallery: {
@@ -418,7 +417,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
     },
 
     // **Open chat card** (the whitish panel: title + message area + input). Google sets one var `--df-messenger-chat-border-radius` on the whole card; we override the panel shell in shadow (`.chat-wrapper`) per corner.
-    // Top corners must match the titlebar's own border-top-*-radius (read from `--df-messenger-chat-border-radius`) — otherwise the wrapper's forced-white background bleeds through as visible white edges at the curved top corners of the header. Bottom corners are the panel's own outer rounding.
+    // Top corners must match the titlebar's own border-top-*-radius (read from `--df-messenger-chat-border-radius` in df-messenger.js) — otherwise the wrapper's forced-white background bleeds through as visible white edges at the curved top corners of the header. Bottom corners are the panel's own outer rounding.
     // Omit this block to keep the default all-around radius from `dfMessengerTheme`.
     chatPanel: {
       borderRadius: {
@@ -439,7 +438,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
       // If Dialogflow still uses `form_id: "appointment"`, load this form instead (e.g. shared general calendar).
       legacyAppointmentFormAlias: "appintmentformgeneral",
       // Shared defaults when a form does not set its own (this form uses per-form chatSummaryFieldNames).
-      // Align keys with Dialogflow parameters — e.g. name, mobile, email (field `name` → POST JSON key).
+      // Align keys with CX session parameters — e.g. name, mobile, email (field `name` → POST JSON key).
       chatSummaryFieldNames: ["name", "mobile", "email"],
       forms: Object.assign(
         {},
@@ -588,7 +587,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
 
     chatWindow: {
       widthPx: 400,
-      heightPx: 500,
+      heightPx: 450,
 
       // right + bottom (matches `common.chatLayout.side: "right"`).
       bubblePosition: { rightPx: 10, bottomPx: 20, leftPx: null, topPx: null },
@@ -682,8 +681,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
       // Optional: set only the bubble–window gap: `chatWindowOffsetPx: 10` (see desk).
 
       // Add to the panel height; optional, separate from `chatWindowOffsetPx`.
-      /* +50px vs previous default (20) for taller open panel on phones */
-      extraHeightTowardBubblePx: 70
+      extraHeightTowardBubblePx: 20
     },
 
     autoOpenChat: {
