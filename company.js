@@ -1969,8 +1969,8 @@ let overlayStatusNode = null;
 const CHAT_ACTION_BAR_ID = "dfchat-chat-action-bar";
 /** @type {HTMLDivElement | null} */
 let poweredByStripNode = null;
-/** Shift the user input / footer row: positive = up (`translateY(-n)`), negative = down, 0 = default. */
-const USER_INPUT_NUDGE_UP_PX = -20;
+/** Shift the user input / footer row: positive = up (`translateY(-n)`), negative = down, 0 = default. ES uses native flex footer — no nudge. */
+const USER_INPUT_NUDGE_UP_PX = 0;
 let chatActionBarSyncTimer = null;
 /** @type {{ left: number, top: number } | null} */
 let chatActionBarFixedPos = null;
@@ -9996,55 +9996,19 @@ function applyDialogflowEsCxLookCompatibility(dfMessenger, theme, headerConfig) 
 .chat-wrapper {
   position: fixed !important;
   width: var(--df-messenger-chat-window-width, 400px) !important;
-  height: var(--df-messenger-chat-window-height, 500px) !important;
-  min-height: var(--df-messenger-chat-window-height, 500px) !important;
-  max-height: min(var(--df-messenger-chat-window-height, 500px), calc(100dvh - 100px)) !important;
   max-width: calc(100vw - 32px) !important;
   right: var(--dfchat-es-right, 10px) !important;
   left: var(--dfchat-es-left, auto) !important;
   top: auto !important;
   bottom: calc(var(--dfchat-es-bottom, 20px) + var(--df-messenger-chat-window-offset, 0px) + 84px) !important;
-  background: var(--df-messenger-chat-background, #ffffff) !important;
+  background: var(--df-messenger-chat-background-color, #fafafa) !important;
   border: var(--df-messenger-chat-border, none) !important;
   border-radius: var(--df-messenger-chat-border-radius, 22px) !important;
   box-shadow: var(--df-messenger-chat-box-shadow, 0 16px 42px rgba(15, 23, 42, 0.16)) !important;
   overflow: hidden !important;
   box-sizing: border-box !important;
-  transform: none !important;
 }
-.chat-wrapper.chat-open,
-.chat-wrapper.opened,
-.chat-wrapper.is-open,
-.chat-wrapper[opened] {
-  height: var(--df-messenger-chat-window-height, 500px) !important;
-  min-height: var(--df-messenger-chat-window-height, 500px) !important;
-  max-height: min(var(--df-messenger-chat-window-height, 500px), calc(100dvh - 100px)) !important;
-  opacity: 1 !important;
-  transform: none !important;
-}
-${getEsChatPanelGridDockCss_()}
-.message-list-wrapper,
-df-message-list {
-  display: block !important;
-  min-height: 0 !important;
-  max-height: none !important;
-  overflow-x: hidden !important;
-  overflow-y: auto !important;
-  -webkit-overflow-scrolling: touch !important;
-  overscroll-behavior-y: contain !important;
-  touch-action: pan-y !important;
-  box-sizing: border-box !important;
-}
-#messageList,
-#message-list {
-  display: block !important;
-  flex: none !important;
-  min-height: auto !important;
-  height: auto !important;
-  max-height: none !important;
-  overflow: visible !important;
-  box-sizing: border-box !important;
-}
+${getEsNativePanelLayoutCss_()}
 .chat-wrapper.chat-min {
   width: var(--df-messenger-chat-window-width, 400px) !important;
 }
@@ -25699,107 +25663,51 @@ function scheduleEsBotPersonaDomRepair_(dfMessenger, whenMs) {
 }
 
 /**
- * True when ES puts the transcript + composer as direct `.chat-wrapper` children (with or without an
- * empty `df-messenger-chat` placeholder that would otherwise eat the flexible row).
- * @param {Element | null | undefined} wrapper
- * @returns {boolean}
- */
-function isEsFlatChatPanelLayout_(wrapper) {
-    if (!wrapper || typeof wrapper.querySelector !== "function") {
-        return false;
-    }
-    let directScroller = null;
-    let directComposer = null;
-    try {
-        directScroller = wrapper.querySelector(
-            ":scope > .message-list-wrapper, :scope > df-message-list"
-        );
-        directComposer = wrapper.querySelector(":scope > df-messenger-user-input");
-    } catch {
-        return false;
-    }
-    return !!(directScroller && directComposer);
-}
-
-/**
- * @param {Element | null | undefined} chatShell
- * @returns {boolean}
- */
-function esChatShellHostsTranscript_(chatShell) {
-    if (!chatShell || typeof chatShell.querySelector !== "function") {
-        return false;
-    }
-    return !!chatShell.querySelector(
-        ".message-list-wrapper, df-message-list, #messageList, #message-list"
-    );
-}
-
-/**
- * Single ES panel grid: header / scrollable transcript / footer. `display:contents` hoists body+footer
- * when they live inside `df-messenger-chat`; empty shells are removed from layout.
+ * ES Messenger (bootstrap.js) layout inside `df-messenger-chat` shadow:
+ * `.chat-wrapper` > `df-messenger-titlebar` + `df-message-list` + `df-messenger-user-input`.
+ * Google uses flex column + `df-message-list { flex: 1 1 auto }` — do not apply CX grid/`df-messenger-chat` child rules.
+ * @see https://cloud.google.com/dialogflow/es/docs/integrations/dialogflow-messenger
  * @returns {string}
  */
-function getEsChatPanelGridDockCss_() {
+function getEsNativePanelLayoutCss_() {
     return `
-.chat-wrapper,
+.chat-wrapper {
+  display: flex !important;
+  flex-direction: column !important;
+  box-sizing: border-box !important;
+}
 .chat-wrapper.chat-open,
 .chat-wrapper.opened,
 .chat-wrapper.is-open,
-.chat-wrapper[opened],
-.chat-wrapper.dfchat-es-flat-chat-panel {
-  display: grid !important;
-  grid-template-columns: minmax(0, 1fr) !important;
-  grid-template-rows: auto minmax(0, 1fr) auto !important;
-  align-content: stretch !important;
+.chat-wrapper[opened] {
+  display: flex !important;
+  flex-direction: column !important;
+  height: var(--df-messenger-chat-window-height, 560px) !important;
+  min-height: var(--df-messenger-chat-window-height, 560px) !important;
+  max-height: min(var(--df-messenger-chat-window-height, 560px), calc(100dvh - 100px)) !important;
+  opacity: 1 !important;
+  transform: translateZ(0) scale(1) !important;
 }
-.chat-wrapper > .title-wrapper,
-.chat-wrapper > df-messenger-titlebar,
-.chat-wrapper > df-messenger-chat > .title-wrapper,
-.chat-wrapper > df-messenger-chat > df-messenger-titlebar {
-  grid-row: 1 !important;
-  grid-column: 1 !important;
+df-messenger-titlebar {
+  flex: 0 0 auto !important;
+  flex-shrink: 0 !important;
 }
-.chat-wrapper > .message-list-wrapper,
-.chat-wrapper > df-message-list,
-.chat-wrapper > df-messenger-chat > .message-list-wrapper,
-.chat-wrapper > df-messenger-chat > df-message-list {
-  grid-row: 2 !important;
-  grid-column: 1 !important;
+df-message-list {
+  flex: 1 1 auto !important;
   min-height: 0 !important;
-  height: auto !important;
-  max-height: none !important;
-  overflow-x: hidden !important;
-  overflow-y: auto !important;
-  -webkit-overflow-scrolling: touch !important;
-  overscroll-behavior-y: contain !important;
-  touch-action: pan-y !important;
-  align-self: stretch !important;
-  box-sizing: border-box !important;
+  min-width: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
 }
-.chat-wrapper > df-messenger-user-input,
-.chat-wrapper > df-messenger-chat > df-messenger-user-input {
-  grid-row: 3 !important;
-  grid-column: 1 !important;
+df-messenger-user-input {
+  flex: 0 0 auto !important;
+  flex-shrink: 0 !important;
   margin-top: 0 !important;
   transform: none !important;
   position: relative !important;
   top: auto !important;
   bottom: auto !important;
-  align-self: end !important;
-}
-.chat-wrapper > df-messenger-chat:has(.message-list-wrapper, df-message-list, #messageList, #message-list) {
-  display: contents !important;
-}
-.chat-wrapper > df-messenger-chat:not(:has(.message-list-wrapper, df-message-list, #messageList, #message-list)) {
-  display: none !important;
-  height: 0 !important;
-  min-height: 0 !important;
-  max-height: 0 !important;
-  overflow: hidden !important;
-  margin: 0 !important;
-  padding: 0 !important;
-  visibility: hidden !important;
-  pointer-events: none !important;
 }`;
 }
 
@@ -25812,40 +25720,7 @@ function getEsChatPanelLayoutCss_() {
   position: fixed !important;
   transform: none !important;
 }
-.chat-wrapper,
-.chat-wrapper.chat-open,
-.chat-wrapper.opened,
-.chat-wrapper.is-open,
-.chat-wrapper[opened] {
-  overflow: hidden !important;
-  position: fixed !important;
-  transform: none !important;
-  will-change: auto !important;
-  box-sizing: border-box !important;
-}
-${getEsChatPanelGridDockCss_()}
-.message-list-wrapper,
-df-message-list {
-  display: block !important;
-  min-height: 0 !important;
-  max-height: none !important;
-  overflow-x: hidden !important;
-  overflow-y: auto !important;
-  -webkit-overflow-scrolling: touch !important;
-  overscroll-behavior-y: contain !important;
-  touch-action: pan-y !important;
-  box-sizing: border-box !important;
-}
-#messageList,
-#message-list {
-  display: block !important;
-  flex: none !important;
-  min-height: auto !important;
-  height: auto !important;
-  max-height: none !important;
-  overflow: visible !important;
-  box-sizing: border-box !important;
-}
+${getEsNativePanelLayoutCss_()}
 .${DFCHAT_ES_USER_PERSONA_CLASS} {
   display: flex !important;
   justify-content: flex-end !important;
@@ -26003,129 +25878,53 @@ function ensureEsChatPanelLayoutWatcher_(dfMessenger) {
  * @param {HTMLElement} dfMessenger
  */
 function applyEsChatPanelLayoutDomFixes_(dfMessenger) {
+    if (!dfMessenger || !isDialogflowEsMessenger_(dfMessenger)) {
+        return;
+    }
+    clearEsPanelLayoutInlineOverrides_(dfMessenger);
     const roots = collectSearchRoots(dfMessenger);
     for (let ri = 0; ri < roots.length; ri += 1) {
         const root = roots[ri];
         if (!root || typeof root.querySelector !== "function") {
             continue;
         }
-        let wrappers = [];
-        try {
-            wrappers = Array.from(root.querySelectorAll(".chat-wrapper"));
-        } catch {
-            wrappers = [];
+        const panel = root.querySelector(".chat-wrapper");
+        if (!panel) {
+            continue;
         }
-        for (let wi = 0; wi < wrappers.length; wi += 1) {
-            const wrapper = wrappers[wi];
-            if (!wrapper || !wrapper.classList) {
-                continue;
-            }
-            const isFlat = isEsFlatChatPanelLayout_(wrapper);
-            let chatShell = null;
+        if (panel.style) {
             try {
-                chatShell = wrapper.querySelector(":scope > df-messenger-chat");
-            } catch {
-                chatShell = null;
-            }
-            try {
-                if (isFlat) {
-                    wrapper.classList.add("dfchat-es-flat-chat-panel");
-                } else {
-                    wrapper.classList.remove("dfchat-es-flat-chat-panel");
-                }
-            } catch {
-                /* ignore */
-            }
-            if (wrapper.style) {
-                try {
-                    wrapper.style.setProperty("display", "grid", "important");
-                    wrapper.style.setProperty("grid-template-columns", "minmax(0, 1fr)", "important");
-                    wrapper.style.setProperty("grid-template-rows", "auto minmax(0, 1fr) auto", "important");
-                } catch {
-                    /* ignore */
-                }
-            }
-            let titleEl = null;
-            try {
-                titleEl = wrapper.querySelector(
-                    ":scope > .title-wrapper, :scope > df-messenger-titlebar"
-                );
-            } catch {
-                titleEl = null;
-            }
-            if (titleEl && titleEl.style) {
-                try {
-                    titleEl.style.setProperty("grid-row", "1", "important");
-                    titleEl.style.setProperty("grid-column", "1", "important");
-                } catch {
-                    /* ignore */
-                }
-            }
-            if (chatShell && chatShell.style) {
-                try {
-                    if (esChatShellHostsTranscript_(chatShell)) {
-                        chatShell.style.setProperty("display", "contents", "important");
-                        chatShell.style.removeProperty("flex");
-                        chatShell.style.removeProperty("height");
-                        chatShell.style.removeProperty("min-height");
-                        chatShell.style.removeProperty("max-height");
-                    } else if (isFlat || !esChatShellHostsTranscript_(chatShell)) {
-                        chatShell.style.setProperty("display", "none", "important");
-                        chatShell.style.setProperty("height", "0", "important");
-                        chatShell.style.setProperty("min-height", "0", "important");
-                        chatShell.style.setProperty("max-height", "0", "important");
-                        chatShell.style.setProperty("overflow", "hidden", "important");
-                    }
-                } catch {
-                    /* ignore */
-                }
-            }
-        }
-        let scroller = null;
-        for (let wi = 0; wi < wrappers.length; wi += 1) {
-            const wrapper = wrappers[wi];
-            if (!wrapper || typeof wrapper.querySelector !== "function") {
-                continue;
-            }
-            scroller =
-                wrapper.querySelector(":scope > .message-list-wrapper")
-                || wrapper.querySelector(":scope > df-message-list");
-            if (scroller) {
-                break;
-            }
-        }
-        if (!scroller) {
-            scroller = root.querySelector("df-messenger-chat .message-list-wrapper")
-                || root.querySelector("df-messenger-chat df-message-list");
-        }
-        if (!scroller) {
-            scroller = root.querySelector(".message-list-wrapper");
-        }
-        if (!scroller) {
-            scroller = root.querySelector("df-message-list");
-        }
-        if (scroller && scroller.style) {
-            try {
-                scroller.style.setProperty("grid-row", "2", "important");
-                scroller.style.setProperty("grid-column", "1", "important");
-                scroller.style.setProperty("min-height", "0", "important");
-                scroller.style.setProperty("overflow-y", "auto", "important");
-                scroller.style.removeProperty("height");
-                scroller.style.removeProperty("max-height");
-                scroller.style.removeProperty("flex");
+                panel.style.setProperty("display", "flex", "important");
+                panel.style.setProperty("flex-direction", "column", "important");
+                panel.style.removeProperty("grid-template-rows");
+                panel.style.removeProperty("grid-template-columns");
             } catch {
                 /* ignore */
             }
         }
-        const composer = root.querySelector("df-messenger-user-input");
+        const msgList = panel.querySelector("df-message-list");
+        if (msgList && msgList.style) {
+            try {
+                msgList.style.setProperty("flex", "1 1 auto", "important");
+                msgList.style.setProperty("min-height", "0", "important");
+                msgList.style.setProperty("display", "flex", "important");
+                msgList.style.setProperty("flex-direction", "column", "important");
+                msgList.style.removeProperty("grid-row");
+                msgList.style.removeProperty("height");
+                msgList.style.removeProperty("max-height");
+            } catch {
+                /* ignore */
+            }
+        }
+        const composer = panel.querySelector("df-messenger-user-input");
         if (composer && composer.style) {
             try {
-                composer.style.setProperty("grid-row", "3", "important");
-                composer.style.setProperty("grid-column", "1", "important");
-                composer.style.removeProperty("flex");
+                composer.style.setProperty("flex", "0 0 auto", "important");
+                composer.style.setProperty("flex-shrink", "0", "important");
                 composer.style.removeProperty("margin-top");
                 composer.style.removeProperty("transform");
                 composer.style.removeProperty("position");
+                composer.style.removeProperty("grid-row");
             } catch {
                 /* ignore */
             }
