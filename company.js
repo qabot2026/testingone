@@ -1797,7 +1797,7 @@ const originalTextNodeContent = new Map();
 const originalElementAttributes = new Map();
 const googleTranslationCache = new Map();
 
-const COMPANY_JS_BUILD_TAG = "20260527-es-panel-grid-watch";
+const COMPANY_JS_BUILD_TAG = "20260527-es-user-persona-icons-panel";
 const COMPANY_DEBUG_QUERY_FLAG = "dfchatDebug";
 let debugMountAttemptSeq = 0;
 let debugBadgeLastRenderAt = 0;
@@ -2783,6 +2783,71 @@ function initializeHardActionBar() {
 }
 
 /** Bubble + header chrome icons (dashboard preview must update attrs after merge). */
+/**
+ * ES bootstrap nests `df-messenger-chat-bubble` inside `df-messenger` (no separate bubble element we create).
+ * @param {HTMLElement | null | undefined} dfMessenger
+ * @returns {HTMLElement | null}
+ */
+function resolveAndCacheEsBubbleHost_(dfMessenger) {
+    const ms =
+        dfMessenger
+        || (typeof activeDfMessenger !== "undefined" ? activeDfMessenger : null);
+    if (!ms || typeof ms.querySelector !== "function") {
+        return activeBubbleNode;
+    }
+    const bubble = ms.querySelector("df-messenger-chat-bubble");
+    if (bubble) {
+        activeBubbleNode = /** @type {HTMLElement} */ (bubble);
+    }
+    return activeBubbleNode;
+}
+
+/**
+ * @param {HTMLElement | null | undefined} dfMessenger
+ * @returns {void}
+ */
+function scheduleEsTitlebarAndBubbleIconSync_(dfMessenger) {
+    const ms =
+        dfMessenger
+        || (typeof activeDfMessenger !== "undefined" ? activeDfMessenger : null);
+    if (!ms || !isDialogflowEsMessenger_(ms)) {
+        return;
+    }
+    const headerConfig = COMMON_CONFIG.header || {};
+    const { chatIconUrl, chatTitleIconUrl } = resolveMessengerChatIconUrls(headerConfig);
+    const subtitle = typeof headerConfig.subtitle === "string" ? headerConfig.subtitle.trim() : "";
+    const bubble = resolveAndCacheEsBubbleHost_(ms);
+    applyMessengerChatIconAttributes(ms, bubble, headerConfig);
+
+    const syncTitle = () => {
+        const roots = collectSearchRoots(ms);
+        for (let ri = 0; ri < roots.length; ri += 1) {
+            const root = roots[ri];
+            if (!root || !root.querySelectorAll) {
+                continue;
+            }
+            const wrappers = root.querySelectorAll(".title-wrapper, df-messenger-titlebar");
+            for (let wi = 0; wi < wrappers.length; wi += 1) {
+                const tw = wrappers[wi];
+                if (tw && tw.querySelector) {
+                    syncDialogflowEsTitlebarChrome_(tw, chatTitleIconUrl, subtitle);
+                }
+            }
+        }
+    };
+
+    syncTitle();
+    scheduleDfMessengerChatIconImageSrcSync(ms, chatIconUrl, chatTitleIconUrl);
+    [80, 240, 600, 1200, 2500, 4500].forEach((ms) => {
+        window.setTimeout(() => {
+            if (activeDfMessenger === ms) {
+                syncTitle();
+                scheduleDfMessengerChatIconImageSrcSync(ms, chatIconUrl, chatTitleIconUrl);
+            }
+        }, ms);
+    });
+}
+
 function resolveMessengerChatIconUrls(headerConfig) {
     const h = headerConfig && typeof headerConfig === "object" ? headerConfig : {};
     const fallback = "https://storage.googleapis.com/companybucket/Images/cat.png";
@@ -2861,20 +2926,53 @@ function scheduleDfMessengerChatIconImageSrcSync(dfMessenger, chatIconUrl, chatT
     };
 
     const patch = () => {
-        const sr = bubbleHost && bubbleHost.shadowRoot;
-        if (sr && typeof chatIconUrl === "string" && chatIconUrl.trim()) {
-            // Only the launcher FAB — broad `img` queries can hit full-panel artwork.
-            const launcherImg = sr.querySelector(".bubble img")
-                || sr.querySelector(".bubble button img")
-                || sr.querySelector(".bubble [role=\"button\"] img");
-            if (launcherImg) {
-                try {
-                    launcherImg.removeAttribute("src");
-                    launcherImg.setAttribute("src", chatIconUrl);
-                    launcherImg.src = chatIconUrl;
-                    applyLauncherImgConstraints(launcherImg);
-                } catch {
-                    /* no-op */
+        const hosts = [];
+        if (bubbleHost) {
+            hosts.push(bubbleHost);
+        }
+        if (typeof dfMessenger.shadowRoot !== "undefined" && dfMessenger.shadowRoot) {
+            hosts.push(dfMessenger.shadowRoot);
+        }
+        const roots = collectSearchRoots(dfMessenger);
+        for (let ri = 0; ri < roots.length; ri += 1) {
+            if (roots[ri] instanceof ShadowRoot) {
+                hosts.push(roots[ri]);
+            }
+        }
+
+        if (typeof chatIconUrl === "string" && chatIconUrl.trim()) {
+            const url = chatIconUrl.trim();
+            for (let hi = 0; hi < hosts.length; hi += 1) {
+                const sr = hosts[hi];
+                if (!sr || typeof sr.querySelector !== "function") {
+                    continue;
+                }
+                const launcherImg =
+                    sr.querySelector("#widgetIcon img")
+                    || sr.querySelector("#widgetIcon .df-chat-icon")
+                    || sr.querySelector(".bubble img")
+                    || sr.querySelector(".bubble button img")
+                    || sr.querySelector(".bubble [role=\"button\"] img");
+                if (launcherImg) {
+                    try {
+                        launcherImg.removeAttribute("src");
+                        launcherImg.setAttribute("src", url);
+                        launcherImg.src = url;
+                        applyLauncherImgConstraints(launcherImg);
+                    } catch {
+                        /* no-op */
+                    }
+                }
+                const widget = sr.querySelector("#widgetIcon");
+                if (widget && widget.style) {
+                    try {
+                        widget.style.setProperty("background-image", `url("${url.replace(/"/g, "%22")}")`, "important");
+                        widget.style.setProperty("background-size", "cover", "important");
+                        widget.style.setProperty("background-position", "center", "important");
+                        widget.style.setProperty("background-repeat", "no-repeat", "important");
+                    } catch {
+                        /* no-op */
+                    }
                 }
             }
         }
@@ -2883,13 +2981,13 @@ function scheduleDfMessengerChatIconImageSrcSync(dfMessenger, chatIconUrl, chatT
             return;
         }
 
-        const roots = collectSearchRoots(dfMessenger);
-        for (let r = 0; r < roots.length; r += 1) {
-            const root = roots[r];
+        const searchRoots = collectSearchRoots(dfMessenger);
+        for (let r = 0; r < searchRoots.length; r += 1) {
+            const root = searchRoots[r];
             if (!root || typeof root.querySelectorAll !== "function") {
                 continue;
             }
-            const bars = root.querySelectorAll("df-messenger-titlebar, df-messenger-header");
+            const bars = root.querySelectorAll("df-messenger-titlebar, df-messenger-header, .title-wrapper");
             for (let i = 0; i < bars.length; i += 1) {
                 const bar = bars[i];
                 const im = bar && typeof bar.querySelector === "function" ? bar.querySelector("img") : null;
@@ -2971,6 +3069,8 @@ function createAndMountMessenger() {
     applyBotWritingTextToChatBubble(bubble);
     scheduleChatInputPlaceholderRefresh(df);
     document.body.appendChild(df);
+    resolveAndCacheEsBubbleHost_(df);
+    scheduleEsTitlebarAndBubbleIconSync_(df);
 
     restartBotWritingDotsTimer();
 
@@ -2986,6 +3086,8 @@ function createAndMountMessenger() {
             }
             ensureBubbleVisible(df);
             applyChatBubbleLauncherCircleStyle(df);
+            resolveAndCacheEsBubbleHost_(df);
+            scheduleEsTitlebarAndBubbleIconSync_(df);
         }, ms);
     });
     if (IS_FORCE_TITLEBAR_CLOSE_X_ENABLED) {
@@ -3025,6 +3127,8 @@ function createAndMountMessenger() {
         if (activeDfMessenger !== df) {
             return;
         }
+        scheduleEsTitlebarAndBubbleIconSync_(df);
+        scheduleEsChatPanelLayoutRepair_(df);
         scheduleChatMessageListScrollbarReapply(df);
         scheduleComposerSpeechMicAttach(df);
         [50, 200, 500, 1200].forEach((ms) => {
@@ -9773,11 +9877,13 @@ input {
 
     applyStyle();
     applyEsChatPanelLayoutToMessenger_(dfMessenger);
+    scheduleEsTitlebarAndBubbleIconSync_(dfMessenger);
     [80, 240, 700, 1500, 3000].forEach((ms) => {
         window.setTimeout(() => {
             if (activeDfMessenger === dfMessenger) {
                 applyStyle();
                 applyEsChatPanelLayoutToMessenger_(dfMessenger);
+                scheduleEsTitlebarAndBubbleIconSync_(dfMessenger);
             }
         }, ms);
     });
@@ -10559,8 +10665,11 @@ function initializeMessengerReadyState(dfMessenger, bubbleNode) {
         isMessengerLoaded = true;
         syncDfMessengerSessionParametersFromClientContext(dfMessenger);
         reapplyChatWindowOffsetFromConfig(dfMessenger);
+        resolveAndCacheEsBubbleHost_(dfMessenger);
+        scheduleEsTitlebarAndBubbleIconSync_(dfMessenger);
         scheduleChatMessageListScrollbarReapply(dfMessenger);
         schedulePersonaShadowFix(dfMessenger);
+        applyEsChatPanelLayoutToMessenger_(dfMessenger);
 
         if (shouldAutoOpenChat) {
             openChatWindow(dfMessenger, bubbleNode);
@@ -12040,6 +12149,8 @@ const DFCHAT_INLINE_SELECT_CLASS = "dfchat-inline-select";
 const DFCHAT_INLINE_BOOKING_CAL_CLASS = "dfchat-inline-booking-calendar";
 /** ES `#messageList` bot persona row (DOM injection; bootstrap does not always surface `renderCustomText` markdown). */
 const DFCHAT_ES_BOT_PERSONA_CLASS = "dfchat-es-bot-persona";
+/** ES `#messageList` user persona caption (right-aligned; not the bot-markdown lane). */
+const DFCHAT_ES_USER_PERSONA_CLASS = "dfchat-es-user-persona";
 
 /** @param {unknown} value @param {number} fallback @param {number} min @param {number} max */
 function sanitizeInlineCarouselPx_(value, fallback, min, max) {
@@ -12262,7 +12373,8 @@ function isDfchatInlineSyntheticRow(el) {
         && (el.classList.contains(DFCHAT_INLINE_GALLERY_CLASS)
             || el.classList.contains(DFCHAT_INLINE_VIDEO_CLASS)
             || el.classList.contains(DFCHAT_INLINE_BOOKING_CAL_CLASS)
-            || el.classList.contains(DFCHAT_ES_BOT_PERSONA_CLASS)));
+            || el.classList.contains(DFCHAT_ES_BOT_PERSONA_CLASS)
+            || el.classList.contains(DFCHAT_ES_USER_PERSONA_CLASS)));
 }
 
 /**
@@ -19853,6 +19965,15 @@ function installRenderedBotTranscriptHook_(host) {
                 scheduleEsBotPersonaDomRepair_(/** @type {HTMLElement} */ (el), Date.now());
                 return undefined;
             }
+            if (
+                isBot !== false
+                && typeof text === "string"
+                && isUserPersonaMarkdownText_(text)
+                && isDialogflowEsMessenger_(/** @type {HTMLElement} */ (el))
+            ) {
+                scheduleEsUserPersonaDomRepair_(/** @type {HTMLElement} */ (el));
+                return undefined;
+            }
         } catch {
             /* ignore */
         }
@@ -24905,15 +25026,21 @@ function getScreenResolution() {
 
 function renderUserPersona(dfMessenger) {
     const ms = dfMessenger && dfMessenger === activeDfMessenger ? dfMessenger : activeDfMessenger;
-    if (!ms || typeof ms.renderCustomText !== "function") {
+    if (!ms) {
         return;
     }
     const now = Date.now();
     if (now - lastUserPersonaRenderAt < 300) {
         return;
     }
-
     lastUserPersonaRenderAt = now;
+    if (isDialogflowEsMessenger_(ms)) {
+        scheduleEsUserPersonaDomRepair_(ms);
+        return;
+    }
+    if (typeof ms.renderCustomText !== "function") {
+        return;
+    }
     const u = USER_PERSONA_CONFIG;
     const timeLabel = u.showTime ? getPersonaTimeLabel(u.timeZone) : "";
     renderPersona(ms, "user", u.label, timeLabel);
@@ -25161,11 +25288,22 @@ function scheduleEsBotPersonaDomRepair_(dfMessenger, whenMs) {
  */
 function getEsChatPanelLayoutCss_() {
     return `
-.chat-wrapper {
+.df-messenger-wrapper {
+  position: fixed !important;
+  transform: none !important;
+}
+.chat-wrapper,
+.chat-wrapper.chat-open,
+.chat-wrapper.opened,
+.chat-wrapper.is-open,
+.chat-wrapper[opened] {
   display: grid !important;
   grid-template-columns: 1fr !important;
   grid-template-rows: auto minmax(0, 1fr) !important;
   overflow: hidden !important;
+  position: fixed !important;
+  transform: none !important;
+  will-change: auto !important;
 }
 .chat-wrapper > df-messenger-titlebar,
 .chat-wrapper > .title-wrapper {
@@ -25204,6 +25342,41 @@ df-message-list {
   height: auto !important;
   max-height: none !important;
   overflow: visible !important;
+}
+.${DFCHAT_ES_USER_PERSONA_CLASS} {
+  display: flex !important;
+  justify-content: flex-end !important;
+  align-items: center !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+  margin: 2px 10px 4px !important;
+  padding: 0 !important;
+  background: transparent !important;
+}
+.${DFCHAT_ES_USER_PERSONA_CLASS}__inner {
+  display: inline-flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: flex-end !important;
+  gap: 6px !important;
+  margin-left: auto !important;
+  max-width: 100% !important;
+}
+.${DFCHAT_ES_USER_PERSONA_CLASS}__caption,
+.${DFCHAT_ES_USER_PERSONA_CLASS}__label {
+  color: ${PERSONA_TEXT_COLOR} !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  line-height: 1.25 !important;
+  white-space: nowrap !important;
+}
+.${DFCHAT_ES_USER_PERSONA_CLASS}__time {
+  color: ${PERSONA_TEXT_COLOR} !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  filter: blur(${PERSONA_SOFT_BLUR}) !important;
+  opacity: ${PERSONA_OPACITY} !important;
+  margin-left: 4px !important;
 }`;
 }
 
@@ -25229,9 +25402,7 @@ function clearEsPanelLayoutInlineOverrides_(dfMessenger) {
         let nodes = [];
         try {
             nodes = Array.from(
-                root.querySelectorAll(
-                    ".chat-wrapper, df-messenger-chat, .message-list-wrapper, df-message-list, #messageList, #message-list"
-                )
+                root.querySelectorAll(".message-list-wrapper, df-message-list, #messageList, #message-list")
             );
         } catch {
             nodes = [];
@@ -25331,7 +25502,6 @@ function applyEsChatPanelLayoutToMessenger_(dfMessenger) {
     if (!ms || !isDialogflowEsMessenger_(ms)) {
         return;
     }
-    clearEsPanelLayoutInlineOverrides_(ms);
     const layoutCss = getEsChatPanelLayoutCss_();
     const roots = collectSearchRoots(ms);
     for (let ri = 0; ri < roots.length; ri += 1) {
@@ -25426,6 +25596,213 @@ function findLastEsAgentMessageChild_(list) {
         }
     }
     return null;
+}
+
+/**
+ * @param {HTMLElement} list
+ * @returns {Element | null}
+ */
+function findLastEsUserMessageChild_(list) {
+    if (!list || !list.children) {
+        return null;
+    }
+    const ch = list.children;
+    for (let i = ch.length - 1; i >= 0; i -= 1) {
+        const el = ch[i];
+        if (!el || !(el instanceof Element)) {
+            continue;
+        }
+        if (el.classList && (el.classList.contains(DFCHAT_ES_USER_PERSONA_CLASS) || el.classList.contains(DFCHAT_ES_BOT_PERSONA_CLASS))) {
+            continue;
+        }
+        if (isDfchatInlineSyntheticRow(el)) {
+            continue;
+        }
+        const tag = el.tagName ? el.tagName.toUpperCase() : "";
+        if (tag === "DF-MESSAGE") {
+            const role = (el.getAttribute("type") || el.getAttribute("data-type") || "").trim().toLowerCase();
+            if (role === "user" || role === "human") {
+                return el;
+            }
+            continue;
+        }
+        if (typeof el.querySelector === "function") {
+            const inner = el.querySelector('df-message[type="user"], df-message[type="human"], df-message[data-type="user"]');
+            if (inner) {
+                return el;
+            }
+            const userMsg = el.querySelector(".message.user-message");
+            if (userMsg) {
+                return el;
+            }
+        }
+    }
+    return null;
+}
+
+/**
+ * @returns {HTMLElement | null}
+ */
+function buildEsUserPersonaDomRow_() {
+    const u = USER_PERSONA_CONFIG;
+    const label = typeof u.label === "string" ? u.label.trim() : "🙂";
+    const timeLabel = u.showTime ? getPersonaTimeLabel(u.timeZone) : "";
+    const row = document.createElement("div");
+    row.className = DFCHAT_ES_USER_PERSONA_CLASS;
+    row.setAttribute("data-dfchat-es-persona", "user");
+    const inner = document.createElement("div");
+    inner.className = `${DFCHAT_ES_USER_PERSONA_CLASS}__inner`;
+    const cap = document.createElement("span");
+    cap.className = `${DFCHAT_ES_USER_PERSONA_CLASS}__caption`;
+    const lb = document.createElement("span");
+    lb.className = `${DFCHAT_ES_USER_PERSONA_CLASS}__label`;
+    lb.textContent = label;
+    cap.appendChild(lb);
+    if (timeLabel) {
+        const tm = document.createElement("strong");
+        tm.className = `${DFCHAT_ES_USER_PERSONA_CLASS}__time`;
+        tm.textContent = timeLabel;
+        cap.appendChild(tm);
+    }
+    inner.appendChild(cap);
+    row.appendChild(inner);
+    return row;
+}
+
+/**
+ * Remove bot-lane markdown user persona (shows on the left on ES).
+ * @param {HTMLElement | null | undefined} dfMessenger
+ * @returns {number}
+ */
+function pruneEsLeakedUserPersonaMarkdownRows_(dfMessenger) {
+    const ms =
+        dfMessenger
+        || (typeof activeDfMessenger !== "undefined" ? activeDfMessenger : null);
+    if (!ms || !isDialogflowEsMessenger_(ms)) {
+        return 0;
+    }
+    const list = findMessengerMessageListRoot(ms);
+    if (!list) {
+        return 0;
+    }
+    const sentinel = USER_PERSONA_TEXT_SENTINEL;
+    const label = String(USER_PERSONA_CONFIG.label || "").trim();
+    let removed = 0;
+    let rows = [];
+    try {
+        rows = Array.from(list.querySelectorAll("df-message, .message.bot-message.markdown, .message.user-message"));
+    } catch {
+        rows = [];
+    }
+    for (let ci = 0; ci < list.children.length; ci += 1) {
+        const ch = list.children[ci];
+        if (ch && rows.indexOf(ch) === -1) {
+            rows.push(ch);
+        }
+    }
+    for (let ri = 0; ri < rows.length; ri += 1) {
+        const row = rows[ri];
+        if (!row || row.classList?.contains(DFCHAT_ES_USER_PERSONA_CLASS)) {
+            continue;
+        }
+        const txt = (row.textContent || "").trim();
+        if (!txt) {
+            continue;
+        }
+        const hasSentinel = txt.includes(sentinel);
+        const hasLabel = label && txt.includes(label);
+        if (!hasSentinel && !hasLabel) {
+            continue;
+        }
+        if (row.classList?.contains(DFCHAT_ES_BOT_PERSONA_CLASS)) {
+            continue;
+        }
+        const isUserDf = row.tagName === "DF-MESSAGE"
+            && (row.getAttribute("type") || "").toLowerCase() === "user";
+        if (isUserDf) {
+            continue;
+        }
+        try {
+            row.remove();
+            removed += 1;
+        } catch {
+            /* ignore */
+        }
+    }
+    return removed;
+}
+
+/**
+ * @param {HTMLElement | null | undefined} dfMessenger
+ * @returns {boolean}
+ */
+function injectEsUserPersonaRow_(dfMessenger) {
+    const ms =
+        dfMessenger
+        || (typeof activeDfMessenger !== "undefined" ? activeDfMessenger : null);
+    if (!ms || !isDialogflowEsMessenger_(ms)) {
+        return false;
+    }
+    pruneEsLeakedUserPersonaMarkdownRows_(ms);
+    const list = findMessengerMessageListRoot(ms);
+    if (!list) {
+        return false;
+    }
+    const userRow = findLastEsUserMessageChild_(list);
+    if (
+        userRow
+        && userRow.previousElementSibling
+        && userRow.previousElementSibling instanceof Element
+        && userRow.previousElementSibling.classList.contains(DFCHAT_ES_USER_PERSONA_CLASS)
+    ) {
+        return true;
+    }
+    const row = buildEsUserPersonaDomRow_();
+    if (!row) {
+        return false;
+    }
+    if (userRow && userRow.parentNode === list) {
+        list.insertBefore(row, userRow);
+    } else {
+        list.appendChild(row);
+    }
+    schedulePersonaShadowFix(ms);
+    scrollMessengerMessageListToBottom(list);
+    return true;
+}
+
+/**
+ * @param {HTMLElement | null | undefined} dfMessenger
+ * @returns {void}
+ */
+function scheduleEsUserPersonaDomRepair_(dfMessenger) {
+    if (!dfMessenger) {
+        return;
+    }
+    const run = () => {
+        try {
+            pruneEsLeakedUserPersonaMarkdownRows_(dfMessenger);
+            injectEsUserPersonaRow_(dfMessenger);
+        } catch {
+            /* ignore */
+        }
+    };
+    run();
+    if (typeof requestAnimationFrame === "function") {
+        requestAnimationFrame(run);
+    }
+    [30, 90, 200, 450, 900].forEach((ms) => {
+        window.setTimeout(run, ms);
+    });
+}
+
+/**
+ * @param {string} text
+ * @returns {boolean}
+ */
+function isUserPersonaMarkdownText_(text) {
+    const s = typeof text === "string" ? text : "";
+    return s.includes(USER_PERSONA_TEXT_SENTINEL);
 }
 
 /**
@@ -26174,6 +26551,7 @@ function schedulePersonaShadowFix(dfMessenger) {
         if (isDialogflowEsMessenger_(dfMessenger)) {
             pruneEsRawBotPersonaMarkdownRows_(dfMessenger);
             scheduleEsChatPanelLayoutRepair_(dfMessenger);
+            scheduleEsTitlebarAndBubbleIconSync_(dfMessenger);
         }
         applyPersonaImageGuardToMessenger(dfMessenger);
         decoratePersonaMessages(dfMessenger);
