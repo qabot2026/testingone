@@ -1795,7 +1795,7 @@ const originalTextNodeContent = new Map();
 const originalElementAttributes = new Map();
 const googleTranslationCache = new Map();
 
-const COMPANY_JS_BUILD_TAG = "20260527-es-persona-markdown-guard";
+const COMPANY_JS_BUILD_TAG = "20260527-es-panel-scroll-fix";
 const COMPANY_DEBUG_QUERY_FLAG = "dfchatDebug";
 let debugMountAttemptSeq = 0;
 let debugBadgeLastRenderAt = 0;
@@ -9502,30 +9502,32 @@ function applyDialogflowEsCxLookCompatibility(dfMessenger, theme, headerConfig) 
 df-messenger-chat {
   display: flex !important;
   flex-direction: column !important;
-  flex: 1 1 auto !important;
+  flex: 1 1 0 !important;
   min-height: 0 !important;
-  height: 100% !important;
-  max-height: 100% !important;
+  height: auto !important;
+  max-height: none !important;
   overflow: hidden !important;
   box-sizing: border-box !important;
 }
 .message-list-wrapper,
 df-message-list {
-  display: flex !important;
-  flex-direction: column !important;
-  flex: 1 1 auto !important;
-  min-height: 0 !important;
-  max-height: 100% !important;
-  overflow: hidden !important;
+  display: block !important;
+  flex: 1 1 0 !important;
+  min-height: 120px !important;
+  height: auto !important;
+  max-height: none !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  -webkit-overflow-scrolling: touch !important;
   box-sizing: border-box !important;
 }
 #messageList {
-  flex: 1 1 auto !important;
-  min-height: 0 !important;
-  max-height: 100% !important;
-  overflow-y: auto !important;
-  overflow-x: hidden !important;
-  -webkit-overflow-scrolling: touch !important;
+  display: block !important;
+  flex: none !important;
+  min-height: auto !important;
+  height: auto !important;
+  max-height: none !important;
+  overflow: visible !important;
   box-sizing: border-box !important;
 }
 .chat-wrapper.chat-min {
@@ -9553,9 +9555,9 @@ df-message-list {
 df-messenger-titlebar {
   flex: 0 0 auto !important;
   flex-shrink: 0 !important;
-  position: sticky !important;
-  top: 0 !important;
-  z-index: 6 !important;
+  position: relative !important;
+  top: auto !important;
+  z-index: 2 !important;
   min-height: 86px !important;
   background: var(--df-messenger-titlebar-background, linear-gradient(168deg, #38bdf8 0%, #0284c7 42%, #075985 100%)) !important;
   color: var(--df-messenger-titlebar-font-color, #f0f9ff) !important;
@@ -25132,27 +25134,34 @@ df-messenger-titlebar,
 .title-wrapper {
   flex: 0 0 auto !important;
   flex-shrink: 0 !important;
+  position: relative !important;
 }
 df-messenger-chat {
-  flex: 1 1 auto !important;
+  flex: 1 1 0 !important;
   min-height: 0 !important;
+  height: auto !important;
+  max-height: none !important;
   display: flex !important;
   flex-direction: column !important;
   overflow: hidden !important;
 }
 .message-list-wrapper,
 df-message-list {
-  flex: 1 1 auto !important;
-  min-height: 0 !important;
-  overflow: hidden !important;
-  display: flex !important;
-  flex-direction: column !important;
-}
-#messageList {
-  flex: 1 1 auto !important;
-  min-height: 0 !important;
-  overflow-y: auto !important;
+  flex: 1 1 0 !important;
+  min-height: 120px !important;
+  height: auto !important;
+  max-height: none !important;
   overflow-x: hidden !important;
+  overflow-y: auto !important;
+  display: block !important;
+}
+#messageList,
+#message-list {
+  flex: none !important;
+  min-height: auto !important;
+  height: auto !important;
+  max-height: none !important;
+  overflow: visible !important;
 }
 df-messenger-user-input,
 .input-box-wrapper {
@@ -25175,30 +25184,103 @@ df-messenger-user-input,
             tag.textContent = layoutCss;
         }
     }
-    const pinFlexColumn = (el) => {
-        if (!el || !el.style) {
-            return;
+    const measurePanelHeights_ = (wrapper) => {
+        if (!wrapper || typeof wrapper.getBoundingClientRect !== "function") {
+            return null;
         }
-        try {
-            el.style.setProperty("display", "flex", "important");
-            el.style.setProperty("flex-direction", "column", "important");
-            el.style.setProperty("overflow", "hidden", "important");
-            el.style.setProperty("min-height", "0", "important");
-        } catch {
-            /* ignore */
+        const panelH = wrapper.getBoundingClientRect().height;
+        if (!Number.isFinite(panelH) || panelH < 160) {
+            return null;
         }
+        const title =
+            wrapper.querySelector("df-messenger-titlebar")
+            || wrapper.querySelector(".title-wrapper");
+        const input =
+            wrapper.querySelector("df-messenger-user-input")
+            || wrapper.querySelector(".input-box-wrapper");
+        const titleH = title && typeof title.getBoundingClientRect === "function"
+            ? title.getBoundingClientRect().height
+            : 86;
+        const inputH = input && typeof input.getBoundingClientRect === "function"
+            ? input.getBoundingClientRect().height
+            : 64;
+        const listH = Math.max(140, Math.round(panelH - titleH - inputH - 12));
+        return { listH, titleH, inputH, panelH };
     };
-    const pinScrollList = (el) => {
-        if (!el || !el.style) {
+    const pinMessageListHeight_ = (wrapper, dims) => {
+        if (!wrapper || !dims) {
             return;
         }
+        const scrollers = [];
         try {
-            el.style.setProperty("flex", "1 1 auto", "important");
-            el.style.setProperty("min-height", "0", "important");
-            el.style.setProperty("overflow-y", "auto", "important");
-            el.style.setProperty("overflow-x", "hidden", "important");
+            const found = wrapper.querySelectorAll(
+                ".message-list-wrapper, df-message-list, #messageList, #message-list"
+            );
+            for (let fi = 0; fi < found.length; fi += 1) {
+                const el = found[fi];
+                if (!el || scrollers.indexOf(el) !== -1) {
+                    continue;
+                }
+                const id = el.id || "";
+                const tag = el.tagName ? el.tagName.toUpperCase() : "";
+                if (id === "messageList" || id === "message-list") {
+                    continue;
+                }
+                if (tag === "DF-MESSAGE-LIST" || el.classList?.contains("message-list-wrapper")) {
+                    scrollers.push(el);
+                }
+            }
         } catch {
             /* ignore */
+        }
+        if (!scrollers.length) {
+            const chat = wrapper.querySelector("df-messenger-chat");
+            if (chat) {
+                scrollers.push(chat);
+            }
+        }
+        for (let si = 0; si < scrollers.length; si += 1) {
+            const el = scrollers[si];
+            if (!el || !el.style) {
+                continue;
+            }
+            try {
+                const hPx = `${dims.listH}px`;
+                el.style.setProperty("flex", "1 1 0", "important");
+                el.style.setProperty("min-height", hPx, "important");
+                el.style.setProperty("max-height", hPx, "important");
+                el.style.setProperty("height", hPx, "important");
+                el.style.setProperty("overflow-y", "auto", "important");
+                el.style.setProperty("overflow-x", "hidden", "important");
+            } catch {
+                /* ignore */
+            }
+        }
+        const lists = wrapper.querySelectorAll("#messageList, #message-list");
+        for (let li = 0; li < lists.length; li += 1) {
+            const list = lists[li];
+            if (!list || !list.style) {
+                continue;
+            }
+            try {
+                list.style.setProperty("height", "auto", "important");
+                list.style.setProperty("min-height", "auto", "important");
+                list.style.setProperty("max-height", "none", "important");
+                list.style.setProperty("overflow", "visible", "important");
+            } catch {
+                /* ignore */
+            }
+        }
+        const chat = wrapper.querySelector("df-messenger-chat");
+        if (chat && chat.style) {
+            try {
+                chat.style.setProperty("flex", "1 1 0", "important");
+                chat.style.setProperty("min-height", "0", "important");
+                chat.style.removeProperty("height");
+                chat.style.removeProperty("max-height");
+            } catch {
+                /* ignore */
+            }
         }
     };
     for (let ri = 0; ri < roots.length; ri += 1) {
@@ -25208,19 +25290,21 @@ df-messenger-user-input,
         }
         const wrappers = root.querySelectorAll(".chat-wrapper");
         for (let wi = 0; wi < wrappers.length; wi += 1) {
-            pinFlexColumn(wrappers[wi]);
-        }
-        const chats = root.querySelectorAll("df-messenger-chat");
-        for (let ci = 0; ci < chats.length; ci += 1) {
-            pinFlexColumn(chats[ci]);
-        }
-        const listWraps = root.querySelectorAll(".message-list-wrapper, df-message-list");
-        for (let li = 0; li < listWraps.length; li += 1) {
-            pinFlexColumn(listWraps[li]);
-        }
-        const lists = root.querySelectorAll("#messageList, #message-list");
-        for (let mi = 0; mi < lists.length; mi += 1) {
-            pinScrollList(lists[mi]);
+            const wrapper = wrappers[wi];
+            if (!wrapper || !wrapper.style) {
+                continue;
+            }
+            try {
+                wrapper.style.setProperty("display", "flex", "important");
+                wrapper.style.setProperty("flex-direction", "column", "important");
+                wrapper.style.setProperty("overflow", "hidden", "important");
+            } catch {
+                /* ignore */
+            }
+            const dims = measurePanelHeights_(wrapper);
+            if (dims) {
+                pinMessageListHeight_(wrapper, dims);
+            }
         }
     }
 }
