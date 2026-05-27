@@ -853,9 +853,67 @@ function readBotPersonaConfig() {
             /** Narrow viewports: translate bot persona imgs left by this many px (`translateX(-n)`). */
             mobileNudgeLeftPx: typeof image.mobileNudgeLeftPx === "number" && Number.isFinite(image.mobileNudgeLeftPx) && image.mobileNudgeLeftPx >= 0
                 ? image.mobileNudgeLeftPx
-                : 14
+                : 14,
+            /** ES DOM persona row only: nudge caption label down (px). Does not affect {@link img.timeOffset*} / clock. */
+            labelOffsetDownPx: typeof image.labelOffsetDownPx === "number" && Number.isFinite(image.labelOffsetDownPx) && image.labelOffsetDownPx >= -32 && image.labelOffsetDownPx <= 120
+                ? image.labelOffsetDownPx
+                : 0,
+            /** ES DOM persona row only: nudge caption label toward the left (px). Applied as negative translateX. */
+            labelOffsetLeftPx: typeof image.labelOffsetLeftPx === "number" && Number.isFinite(image.labelOffsetLeftPx) && image.labelOffsetLeftPx >= 0 && image.labelOffsetLeftPx <= 120
+                ? image.labelOffsetLeftPx
+                : 0
         }
     };
+}
+
+/**
+ * Dismiss floating menu unless the click originated inside Shadow DOM-safe path (for inline action bars / overlays).
+ * @param {{ toggle: HTMLElement, menu: HTMLElement, wrapper?: HTMLElement | null }} refs
+ */
+function bindCloseFloatingMenuOnDocumentClick_(refs) {
+    const { toggle, menu, wrapper } = refs;
+    if (!toggle || !menu) {
+        return;
+    }
+    document.addEventListener("click", (e) => {
+        const path = typeof e.composedPath === "function" ? e.composedPath() : [];
+        const inToggle = path.includes(toggle);
+        const inMenu = path.includes(menu);
+        const inWrap = wrapper ? path.includes(wrapper) : false;
+        if (inToggle || inMenu || inWrap) {
+            return;
+        }
+        menu.style.display = "none";
+    }, false);
+}
+
+/**
+ * Open a language menu with `position: fixed` so it is not clipped by `overflow: hidden` on the chat panel.
+ * @param {HTMLElement} toggleBtn
+ * @param {HTMLElement} menu
+ */
+function openFloatingLanguageMenu_(toggleBtn, menu) {
+    if (!toggleBtn || !menu) {
+        return;
+    }
+    menu.style.display = "block";
+    menu.style.position = "fixed";
+    menu.style.right = "auto";
+    menu.style.bottom = "auto";
+    menu.style.zIndex = "2147483647";
+    menu.style.pointerEvents = "auto";
+    const rect = toggleBtn.getBoundingClientRect();
+    const menuH = menu.offsetHeight > 0 ? menu.offsetHeight : 140;
+    const menuW = menu.offsetWidth > 0 ? menu.offsetWidth : 160;
+    let left = Math.round(rect.left);
+    let top = Math.round(rect.top - menuH - 8);
+    const pad = 8;
+    const vw = window.innerWidth || 360;
+    const vh = window.innerHeight || 640;
+    left = Math.max(pad, Math.min(left, vw - menuW - pad));
+    top = Math.max(pad, Math.min(top, vh - menuH - pad));
+    menu.style.left = `${left}px`;
+    menu.style.top = `${top}px`;
 }
 
 /**
@@ -3352,17 +3410,16 @@ function mountFooterOverlayControls(restartConfig, restartEnabled) {
         langWrapper.appendChild(languageButton);
         langWrapper.appendChild(menu);
 
-        const toggleMenu = () => {
-            menu.style.display = menu.style.display === "none" ? "block" : "none";
-        };
         languageButton.addEventListener("click", (e) => {
             e.stopPropagation();
-            toggleMenu();
+            if (menu.style.display === "none") {
+                openFloatingLanguageMenu_(languageButton, menu);
+            } else {
+                menu.style.display = "none";
+            }
         });
 
-        document.addEventListener("click", () => {
-            menu.style.display = "none";
-        }, false);
+        bindCloseFloatingMenuOnDocumentClick_({ toggle: languageButton, menu, wrapper: langWrapper });
 
         overlay.appendChild(langWrapper);
     }
@@ -3620,16 +3677,22 @@ function ensureChatActionBar() {
 
         languageButton.addEventListener("click", (event) => {
             event.stopPropagation();
-            languageMenu.style.display = languageMenu.style.display === "none" ? "block" : "none";
+            if (languageMenu.style.display === "none") {
+                openFloatingLanguageMenu_(languageButton, languageMenu);
+            } else {
+                languageMenu.style.display = "none";
+            }
         });
 
         langWrapper.appendChild(languageButton);
         langWrapper.appendChild(languageMenu);
         bar.appendChild(langWrapper);
 
-        document.addEventListener("click", () => {
-            languageMenu.style.display = "none";
-        }, false);
+        bindCloseFloatingMenuOnDocumentClick_({
+            toggle: languageButton,
+            menu: languageMenu,
+            wrapper: langWrapper
+        });
     }
 
     if (isRestartChatEnabled()) {
@@ -9019,17 +9082,108 @@ function stopComposerSpeechRecognition() {
 }
 
 /**
- * @param {HTMLTextAreaElement} textarea
+ * Dialogflow ES may use `textarea`, `input`, or a `contenteditable` node for the composer.
+ * @param {ShadowRoot | null | undefined} sr
+ * @returns {HTMLElement | null}
+ */
+function resolveComposerInputInsideUserInputShadow(sr) {
+    if (!sr || typeof sr.querySelector !== "function") {
+        return null;
+    }
+    const ta = sr.querySelector("textarea");
+    if (ta instanceof HTMLTextAreaElement) {
+        return ta;
+    }
+    try {
+        const inputs = sr.querySelectorAll("input");
+        for (let i = 0; i < inputs.length; i += 1) {
+            const inp = inputs[i];
+            if (!(inp instanceof HTMLInputElement)) {
+                continue;
+            }
+            const t = (inp.getAttribute("type") || "text").toLowerCase();
+            if (t === "text" || t === "search" || t === "" || !inp.hasAttribute("type")) {
+                return inp;
+            }
+        }
+    } catch {
+        /* ignore */
+    }
+    const ce = sr.querySelector("[contenteditable=\"true\"]");
+    if (ce instanceof HTMLElement) {
+        return ce;
+    }
+    const ce2 = sr.querySelector("[contenteditable=\"\"]");
+    if (ce2 instanceof HTMLElement) {
+        return ce2;
+    }
+    const role = sr.querySelector("[role=\"textbox\"]");
+    if (role instanceof HTMLElement) {
+        return role;
+    }
+    return null;
+}
+
+/**
+ * @param {HTMLElement | null | undefined} el
+ * @returns {string}
+ */
+function readComposerInputValue(el) {
+    if (!el) {
+        return "";
+    }
+    if (el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement) {
+        return typeof el.value === "string" ? el.value : "";
+    }
+    try {
+        const raw = el.textContent != null ? String(el.textContent) : "";
+        return raw;
+    } catch {
+        return "";
+    }
+}
+
+/**
+ * @param {HTMLElement | null | undefined} el
+ * @param {string} value
+ */
+function writeComposerInputValue(el, value) {
+    if (!el) {
+        return;
+    }
+    const v = typeof value === "string" ? value : "";
+    if (el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement) {
+        el.value = v;
+    } else {
+        try {
+            el.textContent = v;
+        } catch {
+            return;
+        }
+    }
+    try {
+        el.dispatchEvent(new InputEvent("input", { bubbles: true, composed: true }));
+    } catch {
+        try {
+            el.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+        } catch {
+            /* ignore */
+        }
+    }
+}
+
+/**
+ * @param {HTMLElement} field
  * @param {HTMLButtonElement} btn
  */
-function startComposerSpeechRecognition(textarea, btn) {
+function startComposerSpeechRecognition(field, btn) {
     const Ctor = getSpeechRecognitionConstructor();
-    if (!Ctor || !textarea || !btn) {
+    if (!Ctor || !field || !btn) {
         return;
     }
     stopComposerSpeechRecognition();
-    const snapshot = typeof textarea.value === "string" ? textarea.value : "";
-    composerSpeechSession.textarea = textarea;
+    const snapshot = readComposerInputValue(field);
+    composerSpeechSession.textarea = field;
     composerSpeechSession.button = btn;
     composerSpeechSession.snapshot = snapshot;
 
@@ -9062,8 +9216,7 @@ function startComposerSpeechRecognition(textarea, btn) {
                 }
             }
             const base = composerSpeechSession.snapshot;
-            ta.value = base + committed + interim;
-            ta.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+            writeComposerInputValue(ta, base + committed + interim);
         } catch {
             /* ignore */
         }
@@ -9090,19 +9243,27 @@ function onComposerSpeechMicButtonClick(ev) {
         return;
     }
     const root = typeof btn.getRootNode === "function" ? btn.getRootNode() : null;
-    const sr = root && root.nodeType === Node.DOCUMENT_FRAGMENT_NODE ? root : null;
-    if (!sr) {
+    let mount = null;
+    if (root && root.nodeType === Node.DOCUMENT_FRAGMENT_NODE) {
+        mount = root;
+    } else if (root && root.nodeType === Node.ELEMENT_NODE) {
+        const host = /** @type {Element} */ (root).closest
+            ? /** @type {Element} */ (root).closest("df-messenger-user-input")
+            : null;
+        mount = getUserInputComposerMountRoot_(host);
+    }
+    if (!mount || typeof mount.querySelector !== "function") {
         return;
     }
-    const textarea = sr.querySelector("textarea");
-    if (!textarea) {
+    const field = resolveComposerInputInsideUserInputShadow(mount);
+    if (!field) {
         return;
     }
     if (composerSpeechSession.recognition && composerSpeechSession.button === btn) {
         stopComposerSpeechRecognition();
         return;
     }
-    startComposerSpeechRecognition(textarea, btn);
+    startComposerSpeechRecognition(field, btn);
 }
 
 function ensureComposerSpeechMicShadowStyle(shadowRoot) {
@@ -9139,7 +9300,7 @@ function removeComposerSpeechMicsInsideMessenger(dfMessenger) {
         const hosts = root.querySelectorAll("df-messenger-user-input");
         for (let hi = 0; hi < hosts.length; hi += 1) {
             const host = hosts[hi];
-            const sr = host && host.shadowRoot;
+            const sr = getUserInputComposerMountRoot_(host);
             if (!sr) {
                 continue;
             }
@@ -9161,7 +9322,25 @@ function removeComposerSpeechMicsInsideMessenger(dfMessenger) {
     }
 }
 
-/** Mount or remove microphone next to Dialogflow textarea (inside `df-messenger-user-input` shadow roots). */
+/**
+ * Shadow root or light-DOM host for `df-messenger-user-input` (ES bootstrap may omit shadow).
+ * @param {Element | null | undefined} host
+ * @returns {DocumentFragment | Element | null}
+ */
+function getUserInputComposerMountRoot_(host) {
+    if (!host) {
+        return null;
+    }
+    if (host.shadowRoot && typeof host.shadowRoot.querySelector === "function") {
+        return host.shadowRoot;
+    }
+    if (typeof host.querySelector === "function") {
+        return host;
+    }
+    return null;
+}
+
+/** Mount or remove microphone next to Dialogflow composer (inside `df-messenger-user-input`). */
 function applyComposerSpeechMicToMessenger(dfMessenger) {
     if (!dfMessenger) {
         return;
@@ -9184,7 +9363,7 @@ function applyComposerSpeechMicToMessenger(dfMessenger) {
         const hosts = root.querySelectorAll("df-messenger-user-input");
         for (let hi = 0; hi < hosts.length; hi += 1) {
             const host = hosts[hi];
-            const sr = host && host.shadowRoot;
+            const sr = getUserInputComposerMountRoot_(host);
             if (!sr || typeof sr.querySelector !== "function") {
                 continue;
             }
@@ -9691,24 +9870,35 @@ df-message-list {
   border-radius: var(--df-messenger-chat-icon-radius, 50%) !important;
 }
 df-messenger-titlebar {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  flex-wrap: nowrap !important;
   flex: 0 0 auto !important;
   flex-shrink: 0 !important;
   position: relative !important;
   top: auto !important;
   z-index: 2 !important;
-  min-height: 86px !important;
+  min-height: 0 !important;
+  box-sizing: border-box !important;
+  padding: 0 !important;
   background: var(--df-messenger-titlebar-background, linear-gradient(168deg, #38bdf8 0%, #0284c7 42%, #075985 100%)) !important;
   color: var(--df-messenger-titlebar-font-color, #f0f9ff) !important;
   border: var(--df-messenger-titlebar-border, none) !important;
   border-bottom: var(--df-messenger-titlebar-border-bottom, 1px solid rgba(4, 58, 90, 0.55)) !important;
 }
 .title-wrapper {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  flex-wrap: nowrap !important;
   flex: 0 0 auto !important;
   flex-shrink: 0 !important;
-  min-height: 86px !important;
-  height: 86px !important;
+  width: 100% !important;
+  min-height: 0 !important;
+  height: auto !important;
   box-sizing: border-box !important;
-  padding: 0 15px !important;
+  padding: 8px 12px !important;
   background: var(--df-messenger-titlebar-background, linear-gradient(168deg, #38bdf8 0%, #0284c7 42%, #075985 100%)) !important;
   color: var(--df-messenger-titlebar-font-color, #f0f9ff) !important;
   border-radius: var(--df-messenger-chat-border-radius, 22px) var(--df-messenger-chat-border-radius, 22px) 0 0 !important;
@@ -26215,6 +26405,8 @@ function getPersonaImageGuardCss() {
     const mobX = `${(cfg.mode === "image" ? img.offsetRightPx : 0) - img.mobileNudgeLeftPx}px`;
     const timeDown = cfg.mode === "image" ? `${img.timeOffsetDownPx}px` : "0px";
     const timeRight = cfg.mode === "image" ? `${img.timeOffsetRightPx}px` : "0px";
+    const labelDown = cfg.mode === "image" ? `${img.labelOffsetDownPx}px` : "0px";
+    const labelTx = cfg.mode === "image" ? `${-img.labelOffsetLeftPx}px` : "0px";
     return `
 img[src*="dfchat-bot-persona"],
 img[src*="%23dfchat-bot-persona"] {
@@ -26234,12 +26426,14 @@ img[src*="%23dfchat-bot-persona"] {
 }
 .message.bot-message.markdown:has(img[src*="dfchat-bot-persona"]) p + p,
 .message.bot-message.markdown:has(img[src*="%23dfchat-bot-persona"]) p + p {
+  display: inline-block !important;
   color: ${PERSONA_TEXT_COLOR} !important;
   font-size: 11px !important;
   font-weight: 600 !important;
   margin: 0 !important;
   padding: 0 !important;
   line-height: 1.25 !important;
+  transform: translate(${labelTx}, ${labelDown}) !important;
 }
 .message.bot-message.markdown:has(img[src*="dfchat-bot-persona"]) p strong,
 .message.bot-message.markdown:has(img[src*="%23dfchat-bot-persona"]) p strong {
@@ -26343,13 +26537,21 @@ ${cfg.mode === "image" ? `
   filter: blur(${PERSONA_SOFT_BLUR}) !important;
   opacity: ${PERSONA_OPACITY} !important;
 }
-.${DFCHAT_ES_BOT_PERSONA_CLASS}__caption,
-.${DFCHAT_ES_BOT_PERSONA_CLASS}__label {
+.${DFCHAT_ES_BOT_PERSONA_CLASS}__caption {
   color: ${PERSONA_TEXT_COLOR} !important;
   font-size: 11px !important;
   font-weight: 600 !important;
   line-height: 1.25 !important;
   white-space: nowrap !important;
+}
+.${DFCHAT_ES_BOT_PERSONA_CLASS}__label {
+  display: inline-block !important;
+  color: ${PERSONA_TEXT_COLOR} !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  line-height: 1.25 !important;
+  white-space: nowrap !important;
+  transform: translate(${labelTx}, ${labelDown}) !important;
 }
 .${DFCHAT_ES_BOT_PERSONA_CLASS}__time {
   display: inline-block !important;

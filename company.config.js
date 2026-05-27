@@ -95,6 +95,9 @@ window.COMPANY_CHAT_UI_CONFIG = {
         offsetRightPx: 5,
         timeOffsetDownPx: 28,
         timeOffsetRightPx: -5,
+        // ES DOM persona row: nudge "Demo" caption only (clock uses timeOffset* above).
+        labelOffsetDownPx: 10,
+        labelOffsetLeftPx: 10,
         tightenBelowPx: 8,
         // ≤768px: shift bot persona img + time left (translateX) without affecting desktop.
         mobileNudgeLeftPx: 14
