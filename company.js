@@ -25693,6 +25693,8 @@ function getEsNativePanelLayoutCss_() {
   opacity: 1 !important;
   transform: translateZ(0) scale(1) !important;
   overflow: hidden !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
 }
 df-messenger-titlebar {
   flex: 0 0 auto !important;
@@ -25726,22 +25728,12 @@ df-messenger-user-input {
   order: 3 !important;
   margin-top: 0 !important;
   transform: none !important;
-  position: absolute !important;
-  left: 0 !important;
-  right: 0 !important;
-  bottom: 0 !important;
-  top: auto !important;
   z-index: 5 !important;
   width: 100% !important;
   box-sizing: border-box !important;
 }
 .chat-wrapper > #dfchat-chat-action-bar,
 .chat-wrapper > .dfchat-chat-action-bar--inline {
-  position: absolute !important;
-  left: 0 !important;
-  right: 0 !important;
-  bottom: 0 !important;
-  top: auto !important;
   z-index: 6 !important;
   width: 100% !important;
   box-sizing: border-box !important;
@@ -25786,8 +25778,90 @@ function measureEsFooterStackHeightPx_(panel) {
 }
 
 /**
+ * Dialogflow's inner containing block is shorter than `.chat-wrapper` (padding / nested stack), so
+ * `position:absolute;bottom:0` on the composer leaves a band under the footer. Pin to the panel's
+ * viewport rect with `position:fixed` instead.
+ * @param {HTMLElement} panel
+ * @param {HTMLElement} composer
+ * @param {HTMLElement | null | undefined} panelLevelBar
+ * @returns {{ stackPx: number, gapPx: number }}
+ */
+function syncEsFooterViewportFixedDock_(panel, composer, panelLevelBar) {
+    const pr = panel.getBoundingClientRect();
+    if (!pr || pr.height < 40 || pr.width < 40 || !composer || !composer.style) {
+        return { stackPx: 112, gapPx: 0 };
+    }
+    const vh =
+        window.visualViewport && Number.isFinite(window.visualViewport.height)
+            ? window.visualViewport.height
+            : window.innerHeight;
+    const panelBottomVp = Math.max(0, Math.round(vh - pr.bottom));
+    const leftPx = Math.round(pr.left);
+    const widthPx = Math.max(40, Math.round(pr.width));
+
+    let barH = 0;
+    if (panelLevelBar && panelLevelBar.style) {
+        try {
+            barH = Math.ceil(panelLevelBar.offsetHeight || panelLevelBar.getBoundingClientRect().height || 0);
+            panelLevelBar.style.setProperty("position", "fixed", "important");
+            panelLevelBar.style.setProperty("left", `${leftPx}px`, "important");
+            panelLevelBar.style.setProperty("width", `${widthPx}px`, "important");
+            panelLevelBar.style.setProperty("right", "auto", "important");
+            panelLevelBar.style.setProperty("bottom", `${panelBottomVp}px`, "important");
+            panelLevelBar.style.setProperty("top", "auto", "important");
+            panelLevelBar.style.setProperty("z-index", "1001", "important");
+            panelLevelBar.style.removeProperty("transform");
+        } catch {
+            /* ignore */
+        }
+    }
+
+    let bottomVp = panelBottomVp + barH;
+    try {
+        composer.style.setProperty("position", "fixed", "important");
+        composer.style.setProperty("left", `${leftPx}px`, "important");
+        composer.style.setProperty("width", `${widthPx}px`, "important");
+        composer.style.setProperty("right", "auto", "important");
+        composer.style.setProperty("bottom", `${bottomVp}px`, "important");
+        composer.style.setProperty("top", "auto", "important");
+        composer.style.setProperty("z-index", "1000", "important");
+        composer.style.setProperty("box-sizing", "border-box", "important");
+        composer.style.removeProperty("flex");
+        composer.style.removeProperty("order");
+        composer.style.removeProperty("margin-top");
+        composer.style.removeProperty("transform");
+    } catch {
+        /* ignore */
+    }
+
+    let gapPx = 0;
+    try {
+        const cr = composer.getBoundingClientRect();
+        gapPx = Math.round(pr.bottom - cr.bottom);
+        if (gapPx > 2) {
+            bottomVp += gapPx;
+            composer.style.setProperty("bottom", `${bottomVp}px`, "important");
+            const cr2 = composer.getBoundingClientRect();
+            gapPx = Math.round(pr.bottom - cr2.bottom);
+        }
+    } catch {
+        /* ignore */
+    }
+
+    let stackPx = measureEsFooterStackHeightPx_(panel);
+    try {
+        const cr = composer.getBoundingClientRect();
+        if (cr && cr.height > 0) {
+            stackPx = Math.max(stackPx, Math.ceil(cr.height) + barH);
+        }
+    } catch {
+        /* ignore */
+    }
+    return { stackPx, gapPx };
+}
+
+/**
  * Pin composer (and optional panel-level action bar) to the bottom of the open panel.
- * Flex alone leaves a growing empty band under the footer when the transcript is long.
  * @param {HTMLElement} panel
  * @returns {void}
  */
@@ -25800,68 +25874,60 @@ function dockEsOpenPanelFooter_(panel) {
     if (!composer || !msgList || !composer.style || !msgList.style) {
         return;
     }
-    const stackPx = measureEsFooterStackHeightPx_(panel);
     try {
-        panel.style.setProperty("--dfchat-es-footer-stack-px", `${stackPx}px`, "important");
-    } catch {
-        /* ignore */
-    }
-    try {
-        msgList.style.setProperty("flex", "1 1 auto", "important");
-        msgList.style.setProperty("min-height", "0", "important");
-        msgList.style.setProperty("padding-bottom", `${stackPx}px`, "important");
-        msgList.style.setProperty("box-sizing", "border-box", "important");
-        msgList.style.removeProperty("height");
-        msgList.style.removeProperty("max-height");
+        panel.style.setProperty("padding-top", "0", "important");
+        panel.style.setProperty("padding-bottom", "0", "important");
+        panel.style.setProperty("box-sizing", "border-box", "important");
     } catch {
         /* ignore */
     }
     const bar = panel.querySelector(":scope > #dfchat-chat-action-bar");
-    let composerBottomPx = 0;
-    if (bar && bar.parentElement === panel && bar instanceof HTMLElement && bar.style) {
-        try {
-            const bh = Math.ceil(bar.offsetHeight || 0);
-            composerBottomPx = bh > 0 ? bh : 0;
-            bar.style.setProperty("position", "absolute", "important");
-            bar.style.setProperty("left", "0", "important");
-            bar.style.setProperty("right", "0", "important");
-            bar.style.setProperty("bottom", "0", "important");
-            bar.style.setProperty("top", "auto", "important");
-            bar.style.setProperty("z-index", "6", "important");
-            bar.style.removeProperty("flex");
-            bar.style.removeProperty("order");
-        } catch {
-            /* ignore */
-        }
-    }
+    const panelLevelBar =
+        bar && bar.parentElement === panel && bar instanceof HTMLElement ? bar : null;
+    let stackPx = 112;
     try {
-        composer.style.setProperty("position", "absolute", "important");
-        composer.style.setProperty("left", "0", "important");
-        composer.style.setProperty("right", "0", "important");
-        composer.style.setProperty("bottom", `${composerBottomPx}px`, "important");
-        composer.style.setProperty("top", "auto", "important");
-        composer.style.setProperty("z-index", "5", "important");
-        composer.style.setProperty("width", "100%", "important");
-        composer.style.setProperty("box-sizing", "border-box", "important");
-        composer.style.removeProperty("flex");
-        composer.style.removeProperty("order");
-        composer.style.removeProperty("margin-top");
-        composer.style.removeProperty("transform");
+        const docked = syncEsFooterViewportFixedDock_(panel, composer, panelLevelBar);
+        stackPx = docked.stackPx;
+        panel.style.setProperty("--dfchat-es-footer-stack-px", `${stackPx}px`, "important");
+        panel.style.setProperty("--dfchat-es-footer-dock-gap-px", `${docked.gapPx}px`, "important");
     } catch {
         /* ignore */
     }
-    window.requestAnimationFrame(() => {
-        window.requestAnimationFrame(() => {
-            try {
-                const remeasured = measureEsFooterStackHeightPx_(panel);
-                if (remeasured > 0 && remeasured !== stackPx) {
-                    panel.style.setProperty("--dfchat-es-footer-stack-px", `${remeasured}px`, "important");
-                    msgList.style.setProperty("padding-bottom", `${remeasured}px`, "important");
-                }
-            } catch {
-                /* ignore */
+    const title = panel.querySelector(":scope > df-messenger-titlebar");
+    const titleH =
+        title && title instanceof HTMLElement ? Math.ceil(title.offsetHeight || 0) : 0;
+    const panelH = Math.ceil(panel.clientHeight || panel.offsetHeight || 0);
+    const listMax = Math.max(96, panelH - titleH - stackPx);
+    try {
+        msgList.style.setProperty("flex", "1 1 auto", "important");
+        msgList.style.setProperty("order", "2", "important");
+        msgList.style.setProperty("min-height", "0", "important");
+        msgList.style.setProperty("max-height", `${listMax}px`, "important");
+        msgList.style.setProperty("height", `${listMax}px`, "important");
+        msgList.style.setProperty("padding-bottom", `${stackPx}px`, "important");
+        msgList.style.setProperty("box-sizing", "border-box", "important");
+        msgList.style.setProperty("overflow", "hidden", "important");
+    } catch {
+        /* ignore */
+    }
+    const finishDock = () => {
+        try {
+            const docked = syncEsFooterViewportFixedDock_(panel, composer, panelLevelBar);
+            if (docked.stackPx > 0 && docked.stackPx !== stackPx) {
+                stackPx = docked.stackPx;
+                panel.style.setProperty("--dfchat-es-footer-stack-px", `${stackPx}px`, "important");
+                msgList.style.setProperty("padding-bottom", `${stackPx}px`, "important");
+                const listMax2 = Math.max(96, panelH - titleH - stackPx);
+                msgList.style.setProperty("max-height", `${listMax2}px`, "important");
+                msgList.style.setProperty("height", `${listMax2}px`, "important");
             }
-        });
+            panel.style.setProperty("--dfchat-es-footer-dock-gap-px", `${docked.gapPx}px`, "important");
+        } catch {
+            /* ignore */
+        }
+    };
+    window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(finishDock);
     });
 }
 
@@ -26210,7 +26276,12 @@ function scheduleEsChatPanelLayoutRepair_(dfMessenger) {
                     if (!root || typeof root.querySelector !== "function") {
                         continue;
                     }
-                    composer = composer || /** @type {HTMLElement | null} */ (root.querySelector("df-messenger-user-input"));
+                    composer =
+                        composer
+                        || /** @type {HTMLElement | null} */ (
+                            panel && panel.querySelector(":scope > df-messenger-user-input")
+                        )
+                        || /** @type {HTMLElement | null} */ (root.querySelector("df-messenger-user-input"));
                     actionBar = actionBar || /** @type {HTMLElement | null} */ (root.querySelector("#dfchat-chat-action-bar"));
                     if (composer && actionBar) {
                         break;
@@ -26227,6 +26298,7 @@ function scheduleEsChatPanelLayoutRepair_(dfMessenger) {
                 let composerPosCss = "";
                 let composerBottomCss = "";
                 let footerStackPx = "";
+                let footerDockGapPx = "";
                 let wrapperKids = -1;
                 try {
                     if (panel) {
@@ -26235,6 +26307,7 @@ function scheduleEsChatPanelLayoutRepair_(dfMessenger) {
                         panelHeightCss = cs && typeof cs.height === "string" ? cs.height : "";
                         wrapperKids = panel.children ? panel.children.length : -1;
                         footerStackPx = panel.style.getPropertyValue("--dfchat-es-footer-stack-px").trim();
+                        footerDockGapPx = panel.style.getPropertyValue("--dfchat-es-footer-dock-gap-px").trim();
                     }
                     if (composer) {
                         const ccs = window.getComputedStyle(composer);
@@ -26257,7 +26330,7 @@ function scheduleEsChatPanelLayoutRepair_(dfMessenger) {
                     `panel css: height=${panelHeightCss || "?"} bottom=${panelBottomCss || "?"}`,
                     `df-message-list h=${mr ? Math.round(mr.height) : "?"}`,
                     `#messageList h=${lr ? Math.round(lr.height) : "?"} children=${count}`,
-                    `wrapperKids=${wrapperKids} footerStack=${footerStackPx || "?"}`,
+                    `wrapperKids=${wrapperKids} footerStack=${footerStackPx || "?"} dockGap=${footerDockGapPx || "?"}`,
                     `composer bottom=${cr ? Math.round(cr.bottom) : "?"} gapBelow=${gapBelowFooter == null ? "?" : gapBelowFooter} pos=${composerPosCss || "?"} cssBottom=${composerBottomCss || "?"}`,
                     `actionBar bottom=${ar ? Math.round(ar.bottom) : "?"} gapBelow=${gapBelowBar == null ? "?" : gapBelowBar}`,
                     `scrollTop=${list ? Math.round(list.scrollTop || 0) : "?"} scrollH=${list ? Math.round(list.scrollHeight || 0) : "?"}`
@@ -26295,6 +26368,18 @@ function ensureEsChatPanelLayoutWatcher_(dfMessenger) {
     window.addEventListener("df-response-received", schedule, true);
     window.addEventListener("df-chat-open-changed", schedule);
     window.addEventListener("df-user-input-entered", schedule, true);
+    if (!dfMessenger._companyEsPanelLayoutResize) {
+        dfMessenger._companyEsPanelLayoutResize = "1";
+        window.addEventListener("resize", schedule, { passive: true });
+        try {
+            if (window.visualViewport) {
+                window.visualViewport.addEventListener("resize", schedule, { passive: true });
+                window.visualViewport.addEventListener("scroll", schedule, { passive: true });
+            }
+        } catch {
+            /* ignore */
+        }
+    }
 }
 
 /**
