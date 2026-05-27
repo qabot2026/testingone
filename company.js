@@ -9929,7 +9929,6 @@ function applyDialogflowEsCxLookCompatibility(dfMessenger, theme, headerConfig) 
   height: var(--df-messenger-chat-window-height, 500px) !important;
   min-height: var(--df-messenger-chat-window-height, 500px) !important;
   max-height: min(var(--df-messenger-chat-window-height, 500px), calc(100dvh - 100px)) !important;
-  contain: layout style !important;
   max-width: calc(100vw - 32px) !important;
   right: var(--dfchat-es-right, 10px) !important;
   left: var(--dfchat-es-left, auto) !important;
@@ -9990,8 +9989,7 @@ df-message-list {
   display: block !important;
   flex: 1 1 0 !important;
   min-height: 0 !important;
-  height: auto !important;
-  max-height: none !important;
+  max-height: 100% !important;
   overflow-x: hidden !important;
   overflow-y: auto !important;
   -webkit-overflow-scrolling: touch !important;
@@ -10189,11 +10187,14 @@ df-messenger-user-input {
   max-width: 100% !important;
   box-sizing: border-box !important;
 }
+.dfchat-inline-gallery {
+  touch-action: pan-y !important;
+}
 .dfchat-inline-gallery__track {
   overflow-x: auto !important;
   overflow-y: hidden !important;
   -webkit-overflow-scrolling: touch !important;
-  touch-action: pan-x !important;
+  touch-action: pan-x pan-y !important;
 }
 textarea,
 input {
@@ -25693,7 +25694,9 @@ function getEsChatPanelLayoutCss_() {
 df-messenger-chat {
   display: flex !important;
   flex-direction: column !important;
+  flex: 1 1 0 !important;
   min-height: 0 !important;
+  max-height: 100% !important;
   overflow: hidden !important;
 }
 df-messenger-chat > df-messenger-titlebar,
@@ -25707,17 +25710,26 @@ df-messenger-chat .input-box-wrapper {
 }
 .message-list-wrapper,
 df-message-list {
+  display: block !important;
   flex: 1 1 0 !important;
   min-height: 0 !important;
+  max-height: 100% !important;
   overflow-x: hidden !important;
   overflow-y: auto !important;
   -webkit-overflow-scrolling: touch !important;
+  overscroll-behavior-y: contain !important;
+  touch-action: pan-y !important;
+  box-sizing: border-box !important;
 }
 #messageList,
 #message-list {
+  display: block !important;
+  flex: none !important;
+  min-height: auto !important;
   height: auto !important;
   max-height: none !important;
   overflow: visible !important;
+  box-sizing: border-box !important;
 }
 .${DFCHAT_ES_USER_PERSONA_CLASS} {
   display: flex !important;
