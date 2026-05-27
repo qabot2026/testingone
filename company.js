@@ -1794,7 +1794,7 @@ const originalTextNodeContent = new Map();
 const originalElementAttributes = new Map();
 const googleTranslationCache = new Map();
 
-const COMPANY_JS_BUILD_TAG = "20260527-es-persona-repair";
+const COMPANY_JS_BUILD_TAG = "20260527-es-persona-panel-fix";
 const COMPANY_DEBUG_QUERY_FLAG = "dfchatDebug";
 let debugMountAttemptSeq = 0;
 let debugBadgeLastRenderAt = 0;
@@ -9458,6 +9458,7 @@ function applyDialogflowEsCxLookCompatibility(dfMessenger, theme, headerConfig) 
   font-family: var(--df-messenger-font-family, "Manrope", "Segoe UI", sans-serif) !important;
 }
 .df-messenger-wrapper {
+  position: fixed !important;
   right: var(--dfchat-es-right, 10px) !important;
   left: var(--dfchat-es-left, auto) !important;
   top: var(--dfchat-es-top, auto) !important;
@@ -9470,7 +9471,7 @@ function applyDialogflowEsCxLookCompatibility(dfMessenger, theme, headerConfig) 
   width: var(--df-messenger-chat-window-width, 400px) !important;
   height: var(--df-messenger-chat-window-height, 450px) !important;
   min-height: var(--df-messenger-chat-window-height, 450px) !important;
-  max-height: calc(100dvh - var(--dfchat-es-bottom, 20px) - 104px) !important;
+  max-height: var(--df-messenger-chat-window-height, 450px) !important;
   max-width: calc(100vw - 32px) !important;
   right: var(--dfchat-es-right, 10px) !important;
   left: var(--dfchat-es-left, auto) !important;
@@ -9483,6 +9484,9 @@ function applyDialogflowEsCxLookCompatibility(dfMessenger, theme, headerConfig) 
   overflow: hidden !important;
   display: flex !important;
   flex-direction: column !important;
+  flex: 0 0 auto !important;
+  box-sizing: border-box !important;
+  transform: none !important;
 }
 .chat-wrapper.chat-open,
 .chat-wrapper.opened,
@@ -9490,8 +9494,38 @@ function applyDialogflowEsCxLookCompatibility(dfMessenger, theme, headerConfig) 
 .chat-wrapper[opened] {
   height: var(--df-messenger-chat-window-height, 450px) !important;
   min-height: var(--df-messenger-chat-window-height, 450px) !important;
+  max-height: var(--df-messenger-chat-window-height, 450px) !important;
   opacity: 1 !important;
-  transform: translateZ(0) scale(1) !important;
+  transform: none !important;
+}
+df-messenger-chat {
+  display: flex !important;
+  flex-direction: column !important;
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  height: 100% !important;
+  max-height: 100% !important;
+  overflow: hidden !important;
+  box-sizing: border-box !important;
+}
+.message-list-wrapper,
+df-message-list {
+  display: flex !important;
+  flex-direction: column !important;
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  max-height: 100% !important;
+  overflow: hidden !important;
+  box-sizing: border-box !important;
+}
+#messageList {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  max-height: 100% !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  -webkit-overflow-scrolling: touch !important;
+  box-sizing: border-box !important;
 }
 .chat-wrapper.chat-min {
   width: var(--df-messenger-chat-window-width, 400px) !important;
@@ -11956,6 +11990,8 @@ const DFCHAT_INLINE_VIDEO_CLASS = "dfchat-inline-video";
 const DFCHAT_INLINE_CARD_CAROUSEL_CLASS = "dfchat-inline-card-carousel";
 const DFCHAT_INLINE_SELECT_CLASS = "dfchat-inline-select";
 const DFCHAT_INLINE_BOOKING_CAL_CLASS = "dfchat-inline-booking-calendar";
+/** ES `#messageList` bot persona row (DOM injection; bootstrap does not always surface `renderCustomText` markdown). */
+const DFCHAT_ES_BOT_PERSONA_CLASS = "dfchat-es-bot-persona";
 
 /** @param {unknown} value @param {number} fallback @param {number} min @param {number} max */
 function sanitizeInlineCarouselPx_(value, fallback, min, max) {
@@ -12164,7 +12200,8 @@ function isDfchatInlineSyntheticRow(el) {
         && el.classList
         && (el.classList.contains(DFCHAT_INLINE_GALLERY_CLASS)
             || el.classList.contains(DFCHAT_INLINE_VIDEO_CLASS)
-            || el.classList.contains(DFCHAT_INLINE_BOOKING_CAL_CLASS)));
+            || el.classList.contains(DFCHAT_INLINE_BOOKING_CAL_CLASS)
+            || el.classList.contains(DFCHAT_ES_BOT_PERSONA_CLASS)));
 }
 
 /**
@@ -17309,8 +17346,9 @@ async function handleDfResponseReceived(event) {
 
     if (!isFormOnlyOpenResponse_(event)) {
         const ms = activeDfMessenger;
-        if (ms && typeof ms.renderCustomText === "function"
-            && (messages.length > 0 || currentTurnMessages.length > 0 || cxResponseMessagesMerged.length > 0)) {
+        const hasTurnContent =
+            messages.length > 0 || currentTurnMessages.length > 0 || cxResponseMessagesMerged.length > 0;
+        if (ms && hasTurnContent && (isDialogflowEsMessenger_(ms) || typeof ms.renderCustomText === "function")) {
             scheduleBotPersonaAfterEsResponse_(ms, event);
         }
     }
@@ -24876,6 +24914,182 @@ function stripUserPersonaSentinelFromDom_(hostEl) {
 }
 
 /**
+ * Dialogflow ES bootstrap (`#messageList` + `df-message` rows). CX legacy uses `#message-list` + `.entry`.
+ * @param {HTMLElement | null | undefined} dfMessenger
+ * @returns {boolean}
+ */
+function isDialogflowEsMessenger_(dfMessenger) {
+    const ms =
+        dfMessenger
+        || (typeof activeDfMessenger !== "undefined" ? activeDfMessenger : null)
+        || (typeof document !== "undefined" ? document.querySelector("df-messenger") : null);
+    if (!ms) {
+        return false;
+    }
+    const list = findMessengerMessageListRoot(ms);
+    if (!list) {
+        return false;
+    }
+    if (list.id === "messageList") {
+        return true;
+    }
+    try {
+        if (list.querySelector("df-message")) {
+            return true;
+        }
+    } catch {
+        /* ignore */
+    }
+    return false;
+}
+
+/**
+ * @param {HTMLElement} list
+ * @returns {Element | null}
+ */
+function findLastEsAgentMessageChild_(list) {
+    if (!list || !list.children) {
+        return null;
+    }
+    const ch = list.children;
+    for (let i = ch.length - 1; i >= 0; i -= 1) {
+        const el = ch[i];
+        if (!el || !(el instanceof Element)) {
+            continue;
+        }
+        if (el.classList && el.classList.contains(DFCHAT_ES_BOT_PERSONA_CLASS)) {
+            continue;
+        }
+        if (isDfchatInlineSyntheticRow(el)) {
+            continue;
+        }
+        const tag = el.tagName ? el.tagName.toUpperCase() : "";
+        if (tag === "DF-MESSAGE") {
+            const role = (el.getAttribute("type") || el.getAttribute("data-type") || "").trim().toLowerCase();
+            if (role === "user" || role === "human") {
+                continue;
+            }
+            return el;
+        }
+        if (typeof el.querySelector === "function") {
+            const inner = el.querySelector('df-message:not([type="user"]):not([type="human"])');
+            if (inner) {
+                return el;
+            }
+        }
+    }
+    return null;
+}
+
+/**
+ * @param {number | undefined} messageInstantMs
+ * @returns {HTMLElement | null}
+ */
+function buildEsBotPersonaDomRow_(messageInstantMs) {
+    const cfg = BOT_PERSONA_CONFIG;
+    if (cfg.mode !== "image") {
+        return null;
+    }
+    const imgCfg = cfg.image;
+    const baseUrl = getBotPersonaImageBaseUrl_();
+    if (!baseUrl) {
+        return null;
+    }
+    const when =
+        typeof messageInstantMs === "number" && Number.isFinite(messageInstantMs)
+            ? messageInstantMs
+            : Date.now();
+    const incDate = cfg.messageTimeIncludesDate !== false;
+    const label = typeof imgCfg.label === "string" ? imgCfg.label.trim() : "";
+    const timeLabel = imgCfg.showTime
+        ? getBotPersonaMessageTimeLabel(imgCfg.timeZone, when, incDate)
+        : "";
+
+    const row = document.createElement("div");
+    row.className = DFCHAT_ES_BOT_PERSONA_CLASS;
+    row.setAttribute("data-dfchat-es-persona", "bot");
+
+    const inner = document.createElement("div");
+    inner.className = `${DFCHAT_ES_BOT_PERSONA_CLASS}__inner`;
+
+    const imgEl = document.createElement("img");
+    imgEl.src = `${baseUrl}#${PERSONA_URL_MARKER_BOT_IMG}`;
+    imgEl.alt = "";
+    imgEl.setAttribute("draggable", "false");
+    inner.appendChild(imgEl);
+
+    if (label || timeLabel) {
+        const cap = document.createElement("span");
+        cap.className = `${DFCHAT_ES_BOT_PERSONA_CLASS}__caption`;
+        if (label) {
+            const lb = document.createElement("span");
+            lb.className = `${DFCHAT_ES_BOT_PERSONA_CLASS}__label`;
+            lb.textContent = label;
+            cap.appendChild(lb);
+        }
+        if (timeLabel) {
+            const tm = document.createElement("strong");
+            tm.className = `${DFCHAT_ES_BOT_PERSONA_CLASS}__time`;
+            tm.textContent = timeLabel;
+            cap.appendChild(tm);
+        }
+        inner.appendChild(cap);
+    }
+
+    row.appendChild(inner);
+    return row;
+}
+
+/**
+ * Inject bot persona directly into ES `#messageList` (reliable on bootstrap; markdown lane often missing).
+ * @param {HTMLElement | null | undefined} dfMessenger
+ * @param {number | undefined} messageInstantMs
+ * @returns {boolean}
+ */
+function injectEsBotPersonaRow_(dfMessenger, messageInstantMs) {
+    const ms =
+        dfMessenger
+        || (typeof activeDfMessenger !== "undefined" ? activeDfMessenger : null);
+    if (!ms || !isDialogflowEsMessenger_(ms)) {
+        return false;
+    }
+    if (BOT_PERSONA_CONFIG.mode === "emojiTime") {
+        if (typeof ms.renderCustomText === "function") {
+            ms.renderCustomText(buildBotPersonaMarkdown_(messageInstantMs), true);
+            schedulePersonaShadowFix(ms);
+            return true;
+        }
+        return false;
+    }
+    const list = findMessengerMessageListRoot(ms);
+    if (!list) {
+        return false;
+    }
+    const agentRow = findLastEsAgentMessageChild_(list);
+    if (
+        agentRow
+        && agentRow.previousElementSibling
+        && agentRow.previousElementSibling instanceof Element
+        && agentRow.previousElementSibling.classList.contains(DFCHAT_ES_BOT_PERSONA_CLASS)
+    ) {
+        schedulePersonaShadowFix(ms);
+        return true;
+    }
+    const row = buildEsBotPersonaDomRow_(messageInstantMs);
+    if (!row) {
+        return false;
+    }
+    if (agentRow && agentRow.parentNode === list) {
+        list.insertBefore(row, agentRow);
+    } else {
+        list.appendChild(row);
+    }
+    schedulePersonaShadowFix(ms);
+    scrollMessengerMessageListToBottom(list);
+    return true;
+}
+
+/**
  * External avatar + optional caption label + message time as one bold markdown span on the same
  * line as the image (single `<p>` keeps the existing `p strong` chrome rules in
  * {@link getPersonaImageGuardCss} matching for blur / colour / vertical nudge).
@@ -24931,7 +25145,14 @@ function buildBotPersonaMarkdown_(messageInstantMs) {
 }
 
 function renderBotPersona(dfMessenger, messageInstantMs) {
-    if (!dfMessenger || typeof dfMessenger.renderCustomText !== "function") {
+    if (!dfMessenger) {
+        return;
+    }
+    if (isDialogflowEsMessenger_(dfMessenger)) {
+        injectEsBotPersonaRow_(dfMessenger, messageInstantMs);
+        return;
+    }
+    if (typeof dfMessenger.renderCustomText !== "function") {
         return;
     }
     dfMessenger.renderCustomText(buildBotPersonaMarkdown_(messageInstantMs), true);
@@ -24939,15 +25160,14 @@ function renderBotPersona(dfMessenger, messageInstantMs) {
 }
 
 /**
- * ES Messenger paints bot text after `df-response-received`; render persona after the row exists
- * and re-run decorator passes so avatar + clock sit above the reply (not below it).
+ * ES Messenger paints bot text after `df-response-received`; inject persona after the agent row exists.
  *
  * @param {HTMLElement} dfMessenger
  * @param {Event | null | undefined} event
  * @returns {void}
  */
 function scheduleBotPersonaAfterEsResponse_(dfMessenger, event) {
-    if (!dfMessenger || typeof dfMessenger.renderCustomText !== "function") {
+    if (!dfMessenger) {
         return;
     }
     if (event && isFormOnlyOpenResponse_(event)) {
@@ -24956,8 +25176,11 @@ function scheduleBotPersonaAfterEsResponse_(dfMessenger, event) {
     const when = Date.now();
     const run = () => {
         try {
-            renderBotPersona(dfMessenger, when);
-            schedulePersonaShadowFix(dfMessenger);
+            if (isDialogflowEsMessenger_(dfMessenger)) {
+                injectEsBotPersonaRow_(dfMessenger, when);
+            } else {
+                renderBotPersona(dfMessenger, when);
+            }
         } catch {
             /* ignore */
         }
@@ -25237,6 +25460,65 @@ ${cfg.mode === "image" ? `
   visibility: hidden !important;
 }
 ` : ""}
+.${DFCHAT_ES_BOT_PERSONA_CLASS} {
+  display: block !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+  margin: 0 0 ${BOT_PERSONA_CONFIG.gapBelowAssistantPx}px 8px !important;
+  padding: 0 !important;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+.${DFCHAT_ES_BOT_PERSONA_CLASS}__inner {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  flex-wrap: nowrap !important;
+  max-width: 100% !important;
+}
+.${DFCHAT_ES_BOT_PERSONA_CLASS} img {
+  width: ${catW} !important;
+  height: ${catH} !important;
+  max-width: ${catW} !important;
+  max-height: ${catH} !important;
+  object-fit: contain !important;
+  display: inline-block !important;
+  vertical-align: middle !important;
+  flex: 0 0 auto !important;
+  transform: translate(${personaRight}, ${personaDown}) !important;
+  filter: blur(${PERSONA_SOFT_BLUR}) !important;
+  opacity: ${PERSONA_OPACITY} !important;
+}
+.${DFCHAT_ES_BOT_PERSONA_CLASS}__caption,
+.${DFCHAT_ES_BOT_PERSONA_CLASS}__label {
+  color: ${PERSONA_TEXT_COLOR} !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  line-height: 1.25 !important;
+  white-space: nowrap !important;
+}
+.${DFCHAT_ES_BOT_PERSONA_CLASS}__time {
+  display: inline-block !important;
+  vertical-align: middle !important;
+  transform: translate(${timeRight}, ${timeDown}) !important;
+  color: ${PERSONA_TEXT_COLOR} !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  filter: blur(${PERSONA_SOFT_BLUR}) !important;
+  opacity: ${PERSONA_OPACITY} !important;
+  margin-left: 4px !important;
+}
+@media (max-width: ${MOBILE_CHAT_BREAKPOINT_PX}px) {
+.${DFCHAT_ES_BOT_PERSONA_CLASS} img {
+  transform: translate(${mobX}, ${mobY}px) !important;
+}
+.${DFCHAT_ES_BOT_PERSONA_CLASS}__time {
+  transform: translate(${mobX}, ${mobY}px) !important;
+}
+}
 img[src*="dfchat-persona-bot-time"] {
   height: 28px !important;
   width: auto !important;
@@ -27069,6 +27351,20 @@ function decoratePersonaMessages(dfMessenger) {
                 personaImageList.push(/** @type {HTMLImageElement} */ (image));
             }
         }
+        let esPersonaImgs = [];
+        try {
+            esPersonaImgs = Array.from(root.querySelectorAll(`.${DFCHAT_ES_BOT_PERSONA_CLASS} img`));
+        } catch {
+            esPersonaImgs = [];
+        }
+        for (let pi = 0; pi < esPersonaImgs.length; pi += 1) {
+            const img = esPersonaImgs[pi];
+            if (!img || seenPersonaImg.has(img)) {
+                continue;
+            }
+            seenPersonaImg.add(img);
+            personaImageList.push(img);
+        }
         const personaBase = getBotPersonaImageBaseUrl_();
         if (personaBase) {
             let extraImgs = [];
@@ -27096,9 +27392,14 @@ function decoratePersonaMessages(dfMessenger) {
                 continue;
             }
             if (personaType === "bot") {
-                reorderBotPersonaMarkdownToTopOfStack_(image);
-                reorderBotPersonaEntryBeforeContiguousBotChunks_(image);
-                reorderBotPersonaListRowBeforeContiguousBotRows_(image);
+                const inEsDomPersonaRow =
+                    typeof image.closest === "function"
+                    && image.closest(`.${DFCHAT_ES_BOT_PERSONA_CLASS}`);
+                if (!inEsDomPersonaRow) {
+                    reorderBotPersonaMarkdownToTopOfStack_(image);
+                    reorderBotPersonaEntryBeforeContiguousBotChunks_(image);
+                    reorderBotPersonaListRowBeforeContiguousBotRows_(image);
+                }
             }
             if (personaType === "bot" && BOT_PERSONA_CONFIG.mode === "emojiTime") {
                 applyBotEmojiPersonaCaptionChrome(image);

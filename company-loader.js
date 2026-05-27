@@ -35,7 +35,7 @@
   }
 
   var CHAT_HOST = chatHostFromLoaderSrc() || "https://qabot2026.github.io/testingone/";
-  var IFRAME_VERSION = "132-es-persona-repair";
+  var IFRAME_VERSION = "133-es-persona-panel-fix";
   var DEFAULT_API_BASE = "https://handsome-amazement-production-7f65.up.railway.app";
 
   function getLoaderQuery() {
