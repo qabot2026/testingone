@@ -3940,6 +3940,7 @@ function syncChatActionBarPosition() {
             refreshChatActionBarLanguageState(bar);
             bar.style.display = "inline-flex";
             applyChatActionBarInlineTransform(bar);
+            scheduleEsChatPanelLayoutRepair_(messenger);
         } else {
             bar.style.display = "none";
         }
@@ -25682,10 +25683,10 @@ function getEsNativePanelLayoutCss_() {
 .chat-wrapper.opened,
 .chat-wrapper.is-open,
 .chat-wrapper[opened] {
-  display: grid !important;
-  grid-template-columns: minmax(0, 1fr) !important;
-  grid-template-rows: auto minmax(0, 1fr) auto !important;
-  align-content: stretch !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: stretch !important;
+  justify-content: flex-start !important;
   height: var(--df-messenger-chat-window-height, 560px) !important;
   min-height: var(--df-messenger-chat-window-height, 560px) !important;
   max-height: min(var(--df-messenger-chat-window-height, 560px), calc(100dvh - 100px)) !important;
@@ -25694,15 +25695,14 @@ function getEsNativePanelLayoutCss_() {
   overflow: hidden !important;
 }
 df-messenger-titlebar {
-  grid-row: 1 !important;
-  grid-column: 1 !important;
   flex: 0 0 auto !important;
   flex-shrink: 0 !important;
+  order: 1 !important;
   min-height: 0 !important;
 }
 df-message-list {
-  grid-row: 2 !important;
-  grid-column: 1 !important;
+  flex: 1 1 auto !important;
+  order: 2 !important;
   min-height: 0 !important;
   min-width: 0 !important;
   height: auto !important;
@@ -25712,27 +25712,80 @@ df-message-list {
   overflow: hidden !important;
   align-self: stretch !important;
 }
-df-messenger-user-input,
-.chat-wrapper > #dfchat-chat-action-bar,
-.chat-wrapper > .dfchat-chat-action-bar--inline {
-  grid-row: 3 !important;
-  grid-column: 1 !important;
+.chat-wrapper.chat-open > .message-list-wrapper,
+.chat-wrapper.opened > .message-list-wrapper,
+.chat-wrapper.is-open > .message-list-wrapper,
+.chat-wrapper[opened] > .message-list-wrapper {
+  display: none !important;
 }
 df-messenger-user-input {
   flex: 0 0 auto !important;
   flex-shrink: 0 !important;
+  order: 3 !important;
   margin-top: 0 !important;
   transform: none !important;
   position: relative !important;
   top: auto !important;
   bottom: auto !important;
-  align-self: end !important;
+  left: auto !important;
+  right: auto !important;
+  align-self: stretch !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
 }
 .chat-wrapper > #dfchat-chat-action-bar,
 .chat-wrapper > .dfchat-chat-action-bar--inline {
-  align-self: end !important;
-  justify-self: stretch !important;
+  flex: 0 0 auto !important;
+  order: 4 !important;
+  position: static !important;
+  top: auto !important;
+  bottom: auto !important;
+  align-self: stretch !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
 }`;
+}
+
+/**
+ * Bootstrap sometimes sets inline `bottom` on the composer as the transcript grows, which lifts the
+ * footer and leaves a white band (gapBelow ≈ bottom px). Clear those insets on every repair pass.
+ * @param {HTMLElement | null | undefined} el
+ * @returns {void}
+ */
+function clearEsFooterChromeInsets_(el) {
+    if (!el || !el.style) {
+        return;
+    }
+    const props = [
+        "bottom",
+        "top",
+        "left",
+        "right",
+        "inset",
+        "inset-block-end",
+        "inset-block-start",
+        "margin-top",
+        "transform"
+    ];
+    for (let pi = 0; pi < props.length; pi += 1) {
+        try {
+            el.style.removeProperty(props[pi]);
+        } catch {
+            /* ignore */
+        }
+    }
+    try {
+        const pos = window.getComputedStyle(el).position;
+        if (pos === "absolute" || pos === "fixed") {
+            el.style.setProperty("position", "relative", "important");
+        }
+    } catch {
+        try {
+            el.style.removeProperty("position");
+        } catch {
+            /* ignore */
+        }
+    }
 }
 
 /**
@@ -25765,15 +25818,15 @@ function pinEsOpenChatPanelGrid_(panel, dfMessenger) {
     }
     const maxH = `min(${hVar}, calc(100dvh - 100px))`;
     try {
-        panel.style.setProperty("display", "grid", "important");
-        panel.style.setProperty("grid-template-columns", "minmax(0, 1fr)", "important");
-        panel.style.setProperty("grid-template-rows", "auto minmax(0, 1fr) auto", "important");
+        panel.style.setProperty("display", "flex", "important");
+        panel.style.setProperty("flex-direction", "column", "important");
+        panel.style.setProperty("align-items", "stretch", "important");
         panel.style.setProperty("height", hVar, "important");
         panel.style.setProperty("min-height", hVar, "important");
         panel.style.setProperty("max-height", maxH, "important");
         panel.style.setProperty("overflow", "hidden", "important");
-        panel.style.removeProperty("flex");
-        panel.style.removeProperty("flex-direction");
+        panel.style.removeProperty("grid-template-columns");
+        panel.style.removeProperty("grid-template-rows");
     } catch {
         /* ignore */
     }
@@ -25782,35 +25835,45 @@ function pinEsOpenChatPanelGrid_(panel, dfMessenger) {
     const composer = panel.querySelector("df-messenger-user-input");
     if (title && title.style) {
         try {
-            title.style.setProperty("grid-row", "1", "important");
-            title.style.setProperty("grid-column", "1", "important");
+            title.style.setProperty("flex", "0 0 auto", "important");
+            title.style.setProperty("order", "1", "important");
+            title.style.removeProperty("grid-row");
+            title.style.removeProperty("grid-column");
         } catch {
             /* ignore */
         }
     }
     if (msgList && msgList.style) {
         try {
-            msgList.style.setProperty("grid-row", "2", "important");
-            msgList.style.setProperty("grid-column", "1", "important");
+            msgList.style.setProperty("flex", "1 1 auto", "important");
+            msgList.style.setProperty("order", "2", "important");
             msgList.style.setProperty("min-height", "0", "important");
             msgList.style.setProperty("display", "flex", "important");
             msgList.style.setProperty("flex-direction", "column", "important");
             msgList.style.setProperty("overflow", "hidden", "important");
             msgList.style.removeProperty("height");
             msgList.style.removeProperty("max-height");
-            msgList.style.removeProperty("flex");
+            msgList.style.removeProperty("grid-row");
+            msgList.style.removeProperty("grid-column");
         } catch {
             /* ignore */
         }
     }
+    try {
+        const orphanWrap = panel.querySelector(":scope > .message-list-wrapper");
+        if (orphanWrap && orphanWrap instanceof HTMLElement && msgList) {
+            orphanWrap.style.setProperty("display", "none", "important");
+        }
+    } catch {
+        /* ignore */
+    }
     if (composer && composer.style) {
         try {
-            composer.style.setProperty("grid-row", "3", "important");
-            composer.style.setProperty("grid-column", "1", "important");
             composer.style.setProperty("flex", "0 0 auto", "important");
-            composer.style.removeProperty("margin-top");
-            composer.style.removeProperty("transform");
-            composer.style.removeProperty("position");
+            composer.style.setProperty("order", "3", "important");
+            composer.style.removeProperty("grid-row");
+            composer.style.removeProperty("grid-column");
+            clearEsFooterChromeInsets_(composer);
         } catch {
             /* ignore */
         }
@@ -25818,12 +25881,15 @@ function pinEsOpenChatPanelGrid_(panel, dfMessenger) {
     const actionBar = panel.querySelector("#dfchat-chat-action-bar");
     if (actionBar && actionBar.style) {
         try {
-            actionBar.style.setProperty("grid-row", "3", "important");
-            actionBar.style.setProperty("grid-column", "1", "important");
+            actionBar.style.setProperty("flex", "0 0 auto", "important");
+            actionBar.style.setProperty("order", "4", "important");
             actionBar.style.setProperty("position", "static", "important");
+            actionBar.style.removeProperty("grid-row");
+            actionBar.style.removeProperty("grid-column");
             actionBar.style.removeProperty("top");
             actionBar.style.removeProperty("bottom");
-            actionBar.style.removeProperty("transform");
+            actionBar.style.removeProperty("left");
+            actionBar.style.removeProperty("right");
         } catch {
             /* ignore */
         }
@@ -26050,6 +26116,49 @@ function scheduleEsChatPanelLayoutRepair_(dfMessenger) {
                 const pr = panel && panel.getBoundingClientRect ? panel.getBoundingClientRect() : null;
                 const mr = msgListHost && msgListHost.getBoundingClientRect ? msgListHost.getBoundingClientRect() : null;
                 const lr = list && list.getBoundingClientRect ? list.getBoundingClientRect() : null;
+                /** @type {HTMLElement | null} */
+                let composer = null;
+                /** @type {HTMLElement | null} */
+                let actionBar = null;
+                for (const root of roots) {
+                    if (!root || typeof root.querySelector !== "function") {
+                        continue;
+                    }
+                    composer = composer || /** @type {HTMLElement | null} */ (root.querySelector("df-messenger-user-input"));
+                    actionBar = actionBar || /** @type {HTMLElement | null} */ (root.querySelector("#dfchat-chat-action-bar"));
+                    if (composer && actionBar) {
+                        break;
+                    }
+                }
+                const cr = composer && composer.getBoundingClientRect ? composer.getBoundingClientRect() : null;
+                const ar = actionBar && actionBar.getBoundingClientRect ? actionBar.getBoundingClientRect() : null;
+                const gapBelowFooter =
+                    pr && cr ? Math.round(pr.bottom - cr.bottom) : null;
+                const gapBelowBar =
+                    pr && ar ? Math.round(pr.bottom - ar.bottom) : null;
+                let panelBottomCss = "";
+                let panelHeightCss = "";
+                let composerPosCss = "";
+                let composerBottomCss = "";
+                let wrapperKids = -1;
+                try {
+                    if (panel) {
+                        const cs = window.getComputedStyle(panel);
+                        panelBottomCss = cs && typeof cs.bottom === "string" ? cs.bottom : "";
+                        panelHeightCss = cs && typeof cs.height === "string" ? cs.height : "";
+                        wrapperKids = panel.children ? panel.children.length : -1;
+                    }
+                    if (composer) {
+                        const ccs = window.getComputedStyle(composer);
+                        composerPosCss = ccs && typeof ccs.position === "string" ? ccs.position : "";
+                        composerBottomCss = ccs && typeof ccs.bottom === "string" ? ccs.bottom : "";
+                        if (composer.style && composer.style.bottom) {
+                            composerBottomCss = `${composerBottomCss} inline:${composer.style.bottom}`;
+                        }
+                    }
+                } catch {
+                    /* ignore */
+                }
                 const count =
                     list && list.children && typeof list.children.length === "number"
                         ? list.children.length
@@ -26057,8 +26166,12 @@ function scheduleEsChatPanelLayoutRepair_(dfMessenger) {
                 updateCompanyDebugBadge([
                     "ES layout",
                     `panel h=${pr ? Math.round(pr.height) : "?"} top=${pr ? Math.round(pr.top) : "?"} bottom=${pr ? Math.round(pr.bottom) : "?"}`,
+                    `panel css: height=${panelHeightCss || "?"} bottom=${panelBottomCss || "?"}`,
                     `df-message-list h=${mr ? Math.round(mr.height) : "?"}`,
                     `#messageList h=${lr ? Math.round(lr.height) : "?"} children=${count}`,
+                    `wrapperKids=${wrapperKids}`,
+                    `composer bottom=${cr ? Math.round(cr.bottom) : "?"} gapBelow=${gapBelowFooter == null ? "?" : gapBelowFooter} pos=${composerPosCss || "?"} cssBottom=${composerBottomCss || "?"}`,
+                    `actionBar bottom=${ar ? Math.round(ar.bottom) : "?"} gapBelow=${gapBelowBar == null ? "?" : gapBelowBar}`,
                     `scrollTop=${list ? Math.round(list.scrollTop || 0) : "?"} scrollH=${list ? Math.round(list.scrollHeight || 0) : "?"}`
                 ]);
             }
@@ -26148,7 +26261,9 @@ function stripEsTranscriptMeasuredHeights_(dfMessenger) {
         let nodes = [];
         try {
             nodes = Array.from(
-                root.querySelectorAll(".message-list-wrapper, #messageList, #message-list")
+                root.querySelectorAll(
+                    "df-message-list, .message-list-wrapper, #messageList, #message-list"
+                )
             );
         } catch {
             nodes = [];
@@ -26165,6 +26280,15 @@ function stripEsTranscriptMeasuredHeights_(dfMessenger) {
                     /* ignore */
                 }
             }
+        }
+        let composers = [];
+        try {
+            composers = Array.from(root.querySelectorAll("df-messenger-user-input"));
+        } catch {
+            composers = [];
+        }
+        for (let ci = 0; ci < composers.length; ci += 1) {
+            clearEsFooterChromeInsets_(/** @type {HTMLElement} */ (composers[ci]));
         }
     }
 }
