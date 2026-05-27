@@ -26024,6 +26024,47 @@ function scheduleEsChatPanelLayoutRepair_(dfMessenger) {
     esPanelLayoutRepairTimer_ = window.setTimeout(() => {
         esPanelLayoutRepairTimer_ = null;
         applyEsChatPanelLayoutDomFixes_(ms);
+        try {
+            if (isCompanyDebugEnabled && isCompanyDebugEnabled()) {
+                const roots = collectSearchRoots(ms);
+                /** @type {HTMLElement | null} */
+                let panel = null;
+                /** @type {HTMLElement | null} */
+                let msgListHost = null;
+                /** @type {HTMLElement | null} */
+                let listWrapper = null;
+                /** @type {HTMLElement | null} */
+                let list = null;
+                for (const root of roots) {
+                    if (!root || typeof root.querySelector !== "function") {
+                        continue;
+                    }
+                    panel = panel || /** @type {HTMLElement | null} */ (root.querySelector(".chat-wrapper"));
+                    msgListHost = msgListHost || /** @type {HTMLElement | null} */ (root.querySelector("df-message-list"));
+                    listWrapper = listWrapper || /** @type {HTMLElement | null} */ (root.querySelector(".message-list-wrapper"));
+                    list = list || /** @type {HTMLElement | null} */ (root.querySelector("#messageList, #message-list"));
+                    if (panel && msgListHost && listWrapper && list) {
+                        break;
+                    }
+                }
+                const pr = panel && panel.getBoundingClientRect ? panel.getBoundingClientRect() : null;
+                const mr = msgListHost && msgListHost.getBoundingClientRect ? msgListHost.getBoundingClientRect() : null;
+                const lr = list && list.getBoundingClientRect ? list.getBoundingClientRect() : null;
+                const count =
+                    list && list.children && typeof list.children.length === "number"
+                        ? list.children.length
+                        : -1;
+                updateCompanyDebugBadge([
+                    "ES layout",
+                    `panel h=${pr ? Math.round(pr.height) : "?"} top=${pr ? Math.round(pr.top) : "?"} bottom=${pr ? Math.round(pr.bottom) : "?"}`,
+                    `df-message-list h=${mr ? Math.round(mr.height) : "?"}`,
+                    `#messageList h=${lr ? Math.round(lr.height) : "?"} children=${count}`,
+                    `scrollTop=${list ? Math.round(list.scrollTop || 0) : "?"} scrollH=${list ? Math.round(list.scrollHeight || 0) : "?"}`
+                ]);
+            }
+        } catch {
+            /* ignore */
+        }
     }, 80);
 }
 
