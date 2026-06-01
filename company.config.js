@@ -116,7 +116,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
       // - OFF → no picker; the agent uses `defaultLanguage` only.
       // - `code` = language code for Dialogflow (`language-code` on df-messenger); `label` = fallback gloss (English).
       // - Optional `nativeLabel` = exact menu/pill text (overrides built-in endonyms for en/hi/mr).
-      // - Hindi/Marathi copy: `translations/ui-*.js`, `translations/bot-*.js`, `translations/chips-*.js` (fixed script; no translate API).
+      // - Hindi/Marathi: edit only `translations/strings.json` (one file; see _help inside).
       // - Forms / UI chrome: `translations/ui-*.js` + `forms/*` *ByLanguage keys.
       multiLanguage: {
         enabled: true,

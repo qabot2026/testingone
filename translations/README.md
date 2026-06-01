@@ -1,27 +1,32 @@
-# Fixed translations (Hindi / Marathi)
+# एक ही फ़ाइल: `strings.json`
 
-Runtime **Google Translate** was removed. All copy is served from these files.
+सारा Hindi / Marathi **यहीँ** edit करें।
 
-## Files
+## Format
 
-| File | Purpose |
-|------|---------|
-| `ui-hi.js` / `ui-mr.js` | Forms, buttons, status, header, composer placeholder |
-| `bot-hi.js` / `bot-mr.js` | Bot messages, chips, table headers, rich text (English key → translation) |
-| `chips-hi.js` / `chips-mr.js` | Gallery / inline option chips (`data-dfchat-opt-key`) |
-
-Loaded in `chat-frame.html` **before** `company.js`.
-
-## Adding bot lines
-
-When Dialogflow shows new English text, add the **exact** string (as users see it, trimmed) to `bot-hi.js` and `bot-mr.js`:
-
-```javascript
-"My new agent line": "मेरा नया हिंदी वाक्य",
+```json
+"Exact English text from chat": {
+  "hi": "हिंदी",
+  "mr": "मराठी"
+}
 ```
 
-If a line is missing, the chat keeps the English text until you add it.
+## Sections
 
-## Forms
+| Key | Use |
+|-----|-----|
+| (top level) | Bot messages, chips, tables — **जो English chat में दिखे** वही key |
+| `_ui` | Form / button labels (internal keys जैसे `submitButton`) |
+| `_chips` | Chip **value** keys (`location`, `help`) — lowercase |
 
-In-chat forms still use `titleByLanguage` / `placeholderByLanguage` in `forms/*.js`.
+## नई line
+
+1. Chat में English copy करें  
+2. `strings.json` में एक entry add करें (`hi` + `mr`)  
+3. Page refresh (Ctrl+F5)
+
+Missing entry = English ही दिखेगा.
+
+## Load
+
+`chat-frame.html` → `load-strings.js` → `strings.json` → `company.js`

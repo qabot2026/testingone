@@ -2350,24 +2350,50 @@ const UI_TRANSLATIONS_EN = {
         poweredByLabel: "Powered by"
 };
 
+/**
+ * Build hi/mr UI tables from `translations/strings.json` (`_ui` + English phrase keys).
+ * @returns {{ en: Record<string, string>, hi: Record<string, string>, mr: Record<string, string> }}
+ */
+function buildUiTranslationsFromStrings_() {
+    const hi = Object.assign({}, UI_TRANSLATIONS_EN);
+    const mr = Object.assign({}, UI_TRANSLATIONS_EN);
+    const S = typeof window !== "undefined" ? window.DFCHAT_STRINGS : null;
+    if (!S || typeof S !== "object") {
+        return { en: UI_TRANSLATIONS_EN, hi, mr };
+    }
+    const ui = S._ui;
+    if (ui && typeof ui === "object") {
+        for (const key of Object.keys(ui)) {
+            const row = ui[key];
+            if (!row || typeof row !== "object") {
+                continue;
+            }
+            if (typeof row.hi === "string" && row.hi.trim()) {
+                hi[key] = row.hi.trim();
+            }
+            if (typeof row.mr === "string" && row.mr.trim()) {
+                mr[key] = row.mr.trim();
+            }
+        }
+    }
+    for (const key of Object.keys(UI_TRANSLATIONS_EN)) {
+        const enPhrase = UI_TRANSLATIONS_EN[key];
+        const row = lookupFixedStringRow_(enPhrase, S);
+        if (!row) {
+            continue;
+        }
+        if (typeof row.hi === "string" && row.hi.trim()) {
+            hi[key] = row.hi.trim();
+        }
+        if (typeof row.mr === "string" && row.mr.trim()) {
+            mr[key] = row.mr.trim();
+        }
+    }
+    return { en: UI_TRANSLATIONS_EN, hi, mr };
+}
+
 /** @type {{ en: Record<string, string>, hi: Record<string, string>, mr: Record<string, string> }} */
-const UI_TRANSLATIONS = {
-    en: UI_TRANSLATIONS_EN,
-    hi: Object.assign(
-        {},
-        UI_TRANSLATIONS_EN,
-        typeof window !== "undefined" && window.DFCHAT_UI_HI && typeof window.DFCHAT_UI_HI === "object"
-            ? window.DFCHAT_UI_HI
-            : {}
-    ),
-    mr: Object.assign(
-        {},
-        UI_TRANSLATIONS_EN,
-        typeof window !== "undefined" && window.DFCHAT_UI_MR && typeof window.DFCHAT_UI_MR === "object"
-            ? window.DFCHAT_UI_MR
-            : {}
-    )
-};
+const UI_TRANSLATIONS = buildUiTranslationsFromStrings_();
 
 /**
  * Production embeds: no contact-form markup in HTML. Inject once if missing (idempotent).
@@ -20658,15 +20684,22 @@ function readInlineOptionLabelByLanguageMap() {
     }
 }
 
-function readFixedChipsMapForLanguage(lang) {
+function readFixedChipLabel_(valueKey, lang) {
     const code = normalizeFixedTranslationLanguage(lang);
-    if (code === "hi" && typeof window !== "undefined" && window.DFCHAT_CHIPS_HI) {
-        return window.DFCHAT_CHIPS_HI;
+    if (code === "en") {
+        return "";
     }
-    if (code === "mr" && typeof window !== "undefined" && window.DFCHAT_CHIPS_MR) {
-        return window.DFCHAT_CHIPS_MR;
+    const S = typeof window !== "undefined" ? window.DFCHAT_STRINGS : null;
+    const chips = S && S._chips && typeof S._chips === "object" ? S._chips : null;
+    if (!chips) {
+        return "";
     }
-    return null;
+    const row = chips[valueKey] || chips[String(valueKey || "").toLowerCase()];
+    if (!row || typeof row !== "object") {
+        return "";
+    }
+    const t = row[code];
+    return typeof t === "string" && t.trim() ? t.trim() : "";
 }
 
 function resolveInlineOptionLabel(label, value, lang) {
@@ -20675,9 +20708,16 @@ function resolveInlineOptionLabel(label, value, lang) {
     if (!key) {
         return fallback;
     }
-    const chipsMap = readFixedChipsMapForLanguage(lang);
-    if (chipsMap && typeof chipsMap[key] === "string" && chipsMap[key].trim()) {
-        return chipsMap[key].trim();
+    const chipLabel = readFixedChipLabel_(key, lang);
+    if (chipLabel) {
+        return chipLabel;
+    }
+    const chipRow = lookupFixedStringRow_(fallback, typeof window !== "undefined" ? window.DFCHAT_STRINGS : null);
+    if (chipRow) {
+        const code = normalizeFixedTranslationLanguage(lang);
+        if (typeof chipRow[code] === "string" && chipRow[code].trim()) {
+            return chipRow[code].trim();
+        }
     }
     const map = readInlineOptionLabelByLanguageMap();
     if (!map) {
@@ -21666,22 +21706,40 @@ function normalizeFixedTranslationLanguage(code) {
 }
 
 /**
- * @param {string} targetLanguage
- * @returns {Record<string, string> | null}
+ * @param {string} englishText
+ * @param {Record<string, unknown> | null | undefined} [stringsRoot]
+ * @returns {{ hi?: string, mr?: string } | null}
  */
-function readFixedBotTranslationMap(targetLanguage) {
-    const tl = normalizeFixedTranslationLanguage(targetLanguage);
-    if (tl === "hi" && typeof window !== "undefined" && window.DFCHAT_BOT_HI && typeof window.DFCHAT_BOT_HI === "object") {
-        return window.DFCHAT_BOT_HI;
+function lookupFixedStringRow_(englishText, stringsRoot) {
+    const S = stringsRoot || (typeof window !== "undefined" ? window.DFCHAT_STRINGS : null);
+    if (!S || typeof S !== "object") {
+        return null;
     }
-    if (tl === "mr" && typeof window !== "undefined" && window.DFCHAT_BOT_MR && typeof window.DFCHAT_BOT_MR === "object") {
-        return window.DFCHAT_BOT_MR;
+    const s = typeof englishText === "string" ? englishText.trim() : "";
+    if (!s) {
+        return null;
     }
-    return null;
+    let row = S[s];
+    if (!row || typeof row !== "object" || Array.isArray(row)) {
+        const lower = s.toLowerCase();
+        for (const key of Object.keys(S)) {
+            if (key.charAt(0) === "_") {
+                continue;
+            }
+            if (key.toLowerCase() === lower) {
+                row = S[key];
+                break;
+            }
+        }
+    }
+    if (!row || typeof row !== "object" || Array.isArray(row)) {
+        return null;
+    }
+    return /** @type {{ hi?: string, mr?: string }} */ (row);
 }
 
 /**
- * Lookup fixed Hindi/Marathi copy for bot bubbles, chips, and tables (`translations/bot-*.js`).
+ * Lookup Hindi/Marathi from `translations/strings.json` (exact English key).
  * @param {string} sourceText
  * @param {string} targetLanguage
  * @returns {string}
@@ -21695,21 +21753,12 @@ function translateFixedScript(sourceText, targetLanguage) {
     if (!s) {
         return sourceText;
     }
-    const map = readFixedBotTranslationMap(tl);
-    if (!map) {
+    const row = lookupFixedStringRow_(s);
+    if (!row) {
         return sourceText;
     }
-    const exact = map[s];
-    if (typeof exact === "string" && exact.trim()) {
-        return exact.trim();
-    }
-    const lower = s.toLowerCase();
-    for (const key of Object.keys(map)) {
-        if (key.toLowerCase() === lower && typeof map[key] === "string" && map[key].trim()) {
-            return map[key].trim();
-        }
-    }
-    return sourceText;
+    const translated = row[tl];
+    return typeof translated === "string" && translated.trim() ? translated.trim() : sourceText;
 }
 
 function getInitialLanguage() {
