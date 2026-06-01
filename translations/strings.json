@@ -2,7 +2,7 @@
   "_help": "Key = EXACT English text from Dialogflow (reply, chip, dropdown, table). Works for whole bot — not per intent.",
   "_help2": "Add one line once. Wherever that English appears, hi/mr will show after user selects language.",
   "_help3": "_ui = form/button labels (internal keys). _chips = chip value keys (lowercase, e.g. location). Rest = exact English from chat.",
-  "_help4": "open_gallery: message, urls[].name captions, options[].label — use EXACT English as key (e.g. \"Please choose:\", \"Image 1\", \"Syntax\").",
+  "_help4": "open_gallery / open_card_carousel: message, urls[].name or cards title/subtitle/ctaLabel — EXACT English as key.",
   "Animal": {
     "hi": "जानवर",
     "mr": "प्राणी"
@@ -750,5 +750,37 @@
   "doctors": {
     "hi": "डॉक्टर",
     "mr": "डॉक्टर"
+  },
+  "Pick one option:": {
+    "hi": "कृपया एक विकल्प चुनें:",
+    "mr": "कृपया एक पर्याय निवडा:"
+  },
+  "View": {
+    "hi": "देखें",
+    "mr": "पहा"
+  },
+  "Luxury Villa": {
+    "hi": "लक्ज़री विला",
+    "mr": "लक्झरी व्हिला"
+  },
+  "4 BHK • Pool • Garden": {
+    "hi": "4 BHK • पूल • गार्डन",
+    "mr": "4 BHK • पूल • गार्डन"
+  },
+  "Modern Apartment": {
+    "hi": "आधुनिक अपार्टमेंट",
+    "mr": "आधुनिक अपार्टमेंट"
+  },
+  "3 BHK • City View": {
+    "hi": "3 BHK • शहर का नज़ारा",
+    "mr": "3 BHK • शहराचे दृश्य"
+  },
+  "Family House": {
+    "hi": "फैमिली हाउस",
+    "mr": "कुटुंबाचे घर"
+  },
+  "2 BHK • Parking • Garden": {
+    "hi": "2 BHK • पार्किंग • गार्डन",
+    "mr": "2 BHK • पार्किंग • गार्डन"
   }
 }

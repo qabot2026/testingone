@@ -3,7 +3,7 @@
  */
 (function (w) {
   w.DFCHAT_STRINGS = null;
-  var url = "translations/strings.json?v=5";
+  var url = "translations/strings.json?v=6";
   try {
     var xhr = new XMLHttpRequest();
     xhr.open("GET", url, false);
