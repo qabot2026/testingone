@@ -298,10 +298,6 @@ const MULTI_LANGUAGE_CONFIG = FEATURES_CONFIG.multiLanguage && typeof FEATURES_C
 function isMultiLanguageEnabled() {
     return isFeatureEnabledFromConfig(MULTI_LANGUAGE_CONFIG, false);
 }
-/** When true, auto-translation (Google) may walk `document.body`; default false = only chat widget shadow roots. */
-const AUTO_TRANSLATE_HOST_PAGE = typeof MULTI_LANGUAGE_CONFIG.autoTranslateHostPage === "boolean"
-    ? MULTI_LANGUAGE_CONFIG.autoTranslateHostPage
-    : false;
 const RESTART_CHAT_CONFIG = FEATURES_CONFIG.restartChat && typeof FEATURES_CONFIG.restartChat === "object"
     ? FEATURES_CONFIG.restartChat
     : {};
@@ -1456,11 +1452,32 @@ let botWritingDotsWasTyping = false;
  * @returns {string}
  */
 function getBotWritingTextBase() {
+    const fromI18n = getTranslation("botWritingText");
+    if (typeof fromI18n === "string" && fromI18n.trim() && fromI18n !== "botWritingText") {
+        return fromI18n.trim().replace(/\.+$/, "").trim() || "Typing";
+    }
     const raw = HEADER_CONFIG.botWritingText;
     if (typeof raw === "string" && raw.trim()) {
         return raw.trim().replace(/\.+$/, "").trim() || "Typing";
     }
     return "Typing";
+}
+
+/** Title + subtitle on `df-messenger-chat-bubble` from fixed UI translations. */
+function applyLocalizedChatHeader(host) {
+    const bubble = host && host.tagName === "DF-MESSENGER-CHAT-BUBBLE"
+        ? host
+        : host && typeof host.querySelector === "function"
+            ? host.querySelector("df-messenger-chat-bubble")
+            : null;
+    if (!bubble || typeof bubble.setAttribute !== "function") {
+        return;
+    }
+    const headerConfig = COMMON_CONFIG.header || {};
+    const title = getTranslation("headerTitle") || headerConfig.title || "Chat Support";
+    const subtitle = getTranslation("headerSubtitle") || headerConfig.subtitle || "🟢 Online";
+    bubble.setAttribute("chat-title", title);
+    bubble.setAttribute("chat-subtitle", subtitle);
 }
 
 function readBotWritingDotsIntervalMs() {
@@ -1534,6 +1551,7 @@ function applyBotWritingTextToChatBubble(host) {
         return;
     }
     bubble.setAttribute("bot-writing-text", resolveBotWritingTextFromConfig());
+    applyLocalizedChatHeader(host);
 }
 
 function getChatInputPlaceholder(languageCode) {
@@ -1716,7 +1734,6 @@ const SUPPORTED_LANGUAGES = CHAT_LANGUAGE_OPTIONS
     .map((option) => normalizeLanguageCode(option && option.code ? option.code : ""))
     .filter((value) => value);
 const CHAT_LANGUAGE_DROPDOWN_ID = "dfchat-chat-language-dropdown";
-const GOOGLE_TRANSLATE_ENDPOINT = "https://translate.googleapis.com/translate_a/single";
 const DOM_TRANSLATION_DEBOUNCE_MS = 180;
 let activeLanguage = getInitialLanguage();
 
@@ -1779,7 +1796,6 @@ let latestTranslationRunId = 0;
 let translationRefreshTimer = null;
 const originalTextNodeContent = new Map();
 const originalElementAttributes = new Map();
-const googleTranslationCache = new Map();
 
 const COMPANY_JS_BUILD_TAG = "20260518-liveagent";
 const COMPANY_DEBUG_QUERY_FLAG = "dfchatDebug";
@@ -2275,8 +2291,10 @@ function updateCompanyDebugBadge(lines) {
     }
 }
 
-const UI_TRANSLATIONS = {
-    en: {
+const UI_TRANSLATIONS_EN = {
+        headerTitle: "Artemis",
+        headerSubtitle: "🟢 We are online to assist you",
+        botWritingText: "Typing",
         contactFormTitle: "Contact Form",
         contactFormSubtitle: "Share your contact details.",
         closeFormAria: "Close form",
@@ -2328,116 +2346,27 @@ const UI_TRANSLATIONS = {
         appointmentPickerChooseTime: "Choose a time slot below.",
         appointmentPickTimeSlot: "Please pick a time slot.",
         appointmentPickDate: "Please pick a date on the calendar.",
-        appointmentPickDateAndTime: "Please choose a date and a time slot."
-    },
-    hi: {
-        contactFormTitle: "संपर्क करें",
-        contactFormSubtitle: "अपनी जानकारी साझा करें, हम आपसे संपर्क करेंगे।",
-        closeFormAria: "फॉर्म बंद करें",
-        namePlaceholder: "नाम",
-        dialCodePlaceholder: "डायल कोड",
-        mobilePlaceholder: "मोबाइल नंबर",
-        emailPlaceholder: "ईमेल",
-        messagePlaceholder: "हम आपकी कैसे मदद कर सकते हैं?",
-        otpCodePlaceholder: "OTP दर्ज करें",
-        summaryNameLabel: "नाम",
-        summaryDialCodeLabel: "डायल कोड",
-        summaryMobileLabel: "मोबाइल",
-        summaryEmailLabel: "ईमेल",
-        summaryDateLabel: "तिथि",
-        summaryBirthDateLabel: "जन्म तिथि",
-        birthDatePlaceholder: "अपनी जन्म तिथि चुनें",
-        summaryTimeLabel: "समय",
-        summaryDoctorIdLabel: "डॉक्टर",
-        summaryLocationLabel: "स्थान",
-        summaryOtpLabel: "OTP",
-        submitButton: "जमा करें",
-        languageLabel: "भाषा",
-        restartButtonLabel: "रीस्टार्ट",
-        chatInputPlaceholder: "कुछ पूछें…",
-        statusOpenViaFlask: "फॉर्म जमा करने के लिए इस पेज को Flask ऐप URL से खोलें।",
-        statusSubmitting: "जमा किया जा रहा है...",
-        statusSubmitted: "सफलतापूर्वक जमा किया गया।",
-        statusSubmissionFailed: "जमा नहीं हो सका। कृपया फिर से प्रयास करें।",
-        contactResponseThanks: "जानकारी साझा करने के लिए धन्यवाद",
-        fieldRequired: "कृपया यह भरें।",
-        invalidEmail: "कृपया मान्य ईमेल दर्ज करें।",
-        invalidPhone: "कृपया मान्य फोन नंबर दर्ज करें।",
-        invalidPattern: "यह मान आवश्यक प्रारूप से मेल नहीं खाता।",
-        invalidPastBirthDate: "कृपया अतीत की जन्म तिथि चुनें (आज या भविष्य की तारीख मान्य नहीं)।",
-        invalidOtp: "मान्य OTP दर्ज करें (4–8 अंक)।",
-        changeMobileButton: "मोबाइल नंबर बदलें",
-        backToOtpButton: "OTP पर वापस",
-        resendOtpButton: "नहीं मिला? फिर से OTP भेजें",
-        statusOtpResent: "नया कोड भेज दिया गया। संदेश देखें।",
-        statusMobileNumberSaved: "नंबर अपडेट। नया कोड ऊपर दर्ज करें।",
-        otpFormSubtitleMobile: "मोबाइल नंबर दर्ज करें और जमा करें।",
-        documentUploadAria: "अपलोड के लिए फ़ाइल चुनें",
-        summaryDocumentLabel: "दस्तावेज़",
-        invalidVideoFile: "वीडियो फ़ाइलें मान्य नहीं। छवि, PDF या Word आदि भेजें।",
-        clearFileSelectionButton: "चयन रद्द करें",
-        appointmentSlotAlreadyBooked: "यह समय पहले से बुक है। कृपया कोई और समय चुनें।",
-        appointmentPickerSelected: "चयनित",
-        appointmentPickerPickDayIntro: "पहले दिन चुनें, फिर समय।",
-        appointmentPickerChooseTime: "नीचे समय चुनें।",
-        appointmentPickTimeSlot: "कृपया समय चुनें।",
-        appointmentPickDate: "कृपया कैलेंडर से तारीख चुनें।",
-        appointmentPickDateAndTime: "कृपया तारीख और समय चुनें।"
-    },
-    mr: {
-        contactFormTitle: "आमच्याशी संपर्क करा",
-        contactFormSubtitle: "तुमची माहिती शेअर करा, आम्ही तुमच्याशी संपर्क करू.",
-        closeFormAria: "फॉर्म बंद करा",
-        namePlaceholder: "नाव",
-        dialCodePlaceholder: "डायल कोड",
-        mobilePlaceholder: "मोबाईल नंबर",
-        emailPlaceholder: "ईमेल",
-        messagePlaceholder: "आम्ही तुम्हाला कशी मदत करू शकतो?",
-        otpCodePlaceholder: "OTP टाका",
-        summaryNameLabel: "नाव",
-        summaryDialCodeLabel: "डायल कोड",
-        summaryMobileLabel: "मोबाईल",
-        summaryEmailLabel: "ईमेल",
-        summaryDateLabel: "तारीख",
-        summaryBirthDateLabel: "जन्मतारीख",
-        birthDatePlaceholder: "तुमची जन्मतारीख निवडा",
-        summaryTimeLabel: "वेळ",
-        summaryDoctorIdLabel: "डॉक्टर",
-        summaryLocationLabel: "ठिकाण",
-        summaryOtpLabel: "OTP",
-        submitButton: "सबमिट",
-        languageLabel: "भाषा",
-        restartButtonLabel: "रीस्टार्ट",
-        chatInputPlaceholder: "इथे टाइप करा…",
-        statusOpenViaFlask: "फॉर्म सबमिट करण्यासाठी हा पेज Flask अ‍ॅप URL वरून उघडा.",
-        statusSubmitting: "सबमिट होत आहे...",
-        statusSubmitted: "यशस्वीरित्या सबमिट झाले.",
-        statusSubmissionFailed: "सबमिट झाले नाही. कृपया पुन्हा प्रयत्न करा.",
-        contactResponseThanks: "माहिती शेअर केल्याबद्दल धन्यवाद",
-        fieldRequired: "कृपया हे क्षेत्र भरा.",
-        invalidEmail: "कृपया वैध ईमेल टाका.",
-        invalidPhone: "कृपया वैध फोन क्रमांक टाका.",
-        invalidPattern: "हे मूल्य आवश्यक स्वरूपाशी जुळत नाही.",
-        invalidPastBirthDate: "कृपया भूतकाळातील जन्मतारीख निवडा (आज किंवा भविष्यातील तारीख मान्य नाही).",
-        invalidOtp: "वैध OTP टाका (४–८ अंक).",
-        changeMobileButton: "मोबाईल क्रमांक बदला",
-        backToOtpButton: "OTPकडे परत",
-        resendOtpButton: "मिळाला नाही? पुन्हा OTP पाठवा",
-        statusOtpResent: "नवा कोड पाठवला. मेसेज पहा.",
-        statusMobileNumberSaved: "नंबर अपडेट. नवा कोड वर टाका.",
-        otpFormSubtitleMobile: "मोबाईल क्रमांक टाका आणि सबमिट करा.",
-        documentUploadAria: "अपलोडसाठी फाइल निवडा",
-        summaryDocumentLabel: "दस्तऐवज",
-        invalidVideoFile: "व्हिडिओ फाइल्सना परवानगी नाही. प्रतिमा, PDF किंवा Word वापरा.",
-        clearFileSelectionButton: "निवड रद्द करा",
-        appointmentSlotAlreadyBooked: "ही वेळ आधीच बुक आहे. कृपया दुसरी वेळ निवडा.",
-        appointmentPickerSelected: "निवडलेले",
-        appointmentPickerPickDayIntro: "आधी दिवस निवडा, मग वेळ.",
-        appointmentPickerChooseTime: "खाली वेळ निवडा.",
-        appointmentPickTimeSlot: "कृपया वेळ निवडा.",
-        appointmentPickDate: "कृपया दिनदर्शिकेतून तारीख निवडा.",
-        appointmentPickDateAndTime: "कृपया तारीख आणि वेळ निवडा."
-    }
+        appointmentPickDateAndTime: "Please choose a date and a time slot.",
+        poweredByLabel: "Powered by"
+};
+
+/** @type {{ en: Record<string, string>, hi: Record<string, string>, mr: Record<string, string> }} */
+const UI_TRANSLATIONS = {
+    en: UI_TRANSLATIONS_EN,
+    hi: Object.assign(
+        {},
+        UI_TRANSLATIONS_EN,
+        typeof window !== "undefined" && window.DFCHAT_UI_HI && typeof window.DFCHAT_UI_HI === "object"
+            ? window.DFCHAT_UI_HI
+            : {}
+    ),
+    mr: Object.assign(
+        {},
+        UI_TRANSLATIONS_EN,
+        typeof window !== "undefined" && window.DFCHAT_UI_MR && typeof window.DFCHAT_UI_MR === "object"
+            ? window.DFCHAT_UI_MR
+            : {}
+    )
 };
 
 /**
@@ -2929,8 +2858,7 @@ function createAndMountMessenger() {
     activeBubbleNode = bubble;
     const headerConfig = COMMON_CONFIG.header || {};
     applyMessengerChatIconAttributes(df, bubble, headerConfig);
-    bubble.setAttribute("chat-title", headerConfig.title || "Chat Support");
-    bubble.setAttribute("chat-subtitle", headerConfig.subtitle || "🟢 Online");
+    applyLocalizedChatHeader(bubble);
     {
         const collapseUrl = (typeof headerConfig.chatCollapseIconUrl === "string" && headerConfig.chatCollapseIconUrl.trim())
             ? headerConfig.chatCollapseIconUrl.trim()
@@ -3404,7 +3332,7 @@ function ensureChatActionBar() {
     bar = document.createElement("div");
     bar.id = CHAT_ACTION_BAR_ID;
     bar.className = "dfchat-chat-action-bar";
-    // Skip Google `applyDomTranslation` here — it overwrote the language *name* and broke menu `data-active` matching.
+    // Skip fixed DOM translation here — it overwrote the language *name* and broke menu `data-active` matching.
     bar.setAttribute("data-dfchat-no-translate", "true");
     // Hidden until mounted inline in footer row.
     bar.style.position = "static";
@@ -20696,8 +20624,11 @@ function applyLanguage(languageCode) {
     applyContactFormHeaderFromConfig();
     syncLauncherInputStripI18n();
     refreshInlineSyntheticOptionButtonLabels();
+    if (activeDfMessenger) {
+        applyLocalizedChatHeader(activeDfMessenger);
+    }
     scheduleDomTranslationRefresh();
-    // `applyDomTranslation` can run after this and touch `placeholder`; snap composer back to config.
+    // Fixed DOM translation can run after this and touch `placeholder`; snap composer back to config.
     [450, 1100, 2200].forEach((delay) => {
         window.setTimeout(() => {
             if (activeDfMessenger) {
@@ -20727,11 +20658,26 @@ function readInlineOptionLabelByLanguageMap() {
     }
 }
 
+function readFixedChipsMapForLanguage(lang) {
+    const code = normalizeFixedTranslationLanguage(lang);
+    if (code === "hi" && typeof window !== "undefined" && window.DFCHAT_CHIPS_HI) {
+        return window.DFCHAT_CHIPS_HI;
+    }
+    if (code === "mr" && typeof window !== "undefined" && window.DFCHAT_CHIPS_MR) {
+        return window.DFCHAT_CHIPS_MR;
+    }
+    return null;
+}
+
 function resolveInlineOptionLabel(label, value, lang) {
     const fallback = typeof label === "string" && label.trim() ? label.trim() : (typeof value === "string" ? value.trim() : "");
     const key = typeof value === "string" ? value.trim().toLowerCase() : "";
     if (!key) {
         return fallback;
+    }
+    const chipsMap = readFixedChipsMapForLanguage(lang);
+    if (chipsMap && typeof chipsMap[key] === "string" && chipsMap[key].trim()) {
+        return chipsMap[key].trim();
     }
     const map = readInlineOptionLabelByLanguageMap();
     if (!map) {
@@ -21446,7 +21392,7 @@ function scheduleDomTranslationRefresh() {
     }, DOM_TRANSLATION_DEBOUNCE_MS);
 }
 
-async function applyDomTranslation(languageCode) {
+function applyDomTranslation(languageCode) {
     if (!isMultiLanguageEnabled()) {
         return;
     }
@@ -21455,7 +21401,7 @@ async function applyDomTranslation(languageCode) {
     const runId = latestTranslationRunId + 1;
     latestTranslationRunId = runId;
 
-    if (normalizedLanguage === DEFAULT_LANGUAGE) {
+    if (normalizeFixedTranslationLanguage(normalizedLanguage) === "en") {
         restoreOriginalDomContent();
         const actionBarRest = getChatActionBar();
         if (actionBarRest) {
@@ -21471,11 +21417,9 @@ async function applyDomTranslation(languageCode) {
 
     const uniqueTexts = [...new Set(targets.map((target) => target.text))];
     const translatedLookup = new Map();
-
-        await Promise.all(uniqueTexts.map(async (sourceText) => {
-        const translatedText = await translateTextUsingGoogle(sourceText, normalizedLanguage);
-        translatedLookup.set(sourceText, translatedText || sourceText);
-    }));
+    for (const sourceText of uniqueTexts) {
+        translatedLookup.set(sourceText, translateFixedScript(sourceText, normalizedLanguage));
+    }
 
     if (runId !== latestTranslationRunId) {
         return;
@@ -21584,9 +21528,6 @@ function collectTranslationTargets() {
 
 function getTranslationRoots() {
     const roots = [];
-    if (AUTO_TRANSLATE_HOST_PAGE) {
-        roots.push(document.body);
-    }
     if (activeDfMessenger) {
         const messengerRoots = collectShadowRootsUnderHost(activeDfMessenger);
         for (const root of messengerRoots) {
@@ -21595,20 +21536,18 @@ function getTranslationRoots() {
             }
         }
     }
-    if (!AUTO_TRANSLATE_HOST_PAGE) {
-        const lightDomChatRootIds = [
-            "dfchat-contact-form",
-            CHAT_ACTION_BAR_ID,
-            FOOTER_OVERLAY_ID,
-            POWERED_BY_STRIP_ID,
-            COMPANY_LAUNCHER_INPUT_STRIP_ID,
-            "dfchat-chat-launcher-strip"
-        ];
-        for (let i = 0; i < lightDomChatRootIds.length; i++) {
-            const el = document.getElementById(lightDomChatRootIds[i]);
-            if (el && !roots.includes(el)) {
-                roots.push(el);
-            }
+    const lightDomChatRootIds = [
+        "dfchat-contact-form",
+        CHAT_ACTION_BAR_ID,
+        FOOTER_OVERLAY_ID,
+        POWERED_BY_STRIP_ID,
+        COMPANY_LAUNCHER_INPUT_STRIP_ID,
+        "dfchat-chat-launcher-strip"
+    ];
+    for (let i = 0; i < lightDomChatRootIds.length; i++) {
+        const el = document.getElementById(lightDomChatRootIds[i]);
+        if (el && !roots.includes(el)) {
+            roots.push(el);
         }
     }
     return roots;
@@ -21651,13 +21590,13 @@ function shouldSkipTranslationElement(element) {
         return true;
     }
 
-    // Latin "X" only — never run Google text translation on the contact-form close glyph.
+    // Latin "X" only — never run fixed-script translation on the contact-form close glyph.
     if (element.id === "dfchat-contact-form-close") {
         return true;
     }
 
     // Chat composer placeholder is driven by `getChatInputPlaceholder` + `syncNativeComposerPlaceholders`.
-    // Auto-translate used a frozen "original" placeholder and fought language switches.
+    // DOM translation used a frozen "original" placeholder and fought language switches.
     if (element.matches && element.matches("textarea") && activeDfMessenger) {
         const roots = collectSearchRoots(activeDfMessenger);
         for (let r = 0; r < roots.length; r++) {
@@ -21711,166 +21650,66 @@ function restoreOriginalDomContent() {
 }
 
 /**
- * gtx/translate is most reliable with short codes; `mr-IN` / `hi-IN` map to `mr` / `hi`.
  * @param {string} [code]
- * @returns {string}
+ * @returns {"en"|"hi"|"mr"}
  */
-function googleTranslateTargetLanguageCode(code) {
+function normalizeFixedTranslationLanguage(code) {
     const s = typeof code === "string" ? code.trim() : "";
     if (!s) {
         return "en";
     }
-    if (s.includes("-") || s.includes("_")) {
-        return s.split(/[-_]/)[0] || s;
+    const base = (s.includes("-") || s.includes("_") ? s.split(/[-_]/)[0] : s) || s;
+    if (base === "hi" || base === "mr") {
+        return base;
     }
-    return s;
+    return "en";
 }
 
-function readTranslationOverridesForLanguage(targetLanguage) {
-    try {
-        const feats = MULTI_LANGUAGE_CONFIG && typeof MULTI_LANGUAGE_CONFIG === "object" ? MULTI_LANGUAGE_CONFIG : null;
-        const map = feats && typeof feats.translationOverridesByLanguage === "object"
-            ? feats.translationOverridesByLanguage
-            : null;
-        if (!map || typeof map !== "object") {
-            return null;
-        }
-        const tl = googleTranslateTargetLanguageCode(targetLanguage);
-        const row = map[tl];
-        return row && typeof row === "object" ? row : null;
-    } catch {
-        return null;
+/**
+ * @param {string} targetLanguage
+ * @returns {Record<string, string> | null}
+ */
+function readFixedBotTranslationMap(targetLanguage) {
+    const tl = normalizeFixedTranslationLanguage(targetLanguage);
+    if (tl === "hi" && typeof window !== "undefined" && window.DFCHAT_BOT_HI && typeof window.DFCHAT_BOT_HI === "object") {
+        return window.DFCHAT_BOT_HI;
     }
-}
-
-function translateOverrideIfAny(sourceText, targetLanguage) {
-    const s = typeof sourceText === "string" ? sourceText.trim() : "";
-    if (!s) {
-        return null;
-    }
-    const overrides = readTranslationOverridesForLanguage(targetLanguage);
-    if (!overrides) {
-        return null;
-    }
-    // 1) Exact match
-    const vExact = overrides[s];
-    if (typeof vExact === "string" && vExact.trim()) {
-        return vExact.trim();
+    if (tl === "mr" && typeof window !== "undefined" && window.DFCHAT_BOT_MR && typeof window.DFCHAT_BOT_MR === "object") {
+        return window.DFCHAT_BOT_MR;
     }
     return null;
 }
 
-function escapeRegExp(s) {
-    return String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
 /**
- * Replace matching override phrases with stable tokens so Google Translate does NOT translate them,
- * then re-insert the override text after translation.
- * @returns {{ text: string, tokenMap: Record<string, string> }}
+ * Lookup fixed Hindi/Marathi copy for bot bubbles, chips, and tables (`translations/bot-*.js`).
+ * @param {string} sourceText
+ * @param {string} targetLanguage
+ * @returns {string}
  */
-function applyTranslationOverrideTokens(sourceText, targetLanguage) {
-    const s0 = typeof sourceText === "string" ? sourceText : "";
-    const overrides = readTranslationOverridesForLanguage(targetLanguage);
-    if (!overrides) {
-        return { text: s0, tokenMap: {} };
+function translateFixedScript(sourceText, targetLanguage) {
+    const tl = normalizeFixedTranslationLanguage(targetLanguage);
+    if (tl === "en") {
+        return sourceText;
     }
-    let text = s0;
-    /** @type {Record<string, string>} */
-    const tokenMap = {};
-    try {
-        const keys = Object.keys(overrides)
-            .filter((k) => typeof k === "string" && k.trim())
-            .sort((a, b) => b.length - a.length);
-        let tokenSeq = 0;
-        for (const rawKey of keys) {
-            const key = rawKey.trim();
-            if (!key) {
-                continue;
-            }
-            const replacement = overrides[rawKey];
-            if (typeof replacement !== "string" || !replacement.trim()) {
-                continue;
-            }
-            const re = new RegExp(escapeRegExp(key), "gi");
-            if (!re.test(text)) {
-                continue;
-            }
-            const token = `\uE000DFOVR${tokenSeq += 1}\uE001`;
-            tokenMap[token] = replacement.trim();
-            text = text.replace(re, token);
+    const s = typeof sourceText === "string" ? sourceText.trim() : "";
+    if (!s) {
+        return sourceText;
+    }
+    const map = readFixedBotTranslationMap(tl);
+    if (!map) {
+        return sourceText;
+    }
+    const exact = map[s];
+    if (typeof exact === "string" && exact.trim()) {
+        return exact.trim();
+    }
+    const lower = s.toLowerCase();
+    for (const key of Object.keys(map)) {
+        if (key.toLowerCase() === lower && typeof map[key] === "string" && map[key].trim()) {
+            return map[key].trim();
         }
-    } catch {
-        return { text: s0, tokenMap: {} };
     }
-    return { text, tokenMap };
-}
-
-function restoreTranslationOverrideTokens(translatedText, tokenMap) {
-    let out = typeof translatedText === "string" ? translatedText : "";
-    const keys = tokenMap && typeof tokenMap === "object" ? Object.keys(tokenMap) : [];
-    if (keys.length === 0) {
-        return out;
-    }
-    for (const token of keys) {
-        const val = tokenMap[token];
-        if (typeof val !== "string") {
-            continue;
-        }
-        out = out.split(token).join(val);
-    }
-    return out;
-}
-
-async function translateTextUsingGoogle(sourceText, targetLanguage) {
-    const tl = googleTranslateTargetLanguageCode(targetLanguage);
-    const exactOverride = translateOverrideIfAny(sourceText, tl);
-    if (exactOverride != null) {
-        return exactOverride;
-    }
-
-    const tokenized = applyTranslationOverrideTokens(sourceText, tl);
-    const cacheKey = `${tl}::${tokenized.text}`;
-    if (googleTranslationCache.has(cacheKey)) {
-        const cached = googleTranslationCache.get(cacheKey);
-        return restoreTranslationOverrideTokens(cached, tokenized.tokenMap);
-    }
-
-    try {
-        const queryParams = new URLSearchParams({
-            client: "gtx",
-            sl: "auto",
-            tl,
-            dt: "t",
-            q: tokenized.text
-        });
-        const endpoint = `${GOOGLE_TRANSLATE_ENDPOINT}?${queryParams.toString()}`;
-        const response = await fetch(endpoint, { method: "GET" });
-
-        if (!response.ok) {
-            googleTranslationCache.set(cacheKey, tokenized.text);
-            return restoreTranslationOverrideTokens(sourceText, tokenized.tokenMap);
-        }
-
-        const payload = await response.json();
-        const translatedText = extractGoogleTranslatedText(payload) || tokenized.text;
-        googleTranslationCache.set(cacheKey, translatedText);
-        return restoreTranslationOverrideTokens(translatedText, tokenized.tokenMap);
-    } catch {
-        googleTranslationCache.set(cacheKey, tokenized.text);
-        return restoreTranslationOverrideTokens(sourceText, tokenized.tokenMap);
-    }
-}
-
-function extractGoogleTranslatedText(payload) {
-    if (!Array.isArray(payload) || !Array.isArray(payload[0])) {
-        return "";
-    }
-
-    return payload[0]
-        .map((segment) => (Array.isArray(segment) && typeof segment[0] === "string" ? segment[0] : ""))
-        .join("")
-        .trim();
+    return sourceText;
 }
 
 function getInitialLanguage() {
@@ -26556,12 +26395,7 @@ function dfchatApplyCompanyAdminFlatSettingsNow() {
     const h = common.header && typeof common.header === "object" ? common.header : {};
     applyMessengerChatIconAttributes(df, bubble, h);
     if (bubble) {
-        if (typeof h.title === "string") {
-            bubble.setAttribute("chat-title", h.title || "Chat Support");
-        }
-        if (typeof h.subtitle === "string") {
-            bubble.setAttribute("chat-subtitle", h.subtitle);
-        }
+        applyLocalizedChatHeader(bubble);
     }
     ensureCircularBubbleIcon(df);
     ensureChatActionBar();

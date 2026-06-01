@@ -116,26 +116,11 @@ window.COMPANY_CHAT_UI_CONFIG = {
       // - OFF → no picker; the agent uses `defaultLanguage` only.
       // - `code` = language code for Dialogflow (`language-code` on df-messenger); `label` = fallback gloss (English).
       // - Optional `nativeLabel` = exact menu/pill text (overrides built-in endonyms for en/hi/mr).
-      // - Changing language = same conversation language + chat UI (not the host page), unless
-      //   you set `autoTranslateHostPage: true` to also Google-translate the rest of the page.
+      // - Hindi/Marathi copy: `translations/ui-*.js`, `translations/bot-*.js`, `translations/chips-*.js` (fixed script; no translate API).
+      // - Forms / UI chrome: `translations/ui-*.js` + `forms/*` *ByLanguage keys.
       multiLanguage: {
         enabled: true,
         defaultLanguage: "en",
-        autoTranslateHostPage: false,
-        // Optional: exact phrase overrides applied BEFORE Google translate.
-        // Use this when the client wants a specific string, not a machine translation.
-        // Keys are the original English phrases (exact match, trimmed).
-        // Example: "We have following robots" → Marathi custom line.
-        translationOverridesByLanguage: {
-          hi: {
-            "We have following robots": "नीचे का देख लो",
-            "help":"सह्याता"
-          },
-          mr: {
-            "We have following robots": "खालचे बागून घ्या लवकर",
-            "help":"साथ"
-          }
-        },
         // Composer hint (`placeholder-text`). Keys = same `code` values as below. Optional: add `inputPlaceholder` on each language row to override only that row.
         // inputPlaceholderByLanguage: {
         //   en: "Ask something in English…",
@@ -250,16 +235,8 @@ window.COMPANY_CHAT_UI_CONFIG = {
           imageHeightPx: 220,
           objectFit: "cover"
         },
-        // Optional translations for option chips under `open_gallery` / `open_video` payloads.
-        // Key = option `value` lowercased (e.g. "location"). Values are labels by language code.
-        optionLabelByLanguage: {
-          location: { en: "Location", hi: "स्थान", mr: "स्थान" },
-          robots: { en: "Robots", hi: "रोबोट", mr: "रोबोट" },
-          robot: { en: "Robot", hi: "रोबोट", mr: "रोबोट" },
-          live: { en: "Live", hi: "लाइव", mr: "लाइव्ह" },
-          animal: { en: "Animal", hi: "जानवर", mr: "प्राणी" },
-          video: { en: "Video", hi: "वीडियो", mr: "व्हिडिओ" }
-        }
+        // Chip labels: `translations/chips-hi.js` and `translations/chips-mr.js` (optional legacy override below).
+        optionLabelByLanguage: {}
       }
     },
 
