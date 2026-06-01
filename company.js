@@ -11638,6 +11638,7 @@ function isDfchatInlineSyntheticRow(el) {
         && el.classList
         && (el.classList.contains(DFCHAT_INLINE_GALLERY_CLASS)
             || el.classList.contains(DFCHAT_INLINE_VIDEO_CLASS)
+            || el.classList.contains(DFCHAT_INLINE_CARD_CAROUSEL_CLASS)
             || el.classList.contains(DFCHAT_INLINE_BOOKING_CAL_CLASS)));
 }
 
@@ -13430,6 +13431,108 @@ function openCardCarouselSignature(cards) {
 }
 
 /**
+ * Honors `COMMON.features.inlineGallery.suppressRepeatedOpenCardCarousel` (default true).
+ * If dedupe would block but no carousel is mounted, clear seen signatures and allow inject (same as gallery).
+ *
+ * @param {InlineCardCarouselCard[]} cards
+ * @returns {boolean}
+ */
+function shouldScheduleInlineCardCarouselForCards(cards) {
+    const cfg = readCompanyUiConfig();
+    const common =
+        cfg && typeof cfg === "object" && /** @type {Record<string, unknown>} */ (cfg).common && typeof /** @type {Record<string, unknown>} */ (cfg).common === "object"
+            ? /** @type {Record<string, unknown>} */ (cfg).common
+            : null;
+    const feats =
+        common && typeof common.features === "object"
+            ? /** @type {Record<string, unknown>} */ (common.features)
+            : null;
+    const ig =
+        feats && typeof feats.inlineGallery === "object"
+            ? /** @type {Record<string, unknown>} */ (feats.inlineGallery)
+            : /** @type {Record<string, unknown> | null} */ (null);
+    const suppress =
+        !ig
+        || typeof ig.suppressRepeatedOpenCardCarousel === "undefined"
+        || ig.suppressRepeatedOpenCardCarousel !== false;
+    if (!suppress) {
+        return true;
+    }
+    const sig = openCardCarouselSignature(cards);
+    if (!sig) {
+        return false;
+    }
+    try {
+        const hasMounted =
+            !!(dfchatLastInlineCardCarouselWrapEl
+                && dfchatLastInlineCardCarouselWrapEl.isConnected);
+        if (!hasMounted && dfchatOpenCardCarouselSignaturesSeen.size > 0) {
+            dfchatOpenCardCarouselSignaturesSeen.clear();
+        }
+    } catch {
+        /* ignore */
+    }
+    if (dfchatOpenCardCarouselSignaturesSeen.has(sig)) {
+        return false;
+    }
+    dfchatOpenCardCarouselSignaturesSeen.add(sig);
+    return true;
+}
+
+/**
+ * When dedupe blocks reinjection, move/update the existing card carousel near the latest bot rows.
+ *
+ * @param {HTMLElement | null | undefined} dfMessenger
+ * @param {InlineCardCarouselCard[]} cards
+ * @param {string | null | undefined} messageText
+ * @returns {void}
+ */
+function scheduleEnsureExistingInlineCardCarouselPosition(dfMessenger, cards, messageText) {
+    let moved = false;
+    const msResolved =
+        dfMessenger
+        || (typeof activeDfMessenger !== "undefined" ? activeDfMessenger : null)
+        || (typeof document !== "undefined" ? document.querySelector("df-messenger") : null);
+    const msg = typeof messageText === "string" ? messageText.trim() : "";
+
+    const delaysMs = [72, 180, 400, 800, 1600];
+    delaysMs.forEach((delayMs) => {
+        window.setTimeout(() => {
+            if (moved) {
+                return;
+            }
+            const wrap = dfchatLastInlineCardCarouselWrapEl;
+            if (!wrap || !wrap.isConnected) {
+                return;
+            }
+            const ml = findMessengerMessageListRoot(msResolved);
+            if (!ml) {
+                return;
+            }
+            if (msg) {
+                const messageEl = wrap.querySelector("[data-dfchat-src-en]");
+                if (messageEl) {
+                    messageEl.setAttribute("data-dfchat-src-en", msg);
+                    messageEl.textContent = localizeCxFixedString_(msg, activeLanguage);
+                }
+            }
+            const beforeNode = resolveGalleryInsertBeforeByCxOrder(ml);
+            if (beforeNode && beforeNode.parentNode === ml && typeof ml.insertBefore === "function") {
+                ml.insertBefore(wrap, beforeNode);
+            } else if (typeof ml.appendChild === "function") {
+                ml.appendChild(wrap);
+            }
+            moved = true;
+            try {
+                ml.scrollTop = ml.scrollHeight;
+            } catch {
+                /* ignore */
+            }
+        }, delayMs);
+    });
+}
+
+/**
  * Extract the first `{ action: "open_card_carousel", cards: [...] }` payload from merged CX fulfillment messages.
  *
  * @param {unknown[]} messages
@@ -13795,12 +13898,14 @@ function tryOpenCardCarouselFromBotResponseMessages(messages, event) {
         if (!payload || !payload.cards || payload.cards.length === 0) {
             return;
         }
-        const sig = openCardCarouselSignature(payload.cards);
-        if (sig && dfchatOpenCardCarouselSignaturesSeen.has(sig)) {
+        const shouldInject = shouldScheduleInlineCardCarouselForCards(payload.cards);
+        if (!shouldInject) {
+            scheduleEnsureExistingInlineCardCarouselPosition(
+                activeDfMessenger,
+                payload.cards,
+                payload.messageText
+            );
             return;
-        }
-        if (sig) {
-            dfchatOpenCardCarouselSignaturesSeen.add(sig);
         }
         scheduleInjectInlineCardCarousel(activeDfMessenger, payload.cards, payload.messageText);
     } catch (e) {

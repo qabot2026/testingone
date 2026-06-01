@@ -218,6 +218,8 @@ window.COMPANY_CHAT_UI_CONFIG = {
          * echoing `open_gallery`. Cleared when the user uses **Restart**.
          */
         suppressRepeatedOpenGalleryUrls: true,
+        /** Same dedupe for `open_card_carousel` (same cards in one tab). Cleared on Restart or when carousel is not mounted. */
+        suppressRepeatedOpenCardCarousel: true,
         /**
          * `open_gallery` horizontal image strip — set width/height in pixels (each thumbnail uses these exact sizes).
          * objectFit: "cover" (crop to fill) or "contain" (full image visible, may letterbox).
