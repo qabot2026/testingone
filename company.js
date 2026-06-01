@@ -650,6 +650,77 @@ function resolveTitlebarIconDimensions_(config) {
     };
 }
 
+/**
+ * Title-row logo only — not the panel dismiss control (patching the wrong `img` shows the header icon on close after restart).
+ * @param {Element | null | undefined} bar
+ * @returns {HTMLImageElement | null}
+ */
+function queryTitlebarBrandImage_(bar) {
+    if (!bar || typeof bar.querySelector !== "function") {
+        return null;
+    }
+    const im = bar.querySelector("#titlebar-title img")
+        || bar.querySelector("#titlebar-title picture img")
+        || bar.querySelector(".title-text img");
+    if (!im || (im.tagName || "").toUpperCase() !== "IMG") {
+        return null;
+    }
+    if (typeof im.closest === "function") {
+        if (im.closest("df-messenger-header-controls, [class*='header-controls']")) {
+            return null;
+        }
+        if (im.closest("button[data-dfchat-native-close-override], [data-dfchat-native-close-override]")) {
+            return null;
+        }
+    }
+    return /** @type {HTMLImageElement} */ (im);
+}
+
+/** @returns {{ closeTapPx: string, closeFontPx: string }} */
+function resolveTitlebarCloseButtonDimensions_() {
+    const { widthPx } = resolveTitlebarIconDimensions_();
+    const tap = Math.min(44, Math.max(34, Math.round(widthPx * 0.38)));
+    const font = Math.min(24, Math.max(17, Math.round(tap * 0.58)));
+    return { closeTapPx: `${tap}px`, closeFontPx: `${font}px` };
+}
+
+/**
+ * After `restartChatSession` remounts df-messenger, Dialogflow may re-inject arrow/logo on the dismiss control.
+ * @param {Element | null | undefined} dfMessenger
+ */
+function scheduleTitlebarCloseXAfterRemount_(dfMessenger) {
+    if (!dfMessenger || !IS_FORCE_TITLEBAR_CLOSE_X_ENABLED) {
+        return;
+    }
+    const run = () => {
+        if (activeDfMessenger !== dfMessenger) {
+            return;
+        }
+        ensureCloseIconIsX(dfMessenger);
+        if (isChatWindowOpen) {
+            startCloseXWhileChatOpenMonitor(dfMessenger);
+        }
+        try {
+            const bubble = typeof dfMessenger.querySelector === "function"
+                ? dfMessenger.querySelector("df-messenger-chat-bubble")
+                : null;
+            const headerConfig = COMMON_CONFIG.header || {};
+            const collapseUrl = (typeof headerConfig.chatCollapseIconUrl === "string" && headerConfig.chatCollapseIconUrl.trim())
+                ? headerConfig.chatCollapseIconUrl.trim()
+                : CHAT_COLLAPSE_X_ICON_DATA_URL;
+            if (bubble && typeof bubble.setAttribute === "function") {
+                bubble.setAttribute("chat-collapse-icon", collapseUrl);
+            }
+        } catch {
+            /* no-op */
+        }
+    };
+    run();
+    [90, 240, 550, 1200, 2200].forEach((delay) => {
+        window.setTimeout(run, delay);
+    });
+}
+
 /** @param {HTMLElement | null | undefined} dfMessenger @param {Record<string, unknown> | null | undefined} [config] */
 function applyTitlebarIconSizeConfig(dfMessenger, config) {
     if (!dfMessenger || !dfMessenger.style) {
@@ -707,7 +778,7 @@ function repatchTitlebarHeaderIcons_(dfMessenger) {
         }
         const bars = root.querySelectorAll("df-messenger-titlebar, df-messenger-header");
         for (const bar of bars) {
-            const im = bar && typeof bar.querySelector === "function" ? bar.querySelector("img") : null;
+            const im = queryTitlebarBrandImage_(bar);
             if (!im) {
                 continue;
             }
@@ -2829,7 +2900,7 @@ function scheduleDfMessengerChatIconImageSrcSync(dfMessenger, chatIconUrl, chatT
             const bars = root.querySelectorAll("df-messenger-titlebar, df-messenger-header");
             for (let i = 0; i < bars.length; i += 1) {
                 const bar = bars[i];
-                const im = bar && typeof bar.querySelector === "function" ? bar.querySelector("img") : null;
+                const im = queryTitlebarBrandImage_(bar);
                 if (!im) {
                     continue;
                 }
@@ -9866,10 +9937,7 @@ function runTitlebarCloseXSync(dfMessenger) {
     if (!IS_FORCE_TITLEBAR_CLOSE_X_ENABLED || !dfMessenger) {
         return false;
     }
-    const CHAT_WINDOW_CLOSE_PX = 52;
-    const CHAT_WINDOW_CLOSE_FONT_PX = 34;
-    const closeTapPx = `${CHAT_WINDOW_CLOSE_PX}px`;
-    const closeFontPx = `${CHAT_WINDOW_CLOSE_FONT_PX}px`;
+    const { closeTapPx, closeFontPx } = resolveTitlebarCloseButtonDimensions_();
     const headerHost = findChatHeaderHost(dfMessenger);
     let changed = false;
 
@@ -21194,12 +21262,14 @@ function restartChatSession() {
     if (wasOpen) {
         window.setTimeout(() => {
             openChatWindow(m, result && result.bubble);
+            scheduleTitlebarCloseXAfterRemount_(m);
             window.setTimeout(() => {
                 if (!m || activeDfMessenger !== m) {
                     return;
                 }
                 hasAutoStartedConversation = false;
                 scheduleAutoStartConversation(m);
+                scheduleTitlebarCloseXAfterRemount_(m);
             }, 400);
             window.setTimeout(() => {
                 if (!m || activeDfMessenger !== m || hasAutoStartedConversation) {
@@ -21208,6 +21278,8 @@ function restartChatSession() {
                 scheduleAutoStartConversation(m);
             }, 1400);
         }, 200);
+    } else if (m) {
+        scheduleTitlebarCloseXAfterRemount_(m);
     }
 }
 
@@ -24482,6 +24554,9 @@ function getTitlebarLayoutCss() {
 }
 button[data-dfchat-native-close-override="1"],
 df-icon-button[data-dfchat-native-close-override="1"] {
+  max-width: 44px !important;
+  max-height: 44px !important;
+  flex-shrink: 0 !important;
   transform: translateX(-${TITLEBAR_CLOSE_NUDGE_LEFT_PX}px) !important;
 }`;
 }
