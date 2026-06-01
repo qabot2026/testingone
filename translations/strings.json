@@ -2,6 +2,7 @@
   "_help": "Key = EXACT English text from Dialogflow (reply, chip, dropdown, table). Works for whole bot — not per intent.",
   "_help2": "Add one line once. Wherever that English appears, hi/mr will show after user selects language.",
   "_help3": "_ui = form/button labels (internal keys). _chips = chip value keys (lowercase, e.g. location). Rest = exact English from chat.",
+  "_help4": "open_gallery: message, urls[].name captions, options[].label — use EXACT English as key (e.g. \"Please choose:\", \"Image 1\", \"Syntax\").",
   "Animal": {
     "hi": "जानवर",
     "mr": "प्राणी"
@@ -705,6 +706,18 @@
       "hi": "डॉक्टर",
       "mr": "डॉक्टर"
     },
+    "syntax": {
+      "hi": "सिंटैक्स",
+      "mr": "सिंटॅक्स"
+    },
+    "appointment": {
+      "hi": "अपॉइंटमेंट",
+      "mr": "अपॉइंटमेंट"
+    },
+    "feedback": {
+      "hi": "फीडबैक",
+      "mr": "अभिप्राय"
+    },
     "services": {
       "hi": "सेवाएँ",
       "mr": "सेवा"
@@ -727,7 +740,31 @@
     "mr": "Artemis मध्ये आपले स्वागत"
   },
   "Image 1": {
-    "hi": "छवि 11",
+    "hi": "छवि 1",
     "mr": "प्रतिमा १"
+  },
+  "Image 2": {
+    "hi": "छवि 2",
+    "mr": "प्रतिमा २"
+  },
+  "Please choose:": {
+    "hi": "कृपया चुनें:",
+    "mr": "कृपया निवडा:"
+  },
+  "Syntax": {
+    "hi": "सिंटैक्स",
+    "mr": "सिंटॅक्स"
+  },
+  "Appointment": {
+    "hi": "अपॉइंटमेंट",
+    "mr": "अपॉइंटमेंट"
+  },
+  "Feedback": {
+    "hi": "फीडबैक",
+    "mr": "अभिप्राय"
+  },
+  "doctors": {
+    "hi": "डॉक्टर",
+    "mr": "डॉक्टर"
   }
 }

@@ -11671,7 +11671,8 @@ function appendInlineGalleryTrackCell_(track, item, index) {
     if (!url.startsWith("http://") && !url.startsWith("https://")) {
         return;
     }
-    const title = String(item && item.title ? item.title : "").trim().slice(0, 120);
+    const rawTitle = String(item && item.title ? item.title : "").trim().slice(0, 120);
+    const title = rawTitle ? localizeCxFixedString_(rawTitle, activeLanguage) : "";
     const size = readInlineGalleryCarouselSizeConfig();
     const cellW = `${size.galleryWidthPx}px`;
     const imgH = `${size.galleryHeightPx}px`;
@@ -11689,7 +11690,7 @@ function appendInlineGalleryTrackCell_(track, item, index) {
 
     const img = document.createElement("img");
     img.src = url;
-    img.alt = title;
+    img.alt = title || rawTitle;
     img.setAttribute("draggable", "false");
     img.loading = index < 3 ? "eager" : "lazy";
     img.decoding = "async";
@@ -11707,9 +11708,11 @@ function appendInlineGalleryTrackCell_(track, item, index) {
 
     cell.appendChild(img);
 
-    if (title) {
+    if (rawTitle) {
         const cap = document.createElement("div");
-        cap.textContent = title;
+        cap.className = "dfchat-inline-gallery__caption";
+        cap.setAttribute("data-dfchat-src-en", rawTitle);
+        cap.textContent = title || rawTitle;
         cap.style.cssText = [
             "font-size:12px",
             "line-height:1.3",
@@ -11779,7 +11782,6 @@ function scheduleInjectInlineGalleryCarousel(dfMessenger, urlsOrItems, messages,
 
         const wrap = document.createElement("div");
         wrap.className = DFCHAT_INLINE_GALLERY_CLASS;
-        wrap.setAttribute("data-dfchat-no-translate", "true");
         wrap.style.cssText = [
             "box-sizing:border-box",
             "margin:8px 0 10px",
@@ -11816,7 +11818,9 @@ function scheduleInjectInlineGalleryCarousel(dfMessenger, urlsOrItems, messages,
         // Optional message + opt-in buttons directly below the image strip.
         if (msg) {
             const messageEl = document.createElement("div");
-            messageEl.textContent = msg;
+            messageEl.className = "dfchat-inline-gallery__message";
+            messageEl.setAttribute("data-dfchat-src-en", msg);
+            messageEl.textContent = localizeCxFixedString_(msg, activeLanguage);
             messageEl.style.cssText = [
                 "width:100%",
                 "box-sizing:border-box",
@@ -11851,6 +11855,7 @@ function scheduleInjectInlineGalleryCarousel(dfMessenger, urlsOrItems, messages,
                 const chip = document.createElement("button");
                 chip.type = "button";
                 chip.setAttribute("data-dfchat-opt-key", value.toLowerCase());
+                chip.setAttribute("data-dfchat-src-en", label);
                 chip.textContent = resolveInlineOptionLabel(label, value, activeLanguage);
                 chip.style.cssText = [
                     "appearance:none",
@@ -11894,6 +11899,7 @@ function scheduleInjectInlineGalleryCarousel(dfMessenger, urlsOrItems, messages,
             ml.appendChild(wrap);
         }
         dfchatLastInlineGalleryWrapEl = wrap;
+        refreshInlineCxPayloadLabels_();
 
         injected = true;
         try {
@@ -11991,7 +11997,9 @@ function updateInlineGalleryWrapUnderTrack(wrapEl, urlsOrItems, options, message
 
         if (msg) {
             const messageEl = document.createElement("div");
-            messageEl.textContent = msg;
+            messageEl.className = "dfchat-inline-gallery__message";
+            messageEl.setAttribute("data-dfchat-src-en", msg);
+            messageEl.textContent = localizeCxFixedString_(msg, activeLanguage);
             messageEl.style.cssText = [
                 "width:100%",
                 "box-sizing:border-box",
@@ -12027,6 +12035,7 @@ function updateInlineGalleryWrapUnderTrack(wrapEl, urlsOrItems, options, message
                 const chip = document.createElement("button");
                 chip.type = "button";
                 chip.setAttribute("data-dfchat-opt-key", value.toLowerCase());
+                chip.setAttribute("data-dfchat-src-en", label);
                 chip.textContent = resolveInlineOptionLabel(label, value, activeLanguage);
                 chip.style.cssText = [
                     "appearance:none",
@@ -12450,7 +12459,6 @@ function scheduleInjectInlineVideoPlayer(dfMessenger, embedHttpsUrl, options, me
 
         const wrap = document.createElement("div");
         wrap.className = DFCHAT_INLINE_VIDEO_CLASS;
-        wrap.setAttribute("data-dfchat-no-translate", "true");
         wrap.dataset.dfcYtEmbed = src;
         wrap.style.cssText = [
             "box-sizing:border-box",
@@ -12566,6 +12574,7 @@ function scheduleInjectInlineVideoPlayer(dfMessenger, embedHttpsUrl, options, me
                 const chip = document.createElement("button");
                 chip.type = "button";
                 chip.setAttribute("data-dfchat-opt-key", value.toLowerCase());
+                chip.setAttribute("data-dfchat-src-en", label);
                 chip.textContent = resolveInlineOptionLabel(label, value, activeLanguage);
                 chip.style.cssText = [
                     "appearance:none",
@@ -12601,7 +12610,8 @@ function scheduleInjectInlineVideoPlayer(dfMessenger, embedHttpsUrl, options, me
             // If message text exists, render it above the option buttons.
             if (msg) {
                 const messageEl = document.createElement("div");
-                messageEl.textContent = msg;
+                messageEl.setAttribute("data-dfchat-src-en", msg);
+                messageEl.textContent = localizeCxFixedString_(msg, activeLanguage);
                 messageEl.style.cssText = [
                     "width:100%",
                     "box-sizing:border-box",
@@ -12619,7 +12629,8 @@ function scheduleInjectInlineVideoPlayer(dfMessenger, embedHttpsUrl, options, me
         } else if (msg) {
             // If no options but message exists, still show the prompt under the video.
             const messageEl = document.createElement("div");
-            messageEl.textContent = msg;
+            messageEl.setAttribute("data-dfchat-src-en", msg);
+            messageEl.textContent = localizeCxFixedString_(msg, activeLanguage);
             messageEl.style.cssText = [
                 "width:100%",
                 "box-sizing:border-box",
@@ -13517,7 +13528,8 @@ function scheduleInjectInlineCardCarousel(dfMessenger, cards, messageText) {
 
         if (msg) {
             const messageEl = document.createElement("div");
-            messageEl.textContent = msg;
+            messageEl.setAttribute("data-dfchat-src-en", msg);
+            messageEl.textContent = localizeCxFixedString_(msg, activeLanguage);
             messageEl.style.cssText = [
                 "width:100%",
                 "box-sizing:border-box",
@@ -13605,7 +13617,8 @@ function scheduleInjectInlineCardCarousel(dfMessenger, cards, messageText) {
 
             if (c.title) {
                 const t = document.createElement("div");
-                t.textContent = c.title;
+                t.setAttribute("data-dfchat-src-en", c.title);
+                t.textContent = localizeCxFixedString_(c.title, activeLanguage);
                 t.style.cssText = [
                     "font:700 13px/1.25 Manrope, Segoe UI, system-ui, sans-serif",
                     "color:#0f172a",
@@ -13615,7 +13628,8 @@ function scheduleInjectInlineCardCarousel(dfMessenger, cards, messageText) {
             }
             if (c.subtitle) {
                 const s = document.createElement("div");
-                s.textContent = c.subtitle;
+                s.setAttribute("data-dfchat-src-en", c.subtitle);
+                s.textContent = localizeCxFixedString_(c.subtitle, activeLanguage);
                 s.style.cssText = [
                     "font:600 12px/1.25 Manrope, Segoe UI, system-ui, sans-serif",
                     "color:rgba(15,23,42,0.68)",
@@ -13624,8 +13638,10 @@ function scheduleInjectInlineCardCarousel(dfMessenger, cards, messageText) {
                 body.appendChild(s);
             }
 
+            const rawCta = c.ctaLabel || "Select";
             const cta = document.createElement("div");
-            cta.textContent = c.ctaLabel || "Select";
+            cta.setAttribute("data-dfchat-src-en", rawCta);
+            cta.textContent = localizeCxFixedString_(rawCta, activeLanguage);
             cta.style.cssText = [
                 "display:inline-flex",
                 "align-items:center",
@@ -13708,6 +13724,7 @@ function scheduleInjectInlineCardCarousel(dfMessenger, cards, messageText) {
             ml.appendChild(wrap);
         }
         dfchatLastInlineCardCarouselWrapEl = wrap;
+        refreshInlineCxPayloadLabels_();
 
         injected = true;
         try {
@@ -20718,6 +20735,7 @@ function applyLanguage(languageCode) {
     applyContactFormHeaderFromConfig();
     syncLauncherInputStripI18n();
     refreshInlineSyntheticOptionButtonLabels();
+    refreshInlineCxPayloadLabels_();
     if (activeDfMessenger) {
         applyLocalizedChatHeader(activeDfMessenger);
     }
@@ -20739,6 +20757,75 @@ function applyLanguage(languageCode) {
             }
         }, d);
     });
+}
+
+/**
+ * Dialogflow CX inline payloads (`open_gallery`, `open_video`, …) — exact English keys in `translations/strings.json`.
+ * @param {string} englishText
+ * @param {string} [lang]
+ * @returns {string}
+ */
+function localizeCxFixedString_(englishText, lang) {
+    const s = typeof englishText === "string" ? englishText.trim() : "";
+    if (!s) {
+        return "";
+    }
+    return translateFixedScript(s, lang);
+}
+
+/** Re-apply `strings.json` to gallery/video/carousel message, captions, and option chips after language change. */
+function refreshInlineCxPayloadLabels_() {
+    const selector = `.${DFCHAT_INLINE_GALLERY_CLASS}, .${DFCHAT_INLINE_VIDEO_CLASS}, .${DFCHAT_INLINE_CARD_CAROUSEL_CLASS}`;
+    /** @type {Element[]} */
+    const wraps = [];
+    const seen = new Set();
+    const addWrap = (el) => {
+        if (el && !seen.has(el)) {
+            seen.add(el);
+            wraps.push(el);
+        }
+    };
+    try {
+        for (const el of document.querySelectorAll(selector)) {
+            addWrap(el);
+        }
+    } catch {
+        /* ignore */
+    }
+    if (activeDfMessenger) {
+        const roots = collectSearchRoots(activeDfMessenger);
+        for (const root of roots) {
+            if (!root || typeof root.querySelectorAll !== "function") {
+                continue;
+            }
+            try {
+                for (const el of root.querySelectorAll(selector)) {
+                    addWrap(el);
+                }
+            } catch {
+                /* ignore */
+            }
+        }
+    }
+    for (const wrap of wraps) {
+        if (!wrap || typeof wrap.querySelectorAll !== "function") {
+            continue;
+        }
+        for (const el of wrap.querySelectorAll("[data-dfchat-src-en]")) {
+            const en = (el.getAttribute("data-dfchat-src-en") || "").trim();
+            if (en) {
+                el.textContent = localizeCxFixedString_(en, activeLanguage);
+            }
+        }
+        for (const btn of wrap.querySelectorAll("button[data-dfchat-opt-key]")) {
+            const en = (btn.getAttribute("data-dfchat-src-en") || "").trim();
+            const key = (btn.getAttribute("data-dfchat-opt-key") || "").trim().toLowerCase();
+            if (!key) {
+                continue;
+            }
+            btn.textContent = resolveInlineOptionLabel(en || key, key, activeLanguage);
+        }
+    }
 }
 
 function readInlineOptionLabelByLanguageMap() {
@@ -20800,30 +20887,7 @@ function resolveInlineOptionLabel(label, value, lang) {
 }
 
 function refreshInlineSyntheticOptionButtonLabels() {
-    const map = readInlineOptionLabelByLanguageMap();
-    if (!map) {
-        return;
-    }
-    const nodes = document.querySelectorAll(
-        `.${DFCHAT_INLINE_GALLERY_CLASS} button[data-dfchat-opt-key], .${DFCHAT_INLINE_VIDEO_CLASS} button[data-dfchat-opt-key], .${DFCHAT_INLINE_CARD_CAROUSEL_CLASS} button[data-dfchat-opt-key]`
-    );
-    for (const node of nodes) {
-        if (!node || typeof node.getAttribute !== "function") {
-            continue;
-        }
-        const key = (node.getAttribute("data-dfchat-opt-key") || "").trim().toLowerCase();
-        if (!key) {
-            continue;
-        }
-        const row = map[key];
-        if (!row || typeof row !== "object") {
-            continue;
-        }
-        const next = pickContactFormLocalizedLine(row, activeLanguage);
-        if (next != null) {
-            node.textContent = next;
-        }
-    }
+    refreshInlineCxPayloadLabels_();
 }
 
 function initializeChatLanguageDropdown(dfMessenger) {
