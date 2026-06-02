@@ -87,94 +87,201 @@ body.appointments-page {
 .appt-date-bar {
   max-width: 1400px;
   margin: 10px auto 0;
-  padding: 12px 16px;
+  padding: 14px 16px;
   box-sizing: border-box;
   margin-left: 20px;
   margin-right: 20px;
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-end;
-  gap: 12px 16px;
+  align-items: flex-start;
+  gap: 20px 24px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: var(--shadow-soft);
 }
 
-.appt-date-mode {
-  border: 0;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px 14px;
-  min-width: 0;
-}
-
-.appt-date-mode legend {
-  display: none;
-}
-
-.appt-date-mode-opt {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text);
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.appt-date-fields {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px 14px;
-  align-items: flex-end;
-}
-
-.appt-date-label {
+.appt-date-col {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  font-size: 11px;
+  gap: 10px;
+  min-width: 140px;
+}
+
+.appt-quick-dates {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.appt-day-btn {
+  height: 40px;
+  padding: 0 18px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-2);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  color: var(--text);
+  text-align: left;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+
+.appt-day-btn:hover {
+  border-color: var(--brand);
+  background: var(--brand-soft);
+}
+
+.appt-day-btn.active {
+  background: linear-gradient(180deg, var(--brand) 0%, var(--brand-strong) 100%);
+  border-color: var(--brand-strong);
+  color: #fff;
+  box-shadow: var(--shadow-soft);
+}
+
+.appt-cal-range {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  max-width: 200px;
+}
+
+.appt-cal-wrap {
+  flex: 1 1 280px;
+  max-width: 340px;
+}
+
+.appt-cal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.appt-cal-month {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.appt-cal-nav {
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--text);
+}
+
+.appt-cal-nav:hover:not(:disabled) {
+  border-color: var(--brand);
+  background: var(--brand-soft);
+}
+
+.appt-cal-nav:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.appt-cal-weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+  margin-bottom: 4px;
+  font-size: 10px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.03em;
   color: var(--muted);
+  text-align: center;
 }
 
-.appt-date-label input[type="date"] {
-  height: 36px;
-  padding: 0 10px;
-  border: 1px solid var(--border);
+.appt-cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 3px;
+}
+
+.appt-cal-cell {
+  aspect-ratio: 1;
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.appt-cal-cell--blank {
+  pointer-events: none;
+}
+
+.appt-cal-day {
+  width: 100%;
+  height: 100%;
+  min-height: 34px;
+  border: 1px solid transparent;
   border-radius: 8px;
+  background: transparent;
   font: inherit;
   font-size: 13px;
-  min-width: 150px;
-  background: #fff;
+  font-weight: 600;
+  cursor: pointer;
   color: var(--text);
 }
 
-.appt-date-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
+.appt-cal-day:hover:not(:disabled) {
+  background: var(--brand-soft);
+  border-color: var(--brand);
 }
 
-.appt-date-hint {
-  flex: 1 1 100%;
-  margin: 0;
-  font-size: 12px;
+.appt-cal-day--past {
+  color: #cbd5e1;
+  cursor: not-allowed;
+  background: #f8fafc;
+}
+
+.appt-cal-day--today {
+  font-weight: 800;
+}
+
+.appt-cal-day--in-range {
+  background: var(--brand-soft);
+  border-color: #bae6fd;
+}
+
+.appt-cal-day--selected,
+.appt-cal-day--anchor {
+  background: linear-gradient(180deg, var(--brand) 0%, var(--brand-strong) 100%);
+  border-color: var(--brand-strong);
+  color: #fff;
+}
+
+.appt-cal-hint {
+  margin: 10px 0 0;
+  font-size: 11px;
   line-height: 1.4;
 }
 
-@media (min-width: 900px) {
-  .appt-date-hint {
-    flex: 1 1 auto;
-    margin: 0 0 0 8px;
-    text-align: right;
+@media (max-width: 640px) {
+  .appt-date-bar {
+    flex-direction: column;
+  }
+  .appt-quick-dates {
+    flex-direction: row;
+    width: 100%;
+  }
+  .appt-day-btn {
+    flex: 1;
+    text-align: center;
+  }
+  .appt-cal-wrap {
+    max-width: 100%;
+    width: 100%;
   }
 }
 

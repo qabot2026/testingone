@@ -43,6 +43,42 @@
     });
   }
 
+  function pad2(n) {
+    return String(n).padStart(2, "0");
+  }
+
+  function isoFromParts(y, m, d) {
+    return y + "-" + pad2(m) + "-" + pad2(d);
+  }
+
+  function isoFromDate(dt) {
+    return isoFromParts(dt.getFullYear(), dt.getMonth() + 1, dt.getDate());
+  }
+
+  function parseIso(iso) {
+    var p = String(iso || "").split("-");
+    if (p.length !== 3) return null;
+    return new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2]));
+  }
+
+  function todayIso() {
+    return isoFromDate(new Date());
+  }
+
+  function tomorrowIso() {
+    var d = new Date();
+    d.setDate(d.getDate() + 1);
+    return isoFromDate(d);
+  }
+
+  function monthStart(y, m) {
+    return new Date(y, m, 1);
+  }
+
+  function daysInMonth(y, m) {
+    return new Date(y, m + 1, 0).getDate();
+  }
+
   function statusLabel(status) {
     if (status === "accepted") return "Accepted";
     if (status === "declined") return "Declined";
@@ -62,7 +98,6 @@
       .replace(/"/g, "&quot;");
   }
 
-  /** Normalize stored date to YYYY-MM-DD for filters. */
   function appointmentDateToIso(raw) {
     var s = String(raw || "").trim();
     if (!s) return "";
@@ -73,34 +108,37 @@
       var m = Number(dmY[2]);
       var y = Number(dmY[3]);
       if (m >= 1 && m <= 12 && d >= 1 && d <= 31) {
-        return (
-          y +
-          "-" +
-          String(m).padStart(2, "0") +
-          "-" +
-          String(d).padStart(2, "0")
-        );
+        return isoFromParts(y, m, d);
       }
     }
     return "";
   }
 
-  /** Display as DD/MM/YYYY. */
+  function formatIsoDdMmYyyy(iso) {
+    var n = appointmentDateToIso(iso);
+    if (!n) return "—";
+    var parts = n.split("-");
+    return parts[2] + "/" + parts[1] + "/" + parts[0];
+  }
+
   function formatDateDdMmYyyy(row) {
     if (row && row.appointmentDateDisplay) {
       return row.appointmentDateDisplay;
     }
-    var iso = appointmentDateToIso(row && row.appointmentDate);
-    if (!iso) return cellText(row && row.appointmentDate);
-    var parts = iso.split("-");
-    return parts[2] + "/" + parts[1] + "/" + parts[0];
+    return formatIsoDdMmYyyy(row && row.appointmentDate);
   }
+
+  var t0 = todayIso();
+  var now = new Date();
 
   var state = {
     filter: "",
-    dateMode: "single",
-    dateFrom: "",
+    dateFrom: t0,
     dateTo: "",
+    datePreset: "today",
+    calAnchor: "",
+    viewYear: now.getFullYear(),
+    viewMonth: now.getMonth(),
     rows: []
   };
 
@@ -108,34 +146,193 @@
   var listStatus = $("#listStatus");
   var apptEmpty = $("#apptEmpty");
   var tableWrap = document.querySelector(".appt-table-scroll");
-  var dateFromInput = $("#dateFrom");
-  var dateToInput = $("#dateTo");
-  var dateToLabel = $("#dateToLabel");
-  var dateFromLabel = $("#dateFromLabel");
-  var dateFilterHint = $("#dateFilterHint");
+  var calGrid = $("#calGrid");
+  var calMonthLabel = $("#calMonthLabel");
+  var calRangeLabel = $("#calRangeLabel");
+  var calPrev = $("#calPrev");
+  var calNext = $("#calNext");
+  var btnToday = $("#btnToday");
+  var btnTomorrow = $("#btnTomorrow");
+  var dayBtns = document.querySelectorAll(".appt-day-btn");
 
-  function readDateModeFromUi() {
-    var checked = document.querySelector('input[name="dateMode"]:checked');
-    state.dateMode = checked && checked.value === "range" ? "range" : "single";
+  function effectiveDateTo() {
+    if (state.dateTo && state.dateTo !== state.dateFrom) {
+      return state.dateTo;
+    }
+    return "";
   }
 
-  function syncDateModeUi() {
-    var isRange = state.dateMode === "range";
-    if (dateToLabel) dateToLabel.classList.toggle("hidden", !isRange);
-    if (dateFromLabel) {
-      var span = dateFromLabel.querySelector(".appt-date-label-text");
-      if (span) span.textContent = isRange ? "From" : "Date";
+  function isRange() {
+    return Boolean(effectiveDateTo());
+  }
+
+  function syncQuickButtons() {
+    dayBtns.forEach(function (btn) {
+      var preset = btn.getAttribute("data-preset") || "";
+      btn.classList.toggle("active", preset === state.datePreset);
+    });
+  }
+
+  function updateRangeLabel() {
+    if (!calRangeLabel) return;
+    var from = formatIsoDdMmYyyy(state.dateFrom);
+    var toIso = effectiveDateTo();
+    if (state.datePreset === "today") {
+      calRangeLabel.textContent = "Showing today · " + from;
+      return;
     }
-    if (dateFilterHint) {
-      dateFilterHint.textContent = isRange
-        ? "Dates shown as DD/MM/YYYY. Set From and To, then Apply."
-        : "Dates shown as DD/MM/YYYY. Pick one day, then Apply.";
+    if (state.datePreset === "tomorrow") {
+      calRangeLabel.textContent = "Showing tomorrow · " + from;
+      return;
+    }
+    if (toIso) {
+      calRangeLabel.textContent =
+        "Showing " + from + " – " + formatIsoDdMmYyyy(toIso);
+      return;
+    }
+    calRangeLabel.textContent = "Showing " + from;
+  }
+
+  function setDateFilter(fromIso, toIso, preset) {
+    state.dateFrom = fromIso;
+    state.dateTo = toIso && toIso !== fromIso ? toIso : "";
+    state.datePreset = preset || "custom";
+    state.calAnchor = "";
+    var d = parseIso(fromIso);
+    if (d) {
+      state.viewYear = d.getFullYear();
+      state.viewMonth = d.getMonth();
+    }
+    syncQuickButtons();
+    updateRangeLabel();
+    renderCalendar();
+    loadAppointments();
+  }
+
+  function selectToday() {
+    setDateFilter(todayIso(), "", "today");
+  }
+
+  function selectTomorrow() {
+    setDateFilter(tomorrowIso(), "", "tomorrow");
+  }
+
+  function isPastIso(iso) {
+    return iso < todayIso();
+  }
+
+  function isInSelectedRange(iso) {
+    if (!state.dateFrom) return false;
+    var to = effectiveDateTo() || state.dateFrom;
+    var a = state.dateFrom < to ? state.dateFrom : to;
+    var b = state.dateFrom < to ? to : state.dateFrom;
+    return iso >= a && iso <= b;
+  }
+
+  function isRangeEdge(iso) {
+    var to = effectiveDateTo();
+    if (!to) return iso === state.dateFrom;
+    return iso === state.dateFrom || iso === to;
+  }
+
+  function renderCalendar() {
+    if (!calGrid) return;
+
+    var y = state.viewYear;
+    var m = state.viewMonth;
+    var monthNames = [
+      "January", "February", "March", "April", "May", "June",
+      "July", "August", "September", "October", "November", "December"
+    ];
+    if (calMonthLabel) {
+      calMonthLabel.textContent = monthNames[m] + " " + y;
+    }
+
+    var first = monthStart(y, m);
+    var startPad = (first.getDay() + 6) % 7;
+    var dim = daysInMonth(y, m);
+    var today = todayIso();
+
+    var curMonth = now.getFullYear() === y && now.getMonth() === m;
+    if (calPrev) {
+      calPrev.disabled = curMonth;
+    }
+
+    calGrid.innerHTML = "";
+    var i;
+    for (i = 0; i < startPad; i++) {
+      var blank = document.createElement("span");
+      blank.className = "appt-cal-cell appt-cal-cell--blank";
+      calGrid.appendChild(blank);
+    }
+
+    for (var day = 1; day <= dim; day++) {
+      var iso = isoFromParts(y, m + 1, day);
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "appt-cal-cell appt-cal-day";
+      btn.textContent = String(day);
+      btn.dataset.iso = iso;
+      btn.setAttribute("aria-label", formatIsoDdMmYyyy(iso));
+
+      if (isPastIso(iso)) {
+        btn.classList.add("appt-cal-day--past");
+        btn.disabled = true;
+      } else {
+        if (iso === today) {
+          btn.classList.add("appt-cal-day--today");
+        }
+        if (isInSelectedRange(iso)) {
+          btn.classList.add("appt-cal-day--in-range");
+        }
+        if (isRangeEdge(iso)) {
+          btn.classList.add("appt-cal-day--selected");
+        }
+        if (state.calAnchor === iso) {
+          btn.classList.add("appt-cal-day--anchor");
+        }
+        btn.addEventListener("click", function () {
+          onCalendarDayClick(iso);
+        });
+      }
+      calGrid.appendChild(btn);
     }
   }
 
-  function readDatesFromInputs() {
-    state.dateFrom = dateFromInput ? String(dateFromInput.value || "").trim() : "";
-    state.dateTo = dateToInput ? String(dateToInput.value || "").trim() : "";
+  function onCalendarDayClick(iso) {
+    if (isPastIso(iso)) return;
+
+    state.datePreset = "custom";
+    syncQuickButtons();
+
+    if (!state.calAnchor) {
+      state.calAnchor = iso;
+      state.dateFrom = iso;
+      state.dateTo = "";
+      updateRangeLabel();
+      renderCalendar();
+      loadAppointments();
+      return;
+    }
+
+    if (state.calAnchor === iso) {
+      state.dateFrom = iso;
+      state.dateTo = "";
+      state.calAnchor = "";
+      updateRangeLabel();
+      renderCalendar();
+      loadAppointments();
+      return;
+    }
+
+    var a = state.calAnchor < iso ? state.calAnchor : iso;
+    var b = state.calAnchor < iso ? iso : state.calAnchor;
+    state.dateFrom = a;
+    state.dateTo = b;
+    state.calAnchor = "";
+    updateRangeLabel();
+    renderCalendar();
+    loadAppointments();
   }
 
   function buildQueryString() {
@@ -146,26 +343,11 @@
     if (state.dateFrom) {
       parts.push("dateFrom=" + encodeURIComponent(state.dateFrom));
     }
-    if (state.dateMode === "range" && state.dateTo) {
-      parts.push("dateTo=" + encodeURIComponent(state.dateTo));
+    var to = effectiveDateTo();
+    if (to) {
+      parts.push("dateTo=" + encodeURIComponent(to));
     }
     return parts.length ? "?" + parts.join("&") : "";
-  }
-
-  function validateDateFilter() {
-    readDatesFromInputs();
-    if (!state.dateFrom && !state.dateTo) {
-      return true;
-    }
-    if (!state.dateFrom) {
-      showToast("Choose a date (From).", "err");
-      return false;
-    }
-    if (state.dateMode === "range" && state.dateTo && state.dateFrom > state.dateTo) {
-      showToast("'From' must be on or before 'To'.", "err");
-      return false;
-    }
-    return true;
   }
 
   function renderTable() {
@@ -298,18 +480,7 @@
 
   function statusLineText() {
     var n = state.rows.length;
-    var base = n + " appointment" + (n === 1 ? "" : "s");
-    if (!state.dateFrom) return base;
-    if (state.dateMode === "range" && state.dateTo) {
-      return (
-        base +
-        " · " +
-        formatDateDdMmYyyy({ appointmentDate: state.dateFrom }) +
-        " – " +
-        formatDateDdMmYyyy({ appointmentDate: state.dateTo })
-      );
-    }
-    return base + " · " + formatDateDdMmYyyy({ appointmentDate: state.dateFrom });
+    return n + " appointment" + (n === 1 ? "" : "s");
   }
 
   function loadAppointments() {
@@ -326,25 +497,6 @@
       });
   }
 
-  function applyDateFilter() {
-    readDateModeFromUi();
-    syncDateModeUi();
-    if (!validateDateFilter()) return;
-    if (!state.dateFrom && !state.dateTo) {
-      loadAppointments();
-      return;
-    }
-    loadAppointments();
-  }
-
-  function clearDateFilter() {
-    state.dateFrom = "";
-    state.dateTo = "";
-    if (dateFromInput) dateFromInput.value = "";
-    if (dateToInput) dateToInput.value = "";
-    loadAppointments();
-  }
-
   var filters = document.querySelectorAll(".appt-filter");
   filters.forEach(function (btn) {
     btn.addEventListener("click", function () {
@@ -357,35 +509,45 @@
     });
   });
 
-  document.querySelectorAll('input[name="dateMode"]').forEach(function (radio) {
-    radio.addEventListener("change", function () {
-      readDateModeFromUi();
-      syncDateModeUi();
-      if (state.dateMode === "single" && dateToInput) {
-        dateToInput.value = "";
-        state.dateTo = "";
-      }
-    });
-  });
-
-  var applyDateBtn = $("#applyDateBtn");
-  if (applyDateBtn) {
-    applyDateBtn.addEventListener("click", applyDateFilter);
+  if (btnToday) {
+    btnToday.addEventListener("click", selectToday);
+  }
+  if (btnTomorrow) {
+    btnTomorrow.addEventListener("click", selectTomorrow);
   }
 
-  var clearDateBtn = $("#clearDateBtn");
-  if (clearDateBtn) {
-    clearDateBtn.addEventListener("click", clearDateFilter);
+  if (calPrev) {
+    calPrev.addEventListener("click", function () {
+      if (calPrev.disabled) return;
+      state.viewMonth -= 1;
+      if (state.viewMonth < 0) {
+        state.viewMonth = 11;
+        state.viewYear -= 1;
+      }
+      renderCalendar();
+    });
+  }
+
+  if (calNext) {
+    calNext.addEventListener("click", function () {
+      state.viewMonth += 1;
+      if (state.viewMonth > 11) {
+        state.viewMonth = 0;
+        state.viewYear += 1;
+      }
+      renderCalendar();
+    });
   }
 
   var refreshBtn = $("#refreshBtn");
   if (refreshBtn) {
     refreshBtn.addEventListener("click", function () {
-      readDatesFromInputs();
       loadAppointments();
     });
   }
 
-  syncDateModeUi();
+  syncQuickButtons();
+  updateRangeLabel();
+  renderCalendar();
   loadAppointments();
 })();

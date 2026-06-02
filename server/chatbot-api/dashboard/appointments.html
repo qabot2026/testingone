@@ -32,32 +32,26 @@
   </div>
 
   <div class="appt-date-bar">
-    <fieldset class="appt-date-mode" aria-label="Date filter mode">
-      <legend class="sr-only">Date filter mode</legend>
-      <label class="appt-date-mode-opt">
-        <input type="radio" name="dateMode" value="single" checked />
-        Single date
-      </label>
-      <label class="appt-date-mode-opt">
-        <input type="radio" name="dateMode" value="range" />
-        Date range
-      </label>
-    </fieldset>
-    <div class="appt-date-fields">
-      <label class="appt-date-label" id="dateFromLabel">
-        <span class="appt-date-label-text">Date</span>
-        <input type="date" id="dateFrom" autocomplete="off" />
-      </label>
-      <label class="appt-date-label hidden" id="dateToLabel">
-        <span class="appt-date-label-text">To</span>
-        <input type="date" id="dateTo" autocomplete="off" />
-      </label>
+    <div class="appt-date-col">
+      <div class="appt-quick-dates" role="group" aria-label="Quick date">
+        <button type="button" class="appt-day-btn active" data-preset="today" id="btnToday">Today</button>
+        <button type="button" class="appt-day-btn" data-preset="tomorrow" id="btnTomorrow">Tomorrow</button>
+      </div>
+      <p class="appt-cal-range muted" id="calRangeLabel" aria-live="polite"></p>
     </div>
-    <div class="appt-date-actions">
-      <button type="button" class="btn primary small" id="applyDateBtn">Apply</button>
-      <button type="button" class="btn ghost small" id="clearDateBtn">Clear dates</button>
+
+    <div class="appt-cal-wrap" aria-label="Calendar — pick one day or a range from today onwards">
+      <div class="appt-cal-head">
+        <button type="button" class="appt-cal-nav" id="calPrev" aria-label="Previous month">‹</button>
+        <strong class="appt-cal-month" id="calMonthLabel"></strong>
+        <button type="button" class="appt-cal-nav" id="calNext" aria-label="Next month">›</button>
+      </div>
+      <div class="appt-cal-weekdays" aria-hidden="true">
+        <span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span>
+      </div>
+      <div class="appt-cal-grid" id="calGrid" role="grid"></div>
+      <p class="appt-cal-hint muted">Tap a day, then another to select a range. Dates shown in table as DD/MM/YYYY.</p>
     </div>
-    <p class="appt-date-hint muted" id="dateFilterHint">Dates shown as DD/MM/YYYY. Pick a day or a range, then Apply.</p>
   </div>
 
   <section class="appt-table-wrap" aria-label="Appointments table">
