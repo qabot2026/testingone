@@ -1906,7 +1906,8 @@ const CHAT_FOOTER_TOOLBAR_ID = "dfchat-chat-footer-toolbar";
 /** @type {HTMLDivElement | null} */
 let poweredByStripNode = null;
 /** Shift the user input / footer row: positive = up (`translateY(-n)`), negative = down, 0 = default. */
-const USER_INPUT_NUDGE_UP_PX = -20;
+/** Positive moves the composer up (closer to messages); 0 = no transform. */
+const USER_INPUT_NUDGE_UP_PX = 4;
 let chatActionBarSyncTimer = null;
 /** @type {{ left: number, top: number } | null} */
 let chatActionBarFixedPos = null;
@@ -2374,11 +2375,37 @@ function applyPoweredByStripInlineStyles(el) {
     el.style.removeProperty("max-width");
     el.style.setProperty("display", "block", "important");
     applyPoweredByStripVisuals(el);
-    const L = POWERED_BY_STYLE;
-    if (L.marginPx > 0) {
-        el.style.setProperty("margin", `${L.marginPx}px`, "important");
+    const inFooterToolbar = !!(typeof el.closest === "function"
+        && el.closest("#" + CHAT_FOOTER_TOOLBAR_ID));
+    if (inFooterToolbar) {
+        el.style.setProperty("margin", "0", "important");
+        el.style.setProperty("text-align", "right", "important");
     } else {
-        el.style.removeProperty("margin");
+        const L = POWERED_BY_STYLE;
+        if (L.marginPx > 0) {
+            el.style.setProperty("margin", `${L.marginPx}px`, "important");
+        } else {
+            el.style.removeProperty("margin");
+        }
+    }
+}
+
+/**
+ * Language/Restart on the left; Powered by on the right (bottom of footer row).
+ * @param {HTMLElement} toolbar
+ */
+function ensureFooterToolbarSlotOrder_(toolbar) {
+    if (!toolbar) {
+        return;
+    }
+    const poweredSlot = toolbar.querySelector("[data-dfchat-footer-powered-slot]");
+    const actionsSlot = toolbar.querySelector("[data-dfchat-footer-actions-slot]");
+    if (!poweredSlot || !actionsSlot) {
+        return;
+    }
+    if (actionsSlot.compareDocumentPosition(poweredSlot) & Node.DOCUMENT_POSITION_FOLLOWING) {
+        toolbar.appendChild(actionsSlot);
+        toolbar.appendChild(poweredSlot);
     }
 }
 
@@ -2413,9 +2440,10 @@ function mountFooterChromeInline(messenger, bar) {
         const actionsSlot = document.createElement("div");
         actionsSlot.className = "dfchat-footer-toolbar__actions";
         actionsSlot.setAttribute("data-dfchat-footer-actions-slot", "true");
-        toolbar.appendChild(poweredSlot);
         toolbar.appendChild(actionsSlot);
+        toolbar.appendChild(poweredSlot);
     }
+    ensureFooterToolbarSlotOrder_(toolbar);
 
     const cs = window.getComputedStyle(parent);
     if (cs.display === "flex" && (cs.flexDirection === "row" || cs.flexDirection === "row-reverse")) {
@@ -2461,13 +2489,9 @@ function mountFooterChromeInline(messenger, bar) {
                     poweredSlot.appendChild(el);
                 }
             }
-            poweredSlot.style.display = "";
-            const align = POWERED_BY_STYLE.textAlign || "left";
-            poweredSlot.style.justifyContent = align === "right"
-                ? "flex-end"
-                : align === "center"
-                    ? "center"
-                    : "flex-start";
+            poweredSlot.style.display = "flex";
+            poweredSlot.style.justifyContent = "flex-end";
+            poweredSlot.style.alignItems = "flex-end";
             applyPoweredByStripInlineStyles(el);
         }
     } else if (poweredSlot) {

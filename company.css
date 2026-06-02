@@ -184,34 +184,39 @@
    box-sizing: border-box;
    display: flex;
    flex-direction: row;
-   align-items: center;
+   align-items: flex-end;
    justify-content: space-between;
-   gap: 8px;
+   gap: 4px;
    width: 100%;
    max-width: 100%;
-   padding: 2px 8px 3px;
+   padding: 0 8px 2px;
    flex: 0 0 auto;
    min-height: 0;
+   max-height: 28px;
    position: static !important;
    z-index: auto;
    pointer-events: auto;
  }
  
- .dfchat-footer-toolbar__powered {
-   flex: 1 1 auto;
+ .dfchat-footer-toolbar__actions {
+   flex: 0 1 auto;
    min-width: 0;
    display: flex;
    align-items: center;
    justify-content: flex-start;
+   gap: 4px;
+   margin-right: auto;
+   order: 1;
  }
  
- .dfchat-footer-toolbar__actions {
+ .dfchat-footer-toolbar__powered {
    flex: 0 0 auto;
    display: flex;
-   align-items: center;
+   align-items: flex-end;
    justify-content: flex-end;
-   gap: 8px;
    margin-left: auto;
+   order: 2;
+   text-align: right;
  }
  
  #dfchat-chat-footer-toolbar #dfchat-powered-by-strip {
@@ -220,10 +225,13 @@
    top: auto !important;
    bottom: auto !important;
    transform: none !important;
-   max-width: 100%;
+   max-width: 55%;
    margin: 0 !important;
+   padding: 0 !important;
    min-height: 0 !important;
-   line-height: 1.2 !important;
+   line-height: 1.1 !important;
+   text-align: right !important;
+   font-size: 10px !important;
  }
  
  #dfchat-chat-footer-toolbar #dfchat-chat-action-bar.dfchat-chat-action-bar--inline,
@@ -233,7 +241,24 @@
    width: auto !important;
    max-width: none !important;
    padding: 0 !important;
-   justify-content: flex-end !important;
+   margin: 0 !important;
+   gap: 4px !important;
+   justify-content: flex-start !important;
+   min-height: 0 !important;
+ }
+ 
+ #dfchat-chat-footer-toolbar .dfchat-chat-action-pill {
+   padding: 0 8px !important;
+   gap: 4px !important;
+   border-radius: 8px !important;
+   font-size: 11px !important;
+   line-height: 1.1 !important;
+   box-shadow: none !important;
+ }
+ 
+ #dfchat-chat-footer-toolbar .dfchat-chat-action-pill__icon {
+   width: 14px !important;
+   height: 14px !important;
  }
  
  /* Footer controls (Language + Restart) anchored near Send */

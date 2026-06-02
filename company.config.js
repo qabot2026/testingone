@@ -290,7 +290,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
     // -------------------------------------------------------------------------
     footerInputBox: {
       // Composer inset vs chat card (top right bottom left). Omit `sendButtonWrapperPx` to use Dialogflow’s default Send.
-      padding: "8px 10px 30px 10px",
+      padding: "6px 10px 6px 10px",
       // Nudge the Send icon wrapper (negative = up).
       sendOffsetYpx: -3,
       // Or omit `padding` and set all four:
@@ -327,9 +327,9 @@ window.COMPANY_CHAT_UI_CONFIG = {
       linkUrl: "https://www.google.com",
 
       color: "#0369a1",
-      fontSizePx: 11,
-      textAlign: "center",
-      lineHeightPx: 16,
+      fontSizePx: 10,
+      textAlign: "right",
+      lineHeightPx: 13,
 
       // when type strip is enabled
       // nudgeUpPx: 65,
@@ -348,7 +348,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
       offsetTopPx: 80,
       offsetLeftPx: 0,
       widthOffsetPx: 0,
-      marginPx: 20,
+      marginPx: 0,
 
       gapAboveComposerPx: 1,
       fallbackGapFromWindowBottomPx: 6
