@@ -159,7 +159,6 @@
   var toggleCalBtnText = $("#toggleCalBtnText");
   var calPanel = $("#calPanel");
   var calAnchorWrap = $("#calAnchorWrap");
-  var calBackdrop = $("#calBackdrop");
   var chipFrom = $("#chipFrom");
   var chipTo = $("#chipTo");
   var calStepHint = $("#calStepHint");
@@ -296,11 +295,6 @@
 
   function setCalendarOpen(open) {
     state.calOpen = Boolean(open);
-    if (calBackdrop) {
-      calBackdrop.classList.toggle("hidden", !state.calOpen);
-      calBackdrop.hidden = !state.calOpen;
-      calBackdrop.setAttribute("aria-hidden", state.calOpen ? "false" : "true");
-    }
     if (calPanel) {
       calPanel.classList.toggle("hidden", !state.calOpen);
       calPanel.hidden = !state.calOpen;
