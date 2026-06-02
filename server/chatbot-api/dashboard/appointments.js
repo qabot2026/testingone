@@ -137,6 +137,7 @@
     dateTo: "",
     datePreset: "today",
     calAnchor: "",
+    calOpen: false,
     viewYear: now.getFullYear(),
     viewMonth: now.getMonth(),
     rows: []
@@ -154,6 +155,8 @@
   var btnToday = $("#btnToday");
   var btnTomorrow = $("#btnTomorrow");
   var dayBtns = document.querySelectorAll(".appt-day-btn");
+  var toggleCalBtn = $("#toggleCalBtn");
+  var calPanel = $("#calPanel");
 
   function effectiveDateTo() {
     if (state.dateTo && state.dateTo !== state.dateFrom) {
@@ -178,22 +181,55 @@
     var from = formatIsoDdMmYyyy(state.dateFrom);
     var toIso = effectiveDateTo();
     if (state.datePreset === "today") {
-      calRangeLabel.textContent = "Showing today · " + from;
+      calRangeLabel.textContent =
+        "Scheduled for today (" + from + ") — request date ignored";
       return;
     }
     if (state.datePreset === "tomorrow") {
-      calRangeLabel.textContent = "Showing tomorrow · " + from;
+      calRangeLabel.textContent =
+        "Scheduled for tomorrow (" + from + ") — request date ignored";
       return;
     }
     if (toIso) {
       calRangeLabel.textContent =
-        "Showing " + from + " – " + formatIsoDdMmYyyy(toIso);
+        "Scheduled " + from + " – " + formatIsoDdMmYyyy(toIso);
       return;
     }
-    calRangeLabel.textContent = "Showing " + from;
+    calRangeLabel.textContent = "Scheduled for " + from;
   }
 
-  function setDateFilter(fromIso, toIso, preset) {
+  function setCalendarOpen(open) {
+    state.calOpen = Boolean(open);
+    if (calPanel) {
+      calPanel.classList.toggle("hidden", !state.calOpen);
+      calPanel.hidden = !state.calOpen;
+    }
+    if (toggleCalBtn) {
+      toggleCalBtn.setAttribute("aria-expanded", state.calOpen ? "true" : "false");
+      toggleCalBtn.textContent = state.calOpen ? "Hide calendar" : "Choose on calendar";
+    }
+    if (state.calOpen) {
+      renderCalendar();
+    }
+  }
+
+  function rowMatchesScheduleFilter(row) {
+    var iso = appointmentDateToIso(
+      (row && row.appointmentDateIso) || (row && row.appointmentDate)
+    );
+    if (!iso || !state.dateFrom) {
+      return false;
+    }
+    var to = effectiveDateTo();
+    if (!to) {
+      return iso === state.dateFrom;
+    }
+    var lo = state.dateFrom < to ? state.dateFrom : to;
+    var hi = state.dateFrom < to ? to : state.dateFrom;
+    return iso >= lo && iso <= hi;
+  }
+
+  function setDateFilter(fromIso, toIso, preset, opts) {
     state.dateFrom = fromIso;
     state.dateTo = toIso && toIso !== fromIso ? toIso : "";
     state.datePreset = preset || "custom";
@@ -205,16 +241,21 @@
     }
     syncQuickButtons();
     updateRangeLabel();
-    renderCalendar();
+    if (opts && opts.closeCal) {
+      setCalendarOpen(false);
+    }
+    if (state.calOpen) {
+      renderCalendar();
+    }
     loadAppointments();
   }
 
   function selectToday() {
-    setDateFilter(todayIso(), "", "today");
+    setDateFilter(todayIso(), "", "today", { closeCal: true });
   }
 
   function selectTomorrow() {
-    setDateFilter(tomorrowIso(), "", "tomorrow");
+    setDateFilter(tomorrowIso(), "", "tomorrow", { closeCal: true });
   }
 
   function isPastIso(iso) {
@@ -336,18 +377,18 @@
   }
 
   function buildQueryString() {
-    var parts = [];
+    var from = state.dateFrom || todayIso();
+    var parts = [
+      "dateFrom=" + encodeURIComponent(from)
+    ];
     if (state.filter) {
       parts.push("status=" + encodeURIComponent(state.filter));
-    }
-    if (state.dateFrom) {
-      parts.push("dateFrom=" + encodeURIComponent(state.dateFrom));
     }
     var to = effectiveDateTo();
     if (to) {
       parts.push("dateTo=" + encodeURIComponent(to));
     }
-    return parts.length ? "?" + parts.join("&") : "";
+    return "?" + parts.join("&");
   }
 
   function renderTable() {
@@ -356,7 +397,11 @@
     var rows = state.rows;
 
     if (!rows.length) {
-      if (apptEmpty) apptEmpty.classList.remove("hidden");
+      if (apptEmpty) {
+        apptEmpty.classList.remove("hidden");
+        apptEmpty.textContent =
+          "No appointments scheduled for the selected date.";
+      }
       if (tableWrap) tableWrap.classList.add("hidden");
       return;
     }
@@ -487,7 +532,8 @@
     if (listStatus) listStatus.textContent = "Loading…";
     return apiFetch("/api/dashboard/appointments" + buildQueryString())
       .then(function (data) {
-        state.rows = Array.isArray(data.appointments) ? data.appointments : [];
+        var all = Array.isArray(data.appointments) ? data.appointments : [];
+        state.rows = all.filter(rowMatchesScheduleFilter);
         if (listStatus) listStatus.textContent = statusLineText();
         renderTable();
       })
@@ -514,6 +560,12 @@
   }
   if (btnTomorrow) {
     btnTomorrow.addEventListener("click", selectTomorrow);
+  }
+
+  if (toggleCalBtn) {
+    toggleCalBtn.addEventListener("click", function () {
+      setCalendarOpen(!state.calOpen);
+    });
   }
 
   if (calPrev) {
@@ -548,6 +600,6 @@
 
   syncQuickButtons();
   updateRangeLabel();
-  renderCalendar();
+  setCalendarOpen(false);
   loadAppointments();
 })();

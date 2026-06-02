@@ -223,19 +223,29 @@ export function formatAppointmentDateDdMmYyyy_(iso) {
     return `${d}/${m}/${y}`;
 }
 
-/** @param {string} raw */
+/**
+ * Match on appointment **schedule** date (`appointmentDate`), not request/submit time.
+ * Single day: only `dateFrom` → exact match. Range: inclusive `dateFrom`…`dateTo`.
+ *
+ * @param {string} raw
+ * @param {string} dateFrom
+ * @param {string} dateTo
+ */
 function appointmentDateInRange_(raw, dateFrom, dateTo) {
     const iso = appointmentDateToIso_(raw);
     if (!iso) {
         return false;
     }
-    if (dateFrom && iso < dateFrom) {
-        return false;
+    if (!dateFrom) {
+        return true;
     }
-    if (dateTo && iso > dateTo) {
-        return false;
+    const to = dateTo && dateTo !== dateFrom ? dateTo : "";
+    if (!to) {
+        return iso === dateFrom;
     }
-    return true;
+    const lo = dateFrom < to ? dateFrom : to;
+    const hi = dateFrom < to ? to : dateFrom;
+    return iso >= lo && iso <= hi;
 }
 
 /**
@@ -304,6 +314,16 @@ export async function listAppointmentLeads(opts) {
     }
 
     rows.sort((a, b) => {
+        if (hasDateFilter) {
+            const ad = String(a.appointmentDateIso || "");
+            const bd = String(b.appointmentDateIso || "");
+            if (ad !== bd) {
+                return ad.localeCompare(bd);
+            }
+            const at = String(a.appointmentTime || "");
+            const bt = String(b.appointmentTime || "");
+            return at.localeCompare(bt);
+        }
         const au = Number(a.updated_at_ms) || Number(a.created_at_ms) || 0;
         const bu = Number(b.updated_at_ms) || Number(b.created_at_ms) || 0;
         return bu - au;

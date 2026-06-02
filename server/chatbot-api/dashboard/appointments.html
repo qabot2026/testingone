@@ -13,7 +13,7 @@
   <header class="appt-topbar">
     <div class="appt-topbar-main">
       <h1>Appointments</h1>
-      <p class="muted">Review booking requests from the chatbot. New form submissions appear as <strong>Requested</strong>.</p>
+      <p class="muted">Filtered by <strong>scheduled appointment date</strong> (not when the request was submitted). New bookings show as <strong>Requested</strong>.</p>
     </div>
     <nav class="appt-nav">
       <a class="btn ghost small" href="/dashboard/">UI / UX settings</a>
@@ -37,20 +37,25 @@
         <button type="button" class="appt-day-btn active" data-preset="today" id="btnToday">Today</button>
         <button type="button" class="appt-day-btn" data-preset="tomorrow" id="btnTomorrow">Tomorrow</button>
       </div>
+      <button type="button" class="btn ghost small appt-cal-toggle" id="toggleCalBtn" aria-expanded="false" aria-controls="calPanel">
+        Choose on calendar
+      </button>
       <p class="appt-cal-range muted" id="calRangeLabel" aria-live="polite"></p>
     </div>
 
-    <div class="appt-cal-wrap" aria-label="Calendar — pick one day or a range from today onwards">
-      <div class="appt-cal-head">
-        <button type="button" class="appt-cal-nav" id="calPrev" aria-label="Previous month">‹</button>
-        <strong class="appt-cal-month" id="calMonthLabel"></strong>
-        <button type="button" class="appt-cal-nav" id="calNext" aria-label="Next month">›</button>
+    <div class="appt-cal-panel hidden" id="calPanel" hidden>
+      <div class="appt-cal-wrap" aria-label="Calendar — scheduled date, from today onwards">
+        <div class="appt-cal-head">
+          <button type="button" class="appt-cal-nav" id="calPrev" aria-label="Previous month">‹</button>
+          <strong class="appt-cal-month" id="calMonthLabel"></strong>
+          <button type="button" class="appt-cal-nav" id="calNext" aria-label="Next month">›</button>
+        </div>
+        <div class="appt-cal-weekdays" aria-hidden="true">
+          <span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span>
+        </div>
+        <div class="appt-cal-grid" id="calGrid" role="grid"></div>
+        <p class="appt-cal-hint muted">Pick scheduled date: tap one day, or two days for a range.</p>
       </div>
-      <div class="appt-cal-weekdays" aria-hidden="true">
-        <span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span>
-      </div>
-      <div class="appt-cal-grid" id="calGrid" role="grid"></div>
-      <p class="appt-cal-hint muted">Tap a day, then another to select a range. Dates shown in table as DD/MM/YYYY.</p>
     </div>
   </div>
 
@@ -63,7 +68,7 @@
             <th scope="col">Patient</th>
             <th scope="col">Mobile</th>
             <th scope="col">Email</th>
-            <th scope="col">Date</th>
+            <th scope="col">Sched. date</th>
             <th scope="col">Time</th>
             <th scope="col">Doctor</th>
             <th scope="col">Department</th>

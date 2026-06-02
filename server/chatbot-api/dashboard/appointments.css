@@ -141,15 +141,28 @@ body.appointments-page {
   box-shadow: var(--shadow-soft);
 }
 
+.appt-cal-toggle {
+  align-self: flex-start;
+}
+
 .appt-cal-range {
   margin: 0;
   font-size: 12px;
   line-height: 1.45;
-  max-width: 200px;
+  max-width: 280px;
+}
+
+.appt-cal-panel {
+  flex: 1 1 100%;
+  width: 100%;
+  padding-top: 4px;
+}
+
+.appt-cal-panel.hidden {
+  display: none !important;
 }
 
 .appt-cal-wrap {
-  flex: 1 1 280px;
   max-width: 340px;
 }
 
@@ -282,6 +295,9 @@ body.appointments-page {
   .appt-cal-wrap {
     max-width: 100%;
     width: 100%;
+  }
+  .appt-cal-range {
+    max-width: none;
   }
 }
 
