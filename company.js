@@ -2243,6 +2243,120 @@ function hideChatFooterToolbar() {
 }
 
 /**
+ * @returns {HTMLElement[]}
+ */
+function collectPoweredByStripNodes_() {
+    /** @type {HTMLElement[]} */
+    const out = [];
+    const visit = (root) => {
+        if (!root || typeof root.getElementById !== "function") {
+            return;
+        }
+        const el = root.getElementById(POWERED_BY_STRIP_ID);
+        if (el) {
+            out.push(/** @type {HTMLElement} */ (el));
+        }
+    };
+    visit(document);
+    const ms = activeDfMessenger || document.querySelector("df-messenger");
+    if (ms) {
+        const roots = collectSearchRoots(ms);
+        for (let i = 0; i < roots.length; i += 1) {
+            const root = roots[i];
+            if (root && root !== document) {
+                visit(root);
+            }
+        }
+    }
+    return out;
+}
+
+/**
+ * Keep a single Powered-by node (shadow DOM breaks `document.getElementById` after inline mount).
+ * @param {HTMLElement | null | undefined} preferred
+ * @returns {HTMLElement | null}
+ */
+function dedupePoweredByStrips_(preferred) {
+    const nodes = collectPoweredByStripNodes_();
+    let keep = preferred && nodes.includes(preferred) ? preferred : null;
+    if (!keep && poweredByStripNode && nodes.includes(poweredByStripNode)) {
+        keep = poweredByStripNode;
+    }
+    if (!keep) {
+        keep = nodes[0] || null;
+    }
+    for (let i = 0; i < nodes.length; i += 1) {
+        if (nodes[i] !== keep) {
+            try {
+                nodes[i].remove();
+            } catch {
+                /* no-op */
+            }
+        }
+    }
+    poweredByStripNode = keep;
+    return keep;
+}
+
+/**
+ * @returns {HTMLElement | null}
+ */
+function getPoweredByStripElement_() {
+    return dedupePoweredByStrips_(poweredByStripNode);
+}
+
+/**
+ * @returns {HTMLElement[]}
+ */
+function collectChatFooterToolbarNodes_() {
+    /** @type {HTMLElement[]} */
+    const out = [];
+    const visit = (root) => {
+        if (!root || typeof root.getElementById !== "function") {
+            return;
+        }
+        const el = root.getElementById(CHAT_FOOTER_TOOLBAR_ID);
+        if (el) {
+            out.push(/** @type {HTMLElement} */ (el));
+        }
+    };
+    visit(document);
+    const ms = activeDfMessenger || document.querySelector("df-messenger");
+    if (ms) {
+        const roots = collectSearchRoots(ms);
+        for (let i = 0; i < roots.length; i += 1) {
+            const root = roots[i];
+            if (root && root !== document) {
+                visit(root);
+            }
+        }
+    }
+    return out;
+}
+
+/**
+ * @param {HTMLElement | null | undefined} preferred
+ * @returns {HTMLElement | null}
+ */
+function dedupeChatFooterToolbars_(preferred) {
+    const nodes = collectChatFooterToolbarNodes_();
+    let keep = preferred && nodes.includes(preferred) ? preferred : null;
+    if (!keep) {
+        keep = nodes[0] || null;
+    }
+    for (let i = 0; i < nodes.length; i += 1) {
+        if (nodes[i] !== keep) {
+            try {
+                nodes[i].remove();
+            } catch {
+                /* no-op */
+            }
+        }
+    }
+    return keep;
+}
+
+/**
  * @param {HTMLElement | null | undefined} el
  */
 function applyPoweredByStripInlineStyles(el) {
@@ -2287,7 +2401,7 @@ function mountFooterChromeInline(messenger, bar) {
     }
 
     const { parent, afterEl } = mp;
-    let toolbar = getChatFooterToolbar();
+    let toolbar = dedupeChatFooterToolbars_(getChatFooterToolbar());
     if (!toolbar) {
         toolbar = document.createElement("div");
         toolbar.id = CHAT_FOOTER_TOOLBAR_ID;
@@ -2338,11 +2452,15 @@ function mountFooterChromeInline(messenger, bar) {
 
     if (showPowered) {
         ensurePoweredByStrip();
-        const el = poweredByStripNode || document.getElementById(POWERED_BY_STRIP_ID);
-        if (el && poweredSlot && el.parentElement !== poweredSlot) {
-            poweredSlot.appendChild(el);
-        }
-        if (poweredSlot) {
+        const el = getPoweredByStripElement_();
+        if (el && poweredSlot) {
+            try {
+                poweredSlot.replaceChildren(el);
+            } catch {
+                if (el.parentElement !== poweredSlot) {
+                    poweredSlot.appendChild(el);
+                }
+            }
             poweredSlot.style.display = "";
             const align = POWERED_BY_STYLE.textAlign || "left";
             poweredSlot.style.justifyContent = align === "right"
@@ -2350,9 +2468,7 @@ function mountFooterChromeInline(messenger, bar) {
                 : align === "center"
                     ? "center"
                     : "flex-start";
-        }
-        if (el) {
-            applyPoweredByStripInlineStyles(/** @type {HTMLElement} */ (el));
+            applyPoweredByStripInlineStyles(el);
         }
     } else if (poweredSlot) {
         poweredSlot.style.display = "none";
@@ -4257,7 +4373,7 @@ function ensurePoweredByStrip() {
     if (!isPoweredByFeatureEnabled()) {
         return;
     }
-    if (poweredByStripNode && document.getElementById(POWERED_BY_STRIP_ID)) {
+    if (getPoweredByStripElement_()) {
         return;
     }
     const withLink = POWERED_BY_LINK_URL.length > 0;
@@ -4429,7 +4545,7 @@ function syncPoweredByStripPosition() {
         }
         return;
     }
-    const el = poweredByStripNode || document.getElementById(POWERED_BY_STRIP_ID);
+    let el = getPoweredByStripElement_();
     if (!el) {
         return;
     }
@@ -4447,9 +4563,10 @@ function syncPoweredByStripPosition() {
     }
     if (!isFooterChromeInlineMounted_() && wantsFooterChrome_()) {
         mountFooterChromeInline(messenger, getChatActionBar());
+        el = getPoweredByStripElement_() || el;
     }
     if (isFooterChromeInlineMounted_()) {
-        applyPoweredByStripInlineStyles(/** @type {HTMLElement} */ (el));
+        applyPoweredByStripInlineStyles(el);
         return;
     }
     applyPoweredByStripVisuals(el);
@@ -5883,7 +6000,7 @@ function applyDeviceChatbotVisibility(config, dfMessenger) {
     if (inputStrip) {
         inputStrip.style.display = hide ? "none" : "";
     }
-    const powered = document.getElementById("dfchat-powered-by-strip");
+    const powered = getPoweredByStripElement_();
     if (powered) {
         powered.style.display = hide ? "none" : "";
     }

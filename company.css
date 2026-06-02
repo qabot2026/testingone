@@ -189,8 +189,9 @@
    gap: 8px;
    width: 100%;
    max-width: 100%;
-   padding: 4px 10px 6px;
+   padding: 2px 8px 3px;
    flex: 0 0 auto;
+   min-height: 0;
    position: static !important;
    z-index: auto;
    pointer-events: auto;
@@ -220,6 +221,9 @@
    bottom: auto !important;
    transform: none !important;
    max-width: 100%;
+   margin: 0 !important;
+   min-height: 0 !important;
+   line-height: 1.2 !important;
  }
  
  #dfchat-chat-footer-toolbar #dfchat-chat-action-bar.dfchat-chat-action-bar--inline,
