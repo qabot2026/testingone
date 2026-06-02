@@ -272,16 +272,27 @@ body.appointments-page {
   font-weight: 800;
 }
 
-.appt-cal-day--in-range {
+.appt-cal-day--in-range:not(.appt-cal-day--selected) {
   background: var(--brand-soft);
   border-color: #bae6fd;
 }
 
-.appt-cal-day--selected,
+.appt-cal-day--selected {
+  background: linear-gradient(180deg, var(--brand) 0%, var(--brand-strong) 100%);
+  border-color: var(--brand-strong);
+  color: #fff;
+  box-shadow: 0 0 0 2px #fff, 0 0 0 4px var(--brand);
+  font-weight: 800;
+  z-index: 1;
+  position: relative;
+}
+
 .appt-cal-day--anchor {
   background: linear-gradient(180deg, var(--brand) 0%, var(--brand-strong) 100%);
   border-color: var(--brand-strong);
   color: #fff;
+  box-shadow: 0 0 0 2px #fff, 0 0 0 4px #f59e0b;
+  font-weight: 800;
 }
 
 .appt-cal-hint {

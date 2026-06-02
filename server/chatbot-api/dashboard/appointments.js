@@ -313,6 +313,7 @@
       btn.textContent = String(day);
       btn.dataset.iso = iso;
       btn.setAttribute("aria-label", formatIsoDdMmYyyy(iso));
+      btn.setAttribute("aria-pressed", "false");
 
       if (isPastIso(iso)) {
         btn.classList.add("appt-cal-day--past");
@@ -321,17 +322,24 @@
         if (iso === today) {
           btn.classList.add("appt-cal-day--today");
         }
-        if (isInSelectedRange(iso)) {
+        var selected = isRangeEdge(iso);
+        var inRange = isInSelectedRange(iso);
+        if (inRange) {
           btn.classList.add("appt-cal-day--in-range");
         }
-        if (isRangeEdge(iso)) {
+        if (selected) {
           btn.classList.add("appt-cal-day--selected");
+          btn.setAttribute("aria-pressed", "true");
         }
         if (state.calAnchor === iso) {
           btn.classList.add("appt-cal-day--anchor");
         }
-        btn.addEventListener("click", function () {
-          onCalendarDayClick(iso);
+        btn.addEventListener("click", function (ev) {
+          var picked =
+            ev.currentTarget && ev.currentTarget.dataset
+              ? ev.currentTarget.dataset.iso
+              : "";
+          onCalendarDayClick(picked);
         });
       }
       calGrid.appendChild(btn);
