@@ -427,18 +427,6 @@ body.appointments-page {
   text-align: center;
 }
 
-.appt-cal-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 9999;
-  background: rgba(15, 23, 42, 0.2);
-  backdrop-filter: blur(1px);
-}
-
-.appt-cal-backdrop.hidden {
-  display: none !important;
-}
-
 @media (max-width: 900px) {
   .appt-cal-range {
     display: none;

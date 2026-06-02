@@ -701,12 +701,6 @@
     true
   );
 
-  if (calBackdrop) {
-    calBackdrop.addEventListener("click", function () {
-      setCalendarOpen(false);
-    });
-  }
-
   document.addEventListener("keydown", function (ev) {
     if (ev.key === "Escape" && state.calOpen) {
       setCalendarOpen(false);
