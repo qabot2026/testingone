@@ -181,13 +181,11 @@
     var from = formatIsoDdMmYyyy(state.dateFrom);
     var toIso = effectiveDateTo();
     if (state.datePreset === "today") {
-      calRangeLabel.textContent =
-        "Scheduled for today (" + from + ") — request date ignored";
+      calRangeLabel.textContent = "Sched. " + from + " (today)";
       return;
     }
     if (state.datePreset === "tomorrow") {
-      calRangeLabel.textContent =
-        "Scheduled for tomorrow (" + from + ") — request date ignored";
+      calRangeLabel.textContent = "Sched. " + from + " (tomorrow)";
       return;
     }
     if (toIso) {
@@ -206,7 +204,7 @@
     }
     if (toggleCalBtn) {
       toggleCalBtn.setAttribute("aria-expanded", state.calOpen ? "true" : "false");
-      toggleCalBtn.textContent = state.calOpen ? "Hide calendar" : "Choose on calendar";
+      toggleCalBtn.textContent = state.calOpen ? "Hide" : "Calendar";
     }
     if (state.calOpen) {
       renderCalendar();
