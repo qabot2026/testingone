@@ -156,7 +156,13 @@
   var btnTomorrow = $("#btnTomorrow");
   var dayBtns = document.querySelectorAll(".appt-day-btn");
   var toggleCalBtn = $("#toggleCalBtn");
+  var toggleCalBtnText = $("#toggleCalBtnText");
   var calPanel = $("#calPanel");
+  var calAnchorWrap = $("#calAnchorWrap");
+  var chipFrom = $("#chipFrom");
+  var chipTo = $("#chipTo");
+  var calStepHint = $("#calStepHint");
+  var clearCalBtn = $("#clearCalBtn");
 
   function effectiveDateTo() {
     if (state.dateTo && state.dateTo !== state.dateFrom) {
@@ -194,6 +200,75 @@
       return;
     }
     calRangeLabel.textContent = "Scheduled for " + from;
+    updateToggleCalLabel();
+  }
+
+  function updateToggleCalLabel() {
+    if (!toggleCalBtnText) return;
+    if (state.datePreset === "today") {
+      toggleCalBtnText.textContent = "Today";
+      return;
+    }
+    if (state.datePreset === "tomorrow") {
+      toggleCalBtnText.textContent = "Tomorrow";
+      return;
+    }
+    var from = formatIsoDdMmYyyy(state.dateFrom);
+    var to = effectiveDateTo();
+    if (to) {
+      toggleCalBtnText.textContent = from + " – " + formatIsoDdMmYyyy(to);
+      return;
+    }
+    toggleCalBtnText.textContent = from || "Pick date";
+  }
+
+  function updateCalendarChips() {
+    if (chipFrom) {
+      chipFrom.textContent = state.dateFrom
+        ? formatIsoDdMmYyyy(state.dateFrom)
+        : "—";
+    }
+    if (chipTo) {
+      if (state.calAnchor) {
+        chipTo.textContent = "…";
+      } else if (effectiveDateTo()) {
+        chipTo.textContent = formatIsoDdMmYyyy(effectiveDateTo());
+      } else {
+        chipTo.textContent = state.dateFrom ? "Same day" : "—";
+      }
+    }
+    if (calStepHint) {
+      if (state.calAnchor) {
+        calStepHint.textContent =
+          "Step 2 — Tap end date (or tap the same day again for one day only)";
+      } else if (isRange()) {
+        calStepHint.textContent = "Range applied. Tap any date to choose again.";
+      } else {
+        calStepHint.textContent = "Step 1 — Tap the scheduled appointment date";
+      }
+    }
+  }
+
+  function rangePart(iso) {
+    if (!isInSelectedRange(iso)) {
+      return "";
+    }
+    var to = effectiveDateTo();
+    if (!to) {
+      return "single";
+    }
+    var lo = state.dateFrom < to ? state.dateFrom : to;
+    var hi = state.dateFrom < to ? to : state.dateFrom;
+    if (iso === lo && iso === hi) {
+      return "single";
+    }
+    if (iso === lo) {
+      return "start";
+    }
+    if (iso === hi) {
+      return "end";
+    }
+    return "middle";
   }
 
   function setCalendarOpen(open) {
@@ -204,8 +279,19 @@
     }
     if (toggleCalBtn) {
       toggleCalBtn.setAttribute("aria-expanded", state.calOpen ? "true" : "false");
-      toggleCalBtn.textContent = state.calOpen ? "Hide" : "Calendar";
+      toggleCalBtn.classList.toggle("is-open", state.calOpen);
     }
+    if (state.calOpen) {
+      updateCalendarChips();
+      renderCalendar();
+    }
+  }
+
+  function refreshDateUi() {
+    syncQuickButtons();
+    updateRangeLabel();
+    updateCalendarChips();
+    updateToggleCalLabel();
     if (state.calOpen) {
       renderCalendar();
     }
@@ -237,13 +323,9 @@
       state.viewYear = d.getFullYear();
       state.viewMonth = d.getMonth();
     }
-    syncQuickButtons();
-    updateRangeLabel();
+    refreshDateUi();
     if (opts && opts.closeCal) {
       setCalendarOpen(false);
-    }
-    if (state.calOpen) {
-      renderCalendar();
     }
     loadAppointments();
   }
@@ -268,13 +350,8 @@
     return iso >= a && iso <= b;
   }
 
-  function isRangeEdge(iso) {
-    var to = effectiveDateTo();
-    if (!to) return iso === state.dateFrom;
-    return iso === state.dateFrom || iso === to;
-  }
-
   function renderCalendar() {
+    updateCalendarChips();
     if (!calGrid) return;
 
     var y = state.viewYear;
@@ -322,13 +399,9 @@
         if (iso === today) {
           btn.classList.add("appt-cal-day--today");
         }
-        var selected = isRangeEdge(iso);
-        var inRange = isInSelectedRange(iso);
-        if (inRange) {
-          btn.classList.add("appt-cal-day--in-range");
-        }
-        if (selected) {
-          btn.classList.add("appt-cal-day--selected");
+        var part = rangePart(iso);
+        if (part) {
+          btn.classList.add("appt-cal-day--range-" + part);
           btn.setAttribute("aria-pressed", "true");
         }
         if (state.calAnchor === iso) {
@@ -356,8 +429,7 @@
       state.calAnchor = iso;
       state.dateFrom = iso;
       state.dateTo = "";
-      updateRangeLabel();
-      renderCalendar();
+      refreshDateUi();
       loadAppointments();
       return;
     }
@@ -366,8 +438,7 @@
       state.dateFrom = iso;
       state.dateTo = "";
       state.calAnchor = "";
-      updateRangeLabel();
-      renderCalendar();
+      refreshDateUi();
       loadAppointments();
       return;
     }
@@ -377,8 +448,7 @@
     state.dateFrom = a;
     state.dateTo = b;
     state.calAnchor = "";
-    updateRangeLabel();
-    renderCalendar();
+    refreshDateUi();
     loadAppointments();
   }
 
@@ -569,10 +639,31 @@
   }
 
   if (toggleCalBtn) {
-    toggleCalBtn.addEventListener("click", function () {
+    toggleCalBtn.addEventListener("click", function (ev) {
+      ev.stopPropagation();
       setCalendarOpen(!state.calOpen);
     });
   }
+
+  if (clearCalBtn) {
+    clearCalBtn.addEventListener("click", function (ev) {
+      ev.stopPropagation();
+      selectToday();
+    });
+  }
+
+  document.addEventListener("click", function (ev) {
+    if (!state.calOpen || !calAnchorWrap) return;
+    if (!calAnchorWrap.contains(ev.target)) {
+      setCalendarOpen(false);
+    }
+  });
+
+  document.addEventListener("keydown", function (ev) {
+    if (ev.key === "Escape" && state.calOpen) {
+      setCalendarOpen(false);
+    }
+  });
 
   if (calPrev) {
     calPrev.addEventListener("click", function () {
@@ -604,8 +695,7 @@
     });
   }
 
-  syncQuickButtons();
-  updateRangeLabel();
+  refreshDateUi();
   setCalendarOpen(false);
   loadAppointments();
 })();

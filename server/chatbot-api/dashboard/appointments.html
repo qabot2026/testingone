@@ -37,27 +37,44 @@
         <button type="button" class="appt-day-btn" data-preset="tomorrow" id="btnTomorrow">Tomorrow</button>
       </div>
 
-      <button type="button" class="btn ghost small appt-cal-toggle" id="toggleCalBtn" aria-expanded="false" aria-controls="calPanel">
-        Calendar
-      </button>
+      <div class="appt-cal-anchor" id="calAnchorWrap">
+        <button type="button" class="btn ghost small appt-cal-toggle" id="toggleCalBtn" aria-expanded="false" aria-controls="calPanel" aria-haspopup="dialog">
+          <span id="toggleCalBtnText">Pick date</span>
+          <span class="appt-cal-chevron" aria-hidden="true">▾</span>
+        </button>
+        <div class="appt-cal-popover hidden" id="calPanel" hidden role="dialog" aria-label="Choose scheduled appointment date">
+          <div class="appt-cal-card">
+            <div class="appt-cal-selection">
+              <div class="appt-cal-chips">
+                <div class="appt-cal-chip">
+                  <span class="appt-cal-chip-label">From</span>
+                  <strong id="chipFrom">—</strong>
+                </div>
+                <span class="appt-cal-chip-arrow" aria-hidden="true">→</span>
+                <div class="appt-cal-chip">
+                  <span class="appt-cal-chip-label">To</span>
+                  <strong id="chipTo">—</strong>
+                </div>
+              </div>
+              <button type="button" class="btn ghost small" id="clearCalBtn">Reset</button>
+            </div>
+            <p class="appt-cal-step" id="calStepHint"></p>
+            <div class="appt-cal-head">
+              <button type="button" class="appt-cal-nav" id="calPrev" aria-label="Previous month">‹</button>
+              <strong class="appt-cal-month" id="calMonthLabel"></strong>
+              <button type="button" class="appt-cal-nav" id="calNext" aria-label="Next month">›</button>
+            </div>
+            <div class="appt-cal-weekdays" aria-hidden="true">
+              <span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span><span>S</span>
+            </div>
+            <div class="appt-cal-grid" id="calGrid"></div>
+            <p class="appt-cal-hint muted">Scheduled date only · DD/MM/YYYY · past days disabled</p>
+          </div>
+        </div>
+      </div>
 
       <p class="appt-cal-range muted" id="calRangeLabel" aria-live="polite"></p>
       <p class="appt-status muted" id="listStatus" aria-live="polite"></p>
-    </div>
-
-    <div class="appt-cal-panel hidden" id="calPanel" hidden>
-      <div class="appt-cal-wrap" aria-label="Calendar — scheduled date, from today onwards">
-        <div class="appt-cal-head">
-          <button type="button" class="appt-cal-nav" id="calPrev" aria-label="Previous month">‹</button>
-          <strong class="appt-cal-month" id="calMonthLabel"></strong>
-          <button type="button" class="appt-cal-nav" id="calNext" aria-label="Next month">›</button>
-        </div>
-        <div class="appt-cal-weekdays" aria-hidden="true">
-          <span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span>
-        </div>
-        <div class="appt-cal-grid" id="calGrid" role="grid"></div>
-        <p class="appt-cal-hint muted">Pick scheduled date: tap one day, or two days for a range.</p>
-      </div>
     </div>
   </div>
 
