@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>Appointments — Dashboard</title>
+  <link rel="stylesheet" href="/dashboard/dashboard.css" />
+  <link rel="stylesheet" href="/dashboard/appointments.css" />
+</head>
+<body class="appointments-page">
+
+  <header class="appt-topbar">
+    <div class="appt-topbar-main">
+      <h1>Appointments</h1>
+      <p class="muted">Review booking requests from the chatbot. New form submissions appear as <strong>Requested</strong>.</p>
+    </div>
+    <nav class="appt-nav">
+      <a class="btn ghost small" href="/dashboard/">UI / UX settings</a>
+      <button type="button" class="btn ghost small" id="refreshBtn">Refresh</button>
+    </nav>
+  </header>
+
+  <div class="appt-toolbar">
+    <div class="appt-filters" role="tablist" aria-label="Filter by status">
+      <button type="button" class="appt-filter active" data-status="">All</button>
+      <button type="button" class="appt-filter" data-status="requested">Requested</button>
+      <button type="button" class="appt-filter" data-status="accepted">Accepted</button>
+      <button type="button" class="appt-filter" data-status="declined">Declined</button>
+    </div>
+    <p class="appt-status muted" id="listStatus" aria-live="polite"></p>
+  </div>
+
+  <div class="appt-layout">
+    <section class="appt-list-pane" aria-label="Appointment list">
+      <ul class="appt-list" id="apptList"></ul>
+      <p class="appt-empty muted hidden" id="apptEmpty">No appointments in this view.</p>
+    </section>
+
+    <section class="appt-detail-pane" aria-label="Appointment details">
+      <div class="appt-detail-empty" id="detailEmpty">
+        <h2>Select an appointment</h2>
+        <p class="muted">Choose a row on the left to see patient details and accept or decline the request.</p>
+      </div>
+
+      <article class="appt-detail hidden" id="detailPanel">
+        <header class="appt-detail-head">
+          <div>
+            <span class="appt-badge" id="detailBadge">Requested</span>
+            <h2 id="detailTitle">—</h2>
+            <p class="muted" id="detailWhen">—</p>
+          </div>
+        </header>
+
+        <dl class="appt-dl" id="detailDl"></dl>
+
+        <div class="appt-actions" id="detailActions">
+          <button type="button" class="btn primary" id="acceptBtn">Accept</button>
+          <button type="button" class="btn ghost appt-decline-btn" id="declineBtn">Decline</button>
+        </div>
+        <p class="appt-meta muted hidden" id="detailStaffMeta"></p>
+      </article>
+    </section>
+  </div>
+
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+  <script src="/dashboard/appointments.js" defer></script>
+</body>
+</html>

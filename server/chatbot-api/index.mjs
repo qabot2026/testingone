@@ -2840,6 +2840,55 @@ app.post(
         } else if (/^no$/i.test(rawAppointmentBooked || "")) {
             appointmentBooked = "No";
         }
+
+        const normalizedApptFormId = normalizeStr_(formId);
+        const isAppointmentContactForm =
+            normalizedApptFormId === "appintmentformdoctor" ||
+            normalizedApptFormId === "appintmentformgeneral" ||
+            normalizedApptFormId === "appintmentformdocot";
+        if (isAppointmentContactForm && appointmentDate && appointmentTime) {
+            /** @type {Record<string, string>} */
+            const lcAppt = {};
+            for (const [fk, fv] of Object.entries(fields)) {
+                if (typeof fv === "string" && fv.trim()) {
+                    lcAppt[String(fk).toLowerCase()] = fv.trim();
+                }
+            }
+            const dnAppt =
+                lcAppt.doctornamedisplay ||
+                lcAppt.doctordisplay ||
+                lcAppt.doctorname ||
+                lcAppt.doctor_name ||
+                lcAppt.doctor ||
+                "";
+            const doctorDisplayFromFields = dnAppt
+                ? /\bdr\.?\s/i.test(dnAppt)
+                    ? dnAppt
+                    : `Dr. ${dnAppt}`
+                : lcAppt.displaydoctorname || "";
+            void persistAppointmentLeadToRtdbBestEffort_({
+                sessionId: clientSessionId,
+                formId:
+                    normalizedApptFormId === "appintmentformdocot"
+                        ? "appintmentformdoctor"
+                        : formId,
+                patientName: name,
+                patientMobile: mobile,
+                patientEmail: email,
+                appointmentDate,
+                appointmentTime,
+                appointmentBooked,
+                doctorId: normalizeStr_(fields.doctorId),
+                branchId: normalizeStr_(fields.branchId),
+                department:
+                    normalizeStr_(fields.department) || normalizeStr_(fields.specialization),
+                doctorDisplay: doctorDisplayFromFields,
+                cityOrPlace: city,
+                staffStatus: "requested",
+                source: "contact-form"
+            });
+        }
+
         /** Firestore-safe payload (flattened for querying) */
         const fileLinksForSheet = drive_uploads
             .map((u) => (typeof u.web_view_link === "string" ? u.web_view_link : ""))

@@ -13,12 +13,15 @@ visitor session.
 | Path | Method | Auth | Purpose |
 |---|---|---|---|
 | `/dashboard` | GET | — | Static SPA (login + settings + live preview) |
+| `/dashboard/appointments.html` | GET | — | Appointments inbox (list, accept, decline) |
 | `/api/dashboard/login/request` | POST | — | Send magic-link email |
 | `/api/dashboard/login/verify` | GET | — | Verify link, set session cookie, redirect |
 | `/api/dashboard/logout` | POST | — | Clear session cookie |
 | `/api/dashboard/me` | GET | session | Current signed-in email |
 | `/api/dashboard/settings?botid=…` | GET | session | Read saved settings |
 | `/api/dashboard/settings?botid=…` | PUT | session | Save settings (publish live) |
+| `/api/dashboard/appointments` | GET | session | List appointment leads (`?status=requested\|accepted\|declined`) |
+| `/api/dashboard/appointments/:key` | PATCH | session | Update status (`{ staffStatus: "accepted" \| "declined" }`) |
 | `/api/public/widget-settings?botid=…` | GET | — (CORS `*`) | Read settings (called by widget) |
 | `/api/dashboard/health` | GET | — | Env sanity (which keys are missing) |
 

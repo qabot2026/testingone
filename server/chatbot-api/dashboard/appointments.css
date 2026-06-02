@@ -1,0 +1,294 @@
+/* Appointments dashboard — extends dashboard.css */
+
+body.appointments-page {
+  min-height: 100%;
+  padding: 0 0 32px;
+}
+
+.appt-topbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px 20px;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 20px 20px 0;
+}
+
+.appt-topbar h1 {
+  margin: 0 0 4px;
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.appt-topbar-main p {
+  margin: 0;
+  max-width: 36rem;
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.appt-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.appt-toolbar {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 14px 20px 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.appt-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.appt-filter {
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  color: var(--muted);
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+
+.appt-filter:hover {
+  border-color: var(--brand);
+  color: var(--text);
+}
+
+.appt-filter.active {
+  background: var(--brand-soft);
+  border-color: var(--brand);
+  color: var(--brand-strong);
+}
+
+.appt-status {
+  margin: 0;
+  font-size: 12.5px;
+}
+
+.appt-layout {
+  max-width: 1200px;
+  margin: 14px auto 0;
+  padding: 0 20px;
+  display: grid;
+  grid-template-columns: minmax(260px, 340px) 1fr;
+  gap: 16px;
+  align-items: start;
+  min-height: calc(100dvh - 180px);
+}
+
+@media (max-width: 860px) {
+  .appt-layout {
+    grid-template-columns: 1fr;
+    min-height: 0;
+  }
+  .appt-detail-pane {
+    min-height: 280px;
+  }
+}
+
+.appt-list-pane,
+.appt-detail-pane {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.appt-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: calc(100dvh - 200px);
+  overflow-y: auto;
+}
+
+.appt-list-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 12px 14px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  transition: background 100ms ease;
+}
+
+.appt-list-item:hover {
+  background: var(--surface-2);
+}
+
+.appt-list-item.selected {
+  background: var(--brand-soft);
+  box-shadow: inset 3px 0 0 var(--brand);
+}
+
+.appt-list-item:last-child {
+  border-bottom: 0;
+}
+
+.appt-list-name {
+  font-weight: 600;
+  font-size: 0.95rem;
+  margin: 0 0 2px;
+}
+
+.appt-list-sub {
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin: 0;
+  line-height: 1.35;
+}
+
+.appt-empty {
+  padding: 24px 16px;
+  text-align: center;
+  margin: 0;
+}
+
+.appt-detail-pane {
+  padding: 20px 22px;
+  min-height: 320px;
+}
+
+.appt-detail-empty {
+  padding: 24px 8px;
+}
+
+.appt-detail-empty h2 {
+  margin: 0 0 8px;
+  font-size: 1.1rem;
+}
+
+.appt-detail.hidden,
+.appt-detail-empty.hidden,
+.hidden {
+  display: none !important;
+}
+
+.appt-detail-head {
+  margin-bottom: 18px;
+}
+
+.appt-detail-head h2 {
+  margin: 8px 0 4px;
+  font-size: 1.25rem;
+}
+
+.appt-badge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.appt-badge.requested {
+  background: #fffbeb;
+  color: #92400e;
+  border: 1px solid #fcd34d;
+}
+
+.appt-badge.accepted {
+  background: #dcfce7;
+  color: #166534;
+  border: 1px solid #86efac;
+}
+
+.appt-badge.declined {
+  background: #fee2e2;
+  color: #991b1b;
+  border: 1px solid #fca5a5;
+}
+
+.appt-dl {
+  display: grid;
+  grid-template-columns: minmax(100px, 140px) 1fr;
+  gap: 10px 16px;
+  margin: 0 0 20px;
+  font-size: 0.9rem;
+}
+
+.appt-dl dt {
+  margin: 0;
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.appt-dl dd {
+  margin: 0;
+  word-break: break-word;
+}
+
+.appt-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding-top: 4px;
+}
+
+.appt-decline-btn {
+  color: var(--danger);
+  border-color: #fecaca;
+}
+
+.appt-decline-btn:hover {
+  background: #fef2f2;
+}
+
+.appt-meta {
+  margin: 14px 0 0;
+  font-size: 0.8rem;
+}
+
+.appt-list-badge {
+  float: right;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: 999px;
+  margin-left: 8px;
+}
+
+.appt-list-badge.requested {
+  background: #fffbeb;
+  color: #92400e;
+}
+
+.appt-list-badge.accepted {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.appt-list-badge.declined {
+  background: #fee2e2;
+  color: #991b1b;
+}

@@ -129,6 +129,25 @@ export async function bookAppointment(args) {
  *
  * @param {Record<string, unknown>} record
  */
+/** @typedef {"requested" | "accepted" | "declined"} AppointmentStaffStatus */
+
+/** @param {unknown} raw */
+export function normalizeAppointmentStaffStatus_(raw) {
+    const s = String(raw || "")
+        .trim()
+        .toLowerCase();
+    if (s === "accepted" || s === "confirmed" || s === "approved") {
+        return /** @type {AppointmentStaffStatus} */ ("accepted");
+    }
+    if (s === "declined" || s === "rejected" || s === "cancelled" || s === "canceled") {
+        return /** @type {AppointmentStaffStatus} */ ("declined");
+    }
+    return /** @type {AppointmentStaffStatus} */ ("requested");
+}
+
+/**
+ * @param {Record<string, unknown>} record
+ */
 export async function persistAppointmentLeadRecord(record) {
     const sessionId =
         typeof record.sessionId === "string"
@@ -149,13 +168,118 @@ export async function persistAppointmentLeadRecord(record) {
 
     const db = getDb_();
     const ref = db.ref(`${APPOINTMENTS_LEADS_ROOT}/${key}`);
+    const snap = await ref.get();
+    const prev = snap.exists() && snap.val() && typeof snap.val() === "object" ? snap.val() : null;
+    const prevStatus = prev ? normalizeAppointmentStaffStatus_(prev.staffStatus) : null;
+    const incomingStatus = record.staffStatus
+        ? normalizeAppointmentStaffStatus_(record.staffStatus)
+        : null;
+    let staffStatus = incomingStatus || "requested";
+    if (prevStatus === "accepted" || prevStatus === "declined") {
+        staffStatus = prevStatus;
+    }
+
+    const now = Date.now();
     const payload = {
         ...record,
         sessionId: sessionId || key,
-        updated_at_ms: Date.now()
+        staffStatus,
+        updated_at_ms: now,
+        created_at_ms:
+            prev && typeof prev.created_at_ms === "number" ? prev.created_at_ms : now
     };
     await ref.set(payload);
-    return { ok: true, key };
+    return { ok: true, key, staffStatus };
+}
+
+/**
+ * @param {{ status?: string, limit?: number }} [opts]
+ */
+export async function listAppointmentLeads(opts) {
+    const statusFilter = opts && opts.status ? normalizeAppointmentStaffStatus_(opts.status) : "";
+    const limit =
+        opts && typeof opts.limit === "number" && opts.limit > 0
+            ? Math.min(Math.floor(opts.limit), 500)
+            : 200;
+
+    const db = getDb_();
+    const snap = await db.ref(APPOINTMENTS_LEADS_ROOT).get();
+    const val = snap.exists() ? snap.val() : null;
+    if (!val || typeof val !== "object") {
+        return [];
+    }
+
+    /** @type {Array<Record<string, unknown>>} */
+    const rows = [];
+    for (const [key, payload] of Object.entries(val)) {
+        const p = payload && typeof payload === "object" ? payload : {};
+        const staffStatus = normalizeAppointmentStaffStatus_(p.staffStatus);
+        if (statusFilter && staffStatus !== statusFilter) {
+            continue;
+        }
+        rows.push({
+            key: String(key),
+            staffStatus,
+            patientName: typeof p.patientName === "string" ? p.patientName : "",
+            patientMobile: typeof p.patientMobile === "string" ? p.patientMobile : "",
+            patientEmail: typeof p.patientEmail === "string" ? p.patientEmail : "",
+            appointmentDate: typeof p.appointmentDate === "string" ? p.appointmentDate : "",
+            appointmentTime: typeof p.appointmentTime === "string" ? p.appointmentTime : "",
+            appointmentBooked:
+                typeof p.appointmentBooked === "string" ? p.appointmentBooked : "",
+            doctorId: typeof p.doctorId === "string" ? p.doctorId : "",
+            branchId: typeof p.branchId === "string" ? p.branchId : "",
+            department: typeof p.department === "string" ? p.department : "",
+            doctorDisplay: typeof p.doctorDisplay === "string" ? p.doctorDisplay : "",
+            cityOrPlace: typeof p.cityOrPlace === "string" ? p.cityOrPlace : "",
+            formId: typeof p.formId === "string" ? p.formId : "",
+            sessionId: typeof p.sessionId === "string" ? p.sessionId : String(key),
+            source: typeof p.source === "string" ? p.source : "",
+            created_at_ms: typeof p.created_at_ms === "number" ? p.created_at_ms : 0,
+            updated_at_ms: typeof p.updated_at_ms === "number" ? p.updated_at_ms : 0,
+            staffUpdatedBy: typeof p.staffUpdatedBy === "string" ? p.staffUpdatedBy : "",
+            staffUpdatedAtMs:
+                typeof p.staffUpdatedAtMs === "number" ? p.staffUpdatedAtMs : 0
+        });
+    }
+
+    rows.sort((a, b) => {
+        const au = Number(a.updated_at_ms) || Number(a.created_at_ms) || 0;
+        const bu = Number(b.updated_at_ms) || Number(b.created_at_ms) || 0;
+        return bu - au;
+    });
+    return rows.slice(0, limit);
+}
+
+/**
+ * @param {{ key: string, staffStatus: string, updatedBy?: string }} args
+ */
+export async function updateAppointmentLeadStaffStatus(args) {
+    const key = String(args.key || "").trim();
+    const staffStatus = normalizeAppointmentStaffStatus_(args.staffStatus);
+    if (!key) {
+        throw new Error("Missing appointment key.");
+    }
+    if (staffStatus !== "accepted" && staffStatus !== "declined") {
+        throw new Error("staffStatus must be accepted or declined.");
+    }
+
+    const db = getDb_();
+    const ref = db.ref(`${APPOINTMENTS_LEADS_ROOT}/${key}`);
+    const snap = await ref.get();
+    if (!snap.exists()) {
+        throw new Error("Appointment not found.");
+    }
+
+    const now = Date.now();
+    const updatedBy = typeof args.updatedBy === "string" ? args.updatedBy.trim() : "";
+    await ref.update({
+        staffStatus,
+        staffUpdatedAtMs: now,
+        staffUpdatedBy: updatedBy,
+        updated_at_ms: now
+    });
+    return { ok: true, key, staffStatus };
 }
 
 /**

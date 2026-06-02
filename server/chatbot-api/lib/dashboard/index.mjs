@@ -14,6 +14,8 @@
  *     GET  /api/dashboard/me                                                      [auth if DASHBOARD_REQUIRE_AUTH]
  *     GET  /api/dashboard/settings?botid=...                                      [auth if DASHBOARD_REQUIRE_AUTH]
  *     PUT  /api/dashboard/settings?botid=...   body: { flat, advancedPatchJson }  [auth if DASHBOARD_REQUIRE_AUTH]
+ *     GET  /api/dashboard/appointments?status=...                               [auth if DASHBOARD_REQUIRE_AUTH]
+ *     PATCH /api/dashboard/appointments/:key   body: { staffStatus }            [auth if DASHBOARD_REQUIRE_AUTH]
  *
  *   Public read (called by chat-frame.html on load to apply saved settings):
  *     GET  /api/public/widget-settings?botid=...                                  [public, CORS *]
@@ -61,6 +63,11 @@ import {
 } from "../mail/smtp-send.mjs";
 import { isResendConfigured_ } from "../mail/resend-send.mjs";
 import { githubWidgetPublishConfigured_, publishWidgetBotToGithub_ } from "./github-widget-publish.mjs";
+import {
+    listAppointmentLeads,
+    updateAppointmentLeadStaffStatus
+} from "../appointments.mjs";
+import { listDoctors } from "../catalog-rtdb.mjs";
 
 const LOG_TAG = "[dashboard]";
 
@@ -699,6 +706,77 @@ export function mountDashboardRoutes(app) {
             const msg = err && err.message ? err.message : String(err);
             console.error(LOG_TAG, "settings GET failed:", msg);
             res.status(500).json({ ok: false, error: msg });
+        }
+    });
+
+    // --- Appointments (staff inbox) -----------------------------------------
+    router.get("/appointments", requireSessionUnlessDashboardOpen_(), async (req, res) => {
+        setNoCache_(res);
+        try {
+            firebaseAdminInit();
+            const status = trim_(req.query && req.query.status);
+            const limitRaw = trim_(req.query && req.query.limit);
+            const limit = limitRaw ? Number(limitRaw) : 200;
+            const rows = await listAppointmentLeads({
+                status: status || undefined,
+                limit: Number.isFinite(limit) ? limit : 200
+            });
+
+            /** @type {Map<string, string>} */
+            let doctorLabelById = new Map();
+            try {
+                const docs = await listDoctors();
+                for (const d of docs) {
+                    const id = trim_(d.DoctorId);
+                    if (!id) continue;
+                    const label =
+                        trim_(d.DisplayDoctorName) ||
+                        (trim_(d.DoctorName) ? `Dr. ${trim_(d.DoctorName)}` : id);
+                    doctorLabelById.set(id, label);
+                }
+            } catch (catErr) {
+                const msg = catErr && catErr.message ? catErr.message : String(catErr);
+                console.warn(LOG_TAG, "appointments catalog enrich skipped:", msg);
+            }
+
+            const appointments = rows.map((row) => {
+                const doctorId = trim_(row.doctorId);
+                const doctorDisplay =
+                    trim_(row.doctorDisplay) ||
+                    (doctorId ? doctorLabelById.get(doctorId) || "" : "");
+                return { ...row, doctorDisplay: doctorDisplay || doctorId };
+            });
+
+            res.json({ ok: true, appointments });
+        } catch (err) {
+            const msg = err && err.message ? err.message : String(err);
+            console.error(LOG_TAG, "appointments GET failed:", msg);
+            res.status(500).json({ ok: false, error: msg });
+        }
+    });
+
+    router.patch("/appointments/:key", requireSessionUnlessDashboardOpen_(), async (req, res) => {
+        setNoCache_(res);
+        try {
+            firebaseAdminInit();
+            const key = trim_(req.params && req.params.key);
+            const body = req.body && typeof req.body === "object" ? req.body : {};
+            const staffStatus = trim_(body.staffStatus);
+            const email =
+                req.dashboardSession && req.dashboardSession.email
+                    ? req.dashboardSession.email
+                    : "";
+            const out = await updateAppointmentLeadStaffStatus({
+                key,
+                staffStatus,
+                updatedBy: email
+            });
+            res.json({ ok: true, ...out });
+        } catch (err) {
+            const msg = err && err.message ? err.message : String(err);
+            const status = /not found/i.test(msg) ? 404 : 400;
+            console.error(LOG_TAG, "appointments PATCH failed:", msg);
+            res.status(status).json({ ok: false, error: msg });
         }
     });
 
