@@ -715,10 +715,14 @@ export function mountDashboardRoutes(app) {
         try {
             firebaseAdminInit();
             const status = trim_(req.query && req.query.status);
+            const dateFrom = trim_(req.query && req.query.dateFrom);
+            const dateTo = trim_(req.query && req.query.dateTo);
             const limitRaw = trim_(req.query && req.query.limit);
             const limit = limitRaw ? Number(limitRaw) : 200;
             const rows = await listAppointmentLeads({
                 status: status || undefined,
+                dateFrom: dateFrom || undefined,
+                dateTo: dateTo || undefined,
                 limit: Number.isFinite(limit) ? limit : 200
             });
 

@@ -31,6 +31,35 @@
     <p class="appt-status muted" id="listStatus" aria-live="polite"></p>
   </div>
 
+  <div class="appt-date-bar">
+    <fieldset class="appt-date-mode" aria-label="Date filter mode">
+      <legend class="sr-only">Date filter mode</legend>
+      <label class="appt-date-mode-opt">
+        <input type="radio" name="dateMode" value="single" checked />
+        Single date
+      </label>
+      <label class="appt-date-mode-opt">
+        <input type="radio" name="dateMode" value="range" />
+        Date range
+      </label>
+    </fieldset>
+    <div class="appt-date-fields">
+      <label class="appt-date-label" id="dateFromLabel">
+        <span class="appt-date-label-text">Date</span>
+        <input type="date" id="dateFrom" autocomplete="off" />
+      </label>
+      <label class="appt-date-label hidden" id="dateToLabel">
+        <span class="appt-date-label-text">To</span>
+        <input type="date" id="dateTo" autocomplete="off" />
+      </label>
+    </div>
+    <div class="appt-date-actions">
+      <button type="button" class="btn primary small" id="applyDateBtn">Apply</button>
+      <button type="button" class="btn ghost small" id="clearDateBtn">Clear dates</button>
+    </div>
+    <p class="appt-date-hint muted" id="dateFilterHint">Dates shown as DD/MM/YYYY. Pick a day or a range, then Apply.</p>
+  </div>
+
   <section class="appt-table-wrap" aria-label="Appointments table">
     <div class="appt-table-scroll">
       <table class="appt-table" id="apptTable">

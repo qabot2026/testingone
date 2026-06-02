@@ -192,15 +192,67 @@ export async function persistAppointmentLeadRecord(record) {
     return { ok: true, key, staffStatus };
 }
 
+/** @param {string} raw */
+export function appointmentDateToIso_(raw) {
+    const s = String(raw || "").trim();
+    if (!s) {
+        return "";
+    }
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+        return s;
+    }
+    const dmY = s.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$/);
+    if (dmY) {
+        const d = Number(dmY[1]);
+        const m = Number(dmY[2]);
+        const y = Number(dmY[3]);
+        if (m >= 1 && m <= 12 && d >= 1 && d <= 31 && y >= 1900) {
+            return `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+        }
+    }
+    return "";
+}
+
+/** @param {string} iso YYYY-MM-DD */
+export function formatAppointmentDateDdMmYyyy_(iso) {
+    const n = appointmentDateToIso_(iso);
+    if (!n) {
+        return "";
+    }
+    const [y, m, d] = n.split("-");
+    return `${d}/${m}/${y}`;
+}
+
+/** @param {string} raw */
+function appointmentDateInRange_(raw, dateFrom, dateTo) {
+    const iso = appointmentDateToIso_(raw);
+    if (!iso) {
+        return false;
+    }
+    if (dateFrom && iso < dateFrom) {
+        return false;
+    }
+    if (dateTo && iso > dateTo) {
+        return false;
+    }
+    return true;
+}
+
 /**
- * @param {{ status?: string, limit?: number }} [opts]
+ * @param {{ status?: string, limit?: number, dateFrom?: string, dateTo?: string }} [opts]
  */
 export async function listAppointmentLeads(opts) {
     const statusFilter = opts && opts.status ? normalizeAppointmentStaffStatus_(opts.status) : "";
+    const dateFrom =
+        opts && opts.dateFrom ? appointmentDateToIso_(opts.dateFrom) : "";
+    const dateTo = opts && opts.dateTo ? appointmentDateToIso_(opts.dateTo) : "";
+    const hasDateFilter = Boolean(dateFrom || dateTo);
     const limit =
         opts && typeof opts.limit === "number" && opts.limit > 0
             ? Math.min(Math.floor(opts.limit), 500)
-            : 200;
+            : hasDateFilter
+              ? 500
+              : 200;
 
     const db = getDb_();
     const snap = await db.ref(APPOINTMENTS_LEADS_ROOT).get();
@@ -217,13 +269,21 @@ export async function listAppointmentLeads(opts) {
         if (statusFilter && staffStatus !== statusFilter) {
             continue;
         }
+        const appointmentDateRaw =
+            typeof p.appointmentDate === "string" ? p.appointmentDate : "";
+        if (hasDateFilter && !appointmentDateInRange_(appointmentDateRaw, dateFrom, dateTo)) {
+            continue;
+        }
+        const appointmentDateIso = appointmentDateToIso_(appointmentDateRaw);
         rows.push({
             key: String(key),
             staffStatus,
             patientName: typeof p.patientName === "string" ? p.patientName : "",
             patientMobile: typeof p.patientMobile === "string" ? p.patientMobile : "",
             patientEmail: typeof p.patientEmail === "string" ? p.patientEmail : "",
-            appointmentDate: typeof p.appointmentDate === "string" ? p.appointmentDate : "",
+            appointmentDate: appointmentDateRaw,
+            appointmentDateIso,
+            appointmentDateDisplay: formatAppointmentDateDdMmYyyy_(appointmentDateIso || appointmentDateRaw),
             appointmentTime: typeof p.appointmentTime === "string" ? p.appointmentTime : "",
             appointmentBooked:
                 typeof p.appointmentBooked === "string" ? p.appointmentBooked : "",

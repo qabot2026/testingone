@@ -84,6 +84,100 @@ body.appointments-page {
   font-size: 12.5px;
 }
 
+.appt-date-bar {
+  max-width: 1400px;
+  margin: 10px auto 0;
+  padding: 12px 16px;
+  box-sizing: border-box;
+  margin-left: 20px;
+  margin-right: 20px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-soft);
+}
+
+.appt-date-mode {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  min-width: 0;
+}
+
+.appt-date-mode legend {
+  display: none;
+}
+
+.appt-date-mode-opt {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.appt-date-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  align-items: flex-end;
+}
+
+.appt-date-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--muted);
+}
+
+.appt-date-label input[type="date"] {
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font: inherit;
+  font-size: 13px;
+  min-width: 150px;
+  background: #fff;
+  color: var(--text);
+}
+
+.appt-date-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.appt-date-hint {
+  flex: 1 1 100%;
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+@media (min-width: 900px) {
+  .appt-date-hint {
+    flex: 1 1 auto;
+    margin: 0 0 0 8px;
+    text-align: right;
+  }
+}
+
 .appt-table-wrap {
   max-width: 1400px;
   margin: 14px auto 0;
