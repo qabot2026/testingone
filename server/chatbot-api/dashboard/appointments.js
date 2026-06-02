@@ -49,215 +49,142 @@
     return "Requested";
   }
 
-  function formatWhen(dateStr, timeStr) {
-    var d = String(dateStr || "").trim();
-    var t = String(timeStr || "").trim();
-    if (!d && !t) return "—";
-    if (d && t) return d + " · " + t;
-    return d || t;
+  function cellText(value) {
+    var s = String(value || "").trim();
+    return s || "—";
   }
 
-  function formatTs(ms) {
-    if (!ms) return "";
-    try {
-      return new Date(ms).toLocaleString(undefined, {
-        dateStyle: "medium",
-        timeStyle: "short"
-      });
-    } catch (e) {
-      return "";
-    }
+  function esc(s) {
+    return String(s || "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
   }
 
   var state = {
     filter: "",
-    rows: [],
-    selectedKey: ""
+    rows: []
   };
 
-  var listEl = $("#apptList");
+  var tableBody = $("#apptTableBody");
   var listStatus = $("#listStatus");
   var apptEmpty = $("#apptEmpty");
-  var detailEmpty = $("#detailEmpty");
-  var detailPanel = $("#detailPanel");
-  var detailBadge = $("#detailBadge");
-  var detailTitle = $("#detailTitle");
-  var detailWhen = $("#detailWhen");
-  var detailDl = $("#detailDl");
-  var detailActions = $("#detailActions");
-  var detailStaffMeta = $("#detailStaffMeta");
-  var acceptBtn = $("#acceptBtn");
-  var declineBtn = $("#declineBtn");
+  var tableWrap = document.querySelector(".appt-table-scroll");
 
-  function selectedRow() {
-    return state.rows.find(function (r) {
-      return r.key === state.selectedKey;
-    });
-  }
-
-  function renderList() {
-    if (!listEl) return;
-    listEl.innerHTML = "";
+  function renderTable() {
+    if (!tableBody) return;
+    tableBody.innerHTML = "";
     var rows = state.rows;
+
     if (!rows.length) {
       if (apptEmpty) apptEmpty.classList.remove("hidden");
+      if (tableWrap) tableWrap.classList.add("hidden");
       return;
     }
     if (apptEmpty) apptEmpty.classList.add("hidden");
+    if (tableWrap) tableWrap.classList.remove("hidden");
 
     rows.forEach(function (row) {
-      var li = document.createElement("li");
-      var btn = document.createElement("button");
-      btn.type = "button";
-      btn.className =
-        "appt-list-item" + (row.key === state.selectedKey ? " selected" : "");
-      btn.dataset.key = row.key;
-
       var st = row.staffStatus || "requested";
-      var badge = document.createElement("span");
-      badge.className = "appt-list-badge " + st;
-      badge.textContent = statusLabel(st);
+      var tr = document.createElement("tr");
+      tr.dataset.key = row.key;
 
-      var name = document.createElement("p");
-      name.className = "appt-list-name";
-      name.textContent = row.patientName || "Guest";
+      var slotLabel =
+        row.appointmentBooked === "Yes" ? "Booked" : "Pending";
 
-      var sub = document.createElement("p");
-      sub.className = "appt-list-sub";
-      sub.textContent =
-        formatWhen(row.appointmentDate, row.appointmentTime) +
-        (row.doctorDisplay ? " · " + row.doctorDisplay : "");
+      var actionsHtml = "—";
+      if (st === "requested") {
+        actionsHtml =
+          '<div class="appt-row-actions">' +
+          '<button type="button" class="btn primary small appt-act-accept" data-key="' +
+          esc(row.key) +
+          '">Accept</button>' +
+          '<button type="button" class="btn ghost small appt-decline-btn appt-act-decline" data-key="' +
+          esc(row.key) +
+          '">Decline</button>' +
+          "</div>";
+      } else if (row.staffUpdatedBy || row.staffUpdatedAtMs) {
+        var meta = esc(row.staffUpdatedBy || "staff");
+        actionsHtml = '<span class="appt-act-meta muted">' + meta + "</span>";
+      }
 
-      name.appendChild(badge);
-      btn.appendChild(name);
-      btn.appendChild(sub);
+      tr.innerHTML =
+        '<td><span class="appt-badge ' +
+        esc(st) +
+        '">' +
+        esc(statusLabel(st)) +
+        "</span></td>" +
+        "<td><strong>" +
+        esc(row.patientName || "Guest") +
+        "</strong></td>" +
+        "<td>" +
+        esc(cellText(row.patientMobile)) +
+        "</td>" +
+        "<td class=\"appt-cell-email\">" +
+        esc(cellText(row.patientEmail)) +
+        "</td>" +
+        "<td>" +
+        esc(cellText(row.appointmentDate)) +
+        "</td>" +
+        "<td>" +
+        esc(cellText(row.appointmentTime)) +
+        "</td>" +
+        "<td>" +
+        esc(cellText(row.doctorDisplay)) +
+        "</td>" +
+        "<td>" +
+        esc(cellText(row.department)) +
+        "</td>" +
+        "<td>" +
+        esc(cellText(row.branchId)) +
+        "</td>" +
+        "<td>" +
+        esc(slotLabel) +
+        "</td>" +
+        "<td class=\"appt-cell-actions\">" +
+        actionsHtml +
+        "</td>";
+
+      tableBody.appendChild(tr);
+    });
+
+    tableBody.querySelectorAll(".appt-act-accept").forEach(function (btn) {
       btn.addEventListener("click", function () {
-        state.selectedKey = row.key;
-        renderList();
-        renderDetail();
+        patchStatus(btn.getAttribute("data-key"), "accepted");
       });
-      li.appendChild(btn);
-      listEl.appendChild(li);
+    });
+    tableBody.querySelectorAll(".appt-act-decline").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        patchStatus(btn.getAttribute("data-key"), "declined");
+      });
     });
   }
 
-  function detailField(label, value) {
-    if (!value) return null;
-    var dt = document.createElement("dt");
-    dt.textContent = label;
-    var dd = document.createElement("dd");
-    dd.textContent = value;
-    return [dt, dd];
+  function findRow(key) {
+    return state.rows.find(function (r) {
+      return r.key === key;
+    });
   }
 
-  function renderDetail() {
-    var row = selectedRow();
-    if (!row) {
-      if (detailEmpty) detailEmpty.classList.remove("hidden");
-      if (detailPanel) detailPanel.classList.add("hidden");
-      return;
-    }
-    if (detailEmpty) detailEmpty.classList.add("hidden");
-    if (detailPanel) detailPanel.classList.remove("hidden");
-
-    var st = row.staffStatus || "requested";
-    if (detailBadge) {
-      detailBadge.textContent = statusLabel(st);
-      detailBadge.className = "appt-badge " + st;
-    }
-    if (detailTitle) {
-      detailTitle.textContent = row.patientName || "Guest";
-    }
-    if (detailWhen) {
-      detailWhen.textContent = formatWhen(row.appointmentDate, row.appointmentTime);
-    }
-
-    if (detailDl) {
-      detailDl.innerHTML = "";
-      var fields = [
-        detailField("Mobile", row.patientMobile),
-        detailField("Email", row.patientEmail),
-        detailField("Doctor", row.doctorDisplay),
-        detailField("Department", row.department),
-        detailField("Branch", row.branchId),
-        detailField("Location", row.cityOrPlace),
-        detailField(
-          "Slot booked",
-          row.appointmentBooked === "Yes" ? "Yes (chatbot)" : "Pending"
-        ),
-        detailField("Form", row.formId),
-        detailField("Source", row.source),
-        detailField("Session", row.sessionId)
-      ];
-      fields.forEach(function (pair) {
-        if (!pair) return;
-        detailDl.appendChild(pair[0]);
-        detailDl.appendChild(pair[1]);
-      });
-    }
-
-    var isRequested = st === "requested";
-    if (detailActions) {
-      detailActions.classList.toggle("hidden", !isRequested);
-    }
-    if (acceptBtn) acceptBtn.disabled = !isRequested;
-    if (declineBtn) declineBtn.disabled = !isRequested;
-
-    if (detailStaffMeta) {
-      if (row.staffUpdatedBy || row.staffUpdatedAtMs) {
-        detailStaffMeta.textContent =
-          "Last updated by " +
-          (row.staffUpdatedBy || "staff") +
-          (row.staffUpdatedAtMs ? " · " + formatTs(row.staffUpdatedAtMs) : "");
-        detailStaffMeta.classList.remove("hidden");
-      } else {
-        detailStaffMeta.classList.add("hidden");
-      }
-    }
-  }
-
-  function loadAppointments() {
-    if (listStatus) listStatus.textContent = "Loading…";
-    var q = state.filter ? "?status=" + encodeURIComponent(state.filter) : "";
-    return apiFetch("/api/dashboard/appointments" + q)
-      .then(function (data) {
-        state.rows = Array.isArray(data.appointments) ? data.appointments : [];
-        if (
-          state.selectedKey &&
-          !state.rows.some(function (r) {
-            return r.key === state.selectedKey;
-          })
-        ) {
-          state.selectedKey = state.rows[0] ? state.rows[0].key : "";
-        }
-        if (!state.selectedKey && state.rows[0]) {
-          state.selectedKey = state.rows[0].key;
-        }
-        if (listStatus) {
-          listStatus.textContent =
-            state.rows.length +
-            " appointment" +
-            (state.rows.length === 1 ? "" : "s");
-        }
-        renderList();
-        renderDetail();
-      })
-      .catch(function (err) {
-        if (listStatus) listStatus.textContent = "Could not load.";
-        showToast(err.message || "Load failed", "err");
-      });
-  }
-
-  function patchStatus(staffStatus) {
-    var row = selectedRow();
+  function patchStatus(key, staffStatus) {
+    var row = findRow(key);
     if (!row) return Promise.resolve();
     var label = staffStatus === "accepted" ? "Accept" : "Decline";
-    if (!window.confirm(label + " this appointment for " + (row.patientName || "guest") + "?")) {
+    if (
+      !window.confirm(
+        label + " appointment for " + (row.patientName || "guest") + "?"
+      )
+    ) {
       return Promise.resolve();
     }
-    if (acceptBtn) acceptBtn.disabled = true;
-    if (declineBtn) declineBtn.disabled = true;
-    return apiFetch("/api/dashboard/appointments/" + encodeURIComponent(row.key), {
+    var tr = tableBody ? tableBody.querySelector('tr[data-key="' + key + '"]') : null;
+    var rowBtns = tr ? tr.querySelectorAll("button") : [];
+    rowBtns.forEach(function (b) {
+      b.disabled = true;
+    });
+
+    return apiFetch("/api/dashboard/appointments/" + encodeURIComponent(key), {
       method: "PATCH",
       body: { staffStatus: staffStatus }
     })
@@ -267,8 +194,29 @@
       })
       .catch(function (err) {
         showToast(err.message || "Update failed", "err");
-        if (acceptBtn) acceptBtn.disabled = false;
-        if (declineBtn) declineBtn.disabled = false;
+        rowBtns.forEach(function (b) {
+          b.disabled = false;
+        });
+      });
+  }
+
+  function loadAppointments() {
+    if (listStatus) listStatus.textContent = "Loading…";
+    var q = state.filter ? "?status=" + encodeURIComponent(state.filter) : "";
+    return apiFetch("/api/dashboard/appointments" + q)
+      .then(function (data) {
+        state.rows = Array.isArray(data.appointments) ? data.appointments : [];
+        if (listStatus) {
+          listStatus.textContent =
+            state.rows.length +
+            " appointment" +
+            (state.rows.length === 1 ? "" : "s");
+        }
+        renderTable();
+      })
+      .catch(function (err) {
+        if (listStatus) listStatus.textContent = "Could not load.";
+        showToast(err.message || "Load failed", "err");
       });
   }
 
@@ -288,16 +236,6 @@
   if (refreshBtn) {
     refreshBtn.addEventListener("click", function () {
       loadAppointments();
-    });
-  }
-  if (acceptBtn) {
-    acceptBtn.addEventListener("click", function () {
-      patchStatus("accepted");
-    });
-  }
-  if (declineBtn) {
-    declineBtn.addEventListener("click", function () {
-      patchStatus("declined");
     });
   }
 

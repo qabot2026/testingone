@@ -1,4 +1,4 @@
-/* Appointments dashboard — extends dashboard.css */
+/* Appointments dashboard — table view */
 
 body.appointments-page {
   min-height: 100%;
@@ -11,7 +11,7 @@ body.appointments-page {
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px 20px;
-  max-width: 1200px;
+  max-width: 1400px;
   margin: 0 auto;
   padding: 20px 20px 0;
 }
@@ -38,7 +38,7 @@ body.appointments-page {
 }
 
 .appt-toolbar {
-  max-width: 1200px;
+  max-width: 1400px;
   margin: 0 auto;
   padding: 14px 20px 0;
   display: flex;
@@ -84,127 +84,105 @@ body.appointments-page {
   font-size: 12.5px;
 }
 
-.appt-layout {
-  max-width: 1200px;
+.appt-table-wrap {
+  max-width: 1400px;
   margin: 14px auto 0;
   padding: 0 20px;
-  display: grid;
-  grid-template-columns: minmax(260px, 340px) 1fr;
-  gap: 16px;
-  align-items: start;
-  min-height: calc(100dvh - 180px);
 }
 
-@media (max-width: 860px) {
-  .appt-layout {
-    grid-template-columns: 1fr;
-    min-height: 0;
-  }
-  .appt-detail-pane {
-    min-height: 280px;
-  }
-}
-
-.appt-list-pane,
-.appt-detail-pane {
+.appt-table-scroll {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
-  overflow: hidden;
-}
-
-.appt-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
+  overflow: auto;
   max-height: calc(100dvh - 200px);
-  overflow-y: auto;
 }
 
-.appt-list-item {
-  display: block;
+.appt-table {
   width: 100%;
-  text-align: left;
-  padding: 12px 14px;
-  border: 0;
-  border-bottom: 1px solid var(--border);
-  background: transparent;
-  cursor: pointer;
-  font: inherit;
-  color: inherit;
-  transition: background 100ms ease;
+  border-collapse: collapse;
+  font-size: 13px;
+  min-width: 960px;
 }
 
-.appt-list-item:hover {
+.appt-table thead {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
+  box-shadow: 0 1px 0 var(--border);
+}
+
+.appt-table th {
+  text-align: left;
+  padding: 10px 12px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  white-space: nowrap;
+  border-bottom: 1px solid var(--border);
+}
+
+.appt-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+  line-height: 1.4;
+}
+
+.appt-table tbody tr:hover {
   background: var(--surface-2);
 }
 
-.appt-list-item.selected {
-  background: var(--brand-soft);
-  box-shadow: inset 3px 0 0 var(--brand);
-}
-
-.appt-list-item:last-child {
+.appt-table tbody tr:last-child td {
   border-bottom: 0;
 }
 
-.appt-list-name {
-  font-weight: 600;
-  font-size: 0.95rem;
-  margin: 0 0 2px;
+.appt-cell-email {
+  max-width: 180px;
+  word-break: break-all;
 }
 
-.appt-list-sub {
-  font-size: 0.8rem;
-  color: var(--muted);
-  margin: 0;
-  line-height: 1.35;
+.appt-cell-actions {
+  white-space: nowrap;
+  min-width: 140px;
+}
+
+.appt-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.appt-act-meta {
+  font-size: 11px;
 }
 
 .appt-empty {
   padding: 24px 16px;
   text-align: center;
-  margin: 0;
+  margin: 12px 0 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
 }
 
-.appt-detail-pane {
-  padding: 20px 22px;
-  min-height: 320px;
-}
-
-.appt-detail-empty {
-  padding: 24px 8px;
-}
-
-.appt-detail-empty h2 {
-  margin: 0 0 8px;
-  font-size: 1.1rem;
-}
-
-.appt-detail.hidden,
-.appt-detail-empty.hidden,
 .hidden {
   display: none !important;
-}
-
-.appt-detail-head {
-  margin-bottom: 18px;
-}
-
-.appt-detail-head h2 {
-  margin: 8px 0 4px;
-  font-size: 1.25rem;
 }
 
 .appt-badge {
   display: inline-block;
   padding: 3px 10px;
   border-radius: 999px;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
+  white-space: nowrap;
 }
 
 .appt-badge.requested {
@@ -225,35 +203,6 @@ body.appointments-page {
   border: 1px solid #fca5a5;
 }
 
-.appt-dl {
-  display: grid;
-  grid-template-columns: minmax(100px, 140px) 1fr;
-  gap: 10px 16px;
-  margin: 0 0 20px;
-  font-size: 0.9rem;
-}
-
-.appt-dl dt {
-  margin: 0;
-  color: var(--muted);
-  font-weight: 600;
-  font-size: 0.78rem;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-}
-
-.appt-dl dd {
-  margin: 0;
-  word-break: break-word;
-}
-
-.appt-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  padding-top: 4px;
-}
-
 .appt-decline-btn {
   color: var(--danger);
   border-color: #fecaca;
@@ -263,32 +212,8 @@ body.appointments-page {
   background: #fef2f2;
 }
 
-.appt-meta {
-  margin: 14px 0 0;
-  font-size: 0.8rem;
-}
-
-.appt-list-badge {
-  float: right;
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
-  padding: 2px 7px;
-  border-radius: 999px;
-  margin-left: 8px;
-}
-
-.appt-list-badge.requested {
-  background: #fffbeb;
-  color: #92400e;
-}
-
-.appt-list-badge.accepted {
-  background: #dcfce7;
-  color: #166534;
-}
-
-.appt-list-badge.declined {
-  background: #fee2e2;
-  color: #991b1b;
+@media (max-width: 720px) {
+  .appt-table {
+    min-width: 800px;
+  }
 }
