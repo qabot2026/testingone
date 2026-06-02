@@ -10,13 +10,17 @@
 </head>
 <body class="appointments-page">
 
+  <nav class="dashboard-app-nav" aria-label="Dashboard sections">
+    <a href="/dashboard/">UI / UX</a>
+    <a href="/dashboard/appointments.html" class="is-active" aria-current="page">Appointments</a>
+  </nav>
+
   <header class="appt-topbar">
     <div class="appt-topbar-main">
       <h1>Appointments</h1>
-      <p class="muted">Filtered by <strong>scheduled appointment date</strong> (not when the request was submitted). New bookings show as <strong>Requested</strong>.</p>
+      <p class="muted">Booking requests from chatbot users. Filter by <strong>scheduled visit date</strong>, then <strong>Confirm</strong> or <strong>Decline</strong> each pending row.</p>
     </div>
     <nav class="appt-nav">
-      <a class="btn ghost small" href="/dashboard/">UI / UX settings</a>
       <button type="button" class="btn ghost small" id="refreshBtn">Refresh</button>
     </nav>
   </header>
@@ -24,10 +28,10 @@
   <div class="appt-filters-bar">
     <div class="appt-filters-row">
       <div class="appt-filters-scroll">
-      <div class="appt-filters" role="tablist" aria-label="Filter by status">
+      <div class="appt-filters" role="tablist" aria-label="Filter by booking status">
         <button type="button" class="appt-filter active" data-status="">All</button>
-        <button type="button" class="appt-filter" data-status="requested">Requested</button>
-        <button type="button" class="appt-filter" data-status="accepted">Accepted</button>
+        <button type="button" class="appt-filter" data-status="requested">Pending</button>
+        <button type="button" class="appt-filter" data-status="accepted">Confirmed</button>
         <button type="button" class="appt-filter" data-status="declined">Declined</button>
       </div>
 
@@ -85,7 +89,7 @@
       <table class="appt-table" id="apptTable">
         <thead>
           <tr>
-            <th scope="col">Status</th>
+            <th scope="col">Booking status</th>
             <th scope="col">Patient</th>
             <th scope="col">Mobile</th>
             <th scope="col">Email</th>

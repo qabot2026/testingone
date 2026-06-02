@@ -40,6 +40,42 @@ html, body {
 
 a { color: var(--brand); }
 
+/* Top-level dashboard sections (UI/UX vs Appointments) */
+.dashboard-app-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 14px 20px 0;
+}
+
+.dashboard-app-nav a {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 14px;
+  border-radius: 999px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-decoration: none;
+  color: var(--muted);
+  border: 1px solid transparent;
+  background: transparent;
+}
+
+.dashboard-app-nav a:hover {
+  color: var(--brand-strong);
+  background: var(--surface);
+  border-color: var(--border);
+}
+
+.dashboard-app-nav a.is-active {
+  color: var(--brand-strong);
+  background: var(--brand-soft);
+  border-color: rgba(2, 132, 199, 0.25);
+}
+
 .sr-only {
   position: absolute;
   width: 1px;

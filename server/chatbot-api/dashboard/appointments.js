@@ -80,9 +80,9 @@
   }
 
   function statusLabel(status) {
-    if (status === "accepted") return "Accepted";
+    if (status === "accepted") return "Confirmed";
     if (status === "declined") return "Declined";
-    return "Requested";
+    return "Pending";
   }
 
   function cellText(value) {
@@ -522,10 +522,10 @@
           '<div class="appt-row-actions">' +
           '<button type="button" class="btn primary small appt-act-accept" data-key="' +
           esc(row.key) +
-          '">Accept</button>' +
+          '" title="Confirm this appointment">Confirm</button>' +
           '<button type="button" class="btn ghost small appt-decline-btn appt-act-decline" data-key="' +
           esc(row.key) +
-          '">Decline</button>' +
+          '" title="Decline this appointment">Decline</button>' +
           "</div>";
       } else if (row.staffUpdatedBy || row.staffUpdatedAtMs) {
         var meta = esc(row.staffUpdatedBy || "staff");
@@ -593,10 +593,10 @@
   function patchStatus(key, staffStatus) {
     var row = findRow(key);
     if (!row) return Promise.resolve();
-    var label = staffStatus === "accepted" ? "Accept" : "Decline";
+    var label = staffStatus === "accepted" ? "Confirm" : "Decline";
     if (
       !window.confirm(
-        label + " appointment for " + (row.patientName || "guest") + "?"
+        label + " this booking for " + (row.patientName || "guest") + "?"
       )
     ) {
       return Promise.resolve();
