@@ -1902,6 +1902,7 @@ let footerOverlayHealTimer = null;
 let footerOverlayGlobalEnsureTimer = null;
 let overlayStatusNode = null;
 const CHAT_ACTION_BAR_ID = "dfchat-chat-action-bar";
+const CHAT_FOOTER_TOOLBAR_ID = "dfchat-chat-footer-toolbar";
 /** @type {HTMLDivElement | null} */
 let poweredByStripNode = null;
 /** Shift the user input / footer row: positive = up (`translateY(-n)`), negative = down, 0 = default. */
@@ -2179,6 +2180,228 @@ function isChatActionBarInlineElement(el) {
     return !!(el && el.classList
         && el.classList.contains("dfchat-chat-action-bar--inline")
         && el.isConnected);
+}
+
+/**
+ * @param {Element | null} bar
+ * @returns {boolean}
+ */
+function isChatActionBarInFooterToolbar_(bar) {
+    return !!(bar && typeof bar.closest === "function"
+        && bar.closest("#" + CHAT_FOOTER_TOOLBAR_ID));
+}
+
+/**
+ * @returns {HTMLElement | null}
+ */
+function getChatFooterToolbar() {
+    let el = document.getElementById(CHAT_FOOTER_TOOLBAR_ID);
+    if (el) {
+        return /** @type {HTMLElement} */ (el);
+    }
+    const ms = activeDfMessenger || document.querySelector("df-messenger");
+    if (ms) {
+        const roots = collectSearchRoots(ms);
+        for (let i = 0; i < roots.length; i += 1) {
+            const root = roots[i];
+            if (!root || typeof root.getElementById !== "function" || root === document) {
+                continue;
+            }
+            const found = root.getElementById(CHAT_FOOTER_TOOLBAR_ID);
+            if (found) {
+                return /** @type {HTMLElement} */ (found);
+            }
+        }
+    }
+    return null;
+}
+
+/**
+ * @returns {boolean}
+ */
+function isFooterChromeInlineMounted_() {
+    const tb = getChatFooterToolbar();
+    return !!(tb && tb.isConnected
+        && tb.getAttribute("data-dfchat-footer-inline") === "true"
+        && tb.style.display !== "none");
+}
+
+/**
+ * @returns {boolean}
+ */
+function wantsFooterChrome_() {
+    return isPoweredByFeatureEnabled() || isMultiLanguageEnabled() || isRestartChatEnabled();
+}
+
+function hideChatFooterToolbar() {
+    const tb = getChatFooterToolbar();
+    if (!tb) {
+        return;
+    }
+    tb.style.display = "none";
+    tb.removeAttribute("data-dfchat-footer-inline");
+}
+
+/**
+ * @param {HTMLElement | null | undefined} el
+ */
+function applyPoweredByStripInlineStyles(el) {
+    if (!el) {
+        return;
+    }
+    el.style.position = "static";
+    el.style.left = "";
+    el.style.top = "";
+    el.style.bottom = "";
+    el.style.right = "";
+    el.style.transform = "";
+    el.style.zIndex = "";
+    el.style.removeProperty("width");
+    el.style.removeProperty("max-width");
+    el.style.setProperty("display", "block", "important");
+    applyPoweredByStripVisuals(el);
+    const L = POWERED_BY_STYLE;
+    if (L.marginPx > 0) {
+        el.style.setProperty("margin", `${L.marginPx}px`, "important");
+    } else {
+        el.style.removeProperty("margin");
+    }
+}
+
+/**
+ * One in-flow footer row below the composer: Powered by (left) + Language/Restart (right).
+ * @param {Element} messenger
+ * @param {HTMLElement | null} bar
+ * @returns {boolean}
+ */
+function mountFooterChromeInline(messenger, bar) {
+    if (!messenger || !isChatWindowOpen || !wantsFooterChrome_()) {
+        hideChatFooterToolbar();
+        return false;
+    }
+
+    const mp = findFooterBelowInputMountPoint(messenger);
+    if (!mp || !mp.parent || !mp.afterEl) {
+        hideChatFooterToolbar();
+        return false;
+    }
+
+    const { parent, afterEl } = mp;
+    let toolbar = getChatFooterToolbar();
+    if (!toolbar) {
+        toolbar = document.createElement("div");
+        toolbar.id = CHAT_FOOTER_TOOLBAR_ID;
+        toolbar.className = "dfchat-chat-footer-toolbar";
+        toolbar.setAttribute("data-dfchat-no-translate", "true");
+        const poweredSlot = document.createElement("div");
+        poweredSlot.className = "dfchat-footer-toolbar__powered";
+        poweredSlot.setAttribute("data-dfchat-footer-powered-slot", "true");
+        const actionsSlot = document.createElement("div");
+        actionsSlot.className = "dfchat-footer-toolbar__actions";
+        actionsSlot.setAttribute("data-dfchat-footer-actions-slot", "true");
+        toolbar.appendChild(poweredSlot);
+        toolbar.appendChild(actionsSlot);
+    }
+
+    const cs = window.getComputedStyle(parent);
+    if (cs.display === "flex" && (cs.flexDirection === "row" || cs.flexDirection === "row-reverse")) {
+        try {
+            parent.style.flexDirection = "column";
+            parent.style.alignItems = "stretch";
+        } catch {
+            /* no-op */
+        }
+    }
+
+    const sameSlot = toolbar.parentElement === parent && toolbar.previousElementSibling === afterEl;
+    if (!sameSlot) {
+        try {
+            if (afterEl.nextSibling) {
+                parent.insertBefore(toolbar, afterEl.nextSibling);
+            } else {
+                parent.appendChild(toolbar);
+            }
+        } catch {
+            hideChatFooterToolbar();
+            return false;
+        }
+    }
+
+    toolbar.style.display = "flex";
+    toolbar.style.position = "static";
+    toolbar.setAttribute("data-dfchat-footer-inline", "true");
+
+    const poweredSlot = toolbar.querySelector("[data-dfchat-footer-powered-slot]");
+    const actionsSlot = toolbar.querySelector("[data-dfchat-footer-actions-slot]");
+    const showPowered = isPoweredByFeatureEnabled();
+    const showActions = isMultiLanguageEnabled() || isRestartChatEnabled();
+
+    if (showPowered) {
+        ensurePoweredByStrip();
+        const el = poweredByStripNode || document.getElementById(POWERED_BY_STRIP_ID);
+        if (el && poweredSlot && el.parentElement !== poweredSlot) {
+            poweredSlot.appendChild(el);
+        }
+        if (poweredSlot) {
+            poweredSlot.style.display = "";
+            const align = POWERED_BY_STYLE.textAlign || "left";
+            poweredSlot.style.justifyContent = align === "right"
+                ? "flex-end"
+                : align === "center"
+                    ? "center"
+                    : "flex-start";
+        }
+        if (el) {
+            applyPoweredByStripInlineStyles(/** @type {HTMLElement} */ (el));
+        }
+    } else if (poweredSlot) {
+        poweredSlot.style.display = "none";
+    }
+
+    if (showActions && bar) {
+        bar.classList.add("dfchat-chat-action-bar--inline");
+        bar.classList.add("dfchat-chat-action-bar--footer-toolbar");
+        bar.classList.remove("dfchat-chat-action-bar--body-fixed");
+        bar.style.position = "static";
+        bar.style.left = "";
+        bar.style.right = "";
+        bar.style.top = "";
+        bar.style.bottom = "";
+        bar.style.zIndex = "";
+        bar.style.transform = "";
+        bar.style.margin = "0";
+        bar.style.width = "auto";
+        bar.style.maxWidth = "";
+        try {
+            bar.style.removeProperty("transform");
+        } catch {
+            /* no-op */
+        }
+        bar.setAttribute("data-dfchat-anchor", "footer-toolbar");
+        if (actionsSlot && bar.parentElement !== actionsSlot) {
+            actionsSlot.appendChild(bar);
+        }
+        if (actionsSlot) {
+            actionsSlot.style.display = "";
+        }
+        ensureChatActionBarEncapsulatedSkin(bar);
+        refreshChatActionBarLanguageState(bar);
+        bar.style.display = "inline-flex";
+    } else if (bar) {
+        bar.style.display = "none";
+        if (actionsSlot) {
+            actionsSlot.style.display = "none";
+        }
+    } else if (actionsSlot) {
+        actionsSlot.style.display = "none";
+    }
+
+    if (!showPowered && !showActions) {
+        hideChatFooterToolbar();
+        return false;
+    }
+
+    return true;
 }
 
 /**
@@ -3668,6 +3891,14 @@ function applyChatActionBarInlineTransform(bar) {
     if (!bar) {
         return;
     }
+    if (isChatActionBarInFooterToolbar_(bar)) {
+        try {
+            bar.style.removeProperty("transform");
+        } catch {
+            bar.style.transform = "";
+        }
+        return;
+    }
     const nu = FOOTER_ACTION_BAR_LAYOUT.nudgeUpPx;
     const nudge = typeof nu === "number" && Number.isFinite(nu) ? nu : 0;
     const totalUpPx = Math.max(
@@ -3686,23 +3917,27 @@ function applyChatActionBarInlineTransform(bar) {
 }
 
 function syncChatActionBarPosition() {
-    const bar = getChatActionBar();
-    if (!bar) {
-        return;
-    }
-
     const messenger = activeDfMessenger || document.querySelector("df-messenger");
-    if (!messenger) {
-        bar.style.display = "none";
-        bar.removeAttribute("data-dfchat-anchor");
+    const bar = getChatActionBar();
+
+    if (!messenger || !isChatWindowOpen) {
+        if (bar) {
+            bar.style.display = "none";
+            bar.removeAttribute("data-dfchat-anchor");
+        }
+        hideChatFooterToolbar();
         resetChatActionBarPositionCaches();
         return;
     }
 
-    if (!isChatWindowOpen) {
-        bar.style.display = "none";
-        bar.removeAttribute("data-dfchat-anchor");
+    if (wantsFooterChrome_() && mountFooterChromeInline(messenger, bar)) {
         resetChatActionBarPositionCaches();
+        return;
+    }
+
+    hideChatFooterToolbar();
+
+    if (!bar) {
         return;
     }
 
@@ -3894,6 +4129,7 @@ function syncChatActionBarPosition() {
     }
 
     bar.classList.remove("dfchat-chat-action-bar--inline");
+    bar.classList.remove("dfchat-chat-action-bar--footer-toolbar");
     bar.classList.add("dfchat-chat-action-bar--body-fixed");
     bar.style.position = "fixed";
     const nextLeft = `${left}px`;
@@ -4209,6 +4445,13 @@ function syncPoweredByStripPosition() {
         el.style.display = "none";
         return;
     }
+    if (!isFooterChromeInlineMounted_() && wantsFooterChrome_()) {
+        mountFooterChromeInline(messenger, getChatActionBar());
+    }
+    if (isFooterChromeInlineMounted_()) {
+        applyPoweredByStripInlineStyles(/** @type {HTMLElement} */ (el));
+        return;
+    }
     applyPoweredByStripVisuals(el);
     const L = POWERED_BY_STYLE;
     const lineH = L.lineHeightPx;
@@ -4294,6 +4537,7 @@ function mountChatActionBarInline(messenger, bar) {
 
     bar.classList.add("dfchat-chat-action-bar--inline");
     bar.classList.remove("dfchat-chat-action-bar--body-fixed");
+    bar.classList.remove("dfchat-chat-action-bar--footer-toolbar");
     bar.style.position = "static";
     bar.style.left = "";
     bar.style.right = "";

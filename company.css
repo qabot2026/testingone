@@ -178,6 +178,60 @@
    pointer-events: none;
  }
  
+ /* Unified footer row below composer: Powered by + Language/Restart (company.js mountFooterChromeInline) */
+ .dfchat-chat-footer-toolbar,
+ #dfchat-chat-footer-toolbar {
+   box-sizing: border-box;
+   display: flex;
+   flex-direction: row;
+   align-items: center;
+   justify-content: space-between;
+   gap: 8px;
+   width: 100%;
+   max-width: 100%;
+   padding: 4px 10px 6px;
+   flex: 0 0 auto;
+   position: static !important;
+   z-index: auto;
+   pointer-events: auto;
+ }
+ 
+ .dfchat-footer-toolbar__powered {
+   flex: 1 1 auto;
+   min-width: 0;
+   display: flex;
+   align-items: center;
+   justify-content: flex-start;
+ }
+ 
+ .dfchat-footer-toolbar__actions {
+   flex: 0 0 auto;
+   display: flex;
+   align-items: center;
+   justify-content: flex-end;
+   gap: 8px;
+   margin-left: auto;
+ }
+ 
+ #dfchat-chat-footer-toolbar #dfchat-powered-by-strip {
+   position: static !important;
+   left: auto !important;
+   top: auto !important;
+   bottom: auto !important;
+   transform: none !important;
+   max-width: 100%;
+ }
+ 
+ #dfchat-chat-footer-toolbar #dfchat-chat-action-bar.dfchat-chat-action-bar--inline,
+ #dfchat-chat-footer-toolbar #dfchat-chat-action-bar.dfchat-chat-action-bar--footer-toolbar {
+   position: static !important;
+   transform: none !important;
+   width: auto !important;
+   max-width: none !important;
+   padding: 0 !important;
+   justify-content: flex-end !important;
+ }
+ 
  /* Footer controls (Language + Restart) anchored near Send */
  #dfchat-chat-footer-overlay {
    position: fixed !important;
