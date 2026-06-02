@@ -21,8 +21,11 @@
     </nav>
   </header>
 
+  <div class="appt-cal-backdrop hidden" id="calBackdrop" hidden aria-hidden="true"></div>
+
   <div class="appt-filters-bar">
     <div class="appt-filters-row">
+      <div class="appt-filters-scroll">
       <div class="appt-filters" role="tablist" aria-label="Filter by status">
         <button type="button" class="appt-filter active" data-status="">All</button>
         <button type="button" class="appt-filter" data-status="requested">Requested</button>
@@ -35,6 +38,7 @@
       <div class="appt-quick-dates" role="group" aria-label="Scheduled date">
         <button type="button" class="appt-day-btn active" data-preset="today" id="btnToday">Today</button>
         <button type="button" class="appt-day-btn" data-preset="tomorrow" id="btnTomorrow">Tomorrow</button>
+      </div>
       </div>
 
       <div class="appt-cal-anchor" id="calAnchorWrap">

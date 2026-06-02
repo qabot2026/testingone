@@ -159,6 +159,7 @@
   var toggleCalBtnText = $("#toggleCalBtnText");
   var calPanel = $("#calPanel");
   var calAnchorWrap = $("#calAnchorWrap");
+  var calBackdrop = $("#calBackdrop");
   var chipFrom = $("#chipFrom");
   var chipTo = $("#chipTo");
   var calStepHint = $("#calStepHint");
@@ -271,8 +272,35 @@
     return "middle";
   }
 
+  function positionCalendarPopover() {
+    if (!toggleCalBtn || !calPanel || !state.calOpen) {
+      return;
+    }
+    var rect = toggleCalBtn.getBoundingClientRect();
+    var cardW = 360;
+    var gap = 8;
+    var top = rect.bottom + gap;
+    var left = rect.left;
+    if (left + cardW > window.innerWidth - 12) {
+      left = window.innerWidth - cardW - 12;
+    }
+    if (left < 12) {
+      left = 12;
+    }
+    if (top + 380 > window.innerHeight - 12) {
+      top = Math.max(12, rect.top - 380 - gap);
+    }
+    calPanel.style.top = top + "px";
+    calPanel.style.left = left + "px";
+  }
+
   function setCalendarOpen(open) {
     state.calOpen = Boolean(open);
+    if (calBackdrop) {
+      calBackdrop.classList.toggle("hidden", !state.calOpen);
+      calBackdrop.hidden = !state.calOpen;
+      calBackdrop.setAttribute("aria-hidden", state.calOpen ? "false" : "true");
+    }
     if (calPanel) {
       calPanel.classList.toggle("hidden", !state.calOpen);
       calPanel.hidden = !state.calOpen;
@@ -284,6 +312,7 @@
     if (state.calOpen) {
       updateCalendarChips();
       renderCalendar();
+      positionCalendarPopover();
     }
   }
 
@@ -653,11 +682,36 @@
   }
 
   document.addEventListener("click", function (ev) {
-    if (!state.calOpen || !calAnchorWrap) return;
-    if (!calAnchorWrap.contains(ev.target)) {
+    if (!state.calOpen) return;
+    var onCal =
+      (calAnchorWrap && calAnchorWrap.contains(ev.target)) ||
+      (calPanel && calPanel.contains(ev.target));
+    if (!onCal) {
       setCalendarOpen(false);
     }
   });
+
+  window.addEventListener("resize", function () {
+    if (state.calOpen) {
+      positionCalendarPopover();
+    }
+  });
+
+  window.addEventListener(
+    "scroll",
+    function () {
+      if (state.calOpen) {
+        positionCalendarPopover();
+      }
+    },
+    true
+  );
+
+  if (calBackdrop) {
+    calBackdrop.addEventListener("click", function () {
+      setCalendarOpen(false);
+    });
+  }
 
   document.addEventListener("keydown", function (ev) {
     if (ev.key === "Escape" && state.calOpen) {
