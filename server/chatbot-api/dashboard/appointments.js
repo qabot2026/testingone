@@ -276,7 +276,8 @@
       return;
     }
     var rect = toggleCalBtn.getBoundingClientRect();
-    var cardW = 360;
+    var cardW = 280;
+    var cardH = 300;
     var gap = 8;
     var top = rect.bottom + gap;
     var left = rect.left;
@@ -286,8 +287,8 @@
     if (left < 12) {
       left = 12;
     }
-    if (top + 380 > window.innerHeight - 12) {
-      top = Math.max(12, rect.top - 380 - gap);
+    if (top + cardH > window.innerHeight - 12) {
+      top = Math.max(12, rect.top - cardH - gap);
     }
     calPanel.style.top = top + "px";
     calPanel.style.left = left + "px";
