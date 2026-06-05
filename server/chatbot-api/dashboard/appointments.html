@@ -1,115 +1,124 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="robots" content="noindex, nofollow" />
-  <title>Appointments — Dashboard</title>
-  <link rel="stylesheet" href="/dashboard/dashboard.css" />
-  <link rel="stylesheet" href="/dashboard/appointments.css" />
-</head>
-<body class="appointments-page">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Appointments</title>
+    <link rel="stylesheet" href="dashboard.css" />
+    <link rel="stylesheet" href="appointments.css" />
+  </head>
+  <body>
+    <div class="dash-app appt-app">
+      <header class="dash-header">
+        <div>
+          <h1>Appointments</h1>
+          <p class="dash-muted">
+            Chatbot appointment requests — review and Accept or Decline. Defaults to today’s app. date.
+          </p>
+        </div>
+        <nav class="dash-nav">
+          <a href="index.html" class="dash-btn dash-btn--ghost">Dashboard</a>
+          <a href="/uc-conversations" class="dash-btn dash-btn--ghost">Conversation leads</a>
+          <button type="button" id="appt-refresh" class="dash-btn dash-btn--primary">Refresh</button>
+        </nav>
+      </header>
 
-  <nav class="dashboard-app-nav" aria-label="Dashboard sections">
-    <a href="/dashboard/">UI / UX</a>
-    <a href="/dashboard/appointments.html" class="is-active" aria-current="page">Appointments</a>
-  </nav>
+      <section id="appt-unlock" class="appt-unlock hidden" aria-label="Unlock appointments">
+        <h2>Viewer secret required</h2>
+        <p class="dash-muted">
+          Same secret as
+          <a href="/uc-conversations">Conversation leads</a>
+          (<code>CONVERSATIONS_SHEET_VIEW_SECRET</code> on Railway).
+        </p>
+        <div class="appt-unlock-row">
+          <label>
+            Viewer secret
+            <input id="appt-secret" type="password" autocomplete="current-password" />
+          </label>
+          <button type="button" id="appt-unlock-btn" class="dash-btn dash-btn--primary">Unlock</button>
+        </div>
+        <p id="appt-unlock-msg" class="appt-unlock-msg" role="status"></p>
+      </section>
 
-  <header class="appt-topbar">
-    <div class="appt-topbar-main">
-      <h1>Appointments</h1>
-      <p class="muted">Booking requests from chatbot users. Filter by <strong>scheduled visit date</strong>, then <strong>Confirm</strong> or <strong>Decline</strong> each pending row.</p>
-    </div>
-    <nav class="appt-nav">
-      <button type="button" class="btn ghost small" id="refreshBtn">Refresh</button>
-    </nav>
-  </header>
-
-  <div class="appt-filters-bar">
-    <div class="appt-filters-row">
-      <div class="appt-filters-scroll">
-      <div class="appt-filters" role="tablist" aria-label="Filter by booking status">
-        <button type="button" class="appt-filter active" data-status="">All</button>
-        <button type="button" class="appt-filter" data-status="requested">Pending</button>
-        <button type="button" class="appt-filter" data-status="accepted">Confirmed</button>
-        <button type="button" class="appt-filter" data-status="declined">Declined</button>
-      </div>
-
-      <span class="appt-filters-divider" aria-hidden="true"></span>
-
-      <div class="appt-quick-dates" role="group" aria-label="Scheduled date">
-        <button type="button" class="appt-day-btn active" data-preset="today" id="btnToday">Today</button>
-        <button type="button" class="appt-day-btn" data-preset="tomorrow" id="btnTomorrow">Tomorrow</button>
-      </div>
-      </div>
-
-      <div class="appt-cal-anchor" id="calAnchorWrap">
-        <button type="button" class="btn ghost small appt-cal-toggle" id="toggleCalBtn" aria-expanded="false" aria-controls="calPanel" aria-haspopup="dialog">
-          <span id="toggleCalBtnText">Pick date</span>
-          <span class="appt-cal-chevron" aria-hidden="true">▾</span>
-        </button>
-        <div class="appt-cal-popover hidden" id="calPanel" hidden role="dialog" aria-label="Choose scheduled appointment date">
-          <div class="appt-cal-card">
-            <div class="appt-cal-selection">
-              <div class="appt-cal-chips">
-                <div class="appt-cal-chip">
-                  <span class="appt-cal-chip-label">From</span>
-                  <strong id="chipFrom">—</strong>
-                </div>
-                <span class="appt-cal-chip-arrow" aria-hidden="true">→</span>
-                <div class="appt-cal-chip">
-                  <span class="appt-cal-chip-label">To</span>
-                  <strong id="chipTo">—</strong>
-                </div>
-              </div>
-              <button type="button" class="btn ghost small" id="clearCalBtn">Reset</button>
-            </div>
-            <p class="appt-cal-step" id="calStepHint"></p>
-            <div class="appt-cal-head">
-              <button type="button" class="appt-cal-nav" id="calPrev" aria-label="Previous month">‹</button>
-              <strong class="appt-cal-month" id="calMonthLabel"></strong>
-              <button type="button" class="appt-cal-nav" id="calNext" aria-label="Next month">›</button>
-            </div>
-            <div class="appt-cal-weekdays" aria-hidden="true">
-              <span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span><span>S</span>
-            </div>
-            <div class="appt-cal-grid" id="calGrid"></div>
-            <p class="appt-cal-hint muted">Scheduled date only · DD/MM/YYYY · past days disabled</p>
+      <section class="appt-toolbar">
+        <div class="appt-date-field-wrap">
+          <label class="appt-date-label" for="appt-from">From</label>
+          <div class="appt-date-field">
+            <svg class="appt-date-cal-ic" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+              <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+              <path d="M16 2v4M8 2v4M3 10h18" />
+            </svg>
+            <input
+              type="text"
+              id="appt-from"
+              class="appt-date-text"
+              placeholder="DD/MM/YYYY"
+              inputmode="numeric"
+              autocomplete="off"
+              title="Pick a date or type DD/MM/YYYY"
+            />
+            <input type="date" class="appt-date-native" tabindex="-1" aria-hidden="true" />
           </div>
         </div>
-      </div>
+        <div class="appt-date-field-wrap">
+          <label class="appt-date-label" for="appt-to">To</label>
+          <div class="appt-date-field">
+            <svg class="appt-date-cal-ic" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+              <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+              <path d="M16 2v4M8 2v4M3 10h18" />
+            </svg>
+            <input
+              type="text"
+              id="appt-to"
+              class="appt-date-text"
+              placeholder="DD/MM/YYYY"
+              inputmode="numeric"
+              autocomplete="off"
+              title="Pick a date or type DD/MM/YYYY"
+            />
+            <input type="date" class="appt-date-native" tabindex="-1" aria-hidden="true" />
+          </div>
+        </div>
+        <label>
+          Status
+          <select id="appt-status">
+            <option value="all">All</option>
+            <option value="pending" selected>Pending</option>
+            <option value="accepted">Accepted</option>
+            <option value="declined">Declined</option>
+          </select>
+        </label>
+        <button type="button" id="appt-today" class="dash-btn dash-btn--ghost">Today</button>
+        <button type="button" id="appt-apply" class="dash-btn dash-btn--ghost">Apply</button>
+        <p id="appt-meta" class="dash-muted appt-meta"></p>
+      </section>
 
-      <p class="appt-cal-range muted" id="calRangeLabel" aria-live="polite"></p>
-      <p class="appt-status muted" id="listStatus" aria-live="polite"></p>
+      <section class="appt-panel">
+        <div class="appt-table-wrap">
+          <table class="appt-table">
+            <thead>
+              <tr>
+                <th>App. date</th>
+                <th>App. time</th>
+                <th>Name</th>
+                <th>Mobile</th>
+                <th>Email</th>
+                <th>Conv. date</th>
+                <th>Channel</th>
+                <th>Status</th>
+                <th>Actions</th>
+                <th>Chatscript</th>
+              </tr>
+            </thead>
+            <tbody id="appt-body">
+              <tr><td colspan="10" class="appt-loading">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
     </div>
-  </div>
-
-  <section class="appt-table-wrap" aria-label="Appointments table">
-    <div class="appt-table-scroll">
-      <table class="appt-table" id="apptTable">
-        <thead>
-          <tr>
-            <th scope="col">Booking status</th>
-            <th scope="col">Patient</th>
-            <th scope="col">Mobile</th>
-            <th scope="col">Email</th>
-            <th scope="col">Sched. date</th>
-            <th scope="col">Time</th>
-            <th scope="col">Doctor</th>
-            <th scope="col">Department</th>
-            <th scope="col">Branch</th>
-            <th scope="col">Slot</th>
-            <th scope="col">Actions</th>
-          </tr>
-        </thead>
-        <tbody id="apptTableBody"></tbody>
-      </table>
-    </div>
-    <p class="appt-empty muted hidden" id="apptEmpty">No appointments in this view.</p>
-  </section>
-
-  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
-
-  <script src="/dashboard/appointments.js" defer></script>
-</body>
+    <script src="desk-auth.js"></script>
+    <script src="date-display.js"></script>
+    <script src="appointments.js"></script>
+  </body>
 </html>

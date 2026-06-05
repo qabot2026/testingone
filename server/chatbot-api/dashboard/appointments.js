@@ -1,744 +1,471 @@
 (function () {
-  "use strict";
+  'use strict';
 
-  function $(sel) {
-    return document.querySelector(sel);
-  }
+  var auth = window.DashboardDeskAuth;
+  if (!auth) return;
 
-  function showToast(text, kind) {
-    var el = $("#toast");
-    if (!el) return;
-    el.textContent = text;
-    el.classList.remove("ok", "err", "show");
-    if (kind) el.classList.add(kind);
-    el.hidden = false;
-    requestAnimationFrame(function () {
-      el.classList.add("show");
-    });
-    clearTimeout(showToast._t);
-    showToast._t = setTimeout(function () {
-      el.classList.remove("show");
-      setTimeout(function () {
-        el.hidden = true;
-      }, 200);
-    }, 2600);
-  }
-
-  function apiFetch(path, opts) {
-    var o = Object.assign({ credentials: "same-origin", headers: {} }, opts || {});
-    if (o.body && typeof o.body !== "string") {
-      o.headers["Content-Type"] = "application/json";
-      o.body = JSON.stringify(o.body);
-    }
-    return fetch(path, o).then(function (resp) {
-      return resp.json().then(function (data) {
-        if (!resp.ok) {
-          var msg = (data && data.error) || "HTTP " + resp.status;
-          var err = new Error(msg);
-          err.status = resp.status;
-          throw err;
-        }
-        return data;
-      });
-    });
-  }
-
-  function pad2(n) {
-    return String(n).padStart(2, "0");
-  }
-
-  function isoFromParts(y, m, d) {
-    return y + "-" + pad2(m) + "-" + pad2(d);
-  }
-
-  function isoFromDate(dt) {
-    return isoFromParts(dt.getFullYear(), dt.getMonth() + 1, dt.getDate());
-  }
-
-  function parseIso(iso) {
-    var p = String(iso || "").split("-");
-    if (p.length !== 3) return null;
-    return new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2]));
-  }
-
-  function todayIso() {
-    return isoFromDate(new Date());
-  }
-
-  function tomorrowIso() {
-    var d = new Date();
-    d.setDate(d.getDate() + 1);
-    return isoFromDate(d);
-  }
-
-  function monthStart(y, m) {
-    return new Date(y, m, 1);
-  }
-
-  function daysInMonth(y, m) {
-    return new Date(y, m + 1, 0).getDate();
-  }
-
-  function statusLabel(status) {
-    if (status === "accepted") return "Confirmed";
-    if (status === "declined") return "Declined";
-    return "Pending";
-  }
-
-  function cellText(value) {
-    var s = String(value || "").trim();
-    return s || "—";
+  function $(id) {
+    return document.getElementById(id);
   }
 
   function esc(s) {
-    return String(s || "")
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;");
+    var d = document.createElement('div');
+    d.textContent = s == null ? '' : String(s);
+    return d.innerHTML;
   }
 
-  function appointmentDateToIso(raw) {
-    var s = String(raw || "").trim();
-    if (!s) return "";
-    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
-    var dmY = s.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$/);
-    if (dmY) {
-      var d = Number(dmY[1]);
-      var m = Number(dmY[2]);
-      var y = Number(dmY[3]);
-      if (m >= 1 && m <= 12 && d >= 1 && d <= 31) {
-        return isoFromParts(y, m, d);
+  function parseInputDate(raw) {
+    var dd = window.QADateDisplay;
+    if (dd && dd.parseToIsoYmd) return dd.parseToIsoYmd(raw);
+    return String(raw || '').trim();
+  }
+
+  function getApptDateYmd(el) {
+    if (!el) return '';
+    var stored = String(el.dataset.ymd || '').trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(stored)) return stored;
+    var parsed = parseInputDate(el.value);
+    if (parsed) {
+      el.dataset.ymd = parsed;
+      return parsed;
+    }
+    var raw = String(el.value || '').trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+      el.dataset.ymd = raw;
+      return raw;
+    }
+    return '';
+  }
+
+  function setApptDateYmd(el, ymd) {
+    if (!el) return;
+    var dd = window.QADateDisplay;
+    var iso = String(ymd || '').trim();
+    var wrap = el.closest('.appt-date-field');
+    var native = wrap && wrap.querySelector('.appt-date-native');
+    if (iso && /^\d{4}-\d{2}-\d{2}$/.test(iso)) {
+      el.dataset.ymd = iso;
+      el.value =
+        dd && dd.isoYmdToDdMmYyyy ? dd.isoYmdToDdMmYyyy(iso) : formatDmy(iso);
+      if (native) native.value = iso;
+    } else {
+      el.dataset.ymd = '';
+      el.value = '';
+      if (native) native.value = '';
+    }
+  }
+
+  function normalizeApptDateInput(el) {
+    if (!el) return;
+    var raw = String(el.value || '').trim();
+    if (!raw) {
+      setApptDateYmd(el, '');
+      return;
+    }
+    var ymd = parseInputDate(raw);
+    if (!ymd && /^\d{4}-\d{2}-\d{2}$/.test(raw)) ymd = raw;
+    if (ymd) setApptDateYmd(el, ymd);
+  }
+
+  function bindApptDatePicker(textEl) {
+    if (!textEl || textEl._apptDatePickerBound) return;
+    textEl._apptDatePickerBound = true;
+    var wrap = textEl.closest('.appt-date-field');
+    if (!wrap) return;
+    var native = wrap.querySelector('.appt-date-native');
+    var icon = wrap.querySelector('.appt-date-cal-ic');
+    if (!native) return;
+
+    function openPicker() {
+      var ymd = getApptDateYmd(textEl);
+      native.value = ymd || '';
+      if (typeof native.showPicker === 'function') native.showPicker();
+      else native.click();
+    }
+
+    if (icon) {
+      icon.setAttribute('role', 'button');
+      icon.setAttribute('tabindex', '0');
+      icon.setAttribute('aria-label', 'Open calendar');
+      icon.addEventListener('click', openPicker);
+      icon.addEventListener('keydown', function (ev) {
+        if (ev.key === 'Enter' || ev.key === ' ') {
+          ev.preventDefault();
+          openPicker();
+        }
+      });
+    }
+
+    textEl.addEventListener('blur', function () {
+      normalizeApptDateInput(textEl);
+    });
+    textEl.addEventListener('keydown', function (ev) {
+      if (ev.key === 'Enter') {
+        normalizeApptDateInput(textEl);
+        load();
       }
-    }
-    return "";
-  }
+    });
 
-  function formatIsoDdMmYyyy(iso) {
-    var n = appointmentDateToIso(iso);
-    if (!n) return "—";
-    var parts = n.split("-");
-    return parts[2] + "/" + parts[1] + "/" + parts[0];
-  }
-
-  function formatDateDdMmYyyy(row) {
-    if (row && row.appointmentDateDisplay) {
-      return row.appointmentDateDisplay;
-    }
-    return formatIsoDdMmYyyy(row && row.appointmentDate);
-  }
-
-  var t0 = todayIso();
-  var now = new Date();
-
-  var state = {
-    filter: "",
-    dateFrom: t0,
-    dateTo: "",
-    datePreset: "today",
-    calAnchor: "",
-    calOpen: false,
-    viewYear: now.getFullYear(),
-    viewMonth: now.getMonth(),
-    rows: []
-  };
-
-  var tableBody = $("#apptTableBody");
-  var listStatus = $("#listStatus");
-  var apptEmpty = $("#apptEmpty");
-  var tableWrap = document.querySelector(".appt-table-scroll");
-  var calGrid = $("#calGrid");
-  var calMonthLabel = $("#calMonthLabel");
-  var calRangeLabel = $("#calRangeLabel");
-  var calPrev = $("#calPrev");
-  var calNext = $("#calNext");
-  var btnToday = $("#btnToday");
-  var btnTomorrow = $("#btnTomorrow");
-  var dayBtns = document.querySelectorAll(".appt-day-btn");
-  var toggleCalBtn = $("#toggleCalBtn");
-  var toggleCalBtnText = $("#toggleCalBtnText");
-  var calPanel = $("#calPanel");
-  var calAnchorWrap = $("#calAnchorWrap");
-  var chipFrom = $("#chipFrom");
-  var chipTo = $("#chipTo");
-  var calStepHint = $("#calStepHint");
-  var clearCalBtn = $("#clearCalBtn");
-
-  function effectiveDateTo() {
-    if (state.dateTo && state.dateTo !== state.dateFrom) {
-      return state.dateTo;
-    }
-    return "";
-  }
-
-  function isRange() {
-    return Boolean(effectiveDateTo());
-  }
-
-  function syncQuickButtons() {
-    dayBtns.forEach(function (btn) {
-      var preset = btn.getAttribute("data-preset") || "";
-      btn.classList.toggle("active", preset === state.datePreset);
+    native.addEventListener('change', function () {
+      setApptDateYmd(textEl, native.value || '');
+      load();
     });
   }
 
-  function updateRangeLabel() {
-    if (!calRangeLabel) return;
-    var from = formatIsoDdMmYyyy(state.dateFrom);
-    var toIso = effectiveDateTo();
-    if (state.datePreset === "today") {
-      calRangeLabel.textContent = "Sched. " + from + " (today)";
-      return;
-    }
-    if (state.datePreset === "tomorrow") {
-      calRangeLabel.textContent = "Sched. " + from + " (tomorrow)";
-      return;
-    }
-    if (toIso) {
-      calRangeLabel.textContent =
-        "Scheduled " + from + " – " + formatIsoDdMmYyyy(toIso);
-      return;
-    }
-    calRangeLabel.textContent = "Scheduled for " + from;
-    updateToggleCalLabel();
+  function formatDmy(raw) {
+    var dd = window.QADateDisplay;
+    if (dd && dd.formatDateDisplay) return dd.formatDateDisplay(raw);
+    return String(raw || '').trim();
   }
 
-  function updateToggleCalLabel() {
-    if (!toggleCalBtnText) return;
-    if (state.datePreset === "today") {
-      toggleCalBtnText.textContent = "Today";
-      return;
-    }
-    if (state.datePreset === "tomorrow") {
-      toggleCalBtnText.textContent = "Tomorrow";
-      return;
-    }
-    var from = formatIsoDdMmYyyy(state.dateFrom);
-    var to = effectiveDateTo();
-    if (to) {
-      toggleCalBtnText.textContent = from + " – " + formatIsoDdMmYyyy(to);
-      return;
-    }
-    toggleCalBtnText.textContent = from || "Pick date";
-  }
-
-  function updateCalendarChips() {
-    if (chipFrom) {
-      chipFrom.textContent = state.dateFrom
-        ? formatIsoDdMmYyyy(state.dateFrom)
-        : "—";
-    }
-    if (chipTo) {
-      if (state.calAnchor) {
-        chipTo.textContent = "…";
-      } else if (effectiveDateTo()) {
-        chipTo.textContent = formatIsoDdMmYyyy(effectiveDateTo());
-      } else {
-        chipTo.textContent = state.dateFrom ? "Same day" : "—";
-      }
-    }
-    if (calStepHint) {
-      if (state.calAnchor) {
-        calStepHint.textContent =
-          "Step 2 — Tap end date (or tap the same day again for one day only)";
-      } else if (isRange()) {
-        calStepHint.textContent = "Range applied. Tap any date to choose again.";
-      } else {
-        calStepHint.textContent = "Step 1 — Tap the scheduled appointment date";
-      }
-    }
-  }
-
-  function rangePart(iso) {
-    if (!isInSelectedRange(iso)) {
-      return "";
-    }
-    var to = effectiveDateTo();
-    if (!to) {
-      return "single";
-    }
-    var lo = state.dateFrom < to ? state.dateFrom : to;
-    var hi = state.dateFrom < to ? to : state.dateFrom;
-    if (iso === lo && iso === hi) {
-      return "single";
-    }
-    if (iso === lo) {
-      return "start";
-    }
-    if (iso === hi) {
-      return "end";
-    }
-    return "middle";
-  }
-
-  function positionCalendarPopover() {
-    if (!toggleCalBtn || !calPanel || !state.calOpen) {
-      return;
-    }
-    var rect = toggleCalBtn.getBoundingClientRect();
-    var cardW = 280;
-    var cardH = 300;
-    var gap = 8;
-    var top = rect.bottom + gap;
-    var left = rect.left;
-    if (left + cardW > window.innerWidth - 12) {
-      left = window.innerWidth - cardW - 12;
-    }
-    if (left < 12) {
-      left = 12;
-    }
-    if (top + cardH > window.innerHeight - 12) {
-      top = Math.max(12, rect.top - cardH - gap);
-    }
-    calPanel.style.top = top + "px";
-    calPanel.style.left = left + "px";
-  }
-
-  function setCalendarOpen(open) {
-    state.calOpen = Boolean(open);
-    if (calPanel) {
-      calPanel.classList.toggle("hidden", !state.calOpen);
-      calPanel.hidden = !state.calOpen;
-    }
-    if (toggleCalBtn) {
-      toggleCalBtn.setAttribute("aria-expanded", state.calOpen ? "true" : "false");
-      toggleCalBtn.classList.toggle("is-open", state.calOpen);
-    }
-    if (state.calOpen) {
-      updateCalendarChips();
-      renderCalendar();
-      positionCalendarPopover();
-    }
-  }
-
-  function refreshDateUi() {
-    syncQuickButtons();
-    updateRangeLabel();
-    updateCalendarChips();
-    updateToggleCalLabel();
-    if (state.calOpen) {
-      renderCalendar();
-    }
-  }
-
-  function rowMatchesScheduleFilter(row) {
-    var iso = appointmentDateToIso(
-      (row && row.appointmentDateIso) || (row && row.appointmentDate)
+  function localTodayIso() {
+    var d = new Date();
+    return (
+      d.getFullYear() +
+      '-' +
+      String(d.getMonth() + 1).padStart(2, '0') +
+      '-' +
+      String(d.getDate()).padStart(2, '0')
     );
-    if (!iso || !state.dateFrom) {
-      return false;
-    }
-    var to = effectiveDateTo();
-    if (!to) {
-      return iso === state.dateFrom;
-    }
-    var lo = state.dateFrom < to ? state.dateFrom : to;
-    var hi = state.dateFrom < to ? to : state.dateFrom;
-    return iso >= lo && iso <= hi;
   }
 
-  function setDateFilter(fromIso, toIso, preset, opts) {
-    state.dateFrom = fromIso;
-    state.dateTo = toIso && toIso !== fromIso ? toIso : "";
-    state.datePreset = preset || "custom";
-    state.calAnchor = "";
-    var d = parseIso(fromIso);
-    if (d) {
-      state.viewYear = d.getFullYear();
-      state.viewMonth = d.getMonth();
-    }
-    refreshDateUi();
-    if (opts && opts.closeCal) {
-      setCalendarOpen(false);
-    }
-    loadAppointments();
+  function todayDmy() {
+    return formatDmy(localTodayIso());
   }
 
-  function selectToday() {
-    setDateFilter(todayIso(), "", "today", { closeCal: true });
-  }
-
-  function selectTomorrow() {
-    setDateFilter(tomorrowIso(), "", "tomorrow", { closeCal: true });
-  }
-
-  function isPastIso(iso) {
-    return iso < todayIso();
-  }
-
-  function isInSelectedRange(iso) {
-    if (!state.dateFrom) return false;
-    var to = effectiveDateTo() || state.dateFrom;
-    var a = state.dateFrom < to ? state.dateFrom : to;
-    var b = state.dateFrom < to ? to : state.dateFrom;
-    return iso >= a && iso <= b;
-  }
-
-  function renderCalendar() {
-    updateCalendarChips();
-    if (!calGrid) return;
-
-    var y = state.viewYear;
-    var m = state.viewMonth;
-    var monthNames = [
-      "January", "February", "March", "April", "May", "June",
-      "July", "August", "September", "October", "November", "December"
-    ];
-    if (calMonthLabel) {
-      calMonthLabel.textContent = monthNames[m] + " " + y;
+  function initDefaultDates() {
+    var today = localTodayIso();
+    if ($('appt-from') && !getApptDateYmd($('appt-from'))) {
+      setApptDateYmd($('appt-from'), today);
     }
-
-    var first = monthStart(y, m);
-    var startPad = (first.getDay() + 6) % 7;
-    var dim = daysInMonth(y, m);
-    var today = todayIso();
-
-    var curMonth = now.getFullYear() === y && now.getMonth() === m;
-    if (calPrev) {
-      calPrev.disabled = curMonth;
-    }
-
-    calGrid.innerHTML = "";
-    var i;
-    for (i = 0; i < startPad; i++) {
-      var blank = document.createElement("span");
-      blank.className = "appt-cal-cell appt-cal-cell--blank";
-      calGrid.appendChild(blank);
-    }
-
-    for (var day = 1; day <= dim; day++) {
-      var iso = isoFromParts(y, m + 1, day);
-      var btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "appt-cal-cell appt-cal-day";
-      btn.textContent = String(day);
-      btn.dataset.iso = iso;
-      btn.setAttribute("aria-label", formatIsoDdMmYyyy(iso));
-      btn.setAttribute("aria-pressed", "false");
-
-      if (isPastIso(iso)) {
-        btn.classList.add("appt-cal-day--past");
-        btn.disabled = true;
-      } else {
-        if (iso === today) {
-          btn.classList.add("appt-cal-day--today");
-        }
-        var part = rangePart(iso);
-        if (part) {
-          btn.classList.add("appt-cal-day--range-" + part);
-          btn.setAttribute("aria-pressed", "true");
-        }
-        if (state.calAnchor === iso) {
-          btn.classList.add("appt-cal-day--anchor");
-        }
-        btn.addEventListener("click", function (ev) {
-          var picked =
-            ev.currentTarget && ev.currentTarget.dataset
-              ? ev.currentTarget.dataset.iso
-              : "";
-          onCalendarDayClick(picked);
-        });
-      }
-      calGrid.appendChild(btn);
+    if ($('appt-to') && !getApptDateYmd($('appt-to'))) {
+      setApptDateYmd($('appt-to'), today);
     }
   }
 
-  function onCalendarDayClick(iso) {
-    if (isPastIso(iso)) return;
-
-    state.datePreset = "custom";
-    syncQuickButtons();
-
-    if (!state.calAnchor) {
-      state.calAnchor = iso;
-      state.dateFrom = iso;
-      state.dateTo = "";
-      refreshDateUi();
-      loadAppointments();
-      return;
-    }
-
-    if (state.calAnchor === iso) {
-      state.dateFrom = iso;
-      state.dateTo = "";
-      state.calAnchor = "";
-      refreshDateUi();
-      loadAppointments();
-      return;
-    }
-
-    var a = state.calAnchor < iso ? state.calAnchor : iso;
-    var b = state.calAnchor < iso ? iso : state.calAnchor;
-    state.dateFrom = a;
-    state.dateTo = b;
-    state.calAnchor = "";
-    refreshDateUi();
-    loadAppointments();
+  function statusLabel(status) {
+    var s = String(status || 'pending').toLowerCase();
+    if (s === 'accepted') return 'Accepted';
+    if (s === 'declined') return 'Declined';
+    return 'Pending';
   }
 
-  function buildQueryString() {
-    var from = state.dateFrom || todayIso();
-    var parts = [
-      "dateFrom=" + encodeURIComponent(from)
-    ];
-    if (state.filter) {
-      parts.push("status=" + encodeURIComponent(state.filter));
-    }
-    var to = effectiveDateTo();
-    if (to) {
-      parts.push("dateTo=" + encodeURIComponent(to));
-    }
-    return "?" + parts.join("&");
+  function statusClass(status) {
+    var s = String(status || 'pending').toLowerCase();
+    if (s === 'accepted') return 'appt-status appt-status--accepted';
+    if (s === 'declined') return 'appt-status appt-status--declined';
+    return 'appt-status appt-status--pending';
   }
 
-  function renderTable() {
-    if (!tableBody) return;
-    tableBody.innerHTML = "";
-    var rows = state.rows;
+  function buildUrl() {
+    var base = auth.apiBase() + '/api/appointments?';
+    var fromRaw = $('appt-from') ? getApptDateYmd($('appt-from')) : '';
+    var toRaw = $('appt-to') ? getApptDateYmd($('appt-to')) : '';
+    var statusRaw = $('appt-status') ? $('appt-status').value : 'all';
+    var qs = [];
+    if (fromRaw) qs.push('from=' + encodeURIComponent(fromRaw));
+    if (toRaw) qs.push('to=' + encodeURIComponent(toRaw));
+    if (statusRaw && statusRaw !== 'all') {
+      qs.push('status=' + encodeURIComponent(statusRaw));
+    }
+    return base + qs.join('&');
+  }
 
+  function transcriptHref(sessionId) {
+    var sid = String(sessionId || '').trim();
+    if (!sid) return '';
+    return '/conversation-transcript?session=' + encodeURIComponent(sid);
+  }
+
+  function renderActions(row) {
+    var sid = row.sessionId || '';
+    if (!sid) return '<span class="appt-muted">—</span>';
+    var st = String(row.status || 'pending').toLowerCase();
+    if (st === 'accepted' || st === 'declined') {
+      return '<span class="appt-muted">Done</span>';
+    }
+    return (
+      '<div class="appt-actions">' +
+      '<button type="button" class="appt-btn appt-btn--accept" data-action="accept" data-session="' +
+      esc(sid) +
+      '">Accept</button>' +
+      '<button type="button" class="appt-btn appt-btn--decline" data-action="decline" data-session="' +
+      esc(sid) +
+      '">Decline</button>' +
+      '</div>'
+    );
+  }
+
+  function renderRows(data) {
+    var body = $('appt-body');
+    var meta = $('appt-meta');
+    if (!body) return;
+
+    var rows = (data && data.appointments) || [];
     if (!rows.length) {
-      if (apptEmpty) {
-        apptEmpty.classList.remove("hidden");
-        apptEmpty.textContent =
-          "No appointments scheduled for the selected date.";
+      body.innerHTML =
+        '<tr><td colspan="10" class="appt-empty">No appointments for the selected filters.</td></tr>';
+    } else {
+      body.innerHTML = rows
+        .map(function (row) {
+          var link = row.transcriptUrl || transcriptHref(row.sessionId || '');
+          var chatCell = link
+            ? '<a class="appt-link-transcript" href="' +
+              esc(link) +
+              '" target="_blank" rel="noopener noreferrer">Chatscript</a>'
+            : '—';
+          var st = String(row.status || 'pending').toLowerCase();
+          return (
+            '<tr data-session="' +
+            esc(row.sessionId || '') +
+            '">' +
+            '<td>' +
+            esc(formatDmy(row.appointmentDate) || '—') +
+            '</td>' +
+            '<td>' +
+            esc(row.appointmentTime || '—') +
+            '</td>' +
+            '<td>' +
+            esc(row.name || '—') +
+            '</td>' +
+            '<td>' +
+            esc(row.mobile || '—') +
+            '</td>' +
+            '<td>' +
+            esc(row.email || '—') +
+            '</td>' +
+            '<td>' +
+            esc(formatDmy(row.conversationDate) || '—') +
+            '</td>' +
+            '<td>' +
+            esc(row.channel || '—') +
+            '</td>' +
+            '<td><span class="' +
+            statusClass(st) +
+            '">' +
+            esc(statusLabel(st)) +
+            '</span></td>' +
+            '<td>' +
+            renderActions(row) +
+            '</td>' +
+            '<td>' +
+            chatCell +
+            '</td>' +
+            '</tr>'
+          );
+        })
+        .join('');
+    }
+
+    if (meta) {
+      var parts = [rows.length + ' appointment' + (rows.length === 1 ? '' : 's')];
+      var df = data && data.dateFilter;
+      if (df && df.from && df.to) {
+        parts.push(
+          df.from === df.to
+            ? 'App. date: ' + df.from
+            : 'App. dates: ' + df.from + ' – ' + df.to
+        );
       }
-      if (tableWrap) tableWrap.classList.add("hidden");
+      if (data && data.statusFilter && data.statusFilter !== 'all') {
+        parts.push('status: ' + data.statusFilter);
+      }
+      if (data && data.source) parts.push('source: ' + data.source);
+      if (data && data.sheetsConfigured === false) {
+        parts.push('Google Sheet not configured — showing transcript data only');
+      }
+      meta.textContent = parts.join(' · ');
+    }
+  }
+
+  function showUnlock(message) {
+    var panel = $('appt-unlock');
+    var msg = $('appt-unlock-msg');
+    if (panel) panel.classList.remove('hidden');
+    if (msg) {
+      msg.textContent = message || '';
+      msg.classList.toggle('ok', !message);
+    }
+    var saved = auth.viewerSecret();
+    if (saved && $('appt-secret') && !$('appt-secret').value) {
+      $('appt-secret').value = saved;
+    }
+  }
+
+  function hideUnlock() {
+    var panel = $('appt-unlock');
+    var msg = $('appt-unlock-msg');
+    if (panel) panel.classList.add('hidden');
+    if (msg) {
+      msg.textContent = '';
+      msg.classList.remove('ok');
+    }
+  }
+
+  function load() {
+    if (!auth.hasAuth()) {
+      showUnlock('Enter your viewer secret to load appointments.');
       return;
     }
-    if (apptEmpty) apptEmpty.classList.add("hidden");
-    if (tableWrap) tableWrap.classList.remove("hidden");
 
-    rows.forEach(function (row) {
-      var st = row.staffStatus || "requested";
-      var tr = document.createElement("tr");
-      tr.dataset.key = row.key;
-
-      var slotLabel =
-        row.appointmentBooked === "Yes" ? "Booked" : "Pending";
-
-      var actionsHtml = "—";
-      if (st === "requested") {
-        actionsHtml =
-          '<div class="appt-row-actions">' +
-          '<button type="button" class="btn primary small appt-act-accept" data-key="' +
-          esc(row.key) +
-          '" title="Confirm this appointment">Confirm</button>' +
-          '<button type="button" class="btn ghost small appt-decline-btn appt-act-decline" data-key="' +
-          esc(row.key) +
-          '" title="Decline this appointment">Decline</button>' +
-          "</div>";
-      } else if (row.staffUpdatedBy || row.staffUpdatedAtMs) {
-        var meta = esc(row.staffUpdatedBy || "staff");
-        actionsHtml = '<span class="appt-act-meta muted">' + meta + "</span>";
-      }
-
-      tr.innerHTML =
-        '<td><span class="appt-badge ' +
-        esc(st) +
-        '">' +
-        esc(statusLabel(st)) +
-        "</span></td>" +
-        "<td><strong>" +
-        esc(row.patientName || "Guest") +
-        "</strong></td>" +
-        "<td>" +
-        esc(cellText(row.patientMobile)) +
-        "</td>" +
-        '<td class="appt-cell-email">' +
-        esc(cellText(row.patientEmail)) +
-        "</td>" +
-        "<td>" +
-        esc(formatDateDdMmYyyy(row)) +
-        "</td>" +
-        "<td>" +
-        esc(cellText(row.appointmentTime)) +
-        "</td>" +
-        "<td>" +
-        esc(cellText(row.doctorDisplay)) +
-        "</td>" +
-        "<td>" +
-        esc(cellText(row.department)) +
-        "</td>" +
-        "<td>" +
-        esc(cellText(row.branchId)) +
-        "</td>" +
-        "<td>" +
-        esc(slotLabel) +
-        "</td>" +
-        '<td class="appt-cell-actions">' +
-        actionsHtml +
-        "</td>";
-
-      tableBody.appendChild(tr);
-    });
-
-    tableBody.querySelectorAll(".appt-act-accept").forEach(function (btn) {
-      btn.addEventListener("click", function () {
-        patchStatus(btn.getAttribute("data-key"), "accepted");
-      });
-    });
-    tableBody.querySelectorAll(".appt-act-decline").forEach(function (btn) {
-      btn.addEventListener("click", function () {
-        patchStatus(btn.getAttribute("data-key"), "declined");
-      });
-    });
-  }
-
-  function findRow(key) {
-    return state.rows.find(function (r) {
-      return r.key === key;
-    });
-  }
-
-  function patchStatus(key, staffStatus) {
-    var row = findRow(key);
-    if (!row) return Promise.resolve();
-    var label = staffStatus === "accepted" ? "Confirm" : "Decline";
-    if (
-      !window.confirm(
-        label + " this booking for " + (row.patientName || "guest") + "?"
-      )
-    ) {
-      return Promise.resolve();
+    var body = $('appt-body');
+    if (body) {
+      body.innerHTML = '<tr><td colspan="10" class="appt-loading">Loading…</td></tr>';
     }
-    var tr = tableBody ? tableBody.querySelector('tr[data-key="' + key + '"]') : null;
-    var rowBtns = tr ? tr.querySelectorAll("button") : [];
-    rowBtns.forEach(function (b) {
-      b.disabled = true;
-    });
 
-    return apiFetch("/api/dashboard/appointments/" + encodeURIComponent(key), {
-      method: "PATCH",
-      body: { staffStatus: staffStatus }
-    })
-      .then(function () {
-        showToast("Marked as " + statusLabel(staffStatus), "ok");
-        return loadAppointments();
-      })
-      .catch(function (err) {
-        showToast(err.message || "Update failed", "err");
-        rowBtns.forEach(function (b) {
-          b.disabled = false;
+    var url = auth.withAuthQuery(buildUrl());
+    fetch(url, { headers: auth.authHeaders() })
+      .then(function (r) {
+        return r.json().then(function (data) {
+          return { status: r.status, data: data };
         });
-      });
-  }
-
-  function statusLineText() {
-    var n = state.rows.length;
-    return n + " appointment" + (n === 1 ? "" : "s");
-  }
-
-  function loadAppointments() {
-    if (listStatus) listStatus.textContent = "Loading…";
-    return apiFetch("/api/dashboard/appointments" + buildQueryString())
-      .then(function (data) {
-        var all = Array.isArray(data.appointments) ? data.appointments : [];
-        state.rows = all.filter(rowMatchesScheduleFilter);
-        if (listStatus) listStatus.textContent = statusLineText();
-        renderTable();
       })
-      .catch(function (err) {
-        if (listStatus) listStatus.textContent = "Could not load.";
-        showToast(err.message || "Load failed", "err");
+      .then(function (res) {
+        if (res.status === 401 || !res.data.ok) {
+          var detail =
+            (res.data && (res.data.message || res.data.error)) ||
+            'Secret not accepted.';
+          showUnlock(detail);
+          return;
+        }
+        hideUnlock();
+        renderRows(res.data);
+      })
+      .catch(function () {
+        showUnlock('Network error — try again.');
       });
   }
 
-  var filters = document.querySelectorAll(".appt-filter");
-  filters.forEach(function (btn) {
-    btn.addEventListener("click", function () {
-      filters.forEach(function (b) {
-        b.classList.remove("active");
+  function findRowData(sessionId) {
+    var tr = document.querySelector('tr[data-session="' + sessionId + '"]');
+    if (!tr) return null;
+    var cells = tr.querySelectorAll('td');
+    if (!cells || cells.length < 5) return null;
+    return {
+      sessionId: sessionId,
+      appointmentDate: cells[0] ? cells[0].textContent.trim() : '',
+      appointmentTime: cells[1] ? cells[1].textContent.trim() : '',
+      name: cells[2] ? cells[2].textContent.trim() : '',
+      mobile: cells[3] ? cells[3].textContent.trim() : '',
+      email: cells[4] ? cells[4].textContent.trim() : '',
+    };
+  }
+
+  function postAction(sessionId, action, btn) {
+    if (!auth.hasAuth()) {
+      showUnlock('Enter your viewer secret first.');
+      return;
+    }
+    var row = findRowData(sessionId);
+    if (!row) return;
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = action === 'accept' ? 'Accepting…' : 'Declining…';
+    }
+    var url = auth.apiBase() + '/api/appointments/action';
+    fetch(url, {
+      method: 'POST',
+      headers: Object.assign({ 'Content-Type': 'application/json' }, auth.authHeaders()),
+      body: JSON.stringify({
+        sessionId: sessionId,
+        action: action,
+        formId: 'appointment',
+        appointmentDate: row.appointmentDate,
+        appointmentTime: row.appointmentTime,
+        name: row.name === '—' ? '' : row.name,
+        mobile: row.mobile === '—' ? '' : row.mobile,
+        email: row.email === '—' ? '' : row.email,
+      }),
+    })
+      .then(function (r) {
+        return r.json().then(function (data) {
+          return { ok: r.ok, data: data };
+        });
+      })
+      .then(function (res) {
+        if (!res.ok || !res.data.ok) {
+          var err =
+            (res.data && (res.data.error || res.data.message)) ||
+            'Action failed.';
+          alert(err);
+          if (btn) {
+            btn.disabled = false;
+            btn.textContent = action === 'accept' ? 'Accept' : 'Decline';
+          }
+          return;
+        }
+        load();
+      })
+      .catch(function () {
+        alert('Network error — try again.');
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = action === 'accept' ? 'Accept' : 'Decline';
+        }
       });
-      btn.classList.add("active");
-      state.filter = btn.getAttribute("data-status") || "";
-      loadAppointments();
-    });
-  });
-
-  if (btnToday) {
-    btnToday.addEventListener("click", selectToday);
-  }
-  if (btnTomorrow) {
-    btnTomorrow.addEventListener("click", selectTomorrow);
   }
 
-  if (toggleCalBtn) {
-    toggleCalBtn.addEventListener("click", function (ev) {
-      ev.stopPropagation();
-      setCalendarOpen(!state.calOpen);
-    });
-  }
-
-  if (clearCalBtn) {
-    clearCalBtn.addEventListener("click", function (ev) {
-      ev.stopPropagation();
-      selectToday();
-    });
-  }
-
-  document.addEventListener("click", function (ev) {
-    if (!state.calOpen) return;
-    var onCal =
-      (calAnchorWrap && calAnchorWrap.contains(ev.target)) ||
-      (calPanel && calPanel.contains(ev.target));
-    if (!onCal) {
-      setCalendarOpen(false);
+  function unlockAndLoad() {
+    var input = $('appt-secret');
+    var msg = $('appt-unlock-msg');
+    var btn = $('appt-unlock-btn');
+    var secret = input ? input.value.trim() : '';
+    if (!secret) {
+      if (msg) msg.textContent = 'Enter viewer secret.';
+      return;
     }
-  });
-
-  window.addEventListener("resize", function () {
-    if (state.calOpen) {
-      positionCalendarPopover();
-    }
-  });
-
-  window.addEventListener(
-    "scroll",
-    function () {
-      if (state.calOpen) {
-        positionCalendarPopover();
+    if (btn) btn.disabled = true;
+    if (msg) msg.textContent = 'Checking secret…';
+    auth.validateSecret(secret).then(function (result) {
+      if (btn) btn.disabled = false;
+      if (!result.ok) {
+        if (msg) msg.textContent = result.message || 'Secret not accepted.';
+        return;
       }
-    },
-    true
-  );
-
-  document.addEventListener("keydown", function (ev) {
-    if (ev.key === "Escape" && state.calOpen) {
-      setCalendarOpen(false);
-    }
-  });
-
-  if (calPrev) {
-    calPrev.addEventListener("click", function () {
-      if (calPrev.disabled) return;
-      state.viewMonth -= 1;
-      if (state.viewMonth < 0) {
-        state.viewMonth = 11;
-        state.viewYear -= 1;
+      if (msg) {
+        msg.textContent = 'Unlocked.';
+        msg.classList.add('ok');
       }
-      renderCalendar();
+      load();
     });
   }
 
-  if (calNext) {
-    calNext.addEventListener("click", function () {
-      state.viewMonth += 1;
-      if (state.viewMonth > 11) {
-        state.viewMonth = 0;
-        state.viewYear += 1;
+  $('appt-refresh').addEventListener('click', load);
+  if ($('appt-today')) {
+    $('appt-today').addEventListener('click', function () {
+      var today = localTodayIso();
+      if ($('appt-from')) setApptDateYmd($('appt-from'), today);
+      if ($('appt-to')) setApptDateYmd($('appt-to'), today);
+      load();
+    });
+  }
+  $('appt-apply').addEventListener('click', load);
+  if ($('appt-status')) {
+    $('appt-status').addEventListener('change', load);
+  }
+  if ($('appt-unlock-btn')) {
+    $('appt-unlock-btn').addEventListener('click', unlockAndLoad);
+  }
+  if ($('appt-secret')) {
+    $('appt-secret').addEventListener('keydown', function (ev) {
+      if (ev.key === 'Enter') unlockAndLoad();
+    });
+  }
+  if ($('appt-body')) {
+    $('appt-body').addEventListener('click', function (ev) {
+      var btn = ev.target && ev.target.closest ? ev.target.closest('[data-action]') : null;
+      if (!btn || btn.disabled) return;
+      var action = btn.getAttribute('data-action');
+      var sessionId = btn.getAttribute('data-session');
+      if (!action || !sessionId) return;
+      if (action === 'decline') {
+        if (!window.confirm('Decline this appointment? The time slot will be released.')) return;
       }
-      renderCalendar();
+      postAction(sessionId, action, btn);
     });
   }
-
-  var refreshBtn = $("#refreshBtn");
-  if (refreshBtn) {
-    refreshBtn.addEventListener("click", function () {
-      loadAppointments();
-    });
-  }
-
-  refreshDateUi();
-  setCalendarOpen(false);
-  loadAppointments();
+  bindApptDatePicker($('appt-from'));
+  bindApptDatePicker($('appt-to'));
+  initDefaultDates();
+  load();
 })();

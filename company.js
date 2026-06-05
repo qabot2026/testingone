@@ -20701,6 +20701,9 @@ function submitContactForm(event) {
     if (fetchHeaders) {
         fetchInit.headers = fetchHeaders;
     }
+    if (isCompanyQaMode_()) {
+        fetchInit.headers = { ...(fetchInit.headers || {}), "X-QA-Mode": "1" };
+    }
 
     /** So a slow Google API cannot leave “Submitting…” forever (button re-enables in `finally`). */
     let submitFetchTimeoutId = 0;
@@ -24358,7 +24361,31 @@ function mergePhoneFromDialogflowParametersIntoStoredContext(event) {
     }
 }
 
+function isCompanyQaMode_() {
+    try {
+        if (window.COMPANY_QA_MODE === true || window.COMPANY_QA_MODE === 1) return true;
+        if (String(window.COMPANY_QA_MODE || "").trim() === "1") return true;
+    } catch (e) { /* ignore */ }
+    return false;
+}
+
 function createClientSessionId() {
+    if (isCompanyQaMode_()) {
+        try {
+            const preset = typeof window.COMPANY_QA_SESSION_ID === "string"
+                ? window.COMPANY_QA_SESSION_ID.trim()
+                : "";
+            if (preset && preset.startsWith("qa-test-")) return preset;
+            const stored = sessionStorage.getItem("company_qa_session_id");
+            if (stored && String(stored).trim().startsWith("qa-test-")) {
+                return String(stored).trim();
+            }
+        } catch (e) { /* ignore */ }
+        if (window.crypto && typeof window.crypto.randomUUID === "function") {
+            return "qa-test-" + window.crypto.randomUUID();
+        }
+        return "qa-test-" + Date.now() + "-" + Math.random().toString(16).slice(2);
+    }
     if (window.crypto && typeof window.crypto.randomUUID === "function") {
         return window.crypto.randomUUID();
     }

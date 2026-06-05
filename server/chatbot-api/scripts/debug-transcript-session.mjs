@@ -10,9 +10,10 @@ import {
     fetchLatestContactSubmissionForClientSession,
     fetchSessionChatTranscriptContext
 } from "../lib/firestore.mjs";
+import { defaultApiBaseUrl_ } from "../lib/default-api-base.mjs";
 
 const session = (process.argv[2] || "").trim();
-const apiBase = (process.env.CONVERSATIONS_PUBLIC_BASE_URL || "https://handsome-amazement-production-7f65.up.railway.app").replace(/\/$/, "");
+const apiBase = (process.env.CONVERSATIONS_PUBLIC_BASE_URL || defaultApiBaseUrl_()).replace(/\/$/, "");
 const secret = (process.env.CONVERSATIONS_SHEET_VIEW_SECRET || "").trim();
 
 if (!session) {

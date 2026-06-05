@@ -25,6 +25,7 @@ import {
     conversationMetricsForSheetRow_
 } from "./conversation-metrics.mjs";
 import { getServiceAccountCredentials } from "./google-service-account.mjs";
+import { defaultApiBaseUrl_ } from "./default-api-base.mjs";
 
 const SHEET_CONFIG_DIR = path.dirname(fileURLToPath(import.meta.url));
 const SHEET_INTEGRATION_CONFIG_PATH = path.join(SHEET_CONFIG_DIR, "..", "sheet-integration.config.json");
@@ -116,7 +117,7 @@ function resolvedConversationsPublicBaseUrl_() {
     if (st) {
         return /^https?:\/\//i.test(st) ? st : `https://${st}`;
     }
-    return "";
+    return defaultApiBaseUrl_();
 }
 /** Secondary tab for lead KPIs (created if missing). Must differ from `SHEETS_RANGE` data tab. */
 const DASHBOARD_SHEET_TAB = (process.env.SHEETS_DASHBOARD_TAB || "Sheet2").trim() || "Sheet2";

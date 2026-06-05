@@ -125,6 +125,7 @@ import { mountSmsOtpRoutes } from "./lib/sms-otp/index.mjs";
 import { mountWhatsappRoutes } from "./lib/whatsapp/index.mjs";
 import { mountDashboardRoutes } from "./lib/dashboard/index.mjs";
 import { mountLiveAgentRoutes } from "./lib/live-agent/index.mjs";
+import { mountStaffPageRoutes, isQaRequest_ } from "./lib/staff-pages/index.mjs";
 import { normalizeSheetFormId as normalizeStaffSheetFormId_ } from "./lib/form-staff-labels.mjs";
 
 const APPS_SCRIPT_WEBAPP_URL = (process.env.GOOGLE_APPS_SCRIPT_WEBAPP_URL || "").trim();
@@ -2662,6 +2663,15 @@ app.post(
             ? clientContext.client_session_id.trim()
             : "";
 
+        if (isQaRequest_(req, clientSessionId)) {
+            return res.json({
+                ok: true,
+                qaMode: true,
+                sessionId: clientSessionId,
+                skipped: true
+            });
+        }
+
         /** True when this request successfully booked an appointment slot (server-side). */
         let appointmentBookedServer = false;
         try {
@@ -4047,6 +4057,12 @@ app.get("/contact-form-sheets-health", async (_req, res) => {
 const RECEPTION_SCHEDULE_HTML = path.join(__dirname_api, "public", "reception-schedule.html");
 const CONVERSATIONS_SHEET_HTML = path.join(__dirname_api, "public", "conversations-sheet.html");
 const CONVERSATION_TRANSCRIPT_HTML = path.join(__dirname_api, "public", "conversation-transcript.html");
+const QA_INDEX_HTML = path.join(__dirname_api, "public", "qa", "index.html");
+
+mountStaffPageRoutes(app, {
+    conversationsSheetHtml: CONVERSATIONS_SHEET_HTML,
+    qaIndexHtml: QA_INDEX_HTML
+});
 
 /** sendFile callback: client abort (EPIPE) can fire after headers are already sent. */
 function sendStaffHtmlPage_(res, filePath, routeLabel, missingBody) {
@@ -4073,16 +4089,6 @@ app.get("/reception-schedule", (_req, res) => {
         RECEPTION_SCHEDULE_HTML,
         "reception-schedule",
         "Staff UI missing: add public/reception-schedule.html and redeploy."
-    );
-});
-
-/** Staff: visual inbox of chat leads from Google Sheet (protect with CONVERSATIONS_SHEET_VIEW_SECRET). */
-app.get("/conversations-sheet", (_req, res) => {
-    sendStaffHtmlPage_(
-        res,
-        CONVERSATIONS_SHEET_HTML,
-        "conversations-sheet",
-        "Staff UI missing: add public/conversations-sheet.html and redeploy."
     );
 });
 

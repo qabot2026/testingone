@@ -2,5 +2,8 @@ server/chatbot-api/node_modules/
 node_modules/
 __pycache__/
 
+# Local DF CX reference copy (not deployed; may contain credentials)
+Only for Refer/
+
 # Published widget UI (generated when using DASHBOARD_WIDGET_SETTINGS_BACKEND=file)
 server/chatbot-api/data/widget-settings-store.json

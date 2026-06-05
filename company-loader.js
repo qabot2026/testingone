@@ -36,7 +36,6 @@
 
   var CHAT_HOST = chatHostFromLoaderSrc() || "https://qabot2026.github.io/testingone/";
   var IFRAME_VERSION = "123-card-carousel-dedupe";
-  var DEFAULT_API_BASE = "https://handsome-amazement-production-7f65.up.railway.app";
 
   function getLoaderQuery() {
     var cur = document.currentScript;
@@ -60,22 +59,54 @@
   }
   var q = getLoaderQuery();
   var bot = (q.get("botid") || "").trim();
-  /** Pass-through: backend base URL for `/contact-form-submissions` (Railway API). */
-  var apiBase = (q.get("apiBase") || "").trim() || DEFAULT_API_BASE;
 
-  var frameUrl = CHAT_HOST + "chat-frame.html?v=" + encodeURIComponent(IFRAME_VERSION);
-  if (bot) {
-    frameUrl += "&botid=" + encodeURIComponent(bot);
+  function resolveApiBase(cb) {
+    var fromQuery = (q.get("apiBase") || "").trim();
+    if (fromQuery) {
+      cb(fromQuery);
+      return;
+    }
+    try {
+      var preset = window.COMPANY_DEFAULT_API_BASE_URL;
+      if (preset && String(preset).trim()) {
+        cb(String(preset).trim());
+        return;
+      }
+    } catch (ePreset) {
+      /* ignore */
+    }
+    var cfg = document.createElement("script");
+    cfg.src = CHAT_HOST + "api-base.config.js?v=1";
+    cfg.onload = function () {
+      try {
+        cb(String(window.COMPANY_DEFAULT_API_BASE_URL || "").trim());
+      } catch (eLoad) {
+        cb("");
+      }
+    };
+    cfg.onerror = function () {
+      cb("");
+    };
+    (document.head || document.documentElement).appendChild(cfg);
   }
-  if (apiBase) {
-    frameUrl += "&apiBase=" + encodeURIComponent(apiBase);
+
+  function buildFrameUrl(apiBase) {
+    var frameUrl = CHAT_HOST + "chat-frame.html?v=" + encodeURIComponent(IFRAME_VERSION);
+    if (bot) {
+      frameUrl += "&botid=" + encodeURIComponent(bot);
+    }
+    if (apiBase) {
+      frameUrl += "&apiBase=" + encodeURIComponent(apiBase);
+    }
+    try {
+      frameUrl += "&hostPage=" + encodeURIComponent(window.location.href);
+    } catch (e2) {
+      /* ignore invalid parent location */
+    }
+    return frameUrl;
   }
-  /** Parent document URL → chat iframe reads this so `client_context.source_url` is the host page, not `chat-frame.html` or API host. */
-  try {
-    frameUrl += "&hostPage=" + encodeURIComponent(window.location.href);
-  } catch (e2) {
-    /* ignore invalid parent location */
-  }
+
+  var frameUrl = "";
 
   function mount() {
     if (!document.body) {
@@ -124,21 +155,26 @@
     document.body.appendChild(f);
   }
 
-  if (document.body) {
-    mount();
-  } else if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", mount, { once: true });
-  } else {
-    var n = 0;
-    (function w() {
-      if (document.body) {
-        mount();
-        return;
-      }
-      if (n++ > 200) {
-        return;
-      }
-      setTimeout(w, 0);
-    })();
+  function startWidget(apiBase) {
+    frameUrl = buildFrameUrl(apiBase);
+    if (document.body) {
+      mount();
+    } else if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", mount, { once: true });
+    } else {
+      var n = 0;
+      (function w() {
+        if (document.body) {
+          mount();
+          return;
+        }
+        if (n++ > 200) {
+          return;
+        }
+        setTimeout(w, 0);
+      })();
+    }
   }
+
+  resolveApiBase(startWidget);
 })();

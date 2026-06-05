@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Query analytics</title>
+    <link rel="stylesheet" href="dashboard.css" />
+    <link rel="stylesheet" href="query-analytics.css" />
+  </head>
+  <body>
+    <div class="dash-app qa-app">
+      <header class="dash-header">
+        <div>
+          <h1>Query analytics</h1>
+          <p class="dash-muted">What visitors asked, how often, and whether the bot answered or fell back</p>
+        </div>
+        <nav class="dash-nav">
+          <a href="index.html" class="dash-btn dash-btn--ghost">Dashboard</a>
+          <a href="/uc-conversations" class="dash-btn dash-btn--ghost">Conversation leads</a>
+          <a href="documents.html" class="dash-btn dash-btn--ghost">Documents</a>
+          <button type="button" id="qa-refresh" class="dash-btn dash-btn--primary">Refresh</button>
+        </nav>
+      </header>
+
+      <section id="qa-unlock" class="qa-unlock hidden" aria-label="Unlock query analytics">
+        <h2>Viewer secret required</h2>
+        <p class="dash-muted">
+          Use the same secret as
+          <a href="/uc-conversations">Conversation leads</a>
+          or
+          <a href="/live-agent/settings">Live Agent Settings</a>
+          (<code>CONVERSATIONS_SHEET_VIEW_SECRET</code> on Railway).
+        </p>
+        <div class="qa-unlock-row">
+          <label>
+            Viewer secret
+            <input id="qa-secret" type="password" autocomplete="current-password" />
+          </label>
+          <button type="button" id="qa-unlock-btn" class="dash-btn dash-btn--primary">Unlock</button>
+        </div>
+        <p id="qa-unlock-msg" class="qa-unlock-msg" role="status"></p>
+      </section>
+
+      <section class="qa-toolbar">
+        <label>
+          Time period
+          <select id="qa-period">
+            <option value="1">Today (24h)</option>
+            <option value="7">Last 7 days</option>
+            <option value="30" selected>Last 30 days</option>
+            <option value="90">Last 90 days</option>
+            <option value="365">Last year</option>
+            <option value="custom">Custom range…</option>
+          </select>
+        </label>
+        <div id="qa-custom-range" class="qa-custom-range hidden" aria-label="Custom date range">
+          <label>
+            From
+            <input type="text" id="qa-from" placeholder="DD/MM/YYYY" inputmode="numeric" autocomplete="off" />
+          </label>
+          <label>
+            To
+            <input type="text" id="qa-to" placeholder="DD/MM/YYYY" inputmode="numeric" autocomplete="off" />
+          </label>
+          <button type="button" id="qa-apply-range" class="dash-btn dash-btn--ghost">Apply</button>
+        </div>
+        <label>
+          Rows per table
+          <select id="qa-page-size" title="Entries shown per table page">
+            <option value="50" selected>50</option>
+            <option value="100">100</option>
+            <option value="200">200</option>
+            <option value="300">300</option>
+          </select>
+        </label>
+        <p id="qa-period-label" class="dash-muted qa-period-label"></p>
+      </section>
+
+      <section class="dash-grid qa-summary" aria-label="Summary">
+        <div class="dash-card">
+          <div class="dash-card__value" id="qa-total">—</div>
+          <div class="dash-card__label">Total queries</div>
+        </div>
+        <div class="dash-card qa-card--bot">
+          <div class="dash-card__value" id="qa-bot">—</div>
+          <div class="dash-card__label">Bot answered</div>
+        </div>
+        <div class="dash-card qa-card--fallback">
+          <div class="dash-card__value" id="qa-fallback">—</div>
+          <div class="dash-card__label">Fallback</div>
+        </div>
+        <div class="dash-card qa-card--handoff">
+          <div class="dash-card__value" id="qa-handoff">—</div>
+          <div class="dash-card__label">Human agent</div>
+        </div>
+        <div class="dash-card">
+          <div class="dash-card__value" id="qa-unique">—</div>
+          <div class="dash-card__label">Unique questions</div>
+        </div>
+      </section>
+
+      <section class="qa-panel qa-queries-panel">
+        <div class="qa-tables-row">
+          <div class="qa-table-panel qa-table-panel--answered">
+            <h2>Answered queries</h2>
+            <p class="dash-muted qa-hint">Live chats where Dialogflow understood (not fallback)</p>
+            <div class="qa-table-wrap">
+              <table class="qa-table">
+                <colgroup>
+                  <col class="qa-col-query" />
+                  <col class="qa-col-times" />
+                  <col class="qa-col-sessions" />
+                  <col class="qa-col-date" />
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th class="qa-col-query">User query</th>
+                    <th class="qa-col-times">Times</th>
+                    <th class="qa-col-sessions">Sessions</th>
+                    <th class="qa-col-date">Last asked</th>
+                  </tr>
+                </thead>
+                <tbody id="qa-answered-body">
+                  <tr><td colspan="4" class="qa-loading">Loading…</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <footer class="qa-pager" id="qa-answered-pager" hidden aria-label="Answered queries pagination">
+              <div class="qa-pager-controls">
+                <button type="button" class="qa-pager-btn qa-pager-btn--jump" id="qa-answered-first" title="First page" aria-label="First page">1</button>
+                <button type="button" class="qa-pager-btn" id="qa-answered-prev" title="Previous page" aria-label="Previous page">&lt;</button>
+                <span class="qa-pager-num is-current" id="qa-answered-page" aria-live="polite">1</span>
+                <button type="button" class="qa-pager-btn" id="qa-answered-next" title="Next page" aria-label="Next page">&gt;</button>
+                <button type="button" class="qa-pager-btn qa-pager-btn--jump" id="qa-answered-last" title="Last page" aria-label="Last page">1</button>
+              </div>
+              <span class="qa-pager-hint" id="qa-answered-hint"></span>
+            </footer>
+          </div>
+          <div class="qa-table-panel qa-table-panel--unanswered">
+            <h2>Unanswered queries</h2>
+            <p class="dash-muted qa-hint">Fallback only — bot did not understand</p>
+            <div class="qa-table-wrap">
+              <table class="qa-table">
+                <colgroup>
+                  <col class="qa-col-query" />
+                  <col class="qa-col-times" />
+                  <col class="qa-col-sessions" />
+                  <col class="qa-col-date" />
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th class="qa-col-query">User query</th>
+                    <th class="qa-col-times">Times</th>
+                    <th class="qa-col-sessions">Sessions</th>
+                    <th class="qa-col-date">Last asked</th>
+                  </tr>
+                </thead>
+                <tbody id="qa-unanswered-body">
+                  <tr><td colspan="4" class="qa-loading">Loading…</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <footer class="qa-pager" id="qa-unanswered-pager" hidden aria-label="Unanswered queries pagination">
+              <div class="qa-pager-controls">
+                <button type="button" class="qa-pager-btn qa-pager-btn--jump" id="qa-unanswered-first" title="First page" aria-label="First page">1</button>
+                <button type="button" class="qa-pager-btn" id="qa-unanswered-prev" title="Previous page" aria-label="Previous page">&lt;</button>
+                <span class="qa-pager-num is-current" id="qa-unanswered-page" aria-live="polite">1</span>
+                <button type="button" class="qa-pager-btn" id="qa-unanswered-next" title="Next page" aria-label="Next page">&gt;</button>
+                <button type="button" class="qa-pager-btn qa-pager-btn--jump" id="qa-unanswered-last" title="Last page" aria-label="Last page">1</button>
+              </div>
+              <span class="qa-pager-hint" id="qa-unanswered-hint"></span>
+            </footer>
+          </div>
+        </div>
+      </section>
+    </div>
+    <script src="desk-auth.js"></script>
+    <script src="date-display.js"></script>
+    <script src="query-analytics.js"></script>
+  </body>
+</html>

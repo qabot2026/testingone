@@ -2,10 +2,13 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="robots" content="noindex, nofollow" />
   <title>Agent Service Desk</title>
-  <link rel="stylesheet" href="/live-agent/live-agent.css" />
+  <link rel="stylesheet" href="live-agent.css?v=20260604-footer-btn-size" />
+  <link rel="stylesheet" href="live-agent-mobile.css?v=20260604-footer-btn-size" />
 </head>
 <body>
 
@@ -43,13 +46,34 @@
         <div class="top-actions">
           <label class="filter-label agent-status-label" title="Your availability">
             You
-            <select id="myAgentStatus">
-              <option value="online" selected>Online</option>
-              <option value="away">Away</option>
-              <option value="offline">Offline</option>
-            </select>
+            <span class="agent-status-picker">
+              <span id="myAgentStatusIcon" class="status-dot status-dot--online" aria-hidden="true"></span>
+              <select id="myAgentStatus">
+                <option value="online" selected>Online</option>
+                <option value="away">Away</option>
+                <option value="offline">Offline</option>
+              </select>
+            </span>
           </label>
-          <span id="notifyPill" class="notify-pill hidden" title="Waiting for an agent">0 waiting</span>
+          <button type="button" class="btn primary small hidden" id="enablePhoneNotifyBtn"
+            title="Show alerts in Chrome / phone notification list">Phone alerts</button>
+          <div class="notifications-wrap" id="notificationsWrap">
+            <button type="button" class="btn ghost notifications-btn" id="notificationsBtn"
+              title="Open alert panel (new live-agent requests)" aria-expanded="false" aria-controls="notificationsPanel">
+              <span class="notifications-btn-label">Alerts</span>
+              <span class="notifications-btn-icon" aria-hidden="true">🔔</span>
+              <span id="notificationsBadge" class="notifications-badge hidden">0</span>
+            </button>
+            <div id="notificationsPanel" class="notifications-panel notifications-panel--dropdown hidden" role="region" aria-label="Alert dropdown">
+              <div class="notifications-panel-head">
+                <h2>Alert panel</h2>
+                <button type="button" class="btn ghost small" id="markAllNotificationsReadBtn">Mark all read</button>
+              </div>
+              <p id="notificationsEmpty" class="notifications-empty muted small">No notifications yet.</p>
+              <ul id="notificationsList" class="notifications-list"></ul>
+            </div>
+          </div>
+          <span id="notifyPill" class="notify-pill hidden" title="Chats waiting for an agent">0 waiting</span>
           <label class="filter-label">
             Show
             <select id="inboxFilter">
@@ -66,17 +90,27 @@
           </label>
           <button type="button" class="btn ghost" id="refreshInboxBtn" title="Refresh list">↻</button>
           <a class="btn ghost nav-link" href="/live-agent/settings" title="Departments &amp; routing">⚙</a>
-          <a class="btn ghost nav-link" href="/conversations-sheet" id="leadsLink" title="Leads sheet">Leads</a>
+          <a class="btn ghost nav-link" href="/uc-conversations" id="leadsLink" title="Bot leads (Sheet1)">Bot leads</a>
+          <a class="btn ghost nav-link" href="/ua-conversations" title="Human agent chats (Sheet2)">Agent chats</a>
           <button type="button" class="btn ghost" id="logoutBtn">Lock</button>
         </div>
       </div>
     </header>
 
+    <div id="deskHandoffToast" class="desk-handoff-toast hidden" role="status" aria-live="polite"></div>
+    <div id="notificationsBackdrop" class="notifications-backdrop hidden" aria-hidden="true"></div>
+
     <div class="workspace">
       <aside class="inbox-pane" aria-label="Request queue">
-        <p class="pane-title">Chats</p>
+        <div class="mobile-inbox-toolbar">
+          <p class="pane-title mobile-pane-title">Chats</p>
+          <div class="mobile-inbox-toolbar-actions">
+            <button type="button" class="btn ghost small mobile-icon-btn" id="mobileRefreshInboxBtn" title="Refresh">↻</button>
+          </div>
+        </div>
+        <div class="mobile-filter-chips" id="mobileFilterChips" role="tablist" aria-label="Queue filter"></div>
 
-        <section class="agents-panel" aria-label="Agent status">
+        <section class="agents-panel mobile-hide-when-narrow" aria-label="Agent status">
           <div class="agents-panel-head">
             <h3>Team</h3>
             <div class="agents-panel-actions">
@@ -90,7 +124,7 @@
           </div>
         </section>
 
-        <p class="inbox-hint muted small">Pick a waiting chat, then press <strong>Accept</strong> in the chat panel.</p>
+        <p class="inbox-hint muted small mobile-hide-when-narrow">Tap a chat, then <strong>Accept</strong> to reply.</p>
         <p id="inboxStatus" class="inbox-status muted">Loading…</p>
         <button type="button" class="btn ghost small" id="clearTestQueueBtn" hidden>
           Clear old test chats
@@ -98,19 +132,32 @@
         <ul id="inboxList" class="inbox-list"></ul>
       </aside>
 
+      <section id="mobileAlertsView" class="mobile-full-pane" aria-label="Alerts" hidden>
+        <header class="mobile-full-pane-head">
+          <h2>Alerts</h2>
+          <button type="button" class="btn ghost small" id="markAllNotificationsReadBtnMobile">Mark all read</button>
+        </header>
+        <p id="notificationsEmptyMobile" class="notifications-empty muted small">No new handoff alerts yet.</p>
+        <ul id="notificationsListMobile" class="notifications-list mobile-alerts-list"></ul>
+      </section>
+
       <main class="chat-pane" aria-label="Active conversation">
         <div id="chatEmpty" class="chat-empty">
-          <p class="chat-empty-lead">Select a chat on the left.</p>
+          <p class="chat-empty-lead">Select a chat from the list.</p>
+          <p class="muted small mobile-only-hint">Use the bottom bar: <strong>Chats</strong> or <strong>Alerts</strong>.</p>
         </div>
 
         <div id="chatActive" class="chat-active hidden">
           <header class="chat-head">
             <div class="chat-head-meta">
-              <button type="button" class="btn ghost small mobile-back-btn" id="mobileBackBtn" hidden aria-label="Back to chat list">← Chats</button>
-              <h2 id="chatTitle">Visitor</h2>
-              <p class="muted" id="chatMeta">—</p>
+              <button type="button" class="btn ghost mobile-back-btn" id="mobileBackBtn" hidden aria-label="Back to chat list">←</button>
+              <div class="chat-head-text">
+                <h2 id="chatTitle">Visitor</h2>
+                <p id="chatMeta" class="chat-head-subtitle muted">—</p>
+              </div>
+              <button type="button" class="btn ghost small mobile-details-btn" id="mobileDetailsBtn" title="Visitor details">Info</button>
+              <button type="button" class="btn ghost small mobile-chat-menu-btn" id="mobileChatMenuBtn" title="Chat options" aria-label="Chat options">⋮</button>
             </div>
-            <div class="chat-head-actions" hidden aria-hidden="true"></div>
           </header>
 
           <p id="claimHint" class="claim-hint muted small hidden" role="status"></p>
@@ -121,34 +168,39 @@
           </div>
 
           <div class="chat-main">
+            <div id="visitorTypingPreview" class="visitor-typing-preview hidden" aria-hidden="true"></div>
             <div id="messageList" class="message-list" role="log" aria-live="polite"></div>
-            <form id="composerForm" class="composer" novalidate>
-              <textarea id="composerInput" rows="3" placeholder="Type a reply to the visitor…" autocomplete="off"></textarea>
-              <button type="submit" class="btn primary" id="sendBtn">Send</button>
-            </form>
-          </div>
-
-          <div id="chatActionsBar" class="chat-actions-bar" aria-label="Chat controls">
-            <p id="chatModeStatus" class="chat-mode-status muted small"></p>
-            <div class="chat-actions-primary">
-              <button type="button" class="btn primary" id="enableChatbotBtn" title="Accept chat or switch bot vs you">
-                Accept
-              </button>
-              <button type="button" class="btn danger" id="endChatFooterBtn" title="End live chat">
-                End chat
-              </button>
-              <button type="button" class="btn ghost small" id="refreshChatBtn" title="Reload messages">↻</button>
-              <a class="btn ghost small" id="transcriptFooterBtn" href="#" target="_blank" rel="noopener noreferrer" title="Full transcript">Transcript</a>
-              <button type="button" class="btn ghost small" id="copySessionBtn" title="Copy session ID">ID</button>
-              <button type="button" class="btn ghost small" id="dismissFooterBtn" title="Remove from queue">Dismiss</button>
-            </div>
-            <div id="handoverBar" class="handover-bar hidden">
-              <label class="handover-label">
-                Hand over to
-                <select id="handoverAgentSelect" class="handover-select"></select>
-              </label>
-              <button type="button" class="btn ghost small" id="handoverBtn">Transfer</button>
-            </div>
+            <footer class="chat-footer-wrap" id="waChatFooter" aria-label="Reply and chat actions">
+              <p id="chatModeStatus" class="chat-mode-status m-status muted small"></p>
+              <div id="chatActionsBar" class="chat-actions-bar m-actions" aria-label="Chat controls">
+                <div class="m-actions-row chat-actions-primary">
+                  <button type="button" class="btn primary m-btn m-btn--primary" id="enableChatbotBtn" title="Accept chat or switch bot vs you">
+                    Accept
+                  </button>
+                  <button type="button" class="btn danger m-btn m-btn--danger" id="endChatFooterBtn" title="End live chat">
+                    End
+                  </button>
+                  <div id="handoverBar" class="handover-bar m-handover-inline hidden">
+                    <span class="m-handover-to">To</span>
+                    <select id="handoverAgentSelect" class="handover-select m-handover-select" aria-label="Hand over to agent"></select>
+                    <button type="button" class="btn ghost small m-handover-transfer" id="handoverBtn">Transfer</button>
+                  </div>
+                </div>
+                <div class="chat-actions-extra">
+                  <button type="button" class="btn ghost small" id="refreshChatBtn" title="Reload messages">↻</button>
+                  <a class="btn ghost small" id="transcriptFooterBtn" href="#" target="_blank" rel="noopener noreferrer" title="Transcript">Transcript</a>
+                  <button type="button" class="btn ghost small" id="copySessionBtn" title="Copy session ID">Copy ID</button>
+                  <button type="button" class="btn ghost small" id="dismissFooterBtn" title="Remove from queue">Dismiss</button>
+                </div>
+              </div>
+              <form id="composerForm" class="composer m-composer" novalidate>
+                <textarea id="composerInput" rows="1" placeholder="Message" autocomplete="off"></textarea>
+                <button type="submit" class="btn primary m-send" id="sendBtn" aria-label="Send">
+                  <span class="m-send-icon" aria-hidden="true">➤</span>
+                  <span class="m-send-label">Send</span>
+                </button>
+              </form>
+            </footer>
           </div>
         </div>
       </main>
@@ -166,11 +218,106 @@
             <p id="documentsEmpty" class="muted small hidden">No files yet.</p>
             <p class="context-links"><a id="transcriptLink" href="#" target="_blank" rel="noopener noreferrer">Transcript</a></p>
           </div>
+          <section class="kb-pane" id="kbPane" aria-label="Knowledge base">
+            <div class="kb-pane-head">
+              <h3>Knowledge base</h3>
+            </div>
+            <label class="kb-search-label">
+              <span class="sr-only">Search articles</span>
+              <input type="search" id="kbSearchInput" class="kb-search-input" placeholder="Search answers…" autocomplete="off" />
+            </label>
+            <p id="kbSearchHint" class="muted small">Type keywords (refund, hours, pricing…)</p>
+            <ul id="kbResultsList" class="kb-results-list"></ul>
+          </section>
         </div>
       </aside>
     </div>
+
+    <nav class="mobile-desk-nav" id="mobileDeskNav" aria-label="Mobile navigation" hidden>
+      <button type="button" class="mobile-nav-btn" data-mobile-tab="chats" aria-current="page">
+        <span class="mobile-nav-icon-wrap">
+          <span class="mobile-nav-icon" aria-hidden="true">💬</span>
+          <span id="mobileNavWaitingBadge" class="mobile-nav-badge hidden">0</span>
+        </span>
+        <span class="mobile-nav-label">Chats</span>
+      </button>
+      <button type="button" class="mobile-nav-btn" data-mobile-tab="alerts">
+        <span class="mobile-nav-icon-wrap">
+          <span class="mobile-nav-icon" aria-hidden="true">🔔</span>
+          <span id="mobileNavAlertsBadge" class="mobile-nav-badge hidden">0</span>
+        </span>
+        <span class="mobile-nav-label">Alerts</span>
+      </button>
+      <button type="button" class="mobile-nav-btn" data-mobile-tab="menu">
+        <span class="mobile-nav-icon-wrap">
+          <span class="mobile-nav-icon" aria-hidden="true">☰</span>
+        </span>
+        <span class="mobile-nav-label">More</span>
+      </button>
+    </nav>
+
+    <div id="mobileMenuSheet" class="mobile-sheet hidden" role="dialog" aria-label="Menu">
+      <div class="mobile-sheet-head">
+        <h2>Menu</h2>
+        <button type="button" class="btn ghost small" id="closeMobileMenuBtn" aria-label="Close">✕</button>
+      </div>
+      <div class="mobile-sheet-body">
+        <label class="mobile-menu-status">
+          Your status
+          <span class="agent-status-picker">
+            <span id="myAgentStatusIconMenu" class="status-dot status-dot--online" aria-hidden="true"></span>
+            <select id="myAgentStatusMenu">
+              <option value="online" selected>Online</option>
+              <option value="away">Away</option>
+              <option value="offline">Offline</option>
+            </select>
+          </span>
+        </label>
+        <button type="button" class="btn ghost mobile-menu-item hidden" id="enablePhoneNotifyBtnMenu">Allow phone alerts</button>
+        <a class="btn ghost mobile-menu-item" href="/live-agent/settings">Settings</a>
+        <a class="btn ghost mobile-menu-item" href="/uc-conversations" id="leadsLinkMenu">Bot leads</a>
+        <a class="btn ghost mobile-menu-item" href="/ua-conversations">Agent chats</a>
+        <button type="button" class="btn ghost mobile-menu-item" id="logoutBtnMenu">Lock desk</button>
+      </div>
+    </div>
+
+    <div id="mobileChatMenuSheet" class="mobile-sheet hidden" role="dialog" aria-label="Chat options">
+      <div class="mobile-sheet-head">
+        <h2>Chat options</h2>
+        <button type="button" class="btn ghost small" id="closeMobileChatMenuBtn" aria-label="Close">✕</button>
+      </div>
+      <div class="mobile-sheet-body">
+        <button type="button" class="btn ghost mobile-menu-item" id="mobileMenuKbBtn">Knowledge base</button>
+        <button type="button" class="btn ghost mobile-menu-item" id="mobileMenuInfoBtn">Visitor info</button>
+        <button type="button" class="btn ghost mobile-menu-item" id="mobileMenuRefreshBtn">Refresh messages</button>
+        <a class="btn ghost mobile-menu-item" id="mobileMenuTranscriptBtn" href="#" target="_blank" rel="noopener noreferrer">Open transcript</a>
+        <button type="button" class="btn ghost mobile-menu-item" id="mobileMenuCopyIdBtn">Copy session ID</button>
+        <button type="button" class="btn ghost mobile-menu-item" id="mobileMenuDismissBtn">Dismiss from queue</button>
+      </div>
+    </div>
+
+    <div id="mobileKbSheet" class="mobile-sheet mobile-sheet--tall hidden" role="dialog" aria-label="Knowledge base">
+      <div class="mobile-sheet-head">
+        <h2>Knowledge base</h2>
+        <button type="button" class="btn ghost small" id="closeMobileKbBtn" aria-label="Close">✕</button>
+      </div>
+      <div class="mobile-sheet-body">
+        <input type="search" id="kbSearchInputMobile" class="kb-search-input" placeholder="Search answers…" autocomplete="off" />
+        <ul id="kbResultsListMobile" class="kb-results-list"></ul>
+      </div>
+    </div>
+
+    <div id="mobileDetailsSheet" class="mobile-sheet mobile-sheet--tall hidden" role="dialog" aria-label="Visitor details">
+      <div class="mobile-sheet-head">
+        <h2>Visitor details</h2>
+        <button type="button" class="btn ghost small" id="closeMobileDetailsBtn" aria-label="Close">✕</button>
+      </div>
+      <div class="mobile-sheet-body mobile-details-body" id="mobileDetailsBody"></div>
+    </div>
+
+    <div id="mobileSheetBackdrop" class="mobile-sheet-backdrop hidden" aria-hidden="true"></div>
   </section>
 
-  <script src="/live-agent/live-agent.js?v=149-bot-you-mode" defer></script>
+  <script src="live-agent.js?v=20260604-alert-copy" defer></script>
 </body>
 </html>

@@ -30,6 +30,13 @@ window.COMPANY_CHAT_UI_CONFIG = {
   // COMMON (shared: agent, form field defs, theme, …)
   // =========================
   common: {
+    // Railway contact-form API — edit api-base.config.js at repo root (single source of truth).
+    deploy: {
+      apiBaseUrl: typeof window.COMPANY_DEFAULT_API_BASE_URL === "string"
+        ? window.COMPANY_DEFAULT_API_BASE_URL
+        : ""
+    },
+
     // Project + Agent settings (Dialogflow CX).
     dialogflow: {
       projectId: "qabot01",

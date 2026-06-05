@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en-IN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Customer documents</title>
+    <link rel="stylesheet" href="dashboard.css" />
+    <link rel="stylesheet" href="documents.css" />
+  </head>
+  <body>
+    <div class="dash-app docs-app">
+      <header class="dash-header">
+        <div>
+          <h1>Customer documents</h1>
+          <p class="dash-muted">Files from chatbot forms and the 📎 attach button (saved in cloud storage)</p>
+          <p class="dash-muted docs-storage-meta" id="docs-storage-meta" hidden></p>
+        </div>
+        <nav class="dash-nav">
+          <a href="index.html" class="dash-btn dash-btn--ghost">Dashboard</a>
+          <a href="/uc-conversations" class="dash-btn dash-btn--ghost">Conversation leads</a>
+          <a href="query-analytics.html" class="dash-btn dash-btn--ghost">Query analytics</a>
+          <a href="../live-agent/" class="dash-btn dash-btn--ghost">Service desk</a>
+          <button type="button" id="docs-refresh" class="dash-btn dash-btn--primary">Refresh</button>
+        </nav>
+      </header>
+
+      <section class="dash-grid docs-summary" aria-label="Summary">
+        <div class="dash-card">
+          <div class="dash-card__value" id="docs-count-submissions">—</div>
+          <div class="dash-card__label">Submissions</div>
+        </div>
+        <div class="dash-card">
+          <div class="dash-card__value" id="docs-count-files">—</div>
+          <div class="dash-card__label">Documents</div>
+        </div>
+        <div class="dash-card">
+          <div class="dash-card__value" id="docs-count-size">—</div>
+          <div class="dash-card__label">Total size</div>
+        </div>
+      </section>
+
+      <section class="docs-panel">
+        <div class="docs-panel__toolbar">
+          <label class="docs-search-label">
+            <span class="visually-hidden">Search</span>
+            <input
+              type="search"
+              id="docs-search"
+              class="docs-search"
+              placeholder="Search by name, mobile, file…"
+              autocomplete="off"
+            />
+          </label>
+          <div class="docs-date-range" aria-label="Date range">
+            <label class="docs-date-range__field">
+              <span class="docs-date-range__label">From</span>
+              <input
+                type="text"
+                id="docs-date-from"
+                class="docs-date-input"
+                placeholder="DD/MM/YYYY"
+                inputmode="numeric"
+                autocomplete="off"
+                title="Indian date format: DD/MM/YYYY"
+              />
+            </label>
+            <label class="docs-date-range__field">
+              <span class="docs-date-range__label">To</span>
+              <input
+                type="text"
+                id="docs-date-to"
+                class="docs-date-input"
+                placeholder="DD/MM/YYYY"
+                inputmode="numeric"
+                autocomplete="off"
+                title="Indian date format: DD/MM/YYYY"
+              />
+            </label>
+            <button type="button" id="docs-date-all" class="dash-btn dash-btn--ghost docs-date-all">
+              All dates
+            </button>
+          </div>
+          <span class="docs-showing" id="docs-showing"></span>
+        </div>
+
+        <div id="docs-alert" class="docs-alert" hidden></div>
+
+        <div class="docs-table-wrap">
+          <table class="docs-table" id="docs-table">
+            <thead>
+              <tr>
+                <th scope="col">Document</th>
+                <th scope="col">Channel</th>
+                <th scope="col">Tag</th>
+                <th scope="col">Name</th>
+                <th scope="col">Email</th>
+                <th scope="col">Mobile</th>
+                <th scope="col">Date</th>
+                <th scope="col">Size</th>
+                <th scope="col">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="docs-tbody">
+              <tr>
+                <td colspan="9" class="docs-table__empty">Loading…</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+    <script src="desk-auth.js"></script>
+    <script src="date-display.js"></script>
+    <script src="documents.js"></script>
+  </body>
+</html>
