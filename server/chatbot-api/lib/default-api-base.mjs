@@ -42,9 +42,9 @@ function fromEnv_() {
 function fromConfigFile_() {
     const candidates = [
         path.resolve(process.cwd(), "api-base.config.js"),
+        path.resolve(__dirname_lib, "..", "api-base.config.js"),
         path.resolve(process.cwd(), "..", "api-base.config.js"),
         path.resolve(process.cwd(), "..", "..", "api-base.config.js"),
-        path.resolve(__dirname_lib, "..", "api-base.config.js"),
         path.resolve(__dirname_lib, "..", "..", "..", "api-base.config.js")
     ];
     for (const filePath of candidates) {
