@@ -160,7 +160,7 @@ async function buildVisitorSyncPayload_(clientSessionId, clientRev, waitMs, last
             unchanged: false,
             revision: typing.revision,
             visitorTyping: typing.visitorTyping,
-            agentTyping: typing.agentTyping,
+            agentTyping: typing.agentTypingVisitor,
             lastMessageId: typing.lastMessageId,
             conversation,
             messages
@@ -811,7 +811,8 @@ export function mountLiveAgentRoutes(app) {
             const conversation = await updateConversationMode_({
                 conversationId,
                 aiEnabled,
-                humanMode: humanMode || undefined
+                humanMode: humanMode || undefined,
+                agentEmail: req.liveAgentSession && req.liveAgentSession.agentId
             });
             res.json({ ok: true, conversation });
         } catch (err) {
@@ -996,7 +997,7 @@ export function mountLiveAgentRoutes(app) {
             const typing = await getTypingState_(clientSessionId);
             const conversation = await getConversation_(clientSessionId);
             const rev = Math.max(clientRev, typing.revision);
-            const agentTyping = typing.agentTyping;
+            const agentTyping = typing.agentTypingVisitor;
             const lastMessageId = typing.lastMessageId;
             const messageHint = !!(lastMessageId && clientLastMsgId && lastMessageId !== clientLastMsgId);
             res.json({
@@ -1004,6 +1005,7 @@ export function mountLiveAgentRoutes(app) {
                 revision: rev,
                 agentTyping,
                 lastMessageId,
+                conversation,
                 agentConnected: !!(
                     conversation &&
                     conversation.status === "active" &&

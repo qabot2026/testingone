@@ -142,6 +142,10 @@ export function resolveAgentDisplayName_(email, settings) {
 
 /** Stored on accept; formatted per audience in enrichMessagesWithAgentNames_. */
 export const LIVE_AGENT_HUMAN_CONNECTED_MARKER_ = "live_agent_human_connected";
+export const LIVE_AGENT_HUMAN_REJOINED_MARKER_ = "live_agent_human_rejoined";
+export const LIVE_AGENT_HANDOFF_TO_BOT_MARKER_ = "live_agent_handoff_to_bot";
+export const LIVE_AGENT_BOT_ACTIVE_MARKER_ = "live_agent_bot_active";
+export const LIVE_AGENT_BOT_ACTIVE_VISITOR_TEXT_ = "AI assistant is replying now.";
 
 /** Agent desk: accept/join lines show the visitor name, not the agent's own name. */
 export function formatSystemMessageTextForAgent_(text, visitorDisplayName) {
@@ -178,6 +182,21 @@ export function formatSystemMessageTextForVisitor_(text, settings, senderEmail) 
     if (t === LIVE_AGENT_HUMAN_CONNECTED_MARKER_) {
         const name = resolveAgentDisplayName_(senderEmail, settings);
         return `You are now chatting with ${name}.`;
+    }
+    if (t === LIVE_AGENT_HUMAN_REJOINED_MARKER_) {
+        const name = resolveAgentDisplayName_(senderEmail, settings);
+        return `${name} joined again.`;
+    }
+    if (t === LIVE_AGENT_HANDOFF_TO_BOT_MARKER_ || t === LIVE_AGENT_BOT_ACTIVE_MARKER_) {
+        const name = resolveAgentDisplayName_(senderEmail, settings);
+        return `${name} stepped away. ${LIVE_AGENT_BOT_ACTIVE_VISITOR_TEXT_}`;
+    }
+    const tLower = t.toLowerCase();
+    if (tLower.includes("ai assistant enabled") && tLower.includes("bot")) {
+        return LIVE_AGENT_BOT_ACTIVE_VISITOR_TEXT_;
+    }
+    if (tLower.includes("human agent took over")) {
+        return "";
     }
     const acceptLegacy = t.match(/^Agent\s+(\S+@\S+)\s+accepted the chat\.?$/i);
     if (acceptLegacy) {

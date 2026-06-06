@@ -171,6 +171,16 @@ let liveAgentPollTimerId = 0;
 let liveAgentMessagesSinceIso = "";
 /** @type {Set<string>} */
 const liveAgentSeenMessageIds_ = new Set();
+/** @type {Set<string>} */
+const liveAgentSeenNoticeKeys_ = new Set();
+let liveAgentAgentTypingPulseTimerId = 0;
+let liveAgentAgentTypingPulseInFlight_ = false;
+let liveAgentLastAgentTypingLabel_ = "";
+const LIVE_AGENT_HUMAN_REJOINED_MARKER = "live_agent_human_rejoined";
+const LIVE_AGENT_HANDOFF_TO_BOT_MARKER = "live_agent_handoff_to_bot";
+const LIVE_AGENT_BOT_ACTIVE_MARKER = "live_agent_bot_active";
+const LIVE_AGENT_BOT_ACTIVE_VISITOR_TEXT = "AI assistant is replying now.";
+const LIVE_AGENT_TYPING_PULSE_MS = 100;
 
 function liveAgentRememberSeenMessageId_(id) {
     if (!id) {
@@ -15629,6 +15639,294 @@ function stopLiveAgentPoll_() {
         window.clearInterval(liveAgentPollTimerId);
         liveAgentPollTimerId = 0;
     }
+    liveAgentStopAgentTypingPulse_();
+}
+
+function liveAgentStopAgentTypingPulse_() {
+    if (liveAgentAgentTypingPulseTimerId) {
+        window.clearInterval(liveAgentAgentTypingPulseTimerId);
+        liveAgentAgentTypingPulseTimerId = 0;
+    }
+    liveAgentLastAgentTypingLabel_ = "";
+    liveAgentRemoveAgentTypingDraft_(activeDfMessenger);
+}
+
+function liveAgentStartAgentTypingPulse_(dfMessenger) {
+    const ms = dfMessenger || activeDfMessenger;
+    liveAgentStopAgentTypingPulse_();
+    const tick = () => {
+        void liveAgentAgentTypingPulseTick_(ms);
+    };
+    tick();
+    liveAgentAgentTypingPulseTimerId = window.setInterval(tick, LIVE_AGENT_TYPING_PULSE_MS);
+}
+
+/**
+ * @param {HTMLElement | null | undefined} dfMessenger
+ */
+function liveAgentRemoveAgentTypingDraft_(dfMessenger) {
+    const list = findMessengerMessageListRoot(dfMessenger || activeDfMessenger);
+    if (!list) {
+        return;
+    }
+    try {
+        const el = list.querySelector('[data-dfchat-live-agent-typing="1"]');
+        if (el) {
+            el.remove();
+        }
+    } catch {
+        /* ignore */
+    }
+}
+
+/**
+ * Visitors see "Typing..." only — not the agent's unsent draft (refer live-agent-client).
+ * @param {HTMLElement | null | undefined} dfMessenger
+ * @param {string} label
+ */
+function liveAgentSetAgentTypingIndicator_(dfMessenger, label) {
+    const ms = dfMessenger || activeDfMessenger;
+    const on = !!(label && String(label).trim());
+    if (!on) {
+        liveAgentRemoveAgentTypingDraft_(ms);
+        return;
+    }
+    const list = findMessengerMessageListRoot(ms);
+    if (!list) {
+        return;
+    }
+    let el = list.querySelector('[data-dfchat-live-agent-typing="1"]');
+    if (!el) {
+        el = document.createElement("div");
+        el.className = "entry bot";
+        el.dataset.dfchatLiveAgentTyping = "1";
+        const inner = document.createElement("div");
+        inner.className = "message bot-message";
+        const bubble = document.createElement("div");
+        bubble.className = "bubble";
+        inner.appendChild(bubble);
+        el.appendChild(inner);
+        list.appendChild(el);
+    }
+    const bubble = el.querySelector(".bubble");
+    if (bubble) {
+        bubble.textContent = "Typing...";
+    }
+    try {
+        list.scrollTop = list.scrollHeight;
+    } catch {
+        /* ignore */
+    }
+}
+
+/**
+ * @param {HTMLElement | null | undefined} dfMessenger
+ */
+async function liveAgentAgentTypingPulseTick_(dfMessenger) {
+    if (!liveAgentHandoffIsActive_()) {
+        return;
+    }
+    const sid = liveAgentSessionId_();
+    const endpoint = getApiEndpoint(
+        "/api/live-agent/typing-pulse?clientSessionId="
+            + encodeURIComponent(sid)
+            + "&rev="
+            + liveAgentDeskRev_
+            + "&lastMessageId="
+            + encodeURIComponent(liveAgentLastSyncMessageId_ || "")
+            + "&agentTyping="
+            + encodeURIComponent(liveAgentLastAgentTypingLabel_ || "")
+    );
+    if (!endpoint || !sid || liveAgentAgentTypingPulseInFlight_) {
+        return;
+    }
+    liveAgentAgentTypingPulseInFlight_ = true;
+    try {
+        const res = await fetch(endpoint);
+        const st = await res.json().catch(() => ({}));
+        if (!res.ok || !st || !st.ok) {
+            return;
+        }
+        if (typeof st.revision === "number" && st.revision >= liveAgentDeskRev_) {
+            liveAgentDeskRev_ = st.revision;
+        }
+        if (st.conversation || st.agentConnected !== undefined) {
+            syncLiveAgentModeCacheFromConversation_(st.conversation, st);
+        }
+        liveAgentLastAgentTypingLabel_ = st.agentTyping || "";
+        liveAgentSetAgentTypingIndicator_(dfMessenger, liveAgentLastAgentTypingLabel_);
+        if (st.newMessage) {
+            void liveAgentPollTick_(dfMessenger);
+        }
+    } catch {
+        /* ignore */
+    } finally {
+        liveAgentAgentTypingPulseInFlight_ = false;
+    }
+}
+
+function liveAgentIsBotHandoffMessageText_(text) {
+    const t = String(text || "").trim().toLowerCase();
+    return (
+        t === LIVE_AGENT_BOT_ACTIVE_MARKER
+        || t === LIVE_AGENT_HANDOFF_TO_BOT_MARKER
+        || t.includes("ai assistant is replying")
+        || t.includes("the assistant is replying")
+        || t.includes("stepped away")
+    );
+}
+
+function liveAgentIsHumanRejoinMessageText_(text) {
+    const t = String(text || "").trim().toLowerCase();
+    return t === LIVE_AGENT_HUMAN_REJOINED_MARKER || /joined again\.?$/i.test(t);
+}
+
+function liveAgentIsConnectNoticeMessageText_(text) {
+    const t = String(text || "").trim();
+    if (!t) {
+        return false;
+    }
+    if (t === LIVE_AGENT_HUMAN_CONNECTED_MARKER) {
+        return true;
+    }
+    return /^you are now chatting with/i.test(t);
+}
+
+function liveAgentResolveAgentLabelFromSync_(stData, m) {
+    if (m && typeof m.senderDisplayName === "string" && m.senderDisplayName.trim()) {
+        return m.senderDisplayName.trim();
+    }
+    if (stData && stData.assignedAgentDisplayName) {
+        return String(stData.assignedAgentDisplayName).trim();
+    }
+    if (m && m.senderEmail) {
+        return liveAgentDisplayNameForEmail_(m.senderEmail);
+    }
+    return "Support Agent";
+}
+
+/**
+ * @param {HTMLElement | null | undefined} dfMessenger
+ * @param {string} agentLabel
+ * @param {string} [messageText]
+ * @param {string} [dedupeKey]
+ */
+function liveAgentAnnounceConnected_(dfMessenger, agentLabel, messageText, dedupeKey) {
+    const ms = dfMessenger || activeDfMessenger;
+    if (!ms || typeof ms.renderCustomText !== "function") {
+        return;
+    }
+    let name = (agentLabel && String(agentLabel).trim()) || "Support Agent";
+    if (/^me$/i.test(name)) {
+        name = "Support Agent";
+    }
+    const text =
+        (messageText && String(messageText).trim())
+        || "You are now chatting with " + name + ".";
+    const key = dedupeKey || "connected|" + text.toLowerCase();
+    if (liveAgentSeenNoticeKeys_.has(key)) {
+        return;
+    }
+    liveAgentSeenNoticeKeys_.add(key);
+    ms.renderCustomText(text, true);
+    renderBotPersona(ms, Date.now());
+}
+
+/**
+ * @param {HTMLElement | null | undefined} dfMessenger
+ * @param {string} [messageText]
+ * @param {string} [dedupeKey]
+ */
+function liveAgentAnnounceHandoffToBot_(dfMessenger, messageText, dedupeKey) {
+    const ms = dfMessenger || activeDfMessenger;
+    if (!ms || typeof ms.renderCustomText !== "function") {
+        return;
+    }
+    const text =
+        (messageText && String(messageText).trim())
+        || "The agent stepped away. " + LIVE_AGENT_BOT_ACTIVE_VISITOR_TEXT;
+    const key = dedupeKey || "bot-handoff|" + text.toLowerCase();
+    if (liveAgentSeenNoticeKeys_.has(key)) {
+        return;
+    }
+    liveAgentSeenNoticeKeys_.add(key);
+    liveAgentRemoveAgentTypingDraft_(ms);
+    ms.renderCustomText(text, true);
+    renderBotPersona(ms, Date.now());
+}
+
+/**
+ * @param {HTMLElement | null | undefined} dfMessenger
+ * @param {string} agentLabel
+ * @param {string} [messageText]
+ * @param {string} [dedupeKey]
+ */
+function liveAgentAnnounceHumanRejoined_(dfMessenger, agentLabel, messageText, dedupeKey) {
+    const ms = dfMessenger || activeDfMessenger;
+    if (!ms || typeof ms.renderCustomText !== "function") {
+        return;
+    }
+    let name = (agentLabel && String(agentLabel).trim()) || "Support Agent";
+    if (/^me$/i.test(name)) {
+        name = "Support Agent";
+    }
+    let text = messageText && String(messageText).trim();
+    if (!text || text === LIVE_AGENT_HUMAN_REJOINED_MARKER) {
+        text = name + " joined again.";
+    }
+    const key = dedupeKey || "rejoin|" + text.toLowerCase();
+    if (liveAgentSeenNoticeKeys_.has(key)) {
+        return;
+    }
+    liveAgentSeenNoticeKeys_.add(key);
+    ms.renderCustomText(text, true);
+    renderBotPersona(ms, Date.now());
+}
+
+/**
+ * @param {HTMLElement | null | undefined} dfMessenger
+ * @param {{ assignedAgentDisplayName?: string, messages?: Array<{ id?: string, role?: string, text?: string, senderEmail?: string, senderDisplayName?: string }> } | null | undefined} stData
+ */
+function liveAgentApplyConnectionNoticesFromSync_(dfMessenger, stData) {
+    const messages = stData && Array.isArray(stData.messages) ? stData.messages : [];
+    for (let i = 0; i < messages.length; i += 1) {
+        const m = messages[i];
+        if (!m) {
+            continue;
+        }
+        const role = typeof m.role === "string" ? m.role.toLowerCase() : "";
+        if (role !== "system") {
+            continue;
+        }
+        const raw = typeof m.text === "string" ? m.text.trim() : "";
+        if (!raw) {
+            continue;
+        }
+        const mk = m.id ? String(m.id) : "";
+        const label = liveAgentResolveAgentLabelFromSync_(stData, m);
+        const line = liveAgentVisitorLineText_(m);
+        if (liveAgentIsConnectNoticeMessageText_(raw) && line) {
+            liveAgentAnnounceConnected_(dfMessenger, label, line, mk ? "notice|" + mk : "");
+            if (mk) {
+                liveAgentRememberSeenMessageId_(mk);
+            }
+            continue;
+        }
+        if (liveAgentIsHumanRejoinMessageText_(raw) && line) {
+            liveAgentAnnounceHumanRejoined_(dfMessenger, label, line, mk ? "notice|" + mk : "");
+            if (mk) {
+                liveAgentRememberSeenMessageId_(mk);
+            }
+            continue;
+        }
+        if (liveAgentIsBotHandoffMessageText_(raw)) {
+            const handoffText = line || LIVE_AGENT_BOT_ACTIVE_VISITOR_TEXT;
+            liveAgentAnnounceHandoffToBot_(dfMessenger, handoffText, mk ? "notice|" + mk : "");
+            if (mk) {
+                liveAgentRememberSeenMessageId_(mk);
+            }
+        }
+    }
 }
 
 function setLiveAgentHandoffActive_(on) {
@@ -15642,6 +15940,7 @@ function setLiveAgentHandoffActive_(on) {
         liveAgentCachedAiCopilot_ = false;
         liveAgentModeRefreshAt_ = 0;
         liveAgentSeenMessageIds_.clear();
+        liveAgentSeenNoticeKeys_.clear();
         liveAgentOutboundRoutedKey_ = "";
         liveAgentOutboundRoutedAt_ = 0;
         liveAgentVisitorQueryTrackedKey_ = "";
@@ -16073,10 +16372,22 @@ function liveAgentVisitorShouldHideSystemLine_(text) {
     if (!t) {
         return true;
     }
-    if (t.includes("ai assistant enabled") || t.includes("human agent took over")) {
+    if (t.includes("human agent took over")) {
         return true;
     }
     if (t.includes("connecting you with an agent") || t.includes("please wait")) {
+        return true;
+    }
+    if (t === LIVE_AGENT_HUMAN_CONNECTED_MARKER) {
+        return true;
+    }
+    if (liveAgentIsHumanRejoinMessageText_(text)) {
+        return true;
+    }
+    if (liveAgentIsBotHandoffMessageText_(text)) {
+        return true;
+    }
+    if (/^you are now chatting with/i.test(t)) {
         return true;
     }
     return false;
@@ -16092,12 +16403,18 @@ function liveAgentVisitorLineText_(m) {
         return "";
     }
     if (role === "system") {
+        const displayName =
+            typeof m.senderDisplayName === "string" && m.senderDisplayName.trim()
+                ? m.senderDisplayName.trim()
+                : liveAgentDisplayNameForEmail_(m.senderEmail);
         if (text === LIVE_AGENT_HUMAN_CONNECTED_MARKER) {
-            const displayName =
-                typeof m.senderDisplayName === "string" && m.senderDisplayName.trim()
-                    ? m.senderDisplayName.trim()
-                    : liveAgentDisplayNameForEmail_(m.senderEmail);
             return "You are now chatting with " + displayName + ".";
+        }
+        if (text === LIVE_AGENT_HUMAN_REJOINED_MARKER) {
+            return displayName + " joined again.";
+        }
+        if (text === LIVE_AGENT_HANDOFF_TO_BOT_MARKER || text === LIVE_AGENT_BOT_ACTIVE_MARKER) {
+            return displayName + " stepped away. " + LIVE_AGENT_BOT_ACTIVE_VISITOR_TEXT;
         }
         const joined = text.match(/^(.+?)\s+joined the chat\.?$/i);
         if (joined) {
@@ -16108,6 +16425,9 @@ function liveAgentVisitorLineText_(m) {
         const legacy = text.match(/^Agent\s+(\S+@\S+)\s+accepted the chat\.?$/i);
         if (legacy) {
             return "You are now chatting with " + liveAgentDisplayNameForEmail_(legacy[1]) + ".";
+        }
+        if (/ai assistant enabled/i.test(text)) {
+            return LIVE_AGENT_BOT_ACTIVE_VISITOR_TEXT;
         }
         return text.replace(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/gi, (em) =>
             liveAgentDisplayNameForEmail_(em)
@@ -16844,7 +17164,7 @@ async function liveAgentPollTick_(dfMessenger) {
             const ms0 = dfMessenger || activeDfMessenger;
             if (ms0 && typeof ms0.renderCustomText === "function") {
                 ms0.renderCustomText(
-                    "This chat with the agent has ended. You can continue with the assistant or ask for an agent again.",
+                    "Chat with agent ended. You can continue with the assistant.",
                     true
                 );
                 renderBotPersona(ms0, Date.now());
@@ -16864,6 +17184,13 @@ async function liveAgentPollTick_(dfMessenger) {
                 /* ignore */
             }
         }
+
+        if (wasHuman && copilotAi) {
+            liveAgentAnnounceHandoffToBot_(dfMessenger || activeDfMessenger, "", "copilot-transition");
+        }
+
+        liveAgentSetAgentTypingIndicator_(dfMessenger, stData.agentTyping || "");
+        liveAgentApplyConnectionNoticesFromSync_(dfMessenger, stData);
 
         const keepPoll =
             status === "waiting" ||
@@ -16906,6 +17233,9 @@ async function liveAgentPollTick_(dfMessenger) {
                 continue;
             }
             const isAgent = role === "agent" || role === "staff";
+            if (isAgent) {
+                liveAgentRemoveAgentTypingDraft_(ms);
+            }
             let prefix = "";
             if (isAgent) {
                 const displayName =
@@ -16914,7 +17244,7 @@ async function liveAgentPollTick_(dfMessenger) {
                         : liveAgentDisplayNameForEmail_(m.senderEmail);
                 prefix = displayName + ": ";
             }
-            ms.renderCustomText(prefix + text, true);
+            ms.renderCustomText(isAgent ? text : prefix + text, true);
             renderBotPersona(ms, Date.now());
         }
         scheduleSuppressDfMessengerErrorUi_();
@@ -17043,6 +17373,7 @@ function startLiveAgentPoll_(dfMessenger) {
     stopLiveAgentPoll_();
     const ms = dfMessenger || activeDfMessenger;
     attachLiveAgentComposerBridge_(ms);
+    liveAgentStartAgentTypingPulse_(ms);
     const tick = () => {
         liveAgentPollTick_(ms);
     };

@@ -958,7 +958,7 @@ export function isLiveAgentAiCopilot_(conv) {
  * Agent toggles AI vs human handling for the visitor widget (poll via /status).
  * @param {{ conversationId: string, aiEnabled?: boolean, humanMode?: string }} opts
  */
-export async function updateConversationMode_({ conversationId, aiEnabled, humanMode }) {
+export async function updateConversationMode_({ conversationId, aiEnabled, humanMode, agentEmail }) {
     const id = safeConversationId_(conversationId);
     const db = firestoreDb_();
     const ref = db.collection(conversationsCollection_()).doc(id);
@@ -970,6 +970,7 @@ export async function updateConversationMode_({ conversationId, aiEnabled, human
     if (cur.status === "closed") {
         throw new Error("Conversation is closed");
     }
+    const wasBotReply = isLiveAgentAiCopilot_(serializeConversation_(id, cur));
     /** @type {Record<string, unknown>} */
     const patch = {};
     if (typeof aiEnabled === "boolean") {
@@ -987,21 +988,43 @@ export async function updateConversationMode_({ conversationId, aiEnabled, human
     if (!Object.keys(patch).length) {
         throw new Error("Nothing to update");
     }
+    const botOn = hm === "ai" || (hm !== "human" && patch.aiEnabled === true);
+    if (botOn) {
+        patch.visitorTypingText = "";
+        patch.visitorTypingAt = "";
+        patch.agentTypingText = "";
+        patch.agentTypingAt = "";
+        patch.deskRevision = admin.firestore.FieldValue.increment(1);
+    }
     await ref.update(patch);
     try {
-        const modeLabel =
-            hm === "ai"
-                ? "AI assistant enabled — the bot can reply to the visitor again."
-                : hm === "human"
-                  ? "Human agent took over — bot auto-reply is paused."
-                  : "";
-        if (modeLabel) {
+        const {
+            LIVE_AGENT_HANDOFF_TO_BOT_MARKER_,
+            LIVE_AGENT_HUMAN_REJOINED_MARKER_
+        } = await import("./departments.mjs");
+        const me = trim_(agentEmail).toLowerCase() || trim_(cur.assignedAgentEmail).toLowerCase();
+        if (botOn) {
             await appendMessage_({
                 conversationId: id,
                 role: "system",
-                text: modeLabel,
-                senderEmail: "",
+                text: LIVE_AGENT_HANDOFF_TO_BOT_MARKER_,
+                senderEmail: me,
                 bumpUnread: { agent: 0, visitor: 1 }
+            });
+        } else if (hm === "human" && wasBotReply) {
+            await appendMessage_({
+                conversationId: id,
+                role: "system",
+                text: LIVE_AGENT_HUMAN_REJOINED_MARKER_,
+                senderEmail: me,
+                bumpUnread: { agent: 0, visitor: 1 }
+            });
+            await ref.update({
+                visitorTypingText: "",
+                visitorTypingAt: "",
+                agentTypingText: "",
+                agentTypingAt: "",
+                deskRevision: admin.firestore.FieldValue.increment(1)
             });
         }
     } catch (modeMsgErr) {

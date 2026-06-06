@@ -46,17 +46,35 @@ export function conversationRevision_(conv, data) {
 export async function getTypingState_(conversationId) {
     const id = trim_(conversationId);
     if (!id) {
-        return { visitorTyping: "", agentTyping: "", revision: 0, lastMessageId: "" };
+        return {
+            visitorTyping: "",
+            agentTyping: "",
+            agentTypingVisitor: "",
+            revision: 0,
+            lastMessageId: ""
+        };
     }
     const snap = await convRef_(id).get();
     if (!snap.exists) {
-        return { visitorTyping: "", agentTyping: "", revision: 0, lastMessageId: "" };
+        return {
+            visitorTyping: "",
+            agentTyping: "",
+            agentTypingVisitor: "",
+            revision: 0,
+            lastMessageId: ""
+        };
     }
     const data = snap.data() || {};
     const conv = await getConversation_(id);
+    const agentDraft = activeTypingText_(data.agentTypingText, data.agentTypingAt);
+    let agentTypingVisitor = "";
+    if (agentDraft && !isLiveAgentAiCopilot_(conv)) {
+        agentTypingVisitor = "Typing...";
+    }
     return {
         visitorTyping: activeTypingText_(data.visitorTypingText, data.visitorTypingAt),
-        agentTyping: activeTypingText_(data.agentTypingText, data.agentTypingAt),
+        agentTyping: agentDraft,
+        agentTypingVisitor,
         revision: conversationRevision_(conv, data),
         lastMessageId: trim_(data.lastMessageId)
     };
@@ -174,7 +192,7 @@ export async function liveSyncPoll_({ conversationId, clientRev, waitMs, sinceId
                 ok: true,
                 revision: rev,
                 visitorTyping: typing.visitorTyping,
-                agentTyping: typing.agentTyping,
+                agentTyping: typing.agentTypingVisitor,
                 lastMessageId: typing.lastMessageId,
                 conversation: conv,
                 messages
@@ -189,6 +207,6 @@ export async function liveSyncPoll_({ conversationId, clientRev, waitMs, sinceId
         unchanged: true,
         revision: Math.max(clientRev, typing.revision),
         visitorTyping: typing.visitorTyping,
-        agentTyping: typing.agentTyping
+        agentTyping: typing.agentTypingVisitor
     };
 }
