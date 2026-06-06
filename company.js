@@ -246,7 +246,13 @@ function readPersonaDisplayConfig() {
                 ? pd.timeFontSizePx
                 : 10,
         blurPx: typeof pd.blurPx === "number" && Number.isFinite(pd.blurPx) ? pd.blurPx : 0.35,
-        opacity: typeof pd.opacity === "number" && Number.isFinite(pd.opacity) ? pd.opacity : 0.82
+        opacity: typeof pd.opacity === "number" && Number.isFinite(pd.opacity) ? pd.opacity : 0.82,
+        /** Refer `qa-msg__persona-name` on bot rows (#0c4a6e). */
+        nameColor:
+            typeof pd.nameColor === "string" && pd.nameColor.trim() ? pd.nameColor.trim() : "#0c4a6e",
+        /** Refer `qa-msg__persona-time` (#475569). */
+        timeColor:
+            typeof pd.timeColor === "string" && pd.timeColor.trim() ? pd.timeColor.trim() : "#475569"
     };
 }
 
@@ -864,6 +870,8 @@ const PERSONA_URL_MARKER_LIVE_AGENT_LABEL = "dfchat-live-agent-label";
 const PERSONA_URL_MARKER_USER_IMG = "dfchat-user-persona-img";
 /** Invisible fingerprint at start of user persona markdown; removed after decorate so transcript stays readable. */
 const USER_PERSONA_TEXT_SENTINEL = "\u2060\u200c\u2060";
+/** Invisible fingerprint on live-agent chat lines so async DOM can be marked + pinned to transcript end. */
+const LIVE_AGENT_TAIL_SENTINEL = "\u2060\u200d\u2060";
 
 function readBotPersonaConfig() {
     const raw = COMMON_CONFIG.botPersona && typeof COMMON_CONFIG.botPersona === "object"
@@ -15998,10 +16006,7 @@ function installLiveAgentTailPinRenderHook_(host) {
         const ret = orig(text, isBot);
         try {
             if (liveAgentHandoffIsActive_() && isBot !== false) {
-                const list = findMessengerMessageListRoot(el);
-                if (list && list.querySelector('[data-dfchat-live-agent-tail="1"]')) {
-                    scheduleLiveAgentTailRepin_(el);
-                }
+                scheduleLiveAgentTailRepin_(el);
             }
         } catch {
             /* ignore */
@@ -16039,11 +16044,120 @@ function liveAgentMoveNewTailRowsToEnd_(list, snap) {
  * @param {HTMLElement | null | undefined} dfMessenger
  * @param {HTMLElement | null | undefined} [listOverride]
  */
+/** @param {Element | null | undefined} row */
+function dfchatRowHasLiveAgentPersonaMarker_(row) {
+    if (!row || typeof row.querySelector !== "function") {
+        return false;
+    }
+    return !!(
+        row.querySelector(`img[src*='#${PERSONA_URL_MARKER_LIVE_AGENT_LABEL}']`)
+        || row.querySelector(`img[src*='%23${PERSONA_URL_MARKER_LIVE_AGENT_LABEL}']`)
+        || row.querySelector(`img[src*='#${PERSONA_URL_MARKER_AGENT_IMG}']`)
+        || row.querySelector(`img[src*='%23${PERSONA_URL_MARKER_AGENT_IMG}']`)
+    );
+}
+
+/** @param {Element | null | undefined} row */
+function dfchatRowHasLiveAgentTailSentinel_(row) {
+    if (!row || !row.textContent) {
+        return false;
+    }
+    return row.textContent.includes(LIVE_AGENT_TAIL_SENTINEL);
+}
+
+/**
+ * Find live-agent persona / chat rows once df-messenger mounts them (renderCustomText is async).
+ * @param {HTMLElement | null | undefined} list
+ */
+function liveAgentDiscoverAndMarkTailRows_(list) {
+    if (!list || !liveAgentHandoffIsActive_()) {
+        return;
+    }
+    const children = Array.from(list.children);
+    for (let i = 0; i < children.length; i += 1) {
+        const row = children[i];
+        if (!(row instanceof HTMLElement)) {
+            continue;
+        }
+        if (row.dataset.dfchatLiveAgentTail === "1") {
+            continue;
+        }
+        const hasPersona = dfchatRowHasLiveAgentPersonaMarker_(row);
+        const hasSentinel = dfchatRowHasLiveAgentTailSentinel_(row);
+        if (!hasPersona && !hasSentinel) {
+            continue;
+        }
+        row.dataset.dfchatLiveAgentMsg = "1";
+        row.dataset.dfchatLiveAgentTail = "1";
+        if (hasSentinel) {
+            stripLiveAgentTailSentinelFromDom_(row);
+        }
+        const next = row.nextElementSibling;
+        if (
+            next instanceof HTMLElement
+            && next.dataset.dfchatLiveAgentTail !== "1"
+            && dfchatRowLooksLikeCxBotAssistantRow_(next)
+            && !dfchatRowHasPersonaAvatar_(next)
+        ) {
+            next.dataset.dfchatLiveAgentMsg = "1";
+            next.dataset.dfchatLiveAgentTail = "1";
+            if (dfchatRowHasLiveAgentTailSentinel_(next)) {
+                stripLiveAgentTailSentinelFromDom_(next);
+            }
+        }
+    }
+}
+
+/** Late CX galleries/carousels that append after agent tail — keep them above agent block. */
+function liveAgentMoveIntrudingRowsBeforeTail_(list) {
+    if (!list || !liveAgentHandoffIsActive_()) {
+        return;
+    }
+    /** @type {HTMLElement | null} */
+    let firstTail = null;
+    for (const c of list.children) {
+        if (c instanceof HTMLElement && c.dataset && c.dataset.dfchatLiveAgentTail === "1") {
+            firstTail = c;
+            break;
+        }
+    }
+    if (!firstTail) {
+        return;
+    }
+    let pastFirstTail = false;
+    /** @type {HTMLElement[]} */
+    const intruders = [];
+    for (const c of list.children) {
+        if (c === firstTail) {
+            pastFirstTail = true;
+            continue;
+        }
+        if (!pastFirstTail) {
+            continue;
+        }
+        if (
+            c instanceof HTMLElement
+            && c.dataset.dfchatLiveAgentTail !== "1"
+            && c.dataset.dfchatLiveAgentTyping !== "1"
+        ) {
+            intruders.push(c);
+        }
+    }
+    for (let i = 0; i < intruders.length; i += 1) {
+        try {
+            list.insertBefore(intruders[i], firstTail);
+        } catch {
+            /* ignore */
+        }
+    }
+}
+
 function liveAgentPinTailRowsToTranscriptEnd_(dfMessenger, listOverride) {
     const list = listOverride || findMessengerMessageListRoot(dfMessenger || activeDfMessenger);
     if (!list) {
         return;
     }
+    liveAgentDiscoverAndMarkTailRows_(list);
     const marked = Array.from(list.querySelectorAll('[data-dfchat-live-agent-tail="1"]'));
     for (let i = 0; i < marked.length; i += 1) {
         let el = marked[i];
@@ -16058,6 +16172,7 @@ function liveAgentPinTailRowsToTranscriptEnd_(dfMessenger, listOverride) {
     if (typing && typing.parentNode === list) {
         list.appendChild(typing);
     }
+    liveAgentMoveIntrudingRowsBeforeTail_(list);
     try {
         list.scrollTop = list.scrollHeight;
     } catch {
@@ -16193,7 +16308,8 @@ function liveAgentRenderBotLineAtTranscriptEnd_(dfMessenger, text, opts) {
     const snapPersona = liveAgentSnapshotList_(list);
     renderPersonaBeforeSnap_(list, snapPersona);
     const snap = liveAgentSnapshotList_(list);
-    ms.renderCustomText(t, true);
+    const agentText = t.includes(LIVE_AGENT_TAIL_SENTINEL) ? t : `${LIVE_AGENT_TAIL_SENTINEL}${t}`;
+    ms.renderCustomText(agentText, true);
     const finalizeText = () => liveAgentMoveNewTailRowsToEnd_(list, snap);
     finalizeText();
     [50, 180, 400, 800, 1200, 1800, 2500, 3500].forEach((msDelay) => {
@@ -25512,6 +25628,34 @@ function stripUserPersonaSentinelFromDom_(hostEl) {
     }
 }
 
+function stripLiveAgentTailSentinelFromDom_(hostEl) {
+    if (!hostEl || hostEl.dataset.dfchatLiveAgentTailSentinelStripped === "1") {
+        return;
+    }
+    const sentinel = LIVE_AGENT_TAIL_SENTINEL;
+    const walk = (node) => {
+        if (!node) {
+            return false;
+        }
+        if (node.nodeType === Node.TEXT_NODE && node.textContent && node.textContent.includes(sentinel)) {
+            node.textContent = node.textContent.split(sentinel).join("");
+            return true;
+        }
+        if (!node.childNodes) {
+            return false;
+        }
+        for (let i = 0; i < node.childNodes.length; i += 1) {
+            if (walk(node.childNodes[i])) {
+                return true;
+            }
+        }
+        return false;
+    };
+    if (walk(hostEl)) {
+        hostEl.dataset.dfchatLiveAgentTailSentinelStripped = "1";
+    }
+}
+
 /**
  * Refer-style live-agent human avatar (person + checkmark) when agentPersona.mode is icon.
  * @returns {string}
@@ -25609,8 +25753,16 @@ function buildPersonaImageMarkdownWithTime_(baseUrl, label, timeLabel, urlMarker
     if (!t && !l) {
         return imgMd;
     }
-    const inner = l && t ? `${l}  ${t}` : l || t;
-    return `${imgMd} **${inner}**`;
+    if (l && t) {
+        return `${imgMd} ${l} **${t}**`;
+    }
+    if (l) {
+        return `${imgMd} ${l}`;
+    }
+    if (t) {
+        return `${imgMd} **${t}**`;
+    }
+    return imgMd;
 }
 
 /**
@@ -25769,6 +25921,18 @@ function getPersonaImageGuardCss() {
     return `
 img[src*="dfchat-bot-persona"],
 img[src*="%23dfchat-bot-persona"],
+img[src*="dfchat-live-agent-label"],
+img[src*="%23dfchat-live-agent-label"] {
+  border-radius: 50% !important;
+  background: #fff !important;
+  border: 1px solid #dbe5ec !important;
+  object-fit: cover !important;
+  padding: 1px !important;
+  filter: none !important;
+  opacity: 1 !important;
+}
+img[src*="dfchat-bot-persona"],
+img[src*="%23dfchat-bot-persona"],
 img[src*="dfchat-agent-persona"],
 img[src*="%23dfchat-agent-persona"],
 img[src*="dfchat-live-agent-label"],
@@ -25777,7 +25941,7 @@ img[src*="%23dfchat-live-agent-label"] {
   height: ${catH} !important;
   max-width: ${catW} !important;
   max-height: ${catH} !important;
-  object-fit: contain !important;
+  object-fit: cover !important;
   display: inline-block !important;
   vertical-align: middle !important;
   box-sizing: border-box !important;
@@ -25790,19 +25954,26 @@ img[src*="%23dfchat-live-agent-label"] {
 .message.bot-message.markdown:has(img[src*="dfchat-live-agent-label"]),
 .message.bot-message.markdown:has(img[src*="%23dfchat-live-agent-label"]) {
   margin-bottom: ${BOT_PERSONA_CONFIG.gapBelowAssistantPx}px !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  box-shadow: none !important;
+  border: none !important;
+  padding: 0 8px !important;
 }
-.message.bot-message.markdown:has(img[src*="dfchat-bot-persona"]) p + p,
-.message.bot-message.markdown:has(img[src*="%23dfchat-bot-persona"]) p + p,
-.message.bot-message.markdown:has(img[src*="dfchat-agent-persona"]) p + p,
-.message.bot-message.markdown:has(img[src*="%23dfchat-agent-persona"]) p + p,
-.message.bot-message.markdown:has(img[src*="dfchat-live-agent-label"]) p + p,
-.message.bot-message.markdown:has(img[src*="%23dfchat-live-agent-label"]) p + p {
-  color: ${PERSONA_TEXT_COLOR} !important;
+.message.bot-message.markdown:has(img[src*="dfchat-bot-persona"]) p,
+.message.bot-message.markdown:has(img[src*="%23dfchat-bot-persona"]) p,
+.message.bot-message.markdown:has(img[src*="dfchat-agent-persona"]) p,
+.message.bot-message.markdown:has(img[src*="%23dfchat-agent-persona"]) p,
+.message.bot-message.markdown:has(img[src*="dfchat-live-agent-label"]) p,
+.message.bot-message.markdown:has(img[src*="%23dfchat-live-agent-label"]) p {
+  color: ${PERSONA_DISPLAY_CONFIG.nameColor} !important;
   font-size: ${PERSONA_DISPLAY_CONFIG.nameFontSizePx}px !important;
   font-weight: 600 !important;
   margin: 0 !important;
   padding: 0 !important;
-  line-height: 1.25 !important;
+  line-height: 1.15 !important;
+  filter: blur(${PERSONA_DISPLAY_CONFIG.blurPx}px) !important;
+  opacity: ${PERSONA_DISPLAY_CONFIG.opacity} !important;
 }
 .message.bot-message.markdown:has(img[src*="dfchat-bot-persona"]) p strong,
 .message.bot-message.markdown:has(img[src*="%23dfchat-bot-persona"]) p strong,
@@ -25810,14 +25981,15 @@ img[src*="%23dfchat-live-agent-label"] {
 .message.bot-message.markdown:has(img[src*="%23dfchat-agent-persona"]) p strong,
 .message.bot-message.markdown:has(img[src*="dfchat-live-agent-label"]) p strong,
 .message.bot-message.markdown:has(img[src*="%23dfchat-live-agent-label"]) p strong {
-  display: inline-block !important;
-  vertical-align: middle !important;
+  display: inline !important;
+  vertical-align: baseline !important;
   transform: translate(${timeRight}, ${timeDown}) !important;
-  color: ${PERSONA_TEXT_COLOR} !important;
+  color: ${PERSONA_DISPLAY_CONFIG.timeColor} !important;
   font-size: ${PERSONA_DISPLAY_CONFIG.timeFontSizePx}px !important;
-  font-weight: 600 !important;
-  filter: blur(${PERSONA_DISPLAY_CONFIG.blurPx}px) !important;
-  opacity: ${PERSONA_DISPLAY_CONFIG.opacity} !important;
+  font-weight: 500 !important;
+  filter: none !important;
+  opacity: 1 !important;
+  white-space: nowrap !important;
 }
 img[src*="dfchat-persona-bot-time"] {
   height: 28px !important;
@@ -26048,6 +26220,9 @@ function schedulePersonaShadowFix(dfMessenger) {
     const run = () => {
         applyPersonaImageGuardToMessenger(dfMessenger);
         decoratePersonaMessages(dfMessenger);
+        if (liveAgentHandoffIsActive_()) {
+            liveAgentPinTailRowsToTranscriptEnd_(dfMessenger);
+        }
     };
     run();
     window.requestAnimationFrame(run);
@@ -26064,6 +26239,9 @@ function startPersonaDecorator(dfMessenger) {
         }
         applyPersonaImageGuardToMessenger(ms);
         decoratePersonaMessages(ms);
+        if (liveAgentHandoffIsActive_()) {
+            liveAgentPinTailRowsToTranscriptEnd_(ms);
+        }
     };
 
     refresh();
@@ -26648,6 +26826,63 @@ function applyUserPersonaCaptionChrome_(imageNode) {
                 el.style.setProperty("border-radius", "0", "important");
             }
         } catch (e) {
+            /* ignore */
+        }
+        el = getComposedParentElement(el);
+    }
+}
+
+function applyBotImagePersonaCaptionChrome_(imageNode) {
+    if (!imageNode || BOT_PERSONA_CONFIG.mode !== "image" || getPersonaType(imageNode) !== "bot") {
+        return;
+    }
+    let el = getComposedParentElement(imageNode);
+    for (let i = 0; el && i < 28; i += 1) {
+        const tag = el.tagName ? el.tagName.toUpperCase() : "";
+        if (tag === "BODY" || tag === "HTML") {
+            break;
+        }
+        if (tag === "DF-MESSENGER-MESSAGE-LIST" || tag === "DF-MESSENGER-CHAT") {
+            break;
+        }
+        const isBotMessageDiv = el.classList && el.classList.contains("message") && el.classList.contains("bot-message");
+        const isBotEntry = el.classList && el.classList.contains("entry") && el.classList.contains("bot");
+        try {
+            if (isBotEntry) {
+                el.style.setProperty("margin-bottom", "2px", "important");
+                el.style.setProperty("padding", "0", "important");
+                el.style.setProperty("background", "transparent", "important");
+            }
+            if (isBotMessageDiv) {
+                el.style.setProperty("background", "transparent", "important");
+                el.style.setProperty("background-color", "transparent", "important");
+                el.style.setProperty("background-image", "none", "important");
+                el.style.setProperty("box-shadow", "none", "important");
+                el.style.setProperty("border", "none", "important");
+                el.style.setProperty("outline", "none", "important");
+                el.style.setProperty("padding", "0 8px", "important");
+                el.style.setProperty("margin", "0", "important");
+                const pNode = el.querySelector(":scope > p");
+                if (pNode && pNode.style) {
+                    pNode.style.setProperty("margin", "0", "important");
+                    pNode.style.setProperty("padding", "0", "important");
+                    pNode.style.setProperty("color", PERSONA_DISPLAY_CONFIG.nameColor, "important");
+                    pNode.style.setProperty("font-size", `${PERSONA_DISPLAY_CONFIG.nameFontSizePx}px`, "important");
+                    pNode.style.setProperty("font-weight", "600", "important");
+                    pNode.style.setProperty("line-height", "1.15", "important");
+                    pNode.style.setProperty("filter", `blur(${PERSONA_DISPLAY_CONFIG.blurPx}px)`, "important");
+                    pNode.style.setProperty("opacity", String(PERSONA_DISPLAY_CONFIG.opacity), "important");
+                }
+                const strongNode = el.querySelector(":scope > p strong, :scope p strong");
+                if (strongNode && strongNode.style) {
+                    strongNode.style.setProperty("font-size", `${PERSONA_DISPLAY_CONFIG.timeFontSizePx}px`, "important");
+                    strongNode.style.setProperty("font-weight", "500", "important");
+                    strongNode.style.setProperty("color", PERSONA_DISPLAY_CONFIG.timeColor, "important");
+                    strongNode.style.setProperty("filter", "none", "important");
+                    strongNode.style.setProperty("opacity", "1", "important");
+                }
+            }
+        } catch {
             /* ignore */
         }
         el = getComposedParentElement(el);
@@ -27635,6 +27870,11 @@ function decoratePersonaMessages(dfMessenger) {
         const personaImages = root.querySelectorAll(
             [
                 `img[src*='#${PERSONA_URL_MARKER_BOT_IMG}']`,
+                `img[src*='%23${PERSONA_URL_MARKER_BOT_IMG}']`,
+                `img[src*='#${PERSONA_URL_MARKER_LIVE_AGENT_LABEL}']`,
+                `img[src*='%23${PERSONA_URL_MARKER_LIVE_AGENT_LABEL}']`,
+                `img[src*='#${PERSONA_URL_MARKER_AGENT_IMG}']`,
+                `img[src*='%23${PERSONA_URL_MARKER_AGENT_IMG}']`,
                 `img[src*='${PERSONA_MARKER_BOT_TIME}']`,
                 `img[src*='${PERSONA_MARKER_USER}|']`,
                 `img[src*='${PERSONA_MARKER_USER}%7C']`,
@@ -27658,6 +27898,9 @@ function decoratePersonaMessages(dfMessenger) {
             }
             if (personaType === "bot" && BOT_PERSONA_CONFIG.mode === "emojiTime") {
                 applyBotEmojiPersonaCaptionChrome(image);
+            }
+            if (personaType === "bot" && BOT_PERSONA_CONFIG.mode === "image") {
+                applyBotImagePersonaCaptionChrome_(image);
             }
             if (personaType === "user") {
                 applyUserPersonaCaptionChrome_(image);
@@ -27686,6 +27929,9 @@ function decoratePersonaMessages(dfMessenger) {
             if (personaType === "bot" && BOT_PERSONA_CONFIG.mode === "emojiTime") {
                 applyBotEmojiPersonaCaptionChrome(image);
             }
+            if (personaType === "bot" && BOT_PERSONA_CONFIG.mode === "image") {
+                applyBotImagePersonaCaptionChrome_(image);
+            }
             if (personaType === "user") {
                 applyUserPersonaCaptionChrome_(image);
                 const userMsgAfter = resolvePersonaUserMessageElement_(image);
@@ -27704,6 +27950,14 @@ function decoratePersonaMessages(dfMessenger) {
     } catch {
         /* ignore */
     }
+
+    if (liveAgentHandoffIsActive_()) {
+        const list = findMessengerMessageListRoot(dfMessenger);
+        if (list) {
+            liveAgentDiscoverAndMarkTailRows_(list);
+            liveAgentPinTailRowsToTranscriptEnd_(dfMessenger, list);
+        }
+    }
 }
 
 function getPersonaType(imageNode) {
@@ -27716,7 +27970,14 @@ function getPersonaType(imageNode) {
         return "user";
     }
 
-    if (source.includes(`#${PERSONA_URL_MARKER_BOT_IMG}`) || source.includes(`#${PERSONA_URL_MARKER_AGENT_IMG}`) || source.includes(`#${PERSONA_URL_MARKER_LIVE_AGENT_LABEL}`)) {
+    if (
+        source.includes(`#${PERSONA_URL_MARKER_BOT_IMG}`)
+        || source.includes(`%23${PERSONA_URL_MARKER_BOT_IMG}`)
+        || source.includes(`#${PERSONA_URL_MARKER_AGENT_IMG}`)
+        || source.includes(`%23${PERSONA_URL_MARKER_AGENT_IMG}`)
+        || source.includes(`#${PERSONA_URL_MARKER_LIVE_AGENT_LABEL}`)
+        || source.includes(`%23${PERSONA_URL_MARKER_LIVE_AGENT_LABEL}`)
+    ) {
         return "bot";
     }
 
