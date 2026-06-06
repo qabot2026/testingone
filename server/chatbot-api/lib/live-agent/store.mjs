@@ -839,6 +839,8 @@ export async function appendMessage_({
         const convPatch = {
             lastMessageAt: now,
             lastMessagePreview: body.slice(0, 240),
+            lastMessageId: msgRef.id,
+            deskRevision: admin.firestore.FieldValue.increment(1),
             unreadForAgent: nextUnreadAgent,
             unreadForVisitor: (cur.unreadForVisitor || 0) + visitorBump
         };

@@ -206,10 +206,18 @@ function serializeLiveAgentSettings_(d) {
     const raw = d || {};
     const accessRaw = raw.access && typeof raw.access === "object" ? raw.access : {};
     const reportingRaw = raw.reporting && typeof raw.reporting === "object" ? raw.reporting : {};
+    const kbRaw = raw.knowledgeBase && typeof raw.knowledgeBase === "object" ? raw.knowledgeBase : {};
+    const bhRaw = raw.businessHours && typeof raw.businessHours === "object" ? raw.businessHours : {};
     return {
         claimWaitSeconds: clampInt_(raw.claimWaitSeconds, 5, 300, 30),
         endConvWaitMinutes: clampInt_(raw.endConvWaitMinutes, 1, 120, 3),
         defaultDepartmentId: trim_(raw.defaultDepartmentId) || GENERAL_ID,
+        queueMaxWaitEnabled: raw.queueMaxWaitEnabled !== false,
+        queueMaxWaitMinutes: clampInt_(raw.queueMaxWaitMinutes, 1, 120, 10),
+        queueTimeoutReply:
+            typeof raw.queueTimeoutReply === "string" && raw.queueTimeoutReply.trim()
+                ? raw.queueTimeoutReply.trim()
+                : "All agents are busy right now. Please continue with the assistant or try again shortly.",
         general: {
             muteServiceDesk: bool_(raw.muteServiceDesk, false),
             showAgentNameInChat: bool_(raw.showAgentNameInChat, true),
@@ -217,6 +225,9 @@ function serializeLiveAgentSettings_(d) {
             disableUserTextTranslation: bool_(raw.disableUserTextTranslation, false),
             sortChatsByLastMessage: bool_(raw.sortChatsByLastMessage, true),
             notificationSound: pickEnum_(raw.notificationSound, ["default", "chime", "none"], "default"),
+            notifyDeskPanel: bool_(raw.notifyDeskPanel, true),
+            notifyDesktopPopup: bool_(raw.notifyDesktopPopup, true),
+            notifyMobilePopup: bool_(raw.notifyMobilePopup, true),
             agentProfiles: normalizeAgentProfiles_(raw.agentProfiles)
         },
         routing: {
@@ -246,6 +257,20 @@ function serializeLiveAgentSettings_(d) {
                 reportingRaw.weeklyMonthlyEnabled ?? raw.weeklyMonthlyReports,
                 false
             )
+        },
+        knowledgeBase: {
+            enabled: kbRaw.enabled !== false,
+            articles: Array.isArray(kbRaw.articles) ? kbRaw.articles : []
+        },
+        businessHours: {
+            enabled: bhRaw.enabled === true,
+            timezone: trim_(bhRaw.timezone) || "Asia/Kolkata",
+            workDays: Array.isArray(bhRaw.workDays)
+                ? bhRaw.workDays.map((x) => String(x).toLowerCase())
+                : ["monday", "tuesday", "wednesday", "thursday", "friday"],
+            start: trim_(bhRaw.start) || "9:00 AM",
+            end: trim_(bhRaw.end) || "5:00 PM",
+            outsideHoursMessage: trim_(bhRaw.outsideHoursMessage)
         },
         updatedAt: raw.updatedAt && raw.updatedAt.toDate ? raw.updatedAt.toDate().toISOString() : null
     };
@@ -300,6 +325,18 @@ export async function saveLiveAgentSettings_(patch) {
             g.notificationSound !== undefined
                 ? pickEnum_(g.notificationSound, ["default", "chime", "none"], cur.general.notificationSound)
                 : cur.general.notificationSound,
+        notifyDeskPanel:
+            g.notifyDeskPanel !== undefined
+                ? bool_(g.notifyDeskPanel, cur.general.notifyDeskPanel)
+                : cur.general.notifyDeskPanel,
+        notifyDesktopPopup:
+            g.notifyDesktopPopup !== undefined
+                ? bool_(g.notifyDesktopPopup, cur.general.notifyDesktopPopup)
+                : cur.general.notifyDesktopPopup,
+        notifyMobilePopup:
+            g.notifyMobilePopup !== undefined
+                ? bool_(g.notifyMobilePopup, cur.general.notifyMobilePopup)
+                : cur.general.notifyMobilePopup,
         agentProfiles:
             g.agentProfiles !== undefined
                 ? normalizeAgentProfiles_(g.agentProfiles)
@@ -352,6 +389,26 @@ export async function saveLiveAgentSettings_(patch) {
                     ? bool_(rep.weeklyMonthlyEnabled, cur.reporting.weeklyMonthlyEnabled)
                     : cur.reporting.weeklyMonthlyEnabled
         },
+        queueMaxWaitEnabled:
+            p.queueMaxWaitEnabled !== undefined
+                ? bool_(p.queueMaxWaitEnabled, cur.queueMaxWaitEnabled)
+                : cur.queueMaxWaitEnabled,
+        queueMaxWaitMinutes:
+            p.queueMaxWaitMinutes !== undefined
+                ? clampInt_(p.queueMaxWaitMinutes, 1, 120, cur.queueMaxWaitMinutes)
+                : cur.queueMaxWaitMinutes,
+        queueTimeoutReply:
+            p.queueTimeoutReply !== undefined
+                ? String(p.queueTimeoutReply || "")
+                : cur.queueTimeoutReply,
+        knowledgeBase:
+            p.knowledgeBase !== undefined
+                ? p.knowledgeBase
+                : cur.knowledgeBase,
+        businessHours:
+            p.businessHours !== undefined
+                ? p.businessHours
+                : cur.businessHours,
         updatedAt: admin.firestore.FieldValue.serverTimestamp()
     };
     await settingsRef_().set(next, { merge: true });

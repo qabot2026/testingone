@@ -22,8 +22,8 @@
  */
 
 import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { promises as fs } from "node:fs";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { createRequire } from "node:module";
 
 import express from "express";
 
@@ -69,11 +69,23 @@ import {
     listAgentsOverview_,
     touchAgentPresence_
 } from "./agents.mjs";
+import {
+    conversationRevision_,
+    getTypingState_,
+    liveSyncPoll_,
+    listDeskMessages_,
+    updateAgentTyping_
+} from "./desk-realtime.mjs";
 
 const LOG_TAG = "[live-agent]";
 
 const __dirname_lib = path.dirname(fileURLToPath(import.meta.url));
 const STATIC_DIR = path.resolve(__dirname_lib, "..", "..", "live-agent");
+const requireRefer_ = createRequire(pathToFileURL(path.join(__dirname_lib, "..", "refer-staff", "package.json")));
+
+function referKnowledge_() {
+    return requireRefer_(path.join(__dirname_lib, "..", "refer-staff", "live-agent-knowledge.js"));
+}
 
 function trim_(v) {
     return typeof v === "string" ? v.trim() : "";
@@ -115,38 +127,25 @@ function sendHealthJson_(res) {
 /**
  * @param {import('express').Express} app
  */
-function sendLiveAgentIndex_(res, next) {
-    const indexPath = path.join(STATIC_DIR, "index.html");
-    fs.access(indexPath)
-        .then(() => res.sendFile(indexPath))
-        .catch(() => next());
-}
-
-function sendLiveAgentSettings_(res, next) {
-    const indexPath = path.join(STATIC_DIR, "settings.html");
-    fs.access(indexPath)
-        .then(() => res.sendFile(indexPath))
-        .catch(() => next());
-}
-
+/**
+ * @param {import('express').Express} app
+ */
 export function mountLiveAgentRoutes(app) {
     app.get("/live-agent/health", (_req, res) => sendHealthJson_(res));
     app.get("/api/live-agent/health", (_req, res) => sendHealthJson_(res));
 
-    app.get("/live-agent", (_req, res, next) => sendLiveAgentIndex_(res, next));
-    app.get("/live-agent/", (_req, res, next) => sendLiveAgentIndex_(res, next));
-    app.get("/live-agent/console", (_req, res, next) => sendLiveAgentIndex_(res, next));
-    app.get("/live-agent/settings", (_req, res, next) => sendLiveAgentSettings_(res, next));
-
-    app.use("/live-agent", express.static(STATIC_DIR, {
-        index: ["index.html"],
-        extensions: ["html"],
-        setHeaders(res, filePath) {
-            if (filePath.toLowerCase().endsWith(".html")) {
-                res.setHeader("Cache-Control", "no-cache");
+    app.use(
+        "/live-agent",
+        express.static(STATIC_DIR, {
+            index: ["index.html"],
+            extensions: ["html"],
+            setHeaders(res, filePath) {
+                if (filePath.toLowerCase().endsWith(".html")) {
+                    res.setHeader("Cache-Control", "no-cache");
+                }
             }
-        }
-    }));
+        })
+    );
 
     const router = express.Router();
     router.use(express.json({ limit: "256kb" }));
@@ -272,24 +271,66 @@ export function mountLiveAgentRoutes(app) {
         try {
             const settings = await getLiveAgentSettings_();
             const departments = await listDepartments_();
-            res.json({ ok: true, settings, departments });
+            const knowledge = referKnowledge_();
+            const knowledgeBase = knowledge.normalizeKnowledgeBase(settings.knowledgeBase);
+            res.json({
+                ok: true,
+                settings,
+                departments,
+                knowledgeBase
+            });
         } catch (err) {
             logStoreError_(err, "settings get");
             jsonError_(res, 500, err.message || "Settings failed");
         }
     });
 
+    router.get("/knowledge/search", requireLiveAgentSession_(), async (req, res) => {
+        setNoCache_(res);
+        const q = trim_(req.query && (req.query.q || req.query.query));
+        if (!q) {
+            res.json({ ok: true, results: [] });
+            return;
+        }
+        try {
+            const settings = await getLiveAgentSettings_();
+            const knowledge = referKnowledge_();
+            const departmentId =
+                trim_(req.query && (req.query.departmentId || req.query.department)) || "general";
+            const results = knowledge.searchKnowledgeBase(settings.knowledgeBase, {
+                query: q,
+                departmentId,
+                limit: Number(req.query && req.query.limit) || 12
+            });
+            res.json({ ok: true, results });
+        } catch (err) {
+            logStoreError_(err, "knowledge search");
+            jsonError_(res, 500, err.message || "Knowledge search failed");
+        }
+    });
+
     router.put("/settings", requireLiveAgentSession_(), async (req, res) => {
         setNoCache_(res);
         try {
-            const settings = await saveLiveAgentSettings_(req.body || {});
+            const patch = req.body && typeof req.body === "object" ? req.body : {};
+            const knowledge = referKnowledge_();
+            if (patch.knowledgeBase != null) {
+                patch.knowledgeBase = knowledge.normalizeKnowledgeBase(patch.knowledgeBase);
+            }
+            const settings = await saveLiveAgentSettings_(patch);
+            const departments = await listDepartments_();
             try {
                 const { refreshDeskSettingsCache_ } = await import("./store.mjs");
                 await refreshDeskSettingsCache_();
             } catch (_) {
                 /* ignore */
             }
-            res.json({ ok: true, settings });
+            res.json({
+                ok: true,
+                settings,
+                departments,
+                knowledgeBase: knowledge.normalizeKnowledgeBase(settings.knowledgeBase)
+            });
         } catch (err) {
             logStoreError_(err, "settings put");
             jsonError_(res, 400, err.message || "Settings save failed");
@@ -407,17 +448,112 @@ export function mountLiveAgentRoutes(app) {
         }
         try {
             const since = trim_(req.query && req.query.since);
+            const sinceId = trim_(req.query && req.query.sinceId);
             const limitRaw = Number(req.query && req.query.limit);
-            const messages = await listMessages_({
+            const markRead = trim_(req.query && req.query.markRead) === "1";
+            const messages = await listDeskMessages_({
                 conversationId,
                 sinceIso: since || undefined,
-                limit: Number.isFinite(limitRaw) ? limitRaw : undefined,
-                markReadFor: "agent"
+                sinceId: sinceId || undefined,
+                limit: Number.isFinite(limitRaw) ? limitRaw : 80,
+                markReadFor: markRead ? "agent" : undefined
             });
-            res.json({ ok: true, messages });
+            const conversation = await getConversation_(conversationId);
+            const typing = await getTypingState_(conversationId);
+            res.json({
+                ok: true,
+                messages,
+                conversation,
+                revision: typing.revision || conversationRevision_(conversation),
+                visitorTyping: typing.visitorTyping,
+                agentTyping: typing.agentTyping
+            });
         } catch (err) {
             logStoreError_(err, "agent messages");
             jsonError_(res, 500, err.message || "Failed to load messages");
+        }
+    });
+
+    router.get("/conversations/:id/typing-pulse", requireLiveAgentSession_(), async (req, res) => {
+        setNoCache_(res);
+        const conversationId = safeClientSessionId_(req.params && req.params.id);
+        if (!conversationId) {
+            jsonError_(res, 400, "Invalid conversation id");
+            return;
+        }
+        try {
+            const clientRev = Number(req.query && (req.query.rev || req.query.revision)) || 0;
+            const clientLastMsgId = trim_(req.query && req.query.lastMessageId);
+            const typing = await getTypingState_(conversationId);
+            const rev = Math.max(clientRev, typing.revision);
+            const visitorTyping = typing.visitorTyping;
+            const agentTyping = typing.agentTyping;
+            const lastMessageId = typing.lastMessageId;
+            const typingChanged =
+                visitorTyping !== trim_(req.query && req.query.visitorTyping) ||
+                agentTyping !== trim_(req.query && req.query.agentTyping);
+            const messageHint = !!(lastMessageId && clientLastMsgId && lastMessageId !== clientLastMsgId);
+            res.json({
+                ok: true,
+                revision: rev,
+                visitorTyping,
+                agentTyping,
+                lastMessageId,
+                changed: rev > clientRev || typingChanged || messageHint,
+                newMessage: messageHint
+            });
+        } catch (err) {
+            logStoreError_(err, "typing-pulse");
+            jsonError_(res, 500, err.message || "Typing pulse failed");
+        }
+    });
+
+    router.get("/conversations/:id/live-sync", requireLiveAgentSession_(), async (req, res) => {
+        setNoCache_(res);
+        const conversationId = safeClientSessionId_(req.params && req.params.id);
+        if (!conversationId) {
+            jsonError_(res, 400, "Invalid conversation id");
+            return;
+        }
+        try {
+            const payload = await liveSyncPoll_({
+                conversationId,
+                clientRev: Number(req.query && (req.query.rev || req.query.revision)) || 0,
+                waitMs: Number(req.query && (req.query.wait || req.query.waitMs)) || 900,
+                sinceId: trim_(req.query && req.query.sinceId),
+                lastMessageId: trim_(req.query && (req.query.lastMessageId || req.query.sinceId))
+            });
+            res.json(payload);
+        } catch (err) {
+            logStoreError_(err, "live-sync");
+            jsonError_(res, 500, err.message || "Live sync failed");
+        }
+    });
+
+    router.post("/conversations/:id/typing", requireLiveAgentSession_(), async (req, res) => {
+        setNoCache_(res);
+        const conversationId = safeClientSessionId_(req.params && req.params.id);
+        if (!conversationId) {
+            jsonError_(res, 400, "Invalid conversation id");
+            return;
+        }
+        const text = trim_(req.body && req.body.text);
+        const active = !(req.body && req.body.active === false);
+        try {
+            const result = await updateAgentTyping_({
+                conversationId,
+                text,
+                active,
+                agentEmail: req.liveAgentSession.agentId
+            });
+            res.json({
+                ok: true,
+                revision: result.revision,
+                conversation: result.conversation
+            });
+        } catch (err) {
+            logStoreError_(err, "typing");
+            jsonError_(res, 400, err.message || "Typing failed");
         }
     });
 
