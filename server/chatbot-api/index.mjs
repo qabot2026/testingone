@@ -4669,6 +4669,42 @@ function stripLeadingAssistantSplashForSheet_(arr) {
     return out;
 }
 
+/**
+ * Drop gallery/graph/chip payloads from transcript JSON before optional Sheet storage.
+ * Staff transcript page uses Firestore; Sheet JSON is legacy and should be text-only.
+ *
+ * @param {unknown[]} arr
+ */
+function sanitizeChatTranscriptForSheet_(arr) {
+    if (!Array.isArray(arr) || !arr.length) {
+        return [];
+    }
+    /** @type {Record<string, unknown>[]} */
+    const out = [];
+    for (let i = 0; i < arr.length; i += 1) {
+        const turn = arr[i];
+        if (!turn || typeof turn !== "object" || Array.isArray(turn)) {
+            continue;
+        }
+        const o = /** @type {Record<string, unknown>} */ ({ ...turn });
+        delete o.rich_json;
+        delete o.rich;
+        delete o.payload;
+        delete o.images;
+        delete o.gallery;
+        let text = typeof o.text === "string" ? o.text.trim() : "";
+        if (text && transcriptTextLooksLikeScrapedRichNoise_(text)) {
+            text = "";
+        }
+        if (!text) {
+            continue;
+        }
+        o.text = text;
+        out.push(o);
+    }
+    return out;
+}
+
 /** Serialize widget `chat_transcript` for optional Google Sheets column (see SHEETS_CHAT_TRANSCRIPT_JSON_COLUMN). */
 function stringifyChatTranscriptForSheetPayload_(clientContext) {
     const cx = clientContext && typeof clientContext === "object" ? clientContext : {};
@@ -4676,7 +4712,7 @@ function stringifyChatTranscriptForSheetPayload_(clientContext) {
     if (!ctRaw.length) {
         return "";
     }
-    const ct = stripLeadingAssistantSplashForSheet_(ctRaw);
+    const ct = sanitizeChatTranscriptForSheet_(stripLeadingAssistantSplashForSheet_(ctRaw));
     if (!Array.isArray(ct) || !ct.length) {
         return "";
     }

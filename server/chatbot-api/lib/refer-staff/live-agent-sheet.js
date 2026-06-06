@@ -121,8 +121,10 @@ function visitorQueriesFromSession(session) {
   const lines = [];
   msgs.forEach((m) => {
     if (!m || trim(m.role) !== 'visitor') return;
-    const text = trim(m.text);
-    if (!text || transcriptDisplay.isHandoffRequestLine(text)) return;
+    const raw = trim(m.text);
+    if (!raw || transcriptDisplay.isHandoffRequestLine(raw)) return;
+    const text = transcriptDisplay.normalizeUserQueryText(raw) || raw;
+    if (!text || transcriptDisplay.isInternalActionToken(text)) return;
     lines.push(text);
   });
   return lines.join(' | ');

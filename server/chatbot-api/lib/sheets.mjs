@@ -121,6 +121,10 @@ function resolvedConversationsPublicBaseUrl_() {
 }
 /** Secondary tab for lead KPIs (created if missing). Must differ from `SHEETS_RANGE` data tab. */
 const DASHBOARD_SHEET_TAB = (process.env.SHEETS_DASHBOARD_TAB || "Sheet2").trim() || "Sheet2";
+/** Embedded Google Sheets charts on the dashboard tab (default off — tables only). */
+const SHEETS_DASHBOARD_CHARTS = /^(1|true|yes)$/i.test(
+    String(process.env.SHEETS_DASHBOARD_CHARTS || "").trim()
+);
 /** After each new lead row append, refresh the dashboard tab (best-effort; does not fail the request). */
 const SYNC_DASHBOARD_ON_APPEND = /^(1|true|yes)$/i.test(
     String(process.env.SHEETS_SYNC_DASHBOARD_ON_APPEND || "").trim()
@@ -6072,7 +6076,9 @@ function buildLeadDashboardSheetPayload_(payload) {
         ""
     ]);
     L.rowBannerSub = push([
-        `Live sync · ${new Date().toISOString()} · Tables + embedded charts (graphs) refresh on each sync`,
+        SHEETS_DASHBOARD_CHARTS
+            ? `Live sync · ${new Date().toISOString()} · Tables + embedded charts refresh on each sync`
+            : `Live sync · ${new Date().toISOString()} · Summary tables only (charts disabled)`,
         "",
         "",
         "",
@@ -7173,27 +7179,30 @@ export async function writeLeadCaptureDashboardToSheet2(opts = {}) {
         valueInputOption: "USER_ENTERED",
         requestBody: { values }
     });
-    try {
-        await applyLeadDashboardChartsAndFormatting_(sheets, sheetId, layout, values.length);
-    } catch (fmtErr) {
-        const errObj = /** @type {{ message?: string, response?: { data?: unknown } }} */ (fmtErr);
-        const apiDetail =
-            errObj.response && errObj.response.data !== undefined
-                ? JSON.stringify(errObj.response.data).slice(0, 1200)
-                : "";
-        const m = errObj.message ? String(errObj.message) : String(fmtErr);
-        console.error(
-            "[chatbot-api] Dashboard sheet formatting (data was written):",
-            m.slice(0, 600),
-            apiDetail
-        );
+    if (SHEETS_DASHBOARD_CHARTS) {
+        try {
+            await applyLeadDashboardChartsAndFormatting_(sheets, sheetId, layout, values.length);
+        } catch (fmtErr) {
+            const errObj = /** @type {{ message?: string, response?: { data?: unknown } }} */ (fmtErr);
+            const apiDetail =
+                errObj.response && errObj.response.data !== undefined
+                    ? JSON.stringify(errObj.response.data).slice(0, 1200)
+                    : "";
+            const m = errObj.message ? String(errObj.message) : String(fmtErr);
+            console.error(
+                "[chatbot-api] Dashboard sheet formatting (data was written):",
+                m.slice(0, 600),
+                apiDetail
+            );
+        }
     }
     const colW = values.reduce((m, r) => Math.max(m, r.length), 0);
     return {
         tab: title,
         createdTab: created,
         rowsWritten: values.length,
-        colsWritten: colW
+        colsWritten: colW,
+        chartsEnabled: SHEETS_DASHBOARD_CHARTS
     };
 }
 

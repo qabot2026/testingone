@@ -2307,7 +2307,7 @@
           >
             Reload
           </button>
-          <button type="button" id="syncSheet2Btn" title="Runs automatically after reload with current filters. Click to sync again.">
+          <button type="button" id="syncSheet2Btn" title="Push rows to Google Sheet2 manually (not automatic on reload).">
             Sync dashboard
           </button>
           <button
@@ -2649,8 +2649,8 @@
         }
         if (syncSheet2Btn) {
           syncSheet2Btn.title = isLive
-            ? "Push live-agent rows to Google Sheet2 (also runs after Reload)."
-            : "Push live-agent rows to Sheet2 for the selected date range.";
+            ? "Push live-agent rows to Google Sheet2 (manual — use this button)."
+            : "Push KPI summary tables to Sheet2 (manual — charts off unless SHEETS_DASHBOARD_CHARTS=1 on server).";
         }
       }
 
@@ -5721,18 +5721,7 @@
               console.warn("[conversations-sheet] dashboard stats", statsWaitErr);
             }
           }
-          void syncSheetAfterLoad({ interactive: false }).then(function (syncOk) {
-            if (
-              syncOk &&
-              loadingLive &&
-              json &&
-              (!json.conversations || json.conversations.length === 0) &&
-              !sheetAutoReloadAfterSync
-            ) {
-              sheetAutoReloadAfterSync = true;
-              void load();
-            }
-          });
+          /* Sheet2 sync is manual only (Sync Sheet2 button) — avoids pushing dashboard charts / live rows on every reload. */
         } catch (e) {
           if (e && e.name === "AbortError" && sheetLoadAbortCtrl) {
             return;
