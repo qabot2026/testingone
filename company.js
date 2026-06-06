@@ -169,6 +169,10 @@ let liveAgentModeRefreshAt_ = 0;
 let liveAgentModeRefreshInFlight_ = null;
 let liveAgentPollTimerId = 0;
 let liveAgentMessagesSinceIso = "";
+/** Keeps agent chat lines after async CX galleries / carousels (refer uses sync append; DF CX does not). */
+let liveAgentTailPinObserver_ = null;
+/** @type {HTMLElement | null} */
+let liveAgentTailPinObserverList_ = null;
 /** @type {Set<string>} */
 const liveAgentSeenMessageIds_ = new Set();
 /** @type {Set<string>} */
@@ -12052,7 +12056,17 @@ function isDfchatInlineSyntheticRow(el) {
  * @returns {Element | null}
  */
 function resolveGalleryInsertBeforeByCxOrder(messageList) {
-    const realRows = Array.from(messageList.children).filter((el) => !isDfchatInlineSyntheticRow(el));
+    if (!messageList) {
+        return null;
+    }
+    const children = Array.from(messageList.children);
+    for (let i = 0; i < children.length; i += 1) {
+        const el = children[i];
+        if (el instanceof HTMLElement && el.dataset && el.dataset.dfchatLiveAgentTail === "1") {
+            return el;
+        }
+    }
+    const realRows = children.filter((el) => !isDfchatInlineSyntheticRow(el));
     if (realRows.length < 2) {
         return null;
     }
@@ -12304,6 +12318,7 @@ function scheduleInjectInlineGalleryCarousel(dfMessenger, urlsOrItems, messages,
         refreshInlineCxPayloadLabels_();
 
         injected = true;
+        liveAgentPinTailRowsToTranscriptEnd_(msResolved, ml);
         try {
             ml.scrollTop = ml.scrollHeight;
         } catch {
@@ -12520,6 +12535,7 @@ function scheduleEnsureExistingInlineGalleryPosition(dfMessenger, urlsOrItems, o
             } else if (typeof ml.appendChild === "function") {
                 ml.appendChild(dfchatLastInlineGalleryWrapEl);
             }
+            liveAgentPinTailRowsToTranscriptEnd_(msResolved, ml);
             moved = true;
         }, delayMs);
     });
@@ -13047,6 +13063,7 @@ function scheduleInjectInlineVideoPlayer(dfMessenger, embedHttpsUrl, options, me
 
         ml.appendChild(wrap);
         dfchatLastInlineVideoWrapEl = wrap;
+        liveAgentPinTailRowsToTranscriptEnd_(msResolved, ml);
 
         injected = true;
         try {
@@ -13923,6 +13940,7 @@ function scheduleEnsureExistingInlineCardCarouselPosition(dfMessenger, cards, me
             } else if (typeof ml.appendChild === "function") {
                 ml.appendChild(wrap);
             }
+            liveAgentPinTailRowsToTranscriptEnd_(msResolved, ml);
             moved = true;
             try {
                 ml.scrollTop = ml.scrollHeight;
@@ -14229,6 +14247,7 @@ function scheduleInjectInlineCardCarousel(dfMessenger, cards, messageText) {
         }
         dfchatLastInlineCardCarouselWrapEl = wrap;
         refreshInlineCxPayloadLabels_();
+        liveAgentPinTailRowsToTranscriptEnd_(dfMessenger, ml);
 
         injected = true;
         try {
@@ -14526,6 +14545,7 @@ function scheduleInjectInlineSelectDropdown(dfMessenger, options, placeholder, m
             ml.appendChild(wrap);
         }
         dfchatLastInlineSelectWrapEl = wrap;
+        liveAgentPinTailRowsToTranscriptEnd_(dfMessenger, ml);
 
         injected = true;
         try {
@@ -15038,6 +15058,7 @@ function scheduleInjectBookingCalendar(dfMessenger, doctorId, doctorTitle) {
             ml.appendChild(wrap);
         }
         dfchatLastInlineBookingCalWrapEl = wrap;
+        liveAgentPinTailRowsToTranscriptEnd_(dfMessenger, ml);
 
         try {
             ml.scrollTop = ml.scrollHeight;
@@ -15700,6 +15721,7 @@ function liveAgentSetAgentTypingIndicator_(dfMessenger, label) {
         el = document.createElement("div");
         el.className = "entry bot";
         el.dataset.dfchatLiveAgentTyping = "1";
+        el.dataset.dfchatLiveAgentTail = "1";
         const inner = document.createElement("div");
         inner.className = "message bot-message";
         const bubble = document.createElement("div");
@@ -15713,6 +15735,8 @@ function liveAgentSetAgentTypingIndicator_(dfMessenger, label) {
         bubble.textContent = "Typing...";
     }
     try {
+        list.appendChild(el);
+        liveAgentPinTailRowsToTranscriptEnd_(ms, list);
         list.scrollTop = list.scrollHeight;
     } catch {
         /* ignore */
@@ -15819,11 +15843,11 @@ function liveAgentChildWasInSnapshot_(child, snap) {
 }
 
 /**
- * Keep live-agent lines after inline bot payloads (galleries, images, etc.).
+ * Agent role lines that must stay after bot galleries/carousels (refer appends synchronously; CX injects async).
  * @param {HTMLElement | null | undefined} list
  * @param {{ nodes: Element[] }} snap
  */
-function liveAgentMoveNewListChildrenToEnd_(list, snap) {
+function liveAgentMoveNewTailRowsToEnd_(list, snap) {
     if (!list || !snap) {
         return;
     }
@@ -15834,23 +15858,24 @@ function liveAgentMoveNewListChildrenToEnd_(list, snap) {
             continue;
         }
         node.dataset.dfchatLiveAgentMsg = "1";
+        node.dataset.dfchatLiveAgentTail = "1";
         if (node.parentNode === list) {
             list.appendChild(node);
         }
     }
-    liveAgentPinLiveAgentRowsToTranscriptEnd_(null, list);
+    liveAgentPinTailRowsToTranscriptEnd_(null, list);
 }
 
 /**
  * @param {HTMLElement | null | undefined} dfMessenger
  * @param {HTMLElement | null | undefined} [listOverride]
  */
-function liveAgentPinLiveAgentRowsToTranscriptEnd_(dfMessenger, listOverride) {
+function liveAgentPinTailRowsToTranscriptEnd_(dfMessenger, listOverride) {
     const list = listOverride || findMessengerMessageListRoot(dfMessenger || activeDfMessenger);
     if (!list) {
         return;
     }
-    const marked = Array.from(list.querySelectorAll('[data-dfchat-live-agent-msg="1"]'));
+    const marked = Array.from(list.querySelectorAll('[data-dfchat-live-agent-tail="1"]'));
     for (let i = 0; i < marked.length; i += 1) {
         const el = marked[i];
         if (el.parentNode === list) {
@@ -15868,19 +15893,72 @@ function liveAgentPinLiveAgentRowsToTranscriptEnd_(dfMessenger, listOverride) {
     }
 }
 
-function liveAgentSchedulePinRowsToTranscriptEnd_(dfMessenger) {
-    const run = () => liveAgentPinLiveAgentRowsToTranscriptEnd_(dfMessenger);
+/** @deprecated use liveAgentPinTailRowsToTranscriptEnd_ */
+function liveAgentPinLiveAgentRowsToTranscriptEnd_(dfMessenger, listOverride) {
+    liveAgentPinTailRowsToTranscriptEnd_(dfMessenger, listOverride);
+}
+
+function liveAgentStopTailPinObserver_() {
+    if (liveAgentTailPinObserver_) {
+        try {
+            liveAgentTailPinObserver_.disconnect();
+        } catch {
+            /* ignore */
+        }
+        liveAgentTailPinObserver_ = null;
+        liveAgentTailPinObserverList_ = null;
+    }
+}
+
+/** Re-pin agent tail rows when CX async-appends galleries after agent lines. */
+function liveAgentEnsureTailPinObserver_(dfMessenger) {
+    if (!liveAgentHandoffIsActive_()) {
+        liveAgentStopTailPinObserver_();
+        return;
+    }
+    const ms = dfMessenger || activeDfMessenger;
+    const list = findMessengerMessageListRoot(ms);
+    if (!list) {
+        return;
+    }
+    if (liveAgentTailPinObserver_ && liveAgentTailPinObserverList_ === list) {
+        return;
+    }
+    liveAgentStopTailPinObserver_();
+    liveAgentTailPinObserverList_ = list;
+    liveAgentTailPinObserver_ = new MutationObserver(() => {
+        if (!liveAgentHandoffIsActive_()) {
+            liveAgentStopTailPinObserver_();
+            return;
+        }
+        liveAgentPinTailRowsToTranscriptEnd_(ms, list);
+    });
+    try {
+        liveAgentTailPinObserver_.observe(list, { childList: true });
+    } catch {
+        liveAgentStopTailPinObserver_();
+    }
+}
+
+function liveAgentSchedulePinTailRowsToTranscriptEnd_(dfMessenger) {
+    const run = () => liveAgentPinTailRowsToTranscriptEnd_(dfMessenger);
     run();
-    [50, 180, 400, 800, 1200, 1800].forEach((ms) => {
+    [50, 180, 400, 800, 1200, 1800, 2500, 3500, 5000].forEach((ms) => {
         window.setTimeout(run, ms);
     });
 }
 
+/** @deprecated */
+function liveAgentSchedulePinRowsToTranscriptEnd_(dfMessenger) {
+    liveAgentSchedulePinTailRowsToTranscriptEnd_(dfMessenger);
+}
+
 /**
- * Render a bot-lane line at the true transcript tail (after rich bot payloads).
+ * Render a live-agent line in the bot lane.
+ * System notices append in order (refer-style). Agent role lines use tailPin so they stay after CX payloads.
  * @param {HTMLElement | null | undefined} dfMessenger
  * @param {string} text
- * @param {{ withPersona?: boolean }} [opts]
+ * @param {{ withPersona?: boolean, personaLabel?: string, tailPin?: boolean }} [opts]
  */
 function liveAgentRenderBotLineAtTranscriptEnd_(dfMessenger, text, opts) {
     const t = (text || "").trim();
@@ -15888,64 +15966,81 @@ function liveAgentRenderBotLineAtTranscriptEnd_(dfMessenger, text, opts) {
     if (!t || !ms || typeof ms.renderCustomText !== "function") {
         return;
     }
-    const list = findMessengerMessageListRoot(ms);
-    const snap = liveAgentSnapshotList_(list);
-    ms.renderCustomText(t, true);
-    const finalize = () => {
-        liveAgentMoveNewListChildrenToEnd_(list, snap);
-    };
-    finalize();
-    [50, 180, 400, 800].forEach((msDelay) => {
-        window.setTimeout(finalize, msDelay);
-    });
     const personaLabel =
         opts && typeof opts.personaLabel === "string" ? opts.personaLabel.trim() : "";
     const withPersona = opts && opts.withPersona === false ? false : !personaLabel;
-    if (personaLabel) {
-        const when = Date.now();
-        const cfg = BOT_PERSONA_CONFIG;
-        const incDate = cfg.messageTimeIncludesDate !== false;
-        const timeLabel =
-            cfg.mode === "emojiTime" && cfg.emojiTime && cfg.emojiTime.showTime
-                ? getBotPersonaMessageTimeLabel(cfg.emojiTime.timeZone, when, incDate)
-                : cfg.mode === "image" && cfg.image && cfg.image.showTime
-                  ? getBotPersonaMessageTimeLabel(cfg.image.timeZone, when, incDate)
-                  : "";
-        const snapPersona = liveAgentSnapshotList_(list);
-        ms.renderCustomText(
-            createPersonaBadgeMarkdown(
-                personaLabel,
-                timeLabel,
-                `la-${when}-${(personaSequence += 1)}`,
-                PERSONA_MARKER_BOT,
+    const tailPin = !!(opts && opts.tailPin);
+
+    /** @param {HTMLElement | null | undefined} list @param {{ nodes: Element[] }} snap */
+    function renderPersonaAfterSnap_(list, snap) {
+        if (personaLabel) {
+            const when = Date.now();
+            const cfg = BOT_PERSONA_CONFIG;
+            const incDate = cfg.messageTimeIncludesDate !== false;
+            const timeLabel =
+                cfg.mode === "emojiTime" && cfg.emojiTime && cfg.emojiTime.showTime
+                    ? getBotPersonaMessageTimeLabel(cfg.emojiTime.timeZone, when, incDate)
+                    : cfg.mode === "image" && cfg.image && cfg.image.showTime
+                      ? getBotPersonaMessageTimeLabel(cfg.image.timeZone, when, incDate)
+                      : "";
+            ms.renderCustomText(
+                createPersonaBadgeMarkdown(
+                    personaLabel,
+                    timeLabel,
+                    `la-${when}-${(personaSequence += 1)}`,
+                    PERSONA_MARKER_BOT,
+                    true
+                ),
                 true
-            ),
-            true
-        );
-        const finalizePersona = () => {
-            liveAgentMoveNewListChildrenToEnd_(list, snapPersona);
-        };
-        finalizePersona();
-        [80, 200, 500, 1000, 1500].forEach((msDelay) => {
-            window.setTimeout(finalizePersona, msDelay);
-        });
-    } else if (withPersona) {
-        const snapPersona = liveAgentSnapshotList_(list);
-        renderBotPersona(ms, Date.now());
-        const finalizePersona = () => {
-            liveAgentMoveNewListChildrenToEnd_(list, snapPersona);
-        };
-        finalizePersona();
-        [80, 200, 500, 1000, 1500].forEach((msDelay) => {
-            window.setTimeout(finalizePersona, msDelay);
-        });
+            );
+            if (tailPin && list && snap) {
+                const finalizePersona = () => liveAgentMoveNewTailRowsToEnd_(list, snap);
+                finalizePersona();
+                [80, 200, 500, 1000, 1500, 2500].forEach((msDelay) => {
+                    window.setTimeout(finalizePersona, msDelay);
+                });
+            }
+        } else if (withPersona) {
+            renderBotPersona(ms, Date.now());
+            if (tailPin && list && snap) {
+                const finalizePersona = () => liveAgentMoveNewTailRowsToEnd_(list, snap);
+                finalizePersona();
+                [80, 200, 500, 1000, 1500, 2500].forEach((msDelay) => {
+                    window.setTimeout(finalizePersona, msDelay);
+                });
+            }
+        }
     }
-    liveAgentSchedulePinRowsToTranscriptEnd_(ms);
+
+    if (!tailPin) {
+        ms.renderCustomText(t, true);
+        renderPersonaAfterSnap_(null, null);
+        return;
+    }
+
+    liveAgentEnsureTailPinObserver_(ms);
+    const list = findMessengerMessageListRoot(ms);
+    const snap = liveAgentSnapshotList_(list);
+    ms.renderCustomText(t, true);
+    const finalizeText = () => liveAgentMoveNewTailRowsToEnd_(list, snap);
+    finalizeText();
+    [50, 180, 400, 800, 1200, 1800, 2500, 3500].forEach((msDelay) => {
+        window.setTimeout(finalizeText, msDelay);
+    });
+    if (personaLabel || withPersona) {
+        const snapPersona = liveAgentSnapshotList_(list);
+        renderPersonaAfterSnap_(list, snapPersona);
+    }
+    liveAgentSchedulePinTailRowsToTranscriptEnd_(ms);
 }
 
 /** @param {HTMLElement | null | undefined} row */
 function dfchatRowIsLiveAgentPinned_(row) {
-    return !!(row && row.dataset && row.dataset.dfchatLiveAgentMsg === "1");
+    return !!(
+        row
+        && row.dataset
+        && (row.dataset.dfchatLiveAgentMsg === "1" || row.dataset.dfchatLiveAgentTail === "1")
+    );
 }
 
 /** @param {HTMLElement | null | undefined} personaMessage */
@@ -16084,6 +16179,7 @@ function liveAgentApplyConnectionNoticesFromSync_(dfMessenger, stData) {
 function setLiveAgentHandoffActive_(on) {
     liveAgentHandoffActive = Boolean(on);
     if (!liveAgentHandoffActive) {
+        liveAgentStopTailPinObserver_();
         liveAgentHumanChatActive = false;
         stopLiveAgentPoll_();
         liveAgentMessagesSinceIso = "";
@@ -17400,12 +17496,12 @@ async function liveAgentPollTick_(dfMessenger) {
                     typeof m.senderDisplayName === "string" && m.senderDisplayName.trim()
                         ? m.senderDisplayName.trim()
                         : liveAgentDisplayNameForEmail_(m.senderEmail);
-                liveAgentRenderBotLineAtTranscriptEnd_(ms, text, { personaLabel: displayName });
+                liveAgentRenderBotLineAtTranscriptEnd_(ms, text, { personaLabel: displayName, tailPin: true });
             } else {
                 liveAgentRenderBotLineAtTranscriptEnd_(ms, text, { withPersona: false });
             }
         }
-        liveAgentSchedulePinRowsToTranscriptEnd_(ms);
+        liveAgentSchedulePinTailRowsToTranscriptEnd_(ms);
         scheduleSuppressDfMessengerErrorUi_();
     } catch {
         /* ignore */
