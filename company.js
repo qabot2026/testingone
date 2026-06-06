@@ -104,10 +104,27 @@ const PERSONA_FONT_FAMILY =
 const PERSONA_FONT_SIZE = "9px";
 const PERSONA_FONT_WEIGHT = "400";
 const PERSONA_VERTICAL_PULL = "0";
-const PERSONA_SOFT_BLUR = "0.5px";
-const PERSONA_OPACITY = "0.84";
-const USER_PERSONA_TOKEN = encodeURIComponent("🙂User");
-const BOT_PERSONA_TOKEN = encodeURIComponent("Bot 🤖");
+
+function readPersonaDisplayConfig() {
+    const pd =
+        COMMON_CONFIG.personaDisplay && typeof COMMON_CONFIG.personaDisplay === "object"
+            ? COMMON_CONFIG.personaDisplay
+            : {};
+    return {
+        nameFontSizePx:
+            typeof pd.nameFontSizePx === "number" && Number.isFinite(pd.nameFontSizePx)
+                ? pd.nameFontSizePx
+                : 11,
+        timeFontSizePx:
+            typeof pd.timeFontSizePx === "number" && Number.isFinite(pd.timeFontSizePx)
+                ? pd.timeFontSizePx
+                : 10,
+        blurPx: typeof pd.blurPx === "number" && Number.isFinite(pd.blurPx) ? pd.blurPx : 0.35,
+        opacity: typeof pd.opacity === "number" && Number.isFinite(pd.opacity) ? pd.opacity : 0.82
+    };
+}
+
+const PERSONA_DISPLAY_CONFIG = readPersonaDisplayConfig();
 const CHAT_CLIENT_CONTEXT_ENDPOINT = "/chat-client-context";
 const CHAT_CLIENT_CONTEXT_STORAGE_KEY = "company_chat_client_context";
 const CONTACT_FORM_OPEN_DELAY_MS = 600;
@@ -836,6 +853,7 @@ const PERSONA_MARKER_BOT = "dfchat-persona-bot";
 const PERSONA_MARKER_BOT_TIME = "dfchat-persona-bot-time";
 const PERSONA_MARKER_USER = "dfchat-persona-user";
 const PERSONA_URL_MARKER_BOT_IMG = "dfchat-bot-persona";
+const PERSONA_URL_MARKER_AGENT_IMG = "dfchat-agent-persona";
 /** Invisible fingerprint at start of user persona markdown; removed after decorate so transcript stays readable. */
 const USER_PERSONA_TEXT_SENTINEL = "\u2060\u200c\u2060";
 
@@ -849,35 +867,61 @@ function readBotPersonaConfig() {
         : 28;
     const emojiTime = raw.emojiTime && typeof raw.emojiTime === "object" ? raw.emojiTime : {};
     const image = raw.image && typeof raw.image === "object" ? raw.image : {};
+    const topLabel = typeof raw.label === "string" ? raw.label.trim() : "";
+    const topImageUrl = typeof raw.imageUrl === "string" && raw.imageUrl.trim() ? raw.imageUrl.trim() : "";
+    const topShowTime = raw.showTime !== false;
+    const avatarSizePx =
+        typeof raw.avatarSizePx === "number" && Number.isFinite(raw.avatarSizePx) && raw.avatarSizePx > 0
+            ? raw.avatarSizePx
+            : typeof image.widthPx === "number" && Number.isFinite(image.widthPx) && image.widthPx > 0
+              ? image.widthPx
+              : 32;
+    const gapFromRefer =
+        typeof raw.gapBelowPx === "number" && Number.isFinite(raw.gapBelowPx) && raw.gapBelowPx >= 0
+            ? raw.gapBelowPx
+            : undefined;
     /**
      * Horizontal `translateX` (px) applied to the user persona caption. Positive = right, **negative = left**.
-     * `cssUserPersonaTranslateX` clamps to ±56, so any number in `[-56, 56]` is honoured here verbatim
-     * (legacy `>= 0` filter dropped negative values to the default and made the caption drift right).
+     * Refer QA widget uses 0 — keep df-messenger nudges opt-in via config only.
      */
-    const userPersonaShiftRightPx = typeof raw.userPersonaShiftRightPx === "number" && Number.isFinite(raw.userPersonaShiftRightPx)
-        ? raw.userPersonaShiftRightPx
-        : 24;
+    const userPersonaShiftRightPx =
+        typeof raw.userPersonaShiftRightPx === "number" && Number.isFinite(raw.userPersonaShiftRightPx)
+            ? raw.userPersonaShiftRightPx
+            : 0;
     /** On narrow viewports, subtract from computed user persona `margin-left` to move strip left. */
-    const userPersonaMobileNudgeLeftPx = typeof raw.userPersonaMobileNudgeLeftPx === "number" && Number.isFinite(raw.userPersonaMobileNudgeLeftPx) && raw.userPersonaMobileNudgeLeftPx >= 0
-        ? raw.userPersonaMobileNudgeLeftPx
-        : 28;
+    const userPersonaMobileNudgeLeftPx =
+        typeof raw.userPersonaMobileNudgeLeftPx === "number"
+        && Number.isFinite(raw.userPersonaMobileNudgeLeftPx)
+        && raw.userPersonaMobileNudgeLeftPx >= 0
+            ? raw.userPersonaMobileNudgeLeftPx
+            : 0;
     /** Extra px toward the previous message (adds to baseline -6px margin-top); negative values move the user persona row down. */
-    const userPersonaNudgeUpPx = typeof raw.userPersonaNudgeUpPx === "number" && Number.isFinite(raw.userPersonaNudgeUpPx) && raw.userPersonaNudgeUpPx >= -48 && raw.userPersonaNudgeUpPx <= 32
-        ? raw.userPersonaNudgeUpPx
-        : 6;
-    /**
-     * Wide-viewport-only delta added to `userPersonaShiftRightPx`. Negative = pull further left on desktop
-     * only. `cssUserPersonaTranslateX` clamps to ±48; anything in `[-120, 120]` is accepted here.
-     */
-    const userPersonaShiftRightDeskExtraPx = typeof raw.userPersonaShiftRightDeskExtraPx === "number" && Number.isFinite(raw.userPersonaShiftRightDeskExtraPx) && raw.userPersonaShiftRightDeskExtraPx >= -120 && raw.userPersonaShiftRightDeskExtraPx <= 120
-        ? raw.userPersonaShiftRightDeskExtraPx
-        : 0;
-    /** When true (default), bot persona clock shows calendar date + time for this reply; false = time only. */
-    const messageTimeIncludesDate = raw.messageTimeIncludesDate !== false;
-    /** Visible space (px) under the persona row before the assistant reply bubble (`tightenBelowPx` overrides are softened). */
-    const gapBelowAssistantPx = typeof raw.gapBelowAssistantPx === "number" && Number.isFinite(raw.gapBelowAssistantPx) && raw.gapBelowAssistantPx >= 0 && raw.gapBelowAssistantPx <= 64
-        ? raw.gapBelowAssistantPx
-        : 4;
+    const userPersonaNudgeUpPx =
+        typeof raw.userPersonaNudgeUpPx === "number"
+        && Number.isFinite(raw.userPersonaNudgeUpPx)
+        && raw.userPersonaNudgeUpPx >= -48
+        && raw.userPersonaNudgeUpPx <= 32
+            ? raw.userPersonaNudgeUpPx
+            : 0;
+    const userPersonaShiftRightDeskExtraPx =
+        typeof raw.userPersonaShiftRightDeskExtraPx === "number"
+        && Number.isFinite(raw.userPersonaShiftRightDeskExtraPx)
+        && raw.userPersonaShiftRightDeskExtraPx >= -120
+        && raw.userPersonaShiftRightDeskExtraPx <= 120
+            ? raw.userPersonaShiftRightDeskExtraPx
+            : 0;
+    /** When true, bot persona clock shows calendar date + time for this reply; false = time only (refer default). */
+    const messageTimeIncludesDate = raw.messageTimeIncludesDate === true;
+    /** Visible space (px) under the persona row before the assistant reply bubble. */
+    const gapBelowAssistantPx =
+        typeof raw.gapBelowAssistantPx === "number"
+        && Number.isFinite(raw.gapBelowAssistantPx)
+        && raw.gapBelowAssistantPx >= 0
+        && raw.gapBelowAssistantPx <= 64
+            ? raw.gapBelowAssistantPx
+            : gapFromRefer !== undefined
+              ? gapFromRefer
+              : 4;
     return {
         mode,
         threadAvatarSizePx,
@@ -896,47 +940,65 @@ function readBotPersonaConfig() {
         },
         image: {
             url: (() => {
-                const top = typeof raw.imageUrl === "string" && raw.imageUrl.trim() ? raw.imageUrl.trim() : "";
                 const u =
                     typeof image.url === "string" && image.url.trim()
                         ? image.url.trim()
                         : typeof image.imageUrl === "string" && image.imageUrl.trim()
                             ? image.imageUrl.trim()
-                            : top;
-                return u || "https://storage.googleapis.com/companybucket/Images/cat.png";
+                            : topImageUrl;
+                return u || "https://storage.googleapis.com/companybucket/Images/cat-icon.png";
             })(),
-            widthPx: typeof image.widthPx === "number" && Number.isFinite(image.widthPx) ? image.widthPx : 32,
-            heightPx: typeof image.heightPx === "number" && Number.isFinite(image.heightPx) ? image.heightPx : 32,
-            /** Optional caption text rendered between the avatar and the clock (e.g. "Chatbot"). Empty string = clock only. */
-            label: typeof image.label === "string" ? image.label : "",
-            showTime: image.showTime !== false,
-            timeZone: typeof image.timeZone === "string" && image.timeZone.trim()
-                ? image.timeZone.trim()
-                : "Asia/Kolkata",
-            /** Nudge bot avatar + time strip down (px). */
-            offsetDownPx: typeof image.offsetDownPx === "number" && Number.isFinite(image.offsetDownPx) && image.offsetDownPx >= 0
-                ? image.offsetDownPx
-                : 6,
-            /** Image+time mode only: nudge the bot avatar horizontally (px); positive = right. */
-            offsetRightPx: typeof image.offsetRightPx === "number" && Number.isFinite(image.offsetRightPx) && image.offsetRightPx >= -120 && image.offsetRightPx <= 120
-                ? image.offsetRightPx
-                : 0,
-            /** Image+time mode only: nudge the clock text down (px); does not move the avatar (`offsetDownPx` moves both). */
-            timeOffsetDownPx: typeof image.timeOffsetDownPx === "number" && Number.isFinite(image.timeOffsetDownPx) && image.timeOffsetDownPx >= -32 && image.timeOffsetDownPx <= 120
-                ? image.timeOffsetDownPx
-                : 0,
-            /** Image+time mode only: nudge the clock text horizontally (px); positive = right. */
-            timeOffsetRightPx: typeof image.timeOffsetRightPx === "number" && Number.isFinite(image.timeOffsetRightPx) && image.timeOffsetRightPx >= -120 && image.timeOffsetRightPx <= 120
-                ? image.timeOffsetRightPx
-                : 0,
-            /** Extra pull toward the reply bubble (adds to base −4px margin under persona row). */
-            tightenBelowPx: typeof image.tightenBelowPx === "number" && Number.isFinite(image.tightenBelowPx) && image.tightenBelowPx >= 0
-                ? image.tightenBelowPx
-                : 8,
-            /** Narrow viewports: translate bot persona imgs left by this many px (`translateX(-n)`). */
-            mobileNudgeLeftPx: typeof image.mobileNudgeLeftPx === "number" && Number.isFinite(image.mobileNudgeLeftPx) && image.mobileNudgeLeftPx >= 0
-                ? image.mobileNudgeLeftPx
-                : 14
+            widthPx: avatarSizePx,
+            heightPx:
+                typeof image.heightPx === "number" && Number.isFinite(image.heightPx) && image.heightPx > 0
+                    ? image.heightPx
+                    : avatarSizePx,
+            label:
+                typeof image.label === "string" && image.label.trim()
+                    ? image.label.trim()
+                    : topLabel || "Quality",
+            showTime: typeof image.showTime === "boolean" ? image.showTime !== false : topShowTime,
+            timeZone:
+                typeof image.timeZone === "string" && image.timeZone.trim()
+                    ? image.timeZone.trim()
+                    : typeof raw.timeZone === "string" && raw.timeZone.trim()
+                      ? raw.timeZone.trim()
+                      : "Asia/Kolkata",
+            offsetDownPx:
+                typeof image.offsetDownPx === "number" && Number.isFinite(image.offsetDownPx) && image.offsetDownPx >= 0
+                    ? image.offsetDownPx
+                    : 0,
+            offsetRightPx:
+                typeof image.offsetRightPx === "number"
+                && Number.isFinite(image.offsetRightPx)
+                && image.offsetRightPx >= -120
+                && image.offsetRightPx <= 120
+                    ? image.offsetRightPx
+                    : 0,
+            timeOffsetDownPx:
+                typeof image.timeOffsetDownPx === "number"
+                && Number.isFinite(image.timeOffsetDownPx)
+                && image.timeOffsetDownPx >= -32
+                && image.timeOffsetDownPx <= 120
+                    ? image.timeOffsetDownPx
+                    : 0,
+            timeOffsetRightPx:
+                typeof image.timeOffsetRightPx === "number"
+                && Number.isFinite(image.timeOffsetRightPx)
+                && image.timeOffsetRightPx >= -120
+                && image.timeOffsetRightPx <= 120
+                    ? image.timeOffsetRightPx
+                    : 0,
+            tightenBelowPx:
+                typeof image.tightenBelowPx === "number" && Number.isFinite(image.tightenBelowPx) && image.tightenBelowPx >= 0
+                    ? image.tightenBelowPx
+                    : 0,
+            mobileNudgeLeftPx:
+                typeof image.mobileNudgeLeftPx === "number"
+                && Number.isFinite(image.mobileNudgeLeftPx)
+                && image.mobileNudgeLeftPx >= 0
+                    ? image.mobileNudgeLeftPx
+                    : 0
         }
     };
 }
@@ -950,18 +1012,37 @@ function readUserPersonaConfig() {
         ? COMMON_CONFIG.userPersona
         : {};
     const labelFrom = raw.label != null ? raw.label : raw.emoji;
-    const label = typeof labelFrom === "string" && labelFrom.trim() ? labelFrom.trim() : "🙂User";
+    const label = typeof labelFrom === "string" && labelFrom.trim() ? labelFrom.trim() : "You";
     const timeZone = typeof raw.timeZone === "string" && raw.timeZone.trim()
         ? raw.timeZone.trim()
         : "Asia/Kolkata";
     return {
         label,
         showTime: raw.showTime !== false,
+        showSeconds: raw.showSeconds !== false,
+        messageTimeIncludesDate: raw.messageTimeIncludesDate === true,
         timeZone
     };
 }
 
+/** Refer `agentPersona` — live-agent human avatar row (not the bot cat). */
+function readAgentPersonaConfig() {
+    const raw =
+        COMMON_CONFIG.agentPersona && typeof COMMON_CONFIG.agentPersona === "object"
+            ? COMMON_CONFIG.agentPersona
+            : {};
+    const label = typeof raw.label === "string" && raw.label.trim() ? raw.label.trim() : "Support Agent";
+    const imageUrl = typeof raw.imageUrl === "string" && raw.imageUrl.trim() ? raw.imageUrl.trim() : "";
+    const mode = raw.mode === "image" && imageUrl ? "image" : "icon";
+    return { mode, label, imageUrl };
+}
+
+const AGENT_PERSONA_CONFIG = readAgentPersonaConfig();
 const USER_PERSONA_CONFIG = readUserPersonaConfig();
+const USER_PERSONA_TOKEN = encodeURIComponent(USER_PERSONA_CONFIG.label);
+const BOT_PERSONA_TOKEN = encodeURIComponent(
+    BOT_PERSONA_CONFIG.image.label || BOT_PERSONA_CONFIG.emojiTime.label || "Quality"
+);
 
 /**
  * Horizontal nudge for user persona badge (px). `userPersonaShiftRightPx` and
@@ -15975,24 +16056,8 @@ function liveAgentRenderBotLineAtTranscriptEnd_(dfMessenger, text, opts) {
     function renderPersonaAfterSnap_(list, snap) {
         if (personaLabel) {
             const when = Date.now();
-            const cfg = BOT_PERSONA_CONFIG;
-            const incDate = cfg.messageTimeIncludesDate !== false;
-            const timeLabel =
-                cfg.mode === "emojiTime" && cfg.emojiTime && cfg.emojiTime.showTime
-                    ? getBotPersonaMessageTimeLabel(cfg.emojiTime.timeZone, when, incDate)
-                    : cfg.mode === "image" && cfg.image && cfg.image.showTime
-                      ? getBotPersonaMessageTimeLabel(cfg.image.timeZone, when, incDate)
-                      : "";
-            ms.renderCustomText(
-                createPersonaBadgeMarkdown(
-                    personaLabel,
-                    timeLabel,
-                    `la-${when}-${(personaSequence += 1)}`,
-                    PERSONA_MARKER_BOT,
-                    true
-                ),
-                true
-            );
+            ms.renderCustomText(buildAgentPersonaMarkdown_(personaLabel, when), true);
+            schedulePersonaShadowFix(ms);
             if (tailPin && list && snap) {
                 const finalizePersona = () => liveAgentMoveNewTailRowsToEnd_(list, snap);
                 finalizePersona();
@@ -25341,6 +25406,44 @@ function stripUserPersonaSentinelFromDom_(hostEl) {
 }
 
 /**
+ * Refer-style live-agent human avatar (head + shoulders in circle) when agentPersona.mode is icon.
+ * @returns {string}
+ */
+function createAgentHumanIconDataUrl_() {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><circle cx="16" cy="16" r="16" fill="#fde8f0"/><circle cx="16" cy="13" r="5" fill="#8f1d56"/><path d="M8 26c0-4.4 3.6-8 8-8s8 3.6 8 8" fill="#8f1d56"/></svg>`;
+    return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+}
+
+/**
+ * Live-agent agent row — human icon + agent name + clock (refer agentPersona, not bot cat).
+ * @param {string} displayName
+ * @param {number | undefined} messageInstantMs
+ */
+function buildAgentPersonaMarkdown_(displayName, messageInstantMs) {
+    const when =
+        typeof messageInstantMs === "number" && Number.isFinite(messageInstantMs)
+            ? messageInstantMs
+            : Date.now();
+    const cfg = BOT_PERSONA_CONFIG;
+    const incDate = cfg.messageTimeIncludesDate === true;
+    const name =
+        typeof displayName === "string" && displayName.trim()
+            ? displayName.trim()
+            : AGENT_PERSONA_CONFIG.label;
+    const timeLabel =
+        cfg.mode === "image" && cfg.image && cfg.image.showTime
+            ? getBotPersonaMessageTimeLabel(cfg.image.timeZone, when, incDate)
+            : "";
+    let baseUrl;
+    if (AGENT_PERSONA_CONFIG.mode === "image" && AGENT_PERSONA_CONFIG.imageUrl) {
+        baseUrl = AGENT_PERSONA_CONFIG.imageUrl.split("#")[0].trim();
+    } else {
+        baseUrl = createAgentHumanIconDataUrl_().split("#")[0].trim();
+    }
+    return buildPersonaImageMarkdownWithTime_(baseUrl, name, timeLabel, PERSONA_URL_MARKER_AGENT_IMG);
+}
+
+/**
  * External avatar + optional caption label + message time as one bold markdown span on the same
  * line as the image (single `<p>` keeps the existing `p strong` chrome rules in
  * {@link getPersonaImageGuardCss} matching for blur / colour / vertical nudge).
@@ -25348,8 +25451,9 @@ function stripUserPersonaSentinelFromDom_(hostEl) {
  * @param {string} label optional caption text (e.g. "Chatbot"); empty string => clock only
  * @param {string} timeLabel
  */
-function buildBotPersonaImageMarkdownWithTime_(baseUrl, label, timeLabel) {
-    const imgMd = `![](${baseUrl}#${PERSONA_URL_MARKER_BOT_IMG})`;
+function buildPersonaImageMarkdownWithTime_(baseUrl, label, timeLabel, urlMarker = PERSONA_URL_MARKER_BOT_IMG) {
+    const marker = typeof urlMarker === "string" && urlMarker.trim() ? urlMarker.trim() : PERSONA_URL_MARKER_BOT_IMG;
+    const imgMd = `![](${baseUrl}#${marker})`;
     const sanitize = (s) => (typeof s === "string" ? s : "").trim().replace(/\*\*/g, "").replace(/\*/g, "×");
     const t = sanitize(timeLabel);
     const l = sanitize(label);
@@ -25376,7 +25480,7 @@ function buildBotPersonaMarkdown_(messageInstantMs) {
             ? messageInstantMs
             : Date.now();
     const cfg = BOT_PERSONA_CONFIG;
-    const incDate = cfg.messageTimeIncludesDate !== false;
+    const incDate = cfg.messageTimeIncludesDate === true;
     if (cfg.mode === "emojiTime") {
         const nonce = `bot-${Date.now()}-${personaSequence += 1}`;
         const label = cfg.emojiTime.label;
@@ -25390,7 +25494,7 @@ function buildBotPersonaMarkdown_(messageInstantMs) {
     const label = typeof img.label === "string" ? img.label : "";
     if (img.showTime || label) {
         const timeLabel = img.showTime ? getBotPersonaMessageTimeLabel(img.timeZone, when, incDate) : "";
-        return buildBotPersonaImageMarkdownWithTime_(baseUrl, label, timeLabel);
+        return buildPersonaImageMarkdownWithTime_(baseUrl, label, timeLabel);
     }
     return `![](${baseUrl}#${PERSONA_URL_MARKER_BOT_IMG})`;
 }
@@ -25515,7 +25619,9 @@ function getPersonaImageGuardCss() {
     const timeRight = cfg.mode === "image" ? `${img.timeOffsetRightPx}px` : "0px";
     return `
 img[src*="dfchat-bot-persona"],
-img[src*="%23dfchat-bot-persona"] {
+img[src*="%23dfchat-bot-persona"],
+img[src*="dfchat-agent-persona"],
+img[src*="%23dfchat-agent-persona"] {
   width: ${catW} !important;
   height: ${catH} !important;
   max-width: ${catW} !important;
@@ -25527,28 +25633,34 @@ img[src*="%23dfchat-bot-persona"] {
   transform: translate(${personaRight}, ${personaDown}) !important;
 }
 .message.bot-message.markdown:has(img[src*="dfchat-bot-persona"]),
-.message.bot-message.markdown:has(img[src*="%23dfchat-bot-persona"]) {
+.message.bot-message.markdown:has(img[src*="%23dfchat-bot-persona"]),
+.message.bot-message.markdown:has(img[src*="dfchat-agent-persona"]),
+.message.bot-message.markdown:has(img[src*="%23dfchat-agent-persona"]) {
   margin-bottom: ${BOT_PERSONA_CONFIG.gapBelowAssistantPx}px !important;
 }
 .message.bot-message.markdown:has(img[src*="dfchat-bot-persona"]) p + p,
-.message.bot-message.markdown:has(img[src*="%23dfchat-bot-persona"]) p + p {
+.message.bot-message.markdown:has(img[src*="%23dfchat-bot-persona"]) p + p,
+.message.bot-message.markdown:has(img[src*="dfchat-agent-persona"]) p + p,
+.message.bot-message.markdown:has(img[src*="%23dfchat-agent-persona"]) p + p {
   color: ${PERSONA_TEXT_COLOR} !important;
-  font-size: 11px !important;
+  font-size: ${PERSONA_DISPLAY_CONFIG.nameFontSizePx}px !important;
   font-weight: 600 !important;
   margin: 0 !important;
   padding: 0 !important;
   line-height: 1.25 !important;
 }
 .message.bot-message.markdown:has(img[src*="dfchat-bot-persona"]) p strong,
-.message.bot-message.markdown:has(img[src*="%23dfchat-bot-persona"]) p strong {
+.message.bot-message.markdown:has(img[src*="%23dfchat-bot-persona"]) p strong,
+.message.bot-message.markdown:has(img[src*="dfchat-agent-persona"]) p strong,
+.message.bot-message.markdown:has(img[src*="%23dfchat-agent-persona"]) p strong {
   display: inline-block !important;
   vertical-align: middle !important;
   transform: translate(${timeRight}, ${timeDown}) !important;
   color: ${PERSONA_TEXT_COLOR} !important;
-  font-size: 11px !important;
+  font-size: ${PERSONA_DISPLAY_CONFIG.timeFontSizePx}px !important;
   font-weight: 600 !important;
-  filter: blur(${PERSONA_SOFT_BLUR}) !important;
-  opacity: ${PERSONA_OPACITY} !important;
+  filter: blur(${PERSONA_DISPLAY_CONFIG.blurPx}px) !important;
+  opacity: ${PERSONA_DISPLAY_CONFIG.opacity} !important;
 }
 img[src*="dfchat-persona-bot-time"] {
   height: 28px !important;
@@ -25563,7 +25675,9 @@ img[src*="dfchat-persona-bot-time"] {
 }
 @media (max-width: ${MOBILE_CHAT_BREAKPOINT_PX}px) {
 img[src*="dfchat-bot-persona"],
-img[src*="%23dfchat-bot-persona"] {
+img[src*="%23dfchat-bot-persona"],
+img[src*="dfchat-agent-persona"],
+img[src*="%23dfchat-agent-persona"] {
   transform: translate(${mobX}, ${mobY}px) !important;
 }
 img[src*="dfchat-persona-bot-time"] {
@@ -25649,8 +25763,8 @@ df-markdown-message.dfchat-user-persona-md-host,
   font-size: 11px !important;
   font-weight: 600 !important;
   color: ${PERSONA_TEXT_COLOR} !important;
-  filter: blur(${PERSONA_SOFT_BLUR}) !important;
-  opacity: ${PERSONA_OPACITY} !important;
+  filter: blur(${PERSONA_DISPLAY_CONFIG.blurPx}px) !important;
+  opacity: ${PERSONA_DISPLAY_CONFIG.opacity} !important;
   display: inline-block !important;
   vertical-align: middle !important;
 }
@@ -26574,8 +26688,8 @@ function applyUserPersonaMarkdownChrome_(mdHost) {
                     strongNode.style.setProperty("font-size", "11px", "important");
                     strongNode.style.setProperty("font-weight", "600", "important");
                     strongNode.style.setProperty("color", PERSONA_TEXT_COLOR, "important");
-                    strongNode.style.setProperty("filter", `blur(${PERSONA_SOFT_BLUR})`, "important");
-                    strongNode.style.setProperty("opacity", String(PERSONA_OPACITY), "important");
+                    strongNode.style.setProperty("filter", `blur(${PERSONA_DISPLAY_CONFIG.blurPx}px)`, "important");
+                    strongNode.style.setProperty("opacity", String(PERSONA_DISPLAY_CONFIG.opacity), "important");
                 }
             }
             if (isUserMessageDiv) {
@@ -26617,7 +26731,7 @@ function applyUserPersonaMarkdownChrome_(mdHost) {
                     innerDiv.style.setProperty("margin", "0", "important");
                     innerDiv.style.setProperty("padding", "0", "important");
                     innerDiv.style.setProperty("color", PERSONA_TEXT_COLOR, "important");
-                    innerDiv.style.setProperty("opacity", String(PERSONA_OPACITY), "important");
+                    innerDiv.style.setProperty("opacity", String(PERSONA_DISPLAY_CONFIG.opacity), "important");
                 }
             } else if (!isMarkdownMessageHost && !isUserEntry && !isBotEntry && !isMessageStack && !isUserMessageDiv && !isBotMessageDiv && !isTextMessageHost) {
                 el.style.setProperty("background", "transparent", "important");
@@ -27408,7 +27522,7 @@ function getPersonaType(imageNode) {
         return "user";
     }
 
-    if (source.includes(`#${PERSONA_URL_MARKER_BOT_IMG}`)) {
+    if (source.includes(`#${PERSONA_URL_MARKER_BOT_IMG}`) || source.includes(`#${PERSONA_URL_MARKER_AGENT_IMG}`)) {
         return "bot";
     }
 
@@ -27478,20 +27592,23 @@ function stylePersonaContainer(container, imageNode, personaType) {
     let depth = 0;
 
     imageNode.dataset.companyPersonaStyled = personaType;
-    imageNode.style.filter = `blur(${PERSONA_SOFT_BLUR})`;
-    imageNode.style.opacity = PERSONA_OPACITY;
+    imageNode.style.filter = `blur(${PERSONA_DISPLAY_CONFIG.blurPx}px)`;
+    imageNode.style.opacity = String(PERSONA_DISPLAY_CONFIG.opacity);
 
     const src = imageNode.getAttribute("src") || "";
     if (personaType === "bot" && BOT_PERSONA_CONFIG.mode === "image") {
         const { widthPx, heightPx, showTime } = BOT_PERSONA_CONFIG.image;
         const isCat = src.includes(`#${PERSONA_URL_MARKER_BOT_IMG}`);
+        const isAgent = src.includes(`#${PERSONA_URL_MARKER_AGENT_IMG}`);
         const isTime = src.includes(PERSONA_MARKER_BOT_TIME);
         imageNode.style.display = "inline-block";
         imageNode.style.verticalAlign = "middle";
-        if (isCat) {
+        if (isCat || isAgent) {
             imageNode.style.height = `${heightPx}px`;
             imageNode.style.width = `${widthPx}px`;
             imageNode.style.objectFit = "contain";
+            imageNode.style.filter = "none";
+            imageNode.style.opacity = "1";
             if (showTime) {
                 imageNode.style.marginRight = "6px";
             }

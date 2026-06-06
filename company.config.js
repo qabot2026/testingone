@@ -69,51 +69,41 @@ window.COMPANY_CHAT_UI_CONFIG = {
       // chatCollapseIconUrl: "https://example.com/chat-collapse-x.svg"
     },
 
-    // Bot row: `mode: "image"` uses `image.url` / `image.imageUrl` / `imageUrl`; with `image.showTime`, the clock is markdown bold on the same line as the avatar (data-SVG + embedded HTTP avatars is unreliable).
-    // User row: optional `userPersona` below — emoji/label + time in the right-aligned badge (defaults match the old 🙂 + IST clock).
-    // Use `mode: "emojiTime"` only if you want a text 🤖+time caption for the bot instead of the image URL.
+    // Bot persona — match Only for Refer `public/company.config.js` (Quality + cat-icon avatar + clock).
     botPersona: {
       mode: "image",
-      // Bot persona clock: include calendar date + time when the reply arrives (`false` = time only).
-      messageTimeIncludesDate: false,
-      // Space (px) between the persona row and the assistant message bubble below (0–64).
-      gapBelowAssistantPx: 4,
-      // User badge: small `translateX` right (px); negative values shift LEFT. On wide viewports adds `userPersonaShiftRightDeskExtraPx`; on ≤768px subtracts half of `userPersonaMobileNudgeLeftPx` (moves strip slightly left on phones).
-      userPersonaShiftRightPx: 26,
-      userPersonaShiftRightDeskExtraPx: 10,
-      userPersonaMobileNudgeLeftPx: 38,
-      // Extra pull upward (adds to baseline -6px margin-top); negative values move the row down.
-      userPersonaNudgeUpPx: -21,
-      threadAvatarSizePx: 28,
-      emojiTime: {
-        label: "🤖",
-        showTime: true,
-        timeZone: "Asia/Kolkata"
-      },
-      image: {
-        url: "https://storage.googleapis.com/companybucket/Images/cat-icon.png",
-        widthPx: 32,
-        heightPx: 32,
-        // Optional caption text rendered between the avatar and the clock (e.g. "Chatbot 09:36:29 pm"). "" = clock only.
-        label: "Demo",
-        showTime: true,
-        timeZone: "Asia/Kolkata",
-        // Persona row: nudge avatar/time down (`offsetDownPx`); clock text only (`timeOffsetDownPx`).
-        offsetDownPx: 16,
-        offsetRightPx: 5,
-        timeOffsetDownPx: 28,
-        timeOffsetRightPx: -5,
-        tightenBelowPx: 8,
-        // ≤768px: shift bot persona img + time left (translateX) without affecting desktop.
-        mobileNudgeLeftPx: 14
-      }
+      imageUrl: "https://storage.googleapis.com/companybucket/Images/cat-icon.png",
+      label: "Quality",
+      avatarSizePx: 32,
+      gapBelowPx: 4,
+      showTime: true,
+      showSeconds: true,
+      timeZone: "Asia/Kolkata",
+      messageTimeIncludesDate: false
     },
 
-    // Shown above each outgoing user bubble: emoji `label` + optional blurred clock (markdown text; avoids huge `![](data:image/svg+xml…)` in transcript).
+    /** Live-agent human lines (refer agentPersona). */
+    agentPersona: {
+      mode: "icon",
+      label: "Support Agent",
+      imageUrl: ""
+    },
+
     userPersona: {
-      label: "🙂User",
+      label: "You",
+      avatarSizePx: 18,
+      gapBelowPx: 4,
       showTime: true,
-      timeZone: "Asia/Kolkata"
+      showSeconds: true,
+      timeZone: "Asia/Kolkata",
+      messageTimeIncludesDate: false
+    },
+
+    personaDisplay: {
+      nameFontSizePx: 11,
+      timeFontSizePx: 10,
+      blurPx: 0.35,
+      opacity: 0.82
     },
 
     // Features ON / OFF — each block should include `enabled: true` or `false`
