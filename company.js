@@ -170,6 +170,9 @@ let liveAgentMessagesSinceIso = "";
 let liveAgentTailPinObserver_ = null;
 /** @type {HTMLElement | null} */
 let liveAgentTailPinObserverList_ = null;
+/** Blocks bot persona reorder while live-agent tail rows are being pinned (async renderCustomText). */
+let liveAgentPendingTailPinDepth_ = 0;
+let liveAgentTailRepinTimerId_ = 0;
 /** @type {Set<string>} */
 const liveAgentSeenMessageIds_ = new Set();
 /** @type {Set<string>} */
@@ -856,6 +859,8 @@ const PERSONA_MARKER_BOT_TIME = "dfchat-persona-bot-time";
 const PERSONA_MARKER_USER = "dfchat-persona-user";
 const PERSONA_URL_MARKER_BOT_IMG = "dfchat-bot-persona";
 const PERSONA_URL_MARKER_AGENT_IMG = "dfchat-agent-persona";
+/** Agent chat persona (cat + agent name) — must not trigger bot persona reorder above CX payloads. */
+const PERSONA_URL_MARKER_LIVE_AGENT_LABEL = "dfchat-live-agent-label";
 const PERSONA_URL_MARKER_USER_IMG = "dfchat-user-persona-img";
 /** Invisible fingerprint at start of user persona markdown; removed after decorate so transcript stays readable. */
 const USER_PERSONA_TEXT_SENTINEL = "\u2060\u200c\u2060";
@@ -3496,6 +3501,7 @@ function createAndMountMessenger() {
     initializeMobileChatLayout(df, COMPANY_UI_CONFIG);
     initializeChatStateSync(df);
     installRenderedBotTranscriptHook_(df);
+    installLiveAgentTailPinRenderHook_(df);
     attachPersonaHandlers(df);
     // Lightbox is handled via a global click handler (shadow-DOM safe composedPath checks).
     ensureChatActionBar();
@@ -13149,10 +13155,14 @@ function scheduleInjectInlineVideoPlayer(dfMessenger, embedHttpsUrl, options, me
             wrap.appendChild(messageEl);
         }
 
-        ml.appendChild(wrap);
+        const beforeNode = resolveGalleryInsertBeforeByCxOrder(ml);
+        if (beforeNode && beforeNode.parentNode === ml && typeof ml.insertBefore === "function") {
+            ml.insertBefore(wrap, beforeNode);
+        } else {
+            ml.appendChild(wrap);
+        }
         dfchatLastInlineVideoWrapEl = wrap;
         liveAgentPinTailRowsToTranscriptEnd_(msResolved, ml);
-
         injected = true;
         try {
             ml.scrollTop = ml.scrollHeight;
@@ -15930,6 +15940,77 @@ function liveAgentChildWasInSnapshot_(child, snap) {
     return snap.nodes.includes(child);
 }
 
+function liveAgentPersonaImageShouldSkipReorder_(imageNode) {
+    if (liveAgentPendingTailPinDepth_ > 0) {
+        return true;
+    }
+    const src = imageNode && imageNode.getAttribute ? imageNode.getAttribute("src") || "" : "";
+    if (src.includes(`#${PERSONA_URL_MARKER_LIVE_AGENT_LABEL}`)) {
+        return true;
+    }
+    if (src.includes(`#${PERSONA_URL_MARKER_AGENT_IMG}`)) {
+        return true;
+    }
+    const personaMessage = resolvePersonaBotMessageElement_(imageNode);
+    if (dfchatPersonaBelongsToLiveAgentRow_(personaMessage)) {
+        return true;
+    }
+    const personaRow = dfchatResolveListRowHostingMessage_(personaMessage);
+    return dfchatRowIsLiveAgentPinned_(personaRow);
+}
+
+/** Debounced re-pin after df-messenger / CX async-appends bot rows above agent tail. */
+function scheduleLiveAgentTailRepin_(dfMessenger) {
+    if (!liveAgentHandoffIsActive_()) {
+        return;
+    }
+    const ms = dfMessenger || activeDfMessenger;
+    if (liveAgentTailRepinTimerId_) {
+        window.clearTimeout(liveAgentTailRepinTimerId_);
+    }
+    const run = () => {
+        liveAgentTailRepinTimerId_ = 0;
+        liveAgentPinTailRowsToTranscriptEnd_(ms);
+    };
+    run();
+    if (typeof requestAnimationFrame === "function") {
+        requestAnimationFrame(run);
+    }
+    liveAgentTailRepinTimerId_ = window.setTimeout(run, 48);
+    [120, 280, 520, 900, 1500, 2400, 4000].forEach((msDelay) => {
+        window.setTimeout(run, msDelay);
+    });
+}
+
+/**
+ * @param {unknown} host df-messenger element
+ */
+function installLiveAgentTailPinRenderHook_(host) {
+    const el = /** @type {{ renderCustomText?: Function, dataset?: DOMStringMap }} */ (host);
+    if (!el || typeof el.renderCustomText !== "function" || !el.dataset) {
+        return;
+    }
+    if (el.dataset.dfchatLiveAgentTailHook === "1") {
+        return;
+    }
+    const orig = /** @type {(text: unknown, isBot?: boolean) => unknown} */ (el.renderCustomText.bind(el));
+    el.renderCustomText = (text, isBot) => {
+        const ret = orig(text, isBot);
+        try {
+            if (liveAgentHandoffIsActive_() && isBot !== false) {
+                const list = findMessengerMessageListRoot(el);
+                if (list && list.querySelector('[data-dfchat-live-agent-tail="1"]')) {
+                    scheduleLiveAgentTailRepin_(el);
+                }
+            }
+        } catch {
+            /* ignore */
+        }
+        return ret;
+    };
+    el.dataset.dfchatLiveAgentTailHook = "1";
+}
+
 /**
  * Agent role lines that must stay after bot galleries/carousels (refer appends synchronously; CX injects async).
  * @param {HTMLElement | null | undefined} list
@@ -15965,8 +16046,11 @@ function liveAgentPinTailRowsToTranscriptEnd_(dfMessenger, listOverride) {
     }
     const marked = Array.from(list.querySelectorAll('[data-dfchat-live-agent-tail="1"]'));
     for (let i = 0; i < marked.length; i += 1) {
-        const el = marked[i];
-        if (el.parentNode === list) {
+        let el = marked[i];
+        while (el && el.parentNode !== list && el.parentNode instanceof Element) {
+            el = /** @type {Element} */ (el.parentNode);
+        }
+        if (el && el.parentNode === list) {
             list.appendChild(el);
         }
     }
@@ -16055,6 +16139,13 @@ function liveAgentRenderBotLineAtTranscriptEnd_(dfMessenger, text, opts) {
     if (!t || !ms || typeof ms.renderCustomText !== "function") {
         return;
     }
+    liveAgentPendingTailPinDepth_ += 1;
+    const releasePending = () => {
+        window.setTimeout(() => {
+            liveAgentPendingTailPinDepth_ = Math.max(0, liveAgentPendingTailPinDepth_ - 1);
+        }, 4000);
+    };
+    try {
     const personaLabel =
         opts && typeof opts.personaLabel === "string" ? opts.personaLabel.trim() : "";
     const liveAgentHuman = !!(opts && opts.liveAgentHuman);
@@ -16096,9 +16187,7 @@ function liveAgentRenderBotLineAtTranscriptEnd_(dfMessenger, text, opts) {
     if (!tailPin) {
         renderPersonaBeforeSnap_(null, null);
         ms.renderCustomText(t, true);
-        return;
-    }
-
+    } else {
     liveAgentEnsureTailPinObserver_(ms);
     const list = findMessengerMessageListRoot(ms);
     const snapPersona = liveAgentSnapshotList_(list);
@@ -16111,6 +16200,11 @@ function liveAgentRenderBotLineAtTranscriptEnd_(dfMessenger, text, opts) {
         window.setTimeout(finalizeText, msDelay);
     });
     liveAgentSchedulePinTailRowsToTranscriptEnd_(ms);
+    }
+    } finally {
+        releasePending();
+        scheduleLiveAgentTailRepin_(ms);
+    }
 }
 
 /** @param {HTMLElement | null | undefined} row */
@@ -25466,7 +25560,7 @@ function buildBotPersonaLabelMarkdown_(displayName, messageInstantMs) {
     const img = cfg.image;
     const baseUrl = img.url.split("#")[0].trim();
     const timeLabel = img.showTime ? getBotPersonaMessageTimeLabel(img.timeZone, when, incDate) : "";
-    return buildPersonaImageMarkdownWithTime_(baseUrl, name, timeLabel, PERSONA_URL_MARKER_BOT_IMG);
+    return buildPersonaImageMarkdownWithTime_(baseUrl, name, timeLabel, PERSONA_URL_MARKER_LIVE_AGENT_LABEL);
 }
 
 /**
@@ -25676,7 +25770,9 @@ function getPersonaImageGuardCss() {
 img[src*="dfchat-bot-persona"],
 img[src*="%23dfchat-bot-persona"],
 img[src*="dfchat-agent-persona"],
-img[src*="%23dfchat-agent-persona"] {
+img[src*="%23dfchat-agent-persona"],
+img[src*="dfchat-live-agent-label"],
+img[src*="%23dfchat-live-agent-label"] {
   width: ${catW} !important;
   height: ${catH} !important;
   max-width: ${catW} !important;
@@ -25690,13 +25786,17 @@ img[src*="%23dfchat-agent-persona"] {
 .message.bot-message.markdown:has(img[src*="dfchat-bot-persona"]),
 .message.bot-message.markdown:has(img[src*="%23dfchat-bot-persona"]),
 .message.bot-message.markdown:has(img[src*="dfchat-agent-persona"]),
-.message.bot-message.markdown:has(img[src*="%23dfchat-agent-persona"]) {
+.message.bot-message.markdown:has(img[src*="%23dfchat-agent-persona"]),
+.message.bot-message.markdown:has(img[src*="dfchat-live-agent-label"]),
+.message.bot-message.markdown:has(img[src*="%23dfchat-live-agent-label"]) {
   margin-bottom: ${BOT_PERSONA_CONFIG.gapBelowAssistantPx}px !important;
 }
 .message.bot-message.markdown:has(img[src*="dfchat-bot-persona"]) p + p,
 .message.bot-message.markdown:has(img[src*="%23dfchat-bot-persona"]) p + p,
 .message.bot-message.markdown:has(img[src*="dfchat-agent-persona"]) p + p,
-.message.bot-message.markdown:has(img[src*="%23dfchat-agent-persona"]) p + p {
+.message.bot-message.markdown:has(img[src*="%23dfchat-agent-persona"]) p + p,
+.message.bot-message.markdown:has(img[src*="dfchat-live-agent-label"]) p + p,
+.message.bot-message.markdown:has(img[src*="%23dfchat-live-agent-label"]) p + p {
   color: ${PERSONA_TEXT_COLOR} !important;
   font-size: ${PERSONA_DISPLAY_CONFIG.nameFontSizePx}px !important;
   font-weight: 600 !important;
@@ -25707,7 +25807,9 @@ img[src*="%23dfchat-agent-persona"] {
 .message.bot-message.markdown:has(img[src*="dfchat-bot-persona"]) p strong,
 .message.bot-message.markdown:has(img[src*="%23dfchat-bot-persona"]) p strong,
 .message.bot-message.markdown:has(img[src*="dfchat-agent-persona"]) p strong,
-.message.bot-message.markdown:has(img[src*="%23dfchat-agent-persona"]) p strong {
+.message.bot-message.markdown:has(img[src*="%23dfchat-agent-persona"]) p strong,
+.message.bot-message.markdown:has(img[src*="dfchat-live-agent-label"]) p strong,
+.message.bot-message.markdown:has(img[src*="%23dfchat-live-agent-label"]) p strong {
   display: inline-block !important;
   vertical-align: middle !important;
   transform: translate(${timeRight}, ${timeDown}) !important;
@@ -25732,7 +25834,9 @@ img[src*="dfchat-persona-bot-time"] {
 img[src*="dfchat-bot-persona"],
 img[src*="%23dfchat-bot-persona"],
 img[src*="dfchat-agent-persona"],
-img[src*="%23dfchat-agent-persona"] {
+img[src*="%23dfchat-agent-persona"],
+img[src*="dfchat-live-agent-label"],
+img[src*="%23dfchat-live-agent-label"] {
   transform: translate(${mobX}, ${mobY}px) !important;
 }
 img[src*="dfchat-persona-bot-time"] {
@@ -26892,6 +26996,10 @@ function dfchatRowHasPersonaAvatar_(row) {
     if (
         row.querySelector?.(`img[src*='#${PERSONA_URL_MARKER_BOT_IMG}']`)
         || row.querySelector?.(`img[src*='%23${PERSONA_URL_MARKER_BOT_IMG}']`)
+        || row.querySelector?.(`img[src*='#${PERSONA_URL_MARKER_LIVE_AGENT_LABEL}']`)
+        || row.querySelector?.(`img[src*='%23${PERSONA_URL_MARKER_LIVE_AGENT_LABEL}']`)
+        || row.querySelector?.(`img[src*='#${PERSONA_URL_MARKER_AGENT_IMG}']`)
+        || row.querySelector?.(`img[src*='%23${PERSONA_URL_MARKER_AGENT_IMG}']`)
     ) {
         return true;
     }
@@ -27542,9 +27650,11 @@ function decoratePersonaMessages(dfMessenger) {
                 continue;
             }
             if (personaType === "bot") {
-                reorderBotPersonaMarkdownToTopOfStack_(image);
-                reorderBotPersonaEntryBeforeContiguousBotChunks_(image);
-                reorderBotPersonaListRowBeforeContiguousBotRows_(image);
+                if (!liveAgentPersonaImageShouldSkipReorder_(image)) {
+                    reorderBotPersonaMarkdownToTopOfStack_(image);
+                    reorderBotPersonaEntryBeforeContiguousBotChunks_(image);
+                    reorderBotPersonaListRowBeforeContiguousBotRows_(image);
+                }
             }
             if (personaType === "bot" && BOT_PERSONA_CONFIG.mode === "emojiTime") {
                 applyBotEmojiPersonaCaptionChrome(image);
@@ -27606,7 +27716,7 @@ function getPersonaType(imageNode) {
         return "user";
     }
 
-    if (source.includes(`#${PERSONA_URL_MARKER_BOT_IMG}`) || source.includes(`#${PERSONA_URL_MARKER_AGENT_IMG}`)) {
+    if (source.includes(`#${PERSONA_URL_MARKER_BOT_IMG}`) || source.includes(`#${PERSONA_URL_MARKER_AGENT_IMG}`) || source.includes(`#${PERSONA_URL_MARKER_LIVE_AGENT_LABEL}`)) {
         return "bot";
     }
 
@@ -27684,10 +27794,11 @@ function stylePersonaContainer(container, imageNode, personaType) {
         const { widthPx, heightPx, showTime } = BOT_PERSONA_CONFIG.image;
         const isCat = src.includes(`#${PERSONA_URL_MARKER_BOT_IMG}`);
         const isAgent = src.includes(`#${PERSONA_URL_MARKER_AGENT_IMG}`);
+        const isLiveAgentLabel = src.includes(`#${PERSONA_URL_MARKER_LIVE_AGENT_LABEL}`);
         const isTime = src.includes(PERSONA_MARKER_BOT_TIME);
         imageNode.style.display = "inline-block";
         imageNode.style.verticalAlign = "middle";
-        if (isCat || isAgent) {
+        if (isCat || isAgent || isLiveAgentLabel) {
             imageNode.style.height = `${heightPx}px`;
             imageNode.style.width = `${widthPx}px`;
             imageNode.style.objectFit = "contain";
