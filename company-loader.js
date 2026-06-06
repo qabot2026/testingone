@@ -35,7 +35,7 @@
   }
 
   var CHAT_HOST = chatHostFromLoaderSrc() || "https://qabot2026.github.io/testingone/";
-  var IFRAME_VERSION = "131-gallery-before-loose-images";
+  var IFRAME_VERSION = "132-carousel-before-live-chat";
 
   function getLoaderQuery() {
     var cur = document.currentScript;

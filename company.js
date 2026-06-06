@@ -12272,9 +12272,28 @@ function dfchatFixInlineGalleryStandaloneImageOrder_(messageList) {
     }
 }
 
+/** First user or agent row — live chat must stay below bot CX payloads (gallery/carousel). */
+function dfchatResolveFirstLiveConversationRow_(messageList) {
+    if (!messageList) {
+        return null;
+    }
+    for (const c of messageList.children) {
+        if (!(c instanceof HTMLElement)) {
+            continue;
+        }
+        if (c.dataset && c.dataset.dfchatLiveAgentAnchor === "1") {
+            continue;
+        }
+        if (dfchatMessageListRowIsUser_(c) || liveAgentRowIsTranscriptTailBlock_(c)) {
+            return c;
+        }
+    }
+    return null;
+}
+
 /**
  * Place gallery between visible bot rows when possible:
- * - live-agent: before first agent tail (not after agent lines)
+ * - live-agent: before first user/agent row (never after live chat)
  * - before trailing bot markdown image rows when present
  * - if there are at least 2 real rows, insert before the last one
  * - otherwise append at the end
@@ -12288,22 +12307,16 @@ function resolveGalleryInsertBeforeByCxOrder(messageList) {
     }
     const children = Array.from(messageList.children);
     /** @type {Element | null} */
-    let firstLiveAgentTail = null;
-    /** @type {Element | null} */
     let anchor = null;
-    for (let i = 0; i < children.length; i += 1) {
-        const el = children[i];
-        if (!(el instanceof HTMLElement)) {
-            continue;
+
+    if (liveAgentHandoffIsActive_()) {
+        const conv = dfchatResolveFirstLiveConversationRow_(messageList);
+        if (conv) {
+            return conv;
         }
-        if (el.dataset && el.dataset.dfchatLiveAgentAnchor === "1") {
-            anchor = el;
-            continue;
-        }
-        if (el.dataset && el.dataset.dfchatLiveAgentTail === "1") {
-            if (!firstLiveAgentTail) {
-                firstLiveAgentTail = el;
-            }
+        anchor = messageList.querySelector('[data-dfchat-live-agent-anchor="1"]');
+        if (anchor) {
+            return anchor;
         }
     }
 
@@ -12336,23 +12349,15 @@ function resolveGalleryInsertBeforeByCxOrder(messageList) {
         return null;
     }
 
-    const scanEnd = firstLiveAgentTail
-        ? children.indexOf(firstLiveAgentTail) - 1
-        : anchor
-          ? children.indexOf(anchor) - 1
-          : children.length - 1;
+    const firstConv = dfchatResolveFirstLiveConversationRow_(messageList);
+    const scanEnd = firstConv
+        ? children.indexOf(firstConv) - 1
+        : children.length - 1;
     if (scanEnd >= 0) {
         const imageRow = findTrailingStandaloneImageRow_(scanEnd);
         if (imageRow) {
             return imageRow;
         }
-    }
-
-    if (liveAgentHandoffIsActive_() && firstLiveAgentTail) {
-        return firstLiveAgentTail;
-    }
-    if (liveAgentHandoffIsActive_() && anchor) {
-        return anchor;
     }
 
     for (let i = 0; i < children.length; i += 1) {
@@ -12624,7 +12629,7 @@ function scheduleInjectInlineGalleryCarousel(dfMessenger, urlsOrItems, messages,
             window.setTimeout(() => {
                 try {
                     dfchatFixInlineGalleryStandaloneImageOrder_(ml);
-                    if (liveAgentHandoffIsActive_() && liveAgentVisitorAgentChatActive_()) {
+                    if (liveAgentHandoffIsActive_()) {
                         liveAgentPinTailRowsToTranscriptEnd_(msResolved, ml);
                     }
                 } catch {
@@ -16179,7 +16184,7 @@ function liveAgentPersonaImageShouldSkipReorder_(imageNode) {
 
 /** Debounced re-pin after df-messenger / CX async-appends bot rows above agent tail. */
 function scheduleLiveAgentTailRepin_(dfMessenger) {
-    if (!liveAgentHandoffIsActive_() || !liveAgentVisitorAgentChatActive_()) {
+    if (!liveAgentHandoffIsActive_()) {
         return;
     }
     const ms = dfMessenger || activeDfMessenger;
@@ -16191,7 +16196,7 @@ function scheduleLiveAgentTailRepin_(dfMessenger) {
         liveAgentPinTailRowsToTranscriptEnd_(ms);
     };
     liveAgentTailRepinTimerId_ = window.setTimeout(run, 48);
-    [180, 520, 1200, 2500].forEach((msDelay) => {
+    [120, 320, 720, 1500, 2800].forEach((msDelay) => {
         window.setTimeout(run, msDelay);
     });
 }
@@ -16211,7 +16216,7 @@ function installLiveAgentTailPinRenderHook_(host) {
     el.renderCustomText = (text, isBot) => {
         const ret = orig(text, isBot);
         try {
-            if (liveAgentHandoffIsActive_() && liveAgentVisitorAgentChatActive_() && isBot !== false) {
+            if (liveAgentHandoffIsActive_()) {
                 scheduleLiveAgentTailRepin_(el);
             }
         } catch {
@@ -16472,7 +16477,11 @@ function liveAgentPinTailRowsToTranscriptEnd_(dfMessenger, listOverride) {
     }
 
     /** @type {HTMLElement[]} */
-    const nonTail = [];
+    const botRows = [];
+    /** @type {HTMLElement[]} */
+    const syntheticRows = [];
+    /** @type {HTMLElement[]} */
+    const userRows = [];
     /** @type {HTMLElement[]} */
     const tailBlocks = [];
     for (const c of list.children) {
@@ -16484,13 +16493,17 @@ function liveAgentPinTailRowsToTranscriptEnd_(dfMessenger, listOverride) {
         }
         if (tailSet.has(c) || liveAgentRowIsTranscriptTailBlock_(c)) {
             tailBlocks.push(c);
+        } else if (isDfchatInlineSyntheticRow(c)) {
+            syntheticRows.push(c);
+        } else if (dfchatMessageListRowIsUser_(c)) {
+            userRows.push(c);
         } else {
-            nonTail.push(c);
+            botRows.push(c);
         }
     }
 
     /** @type {Element[]} */
-    const desiredOrder = nonTail.concat(tailBlocks).concat([anchor]);
+    const desiredOrder = botRows.concat(syntheticRows).concat(userRows).concat(tailBlocks).concat([anchor]);
     const current = Array.from(list.children);
     let orderOk = current.length === desiredOrder.length;
     if (orderOk) {
@@ -17192,6 +17205,9 @@ function liveAgentMaybeRenderVisitorBubbleOnce_(dfMessenger, text) {
     liveAgentMarkVisitorUiRendered_(t);
     renderUserPersona(ms);
     ms.renderCustomText(t, false);
+    schedulePersonaShadowFix(ms);
+    scheduleLiveAgentTailRepin_(ms);
+    liveAgentSchedulePinTailRowsToTranscriptEnd_(ms);
 }
 
 let liveAgentComposerBridgeAttached = false;
@@ -26611,7 +26627,7 @@ function schedulePersonaShadowFix(dfMessenger) {
     const run = () => {
         applyPersonaImageGuardToMessenger(dfMessenger);
         decoratePersonaMessages(dfMessenger);
-        if (liveAgentHandoffIsActive_() && liveAgentVisitorAgentChatActive_()) {
+        if (liveAgentHandoffIsActive_()) {
             liveAgentPinTailRowsToTranscriptEnd_(dfMessenger);
         }
     };
@@ -28342,7 +28358,7 @@ function decoratePersonaMessages(dfMessenger) {
         /* ignore */
     }
 
-    if (liveAgentHandoffIsActive_() && liveAgentVisitorAgentChatActive_()) {
+    if (liveAgentHandoffIsActive_()) {
         const list = findMessengerMessageListRoot(dfMessenger);
         if (list) {
             liveAgentDiscoverAndMarkTailRows_(list);
