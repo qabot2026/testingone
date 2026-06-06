@@ -170,6 +170,9 @@ let liveAgentMessagesSinceIso = "";
 let liveAgentTailPinObserver_ = null;
 /** @type {HTMLElement | null} */
 let liveAgentTailPinObserverList_ = null;
+/** Prevents MutationObserver ↔ DOM reorder feedback loops. */
+let liveAgentTailPinInFlight_ = false;
+let liveAgentTailPinMoScheduled_ = false;
 /** Blocks bot persona reorder while live-agent tail rows are being pinned (async renderCustomText). */
 let liveAgentPendingTailPinDepth_ = 0;
 let liveAgentTailRepinTimerId_ = 0;
@@ -15991,7 +15994,7 @@ function liveAgentPersonaImageShouldSkipReorder_(imageNode) {
 
 /** Debounced re-pin after df-messenger / CX async-appends bot rows above agent tail. */
 function scheduleLiveAgentTailRepin_(dfMessenger) {
-    if (!liveAgentHandoffIsActive_()) {
+    if (!liveAgentHandoffIsActive_() || !liveAgentVisitorAgentChatActive_()) {
         return;
     }
     const ms = dfMessenger || activeDfMessenger;
@@ -16002,12 +16005,8 @@ function scheduleLiveAgentTailRepin_(dfMessenger) {
         liveAgentTailRepinTimerId_ = 0;
         liveAgentPinTailRowsToTranscriptEnd_(ms);
     };
-    run();
-    if (typeof requestAnimationFrame === "function") {
-        requestAnimationFrame(run);
-    }
     liveAgentTailRepinTimerId_ = window.setTimeout(run, 48);
-    [120, 280, 520, 900, 1500, 2400, 4000].forEach((msDelay) => {
+    [180, 520, 1200, 2500].forEach((msDelay) => {
         window.setTimeout(run, msDelay);
     });
 }
@@ -16027,7 +16026,7 @@ function installLiveAgentTailPinRenderHook_(host) {
     el.renderCustomText = (text, isBot) => {
         const ret = orig(text, isBot);
         try {
-            if (liveAgentHandoffIsActive_() && isBot !== false) {
+            if (liveAgentHandoffIsActive_() && liveAgentVisitorAgentChatActive_() && isBot !== false) {
                 scheduleLiveAgentTailRepin_(el);
             }
         } catch {
@@ -16078,6 +16077,9 @@ function liveAgentEnsureTailAnchor_(list) {
         anchor.setAttribute("aria-hidden", "true");
         anchor.style.cssText =
             "display:block!important;height:0!important;width:0!important;margin:0!important;padding:0!important;border:0!important;overflow:hidden!important;";
+    }
+    if (anchor.parentNode === list && list.lastElementChild === anchor) {
+        return anchor;
     }
     list.appendChild(anchor);
     return anchor;
@@ -16255,6 +16257,9 @@ function liveAgentDiscoverAndMarkTailRows_(list) {
 }
 
 function liveAgentPinTailRowsToTranscriptEnd_(dfMessenger, listOverride) {
+    if (liveAgentTailPinInFlight_) {
+        return;
+    }
     const list = listOverride || findMessengerMessageListRoot(dfMessenger || activeDfMessenger);
     if (!list || !liveAgentHandoffIsActive_()) {
         return;
@@ -16299,19 +16304,58 @@ function liveAgentPinTailRowsToTranscriptEnd_(dfMessenger, listOverride) {
         }
     }
 
-    const frag = document.createDocumentFragment();
-    for (let i = 0; i < nonTail.length; i += 1) {
-        frag.appendChild(nonTail[i]);
+    /** @type {Element[]} */
+    const desiredOrder = nonTail.concat(tailBlocks).concat([anchor]);
+    const current = Array.from(list.children);
+    let orderOk = current.length === desiredOrder.length;
+    if (orderOk) {
+        for (let i = 0; i < current.length; i += 1) {
+            if (current[i] !== desiredOrder[i]) {
+                orderOk = false;
+                break;
+            }
+        }
     }
-    for (let i = 0; i < tailBlocks.length; i += 1) {
-        frag.appendChild(tailBlocks[i]);
+    if (orderOk) {
+        return;
     }
-    list.insertBefore(frag, anchor);
-    list.appendChild(anchor);
+
+    liveAgentTailPinInFlight_ = true;
+    const obs = liveAgentTailPinObserver_;
+    const obsList = liveAgentTailPinObserverList_;
+    if (obs) {
+        try {
+            obs.disconnect();
+        } catch {
+            /* ignore */
+        }
+    }
     try {
-        list.scrollTop = list.scrollHeight;
-    } catch {
-        /* ignore */
+        const frag = document.createDocumentFragment();
+        for (let i = 0; i < nonTail.length; i += 1) {
+            frag.appendChild(nonTail[i]);
+        }
+        for (let i = 0; i < tailBlocks.length; i += 1) {
+            frag.appendChild(tailBlocks[i]);
+        }
+        list.insertBefore(frag, anchor);
+        if (list.lastElementChild !== anchor) {
+            list.appendChild(anchor);
+        }
+        try {
+            list.scrollTop = list.scrollHeight;
+        } catch {
+            /* ignore */
+        }
+    } finally {
+        liveAgentTailPinInFlight_ = false;
+        if (obs && obsList === list && liveAgentHandoffIsActive_() && liveAgentVisitorAgentChatActive_()) {
+            try {
+                obs.observe(list, { childList: true });
+            } catch {
+                /* ignore */
+            }
+        }
     }
 }
 
@@ -16344,17 +16388,33 @@ function liveAgentEnsureTailPinObserver_(dfMessenger) {
         return;
     }
     liveAgentEnsureTailAnchor_(list);
+    if (!liveAgentVisitorAgentChatActive_()) {
+        liveAgentStopTailPinObserver_();
+        return;
+    }
     if (liveAgentTailPinObserver_ && liveAgentTailPinObserverList_ === list) {
         return;
     }
     liveAgentStopTailPinObserver_();
     liveAgentTailPinObserverList_ = list;
     liveAgentTailPinObserver_ = new MutationObserver(() => {
-        if (!liveAgentHandoffIsActive_()) {
-            liveAgentStopTailPinObserver_();
+        if (liveAgentTailPinInFlight_ || liveAgentTailPinMoScheduled_) {
             return;
         }
-        liveAgentPinTailRowsToTranscriptEnd_(ms, list);
+        liveAgentTailPinMoScheduled_ = true;
+        const run = () => {
+            liveAgentTailPinMoScheduled_ = false;
+            if (!liveAgentHandoffIsActive_() || !liveAgentVisitorAgentChatActive_()) {
+                liveAgentStopTailPinObserver_();
+                return;
+            }
+            liveAgentPinTailRowsToTranscriptEnd_(ms, list);
+        };
+        if (typeof requestAnimationFrame === "function") {
+            requestAnimationFrame(run);
+        } else {
+            window.setTimeout(run, 16);
+        }
     });
     try {
         liveAgentTailPinObserver_.observe(list, { childList: true });
@@ -16503,7 +16563,7 @@ function liveAgentAnnounceConnected_(dfMessenger, agentLabel, messageText, dedup
         return;
     }
     liveAgentSeenNoticeKeys_.add(key);
-    liveAgentRenderBotLineAtTranscriptEnd_(ms, text, { personaLabel: name, liveAgentHuman: true });
+    liveAgentRenderBotLineAtTranscriptEnd_(ms, text, { personaLabel: name, liveAgentHuman: true, tailPin: true });
 }
 
 /**
@@ -16552,7 +16612,7 @@ function liveAgentAnnounceHumanRejoined_(dfMessenger, agentLabel, messageText, d
         return;
     }
     liveAgentSeenNoticeKeys_.add(key);
-    liveAgentRenderBotLineAtTranscriptEnd_(ms, text, { personaLabel: name, liveAgentHuman: true });
+    liveAgentRenderBotLineAtTranscriptEnd_(ms, text, { personaLabel: name, liveAgentHuman: true, tailPin: true });
 }
 
 /**
@@ -17854,6 +17914,7 @@ async function liveAgentPollTick_(dfMessenger) {
             const msHuman = dfMessenger || activeDfMessenger;
             suppressDfMessengerBotRepliesDuringHumanHandoff_(msHuman);
             scheduleSuppressDfMessengerBotRepliesDuringHumanHandoff_();
+            liveAgentEnsureTailPinObserver_(msHuman);
             try {
                 markLiveAgentHumanChatInSession_();
             } catch {
@@ -18056,7 +18117,10 @@ function startLiveAgentPoll_(dfMessenger) {
     stopLiveAgentPoll_();
     const ms = dfMessenger || activeDfMessenger;
     attachLiveAgentComposerBridge_(ms);
-    liveAgentEnsureTailPinObserver_(ms);
+    const list = findMessengerMessageListRoot(ms);
+    if (list && liveAgentHandoffIsActive_()) {
+        liveAgentEnsureTailAnchor_(list);
+    }
     liveAgentStartAgentTypingPulse_(ms);
     const tick = () => {
         liveAgentPollTick_(ms);
@@ -26362,7 +26426,7 @@ function schedulePersonaShadowFix(dfMessenger) {
     const run = () => {
         applyPersonaImageGuardToMessenger(dfMessenger);
         decoratePersonaMessages(dfMessenger);
-        if (liveAgentHandoffIsActive_()) {
+        if (liveAgentHandoffIsActive_() && liveAgentVisitorAgentChatActive_()) {
             liveAgentPinTailRowsToTranscriptEnd_(dfMessenger);
         }
     };
@@ -26381,7 +26445,7 @@ function startPersonaDecorator(dfMessenger) {
         }
         applyPersonaImageGuardToMessenger(ms);
         decoratePersonaMessages(ms);
-        if (liveAgentHandoffIsActive_()) {
+        if (liveAgentHandoffIsActive_() && liveAgentVisitorAgentChatActive_()) {
             liveAgentPinTailRowsToTranscriptEnd_(ms);
         }
     };
@@ -28093,7 +28157,7 @@ function decoratePersonaMessages(dfMessenger) {
         /* ignore */
     }
 
-    if (liveAgentHandoffIsActive_()) {
+    if (liveAgentHandoffIsActive_() && liveAgentVisitorAgentChatActive_()) {
         const list = findMessengerMessageListRoot(dfMessenger);
         if (list) {
             liveAgentDiscoverAndMarkTailRows_(list);
