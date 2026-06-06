@@ -105,26 +105,6 @@ const PERSONA_FONT_SIZE = "9px";
 const PERSONA_FONT_WEIGHT = "400";
 const PERSONA_VERTICAL_PULL = "0";
 
-function readPersonaDisplayConfig() {
-    const pd =
-        COMMON_CONFIG.personaDisplay && typeof COMMON_CONFIG.personaDisplay === "object"
-            ? COMMON_CONFIG.personaDisplay
-            : {};
-    return {
-        nameFontSizePx:
-            typeof pd.nameFontSizePx === "number" && Number.isFinite(pd.nameFontSizePx)
-                ? pd.nameFontSizePx
-                : 11,
-        timeFontSizePx:
-            typeof pd.timeFontSizePx === "number" && Number.isFinite(pd.timeFontSizePx)
-                ? pd.timeFontSizePx
-                : 10,
-        blurPx: typeof pd.blurPx === "number" && Number.isFinite(pd.blurPx) ? pd.blurPx : 0.35,
-        opacity: typeof pd.opacity === "number" && Number.isFinite(pd.opacity) ? pd.opacity : 0.82
-    };
-}
-
-const PERSONA_DISPLAY_CONFIG = readPersonaDisplayConfig();
 const CHAT_CLIENT_CONTEXT_ENDPOINT = "/chat-client-context";
 const CHAT_CLIENT_CONTEXT_STORAGE_KEY = "company_chat_client_context";
 const CONTACT_FORM_OPEN_DELAY_MS = 600;
@@ -247,6 +227,28 @@ const COMPANY_UI_CONFIG = readCompanyUiConfig();
 const COMMON_CONFIG = COMPANY_UI_CONFIG.common && typeof COMPANY_UI_CONFIG.common === "object"
     ? COMPANY_UI_CONFIG.common
     : {};
+
+function readPersonaDisplayConfig() {
+    const pd =
+        COMMON_CONFIG.personaDisplay && typeof COMMON_CONFIG.personaDisplay === "object"
+            ? COMMON_CONFIG.personaDisplay
+            : {};
+    return {
+        nameFontSizePx:
+            typeof pd.nameFontSizePx === "number" && Number.isFinite(pd.nameFontSizePx)
+                ? pd.nameFontSizePx
+                : 11,
+        timeFontSizePx:
+            typeof pd.timeFontSizePx === "number" && Number.isFinite(pd.timeFontSizePx)
+                ? pd.timeFontSizePx
+                : 10,
+        blurPx: typeof pd.blurPx === "number" && Number.isFinite(pd.blurPx) ? pd.blurPx : 0.35,
+        opacity: typeof pd.opacity === "number" && Number.isFinite(pd.opacity) ? pd.opacity : 0.82
+    };
+}
+
+const PERSONA_DISPLAY_CONFIG = readPersonaDisplayConfig();
+
 /**
  * Explicit `generalAppointment.slotMinutes` from `company.config.js` (sent to API + form POST) so grids match
  * when the backend cannot read `company.config.js`.
