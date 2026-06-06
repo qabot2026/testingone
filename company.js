@@ -1035,12 +1035,17 @@ function readUserPersonaConfig() {
     const timeZone = typeof raw.timeZone === "string" && raw.timeZone.trim()
         ? raw.timeZone.trim()
         : "Asia/Kolkata";
+    const gapBelowPx =
+        typeof raw.gapBelowPx === "number" && Number.isFinite(raw.gapBelowPx) && raw.gapBelowPx >= 0
+            ? raw.gapBelowPx
+            : 2;
     return {
         label,
         avatarSizePx:
             typeof raw.avatarSizePx === "number" && Number.isFinite(raw.avatarSizePx) && raw.avatarSizePx > 0
                 ? raw.avatarSizePx
                 : 18,
+        gapBelowPx,
         showTime: raw.showTime !== false,
         showSeconds: raw.showSeconds !== false,
         messageTimeIncludesDate: raw.messageTimeIncludesDate === true,
@@ -1089,7 +1094,7 @@ function cssUserPersonaTranslateX() {
 
 /** User persona baseline pull is -6px; config adds extra upward nudge, or down when negative. */
 function cssUserPersonaMarginTop() {
-    const extra = Math.max(-48, Math.min(32, BOT_PERSONA_CONFIG.userPersonaNudgeUpPx ?? 6));
+    const extra = Math.max(-48, Math.min(32, BOT_PERSONA_CONFIG.userPersonaNudgeUpPx ?? 0));
     return `${-(6 + extra)}px`;
 }
 
@@ -15884,9 +15889,6 @@ function tryRenderThanksAfterMergeSuppressDf_(event, raw, before) {
         ms.renderCustomText(line, true);
     }
     trackChatUserQueryInSessionContext_(t);
-    if (ms && typeof ms.renderUserPersona === "function") {
-        renderUserPersona(ms);
-    }
     markContactOnlyThanksSuppressQuery_(t);
     scheduleClearDfMessengerComposerInput_();
     return true;
@@ -17270,9 +17272,7 @@ function liveAgentMaybeRenderVisitorBubbleOnce_(dfMessenger, text) {
         return;
     }
     liveAgentMarkVisitorUiRendered_(t);
-    renderUserPersona(ms);
-    ms.renderCustomText(t, false);
-    schedulePersonaShadowFix(ms);
+    renderUserPersonaBeforeUserText_(ms, t);
     scheduleLiveAgentTailRepin_(ms);
     liveAgentSchedulePinTailRowsToTranscriptEnd_(ms);
 }
@@ -18873,10 +18873,6 @@ function attachPersonaHandlers(dfMessenger) {
             if (tryPreventChatSendForMissingMobileGate_(event, typedTrim)) {
                 return;
             }
-            const ms = activeDfMessenger;
-            if (ms && typeof ms.renderCustomText === "function") {
-                renderUserPersona(ms);
-            }
         },
         true
     );
@@ -18964,9 +18960,6 @@ function attachPersonaHandlers(dfMessenger) {
         if (await liveAgentTryRouteVisitorText_(q, ms, { renderBubble: true })) {
             scheduleClearDfMessengerComposerInput_();
             return;
-        }
-        if (ms && typeof ms.renderCustomText === "function") {
-            renderUserPersona(ms);
         }
         scheduleClearDfMessengerComposerInput_();
     };
@@ -26033,6 +26026,22 @@ function renderUserPersona(dfMessenger) {
     renderPersona(ms, "user", u.label, timeLabel);
 }
 
+/**
+ * Persona immediately above the outgoing user bubble (refer `appendMessage` order).
+ * @param {HTMLElement | null | undefined} dfMessenger
+ * @param {string} userText
+ */
+function renderUserPersonaBeforeUserText_(dfMessenger, userText) {
+    const t = typeof userText === "string" ? userText.trim() : "";
+    const ms = dfMessenger || activeDfMessenger;
+    if (!ms || typeof ms.renderCustomText !== "function" || !t) {
+        return;
+    }
+    renderUserPersona(ms);
+    ms.renderCustomText(t, false);
+    schedulePersonaShadowFix(ms);
+}
+
 function renderPersona(dfMessenger, personaType, label, timeLabelForUser) {
     if (personaType === "bot") {
         renderBotPersona(dfMessenger, Date.now());
@@ -26605,9 +26614,13 @@ img[src*="%23dfchat-user-persona-img"] {
   margin-left: auto !important;
   margin-right: 0 !important;
   margin-top: 0 !important;
-  margin-bottom: 2px !important;
+  margin-bottom: ${USER_PERSONA_CONFIG.gapBelowPx}px !important;
   padding: 0 !important;
   background: transparent !important;
+}
+.entry.bot.dfchat-user-persona-caption-bot-entry + .entry.user {
+  margin-top: 0 !important;
+  padding-top: 0 !important;
 }
 df-markdown-message.dfchat-user-persona-caption-md-host {
   align-self: flex-end !important;
@@ -27324,7 +27337,8 @@ function applyBotImagePersonaCaptionChrome_(imageNode) {
         const isBotEntry = el.classList && el.classList.contains("entry") && el.classList.contains("bot");
         try {
             if (isBotEntry) {
-                el.style.setProperty("margin-bottom", "2px", "important");
+                const gap = Math.max(0, Math.min(16, BOT_PERSONA_CONFIG.gapBelowAssistantPx ?? 2));
+                el.style.setProperty("margin-bottom", `${gap}px`, "important");
                 el.style.setProperty("padding", "0", "important");
                 el.style.setProperty("background", "transparent", "important");
             }
@@ -27980,8 +27994,120 @@ function isUserPersonaCaptionMessage_(el) {
     return false;
 }
 
+/** @param {HTMLElement | null | undefined} row */
+function dfchatRowIsUserPersonaCaptionRow_(row) {
+    if (!(row instanceof HTMLElement)) {
+        return false;
+    }
+    if (row.classList && row.classList.contains("dfchat-user-persona-entry")) {
+        return true;
+    }
+    if (row.querySelector?.(`img[src*='${PERSONA_URL_MARKER_USER_IMG}']`)) {
+        return true;
+    }
+    if (row.querySelector?.(".dfchat-user-persona-md")) {
+        return true;
+    }
+    const entry = resolveBotPersonaEntry_(row);
+    if (entry && entry.classList && entry.classList.contains("dfchat-user-persona-caption-bot-entry")) {
+        return true;
+    }
+    if (isUserPersonaCaptionMessage_(row)) {
+        return true;
+    }
+    return false;
+}
+
+/** @param {HTMLElement} personaEntry @param {HTMLElement} userEntry */
+function snugUserPersonaEntryToUserRow_(personaEntry, userEntry) {
+    const gap = Math.max(0, Math.min(16, USER_PERSONA_CONFIG.gapBelowPx ?? 2));
+    try {
+        personaEntry.style.setProperty("margin-bottom", `${gap}px`, "important");
+        personaEntry.style.setProperty("padding-bottom", "0", "important");
+        userEntry.style.setProperty("margin-top", "0", "important");
+        userEntry.style.setProperty("padding-top", "0", "important");
+    } catch {
+        /* ignore */
+    }
+}
+
+/** @param {HTMLElement} personaEntry */
+function snugBotPersonaEntryToNextBotContent_(personaEntry) {
+    const gap = Math.max(0, Math.min(16, BOT_PERSONA_CONFIG.gapBelowAssistantPx ?? 2));
+    try {
+        personaEntry.style.setProperty("margin-bottom", `${gap}px`, "important");
+        personaEntry.style.setProperty("padding-bottom", "0", "important");
+        const next = personaEntry.nextElementSibling;
+        if (
+            next instanceof HTMLElement
+            && next.classList
+            && next.classList.contains("entry")
+            && next.classList.contains("bot")
+            && !dfchatRowHasPersonaAvatar_(next)
+            && !dfchatRowIsUserPersonaCaptionRow_(next)
+        ) {
+            next.style.setProperty("margin-top", "0", "important");
+        }
+    } catch {
+        /* ignore */
+    }
+}
+
+/**
+ * Remove user persona captions that never received a user bubble (blocked send, thanks-only, etc.).
+ * @param {HTMLElement | null | undefined} dfMessenger
+ */
+function pruneOrphanUserPersonaCaptions_(dfMessenger) {
+    const list = findMessengerMessageListRoot(dfMessenger || activeDfMessenger);
+    if (!list) {
+        return;
+    }
+    const children = Array.from(list.children);
+    for (let i = 0; i < children.length; i += 1) {
+        const row = children[i];
+        if (!(row instanceof HTMLElement) || !dfchatRowIsUserPersonaCaptionRow_(row)) {
+            continue;
+        }
+        let foundUser = false;
+        for (let j = i + 1; j < Math.min(i + 4, children.length); j += 1) {
+            const sib = children[j];
+            if (!(sib instanceof HTMLElement)) {
+                continue;
+            }
+            if (sib.dataset && sib.dataset.dfchatLiveAgentAnchor === "1") {
+                break;
+            }
+            if (dfchatRowIsUserPersonaCaptionRow_(sib)) {
+                break;
+            }
+            if (dfchatMessageListRowIsUser_(sib) || sib.querySelector?.(".message.user-message")) {
+                foundUser = true;
+                break;
+            }
+        }
+        if (foundUser) {
+            continue;
+        }
+        const created = Number(row.dataset.dfchatUserPersonaCreatedAt || 0);
+        const now = Date.now();
+        if (!created) {
+            row.dataset.dfchatUserPersonaCreatedAt = String(now);
+            continue;
+        }
+        if (now - created < 1200) {
+            continue;
+        }
+        try {
+            row.remove();
+        } catch {
+            /* ignore */
+        }
+    }
+}
+
 /**
  * Persona caption is appended after the user bubble on send; move it above the preceding user entry.
+ * When we render persona first, keep it directly above the following user row with tight spacing.
  * @param {HTMLElement | null} personaMessage
  * @returns {boolean}
  */
@@ -28016,10 +28142,25 @@ function reorderUserPersonaBeforeUserMessage_(personaMessage) {
                     parent.insertBefore(entry, userEntry);
                     entry.dataset.dfchatUserPersonaEntryMoved = "1";
                     personaMessage.dataset.dfchatUserPersonaEntryMoved = "1";
+                    snugUserPersonaEntryToUserRow_(entry, userEntry);
                     return true;
                 } catch {
                     /* fall through to row-level move */
                 }
+            }
+            let nextEntry = entry.nextElementSibling;
+            while (nextEntry && nextEntry.nodeType === Node.ELEMENT_NODE) {
+                const h = /** @type {HTMLElement} */ (nextEntry);
+                if (h.classList && h.classList.contains("entry") && h.classList.contains("user")) {
+                    entry.dataset.dfchatUserPersonaEntryMoved = "1";
+                    personaMessage.dataset.dfchatUserPersonaEntryMoved = "1";
+                    snugUserPersonaEntryToUserRow_(entry, h);
+                    return true;
+                }
+                if (h.classList && h.classList.contains("entry")) {
+                    break;
+                }
+                nextEntry = h.nextElementSibling;
             }
         }
     }
@@ -28048,6 +28189,22 @@ function reorderUserPersonaBeforeUserMessage_(personaMessage) {
         probeRow = h.previousElementSibling;
     }
     if (!userRow) {
+        let nextRow = personaRow.nextElementSibling;
+        while (nextRow && nextRow.nodeType === Node.ELEMENT_NODE) {
+            const h = /** @type {HTMLElement} */ (nextRow);
+            const hasUser = !!(h.querySelector && h.querySelector(".message.user-message"))
+                || (h.classList && h.classList.contains("user"));
+            if (hasUser) {
+                personaRow.dataset.dfchatUserPersonaRowMoved = "1";
+                personaMessage.dataset.dfchatUserPersonaEntryMoved = "1";
+                snugUserPersonaEntryToUserRow_(personaRow, h);
+                return true;
+            }
+            if (h.querySelector?.(".message.bot-message") || h.classList?.contains("entry")) {
+                break;
+            }
+            nextRow = h.nextElementSibling;
+        }
         personaMessage.dataset.dfchatUserPersonaEntryMoved = "1";
         return false;
     }
@@ -28055,6 +28212,7 @@ function reorderUserPersonaBeforeUserMessage_(personaMessage) {
         list.insertBefore(personaRow, userRow);
         personaRow.dataset.dfchatUserPersonaRowMoved = "1";
         personaMessage.dataset.dfchatUserPersonaEntryMoved = "1";
+        snugUserPersonaEntryToUserRow_(personaRow, userRow);
         return true;
     } catch {
         personaMessage.dataset.dfchatUserPersonaEntryMoved = "1";
@@ -28187,7 +28345,7 @@ function styleUserPersonaMarkdownHost_(container, mdHost) {
     mdHost.style.marginLeft = "auto";
     mdHost.style.marginRight = "4px";
     mdHost.style.marginTop = cssUserPersonaMarginTop();
-    mdHost.style.marginBottom = "0px";
+    mdHost.style.marginBottom = `${Math.max(0, Math.min(16, USER_PERSONA_CONFIG.gapBelowPx ?? 2))}px`;
     mdHost.style.maxWidth = "100%";
     mdHost.style.width = "fit-content";
     mdHost.style.height = "auto";
@@ -28370,6 +28528,10 @@ function decoratePersonaMessages(dfMessenger) {
                     reorderBotPersonaEntryBeforeContiguousBotChunks_(image);
                     reorderBotPersonaListRowBeforeContiguousBotRows_(image);
                 }
+                const botPersonaEntry = resolveBotPersonaEntry_(resolvePersonaBotMessageElement_(image));
+                if (botPersonaEntry) {
+                    snugBotPersonaEntryToNextBotContent_(botPersonaEntry);
+                }
             }
             if (personaType === "bot" && BOT_PERSONA_CONFIG.mode === "emojiTime") {
                 applyBotEmojiPersonaCaptionChrome(image);
@@ -28422,6 +28584,12 @@ function decoratePersonaMessages(dfMessenger) {
     // bubble is stripped + the row is right-aligned to look like a small caption, not a message.
     try {
         decorateUserPersonaMarkdownHosts(dfMessenger);
+    } catch {
+        /* ignore */
+    }
+
+    try {
+        pruneOrphanUserPersonaCaptions_(dfMessenger);
     } catch {
         /* ignore */
     }

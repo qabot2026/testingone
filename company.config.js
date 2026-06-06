@@ -75,7 +75,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
       imageUrl: "https://storage.googleapis.com/companybucket/Images/cat-icon.png",
       label: "Quality",
       avatarSizePx: 32,
-      gapBelowPx: 4,
+      gapBelowPx: 2,
       showTime: true,
       showSeconds: true,
       timeZone: "Asia/Kolkata",
@@ -92,7 +92,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
     userPersona: {
       label: "You",
       avatarSizePx: 18,
-      gapBelowPx: 4,
+      gapBelowPx: 2,
       showTime: true,
       showSeconds: true,
       timeZone: "Asia/Kolkata",
