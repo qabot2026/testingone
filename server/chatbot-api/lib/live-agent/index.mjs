@@ -17,6 +17,7 @@
  *   GET  /api/live-agent/status?clientSessionId=
  *   GET  /api/live-agent/messages?clientSessionId=&since=
  *   POST /api/live-agent/visitor-message    { clientSessionId, text }
+ *   POST /api/live-agent/visitor-typing     { clientSessionId, text, active? }
  *
  * Agent auth: CONVERSATIONS_SHEET_VIEW_SECRET (header X-Conversations-Sheet-Secret).
  */
@@ -74,7 +75,8 @@ import {
     getTypingState_,
     liveSyncPoll_,
     listDeskMessages_,
-    updateAgentTyping_
+    updateAgentTyping_,
+    updateVisitorTyping_
 } from "./desk-realtime.mjs";
 
 const LOG_TAG = "[live-agent]";
@@ -866,6 +868,31 @@ export function mountLiveAgentRoutes(app) {
         } catch (err) {
             logStoreError_(err, "visitor messages");
             jsonError_(res, 500, err.message || "Failed to load messages");
+        }
+    });
+
+    publicRouter.post("/visitor-typing", async (req, res) => {
+        setPublicCors_(res);
+        setNoCache_(res);
+        let clientSessionId = "";
+        try {
+            clientSessionId = resolveConversationId_(req.body && req.body.clientSessionId);
+        } catch (idErr) {
+            jsonError_(res, 400, idErr.message || "clientSessionId required");
+            return;
+        }
+        const text = typeof (req.body && req.body.text) === "string" ? req.body.text : "";
+        const active = !(req.body && req.body.active === false);
+        try {
+            const result = await updateVisitorTyping_({
+                conversationId: clientSessionId,
+                text,
+                active
+            });
+            res.json({ ok: true, ...result });
+        } catch (err) {
+            logStoreError_(err, "visitor typing");
+            jsonError_(res, 400, err.message || "Visitor typing failed");
         }
     });
 

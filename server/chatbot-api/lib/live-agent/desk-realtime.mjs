@@ -5,7 +5,7 @@
 import admin from "firebase-admin";
 
 import { firebaseAdminInit } from "../firebase-admin-init.mjs";
-import { getConversation_, listMessages_ } from "./store.mjs";
+import { getConversation_, isLiveAgentAiCopilot_, listMessages_ } from "./store.mjs";
 
 const TYPING_TTL_MS = 12000;
 
@@ -59,6 +59,45 @@ export async function getTypingState_(conversationId) {
         agentTyping: activeTypingText_(data.agentTypingText, data.agentTypingAt),
         revision: conversationRevision_(conv, data),
         lastMessageId: trim_(data.lastMessageId)
+    };
+}
+
+export async function updateVisitorTyping_({ conversationId, text, active }) {
+    const id = trim_(conversationId);
+    if (!id) throw new Error("conversationId required");
+    const ref = convRef_(id);
+    const snap = await ref.get();
+    if (!snap.exists) throw new Error("Conversation not found");
+    const cur = snap.data() || {};
+    if (cur.status === "closed") throw new Error("Conversation is closed");
+    const conv = await getConversation_(id);
+    if (isLiveAgentAiCopilot_(conv)) {
+        return {
+            skipped: true,
+            revision: conversationRevision_(conv, cur),
+            visitorTyping: ""
+        };
+    }
+    const now = new Date().toISOString();
+    const payload =
+        active !== false && trim_(text)
+            ? {
+                  visitorTypingText: trim_(text).slice(0, 400),
+                  visitorTypingAt: now,
+                  deskRevision: admin.firestore.FieldValue.increment(1)
+              }
+            : {
+                  visitorTypingText: "",
+                  visitorTypingAt: "",
+                  deskRevision: admin.firestore.FieldValue.increment(1)
+              };
+    await ref.set(payload, { merge: true });
+    const snap2 = await ref.get();
+    const conv2 = await getConversation_(id);
+    const data2 = snap2.data() || {};
+    return {
+        revision: conversationRevision_(conv2, data2),
+        visitorTyping: activeTypingText_(data2.visitorTypingText, data2.visitorTypingAt)
     };
 }
 

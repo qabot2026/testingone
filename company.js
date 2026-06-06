@@ -145,7 +145,7 @@ const VISITOR_CITY_ENDPOINT = "/api/visitor-city";
 const SESSION_TRANSCRIPT_SYNC_ENDPOINT = "/api/session-transcript-sync";
 /** Dialogflow custom payload `action` → hand off to human agent inbox (`/live-agent`). */
 const LIVE_AGENT_REQUEST_ACTION = "request_live_agent";
-const LIVE_AGENT_POLL_INTERVAL_MS = 2000;
+const LIVE_AGENT_POLL_INTERVAL_MS = 1200;
 let liveAgentHandoffActive = false;
 /** True only after an agent has accepted (active human chat) — visitor text goes to agent inbox, not Dialogflow. */
 let liveAgentHumanChatActive = false;
@@ -15946,6 +15946,67 @@ function liveAgentMaybeRenderVisitorBubbleOnce_(dfMessenger, text) {
 let liveAgentComposerBridgeAttached = false;
 /** @type {Record<string, string>} */
 let liveAgentAgentProfileMap_ = {};
+/** @type {number} */
+let liveAgentVisitorTypingTimer_ = 0;
+/** @type {string} */
+let liveAgentLastVisitorTypingSent_ = "";
+
+function liveAgentShouldSendVisitorTypingDraft_() {
+    if (!liveAgentHandoffIsActive_() || liveAgentCoPilotAiEnabled_()) {
+        return false;
+    }
+    return liveAgentCachedConvStatus !== "closed";
+}
+
+function liveAgentPostVisitorTypingDraft_(text, active) {
+    if (!liveAgentShouldSendVisitorTypingDraft_()) {
+        return;
+    }
+    const sid = liveAgentSessionId_();
+    const endpoint = getApiEndpoint("/api/live-agent/visitor-typing");
+    if (!endpoint || !sid) {
+        return;
+    }
+    void fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            clientSessionId: sid,
+            text: typeof text === "string" ? text.slice(0, 400) : "",
+            active: active !== false
+        })
+    }).catch(() => {});
+}
+
+function liveAgentScheduleVisitorTypingDraft_(text) {
+    if (!liveAgentShouldSendVisitorTypingDraft_()) {
+        return;
+    }
+    window.clearTimeout(liveAgentVisitorTypingTimer_);
+    const t = String(text || "").slice(0, 400);
+    if (!t.trim()) {
+        if (liveAgentLastVisitorTypingSent_) {
+            liveAgentLastVisitorTypingSent_ = "";
+            liveAgentPostVisitorTypingDraft_("", false);
+        }
+        return;
+    }
+    liveAgentVisitorTypingTimer_ = window.setTimeout(() => {
+        if (t === liveAgentLastVisitorTypingSent_) {
+            return;
+        }
+        liveAgentLastVisitorTypingSent_ = t;
+        liveAgentPostVisitorTypingDraft_(t, true);
+    }, 100);
+}
+
+function liveAgentClearVisitorTypingDraft_() {
+    window.clearTimeout(liveAgentVisitorTypingTimer_);
+    if (liveAgentLastVisitorTypingSent_) {
+        liveAgentLastVisitorTypingSent_ = "";
+        liveAgentPostVisitorTypingDraft_("", false);
+    }
+}
 
 function liveAgentCacheAgentProfiles_(profiles) {
     if (!Array.isArray(profiles)) {
@@ -16173,7 +16234,7 @@ function suppressDfMessengerBotRepliesDuringHumanHandoff_(dfMessenger) {
                 }
                 continue;
             }
-            if (liveAgentHumanChatActive_() && dfchatRowLooksLikeCxBotAssistantRow_(entry)) {
+            if (liveAgentShouldBlockDialogflowNow_() && dfchatRowLooksLikeCxBotAssistantRow_(entry)) {
                 try {
                     entry.remove();
                 } catch {
@@ -16682,6 +16743,7 @@ async function liveAgentPollTick_(dfMessenger) {
         if (wasHuman && copilotAi) {
             liveAgentModeRefreshAt_ = 0;
             setLiveAgentHumanChatActive_(false);
+            liveAgentClearVisitorTypingDraft_();
             try {
                 markLiveAgentCopilotInSession_();
                 clearLiveAgentHumanChatInSession_();
@@ -16693,6 +16755,7 @@ async function liveAgentPollTick_(dfMessenger) {
         if (status === "closed") {
             liveAgentCachedConvStatus = "";
             setLiveAgentHumanChatActive_(false);
+            liveAgentClearVisitorTypingDraft_();
             clearLiveAgentRequestedInSession_();
             setLiveAgentHandoffActive_(false);
             const ms0 = dfMessenger || activeDfMessenger;
@@ -16827,6 +16890,18 @@ function attachLiveAgentComposerBridge_(dfMessenger) {
                     }
                     ta.dataset.dfchatLiveAgentBridge = "1";
                     ta.addEventListener(
+                        "input",
+                        () => {
+                            if (!liveAgentHandoffIsActive_()) {
+                                return;
+                            }
+                            liveAgentScheduleVisitorTypingDraft_(
+                                typeof ta.value === "string" ? ta.value : ""
+                            );
+                        },
+                        true
+                    );
+                    ta.addEventListener(
                         "keydown",
                         (ev) => {
                             if (ev.key !== "Enter" || ev.shiftKey || ev.isComposing) {
@@ -16855,6 +16930,7 @@ function attachLiveAgentComposerBridge_(dfMessenger) {
                                 liveAgentMaybeRenderVisitorBubbleOnce_(ms, text);
                                 scheduleSuppressDuplicateVisitorMessageRows_(ms, text);
                                 scheduleClearDfMessengerComposerInput_();
+                                liveAgentClearVisitorTypingDraft_();
                                 return;
                             }
                             if (!liveAgentShouldPostVisitorToAgent_(text)) {
@@ -16867,6 +16943,7 @@ function attachLiveAgentComposerBridge_(dfMessenger) {
                             liveAgentMaybeRenderVisitorBubbleOnce_(ms, text);
                             scheduleSuppressDuplicateVisitorMessageRows_(ms, text);
                             scheduleClearDfMessengerComposerInput_();
+                            liveAgentClearVisitorTypingDraft_();
                             })();
                         },
                         true
@@ -16944,6 +17021,7 @@ async function liveAgentSendVisitorMessage_(dfMessenger, text, shouldRenderCusto
     if (!t) {
         return;
     }
+    liveAgentClearVisitorTypingDraft_();
     if (liveAgentHandoffIsActive_()) {
         await liveAgentRefreshModeFromServer_(true);
     }
