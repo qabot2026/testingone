@@ -22481,7 +22481,14 @@ function getApiEndpoint(pathname) {
         return null;
     }
 
-    const configuredBaseUrl = getConfiguredApiBaseUrl();
+    let configuredBaseUrl = getConfiguredApiBaseUrl();
+    if (
+        configuredBaseUrl &&
+        window.location.protocol === "https:" &&
+        /^http:\/\//i.test(configuredBaseUrl)
+    ) {
+        configuredBaseUrl = "https://" + configuredBaseUrl.replace(/^https?:\/\//i, "");
+    }
     const baseUrl = configuredBaseUrl || window.location.origin;
 
     return new URL(pathname, `${baseUrl.replace(/\/$/, "")}/`).toString();

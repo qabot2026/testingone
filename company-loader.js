@@ -35,7 +35,7 @@
   }
 
   var CHAT_HOST = chatHostFromLoaderSrc() || "https://qabot2026.github.io/testingone/";
-  var IFRAME_VERSION = "123-card-carousel-dedupe";
+  var IFRAME_VERSION = "124-https-api-base";
 
   function getLoaderQuery() {
     var cur = document.currentScript;
@@ -76,7 +76,7 @@
       /* ignore */
     }
     var cfg = document.createElement("script");
-    cfg.src = CHAT_HOST + "api-base.config.js?v=1";
+    cfg.src = CHAT_HOST + "api-base.config.js?v=2";
     cfg.onload = function () {
       try {
         cb(String(window.COMPANY_DEFAULT_API_BASE_URL || "").trim());

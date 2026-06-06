@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <!-- Default API: api-base.config.js (override with ?apiBase= on URL) -->
-  <script src="api-base.config.js"></script>
+  <script src="api-base.config.js?v=2"></script>
   <!-- After GitHub “Make live” mirror: optional static JSON on your site origin (falls back to `/api/public/widget-settings`). -->
   <!-- <meta name="dfchat-published-widget-path" content="published-widget-settings.json" /> -->
   <title>Chat</title>
@@ -17,15 +17,23 @@
       var b = p.get("botid");
       if (b) window.COMPANY_EMBED_BOT_ID = b.trim();
       var api = (p.get("apiBase") || "").trim();
+      function httpsApiBase_(url) {
+        var s = String(url || "").trim().replace(/\/+$/, "");
+        if (!s) return "";
+        if (window.location.protocol === "https:" && /^http:\/\//i.test(s)) {
+          return "https://" + s.replace(/^https?:\/\//i, "");
+        }
+        return s;
+      }
       if (api) {
-        window.COMPANY_API_BASE_URL = api;
+        window.COMPANY_API_BASE_URL = httpsApiBase_(api);
       } else {
         try {
           var fromConfig = typeof window.COMPANY_DEFAULT_API_BASE_URL === "string"
             ? window.COMPANY_DEFAULT_API_BASE_URL.trim()
             : "";
           if (fromConfig) {
-            window.COMPANY_API_BASE_URL = fromConfig;
+            window.COMPANY_API_BASE_URL = httpsApiBase_(fromConfig);
           } else {
             var mt = document.querySelector('meta[name="dfchat-api-base-url"]')
               || document.querySelector('meta[name="company-api-base-url"]');

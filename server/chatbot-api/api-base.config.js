@@ -9,5 +9,5 @@
  */
 (function (global) {
   global.COMPANY_DEFAULT_API_BASE_URL =
-    "http://cxchatbot.up.railway.app";
+    "https://cxchatbot.up.railway.app";
 })(typeof window !== "undefined" ? window : globalThis);
