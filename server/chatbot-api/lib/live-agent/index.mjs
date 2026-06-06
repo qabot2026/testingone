@@ -18,6 +18,8 @@
  *   GET  /api/live-agent/messages?clientSessionId=&since=
  *   POST /api/live-agent/visitor-message    { clientSessionId, text }
  *   POST /api/live-agent/visitor-typing     { clientSessionId, text, active? }
+ *   GET  /api/live-agent/sync?clientSessionId=&rev=&waitMs=&lastMessageId=
+ *   GET  /api/live-agent/typing-pulse?clientSessionId=&rev=&lastMessageId=
  *
  * Agent auth: CONVERSATIONS_SHEET_VIEW_SECRET (header X-Conversations-Sheet-Secret).
  */
@@ -113,6 +115,89 @@ function safeClientSessionId_(raw) {
 
 function jsonError_(res, status, message) {
     res.status(status).json({ ok: false, error: message });
+}
+
+function visitorAgentChatActive_(conv) {
+    if (!conv || conv.status !== "active") {
+        return false;
+    }
+    if (isLiveAgentAiCopilot_(conv)) {
+        return false;
+    }
+    const hm = trim_(conv.humanMode).toLowerCase();
+    if (hm === "ai") {
+        return false;
+    }
+    if (hm === "human" || conv.aiEnabled === false) {
+        return true;
+    }
+    return !!(trim_(conv.assignedAgentEmail) && hm !== "ai");
+}
+
+async function buildVisitorSyncPayload_(clientSessionId, clientRev, waitMs, lastMessageId) {
+    const id = clientSessionId;
+    const rev = Number(clientRev) || 0;
+    const wait = Math.min(Math.max(Number(waitMs) || 0, 0), 28000);
+    const lastId = trim_(lastMessageId);
+    let base;
+    if (wait > 0) {
+        base = await liveSyncPoll_({
+            conversationId: id,
+            clientRev: rev,
+            waitMs: wait,
+            lastMessageId: lastId || undefined
+        });
+    } else {
+        const typing = await getTypingState_(id);
+        const conversation = await getConversation_(id);
+        const messages = await listMessages_({
+            conversationId: id,
+            limit: 50,
+            markReadFor: "visitor"
+        });
+        base = {
+            ok: true,
+            unchanged: false,
+            revision: typing.revision,
+            visitorTyping: typing.visitorTyping,
+            agentTyping: typing.agentTyping,
+            lastMessageId: typing.lastMessageId,
+            conversation,
+            messages
+        };
+    }
+    const conversation = base.conversation || (await getConversation_(id));
+    const assigned = trim_(conversation && conversation.assignedAgentEmail);
+    const agentConnected = !!(
+        conversation &&
+        conversation.status === "active" &&
+        assigned
+    );
+    const humanHandoffActive = visitorAgentChatActive_(conversation);
+    const aiCopilot = isLiveAgentAiCopilot_(conversation);
+    const { getLiveAgentSettings_, resolveAgentDisplayName_ } = await import("./departments.mjs");
+    const settings = await getLiveAgentSettings_();
+    let assignedAgentDisplayName = "";
+    if (assigned) {
+        assignedAgentDisplayName = resolveAgentDisplayName_(assigned, settings);
+    }
+    const agentProfiles =
+        settings && settings.general && settings.general.agentProfiles
+            ? settings.general.agentProfiles
+            : [];
+    return {
+        ...base,
+        conversation,
+        agentConnected,
+        humanHandoffActive,
+        humanActive: humanHandoffActive,
+        waitingForAgent: !!(conversation && conversation.status === "waiting"),
+        aiCopilot,
+        assignedAgentDisplayName,
+        agentProfiles,
+        aiEnabled: conversation ? conversation.aiEnabled !== false : true,
+        humanMode: conversation && conversation.humanMode ? conversation.humanMode : "ai"
+    };
 }
 
 function sendHealthJson_(res) {
@@ -871,6 +956,69 @@ export function mountLiveAgentRoutes(app) {
         }
     });
 
+    publicRouter.get("/sync", async (req, res) => {
+        setPublicCors_(res);
+        setNoCache_(res);
+        let clientSessionId = "";
+        try {
+            clientSessionId = resolveConversationId_(req.query && req.query.clientSessionId);
+        } catch (idErr) {
+            jsonError_(res, 400, idErr.message || "clientSessionId required");
+            return;
+        }
+        try {
+            const payload = await buildVisitorSyncPayload_(
+                clientSessionId,
+                Number(req.query && (req.query.rev || req.query.revision)) || 0,
+                Number(req.query && (req.query.wait || req.query.waitMs)) || 0,
+                trim_(req.query && (req.query.lastMessageId || req.query.sinceId))
+            );
+            res.json(payload);
+        } catch (err) {
+            logStoreError_(err, "visitor sync");
+            jsonError_(res, 500, err.message || "Sync failed");
+        }
+    });
+
+    publicRouter.get("/typing-pulse", async (req, res) => {
+        setPublicCors_(res);
+        setNoCache_(res);
+        let clientSessionId = "";
+        try {
+            clientSessionId = resolveConversationId_(req.query && req.query.clientSessionId);
+        } catch (idErr) {
+            jsonError_(res, 400, idErr.message || "clientSessionId required");
+            return;
+        }
+        try {
+            const clientRev = Number(req.query && (req.query.rev || req.query.revision)) || 0;
+            const clientLastMsgId = trim_(req.query && req.query.lastMessageId);
+            const typing = await getTypingState_(clientSessionId);
+            const conversation = await getConversation_(clientSessionId);
+            const rev = Math.max(clientRev, typing.revision);
+            const agentTyping = typing.agentTyping;
+            const lastMessageId = typing.lastMessageId;
+            const messageHint = !!(lastMessageId && clientLastMsgId && lastMessageId !== clientLastMsgId);
+            res.json({
+                ok: true,
+                revision: rev,
+                agentTyping,
+                lastMessageId,
+                agentConnected: !!(
+                    conversation &&
+                    conversation.status === "active" &&
+                    trim_(conversation.assignedAgentEmail)
+                ),
+                humanHandoffActive: visitorAgentChatActive_(conversation),
+                changed: rev > clientRev || messageHint,
+                newMessage: messageHint
+            });
+        } catch (err) {
+            logStoreError_(err, "visitor typing-pulse");
+            jsonError_(res, 500, err.message || "Typing pulse failed");
+        }
+    });
+
     publicRouter.post("/visitor-typing", async (req, res) => {
         setPublicCors_(res);
         setNoCache_(res);
@@ -943,7 +1091,24 @@ export function mountLiveAgentRoutes(app) {
                 throw appendErr;
             }
             const conversation = await getConversation_(clientSessionId);
-            res.json({ ok: true, message, conversation });
+            const typing = await getTypingState_(clientSessionId);
+            const assigned = trim_(conversation && conversation.assignedAgentEmail);
+            const agentConnected = !!(
+                conversation &&
+                conversation.status === "active" &&
+                assigned
+            );
+            res.json({
+                ok: true,
+                message,
+                conversation,
+                deduped: false,
+                revision: typing.revision,
+                lastMessageId: typing.lastMessageId,
+                agentConnected,
+                humanHandoffActive: visitorAgentChatActive_(conversation),
+                aiCopilot: isLiveAgentAiCopilot_(conversation)
+            });
         } catch (err) {
             logStoreError_(err, "visitor send");
             jsonError_(res, 400, err.message || "Send failed");

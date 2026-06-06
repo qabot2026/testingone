@@ -475,7 +475,8 @@ export async function claimConversation_({ conversationId, agentEmail }) {
             acceptedAt: cur.acceptedAt || now,
             acceptedByEmail: email,
             unreadForAgent: 0,
-            visitorSessionActive: true
+            visitorSessionActive: true,
+            deskRevision: admin.firestore.FieldValue.increment(1)
         });
     });
 
