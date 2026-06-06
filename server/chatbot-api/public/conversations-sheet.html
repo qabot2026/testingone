@@ -2595,6 +2595,7 @@
       var lastLeadStatsPayload = null;
       var LEAD_STATS_VIEW_KEY = "lead_stats_view";
       var dashboardSheetSyncBusy = false;
+      var sheetAutoReloadAfterSync = false;
       var PAGE_MODE = /\/ua-conversations\/?$/i.test(window.location.pathname) ? "ua" : "uc";
       document.body.classList.add("page-mode-" + PAGE_MODE);
       var activeSheetTab = PAGE_MODE === "ua" ? "live-agent" : "bot";
@@ -5441,6 +5442,80 @@
       });
 
       /**
+       * Push live-agent handoff rows to the Live Agent sheet tab (ua-conversations).
+       * @param {{ interactive?: boolean }} [opts]
+       * @returns {Promise<boolean>}
+       */
+      function syncLiveAgentSheet(opts) {
+        opts = opts || {};
+        var interactive = !!opts.interactive;
+        var secret = secretEl.value.trim();
+        if (!secret) {
+          if (interactive) showErr("Enter viewer secret.");
+          return Promise.resolve(false);
+        }
+        if (dashboardSheetSyncBusy) {
+          return Promise.resolve(false);
+        }
+        dashboardSheetSyncBusy = true;
+        var fromV = getDateFilterYmd_(dateFromEl);
+        var toV = getDateFilterYmd_(dateToEl);
+        var qp = [];
+        if (fromV) qp.push("from=" + encodeURIComponent(fromV));
+        if (toV) qp.push("to=" + encodeURIComponent(toV));
+        var url =
+          apiBase() +
+          "/api/live-agent-sheet-sync" +
+          (qp.length ? "?" + qp.join("&") : "");
+        var prevBtnText = "";
+        if (interactive && syncSheet2Btn) {
+          syncSheet2Btn.disabled = true;
+          prevBtnText = syncSheet2Btn.textContent;
+          syncSheet2Btn.textContent = "Syncing…";
+        }
+        return fetch(url, {
+          method: "POST",
+          headers: viewerAuthHeaders_(secret),
+          cache: "no-store",
+          credentials: "same-origin"
+        })
+          .then(function (res) {
+            return res.json().then(function (j) {
+              return { res: res, j: j };
+            });
+          })
+          .then(function (o) {
+            if (!o.res.ok || !o.j || !o.j.ok) {
+              var failMsg = (o.j && o.j.error) || "Sync failed.";
+              if (interactive) showErr(friendlyViewerError_(failMsg, o.res.status));
+              else console.warn("[conversations-sheet] live-agent sync:", failMsg);
+              return false;
+            }
+            return true;
+          })
+          .catch(function (e) {
+            var msg = String(e && e.message ? e.message : e);
+            if (interactive) showErr(msg);
+            else console.warn("[conversations-sheet] live-agent sync:", msg);
+            return false;
+          })
+          .finally(function () {
+            dashboardSheetSyncBusy = false;
+            if (interactive && syncSheet2Btn) {
+              syncSheet2Btn.disabled = false;
+              syncSheet2Btn.textContent = prevBtnText;
+            }
+          });
+      }
+
+      function syncSheetAfterLoad(opts) {
+        if (isLiveAgentSheetTab()) {
+          return syncLiveAgentSheet(opts);
+        }
+        return syncDashboardSheet(opts);
+      }
+
+      /**
        * Push executive dashboard tab to the linked spreadsheet (same From/To as this page).
        * @param {{ interactive?: boolean }} [opts] When false (auto after reload), failures are logged only.
        * @returns {Promise<boolean>}
@@ -5611,6 +5686,9 @@
           setStatus(msgParts.join(", ") + ".");
           sheetOffset = Number(json.offset) || 0;
           hadLoadedSheet = true;
+          if (json.conversations && json.conversations.length > 0) {
+            sheetAutoReloadAfterSync = false;
+          }
           syncPagerUi(json);
           render(json);
           refreshAllValueFilterOptions_(true);
@@ -5643,7 +5721,18 @@
               console.warn("[conversations-sheet] dashboard stats", statsWaitErr);
             }
           }
-          void syncDashboardSheet({ interactive: false });
+          void syncSheetAfterLoad({ interactive: false }).then(function (syncOk) {
+            if (
+              syncOk &&
+              loadingLive &&
+              json &&
+              (!json.conversations || json.conversations.length === 0) &&
+              !sheetAutoReloadAfterSync
+            ) {
+              sheetAutoReloadAfterSync = true;
+              void load();
+            }
+          });
         } catch (e) {
           if (e && e.name === "AbortError" && sheetLoadAbortCtrl) {
             return;
@@ -5985,7 +6074,7 @@
       if (syncSheet2Btn) {
         syncSheet2Btn.addEventListener("click", function () {
           showErr("");
-          void syncDashboardSheet({ interactive: true });
+          void syncSheetAfterLoad({ interactive: true });
         });
       }
 

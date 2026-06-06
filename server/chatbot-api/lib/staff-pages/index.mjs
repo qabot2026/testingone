@@ -379,6 +379,10 @@ export function mountStaffPageRoutes(app, opts) {
         setConversationsSheetCors_(req, res);
         res.sendStatus(204);
     });
+    app.options("/api/live-agent-sheet-sync", (req, res) => {
+        setConversationsSheetCors_(req, res);
+        res.sendStatus(204);
+    });
 
     app.get("/api/live-agent-sheet", async (req, res) => {
         setConversationsSheetCors_(req, res);
@@ -403,9 +407,40 @@ export function mountStaffPageRoutes(app, opts) {
         }
     });
 
+    async function handleLiveAgentSheetSync_(req, res) {
+        setConversationsSheetCors_(req, res);
+        setNoCache_(res);
+        if (!requireConversationsViewer_(req, res)) return;
+        try {
+            const liveAgentSheet = referMod_("live-agent-sheet.js");
+            const q = req.query || {};
+            const from = typeof q.from === "string" ? q.from.trim() : "";
+            const to = typeof q.to === "string" ? q.to.trim() : "";
+            const result = await liveAgentSheet.syncDashboardToSheet2(
+                from || to ? { from: from || undefined, to: to || undefined } : {}
+            );
+            if (!result || result.ok === false) {
+                res.status(503).json({
+                    ok: false,
+                    error: (result && result.error) || "Live agent sheet sync failed."
+                });
+                return;
+            }
+            res.json({ ok: true, ...result });
+        } catch (err) {
+            const msg = err && err.message ? err.message : String(err);
+            console.error(LOG_TAG, "live-agent-sheet-sync:", msg);
+            const status = msg.includes("Invalid") && msg.includes("date") ? 400 : 500;
+            res.status(status).json({ ok: false, error: msg.slice(0, 500) });
+        }
+    }
+
+    app.get("/api/live-agent-sheet-sync", handleLiveAgentSheetSync_);
+    app.post("/api/live-agent-sheet-sync", handleLiveAgentSheetSync_);
+
     console.log(
         LOG_TAG,
-        "mounted /uc-conversations /ua-conversations /qa + staff /api/analytics/* /api/documents/* /api/appointments /api/live-agent-sheet"
+        "mounted /uc-conversations /ua-conversations /qa + staff /api/analytics/* /api/documents/* /api/appointments /api/live-agent-sheet /api/live-agent-sheet-sync"
     );
 }
 

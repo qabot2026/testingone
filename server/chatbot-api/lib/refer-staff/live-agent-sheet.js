@@ -39,7 +39,7 @@ function scalar(v) {
 }
 
 function tabName() {
-  return sheets.dashboardTabName();
+  return sheets.liveAgentTabName();
 }
 
 function formatDateForSheet(d) {
@@ -150,7 +150,12 @@ function liveAgentMetrics(session) {
 function buildRowValues(session) {
   const sid = trim(session.sessionId);
   const doc = chatTranscript.getSessionDoc(sid);
-  const meta = (doc && doc.meta) || {};
+  const meta =
+    (session._sheetMeta && typeof session._sheetMeta === 'object'
+      ? session._sheetMeta
+      : null) ||
+    (doc && doc.meta) ||
+    {};
   const startedRaw =
     session.requestedAt || session.createdAt || (doc.turns && doc.turns[0] && doc.turns[0].at);
   const started = startedRaw ? new Date(startedRaw) : new Date();
@@ -221,7 +226,11 @@ function persistSheet2Row(session, rowNum) {
   session.sheet2Row = rowNum;
   try {
     const liveAgentStore = require('./live-agent-store');
-    liveAgentStore.saveStore();
+    if (typeof liveAgentStore.persistSheet2Row === 'function') {
+      liveAgentStore.persistSheet2Row(session.sessionId, rowNum);
+    } else {
+      liveAgentStore.saveStore();
+    }
   } catch {
     /* ignore */
   }
@@ -233,7 +242,10 @@ async function runSheet2Sync(sessionId) {
   if (!sid) return { skipped: true, reason: 'no_session' };
 
   const liveAgentStore = require('./live-agent-store');
-  const session = liveAgentStore.getSession(sid);
+  const session =
+    typeof liveAgentStore.getSessionAsync === 'function'
+      ? await liveAgentStore.getSessionAsync(sid)
+      : liveAgentStore.getSession(sid);
   if (!session || !sessionQualifies(session)) {
     return { skipped: true, reason: 'not_live_agent' };
   }
@@ -317,7 +329,7 @@ async function syncDashboardToSheet2(opts = {}) {
   }
 
   const liveAgentStore = require('./live-agent-store');
-  liveAgentStore.storageReady();
+  await Promise.resolve(liveAgentStore.storageReady());
   const tab = tabName();
   await sheets.ensureHeaderRowOnTab(tab, LIVE_AGENT_SHEET_HEADERS);
 

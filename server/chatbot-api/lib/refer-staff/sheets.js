@@ -123,6 +123,13 @@ function dashboardTabName() {
   return tabFromRange(DASHBOARD_RANGE);
 }
 
+/** Human-agent handoff rows (ua-conversations) — NOT the KPI dashboard tab (SHEETS_DASHBOARD_TAB). */
+function liveAgentTabName() {
+  const custom = String(process.env.SHEETS_LIVE_AGENT_TAB || '').trim();
+  if (custom) return custom;
+  return 'Live Agent';
+}
+
 function isConfigured() {
   return !!(SPREADSHEET_ID && googleCredentials.isCredentialsConfigured());
 }
@@ -914,7 +921,7 @@ async function fetchLiveAgentGrid() {
       'Missing service account credentials — same as Sheets writes.'
     );
   }
-  const tab = dashboardTabName();
+  const tab = liveAgentTabName();
   const colEnd = colEndFromRange(DASHBOARD_RANGE);
   const meta = await client.spreadsheets.get({
     spreadsheetId: SPREADSHEET_ID,
@@ -969,6 +976,7 @@ module.exports = {
   transcriptUrl,
   resolvePublicBaseUrl,
   dashboardTabName,
+  liveAgentTabName,
   SHEET_COL_HEADERS,
   SPREADSHEET_ID,
   RANGE,
