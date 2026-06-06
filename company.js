@@ -856,6 +856,7 @@ const PERSONA_MARKER_BOT_TIME = "dfchat-persona-bot-time";
 const PERSONA_MARKER_USER = "dfchat-persona-user";
 const PERSONA_URL_MARKER_BOT_IMG = "dfchat-bot-persona";
 const PERSONA_URL_MARKER_AGENT_IMG = "dfchat-agent-persona";
+const PERSONA_URL_MARKER_USER_IMG = "dfchat-user-persona-img";
 /** Invisible fingerprint at start of user persona markdown; removed after decorate so transcript stays readable. */
 const USER_PERSONA_TEXT_SENTINEL = "\u2060\u200c\u2060";
 
@@ -1020,6 +1021,10 @@ function readUserPersonaConfig() {
         : "Asia/Kolkata";
     return {
         label,
+        avatarSizePx:
+            typeof raw.avatarSizePx === "number" && Number.isFinite(raw.avatarSizePx) && raw.avatarSizePx > 0
+                ? raw.avatarSizePx
+                : 18,
         showTime: raw.showTime !== false,
         showSeconds: raw.showSeconds !== false,
         messageTimeIncludesDate: raw.messageTimeIncludesDate === true,
@@ -16038,10 +16043,11 @@ function liveAgentSchedulePinRowsToTranscriptEnd_(dfMessenger) {
 
 /**
  * Render a live-agent line in the bot lane.
- * System notices append in order (refer-style). Agent role lines use tailPin so they stay after CX payloads.
+ * Refer `appendMessage`: persona row first, bubble second. Agent connect/rejoin use human icon;
+ * regular agent chat uses bot cat + agent name; handoff/end use default Quality persona.
  * @param {HTMLElement | null | undefined} dfMessenger
  * @param {string} text
- * @param {{ withPersona?: boolean, personaLabel?: string, tailPin?: boolean }} [opts]
+ * @param {{ withPersona?: boolean, personaLabel?: string, liveAgentHuman?: boolean, tailPin?: boolean }} [opts]
  */
 function liveAgentRenderBotLineAtTranscriptEnd_(dfMessenger, text, opts) {
     const t = (text || "").trim();
@@ -16051,42 +16057,52 @@ function liveAgentRenderBotLineAtTranscriptEnd_(dfMessenger, text, opts) {
     }
     const personaLabel =
         opts && typeof opts.personaLabel === "string" ? opts.personaLabel.trim() : "";
+    const liveAgentHuman = !!(opts && opts.liveAgentHuman);
     const withPersona = opts && opts.withPersona === false ? false : !personaLabel;
     const tailPin = !!(opts && opts.tailPin);
 
-    /** @param {HTMLElement | null | undefined} list @param {{ nodes: Element[] }} snap */
-    function renderPersonaAfterSnap_(list, snap) {
+    /** @returns {string | null} */
+    function buildPersonaMarkdown_() {
+        const when = Date.now();
         if (personaLabel) {
-            const when = Date.now();
-            ms.renderCustomText(buildAgentPersonaMarkdown_(personaLabel, when), true);
-            schedulePersonaShadowFix(ms);
-            if (tailPin && list && snap) {
-                const finalizePersona = () => liveAgentMoveNewTailRowsToEnd_(list, snap);
-                finalizePersona();
-                [80, 200, 500, 1000, 1500, 2500].forEach((msDelay) => {
-                    window.setTimeout(finalizePersona, msDelay);
-                });
+            if (liveAgentHuman) {
+                return buildAgentPersonaMarkdown_(personaLabel, when);
             }
-        } else if (withPersona) {
-            renderBotPersona(ms, Date.now());
-            if (tailPin && list && snap) {
-                const finalizePersona = () => liveAgentMoveNewTailRowsToEnd_(list, snap);
-                finalizePersona();
-                [80, 200, 500, 1000, 1500, 2500].forEach((msDelay) => {
-                    window.setTimeout(finalizePersona, msDelay);
-                });
-            }
+            return buildBotPersonaLabelMarkdown_(personaLabel, when);
+        }
+        if (withPersona) {
+            return buildBotPersonaMarkdown_(when);
+        }
+        return null;
+    }
+
+    /** @param {HTMLElement | null | undefined} list @param {{ nodes: Element[] }} snap */
+    function renderPersonaBeforeSnap_(list, snap) {
+        const md = buildPersonaMarkdown_();
+        if (!md) {
+            return;
+        }
+        ms.renderCustomText(md, true);
+        schedulePersonaShadowFix(ms);
+        if (tailPin && list && snap) {
+            const finalizePersona = () => liveAgentMoveNewTailRowsToEnd_(list, snap);
+            finalizePersona();
+            [80, 200, 500, 1000, 1500, 2500].forEach((msDelay) => {
+                window.setTimeout(finalizePersona, msDelay);
+            });
         }
     }
 
     if (!tailPin) {
+        renderPersonaBeforeSnap_(null, null);
         ms.renderCustomText(t, true);
-        renderPersonaAfterSnap_(null, null);
         return;
     }
 
     liveAgentEnsureTailPinObserver_(ms);
     const list = findMessengerMessageListRoot(ms);
+    const snapPersona = liveAgentSnapshotList_(list);
+    renderPersonaBeforeSnap_(list, snapPersona);
     const snap = liveAgentSnapshotList_(list);
     ms.renderCustomText(t, true);
     const finalizeText = () => liveAgentMoveNewTailRowsToEnd_(list, snap);
@@ -16094,10 +16110,6 @@ function liveAgentRenderBotLineAtTranscriptEnd_(dfMessenger, text, opts) {
     [50, 180, 400, 800, 1200, 1800, 2500, 3500].forEach((msDelay) => {
         window.setTimeout(finalizeText, msDelay);
     });
-    if (personaLabel || withPersona) {
-        const snapPersona = liveAgentSnapshotList_(list);
-        renderPersonaAfterSnap_(list, snapPersona);
-    }
     liveAgentSchedulePinTailRowsToTranscriptEnd_(ms);
 }
 
@@ -16145,7 +16157,7 @@ function liveAgentAnnounceConnected_(dfMessenger, agentLabel, messageText, dedup
         return;
     }
     liveAgentSeenNoticeKeys_.add(key);
-    liveAgentRenderBotLineAtTranscriptEnd_(ms, text, { personaLabel: name });
+    liveAgentRenderBotLineAtTranscriptEnd_(ms, text, { personaLabel: name, liveAgentHuman: true });
 }
 
 /**
@@ -16167,7 +16179,7 @@ function liveAgentAnnounceHandoffToBot_(dfMessenger, messageText, dedupeKey) {
     }
     liveAgentSeenNoticeKeys_.add(key);
     liveAgentRemoveAgentTypingDraft_(ms);
-    liveAgentRenderBotLineAtTranscriptEnd_(ms, text, { withPersona: false });
+    liveAgentRenderBotLineAtTranscriptEnd_(ms, text, { withPersona: true });
 }
 
 /**
@@ -16194,7 +16206,7 @@ function liveAgentAnnounceHumanRejoined_(dfMessenger, agentLabel, messageText, d
         return;
     }
     liveAgentSeenNoticeKeys_.add(key);
-    liveAgentRenderBotLineAtTranscriptEnd_(ms, text, { personaLabel: name });
+    liveAgentRenderBotLineAtTranscriptEnd_(ms, text, { personaLabel: name, liveAgentHuman: true });
 }
 
 /**
@@ -16582,10 +16594,8 @@ function liveAgentMaybeRenderVisitorBubbleOnce_(dfMessenger, text) {
         return;
     }
     liveAgentMarkVisitorUiRendered_(t);
+    renderUserPersona(ms);
     ms.renderCustomText(t, false);
-    if (typeof ms.renderUserPersona === "function") {
-        renderUserPersona(ms);
-    }
 }
 
 let liveAgentComposerBridgeAttached = false;
@@ -17225,9 +17235,9 @@ async function requestLiveAgentHandoff_(spec) {
             const waitLine =
                 typeof s.waitingMessage === "string" && s.waitingMessage.trim()
                     ? s.waitingMessage.trim()
-                    : "Connecting you with an agent. Please wait…";
-            ms.renderCustomText(waitLine, true);
+                    : "Connecting you to our team. Please wait.";
             renderBotPersona(ms, Date.now());
+            ms.renderCustomText(waitLine, true);
         }
         startLiveAgentPoll_(ms);
         return Boolean(data && data.ok);
@@ -17565,7 +17575,7 @@ async function liveAgentPollTick_(dfMessenger) {
                         : liveAgentDisplayNameForEmail_(m.senderEmail);
                 liveAgentRenderBotLineAtTranscriptEnd_(ms, text, { personaLabel: displayName, tailPin: true });
             } else {
-                liveAgentRenderBotLineAtTranscriptEnd_(ms, text, { withPersona: false });
+                liveAgentRenderBotLineAtTranscriptEnd_(ms, text, { withPersona: true });
             }
         }
         liveAgentSchedulePinTailRowsToTranscriptEnd_(ms);
@@ -25332,7 +25342,9 @@ function renderUserPersona(dfMessenger) {
 
     lastUserPersonaRenderAt = now;
     const u = USER_PERSONA_CONFIG;
-    const timeLabel = u.showTime ? getPersonaTimeLabel(u.timeZone) : "";
+    const timeLabel = u.showTime
+        ? getBotPersonaMessageTimeLabel(u.timeZone, now, u.messageTimeIncludesDate === true)
+        : "";
     renderPersona(ms, "user", u.label, timeLabel);
 }
 
@@ -25370,13 +25382,12 @@ function sanitizeUserPersonaLabelForMarkdown(label) {
  * @param {string} timeLabel
  */
 function buildUserPersonaMarkdownText_(label, timeLabel) {
-    const base = sanitizeUserPersonaLabelForMarkdown(label) || "🙂";
+    const base = sanitizeUserPersonaLabelForMarkdown(label) || "You";
     const t = typeof timeLabel === "string" ? timeLabel.trim() : "";
-    if (!t) {
-        return `${USER_PERSONA_TEXT_SENTINEL}**${base}**`;
-    }
     const safeTime = t.replace(/\*\*/g, "").replace(/\*/g, "×");
-    return `${USER_PERSONA_TEXT_SENTINEL}**${base}  ${safeTime}**`;
+    const userImg = createUserIconDataUrl_().split("#")[0].trim();
+    const imgMd = buildPersonaImageMarkdownWithTime_(userImg, base, safeTime, PERSONA_URL_MARKER_USER_IMG);
+    return `${USER_PERSONA_TEXT_SENTINEL}${imgMd}`;
 }
 
 function stripUserPersonaSentinelFromDom_(hostEl) {
@@ -25408,12 +25419,54 @@ function stripUserPersonaSentinelFromDom_(hostEl) {
 }
 
 /**
- * Refer-style live-agent human avatar (head + shoulders in circle) when agentPersona.mode is icon.
+ * Refer-style live-agent human avatar (person + checkmark) when agentPersona.mode is icon.
  * @returns {string}
  */
 function createAgentHumanIconDataUrl_() {
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><circle cx="16" cy="16" r="16" fill="#fde8f0"/><circle cx="16" cy="13" r="5" fill="#8f1d56"/><path d="M8 26c0-4.4 3.6-8 8-8s8 3.6 8 8" fill="#8f1d56"/></svg>`;
+    const svg =
+        '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">'
+        + '<circle cx="16" cy="16" r="16" fill="#fde8f0"/>'
+        + '<g fill="none" stroke="#8f1d56" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">'
+        + '<circle cx="16" cy="12" r="3.25"/>'
+        + '<path d="M8 26v-.75C8 21.13 11.13 19 16 19s8 2.13 8 6.25V26"/>'
+        + '<path d="M20.5 11.5l1.2 1.2 2.3-2.3"/>'
+        + "</g></svg>";
     return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+}
+
+/** Refer user avatar (18px) for persona row above visitor bubbles. */
+function createUserIconDataUrl_() {
+    const px = USER_PERSONA_CONFIG.avatarSizePx || 18;
+    const svg =
+        `<svg xmlns="http://www.w3.org/2000/svg" width="${px}" height="${px}" viewBox="0 0 24 24">`
+        + '<circle cx="12" cy="12" r="12" fill="#fde8f0"/>'
+        + '<g fill="none" stroke="#8f1d56" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
+        + '<circle cx="12" cy="8" r="4"/>'
+        + '<path d="M4 20c0-4 4-6 8-6s8 2 8 6"/>'
+        + "</g></svg>";
+    return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+}
+
+/**
+ * Bot cat avatar + custom label (agent name) — refer regular agent chat lines (not connect/rejoin).
+ * @param {string} displayName
+ * @param {number | undefined} messageInstantMs
+ */
+function buildBotPersonaLabelMarkdown_(displayName, messageInstantMs) {
+    const when =
+        typeof messageInstantMs === "number" && Number.isFinite(messageInstantMs)
+            ? messageInstantMs
+            : Date.now();
+    const cfg = BOT_PERSONA_CONFIG;
+    const incDate = cfg.messageTimeIncludesDate === true;
+    const name =
+        typeof displayName === "string" && displayName.trim()
+            ? displayName.trim()
+            : AGENT_PERSONA_CONFIG.label;
+    const img = cfg.image;
+    const baseUrl = img.url.split("#")[0].trim();
+    const timeLabel = img.showTime ? getBotPersonaMessageTimeLabel(img.timeZone, when, incDate) : "";
+    return buildPersonaImageMarkdownWithTime_(baseUrl, name, timeLabel, PERSONA_URL_MARKER_BOT_IMG);
 }
 
 /**
@@ -25769,6 +25822,31 @@ df-markdown-message.dfchat-user-persona-md-host,
   opacity: ${PERSONA_DISPLAY_CONFIG.opacity} !important;
   display: inline-block !important;
   vertical-align: middle !important;
+}
+img[src*="dfchat-user-persona-img"],
+img[src*="%23dfchat-user-persona-img"] {
+  width: ${USER_PERSONA_CONFIG.avatarSizePx}px !important;
+  height: ${USER_PERSONA_CONFIG.avatarSizePx}px !important;
+  max-width: ${USER_PERSONA_CONFIG.avatarSizePx}px !important;
+  max-height: ${USER_PERSONA_CONFIG.avatarSizePx}px !important;
+  object-fit: contain !important;
+  display: inline-block !important;
+  vertical-align: middle !important;
+  box-sizing: border-box !important;
+  filter: none !important;
+  opacity: 1 !important;
+}
+.message.bot-message.markdown.dfchat-user-persona-md:has(img[src*="dfchat-user-persona-img"]) p + p,
+.message.bot-message.markdown.dfchat-user-persona-md:has(img[src*="%23dfchat-user-persona-img"]) p + p {
+  color: ${PERSONA_TEXT_COLOR} !important;
+  font-size: ${PERSONA_DISPLAY_CONFIG.nameFontSizePx}px !important;
+  font-weight: 600 !important;
+}
+.message.bot-message.markdown.dfchat-user-persona-md:has(img[src*="dfchat-user-persona-img"]) p strong,
+.message.bot-message.markdown.dfchat-user-persona-md:has(img[src*="%23dfchat-user-persona-img"]) p strong {
+  font-size: ${PERSONA_DISPLAY_CONFIG.timeFontSizePx}px !important;
+  filter: blur(${PERSONA_DISPLAY_CONFIG.blurPx}px) !important;
+  opacity: ${PERSONA_DISPLAY_CONFIG.opacity} !important;
 }
 .entry.bot.dfchat-user-persona-caption-bot-entry {
   align-self: flex-end !important;
@@ -27524,6 +27602,10 @@ function getPersonaType(imageNode) {
         return "user";
     }
 
+    if (source.includes(`#${PERSONA_URL_MARKER_USER_IMG}`)) {
+        return "user";
+    }
+
     if (source.includes(`#${PERSONA_URL_MARKER_BOT_IMG}`) || source.includes(`#${PERSONA_URL_MARKER_AGENT_IMG}`)) {
         return "bot";
     }
@@ -27645,6 +27727,16 @@ function stylePersonaContainer(container, imageNode, personaType) {
         imageNode.style.marginRight = "4px";
         imageNode.style.marginTop = cssUserPersonaMarginTop();
         imageNode.style.marginBottom = "0px";
+        if (src.includes(`#${PERSONA_URL_MARKER_USER_IMG}`)) {
+            const px = USER_PERSONA_CONFIG.avatarSizePx || 18;
+            imageNode.style.display = "inline-block";
+            imageNode.style.verticalAlign = "middle";
+            imageNode.style.height = `${px}px`;
+            imageNode.style.width = `${px}px`;
+            imageNode.style.objectFit = "contain";
+            imageNode.style.filter = "none";
+            imageNode.style.opacity = "1";
+        }
         {
             const t = cssUserPersonaTranslateX();
             imageNode.style.transform = t || "";
