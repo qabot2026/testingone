@@ -12287,6 +12287,12 @@ function dfchatResolveFirstLiveConversationRow_(messageList) {
         if (dfchatMessageListRowIsUser_(c) || liveAgentRowIsTranscriptTailBlock_(c)) {
             return c;
         }
+        if (c.dataset && c.dataset.dfchatLiveAgentMsg === "1") {
+            return c;
+        }
+        if (dfchatRowHasLiveAgentPersonaMarker_(c) || dfchatRowHasLiveAgentTailSentinel_(c)) {
+            return c;
+        }
     }
     return null;
 }
@@ -16462,6 +16468,10 @@ function liveAgentClassifyTranscriptRow_(row, tailSet) {
     if (!(row instanceof HTMLElement)) {
         return "bot";
     }
+    if (row.dataset && row.dataset.dfchatLiveAgentMsg === "1") {
+        row.dataset.dfchatLiveAgentTail = "1";
+        return "tail";
+    }
     if (tailSet.has(row) || liveAgentRowIsTranscriptTailBlock_(row)) {
         return "tail";
     }
@@ -16597,6 +16607,10 @@ function liveAgentPinTailRowsToTranscriptEnd_(dfMessenger, listOverride) {
             list.scrollTop = list.scrollHeight;
         } catch {
             /* ignore */
+        }
+    } catch (pinErr) {
+        if (typeof console !== "undefined" && console.warn) {
+            console.warn("[live-agent] transcript pin failed:", pinErr);
         }
     } finally {
         liveAgentTailPinInFlight_ = false;
@@ -18169,6 +18183,7 @@ async function liveAgentPollTick_(dfMessenger) {
             suppressDfMessengerBotRepliesDuringHumanHandoff_(msHuman);
             scheduleSuppressDfMessengerBotRepliesDuringHumanHandoff_();
             liveAgentEnsureTailPinObserver_(msHuman);
+            liveAgentSchedulePinTailRowsToTranscriptEnd_(msHuman);
             try {
                 markLiveAgentHumanChatInSession_();
             } catch {
