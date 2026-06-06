@@ -15898,8 +15898,38 @@ function liveAgentRenderBotLineAtTranscriptEnd_(dfMessenger, text, opts) {
     [50, 180, 400, 800].forEach((msDelay) => {
         window.setTimeout(finalize, msDelay);
     });
-    const withPersona = !opts || opts.withPersona !== false;
-    if (withPersona) {
+    const personaLabel =
+        opts && typeof opts.personaLabel === "string" ? opts.personaLabel.trim() : "";
+    const withPersona = opts && opts.withPersona === false ? false : !personaLabel;
+    if (personaLabel) {
+        const when = Date.now();
+        const cfg = BOT_PERSONA_CONFIG;
+        const incDate = cfg.messageTimeIncludesDate !== false;
+        const timeLabel =
+            cfg.mode === "emojiTime" && cfg.emojiTime && cfg.emojiTime.showTime
+                ? getBotPersonaMessageTimeLabel(cfg.emojiTime.timeZone, when, incDate)
+                : cfg.mode === "image" && cfg.image && cfg.image.showTime
+                  ? getBotPersonaMessageTimeLabel(cfg.image.timeZone, when, incDate)
+                  : "";
+        const snapPersona = liveAgentSnapshotList_(list);
+        ms.renderCustomText(
+            createPersonaBadgeMarkdown(
+                personaLabel,
+                timeLabel,
+                `la-${when}-${(personaSequence += 1)}`,
+                PERSONA_MARKER_BOT,
+                true
+            ),
+            true
+        );
+        const finalizePersona = () => {
+            liveAgentMoveNewListChildrenToEnd_(list, snapPersona);
+        };
+        finalizePersona();
+        [80, 200, 500, 1000, 1500].forEach((msDelay) => {
+            window.setTimeout(finalizePersona, msDelay);
+        });
+    } else if (withPersona) {
         const snapPersona = liveAgentSnapshotList_(list);
         renderBotPersona(ms, Date.now());
         const finalizePersona = () => {
@@ -15953,7 +15983,7 @@ function liveAgentAnnounceConnected_(dfMessenger, agentLabel, messageText, dedup
         return;
     }
     liveAgentSeenNoticeKeys_.add(key);
-    liveAgentRenderBotLineAtTranscriptEnd_(ms, text, { withPersona: true });
+    liveAgentRenderBotLineAtTranscriptEnd_(ms, text, { personaLabel: name });
 }
 
 /**
@@ -15975,7 +16005,7 @@ function liveAgentAnnounceHandoffToBot_(dfMessenger, messageText, dedupeKey) {
     }
     liveAgentSeenNoticeKeys_.add(key);
     liveAgentRemoveAgentTypingDraft_(ms);
-    liveAgentRenderBotLineAtTranscriptEnd_(ms, text, { withPersona: true });
+    liveAgentRenderBotLineAtTranscriptEnd_(ms, text, { withPersona: false });
 }
 
 /**
@@ -16002,7 +16032,7 @@ function liveAgentAnnounceHumanRejoined_(dfMessenger, agentLabel, messageText, d
         return;
     }
     liveAgentSeenNoticeKeys_.add(key);
-    liveAgentRenderBotLineAtTranscriptEnd_(ms, text, { withPersona: true });
+    liveAgentRenderBotLineAtTranscriptEnd_(ms, text, { personaLabel: name });
 }
 
 /**
@@ -17349,6 +17379,13 @@ async function liveAgentPollTick_(dfMessenger) {
                 if (liveAgentVisitorShouldHideSystemLine_(sysPreview)) {
                     continue;
                 }
+                if (
+                    liveAgentIsConnectNoticeMessageText_(sysPreview) ||
+                    liveAgentIsHumanRejoinMessageText_(sysPreview) ||
+                    liveAgentIsBotHandoffMessageText_(sysPreview)
+                ) {
+                    continue;
+                }
             }
             const text = liveAgentVisitorLineText_(m);
             if (!text || !ms || typeof ms.renderCustomText !== "function") {
@@ -17358,15 +17395,15 @@ async function liveAgentPollTick_(dfMessenger) {
             if (isAgent) {
                 liveAgentRemoveAgentTypingDraft_(ms);
             }
-            let prefix = "";
             if (isAgent) {
                 const displayName =
                     typeof m.senderDisplayName === "string" && m.senderDisplayName.trim()
                         ? m.senderDisplayName.trim()
                         : liveAgentDisplayNameForEmail_(m.senderEmail);
-                prefix = displayName + ": ";
+                liveAgentRenderBotLineAtTranscriptEnd_(ms, text, { personaLabel: displayName });
+            } else {
+                liveAgentRenderBotLineAtTranscriptEnd_(ms, text, { withPersona: false });
             }
-            liveAgentRenderBotLineAtTranscriptEnd_(ms, isAgent ? text : prefix + text, { withPersona: true });
         }
         liveAgentSchedulePinRowsToTranscriptEnd_(ms);
         scheduleSuppressDfMessengerErrorUi_();

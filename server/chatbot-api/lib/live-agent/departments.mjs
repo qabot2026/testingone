@@ -147,28 +147,75 @@ export const LIVE_AGENT_HANDOFF_TO_BOT_MARKER_ = "live_agent_handoff_to_bot";
 export const LIVE_AGENT_BOT_ACTIVE_MARKER_ = "live_agent_bot_active";
 export const LIVE_AGENT_BOT_ACTIVE_VISITOR_TEXT_ = "AI assistant is replying now.";
 
-/** Agent desk: accept/join lines show the visitor name, not the agent's own name. */
-export function formatSystemMessageTextForAgent_(text, visitorDisplayName) {
+function agentNameFromSystemMsg_(msg, assignedAgentEmail, settings) {
+    const fromMsg = trim_(msg && (msg.senderDisplayName || msg.senderName));
+    const email =
+        normalizeEmail_(msg && msg.senderEmail) ||
+        normalizeEmail_(assignedAgentEmail) ||
+        "";
+    return fromMsg || resolveAgentDisplayName_(email, settings) || "Agent";
+}
+
+function isHumanHandoffToBotSystemText_(text) {
+    const t = trim_(text);
+    return t === LIVE_AGENT_HANDOFF_TO_BOT_MARKER_ || t === LIVE_AGENT_BOT_ACTIVE_MARKER_;
+}
+
+function isBotHandoffSystemText_(text) {
+    const t = trim_(text).toLowerCase();
+    return (
+        t === LIVE_AGENT_HANDOFF_TO_BOT_MARKER_ ||
+        t === LIVE_AGENT_BOT_ACTIVE_MARKER_ ||
+        t.includes("ai assistant is replying") ||
+        t.includes("the assistant is replying") ||
+        t.includes("stepped away")
+    );
+}
+
+function isHumanJoinSystemText_(text) {
+    const t = trim_(text);
+    return (
+        t === LIVE_AGENT_HUMAN_CONNECTED_MARKER_ ||
+        /^Agent\s+\S+@\S+\s+accepted the chat\.?$/i.test(t) ||
+        /^\S+@\S+\s+accepted the chat\.?$/i.test(t)
+    );
+}
+
+/** Agent desk / API — not visitor-facing copy (mirrors refer formatSystemMessageForAgent). */
+export function formatSystemMessageTextForAgent_(
+    text,
+    visitorDisplayName,
+    msg,
+    viewingAgentEmail,
+    settings,
+    assignedAgentEmail
+) {
     let t = trim_(text);
     if (!t) {
         return t;
     }
-    if (t === LIVE_AGENT_HUMAN_CONNECTED_MARKER_) {
-        const visitor = trim_(visitorDisplayName) || "Visitor";
-        return `You are now chatting with ${visitor}.`;
+    const me = normalizeEmail_(viewingAgentEmail);
+    const senderEmail =
+        normalizeEmail_(msg && msg.senderEmail) || normalizeEmail_(assignedAgentEmail);
+    const senderName = agentNameFromSystemMsg_(msg, assignedAgentEmail, settings);
+    const isMe = !!(me && senderEmail && me === senderEmail);
+
+    if (isHumanHandoffToBotSystemText_(t) || isBotHandoffSystemText_(t)) {
+        return isMe
+            ? "You stepped away. AI assistant is replying to the visitor."
+            : `${senderName} stepped away. AI assistant is replying to the visitor.`;
     }
-    const visitor = trim_(visitorDisplayName) || "Visitor";
+    if (t === LIVE_AGENT_HUMAN_REJOINED_MARKER_ || /joined again\.?$/i.test(t)) {
+        return isMe ? "You joined again." : `${senderName} joined again.`;
+    }
+    if (isHumanJoinSystemText_(t) || /^you are now chatting with\s+/i.test(t)) {
+        const visitor = trim_(visitorDisplayName) || "Visitor";
+        return `${visitor} joined the chat.`;
+    }
     const joined = t.match(/^(.+?)\s+joined the chat\.?$/i);
     if (joined) {
-        return `You are now chatting with ${visitor}.`;
-    }
-    const acceptLegacy = t.match(/^Agent\s+(\S+@\S+)\s+accepted the chat\.?$/i);
-    if (acceptLegacy) {
-        return `You are now chatting with ${visitor}.`;
-    }
-    const acceptShort = t.match(/^(\S+@\S+)\s+accepted the chat\.?$/i);
-    if (acceptShort) {
-        return `You are now chatting with ${visitor}.`;
+        const visitor = trim_(visitorDisplayName) || "Visitor";
+        return `${visitor} joined the chat.`;
     }
     return t;
 }

@@ -543,7 +543,8 @@ export function mountLiveAgentRoutes(app) {
                 sinceIso: since || undefined,
                 sinceId: sinceId || undefined,
                 limit: Number.isFinite(limitRaw) ? limitRaw : 80,
-                markReadFor: markRead ? "agent" : undefined
+                markReadFor: markRead ? "agent" : undefined,
+                viewingAgentEmail: req.liveAgentSession && req.liveAgentSession.agentId
             });
             const conversation = await getConversation_(conversationId);
             const typing = await getTypingState_(conversationId);
@@ -608,7 +609,8 @@ export function mountLiveAgentRoutes(app) {
                 clientRev: Number(req.query && (req.query.rev || req.query.revision)) || 0,
                 waitMs: Number(req.query && (req.query.wait || req.query.waitMs)) || 900,
                 sinceId: trim_(req.query && req.query.sinceId),
-                lastMessageId: trim_(req.query && (req.query.lastMessageId || req.query.sinceId))
+                lastMessageId: trim_(req.query && (req.query.lastMessageId || req.query.sinceId)),
+                viewingAgentEmail: req.liveAgentSession && req.liveAgentSession.agentId
             });
             res.json(payload);
         } catch (err) {

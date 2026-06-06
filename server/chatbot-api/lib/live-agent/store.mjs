@@ -140,6 +140,8 @@ async function enrichMessagesWithAgentNames_(messages, options = {}) {
     }
     const audience = options.audience === "agent" ? "agent" : "visitor";
     const visitorDisplayName = trim_(options.visitorDisplayName);
+    const viewingAgentEmail = trim_(options.viewingAgentEmail);
+    const assignedAgentEmail = trim_(options.assignedAgentEmail);
     try {
         const {
             resolveAgentDisplayName_,
@@ -158,7 +160,14 @@ async function enrichMessagesWithAgentNames_(messages, options = {}) {
             if (role === "system") {
                 const text =
                     audience === "agent"
-                        ? formatSystemMessageTextForAgent_(m.text, visitorDisplayName)
+                        ? formatSystemMessageTextForAgent_(
+                              m.text,
+                              visitorDisplayName,
+                              m,
+                              viewingAgentEmail,
+                              settings,
+                              assignedAgentEmail
+                          )
                         : formatSystemMessageTextForVisitor_(m.text, settings, m.senderEmail);
                 return {
                     ...m,
@@ -885,7 +894,14 @@ export async function appendMessage_({
     return serializeMessage_(msgRef.id, snap.data());
 }
 
-export async function listMessages_({ conversationId, sinceIso, limit, markReadFor }) {
+export async function listMessages_({
+    conversationId,
+    sinceIso,
+    limit,
+    markReadFor,
+    audience,
+    viewingAgentEmail
+}) {
     const id = safeConversationId_(conversationId);
     const db = firestoreDb_();
     const convRef = db.collection(conversationsCollection_()).doc(id);
@@ -924,25 +940,33 @@ export async function listMessages_({ conversationId, sinceIso, limit, markReadF
     }
 
     let visitorDisplayName = "";
-    if (markReadFor === "agent") {
+    let assignedAgentEmail = "";
+    const enrichAudience = audience === "agent" ? "agent" : "visitor";
+    const needsConvMeta = markReadFor === "agent" || enrichAudience === "agent";
+    if (needsConvMeta) {
         try {
             const convSnap = await convRef.get();
             if (convSnap.exists) {
                 const conv = serializeConversation_(id, convSnap.data());
                 const { resolveVisitorDisplayName_ } = await import("./visitor-name.mjs");
                 visitorDisplayName = resolveVisitorDisplayName_({ visitorName: conv.visitorName });
+                assignedAgentEmail = trim_(conv.assignedAgentEmail);
             }
         } catch (nameErr) {
             console.warn(LOG_TAG, "visitor display name for messages:", nameErr.message || nameErr);
         }
+    }
+    if (markReadFor === "agent") {
         await convRef.update({ unreadForAgent: 0 });
     } else if (markReadFor === "visitor") {
         await convRef.update({ unreadForVisitor: 0 });
     }
 
     return enrichMessagesWithAgentNames_(messages, {
-        audience: markReadFor === "agent" ? "agent" : "visitor",
-        visitorDisplayName
+        audience: enrichAudience,
+        visitorDisplayName,
+        viewingAgentEmail: enrichAudience === "agent" ? viewingAgentEmail : "",
+        assignedAgentEmail: enrichAudience === "agent" ? assignedAgentEmail : ""
     });
 }
 

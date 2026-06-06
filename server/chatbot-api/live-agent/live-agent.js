@@ -3263,7 +3263,14 @@
         if (!t) {
             return t;
         }
-        if (!t.startsWith("live_agent_") && !/^Agent\s+\S+@\S+\s+accepted the chat/i.test(t)) {
+        if (
+            !t.startsWith("live_agent_") &&
+            !/^Agent\s+\S+@\S+\s+accepted the chat/i.test(t) &&
+            !/stepped away/i.test(t) &&
+            !/joined again/i.test(t) &&
+            !/^you are now chatting with\s+/i.test(t) &&
+            !/ai assistant is replying/i.test(t)
+        ) {
             return t;
         }
         const senderEmail =
