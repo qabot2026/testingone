@@ -124,20 +124,11 @@ function visitorQueriesFromSession(session) {
     const role = trim(m.role).toLowerCase();
     const raw = trim(m.text);
     if (!raw || role === 'internal') return;
-    if (role === 'visitor') {
-      if (transcriptDisplay.isHandoffRequestLine(raw)) return;
-      const text = transcriptDisplay.normalizeUserQueryText(raw) || raw;
-      if (!text || transcriptDisplay.isInternalActionToken(text)) return;
-      lines.push(text);
-      return;
-    }
-    if (role === 'agent' || role === 'staff') {
-      const who =
-        trim(m.senderDisplayName) ||
-        trim(session.assignedAgentDisplayName) ||
-        'Agent';
-      lines.push(`${who}: ${raw}`);
-    }
+    if (role !== 'visitor') return;
+    if (transcriptDisplay.isHandoffRequestLine(raw)) return;
+    const text = transcriptDisplay.normalizeUserQueryText(raw) || raw;
+    if (!text || transcriptDisplay.isInternalActionToken(text)) return;
+    lines.push(text);
   });
   return lines.join(' | ').slice(0, 2000);
 }
