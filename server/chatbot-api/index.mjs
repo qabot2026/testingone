@@ -3010,8 +3010,9 @@ app.post(
                         : {})
                 };
             }
-            const chatTranscriptJsonForSheet =
-                stringifyChatTranscriptForSheetPayload_(mergedClientContext);
+            const chatTranscriptJsonForSheet = sheetsWriteChatTranscriptJsonEnabled_()
+                ? stringifyChatTranscriptForSheetPayload_(mergedClientContext)
+                : "";
             mergedClientContext = await enrichClientContextForSheetMetricsAsync_(mergedClientContext, {
                 sessionId: clientSessionId,
                 incomingRow: chatTranscriptJsonForSheet
@@ -3281,8 +3282,9 @@ app.post(
             || (await resolveCityForRequest(req));
         const userQueriesCsv = normalizeUserQueriesCsvFromClientContext(mergedClientContext);
         const sourceUrl = resolveSourceUrlForSheet(mergedClientContext);
-        const chatTranscriptJsonMobile =
-            stringifyChatTranscriptForSheetPayload_(mergedClientContext);
+        const chatTranscriptJsonMobile = sheetsWriteChatTranscriptJsonEnabled_()
+            ? stringifyChatTranscriptForSheetPayload_(mergedClientContext)
+            : "";
         mergedClientContext = await enrichClientContextForSheetMetricsAsync_(mergedClientContext, {
             sessionId: clientSessionId,
             incomingRow: chatTranscriptJsonMobile
@@ -3461,7 +3463,9 @@ app.post(
             : [];
         const hasLiveChatTranscript =
             coercedTranscript.length > 0 || assistantQueries.length > 0;
-        const chatTranscriptJson = stringifyChatTranscriptForSheetPayload_(mergedClientContext);
+        const chatTranscriptJson = sheetsWriteChatTranscriptJsonEnabled_()
+            ? stringifyChatTranscriptForSheetPayload_(mergedClientContext)
+            : "";
         if (!userQueriesCsv && !hasLiveChatTranscript) {
             return res.status(200).json({ ok: true, message: "Nothing to sync." });
         }
@@ -3609,7 +3613,9 @@ app.post(
             lead_transcript_patched: leadTranscriptPatched,
             firestore_disabled: FIRESTORE_DISABLED,
             chat_transcript_turns: coercedTranscript.length,
-            chat_transcript_json_written: Boolean(chatTranscriptJson),
+            chat_transcript_json_written: Boolean(
+                chatTranscriptJson && sheetsWriteChatTranscriptJsonEnabled_()
+            ),
             live_agent: liveAgentQueue
         });
     }
@@ -4716,6 +4722,13 @@ function sanitizeChatTranscriptForSheet_(arr) {
         out.push(o);
     }
     return out;
+}
+
+function sheetsWriteChatTranscriptJsonEnabled_() {
+    return (
+        process.env.SHEETS_WRITE_CHAT_TRANSCRIPT_JSON === "1"
+        || String(process.env.SHEETS_WRITE_CHAT_TRANSCRIPT_JSON || "").trim().toLowerCase() === "true"
+    );
 }
 
 /** Serialize widget `chat_transcript` for optional Google Sheets column (see SHEETS_CHAT_TRANSCRIPT_JSON_COLUMN). */

@@ -4493,26 +4493,89 @@ function isReservedColumnForChatTranscriptJson_(idx0) {
     );
 }
 
+/** Never store raw JSON in appointment / link / document columns (S = App. Time in current layout). */
+function isForbiddenTranscriptJsonHeaderKey_(nk) {
+    if (!nk) {
+        return true;
+    }
+    if (
+        nk === "apptime"
+        || nk === "appointmenttime"
+        || nk === "appointmentdate"
+        || nk === "appointmentbooked"
+        || nk === "appointmentdatetime"
+        || nk === "appdate"
+        || nk === "appbooked"
+    ) {
+        return true;
+    }
+    if (nk === "document" || nk === "documents" || nk === "drivefilelink" || nk === "filelinks") {
+        return true;
+    }
+    if (
+        nk === "convlink"
+        || nk === "conversationlink"
+        || nk === "chatscriptlink"
+        || nk === "chatscript"
+    ) {
+        return true;
+    }
+    if (/^app/.test(nk) && /(time|date|book|slot)/.test(nk)) {
+        return true;
+    }
+    return false;
+}
+
+/**
+ * @param {import("googleapis").sheets_v4.Sheets} sheets
+ * @param {string} tab
+ * @param {number} idx0
+ */
+async function sheetHeaderKeyAtIndex_(sheets, tab, idx0) {
+    if (!(idx0 >= 0)) {
+        return "";
+    }
+    const headers = await getSheetHeaderRowRaw_(sheets, tab);
+    if (!Array.isArray(headers) || idx0 >= headers.length) {
+        return "";
+    }
+    return normalizedHeaderKey_(sheetCellString_(headers[idx0]));
+}
+
 /**
  * @param {import("googleapis").sheets_v4.Sheets} sheets
  * @param {string} tab
  * @returns {Promise<string>}
  */
 async function resolveChatTranscriptColumnLetter_(sheets, tab) {
+    if (!SHEETS_WRITE_CHAT_TRANSCRIPT_JSON) {
+        return "";
+    }
     const envCol = SHEETS_CHAT_TRANSCRIPT_JSON_COLUMN.replace(/[^A-Z]/g, "");
     if (/^[A-Z]{1,3}$/.test(envCol)) {
         const envIdx = columnLetterToIndex0_(envCol);
-        if (!isReservedColumnForChatTranscriptJson_(envIdx)) {
-            return envCol;
+        const envHeaderKey = await sheetHeaderKeyAtIndex_(sheets, tab, envIdx);
+        if (
+            isReservedColumnForChatTranscriptJson_(envIdx)
+            || isForbiddenTranscriptJsonHeaderKey_(envHeaderKey)
+        ) {
+            console.warn(
+                "[chatbot-api] SHEETS_CHAT_TRANSCRIPT_JSON_COLUMN targets App. Time, Document, Conv. link, or another reserved column; JSON sheet writes skipped."
+            );
+            return "";
         }
-        console.warn(
-            "[chatbot-api] SHEETS_CHAT_TRANSCRIPT_JSON_COLUMN targets a reserved lead column (App. Time, Document, metrics, etc.); JSON sheet writes skipped."
-        );
-        return "";
+        return envCol;
     }
     const headerMap = await getHeaderIndexMap_(sheets, tab);
     const transcriptIdx = firstHeaderIdxFromAliases_(headerMap, CHAT_TRANSCRIPT_JSON_HEADER_ALIASES);
     if (transcriptIdx !== undefined && !isReservedColumnForChatTranscriptJson_(transcriptIdx)) {
+        const headerKey = await sheetHeaderKeyAtIndex_(sheets, tab, transcriptIdx);
+        if (isForbiddenTranscriptJsonHeaderKey_(headerKey)) {
+            console.warn(
+                "[chatbot-api] Chat transcript JSON header alias matched a reserved column; JSON sheet writes skipped."
+            );
+            return "";
+        }
         return columnLetterFromIndex_(transcriptIdx);
     }
     return "";
@@ -4525,8 +4588,8 @@ async function resolveChatTranscriptColumnLetter_(sheets, tab) {
  * @param {string} chatTranscriptJson
  */
 async function maybeWriteChatTranscriptJsonToSheetCell_(sheets, tab, rowNumber, chatTranscriptJson, opts) {
-    const forceSessionSync = !!(opts && opts.sessionSync === true);
-    if (!SHEETS_WRITE_CHAT_TRANSCRIPT_JSON && !forceSessionSync) {
+    void opts;
+    if (!SHEETS_WRITE_CHAT_TRANSCRIPT_JSON) {
         return false;
     }
     const raw = typeof chatTranscriptJson === "string" ? chatTranscriptJson.trim() : "";
