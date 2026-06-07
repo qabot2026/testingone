@@ -20504,6 +20504,7 @@ function trackChatUserQueryInSessionContext_(raw) {
             chat_transcript_seq: seq
         });
         scheduleSessionQueriesSheetSync_();
+        scheduleSessionTranscriptFirestoreSync_();
     } catch {
         /* ignore */
     }

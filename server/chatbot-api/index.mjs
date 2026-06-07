@@ -6506,6 +6506,60 @@ function userTurnsFromSheetQueriesCsv_(csv) {
 }
 
 /**
+ * Estimate `seq` / `at` for a user line rebuilt from Sheet CSV when Firestore lacks widget user rows.
+ * Maps user index k to the bot response it precedes (multiple user lines can share the same bot slot).
+ *
+ * @param {number} userIndex
+ * @param {{ role: string, text: string, at?: number, seq?: number }[]} assistants
+ * @param {number} baseAt
+ */
+function seqAtForUserQuerySlot_(userIndex, assistants, baseAt) {
+    const ai =
+        assistants.length > 0 ? Math.min(userIndex, assistants.length - 1) : -1;
+    if (ai < 0) {
+        return { seq: 2 * userIndex + 1, at: baseAt - (userIndex + 1) * 1500 };
+    }
+    const bot = assistants[ai];
+    const prevBot = ai > 0 ? assistants[ai - 1] : null;
+    let sameTarget = 0;
+    let myIndexAmongSame = 0;
+    for (let j = 0; j <= userIndex; j += 1) {
+        const targetAi =
+            assistants.length > 0 ? Math.min(j, assistants.length - 1) : -1;
+        if (targetAi === ai) {
+            if (j === userIndex) {
+                myIndexAmongSame = sameTarget;
+            }
+            sameTarget += 1;
+        }
+    }
+    const hiSeq =
+        bot && typeof bot.seq === "number" && Number.isFinite(bot.seq) ? bot.seq : NaN;
+    const loSeq =
+        prevBot && typeof prevBot.seq === "number" && Number.isFinite(prevBot.seq)
+            ? prevBot.seq
+            : 0;
+    const hiAt =
+        bot && typeof bot.at === "number" && Number.isFinite(bot.at) ? bot.at : baseAt;
+    const loAt =
+        prevBot && typeof prevBot.at === "number" && Number.isFinite(prevBot.at)
+            ? prevBot.at
+            : hiAt - Math.max(4000, (assistants.length + 2) * 900);
+    const frac = (myIndexAmongSame + 1) / (sameTarget + 1);
+    let seq;
+    if (Number.isFinite(hiSeq)) {
+        seq = Math.max(loSeq + 1, Math.floor(loSeq + (hiSeq - loSeq) * frac));
+        if (seq >= hiSeq) {
+            seq = Math.max(loSeq + 1, hiSeq - 1);
+        }
+    } else {
+        seq = 2 * userIndex + 1;
+    }
+    const at = Math.max(loAt + 1, Math.floor(loAt + (hiAt - loAt) * frac));
+    return { seq, at };
+}
+
+/**
  * Match sheet / session user-query lists to transcript user bubbles by multiset (keep duplicate utterances).
  *
  * @param {{ role: string, text: string, rich?: Record<string, unknown>, at?: number, seq?: number }[]} turns
@@ -6527,17 +6581,14 @@ function missingUserTurnsFromQueryLines_(turns, lines, atBase) {
             }
         }
     }
-    let maxSeq = 0;
-    for (let j = 0; j < turns.length; j += 1) {
-        const seq = turns[j] && typeof turns[j].seq === "number" ? turns[j].seq : NaN;
-        if (Number.isFinite(seq)) {
-            maxSeq = Math.max(maxSeq, seq);
-        }
-    }
+    const assistants = orderTranscriptTurnsForDisplay_(
+        turns.filter((t) => t && (t.role === "assistant" || t.role === "agent"))
+    );
     const baseAt =
         typeof atBase === "number" && Number.isFinite(atBase) ? atBase : Date.now();
     /** @type {{ role: string, text: string, at: number, seq: number }[]} */
     const extra = [];
+    let userSlot = 0;
     for (let k = 0; k < lines.length; k += 1) {
         const text = typeof lines[k] === "string" ? lines[k].trim() : "";
         if (!text || shouldOmitTranscriptUserTurn_(text)) {
@@ -6550,18 +6601,86 @@ function missingUserTurnsFromQueryLines_(turns, lines, atBase) {
         const idx = pendingNorms.indexOf(norm);
         if (idx >= 0) {
             pendingNorms.splice(idx, 1);
+            userSlot += 1;
             continue;
         }
-        maxSeq += 1;
+        const slot = seqAtForUserQuerySlot_(userSlot, assistants, baseAt);
         extra.push({
             role: "user",
             text,
-            seq: maxSeq,
-            at: baseAt - (lines.length - 1 - k) * 1500
+            seq: slot.seq,
+            at: slot.at
         });
         pendingNorms.push(norm);
+        userSlot += 1;
     }
     return extra;
+}
+
+/**
+ * Rebuild user bubbles in Sheet / session query order and interleave with bot rows via `seq` / `at`.
+ *
+ * @param {{ role: string, text: string, rich?: Record<string, unknown>, at?: number, seq?: number }[]} turns
+ * @param {string[]} lines
+ */
+function reorderTranscriptUsersFromAuthoritativeLines_(turns, lines) {
+    const base = Array.isArray(turns) ? turns.slice() : [];
+    if (!lines.length) {
+        return base;
+    }
+    /** @type {Map<string, { role: string, text: string, rich?: Record<string, unknown>, at?: number, seq?: number }[]>} */
+    const userQueues = new Map();
+    for (let i = 0; i < base.length; i += 1) {
+        const t = base[i];
+        if (!t || t.role !== "user") {
+            continue;
+        }
+        const norm = transcriptUserCompareNorm_(t.text);
+        if (!norm) {
+            continue;
+        }
+        if (!userQueues.has(norm)) {
+            userQueues.set(norm, []);
+        }
+        userQueues.get(norm).push(t);
+    }
+    const assistants = orderTranscriptTurnsForDisplay_(
+        base.filter((t) => t && (t.role === "assistant" || t.role === "agent"))
+    );
+    const baseAt = Date.now();
+    /** @type {{ role: string, text: string, rich?: Record<string, unknown>, at?: number, seq?: number }[]} */
+    const usersOrdered = [];
+    let userSlot = 0;
+    for (let k = 0; k < lines.length; k += 1) {
+        const text = typeof lines[k] === "string" ? lines[k].trim() : "";
+        if (!text || shouldOmitTranscriptUserTurn_(text)) {
+            continue;
+        }
+        const norm = transcriptUserCompareNorm_(text);
+        if (!norm) {
+            continue;
+        }
+        const queue = userQueues.get(norm);
+        if (queue && queue.length) {
+            usersOrdered.push(queue.shift());
+            userSlot += 1;
+            continue;
+        }
+        const slot = seqAtForUserQuerySlot_(userSlot, assistants, baseAt);
+        usersOrdered.push({
+            role: "user",
+            text,
+            seq: slot.seq,
+            at: slot.at
+        });
+        userSlot += 1;
+    }
+    for (const leftover of userQueues.values()) {
+        for (let u = 0; u < leftover.length; u += 1) {
+            usersOrdered.push(leftover[u]);
+        }
+    }
+    return orderTranscriptTurnsForDisplay_([...usersOrdered, ...assistants]);
 }
 
 /**
@@ -6573,11 +6692,7 @@ function reinforceTranscriptUserTurnsFromQueriesCsv_(turns, csv) {
     if (!lines.length) {
         return Array.isArray(turns) ? turns.slice() : [];
     }
-    const extra = missingUserTurnsFromQueryLines_(turns, lines);
-    if (!extra.length) {
-        return Array.isArray(turns) ? turns.slice() : [];
-    }
-    return orderTranscriptTurnsForDisplay_(mergeConversationTranscriptTurnSources_(turns, extra));
+    return reorderTranscriptUsersFromAuthoritativeLines_(turns, lines);
 }
 
 app.options(PATHNAME_CONVERSATIONS_SHEET_JSON, (req, res) => {
@@ -6896,15 +7011,16 @@ app.get(PATHNAME_CONVERSATION_TRANSCRIPT_JSON, async (req, res) => {
             }
         }
 
-        turns = augmentTranscriptWithMissingUserQueries_(turns, [
-            firestoreRec && typeof firestoreRec.client_context === "object"
-                ? /** @type {Record<string, unknown>} */ (firestoreRec.client_context)
-                : null,
-            liveCx && typeof liveCx === "object" ? liveCx : null
-        ]);
         if (authoritativeUserQueriesCsv) {
             turns = reinforceTranscriptUserTurnsFromQueriesCsv_(turns, authoritativeUserQueriesCsv);
-            sourceParts.push("sheet_user_queries_reinforced");
+            sourceParts.push("sheet_user_queries_interleaved");
+        } else {
+            turns = augmentTranscriptWithMissingUserQueries_(turns, [
+                firestoreRec && typeof firestoreRec.client_context === "object"
+                    ? /** @type {Record<string, unknown>} */ (firestoreRec.client_context)
+                    : null,
+                liveCx && typeof liveCx === "object" ? liveCx : null
+            ]);
         }
         turns = polishTranscriptAssistantPlaceholderTurns_(turns);
 
