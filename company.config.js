@@ -120,12 +120,12 @@ window.COMPANY_CHAT_UI_CONFIG = {
       botTextNudgeLeftPx: 10,
       /** Space between bot persona label (Quality) and time (~1 character). */
       botLabelTimeGapPx: 6,
-      /** Human agent connected — bot cat image up (px). */
-      liveAgentBotImageNudgeUpPx: 10,
-      /** Human agent connected — user persona row up (px). */
-      liveAgentUserPersonaNudgeUpPx: 10,
-      /** AI co-pilot (Bot on) during handoff — user persona row up (px). */
-      liveAgentAiUserPersonaNudgeUpPx: 2
+      /** When false (default), agent connect/disconnect does not move bot or user persona positions. */
+      applyLiveAgentLayoutNudges: false,
+      /** Only used when applyLiveAgentLayoutNudges is true. */
+      liveAgentBotImageNudgeUpPx: 0,
+      liveAgentUserPersonaNudgeUpPx: 0,
+      liveAgentAiUserPersonaNudgeUpPx: 0
     },
 
     // Features ON / OFF — each block should include `enabled: true` or `false`

@@ -318,7 +318,9 @@ function readPersonaDisplayConfig() {
                 ? Math.max(0, Math.min(32, pd.liveAgentAiUserPersonaNudgeUpPx))
                 : typeof pd.liveAgentUserPersonaNudgeUpPx === "number" && Number.isFinite(pd.liveAgentUserPersonaNudgeUpPx)
                   ? Math.max(0, Math.min(32, pd.liveAgentUserPersonaNudgeUpPx))
-                  : 2
+                  : 2,
+        /** When false (default), agent connect/disconnect does not move bot or user persona positions. */
+        applyLiveAgentLayoutNudges: pd.applyLiveAgentLayoutNudges === true
     };
 }
 
@@ -1199,6 +1201,10 @@ function liveAgentHumanChatPersonaLayoutActive_() {
     return liveAgentHandoffIsActive_() && liveAgentVisitorAgentChatActive_();
 }
 
+function liveAgentPersonaLayoutNudgesEnabled_() {
+    return PERSONA_DISPLAY_CONFIG.applyLiveAgentLayoutNudges === true;
+}
+
 function liveAgentAiChatPersonaLayoutActive_() {
     return liveAgentHandoffIsActive_() && liveAgentCoPilotAiEnabled_();
 }
@@ -1229,6 +1235,9 @@ function cssUserPersonaRowDownShiftForLaUp_(laUp) {
 }
 
 function cssUserPersonaRowDownShift_() {
+    if (!liveAgentPersonaLayoutNudgesEnabled_()) {
+        return cssPersonaRowDownShift_();
+    }
     const base = cssPersonaRowDownShiftPx_();
     if (liveAgentHumanChatPersonaLayoutActive_()) {
         return cssUserPersonaRowDownShiftForLaUp_(cssLiveAgentUserPersonaNudgeUpPx_());
@@ -1266,119 +1275,67 @@ function userPersonaMarkdownHostLayoutFrozen_(mdHost) {
     return "";
 }
 
-/** @param {HTMLElement} entry @param {"human" | "ai" | string} mode */
-function applyUserPersonaFrozenLayoutToEntry_(entry, mode) {
-    if (!(entry instanceof HTMLElement)) {
-        return;
-    }
-    const laUserUp =
-        mode === "ai" ? cssLiveAgentAiUserPersonaNudgeUpPx_() : cssLiveAgentUserPersonaNudgeUpPx_();
-    const rowShift = cssUserPersonaRowDownShiftForLaUp_(laUserUp);
-    entry.dataset.dfchatUserPersonaFrozen = mode;
-    try {
-        entry.style.setProperty("transform", `translateY(${rowShift})`, "important");
-        entry.style.setProperty("margin-top", cssUserPersonaMarginTopWithLaUp_(laUserUp, entry), "important");
-    } catch {
-        /* ignore */
-    }
-    const md = entry.querySelector?.(".message.bot-message.markdown.dfchat-user-persona-md");
-    if (md instanceof HTMLElement) {
-        md.dataset.dfchatUserPersonaFrozen = mode;
-        try {
-            md.style.setProperty("transform", `translateY(-${laUserUp}px)`, "important");
-        } catch {
-            /* ignore */
-        }
-    }
-}
-
-/** Keep user persona rows at live-agent offsets after human/AI handoff ends. */
-function freezeUserPersonaLayoutFromLiveAgent_(dfMessenger, mode) {
-    const list = findMessengerMessageListRoot(dfMessenger || activeDfMessenger);
+/** Restore normal bot-chat persona positions after agent handoff ends. */
+function resetUserPersonaLayoutsFromLiveAgent_(dfMessenger) {
+    liveAgentUserPersonaLayoutSessionFrozen_ = false;
+    liveAgentUserPersonaLayoutFrozenMode_ = "";
+    const ms = dfMessenger || activeDfMessenger;
+    const list = findMessengerMessageListRoot(ms);
     if (!list) {
         return;
     }
-    liveAgentUserPersonaLayoutSessionFrozen_ = true;
-    liveAgentUserPersonaLayoutFrozenMode_ = mode;
-    list.dataset.dfchatUserPersonaLayoutFrozen = mode;
-    const laUserUp =
-        mode === "ai" ? cssLiveAgentAiUserPersonaNudgeUpPx_() : cssLiveAgentUserPersonaNudgeUpPx_();
-    const seen = new Set();
-    const personaRows = liveAgentCollectUserPersonaRows_(list);
-    for (let i = 0; i < personaRows.length; i += 1) {
-        const row = personaRows[i];
-        const entry =
-            row instanceof HTMLElement && row.classList.contains("entry")
-                ? row
-                : resolveBotPersonaEntry_(row);
-        if (!(entry instanceof HTMLElement) || seen.has(entry)) {
-            continue;
-        }
-        seen.add(entry);
-        applyUserPersonaFrozenLayoutToEntry_(entry, mode);
-    }
+    delete list.dataset.dfchatUserPersonaLayoutFrozen;
+    delete list.dataset.dfchatLiveAgentHumanChat;
+    delete list.dataset.dfchatLiveAgentAiChat;
     list.querySelectorAll(
         ".entry.bot.dfchat-user-persona-caption-bot-entry, .entry.bot.dfchat-user-persona-entry"
     ).forEach((entry) => {
-        if (!(entry instanceof HTMLElement) || seen.has(entry)) {
+        if (!(entry instanceof HTMLElement)) {
             return;
         }
-        seen.add(entry);
-        applyUserPersonaFrozenLayoutToEntry_(entry, mode);
+        delete entry.dataset.dfchatUserPersonaFrozen;
+        entry.style.removeProperty("transform");
+        entry.style.removeProperty("margin-top");
+        let sibling = entry.nextElementSibling;
+        let paired = false;
+        while (sibling && sibling.nodeType === Node.ELEMENT_NODE) {
+            const h = /** @type {HTMLElement} */ (sibling);
+            if (h.classList && h.classList.contains("entry") && h.classList.contains("user")) {
+                snugUserPersonaEntryToUserRow_(entry, h);
+                paired = true;
+                break;
+            }
+            if (h.classList && h.classList.contains("entry")) {
+                break;
+            }
+            sibling = h.nextElementSibling;
+        }
+        if (!paired) {
+            try {
+                entry.style.setProperty("transform", `translateY(${cssUserPersonaRowDownShift_()})`, "important");
+                entry.style.setProperty("margin-top", cssUserPersonaMarginTopForEntry_(entry), "important");
+            } catch {
+                /* ignore */
+            }
+        }
     });
     list.querySelectorAll(".message.bot-message.markdown.dfchat-user-persona-md").forEach((md) => {
-        if (!(md instanceof HTMLElement) || md.dataset.dfchatUserPersonaFrozen) {
-            return;
-        }
-        md.dataset.dfchatUserPersonaFrozen = mode;
-        try {
-            md.style.setProperty("transform", `translateY(-${laUserUp}px)`, "important");
-        } catch {
-            /* ignore */
-        }
-    });
-}
-
-/** Re-assert frozen persona offsets after decorate/CSS refresh (decorator was resetting transforms). */
-function reapplyUserPersonaFrozenLayouts_(dfMessenger) {
-    if (!liveAgentUserPersonaLayoutSessionFrozen_) {
-        return;
-    }
-    const list = findMessengerMessageListRoot(dfMessenger || activeDfMessenger);
-    if (!list) {
-        return;
-    }
-    const fallbackMode = liveAgentUserPersonaLayoutFrozenMode_ || "human";
-    list.querySelectorAll(
-        ".entry.bot.dfchat-user-persona-caption-bot-entry[data-dfchat-user-persona-frozen], "
-            + ".entry.bot.dfchat-user-persona-entry[data-dfchat-user-persona-frozen]"
-    ).forEach((entry) => {
-        if (entry instanceof HTMLElement) {
-            applyUserPersonaFrozenLayoutToEntry_(
-                entry,
-                entry.dataset.dfchatUserPersonaFrozen || fallbackMode
-            );
-        }
-    });
-    list.querySelectorAll(".message.bot-message.markdown.dfchat-user-persona-md[data-dfchat-user-persona-frozen]").forEach((md) => {
         if (!(md instanceof HTMLElement)) {
             return;
         }
-        const mode = md.dataset.dfchatUserPersonaFrozen || fallbackMode;
-        const laUserUp =
-            mode === "ai" ? cssLiveAgentAiUserPersonaNudgeUpPx_() : cssLiveAgentUserPersonaNudgeUpPx_();
-        try {
-            md.style.setProperty("transform", `translateY(-${laUserUp}px)`, "important");
-        } catch {
-            /* ignore */
-        }
+        delete md.dataset.dfchatUserPersonaFrozen;
+        md.style.removeProperty("transform");
     });
+    try {
+        applyPersonaImageGuardToMessenger(ms);
+    } catch {
+        /* ignore */
+    }
 }
 
 /** Re-apply user persona snug offsets after live-agent layout flags change. */
 function refreshLiveAgentUserPersonaLayout_(dfMessenger) {
-    if (liveAgentUserPersonaLayoutSessionFrozen_) {
-        reapplyUserPersonaFrozenLayouts_(dfMessenger);
+    if (!liveAgentPersonaLayoutNudgesEnabled_()) {
         return;
     }
     const list = findMessengerMessageListRoot(dfMessenger || activeDfMessenger);
@@ -1448,24 +1405,25 @@ function syncLiveAgentPersonaLayoutFlags_(dfMessenger) {
     const humanNow = liveAgentHumanChatPersonaLayoutActive_();
     const aiNow = liveAgentAiChatPersonaLayoutActive_();
     if (liveAgentPersonaLayoutWasHuman_ && !humanNow) {
-        freezeUserPersonaLayoutFromLiveAgent_(ms, "human");
-    }
-    if (liveAgentPersonaLayoutWasAi_ && !aiNow) {
-        freezeUserPersonaLayoutFromLiveAgent_(ms, "ai");
+        resetUserPersonaLayoutsFromLiveAgent_(ms);
+    } else if (liveAgentPersonaLayoutWasAi_ && !aiNow) {
+        resetUserPersonaLayoutsFromLiveAgent_(ms);
     }
     liveAgentPersonaLayoutWasHuman_ = humanNow;
     liveAgentPersonaLayoutWasAi_ = aiNow;
-    if (humanNow) {
-        list.dataset.dfchatLiveAgentHumanChat = "1";
-    } else if (list.dataset.dfchatLiveAgentHumanChat) {
-        delete list.dataset.dfchatLiveAgentHumanChat;
+    if (liveAgentPersonaLayoutNudgesEnabled_()) {
+        if (humanNow) {
+            list.dataset.dfchatLiveAgentHumanChat = "1";
+        } else if (list.dataset.dfchatLiveAgentHumanChat) {
+            delete list.dataset.dfchatLiveAgentHumanChat;
+        }
+        if (liveAgentAiChatPersonaLayoutActive_()) {
+            list.dataset.dfchatLiveAgentAiChat = "1";
+        } else if (list.dataset.dfchatLiveAgentAiChat) {
+            delete list.dataset.dfchatLiveAgentAiChat;
+        }
+        refreshLiveAgentUserPersonaLayout_(dfMessenger || activeDfMessenger);
     }
-    if (liveAgentAiChatPersonaLayoutActive_()) {
-        list.dataset.dfchatLiveAgentAiChat = "1";
-    } else if (list.dataset.dfchatLiveAgentAiChat) {
-        delete list.dataset.dfchatLiveAgentAiChat;
-    }
-    refreshLiveAgentUserPersonaLayout_(dfMessenger || activeDfMessenger);
 }
 
 /** User persona avatar transform (image only — not the caption row). */
@@ -1485,10 +1443,12 @@ function cssUserPersonaImageTransform_() {
 function cssUserPersonaMarginTop() {
     const extra = Math.max(-48, Math.min(32, BOT_PERSONA_CONFIG.userPersonaNudgeUpPx ?? 0));
     let laUp = 0;
-    if (liveAgentHumanChatPersonaLayoutActive_()) {
-        laUp = cssLiveAgentUserPersonaNudgeUpPx_();
-    } else if (liveAgentAiChatPersonaLayoutActive_()) {
-        laUp = cssLiveAgentAiUserPersonaNudgeUpPx_();
+    if (liveAgentPersonaLayoutNudgesEnabled_()) {
+        if (liveAgentHumanChatPersonaLayoutActive_()) {
+            laUp = cssLiveAgentUserPersonaNudgeUpPx_();
+        } else if (liveAgentAiChatPersonaLayoutActive_()) {
+            laUp = cssLiveAgentAiUserPersonaNudgeUpPx_();
+        }
     }
     return `${-(6 + extra + laUp)}px`;
 }
@@ -18988,7 +18948,7 @@ async function liveAgentPollTick_(dfMessenger) {
             clearLiveAgentRequestedInSession_();
             setLiveAgentHandoffActive_(false);
             const ms0 = dfMessenger || activeDfMessenger;
-            freezeUserPersonaLayoutFromLiveAgent_(ms0, "human");
+            resetUserPersonaLayoutsFromLiveAgent_(ms0);
             syncLiveAgentPersonaLayoutFlags_(ms0);
             if (ms0 && typeof ms0.renderCustomText === "function") {
                 liveAgentRenderBotLineAtTranscriptEnd_(
@@ -28536,7 +28496,6 @@ function applyUserPersonaMarkdownChrome_(mdHost) {
     if (!mdHost) {
         return;
     }
-    const frozenMode = userPersonaMarkdownHostLayoutFrozen_(mdHost);
     let el = /** @type {HTMLElement | null} */ (mdHost);
     for (let i = 0; el && i < 28; i += 1) {
         const tag = el.tagName ? el.tagName.toUpperCase() : "";
@@ -28608,15 +28567,8 @@ function applyUserPersonaMarkdownChrome_(mdHost) {
                 el.style.setProperty("justify-content", "flex-end", "important");
                 el.style.setProperty("margin-left", "auto", "important");
                 el.style.setProperty("margin-right", "0", "important");
-                if (frozenMode || userPersonaEntryLayoutFrozen_(el)) {
-                    applyUserPersonaFrozenLayoutToEntry_(
-                        el,
-                        frozenMode || el.dataset.dfchatUserPersonaFrozen || "human"
-                    );
-                } else {
-                    el.style.setProperty("margin-top", "0", "important");
-                    el.style.setProperty("margin-bottom", "2px", "important");
-                }
+                el.style.setProperty("margin-top", "0", "important");
+                el.style.setProperty("margin-bottom", "2px", "important");
                 el.style.setProperty("padding", "0", "important");
                 el.style.setProperty("background", "transparent", "important");
             }
@@ -28635,9 +28587,7 @@ function applyUserPersonaMarkdownChrome_(mdHost) {
                 el.style.setProperty("background-color", "transparent", "important");
                 el.style.setProperty("background-image", "none", "important");
                 el.style.setProperty("padding", "0 6px", "important");
-                if (!frozenMode) {
-                    el.style.setProperty("margin-top", "0", "important");
-                }
+                el.style.setProperty("margin-top", "0", "important");
                 el.style.setProperty("margin-bottom", "0", "important");
                 el.style.setProperty("margin-left", "auto", "important");
                 el.style.setProperty("margin-right", "0", "important");
@@ -28661,18 +28611,7 @@ function applyUserPersonaMarkdownChrome_(mdHost) {
                 } catch {
                     /* ignore */
                 }
-                if (frozenMode) {
-                    const laUserUp =
-                        frozenMode === "ai"
-                            ? cssLiveAgentAiUserPersonaNudgeUpPx_()
-                            : cssLiveAgentUserPersonaNudgeUpPx_();
-                    const frozenTransform =
-                        `translateY(-${laUserUp}px)${tx && tx !== "none" ? ` ${tx}` : ""}`;
-                    el.style.setProperty("transform", frozenTransform, "important");
-                    el.dataset.dfchatUserPersonaFrozen = frozenMode;
-                } else {
-                    el.style.setProperty("transform", tx, "important");
-                }
+                el.style.setProperty("transform", tx, "important");
                 el.style.removeProperty("-webkit-filter");
                 // Markdown body wraps in <p>. Style its <strong> as the persona caption: small,
                 // colored, soft-blurred, sitting on one line with the emoji.
@@ -29709,7 +29648,7 @@ function decoratePersonaMessages(dfMessenger) {
     }
 
     try {
-        reapplyUserPersonaFrozenLayouts_(dfMessenger);
+        schedulePersonaShadowFix(dfMessenger);
     } catch {
         /* ignore */
     }
