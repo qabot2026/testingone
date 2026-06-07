@@ -110,7 +110,9 @@ window.COMPANY_CHAT_UI_CONFIG = {
       botImageNudgeUpPx: 10,
       /** User avatar only — nudge image down (px). Label/time text stays put. */
       userImageNudgeDownPx: 3,
-      /** User persona name/time text only — nudge up (px). Avatar stays put. */
+      /** User persona label ("You") only — nudge up (px). Avatar stays put. */
+      userLabelNudgeUpPx: 5,
+      /** User persona time text only — nudge up (px). */
       userTextNudgeUpPx: 5,
       /** Bot Quality name/time text only — nudge left (px). Cat image stays put. */
       botTextNudgeLeftPx: 10,

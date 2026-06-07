@@ -273,7 +273,12 @@ function readPersonaDisplayConfig() {
             typeof pd.userImageNudgeDownPx === "number" && Number.isFinite(pd.userImageNudgeDownPx)
                 ? Math.max(-32, Math.min(32, pd.userImageNudgeDownPx))
                 : 3,
-        /** User persona name/time text only — nudge up (px); avatar image stays put. */
+        /** User persona label (e.g. "You") only — nudge up (px); avatar stays put. */
+        userLabelNudgeUpPx:
+            typeof pd.userLabelNudgeUpPx === "number" && Number.isFinite(pd.userLabelNudgeUpPx)
+                ? Math.max(-32, Math.min(32, pd.userLabelNudgeUpPx))
+                : 5,
+        /** User persona time text only — nudge up (px). */
         userTextNudgeUpPx:
             typeof pd.userTextNudgeUpPx === "number" && Number.isFinite(pd.userTextNudgeUpPx)
                 ? Math.max(-32, Math.min(32, pd.userTextNudgeUpPx))
@@ -1155,6 +1160,10 @@ function cssUserPersonaImageNudgeDownPx_() {
 
 function cssUserPersonaTextNudgeUpPx_() {
     return Math.max(-32, Math.min(32, PERSONA_DISPLAY_CONFIG.userTextNudgeUpPx ?? 5));
+}
+
+function cssUserPersonaLabelNudgeUpPx_() {
+    return Math.max(-32, Math.min(32, PERSONA_DISPLAY_CONFIG.userLabelNudgeUpPx ?? 5));
 }
 
 function cssBotPersonaTextNudgeLeftPx_() {
@@ -26709,9 +26718,15 @@ function buildPersonaImageMarkdownWithTime_(baseUrl, label, timeLabel, urlMarker
         return imgMd;
     }
     if (l && t) {
+        if (marker === PERSONA_URL_MARKER_USER_IMG) {
+            return `${imgMd} <span class="dfchat-user-persona-label">${l}</span> **${t}**`;
+        }
         return `${imgMd} ${l} **${t}**`;
     }
     if (l) {
+        if (marker === PERSONA_URL_MARKER_USER_IMG) {
+            return `${imgMd} <span class="dfchat-user-persona-label">${l}</span>`;
+        }
         return `${imgMd} ${l}`;
     }
     if (t) {
@@ -26882,6 +26897,7 @@ function getPersonaImageGuardCss() {
     const mobX = `${(cfg.mode === "image" ? img.offsetRightPx : 0) - img.mobileNudgeLeftPx}px`;
     const userImgDown = `${cssUserPersonaImageNudgeDownPx_()}px`;
     const userTextUp = `${cssUserPersonaTextNudgeUpPx_()}px`;
+    const userLabelUp = `${cssUserPersonaLabelNudgeUpPx_()}px`;
     const timeDown = cfg.mode === "image" ? `${img.timeOffsetDownPx}px` : "0px";
     const timeRight = cfg.mode === "image" ? `${img.timeOffsetRightPx}px` : "0px";
     const rowDown = cssPersonaRowDownShift_();
@@ -27142,12 +27158,22 @@ img[src*="%23dfchat-user-persona-img"] {
   opacity: 1 !important;
   transform: translateY(${userImgDown}) !important;
 }
+.message.bot-message.markdown.dfchat-user-persona-md .dfchat-user-persona-label,
+.message.bot-message.markdown.dfchat-user-persona-md span.dfchat-user-persona-label {
+  display: inline-block !important;
+  vertical-align: middle !important;
+  color: ${PERSONA_TEXT_COLOR} !important;
+  font-size: ${PERSONA_DISPLAY_CONFIG.nameFontSizePx}px !important;
+  font-weight: 600 !important;
+  filter: blur(${PERSONA_DISPLAY_CONFIG.blurPx}px) !important;
+  opacity: ${PERSONA_DISPLAY_CONFIG.opacity} !important;
+  transform: translateY(-${userLabelUp}) !important;
+}
 .message.bot-message.markdown.dfchat-user-persona-md:has(img[src*="dfchat-user-persona-img"]) p + p,
 .message.bot-message.markdown.dfchat-user-persona-md:has(img[src*="%23dfchat-user-persona-img"]) p + p {
   color: ${PERSONA_TEXT_COLOR} !important;
   font-size: ${PERSONA_DISPLAY_CONFIG.nameFontSizePx}px !important;
   font-weight: 600 !important;
-  transform: translateY(-${userTextUp}) !important;
 }
 .message.bot-message.markdown.dfchat-user-persona-md:has(img[src*="dfchat-user-persona-img"]) p strong,
 .message.bot-message.markdown.dfchat-user-persona-md:has(img[src*="%23dfchat-user-persona-img"]) p strong {
