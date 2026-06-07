@@ -427,7 +427,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
         /** Minimum “Typing…” time after the user sends before bot persona/extras (ms). 0 = no extra wait. */
         minTypingIndicatorMs: 0,
         /** Extra delay before bot persona caption after a reply (ms). */
-        botPersonaDelayMs: 1000
+        botPersonaDelayMs: 0
       }
     },
 

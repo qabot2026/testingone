@@ -1294,6 +1294,8 @@ function resetUserPersonaLayoutsFromLiveAgent_(dfMessenger) {
             return;
         }
         delete entry.dataset.dfchatUserPersonaFrozen;
+        delete entry.dataset.dfchatPersonaPairSnugged;
+        delete entry.dataset.dfchatUserPersonaEntryMoved;
         entry.style.removeProperty("transform");
         entry.style.removeProperty("margin-top");
         let sibling = entry.nextElementSibling;
@@ -1324,13 +1326,21 @@ function resetUserPersonaLayoutsFromLiveAgent_(dfMessenger) {
             return;
         }
         delete md.dataset.dfchatUserPersonaFrozen;
+        delete md.dataset.dfchatUserPersonaEntryMoved;
         md.style.removeProperty("transform");
+    });
+    list.querySelectorAll(".entry.bot.dfchat-user-persona-caption-bot-entry").forEach((row) => {
+        if (row instanceof HTMLElement) {
+            delete row.dataset.dfchatUserPersonaRowMoved;
+            delete row.dataset.dfchatPersonaPairSnugged;
+        }
     });
     try {
         applyPersonaImageGuardToMessenger(ms);
     } catch {
         /* ignore */
     }
+    liveAgentRepairUserPersonaPairing_(list);
 }
 
 /** Re-apply user persona snug offsets after live-agent layout flags change. */
@@ -1406,8 +1416,11 @@ function syncLiveAgentPersonaLayoutFlags_(dfMessenger) {
     const aiNow = liveAgentAiChatPersonaLayoutActive_();
     if (liveAgentPersonaLayoutWasHuman_ && !humanNow) {
         resetUserPersonaLayoutsFromLiveAgent_(ms);
+        liveAgentRemoveTailAnchor_(list);
+        liveAgentScheduleRepairUserPersonaPairing_(ms);
     } else if (liveAgentPersonaLayoutWasAi_ && !aiNow) {
         resetUserPersonaLayoutsFromLiveAgent_(ms);
+        liveAgentScheduleRepairUserPersonaPairing_(ms);
     }
     liveAgentPersonaLayoutWasHuman_ = humanNow;
     liveAgentPersonaLayoutWasAi_ = aiNow;
@@ -19738,6 +19751,7 @@ function attachPersonaHandlers(dfMessenger) {
                     && (!liveAgentHandoffIsActive_() || liveAgentAllowDialogflowForUserText_())
                 ) {
                     renderUserPersona(ms);
+                    liveAgentScheduleRepairUserPersonaPairing_(ms);
                 }
                 scheduleScrollMessageListToBottom_(ms, { force: true });
                 scheduleClearDfMessengerComposerInput_();
@@ -26941,9 +26955,7 @@ function renderUserPersonaBeforeUserText_(dfMessenger, userText) {
     ms.renderCustomText(t, false);
     schedulePersonaShadowFix(ms);
     scheduleScrollMessageListToBottom_(ms, { force: true });
-    if (liveAgentHumanChatPersonaLayoutActive_()) {
-        liveAgentScheduleRepairUserPersonaPairing_(ms);
-    }
+    liveAgentScheduleRepairUserPersonaPairing_(ms);
 }
 
 function renderPersona(dfMessenger, personaType, label, timeLabelForUser, opts) {
@@ -27723,11 +27735,9 @@ function schedulePersonaShadowFix(dfMessenger) {
     const run = () => {
         applyPersonaImageGuardToMessenger(dfMessenger);
         decoratePersonaMessages(dfMessenger);
-        if (liveAgentVisitorAgentChatActive_()) {
-            const list = findMessengerMessageListRoot(dfMessenger);
-            if (list) {
-                liveAgentRepairUserPersonaPairing_(list);
-            }
+        const list = findMessengerMessageListRoot(dfMessenger);
+        if (list) {
+            liveAgentRepairUserPersonaPairing_(list);
         }
     };
     run();
@@ -27746,11 +27756,9 @@ function startPersonaDecorator(dfMessenger) {
         applyPersonaImageGuardToMessenger(ms);
         decoratePersonaMessages(ms);
         syncLiveAgentPersonaLayoutFlags_(ms);
-        if (liveAgentVisitorAgentChatActive_()) {
-            const list = findMessengerMessageListRoot(ms);
-            if (list) {
-                liveAgentRepairUserPersonaPairing_(list);
-            }
+        const list = findMessengerMessageListRoot(ms);
+        if (list) {
+            liveAgentRepairUserPersonaPairing_(list);
         }
     };
 
