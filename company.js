@@ -282,6 +282,10 @@ function readPersonaDisplayConfig() {
             typeof pd.userImageNudgeDownPx === "number" && Number.isFinite(pd.userImageNudgeDownPx)
                 ? Math.max(-32, Math.min(32, pd.userImageNudgeDownPx))
                 : 3,
+        userPersonaRowNudgeDownPx:
+            typeof pd.userPersonaRowNudgeDownPx === "number" && Number.isFinite(pd.userPersonaRowNudgeDownPx)
+                ? Math.max(-32, Math.min(32, pd.userPersonaRowNudgeDownPx))
+                : 0,
         /** User persona label (e.g. "You") only — nudge up (px); avatar stays put. */
         userLabelNudgeUpPx:
             typeof pd.userLabelNudgeUpPx === "number" && Number.isFinite(pd.userLabelNudgeUpPx)
@@ -1179,6 +1183,15 @@ function cssBotPersonaImageNudgeUpPx_() {
 
 function cssUserPersonaImageNudgeDownPx_() {
     return Math.max(-32, Math.min(32, PERSONA_DISPLAY_CONFIG.userImageNudgeDownPx ?? 3));
+}
+
+function cssUserPersonaRowNudgeDownPx_() {
+    return Math.max(-32, Math.min(32, PERSONA_DISPLAY_CONFIG.userPersonaRowNudgeDownPx ?? 0));
+}
+
+function cssUserPersonaRowNudgeDown_() {
+    const px = cssUserPersonaRowNudgeDownPx_();
+    return px === 0 ? "none" : `translateY(${px}px)`;
 }
 
 function cssUserPersonaTextNudgeUpPx_() {
@@ -27380,6 +27393,8 @@ function getPersonaImageGuardCss() {
     const userImgDown = `${cssUserPersonaImageNudgeDownPx_()}px`;
     const userTextUp = `${cssUserPersonaTextNudgeUpPx_()}px`;
     const userLabelUp = `${cssUserPersonaLabelNudgeUpPx_()}px`;
+    const userRowDownPx = cssUserPersonaRowNudgeDownPx_();
+    const userRowDown = userRowDownPx === 0 ? "none" : `translateY(${userRowDownPx}px)`;
     const timeDown = cfg.mode === "image" ? `${img.timeOffsetDownPx}px` : "0px";
     const timeRight = cfg.mode === "image" ? `${img.timeOffsetRightPx}px` : "0px";
     const rowDown = cssPersonaRowDownShift_();
@@ -27445,13 +27460,13 @@ img[src*="%23dfchat-live-agent-label"] {
 }
 .entry.bot.dfchat-user-persona-caption-bot-entry,
 .entry.bot.dfchat-user-persona-entry {
-  transform: none !important;
+  transform: ${userRowDown} !important;
   position: relative !important;
   z-index: 2 !important;
 }
 .entry.bot.dfchat-user-persona-caption-bot-entry[data-dfchat-persona-pair-snugged="1"],
 .entry.bot.dfchat-user-persona-entry[data-dfchat-persona-pair-snugged="1"] {
-  transform: none !important;
+  transform: ${userRowDown} !important;
   margin-top: 0 !important;
 }
 #message-list[data-dfchat-live-agent-human-chat="1"] img[src*="dfchat-bot-persona"],
@@ -27464,28 +27479,28 @@ img[src*="%23dfchat-live-agent-label"] {
 }
 #message-list[data-dfchat-live-agent-human-chat="1"] .entry.bot.dfchat-user-persona-caption-bot-entry,
 #message-list[data-dfchat-live-agent-human-chat="1"] .entry.bot.dfchat-user-persona-entry {
-  transform: none !important;
+  transform: ${userRowDown} !important;
 }
 #message-list[data-dfchat-live-agent-human-chat="1"] .message.bot-message.markdown.dfchat-user-persona-md {
   transform: none !important;
 }
 #message-list[data-dfchat-live-agent-ai-chat="1"] .entry.bot.dfchat-user-persona-caption-bot-entry,
 #message-list[data-dfchat-live-agent-ai-chat="1"] .entry.bot.dfchat-user-persona-entry {
-  transform: none !important;
+  transform: ${userRowDown} !important;
 }
 #message-list[data-dfchat-live-agent-ai-chat="1"] .message.bot-message.markdown.dfchat-user-persona-md {
   transform: none !important;
 }
 .entry.bot.dfchat-user-persona-caption-bot-entry[data-dfchat-user-persona-frozen="human"],
 .entry.bot.dfchat-user-persona-entry[data-dfchat-user-persona-frozen="human"] {
-  transform: none !important;
+  transform: ${userRowDown} !important;
 }
 .message.bot-message.markdown.dfchat-user-persona-md[data-dfchat-user-persona-frozen="human"] {
   transform: none !important;
 }
 .entry.bot.dfchat-user-persona-caption-bot-entry[data-dfchat-user-persona-frozen="ai"],
 .entry.bot.dfchat-user-persona-entry[data-dfchat-user-persona-frozen="ai"] {
-  transform: none !important;
+  transform: ${userRowDown} !important;
 }
 .message.bot-message.markdown.dfchat-user-persona-md[data-dfchat-user-persona-frozen="ai"] {
   transform: none !important;
@@ -29150,10 +29165,16 @@ function snugUserPersonaEntryToUserRow_(personaEntry, userEntry) {
         personaEntry.style.setProperty("position", "relative", "important");
         personaEntry.style.setProperty("z-index", "2", "important");
         if (directPair) {
-            personaEntry.style.setProperty("transform", "none", "important");
+            personaEntry.style.setProperty(
+                "transform",
+                `translateY(${cssUserPersonaRowNudgeDownPx_()}px)`,
+                "important"
+            );
             personaEntry.style.setProperty("margin-top", "0", "important");
         } else {
-            personaEntry.style.setProperty("transform", `translateY(${cssUserPersonaRowDownShift_()})`, "important");
+            const downPx =
+                cssUserPersonaRowNudgeDownPx_() + (parseFloat(cssUserPersonaRowDownShift_()) || 0);
+            personaEntry.style.setProperty("transform", `translateY(${downPx}px)`, "important");
             personaEntry.style.setProperty("margin-top", cssUserPersonaMarginTopForEntry_(personaEntry), "important");
         }
         userEntry.style.setProperty("margin-top", "0", "important");
