@@ -67,6 +67,7 @@ function serializeFirestoreConversation_(id, data) {
         botid: typeof d.botid === "string" ? d.botid : "default",
         visitorName: trim_(d.visitorName),
         assignedAgentEmail: trim_(d.assignedAgentEmail),
+        acceptedByEmail: trim_(d.acceptedByEmail),
         departmentId: typeof d.departmentId === "string" ? d.departmentId : "general",
         departmentName: typeof d.departmentName === "string" ? d.departmentName : "General",
         currentAssigneeEmail: trim_(d.currentAssigneeEmail),
@@ -113,8 +114,12 @@ async function loadMessagesForSession_(convRef, limit = 300) {
 
 async function enrichSessionForSheet_(base) {
     const settings = await getLiveAgentSettings_().catch(() => null);
-    const assignedAgentDisplayName = base.assignedAgentEmail
-        ? resolveAgentDisplayName_(base.assignedAgentEmail, settings)
+    const agentEmail =
+        trim_(base.acceptedByEmail) ||
+        trim_(base.assignedAgentEmail) ||
+        trim_(base.currentAssigneeEmail);
+    const assignedAgentDisplayName = agentEmail
+        ? resolveAgentDisplayName_(agentEmail, settings)
         : "";
     let sheetMeta = {
         name: base.visitorName || "",
@@ -186,8 +191,11 @@ export async function listSessionsForLiveAgentSheet(opts = {}) {
         const base = serializeFirestoreConversation_(doc.id, doc.data());
         if (!base.requestedAt && !base.createdAt) continue;
         if (!base.requestedAt && base.status === "closed" && base.humanMode === "ai") continue;
-        base.assignedAgentDisplayName = base.assignedAgentEmail
-            ? resolveAgentDisplayName_(base.assignedAgentEmail, settings)
+        base.assignedAgentDisplayName = base.acceptedByEmail || base.assignedAgentEmail
+            ? resolveAgentDisplayName_(
+                  trim_(base.acceptedByEmail) || trim_(base.assignedAgentEmail),
+                  settings
+              )
             : "";
         base.messages = [];
         base._sheetMeta = { name: base.visitorName || "", email: "", mobile: "", phone: "" };

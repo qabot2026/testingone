@@ -759,9 +759,15 @@ function pickCityFromClientContextMerged_(ctx) {
     if (!ctx || typeof ctx !== "object") {
         return "";
     }
+    const sp =
+        ctx.session_params && typeof ctx.session_params === "object" && !Array.isArray(ctx.session_params)
+            ? /** @type {Record<string, unknown>} */ (ctx.session_params)
+            : {};
     const aliases = ["city", "user_city", "visitor_city", "selected_city", "geo_city", "preferred_city", "home_city"];
     for (let i = 0; i < aliases.length; i += 1) {
-        const v = typeof ctx[aliases[i]] === "string" ? ctx[aliases[i]].trim() : "";
+        const key = aliases[i];
+        const raw = ctx[key] ?? sp[key];
+        const v = typeof raw === "string" ? raw.trim() : "";
         if (v && v.length <= 200 && !/^\$session\.params\./i.test(v)) {
             return v;
         }
@@ -3565,7 +3571,7 @@ app.post(
                     appointmentTime: "",
                     userQueriesCsv,
                     chatTranscriptJson,
-                    writeChatTranscriptOnSessionSync: true,
+                    writeChatTranscriptOnSessionSync: false,
                     lightweightSessionSync: false,
                     clientAuthoritativeQueries: true,
                     sheetExtrasSources: {

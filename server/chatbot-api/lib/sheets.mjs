@@ -520,6 +520,38 @@ function normalizedHeaderKey_(s) {
         .replace(/[^a-z0-9]/g, "");
 }
 
+/** City from row payload or nested client_context / session_params. */
+function resolveCityFromClientContextForSheet_(ctx, rowCity) {
+    const explicit = sheetOutboundCell_(rowCity);
+    if (explicit) {
+        return explicit;
+    }
+    if (!ctx || typeof ctx !== "object" || Array.isArray(ctx)) {
+        return "";
+    }
+    const sp =
+        ctx.session_params && typeof ctx.session_params === "object" && !Array.isArray(ctx.session_params)
+            ? /** @type {Record<string, unknown>} */ (ctx.session_params)
+            : {};
+    const aliases = [
+        "city",
+        "user_city",
+        "visitor_city",
+        "selected_city",
+        "geo_city",
+        "preferred_city",
+        "home_city"
+    ];
+    for (let i = 0; i < aliases.length; i += 1) {
+        const key = aliases[i];
+        const v = sheetOutboundCell_(ctx[key]) || sheetOutboundCell_(sp[key]);
+        if (v && v.length <= 200 && !/^\$session\.params\./i.test(v)) {
+            return v;
+        }
+    }
+    return "";
+}
+
 function columnLetterFromIndex_(idx0) {
     let n = idx0 + 1; // 1-based
     let out = "";
@@ -1308,7 +1340,7 @@ export function assembleLeadSheetPayloadFromSources_(incomingRow, sheetExtrasSou
     );
     const fileLinks =
         typeof row.fileLinks === "string" && row.fileLinks.trim() ? row.fileLinks.trim() : "";
-    const city = typeof row.city === "string" ? row.city.trim() : "";
+    const city = resolveCityFromClientContextForSheet_(ctxEnriched, row.city);
     const ip = typeof row.ip === "string" ? row.ip.trim() : "";
     const sourceUrl = typeof row.sourceUrl === "string" ? row.sourceUrl.trim() : "";
     const osName =
@@ -4457,7 +4489,7 @@ function isReservedColumnForChatTranscriptJson_(idx0) {
     return (
         idx0 === STANDARD_CHAT_SCRIPT_LINK_COL_INDEX0
         || idx0 === STANDARD_DOCUMENT_COL_INDEX0
-        || (idx0 >= 19 && idx0 <= CONVERSATION_SHEET_PREVIEW_MIN_COL_INDEX0)
+        || idx0 >= 16
     );
 }
 
@@ -4474,7 +4506,7 @@ async function resolveChatTranscriptColumnLetter_(sheets, tab) {
             return envCol;
         }
         console.warn(
-            "[chatbot-api] SHEETS_CHAT_TRANSCRIPT_JSON_COLUMN must not be A (Chat script link) or S (Document); JSON sheet writes skipped."
+            "[chatbot-api] SHEETS_CHAT_TRANSCRIPT_JSON_COLUMN targets a reserved lead column (App. Time, Document, metrics, etc.); JSON sheet writes skipped."
         );
         return "";
     }

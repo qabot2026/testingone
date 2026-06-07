@@ -116,8 +116,36 @@ function sessionQualifies(session) {
   });
 }
 
-function visitorQueriesFromSession(session) {
+function liveAgentSheetUserQueries_(session) {
+  const handoff = buildSheet1LiveAgentHandoffQueries(session);
+  if (handoff) return handoff;
   return liveAgentQueriesFromSession(session);
+}
+
+function resolveAgentNameForSheet_(session) {
+  const display = trim(session && session.assignedAgentDisplayName);
+  if (display) return display;
+  const email =
+    trim(session && session.acceptedByEmail) ||
+    trim(session && session.assignedAgentEmail) ||
+    trim(session && session.currentAssigneeEmail);
+  return email;
+}
+
+async function loadSessionForSheet_(sessionId) {
+  const sid = trim(sessionId);
+  if (!sid) return null;
+  try {
+    const bridge = await import('../live-agent/firestore-bridge.mjs');
+    const fresh = await bridge.loadSessionForLiveAgentSheet(sid);
+    if (fresh) return fresh;
+  } catch (e) {
+    console.warn('[live-agent-sheet] loadSessionForLiveAgentSheet:', e.message);
+  }
+  const liveAgentStore = require('./live-agent-store');
+  return typeof liveAgentStore.getSessionAsync === 'function'
+    ? await liveAgentStore.getSessionAsync(sid)
+    : liveAgentStore.getSession(sid);
 }
 
 /** User + agent lines from the handoff only — not the full bot transcript (see chatscript link). */
@@ -222,11 +250,11 @@ function buildRowValues(session) {
     formatMobileForSheet(meta),
     scalar(meta.email),
     trim(session.assignedAgentDisplayName) ||
-      trim(session.assignedAgentEmail) ||
+      resolveAgentNameForSheet_(session) ||
       '',
     trim(session.departmentName) || trim(session.departmentId) || 'General',
     trim(session.status) || 'waiting',
-    visitorQueriesFromSession(session),
+    liveAgentSheetUserQueries_(session),
     sid,
     metrics.messageCount,
     metrics.duration,
@@ -293,10 +321,13 @@ async function runSheet2Sync(sessionId) {
   if (!sid) return { skipped: true, reason: 'no_session' };
 
   const liveAgentStore = require('./live-agent-store');
-  const session =
-    typeof liveAgentStore.getSessionAsync === 'function'
-      ? await liveAgentStore.getSessionAsync(sid)
-      : liveAgentStore.getSession(sid);
+  let session = await loadSessionForSheet_(sid);
+  if (!session) {
+    session =
+      typeof liveAgentStore.getSessionAsync === 'function'
+        ? await liveAgentStore.getSessionAsync(sid)
+        : liveAgentStore.getSession(sid);
+  }
   if (!session || !sessionQualifies(session)) {
     return { skipped: true, reason: 'not_live_agent' };
   }
