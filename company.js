@@ -172,10 +172,14 @@ let liveAgentTailPinObserver_ = null;
 let liveAgentTailPinObserverList_ = null;
 /** Prevents MutationObserver ↔ DOM reorder feedback loops. */
 let liveAgentTailPinInFlight_ = false;
+/** @type {number} */
+let liveAgentTailPinMoDebounceTimer_ = 0;
 let liveAgentTailPinMoScheduled_ = false;
 /** Blocks bot persona reorder while live-agent tail rows are being pinned (async renderCustomText). */
 let liveAgentPendingTailPinDepth_ = 0;
 let liveAgentTailRepinTimerId_ = 0;
+/** @type {number} */
+let liveAgentTailRepinFollowUpTimerId_ = 0;
 /** @type {Set<string>} */
 const liveAgentSeenMessageIds_ = new Set();
 /** @type {Set<string>} */
@@ -16437,21 +16441,30 @@ function liveAgentPersonaImageShouldSkipReorder_(imageNode) {
 
 /** Debounced re-pin after df-messenger / CX async-appends bot rows above agent tail. */
 function scheduleLiveAgentTailRepin_(dfMessenger) {
-    if (!liveAgentHandoffIsActive_()) {
+    if (!liveAgentHandoffIsActive_() || !liveAgentVisitorAgentChatActive_()) {
         return;
     }
     const ms = dfMessenger || activeDfMessenger;
+    const run = () => {
+        if (liveAgentTailPinInFlight_) {
+            return;
+        }
+        liveAgentPinTailRowsToTranscriptEnd_(ms);
+    };
     if (liveAgentTailRepinTimerId_) {
         window.clearTimeout(liveAgentTailRepinTimerId_);
     }
-    const run = () => {
+    liveAgentTailRepinTimerId_ = window.setTimeout(() => {
         liveAgentTailRepinTimerId_ = 0;
-        liveAgentPinTailRowsToTranscriptEnd_(ms);
-    };
-    liveAgentTailRepinTimerId_ = window.setTimeout(run, 48);
-    [120, 320, 720, 1500, 2800].forEach((msDelay) => {
-        window.setTimeout(run, msDelay);
-    });
+        run();
+    }, 200);
+    if (liveAgentTailRepinFollowUpTimerId_) {
+        window.clearTimeout(liveAgentTailRepinFollowUpTimerId_);
+    }
+    liveAgentTailRepinFollowUpTimerId_ = window.setTimeout(() => {
+        liveAgentTailRepinFollowUpTimerId_ = 0;
+        run();
+    }, 850);
 }
 
 /**
@@ -16469,7 +16482,14 @@ function installLiveAgentTailPinRenderHook_(host) {
     el.renderCustomText = (text, isBot) => {
         const ret = orig(text, isBot);
         try {
-            if (liveAgentHandoffIsActive_()) {
+            if (liveAgentHandoffIsActive_() && liveAgentVisitorAgentChatActive_()) {
+                const s = typeof text === "string" ? text : String(text ?? "");
+                if (s.includes(USER_PERSONA_TEXT_SENTINEL)) {
+                    return ret;
+                }
+                if (!isBot) {
+                    return ret;
+                }
                 scheduleLiveAgentTailRepin_(el);
             }
         } catch {
@@ -16730,6 +16750,14 @@ function dfchatRowIsUserPersonaCaptionRow_(row) {
 
 /** @param {HTMLElement} personaRow @param {HTMLElement} userRow */
 function liveAgentSnugUserPersonaPair_(personaRow, userRow) {
+    if (
+        personaRow instanceof HTMLElement
+        && userRow instanceof HTMLElement
+        && personaRow.dataset.dfchatPersonaPairSnugged === "1"
+        && personaRow.nextElementSibling === userRow
+    ) {
+        return;
+    }
     const personaMd = personaRow.querySelector?.(".message.bot-message.markdown.dfchat-user-persona-md");
     const personaEntry =
         personaRow.classList.contains("entry")
@@ -16741,6 +16769,9 @@ function liveAgentSnugUserPersonaPair_(personaRow, userRow) {
             : userRow.querySelector?.(".entry.user") || userRow;
     if (personaEntry instanceof HTMLElement && userEntry instanceof HTMLElement) {
         snugUserPersonaEntryToUserRow_(personaEntry, userEntry);
+        if (personaRow instanceof HTMLElement) {
+            personaRow.dataset.dfchatPersonaPairSnugged = "1";
+        }
     }
 }
 
@@ -16916,6 +16947,10 @@ function liveAgentPinTailRowsToTranscriptEnd_(dfMessenger, listOverride) {
     if (!list || !liveAgentHandoffIsActive_()) {
         return;
     }
+    if (!liveAgentVisitorAgentChatActive_()) {
+        liveAgentEnsureTailAnchor_(list);
+        return;
+    }
     liveAgentDiscoverAndMarkTailRows_(list);
     const anchor = liveAgentEnsureTailAnchor_(list);
     if (!anchor) {
@@ -16994,7 +17029,7 @@ function liveAgentPinTailRowsToTranscriptEnd_(dfMessenger, listOverride) {
         }
     }
     if (orderOk) {
-        liveAgentEnsureUserPersonasForAllVisitorRows_(dfMessenger || activeDfMessenger, list);
+        liveAgentRepairUserPersonaPairing_(list);
         return;
     }
 
@@ -17045,7 +17080,7 @@ function liveAgentPinTailRowsToTranscriptEnd_(dfMessenger, listOverride) {
         } catch {
             /* ignore */
         }
-        liveAgentEnsureUserPersonasForAllVisitorRows_(dfMessenger || activeDfMessenger, list);
+        liveAgentRepairUserPersonaPairing_(list);
     } catch (pinErr) {
         if (typeof console !== "undefined" && console.warn) {
             console.warn("[live-agent] transcript pin failed:", pinErr);
@@ -17105,19 +17140,18 @@ function liveAgentEnsureTailPinObserver_(dfMessenger) {
             return;
         }
         liveAgentTailPinMoScheduled_ = true;
-        const run = () => {
+        if (liveAgentTailPinMoDebounceTimer_) {
+            window.clearTimeout(liveAgentTailPinMoDebounceTimer_);
+        }
+        liveAgentTailPinMoDebounceTimer_ = window.setTimeout(() => {
+            liveAgentTailPinMoDebounceTimer_ = 0;
             liveAgentTailPinMoScheduled_ = false;
             if (!liveAgentHandoffIsActive_() || !liveAgentVisitorAgentChatActive_()) {
                 liveAgentStopTailPinObserver_();
                 return;
             }
             liveAgentPinTailRowsToTranscriptEnd_(ms, list);
-        };
-        if (typeof requestAnimationFrame === "function") {
-            requestAnimationFrame(run);
-        } else {
-            window.setTimeout(run, 16);
-        }
+        }, 220);
     });
     try {
         liveAgentTailPinObserver_.observe(list, { childList: true });
@@ -17127,9 +17161,12 @@ function liveAgentEnsureTailPinObserver_(dfMessenger) {
 }
 
 function liveAgentSchedulePinTailRowsToTranscriptEnd_(dfMessenger) {
+    if (!liveAgentVisitorAgentChatActive_()) {
+        return;
+    }
     const run = () => liveAgentPinTailRowsToTranscriptEnd_(dfMessenger);
     run();
-    [50, 180, 400, 800, 1200, 1800, 2500, 3500, 5000].forEach((ms) => {
+    [120, 400, 900].forEach((ms) => {
         window.setTimeout(run, ms);
     });
 }
@@ -27338,13 +27375,16 @@ function schedulePersonaShadowFix(dfMessenger) {
     const run = () => {
         applyPersonaImageGuardToMessenger(dfMessenger);
         decoratePersonaMessages(dfMessenger);
-        if (liveAgentHandoffIsActive_()) {
-            liveAgentPinTailRowsToTranscriptEnd_(dfMessenger);
+        if (liveAgentVisitorAgentChatActive_()) {
+            const list = findMessengerMessageListRoot(dfMessenger);
+            if (list) {
+                liveAgentRepairUserPersonaPairing_(list);
+            }
         }
     };
     run();
     window.requestAnimationFrame(run);
-    [0, 24, 80, 200, 500, 750, 1200, 2000].forEach((ms) => {
+    [80, 200, 500, 1200].forEach((ms) => {
         window.setTimeout(run, ms);
     });
 }
@@ -27358,16 +27398,18 @@ function startPersonaDecorator(dfMessenger) {
         applyPersonaImageGuardToMessenger(ms);
         decoratePersonaMessages(ms);
         syncLiveAgentPersonaLayoutFlags_(ms);
-        if (liveAgentHandoffIsActive_() && liveAgentVisitorAgentChatActive_()) {
-            liveAgentEnsureUserPersonasForAllVisitorRows_(ms);
-            liveAgentPinTailRowsToTranscriptEnd_(ms);
+        if (liveAgentVisitorAgentChatActive_()) {
+            const list = findMessengerMessageListRoot(ms);
+            if (list) {
+                liveAgentRepairUserPersonaPairing_(list);
+            }
         }
     };
 
     refresh();
 
     if (!personaRefreshTimer) {
-        personaRefreshTimer = window.setInterval(refresh, 500);
+        personaRefreshTimer = window.setInterval(refresh, 2000);
     }
 
     if (dfMessenger && !dfMessenger._companyPersonaMO) {
@@ -27558,6 +27600,7 @@ function getMessageListHideScrollbarCss() {
   overflow: hidden auto !important;
   overflow-x: hidden !important;
   overflow-y: auto !important;
+  overflow-anchor: none !important;
   scrollbar-width: none !important;
   -ms-overflow-style: none !important;
   scrollbar-gutter: auto !important;
@@ -29245,11 +29288,11 @@ function decoratePersonaMessages(dfMessenger) {
         /* ignore */
     }
 
-    if (liveAgentHandoffIsActive_()) {
+    if (liveAgentVisitorAgentChatActive_()) {
         const list = findMessengerMessageListRoot(dfMessenger);
         if (list) {
             liveAgentDiscoverAndMarkTailRows_(list);
-            liveAgentPinTailRowsToTranscriptEnd_(dfMessenger, list);
+            liveAgentRepairUserPersonaPairing_(list);
         }
     }
 }
