@@ -17008,7 +17008,7 @@ function liveAgentSchedulePinRowsToTranscriptEnd_(dfMessenger) {
 /**
  * Render a live-agent line in the bot lane.
  * Refer `appendMessage`: persona row first, bubble second. Agent connect/rejoin use human icon;
- * regular agent chat uses bot cat + agent name; handoff/end use default Quality persona.
+ * regular agent chat uses the same bot persona as AI ({@link BOT_PERSONA_CONFIG}); handoff/end use default Quality persona.
  * @param {HTMLElement | null | undefined} dfMessenger
  * @param {string} text
  * @param {{ withPersona?: boolean, personaLabel?: string, liveAgentHuman?: boolean, tailPin?: boolean }} [opts]
@@ -18553,11 +18553,7 @@ async function liveAgentPollTick_(dfMessenger) {
                 liveAgentRemoveAgentTypingDraft_(ms);
             }
             if (isAgent) {
-                const displayName =
-                    typeof m.senderDisplayName === "string" && m.senderDisplayName.trim()
-                        ? m.senderDisplayName.trim()
-                        : liveAgentDisplayNameForEmail_(m.senderEmail);
-                liveAgentRenderBotLineAtTranscriptEnd_(ms, text, { personaLabel: displayName, tailPin: true });
+                liveAgentRenderBotLineAtTranscriptEnd_(ms, text, { withPersona: true, tailPin: true });
             } else {
                 liveAgentRenderBotLineAtTranscriptEnd_(ms, text, { withPersona: true });
             }
@@ -26571,43 +26567,27 @@ function createUserIconDataUrl_() {
 }
 
 /**
- * Bot cat avatar + custom label (agent name) — refer regular agent chat lines (not connect/rejoin).
- * @param {string} displayName
+ * Bot cat avatar + label from {@link BOT_PERSONA_CONFIG} only (never a live agent display name).
+ * @param {string} [_displayName] ignored — kept for call-site compatibility
  * @param {number | undefined} messageInstantMs
  */
-function buildBotPersonaLabelMarkdown_(displayName, messageInstantMs) {
-    const when =
-        typeof messageInstantMs === "number" && Number.isFinite(messageInstantMs)
-            ? messageInstantMs
-            : Date.now();
-    const cfg = BOT_PERSONA_CONFIG;
-    const incDate = cfg.messageTimeIncludesDate === true;
-    const name =
-        typeof displayName === "string" && displayName.trim()
-            ? displayName.trim()
-            : AGENT_PERSONA_CONFIG.label;
-    const img = cfg.image;
-    const baseUrl = img.url.split("#")[0].trim();
-    const timeLabel = img.showTime ? getBotPersonaMessageTimeLabel(img.timeZone, when, incDate) : "";
-    return buildPersonaImageMarkdownWithTime_(baseUrl, name, timeLabel, PERSONA_URL_MARKER_LIVE_AGENT_LABEL);
+function buildBotPersonaLabelMarkdown_(_displayName, messageInstantMs) {
+    return buildBotPersonaMarkdown_(messageInstantMs);
 }
 
 /**
- * Live-agent agent row — human icon + agent name + clock (refer agentPersona, not bot cat).
- * @param {string} displayName
+ * Live-agent connect/rejoin row — icon from {@link AGENT_PERSONA_CONFIG}, label from config only.
+ * @param {string} [_displayName] ignored — message body may still name the agent; persona label stays config
  * @param {number | undefined} messageInstantMs
  */
-function buildAgentPersonaMarkdown_(displayName, messageInstantMs) {
+function buildAgentPersonaMarkdown_(_displayName, messageInstantMs) {
     const when =
         typeof messageInstantMs === "number" && Number.isFinite(messageInstantMs)
             ? messageInstantMs
             : Date.now();
     const cfg = BOT_PERSONA_CONFIG;
     const incDate = cfg.messageTimeIncludesDate === true;
-    const name =
-        typeof displayName === "string" && displayName.trim()
-            ? displayName.trim()
-            : AGENT_PERSONA_CONFIG.label;
+    const name = AGENT_PERSONA_CONFIG.label;
     const timeLabel =
         cfg.mode === "image" && cfg.image && cfg.image.showTime
             ? getBotPersonaMessageTimeLabel(cfg.image.timeZone, when, incDate)

@@ -82,7 +82,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
       messageTimeIncludesDate: false
     },
 
-    /** Live-agent human lines (refer agentPersona). */
+    /** Live-agent connect/rejoin notices — human icon + label (not used on agent chat lines). */
     agentPersona: {
       mode: "icon",
       label: "Support Agent",
