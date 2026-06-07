@@ -3484,6 +3484,7 @@ app.post(
             || "";
         const name = resolveContactName(fields, body, mergedClientContext);
         const email = resolveContactEmail(fields, body, mergedClientContext);
+        const hasResolvedContact = !!(name || email || mobile);
 
         const convAt = new Date();
         const convSheetDate = formatConversationDateForSheet(convAt);
@@ -3561,7 +3562,7 @@ app.post(
                     userQueriesCsv,
                     chatTranscriptJson,
                     writeChatTranscriptOnSessionSync: true,
-                    lightweightSessionSync: true,
+                    lightweightSessionSync: !hasResolvedContact,
                     clientAuthoritativeQueries: true,
                     sheetExtrasSources: {
                         clientContext: mergedClientContext,

@@ -132,7 +132,7 @@ async function enrichSessionForSheet_(base) {
                 name: trim_(ctx.name) || sheetMeta.name,
                 email: trim_(ctx.email),
                 mobile: trim_(ctx.mobile),
-                dial_code: "",
+                dial_code: trim_(ctx.dial_code || ctx.dialCode || ctx.country_dial_code),
                 phone: trim_(ctx.mobile)
             };
         }

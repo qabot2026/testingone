@@ -5265,6 +5265,36 @@ async function findSessionRowNumberBySessionId_(sheets, tab, sessionId, lookback
 }
 
 /**
+ * Resolve name/mobile/email from form fields, row payload, and nested client_context.
+ *
+ * @param {*} row
+ * @param {{ clientContext?: Record<string, unknown> | null, fields?: Record<string, unknown> | null } | null} sheetExtrasSources
+ */
+function resolvedIncomingContactForSheetRow_(row, sheetExtrasSources) {
+    const r = row && typeof row === "object" ? row : {};
+    const fieldsRec = formFieldsRecordForSheet_(sheetExtrasSources?.fields);
+    const ctx =
+        sheetExtrasSources?.clientContext && typeof sheetExtrasSources.clientContext === "object"
+            ? sheetExtrasSources.clientContext
+            : null;
+    const lookup = contactContextLookupRecord_(ctx);
+    const name =
+        resolveContactName(fieldsRec, {}, lookup) || sheetOutboundCell_(/** @type {{ name?: unknown }} */ (r).name);
+    const mobile =
+        resolveContactMobile(fieldsRec, {}, lookup)
+        || sheetOutboundCell_(/** @type {{ mobile?: unknown }} */ (r).mobile);
+    const email =
+        resolveContactEmail(fieldsRec, {}, lookup)
+        || sheetOutboundCell_(/** @type {{ email?: unknown }} */ (r).email);
+    return {
+        name: name || "",
+        mobile: mobile || "",
+        email: email || "",
+        hasContact: !!(name || mobile || email)
+    };
+}
+
+/**
  * Merge latest user_queries into the User Queries column for this session, or append a minimal row if none exists.
  * Used for live chat query sync without requiring another form POST.
  *
@@ -5306,11 +5336,8 @@ async function upsertSessionQueriesInSheet_(row) {
         row.sheetExtrasSources && typeof row.sheetExtrasSources === "object"
             ? row.sheetExtrasSources
             : null;
-    const incomingHasContact = !!(
-        (typeof row.name === "string" && row.name.trim())
-        || (typeof row.mobile === "string" && row.mobile.trim())
-        || (typeof row.email === "string" && row.email.trim())
-    );
+    const resolvedContact = resolvedIncomingContactForSheetRow_(row, sheetExtrasSources);
+    const incomingHasContact = resolvedContact.hasContact;
 
     let rowNumber = await getValidatedCachedSessionLeadRow_(sheets, tab, sid);
     if (!rowNumber) {
@@ -5391,9 +5418,9 @@ async function upsertSessionQueriesInSheet_(row) {
                         convDate: row.convDate,
                         convTime: row.convTime,
                         formId: row.formId,
-                        name: row.name,
-                        mobile: row.mobile,
-                        email: row.email,
+                        name: resolvedContact.name || row.name,
+                        mobile: resolvedContact.mobile || row.mobile,
+                        email: resolvedContact.email || row.email,
                         clientSessionId: sid,
                         browserName: row.browserName,
                         deviceType: row.deviceType,

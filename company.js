@@ -20462,6 +20462,11 @@ function buildClientContextForServerSync_() {
     const stored = readStoredClientContext();
     const live = getClientContext();
     const out = { ...live };
+    for (const k of ["name", "email", "mobile", "dial_code", "dialCode", "country_dial_code"]) {
+        if (stored[k] != null && String(stored[k]).trim()) {
+            out[k] = stored[k];
+        }
+    }
     if (Array.isArray(stored.chat_transcript) && stored.chat_transcript.length) {
         out.chat_transcript = stored.chat_transcript;
     }

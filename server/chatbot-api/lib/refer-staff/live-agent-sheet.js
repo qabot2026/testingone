@@ -117,18 +117,42 @@ function sessionQualifies(session) {
 }
 
 function visitorQueriesFromSession(session) {
+  return liveAgentQueriesFromSession(session);
+}
+
+/** User + agent lines from the handoff only — not the full bot transcript (see chatscript link). */
+function liveAgentQueriesFromSession(session) {
   const msgs = (session && session.messages) || [];
   const lines = [];
   msgs.forEach((m) => {
     if (!m) return;
     const role = trim(m.role).toLowerCase();
     const raw = trim(m.text);
-    if (!raw || role === 'internal') return;
-    if (role !== 'visitor') return;
-    if (transcriptDisplay.isHandoffRequestLine(raw)) return;
-    const text = transcriptDisplay.normalizeUserQueryText(raw) || raw;
-    if (!text || transcriptDisplay.isInternalActionToken(text)) return;
-    lines.push(text);
+    if (!raw || role === 'internal' || role === 'system') return;
+    if (role === 'visitor') {
+      if (transcriptDisplay.isHandoffRequestLine(raw)) return;
+      const text = transcriptDisplay.normalizeUserQueryText(raw) || raw;
+      if (!text || transcriptDisplay.isInternalActionToken(text)) return;
+      lines.push(text);
+      return;
+    }
+    if (role === 'agent' || role === 'staff') {
+      let body = raw;
+      const who =
+        trim(m.senderDisplayName) ||
+        trim(session.assignedAgentDisplayName) ||
+        '';
+      if (who) {
+        const prefix = `${who}:`;
+        if (body.toLowerCase().startsWith(prefix.toLowerCase())) {
+          body = trim(body.slice(prefix.length));
+        }
+      }
+      body = trim(body.replace(/^[^:]{1,48}:\s+/, '')) || raw;
+      if (!body || transcriptDisplay.isInternalActionToken(body)) return;
+      if (/^typing(\.{0,3})?$/i.test(body)) return;
+      lines.push(body);
+    }
   });
   return lines.join(' | ').slice(0, 2000);
 }
