@@ -123,7 +123,7 @@ function dashboardTabName() {
   return tabFromRange(DASHBOARD_RANGE);
 }
 
-/** Human-agent handoff rows (ua-conversations) — NOT the KPI dashboard tab (SHEETS_DASHBOARD_TAB). */
+/** Human-agent handoff rows (ua-conversations) — live-agent sync tab, not the web KPI dashboard. */
 function liveAgentTabName() {
   const custom = String(process.env.SHEETS_LIVE_AGENT_TAB || '').trim();
   if (custom) return custom;
