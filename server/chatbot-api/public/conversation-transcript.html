@@ -520,6 +520,13 @@
           .trim();
       }
 
+      /** Ephemeral UI status (typing indicators) — not conversation content. */
+      function isTranscriptEphemeralStatusLine(line) {
+        var raw = typeof line === "string" ? line.trim() : "";
+        if (!raw) return false;
+        return /^typing(\.{0,3})?$/i.test(raw);
+      }
+
       /** Bot/user persona caption chrome — not staff conversation content. */
       function isTranscriptPersonaChromeLine(line) {
         var raw = typeof line === "string" ? line.trim() : "";
@@ -819,6 +826,7 @@
           .filter(function (ln) {
             if (!ln || TRANSCRIPT_NOISE[ln]) return false;
             if (isTranscriptPersonaChromeLine(ln)) return false;
+            if (isTranscriptEphemeralStatusLine(ln)) return false;
             if (rich && ln === "Chips" && rich.richContent) return false;
             if (chipLabels.length && chipLabels.indexOf(ln.toLowerCase()) >= 0) return false;
             if (rich && richHasActionUi(rich)) {
@@ -856,7 +864,23 @@
           var plain = cleanText(turn.text, rich);
           if (plain) html += '<p class="rc-text">' + escapeHtml(plain) + "</p>";
         }
-        return html || '<p class="rc-text">(No message stored for this line.)</p>';
+        return html;
+      }
+
+      function turnHasRenderableBody(turn) {
+        if (!turn) return false;
+        if (turn.role === "assistant") {
+          if (isTranscriptPersonaChromeLine(turn.text) || isTranscriptEphemeralStatusLine(turn.text)) return false;
+          return !!renderAssistantBody(turn);
+        }
+        if (turn.role === "user" || turn.role === "agent") {
+          var userText = cleanText(turn.text, null);
+          if (!userText || isTranscriptPersonaChromeLine(userText) || isTranscriptEphemeralStatusLine(userText)) {
+            return false;
+          }
+          return true;
+        }
+        return false;
       }
 
       /** Match `company.js` getBotPersonaMessageTimeLabel (`en-IN`, optional short date). */
@@ -1252,9 +1276,7 @@
           thread.appendChild(dayLine);
           for (var i = 0; i < turns.length; i++) {
             var t = turns[i];
-            if (!t) continue;
-            if (t.role === "assistant" && isTranscriptPersonaChromeLine(t.text)) continue;
-            if (t.role === "user" && isTranscriptPersonaChromeLine(t.text)) continue;
+            if (!t || !turnHasRenderableBody(t)) continue;
             var role =
               t && t.role === "assistant"
                 ? "assistant"
@@ -1279,7 +1301,12 @@
             var bodyHtml =
               role === "assistant"
                 ? renderAssistantBody(t)
-                : '<p class="rc-text">' + escapeHtml((t && t.text) || "") + "</p>";
+                : (function () {
+                    var plain = cleanText(t.text, null);
+                    return plain
+                      ? '<p class="rc-text">' + escapeHtml(plain) + "</p>"
+                      : "";
+                  })();
             var row = document.createElement("div");
             row.className = "msg msg--" + role;
             row.innerHTML =

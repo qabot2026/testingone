@@ -4409,7 +4409,7 @@ async function transcriptTurnsFromLiveAgentInbox_(sessionId) {
             }
             const roleRaw = typeof m.role === "string" ? m.role.trim().toLowerCase() : "";
             const text = typeof m.text === "string" ? m.text.trim() : "";
-            if (!text) {
+            if (!text || isTranscriptEphemeralStatusText_(text)) {
                 continue;
             }
             const atMs = coerceTranscriptAtMs_(m.createdAt);
@@ -4911,6 +4911,9 @@ function transcriptTurnsFromStoredChatArray_(arr) {
         if (role === "user" && shouldOmitTranscriptUserTurn_(text)) {
             continue;
         }
+        if (isTranscriptEphemeralStatusText_(text)) {
+            continue;
+        }
         if (role === "assistant" && isTranscriptPersonaChromeText_(text)) {
             continue;
         }
@@ -5262,6 +5265,25 @@ function shouldOmitTranscriptUserTurn_(text) {
     return isTranscriptHandoffRoutingToken_(text) || isTranscriptInternalUserToken_(text);
 }
 
+/** Typing indicators — ephemeral UI, not conversation content. */
+function isTranscriptEphemeralStatusText_(text) {
+    const raw = String(text ?? "").trim();
+    if (!raw) {
+        return false;
+    }
+    return /^typing(\.{0,3})?$/i.test(raw);
+}
+
+/** Agent lines are often stored as `Name: message` in live-agent inbox. */
+function transcriptAgentBodyCompareNorm_(text) {
+    const raw = String(text ?? "").trim();
+    if (!raw) {
+        return "";
+    }
+    const stripped = raw.replace(/^[^:]{1,48}:\s+/, "").trim();
+    return transcriptAssistantCompareNorm_(stripped || raw);
+}
+
 /** Bot/user persona label + clock rows — not staff conversation content. */
 function isTranscriptPersonaChromeText_(text) {
     const raw = String(text ?? "").trim();
@@ -5304,45 +5326,46 @@ function isTranscriptPersonaChromeText_(text) {
 }
 
 /**
- * Assign monotonic seq to turns missing it so live-agent + widget rows sort chronologically.
+ * Live-agent chat renders in the bot lane; DOM scrape can duplicate inbox rows as `assistant`.
+ * When an agent turn exists for the same body, drop the assistant mirror.
  *
  * @param {{ role: string, text: string, rich?: Record<string, unknown>, at?: number, seq?: number }[]} turns
  */
-function assignTranscriptSeqForOrdering_(turns) {
+function collapseLiveAgentAssistantMirrors_(turns) {
     if (!Array.isArray(turns) || turns.length < 2) {
-        return;
+        return Array.isArray(turns) ? turns.slice() : [];
     }
-    let maxSeq = 0;
+    /** @type {Set<string>} */
+    const agentNorms = new Set();
     for (let i = 0; i < turns.length; i += 1) {
-        const s = turns[i] && typeof turns[i].seq === "number" ? turns[i].seq : NaN;
-        if (Number.isFinite(s) && s > maxSeq) {
-            maxSeq = s;
+        const t = turns[i];
+        if (!t || t.role !== "agent") {
+            continue;
+        }
+        const text = String(t.text || "").trim();
+        if (!text) {
+            continue;
+        }
+        agentNorms.add(transcriptAssistantCompareNorm_(text));
+        const bodyNorm = transcriptAgentBodyCompareNorm_(text);
+        if (bodyNorm) {
+            agentNorms.add(bodyNorm);
         }
     }
-    const tagged = turns.map((t, i) => ({ t, i }));
-    tagged.sort((a, b) => {
-        const atA =
-            typeof a.t.at === "number" && Number.isFinite(a.t.at) ? a.t.at : Number.POSITIVE_INFINITY;
-        const atB =
-            typeof b.t.at === "number" && Number.isFinite(b.t.at) ? b.t.at : Number.POSITIVE_INFINITY;
-        if (atA !== atB) {
-            return atA - atB;
+    if (!agentNorms.size) {
+        return turns.slice();
+    }
+    return turns.filter((t) => {
+        if (!t || t.role !== "assistant") {
+            return true;
         }
-        const seqA = typeof a.t.seq === "number" && Number.isFinite(a.t.seq) ? a.t.seq : NaN;
-        const seqB = typeof b.t.seq === "number" && Number.isFinite(b.t.seq) ? b.t.seq : NaN;
-        if (Number.isFinite(seqA) && Number.isFinite(seqB) && seqA !== seqB) {
-            return seqA - seqB;
+        const text = String(t.text || "").trim();
+        if (!text) {
+            return true;
         }
-        return a.i - b.i;
+        const norm = transcriptAssistantCompareNorm_(text);
+        return !(norm && agentNorms.has(norm));
     });
-    let next = maxSeq + 1;
-    for (let j = 0; j < tagged.length; j += 1) {
-        const row = tagged[j].t;
-        if (typeof row.seq !== "number" || !Number.isFinite(row.seq)) {
-            row.seq = next;
-            next += 1;
-        }
-    }
 }
 
 /** Widget form bubbles use `  \\n` between rows; flatten before comparing assistant duplicates. */
@@ -5553,10 +5576,9 @@ function dedupeTranscriptTurnsForDisplay_(turns) {
     const out = [];
     let prevAssistantNorm = "";
     let prevUserNorm = "";
+    let prevAgentNorm = "";
     /** @type {Set<string>} */
     const seenHandoffUserNorm = new Set();
-    /** @type {Set<string>} */
-    const seenUserNormGlobal = new Set();
     for (let i = 0; i < turns.length; i += 1) {
         const t = turns[i];
         if (!t || typeof t !== "object") {
@@ -5572,11 +5594,10 @@ function dedupeTranscriptTurnsForDisplay_(turns) {
                 ? /** @type {Record<string, unknown>} */ (t.rich)
                 : undefined;
         if (!text && !rich) {
-            if (role === "assistant") {
-                /* keep explicit assistant rows */
-            } else {
-                continue;
-            }
+            continue;
+        }
+        if (text && isTranscriptEphemeralStatusText_(text)) {
+            continue;
         }
         if (role === "assistant") {
             const key = text
@@ -5611,16 +5632,19 @@ function dedupeTranscriptTurnsForDisplay_(turns) {
             if (userNorm && userNorm === prevUserNorm) {
                 continue;
             }
-            if (userNorm && seenUserNormGlobal.has(userNorm)) {
+            prevUserNorm = userNorm;
+        } else if (role === "agent") {
+            prevAssistantNorm = "";
+            prevUserNorm = "";
+            const agentNorm = transcriptAgentBodyCompareNorm_(text) || transcriptAssistantCompareNorm_(text);
+            if (agentNorm && agentNorm === prevAgentNorm) {
                 continue;
             }
-            if (userNorm) {
-                seenUserNormGlobal.add(userNorm);
-            }
-            prevUserNorm = userNorm;
+            prevAgentNorm = agentNorm;
         } else {
             prevAssistantNorm = "";
             prevUserNorm = "";
+            prevAgentNorm = "";
         }
         const row = /** @type {{ role: string, text: string, rich?: Record<string, unknown>, at?: number, seq?: number }} */ ({
             role,
@@ -5641,8 +5665,9 @@ function dedupeTranscriptTurnsForDisplay_(turns) {
 }
 
 /**
- * Final ordering for staff JSON: sort by wall time, then `seq`, then merge order. Undated rows (no `at`)
- * follow dated rows while preserving relative order — fixes user/bot blocks from two sources clustering wrong.
+ * Final ordering for staff JSON: sort by wall time (`at`), then widget `seq`, then merge order.
+ * Widget rows carry low `seq` from bot phase; live-agent inbox rows carry Firestore `at` — `at` must win
+ * so user/agent lines interleave instead of clustering at the bottom.
  *
  * @param {{ role: string, text: string, rich?: Record<string, unknown>, at?: number, seq?: number }[]} turns
  * @returns {{ role: string, text: string, rich?: Record<string, unknown>, at?: number, seq?: number }[]}
@@ -5653,18 +5678,24 @@ function orderTranscriptTurnsForDisplay_(turns) {
     }
     const tagged = turns.map((t, i) => ({ t, i }));
     tagged.sort((a, b) => {
+        const atA = typeof a.t.at === "number" && Number.isFinite(a.t.at) ? a.t.at : null;
+        const atB = typeof b.t.at === "number" && Number.isFinite(b.t.at) ? b.t.at : null;
+        if (atA !== null && atB !== null && atA !== atB) {
+            return atA - atB;
+        }
         const seqA = typeof a.t.seq === "number" && Number.isFinite(a.t.seq) ? a.t.seq : NaN;
         const seqB = typeof b.t.seq === "number" && Number.isFinite(b.t.seq) ? b.t.seq : NaN;
         if (Number.isFinite(seqA) && Number.isFinite(seqB) && seqA !== seqB) {
             return seqA - seqB;
         }
-        const atA = typeof a.t.at === "number" && Number.isFinite(a.t.at) ? a.t.at : Number.POSITIVE_INFINITY;
-        const atB = typeof b.t.at === "number" && Number.isFinite(b.t.at) ? b.t.at : Number.POSITIVE_INFINITY;
-        if (atA !== atB) {
+        if (atA !== null && atB !== null && atA !== atB) {
             return atA - atB;
         }
-        if (Number.isFinite(seqA) && Number.isFinite(seqB) && seqA !== seqB) {
-            return seqA - seqB;
+        if (atA !== null && atB === null) {
+            return -1;
+        }
+        if (atA === null && atB !== null) {
+            return 1;
         }
         return a.i - b.i;
     });
@@ -6341,15 +6372,33 @@ app.get(PATHNAME_CONVERSATION_TRANSCRIPT_JSON, async (req, res) => {
                     .filter((t) => t && t.role === "user")
                     .map((t) => transcriptUserCompareNorm_(t.text))
             );
+            const existingAgentNorms = new Set(
+                turns
+                    .filter((t) => t && t.role === "agent")
+                    .map((t) => transcriptAgentBodyCompareNorm_(t.text))
+                    .filter(Boolean)
+            );
             const liveAgentTurns = liveAgentTurnsRaw.filter((t) => {
-                if (!t || t.role !== "user") {
-                    return true;
-                }
-                const norm = transcriptUserCompareNorm_(t.text);
-                if (!norm || existingUserNorms.has(norm)) {
+                if (!t) {
                     return false;
                 }
-                existingUserNorms.add(norm);
+                if (t.role === "user") {
+                    const norm = transcriptUserCompareNorm_(t.text);
+                    if (!norm || existingUserNorms.has(norm)) {
+                        return false;
+                    }
+                    existingUserNorms.add(norm);
+                    return true;
+                }
+                if (t.role === "agent") {
+                    const norm = transcriptAgentBodyCompareNorm_(t.text);
+                    if (norm && existingAgentNorms.has(norm)) {
+                        return false;
+                    }
+                    if (norm) {
+                        existingAgentNorms.add(norm);
+                    }
+                }
                 return true;
             });
             if (liveAgentTurns.length) {
@@ -6358,11 +6407,12 @@ app.get(PATHNAME_CONVERSATION_TRANSCRIPT_JSON, async (req, res) => {
             }
         }
 
-        assignTranscriptSeqForOrdering_(turns);
         turns = orderTranscriptTurnsForDisplay_(turns);
+        turns = collapseLiveAgentAssistantMirrors_(turns);
         turns = collapseIdenticalAssistantTranscriptTurns_(turns);
         turns = collapseRedundantAssistantTranscriptTurns_(turns);
         turns = dedupeTranscriptTurnsForDisplay_(turns);
+        turns = orderTranscriptTurnsForDisplay_(turns);
 
         if (!assistantTurnCount_(turns) && firestoreRec?.client_context) {
             const rawCx = /** @type {Record<string, unknown>} */ (firestoreRec.client_context);

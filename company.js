@@ -19926,6 +19926,32 @@ let domBotTranscriptCaptureTimer = 0;
  * @param {HTMLElement | null | undefined} dfMessenger
  * @returns {string[]}
  */
+/**
+ * @param {HTMLElement | null | undefined} row
+ * @returns {boolean}
+ */
+function dfchatTranscriptSkipDomRowForCapture_(row) {
+    if (!(row instanceof HTMLElement)) {
+        return true;
+    }
+    if (dfchatRowIsBotTypingIndicator_(row)) {
+        return true;
+    }
+    if (dfchatRowIsLiveAgentPinned_(row)) {
+        return true;
+    }
+    if (dfchatRowHasLiveAgentTailSentinel_(row)) {
+        return true;
+    }
+    if (dfchatRowHasLiveAgentPersonaMarker_(row)) {
+        return true;
+    }
+    if (row.dataset && row.dataset.dfchatLiveAgentTyping === "1") {
+        return true;
+    }
+    return false;
+}
+
 function scrapeVisibleBotTranscriptTextsFromMessenger_(dfMessenger) {
     const list = findMessengerMessageListRoot(dfMessenger);
     if (!list) {
@@ -19959,12 +19985,16 @@ function scrapeVisibleBotTranscriptTextsFromMessenger_(dfMessenger) {
         if (!(row instanceof HTMLElement) || !dfchatRowLooksLikeCxBotAssistantRow_(row)) {
             continue;
         }
+        if (dfchatTranscriptSkipDomRowForCapture_(row)) {
+            continue;
+        }
         const msg = row.querySelector(".message.bot-message");
         if (!msg || !(msg instanceof HTMLElement)) {
             continue;
         }
         let text = (msg.innerText || msg.textContent || "").trim();
         text = text
+            .replace(/\u2060\u200d\u2060/g, "")
             .replace(/!\[[^\]]*\]\([^)]*\)/g, "")
             .replace(/\*\*([^*]+)\*\*/g, "$1")
             .replace(/\s+/g, " ")
@@ -19985,6 +20015,10 @@ function scrapeVisibleBotTranscriptTextsFromMessenger_(dfMessenger) {
         if (!(msg instanceof HTMLElement)) {
             continue;
         }
+        const hostRow = dfchatResolveListRowHostingMessage_(msg);
+        if (dfchatTranscriptSkipDomRowForCapture_(hostRow || msg)) {
+            continue;
+        }
         if (
             msg.querySelector?.(".dfchat-bot-persona-label, .dfchat-user-persona-label")
             || msg.classList?.contains("dfchat-user-persona-md")
@@ -19996,6 +20030,7 @@ function scrapeVisibleBotTranscriptTextsFromMessenger_(dfMessenger) {
         }
         let text = (msg.innerText || msg.textContent || "").trim();
         text = text
+            .replace(/\u2060\u200d\u2060/g, "")
             .replace(/!\[[^\]]*\]\([^)]*\)/g, "")
             .replace(/\*\*([^*]+)\*\*/g, "$1")
             .replace(/\s+/g, " ")
@@ -21404,12 +21439,30 @@ function isTranscriptPersonaChromeLine_(line) {
 }
 
 /**
+ * Ephemeral UI status lines (typing indicators) — not conversation content.
+ * @param {string} line
+ * @returns {boolean}
+ */
+function isTranscriptEphemeralStatusLine_(line) {
+    const raw = typeof line === "string" ? line.trim() : "";
+    if (!raw) {
+        return false;
+    }
+    return /^typing(\.{0,3})?$/i.test(raw);
+}
+
+/**
  * @param {string} line
  * @returns {boolean}
  */
 function isTranscriptNoiseLine_(line) {
     const t = typeof line === "string" ? line.trim() : "";
-    return !t || TRANSCRIPT_NOISE_LINE_SET.has(t) || isTranscriptPersonaChromeLine_(t);
+    return (
+        !t
+        || TRANSCRIPT_NOISE_LINE_SET.has(t)
+        || isTranscriptPersonaChromeLine_(t)
+        || isTranscriptEphemeralStatusLine_(t)
+    );
 }
 
 /**
