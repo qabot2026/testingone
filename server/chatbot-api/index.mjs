@@ -4922,6 +4922,9 @@ function transcriptTurnsFromStoredChatArray_(arr) {
         if (isTranscriptCxInternalToken_(text)) {
             continue;
         }
+        if (role === "assistant" && text && !rich && isTranscriptStandaloneChipOrMenuLabel_(text)) {
+            continue;
+        }
         if (isTranscriptOpenFormActionTurn_(/** @type {{ role?: string, text?: string, rich?: unknown, rich_json?: unknown }} */ ({ role, text, rich }))) {
             continue;
         }
@@ -5294,7 +5297,52 @@ function isTranscriptCxInternalToken_(text) {
     return false;
 }
 
+/** CX chip / menu labels and bare emails — not standalone assistant transcript lines. */
+function isTranscriptStandaloneChipOrMenuLabel_(text) {
+    const t = String(text ?? "").trim();
+    if (!t || t.includes("\n")) {
+        return false;
+    }
+    if (/form closed/i.test(t)) {
+        return false;
+    }
+    if (/^(human agent requested|connected with agent)$/i.test(t)) {
+        return false;
+    }
+    if (/[?!]/.test(t) || /'\w/.test(t)) {
+        return false;
+    }
+    if (/\.\s/.test(t) || (t.endsWith(".") && t.length > 20)) {
+        return false;
+    }
+    const words = t.split(/\s+/).filter(Boolean);
+    if (words.length >= 4) {
+        return false;
+    }
+    if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/i.test(t)) {
+        return true;
+    }
+    if (words.length <= 2 && t.length <= 36 && !/[,.]/.test(t)) {
+        const nk = t.toLowerCase().replace(/[^a-z0-9]+/g, "");
+        if (
+            nk
+            && /^(contact|feedback|appointment|upload|resend|otp|human|agent|book|booking|help|support|menu|services|location|hours|cancel|confirm|continue|back|home|chat|live|whatsapp)$/.test(
+                nk
+            )
+        ) {
+            return true;
+        }
+        if (words.length === 1 && /^[a-z][a-z0-9_-]{2,31}$/.test(t)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 function shouldOmitTranscriptUserTurn_(text) {
+    if (/^__form_closed:/i.test(String(text ?? "").trim())) {
+        return false;
+    }
     return (
         isTranscriptHandoffRoutingToken_(text)
         || isTranscriptInternalUserToken_(text)
@@ -5748,6 +5796,9 @@ function dedupeTranscriptTurnsForDisplay_(turns) {
             continue;
         }
         if (text && isTranscriptCxInternalToken_(text)) {
+            continue;
+        }
+        if (role === "assistant" && text && !rich && isTranscriptStandaloneChipOrMenuLabel_(text)) {
             continue;
         }
         if (isTranscriptOpenFormActionTurn_(t)) {

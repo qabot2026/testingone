@@ -560,6 +560,38 @@
         return false;
       }
 
+      function isTranscriptStandaloneChipOrMenuLabel(line) {
+        var raw = typeof line === "string" ? line.trim() : "";
+        if (!raw || raw.indexOf("\n") >= 0) return false;
+        if (/form closed/i.test(raw)) return false;
+        if (/^(human agent requested|connected with agent)$/i.test(raw)) return false;
+        if (/[?!]/.test(raw) || /'\w/.test(raw)) return false;
+        if (/\.\s/.test(raw) || (raw.slice(-1) === "." && raw.length > 20)) return false;
+        var words = raw.split(/\s+/).filter(Boolean);
+        if (words.length >= 4) return false;
+        if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/i.test(raw)) return true;
+        if (words.length <= 2 && raw.length <= 36 && !/[,.]/.test(raw)) {
+          var nk = raw.toLowerCase().replace(/[^a-z0-9]+/g, "");
+          if (/^(contact|feedback|appointment|upload|resend|otp|human|agent|book|booking|help|support|menu|services|location|hours|cancel|confirm|continue|back|home|chat|live|whatsapp)$/.test(nk)) {
+            return true;
+          }
+          if (words.length === 1 && /^[a-z][a-z0-9_-]{2,31}$/.test(raw)) return true;
+        }
+        return false;
+      }
+
+      function formatUserTranscriptPlain(text) {
+        var t = typeof text === "string" ? text.trim() : "";
+        if (!t) return t;
+        var closed = t.match(/^__form_closed:(\S+)/i);
+        if (closed) {
+          var id = String(closed[1] || "contact").replace(/_/g, " ");
+          var name = id.charAt(0).toUpperCase() + id.slice(1).toLowerCase();
+          return name + " form closed.";
+        }
+        return t;
+      }
+
       function unwrapStr(v) {
         if (typeof v === "string") return v.trim();
         if (v && typeof v === "object" && typeof v.stringValue === "string") return v.stringValue.trim();
@@ -833,6 +865,7 @@
             if (isTranscriptEphemeralStatusLine(ln)) return false;
             if (rich && ln === "Chips" && rich.richContent) return false;
             if (chipLabels.length && chipLabels.indexOf(ln.toLowerCase()) >= 0) return false;
+            if (!rich && isTranscriptStandaloneChipOrMenuLabel(ln)) return false;
             if (rich && richHasActionUi(rich)) {
               if (/^https?:\/\//i.test(ln)) return false;
               if (/^card_\d+$/i.test(ln)) return false;
@@ -876,6 +909,7 @@
         if (turn.role === "assistant") {
           if (isTranscriptPersonaChromeLine(turn.text) || isTranscriptEphemeralStatusLine(turn.text)) return false;
           if (isTranscriptInternalCxToken(turn.text)) return false;
+          if (!resolveRich(turn) && isTranscriptStandaloneChipOrMenuLabel(turn.text)) return false;
           var richProbe = resolveRich(turn);
           if (richProbe && String(richProbe.action || "").toLowerCase() === "open_form") {
             var summaryText = cleanText(turn.text, richProbe);
@@ -1317,7 +1351,7 @@
               role === "assistant"
                 ? renderAssistantBody(t)
                 : (function () {
-                    var plain = cleanText(t.text, null);
+                    var plain = cleanText(formatUserTranscriptPlain(t.text), null);
                     return plain
                       ? '<p class="rc-text">' + escapeHtml(plain) + "</p>"
                       : "";

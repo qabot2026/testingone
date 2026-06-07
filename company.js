@@ -19949,6 +19949,17 @@ function dfchatTranscriptSkipDomRowForCapture_(row) {
     if (row.dataset && row.dataset.dfchatLiveAgentTyping === "1") {
         return true;
     }
+    try {
+        const msg = row.querySelector(".message.bot-message");
+        if (msg instanceof HTMLElement) {
+            const text = (msg.innerText || msg.textContent || "").trim();
+            if (isTranscriptStandaloneChipOrMenuLabel_(text)) {
+                return true;
+            }
+        }
+    } catch {
+        /* ignore */
+    }
     return false;
 }
 
@@ -21151,11 +21162,11 @@ function collectAssistantStringsDeepFromNode_(node, seen, depth) {
     }
     if (typeof node === "string") {
         const t = node.trim().replace(/\s+/g, " ");
-        if (
-            t.length < 4
+        if (t.length < 4
             || t.length > MAX_CHAT_TRANSCRIPT_TEXT_CHARS
             || t.startsWith("projects/")
             || /^[a-f0-9-]{36}$/i.test(t)
+            || isTranscriptStandaloneChipOrMenuLabel_(t)
         ) {
             return;
         }
@@ -21222,7 +21233,7 @@ function extractAssistantVisibleTextsDeepFallback_(event) {
     for (const m of [...responseMessages, ...messengerMessages, ...topMessages]) {
         collectAssistantStringsDeepFromNode_(m, seen, 0);
     }
-    const out = Array.from(seen);
+    const out = Array.from(seen).filter((ln) => !isTranscriptStandaloneChipOrMenuLabel_(ln));
     out.sort((a, b) => a.length - b.length);
     return out.length <= 8 ? out : [out.join("\n\n")];
 }
@@ -21273,7 +21284,9 @@ function coalesceAssistantTranscriptLines_(lines) {
     if (!lines || !lines.length) {
         return [];
     }
-    const parts = dedupeAssistantTranscriptTextLines_(lines);
+    const parts = dedupeAssistantTranscriptTextLines_(lines).filter(
+        (ln) => !isTranscriptStandaloneChipOrMenuLabel_(ln)
+    );
     if (!parts.length) {
         return [];
     }
@@ -21502,6 +21515,78 @@ function isTranscriptInternalCxToken_(line) {
     return false;
 }
 
+/** Common CX chip / quick-reply labels — not standalone staff transcript lines. */
+const TRANSCRIPT_CHIP_MENU_LABEL_KEYS_ = new Set(
+    [
+        "contact",
+        "feedback",
+        "appointment",
+        "upload",
+        "resend",
+        "otp",
+        "human",
+        "agent",
+        "book",
+        "booking",
+        "help",
+        "support",
+        "menu",
+        "services",
+        "location",
+        "hours",
+        "cancel",
+        "confirm",
+        "continue",
+        "back",
+        "home",
+        "chat",
+        "live",
+        "whatsapp"
+    ].map((k) => k.toLowerCase())
+);
+
+/**
+ * Short chip / menu labels (contact, feedback, bare email) — not bot sentences for chatscript.
+ *
+ * @param {string} line
+ * @returns {boolean}
+ */
+function isTranscriptStandaloneChipOrMenuLabel_(line) {
+    const t = typeof line === "string" ? line.trim() : "";
+    if (!t || t.includes("\n")) {
+        return false;
+    }
+    if (/form closed/i.test(t) || isWidgetFormThankYouSummaryLine_(t)) {
+        return false;
+    }
+    if (/^(human agent requested|connected with agent)$/i.test(t)) {
+        return false;
+    }
+    if (/[?!]/.test(t) || /'\w/.test(t)) {
+        return false;
+    }
+    if (/\.\s/.test(t) || (t.endsWith(".") && t.length > 20)) {
+        return false;
+    }
+    const words = t.split(/\s+/).filter(Boolean);
+    if (words.length >= 4) {
+        return false;
+    }
+    if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/i.test(t)) {
+        return true;
+    }
+    if (words.length <= 2 && t.length <= 36 && !/[,.]/.test(t)) {
+        const nk = t.toLowerCase().replace(/[^a-z0-9]+/g, "");
+        if (nk && TRANSCRIPT_CHIP_MENU_LABEL_KEYS_.has(nk)) {
+            return true;
+        }
+        if (words.length === 1 && /^[a-z][a-z0-9_-]{2,31}$/.test(t)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 /**
  * @param {string} line
  * @returns {boolean}
@@ -21514,6 +21599,7 @@ function isTranscriptNoiseLine_(line) {
         || isTranscriptPersonaChromeLine_(t)
         || isTranscriptEphemeralStatusLine_(t)
         || isTranscriptInternalCxToken_(t)
+        || isTranscriptStandaloneChipOrMenuLabel_(t)
     );
 }
 
@@ -23041,6 +23127,16 @@ function closeForm(options) {
 
     if (opts.userDismissedForm === true) {
         dispatchPendingOpenFormFollowup_("cancel");
+        try {
+            const cfg = readContactFormConfig();
+            const fk =
+                typeof cfg.formKey === "string" && cfg.formKey.trim()
+                    ? cfg.formKey.trim()
+                    : getDefaultContactFormId();
+            trackChatUserQueryInSessionContext_(`__form_closed:${fk}`);
+        } catch {
+            /* ignore */
+        }
     }
 }
 
