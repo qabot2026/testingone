@@ -783,7 +783,8 @@
             if (!data.unchanged && data.messages && data.messages.length) {
                 let maxIso = lastMessageIso;
                 let gotVisitorMsg = false;
-                for (const m of data.messages) {
+                const syncMessages = data.messages.slice().sort(compareMessagesByTime_);
+                for (const m of syncMessages) {
                     if (document.querySelector('[data-msg-id="' + m.id + '"]')) {
                         if (m.id) lastMessageId = m.id;
                         continue;
@@ -801,6 +802,7 @@
                     clearVisitorTypingDraft_();
                 }
                 if (maxIso) lastMessageIso = maxIso;
+                reconcileMessageListOrder_();
                 messageList.scrollTop = messageList.scrollHeight;
             }
             contextPollTicks += 1;
@@ -3152,7 +3154,7 @@
         } else {
             loadContext(c.id);
         }
-        loadMessages(c.id);
+        await loadMessages(c.id, false, true);
         startTypingPulse_();
         void runLiveSync_();
     }
@@ -3217,6 +3219,7 @@
                 syncVisitorTypingDraftFromPulse_(data);
             }
             if (!messages.length && quiet) return;
+            messages.sort(compareMessagesByTime_);
             let maxIso = lastMessageIso;
             for (const m of messages) {
                 if (document.querySelector('[data-msg-id="' + m.id + '"]')) {
@@ -3241,6 +3244,7 @@
             if (maxIso) {
                 lastMessageIso = maxIso;
             }
+            reconcileMessageListOrder_();
             messageList.scrollTop = messageList.scrollHeight;
         } catch (e) {
             if (!quiet) {
@@ -3332,6 +3336,73 @@
         messageList.querySelectorAll('[data-msg-id^="opt-"]').forEach((el) => el.remove());
     }
 
+    function messageCreatedAtMs_(m) {
+        const iso = m && m.createdAt ? String(m.createdAt) : "";
+        const ms = Date.parse(iso);
+        return Number.isFinite(ms) ? ms : 0;
+    }
+
+    function compareMessagesByTime_(a, b) {
+        const ta = messageCreatedAtMs_(a);
+        const tb = messageCreatedAtMs_(b);
+        if (ta !== tb) {
+            return ta - tb;
+        }
+        return String((a && a.id) || "").localeCompare(String((b && b.id) || ""));
+    }
+
+    function messageElCreatedAtMs_(el) {
+        if (!(el instanceof HTMLElement)) {
+            return 0;
+        }
+        const ms = Date.parse(el.dataset.createdAt || "");
+        return Number.isFinite(ms) ? ms : 0;
+    }
+
+    /** Keep transcript DOM in createdAt order (live-sync can arrive before older history loads). */
+    function reconcileMessageListOrder_() {
+        if (!messageList) {
+            return;
+        }
+        const rows = Array.from(messageList.querySelectorAll(".msg[data-msg-id]"));
+        if (rows.length < 2) {
+            return;
+        }
+        rows.sort((a, b) => {
+            const ta = messageElCreatedAtMs_(a);
+            const tb = messageElCreatedAtMs_(b);
+            if (ta !== tb) {
+                return ta - tb;
+            }
+            return String(a.dataset.msgId || "").localeCompare(String(b.dataset.msgId || ""));
+        });
+        for (let i = 0; i < rows.length; i += 1) {
+            messageList.appendChild(rows[i]);
+        }
+    }
+
+    function insertMessageElInOrder_(div, m) {
+        if (!messageList || !div) {
+            return;
+        }
+        const msgMs = messageCreatedAtMs_(m);
+        const msgId = m && m.id ? String(m.id) : "";
+        const siblings = messageList.querySelectorAll(".msg[data-created-at]");
+        for (let i = 0; i < siblings.length; i += 1) {
+            const sib = siblings[i];
+            const sibMs = messageElCreatedAtMs_(sib);
+            if (msgMs < sibMs) {
+                messageList.insertBefore(div, sib);
+                return;
+            }
+            if (msgMs === sibMs && msgId && sib.dataset.msgId && msgId < sib.dataset.msgId) {
+                messageList.insertBefore(div, sib);
+                return;
+            }
+        }
+        messageList.appendChild(div);
+    }
+
     function appendMessageEl(m) {
         if (!m || !messageList) return;
         const msgId = m.id ? String(m.id) : "";
@@ -3345,6 +3416,9 @@
         const role = m.role || "visitor";
         div.className = "msg " + role;
         div.dataset.msgId = m.id;
+        if (m.createdAt) {
+            div.dataset.createdAt = String(m.createdAt);
+        }
         let body;
         if (role === "system") {
             body = escapeHtml(formatSystemLineForDesk_(m.text || "", m));
@@ -3376,7 +3450,7 @@
             body = escapeHtml(m.text || "");
         }
         div.innerHTML = body + "<time>" + escapeHtml(formatTime(m.createdAt)) + "</time>";
-        messageList.appendChild(div);
+        insertMessageElInOrder_(div, m);
     }
 
     if (reopenChatBtn) {
