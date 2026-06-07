@@ -129,7 +129,8 @@ const STANDARD_SESSION_COLUMN_INDEX0_LEGACY = 8;
 /** Column A (0): staff “Chat script” = Conv. link HYPERLINK — never raw JSON. */
 const STANDARD_CHAT_SCRIPT_LINK_COL_INDEX0 = 0;
 /** Column S (18): Document / drive file links — never transcript JSON or duplicate link. */
-const STANDARD_DOCUMENT_COL_INDEX0 = 18;
+/** Document column (0-based) when row 1 matches canonical layout including OS. */
+const STANDARD_DOCUMENT_COL_INDEX0 = 19;
 /** Only used when env mistakenly targets A or S for JSON — never written by default. */
 const STANDARD_CHAT_TRANSCRIPT_JSON_COL_LETTER = "T";
 const DEDUP_LOOKBACK_ROWS = Math.max(
@@ -421,7 +422,7 @@ export function formatConversationDateTimeForSheet(d = new Date()) {
  */
 function appendRangeSchemaWidth_(raw) {
     const tab = tabNameFromRange(raw);
-    return `${tab}!A:AE`;
+    return `${tab}!A:AG`;
 }
 
 /** Row 1 headers when the sheet header row is empty (matches standard lead + metrics layout). */
@@ -439,6 +440,7 @@ const CANONICAL_LEAD_SHEET_HEADERS = [
     "Session ID",
     "Device",
     "Browser",
+    "OS",
     "City",
     "IP Address",
     "App. Booked",
@@ -456,7 +458,8 @@ const CANONICAL_LEAD_SHEET_HEADERS = [
     "UtmContent",
     "UtmMedium",
     "UtmSource",
-    "UtmTerm"
+    "UtmTerm",
+    "Fall back"
 ];
 
 /**
@@ -1356,9 +1359,9 @@ export function assembleLeadSheetPayloadFromSources_(incomingRow, sheetExtrasSou
     };
 }
 
-/** Column U (rating) and V (feedback) — 0-based indices 20 and 21. */
-const SHEET_FEEDBACK_RATING_COL_LETTER = "U";
-const SHEET_FEEDBACK_MESSAGE_COL_LETTER = "V";
+/** Column U (rating) and W (feedback) — canonical layout with OS column (0-based 21 and 22). */
+const SHEET_FEEDBACK_RATING_COL_LETTER = "V";
+const SHEET_FEEDBACK_MESSAGE_COL_LETTER = "W";
 
 /** @param {string} s */
 function isLiveAgentChannelLabel_(s) {
@@ -1527,9 +1530,9 @@ const LEAD_CAPTURE_NEGATIVE_RE =
  * @param {unknown[]} headersRaw
  */
 function leadCaptureStatColFromHeaders_(headerMap, headersRaw) {
-    const appointmentBookedIdx = pickAppointmentStatsColumnIdx_(headerMap, headersRaw, 15);
-    const appointmentDateIdx = pickHeaderIndex_(headerMap, SHEET_H_APPOINTMENT_DATE, 16);
-    const appointmentTimeIdx = pickHeaderIndex_(headerMap, SHEET_H_APPOINTMENT_TIME, 17);
+    const appointmentBookedIdx = pickAppointmentStatsColumnIdx_(headerMap, headersRaw, 16);
+    const appointmentDateIdx = pickHeaderIndex_(headerMap, SHEET_H_APPOINTMENT_DATE, 17);
+    const appointmentTimeIdx = pickHeaderIndex_(headerMap, SHEET_H_APPOINTMENT_TIME, 18);
     const appointmentDatetimeIdx = firstHeaderIdxFromAliases_(headerMap, SHEET_H_APPOINTMENT_DATETIME);
     const transcriptIdx = firstHeaderIdxFromAliases_(headerMap, CHAT_TRANSCRIPT_JSON_HEADER_ALIASES);
     const userQueriesIdx = firstHeaderIdxFromAliases_(headerMap, SHEET_H_USER_QUERIES);
@@ -1537,7 +1540,7 @@ function leadCaptureStatColFromHeaders_(headerMap, headersRaw) {
         mobileIdx: pickHeaderIndex_(headerMap, SHEET_H_MOBILE, 4),
         emailIdx: pickHeaderIndex_(headerMap, SHEET_H_EMAIL, 5),
         channelIdx: pickHeaderIndex_(headerMap, SHEET_H_CHANNEL, 6),
-        cityIdx: pickHeaderIndex_(headerMap, SHEET_H_CITY, 13),
+        cityIdx: pickHeaderIndex_(headerMap, SHEET_H_CITY, 14),
         appointmentBookedIdx,
         appointmentDateIdx,
         appointmentTimeIdx,
@@ -3451,24 +3454,25 @@ const SHEET_H_FEEDBACK_MESSAGE = [
 ];
 
 /** Staff viewer / export: through column AE (UtmTerm). */
-const CONVERSATION_SHEET_PREVIEW_MIN_COL_INDEX0 = 30;
+const CONVERSATION_SHEET_PREVIEW_MIN_COL_INDEX0 = 32;
 
 /**
- * Fixed column letters T–AE (row-1 headers: Sentiment … UtmTerm).
- * A–S = Conv. link through Document; T = Sentiment; U = Rating; V = Feedback; W+ = metrics/UTM.
+ * Fixed column letters U–AG (canonical row 1: Sentiment … Fall back) when header map is unavailable.
+ * A–T = Conv. link through Document; U = Sentiment; V = Rating; W = Feedback; … AG = Fall back.
  */
-const SHEET_COL_SENTIMENT = "T";
-const SHEET_COL_FEEDBACK_RATING = "U";
-const SHEET_COL_FEEDBACK_MESSAGE = "V";
-const SHEET_COL_DURATION = "W";
-const SHEET_COL_CRM_PUSH_STATUS = "X";
-const SHEET_COL_MESSAGE_COUNT = "Y";
-const SHEET_COL_AVG_RESPONSE_MS = "Z";
-const SHEET_COL_UTM_CAMPAIGN = "AA";
-const SHEET_COL_UTM_CONTENT = "AB";
-const SHEET_COL_UTM_MEDIUM = "AC";
-const SHEET_COL_UTM_SOURCE = "AD";
-const SHEET_COL_UTM_TERM = "AE";
+const SHEET_COL_SENTIMENT = "U";
+const SHEET_COL_FEEDBACK_RATING = "V";
+const SHEET_COL_FEEDBACK_MESSAGE = "W";
+const SHEET_COL_DURATION = "X";
+const SHEET_COL_CRM_PUSH_STATUS = "Y";
+const SHEET_COL_MESSAGE_COUNT = "Z";
+const SHEET_COL_AVG_RESPONSE_MS = "AA";
+const SHEET_COL_UTM_CAMPAIGN = "AB";
+const SHEET_COL_UTM_CONTENT = "AC";
+const SHEET_COL_UTM_MEDIUM = "AD";
+const SHEET_COL_UTM_SOURCE = "AE";
+const SHEET_COL_UTM_TERM = "AF";
+const SHEET_COL_FALLBACK = "AG";
 
 /**
  * @param {unknown[]} headersRaw
@@ -3556,6 +3560,8 @@ const SHEET_H_UTM_CONTENT = ["utmcontent", "utm_content"];
 const SHEET_H_UTM_MEDIUM = ["utmmedium", "utm_medium"];
 const SHEET_H_UTM_SOURCE = ["utmsource", "utm_source"];
 const SHEET_H_UTM_TERM = ["utmterm", "utm_term"];
+const SHEET_H_OS = ["os", "operatingsystem", "osname"];
+const SHEET_H_FALLBACK = ["fallback", "fallbackflag", "fall_back"];
 
 /** True when row-1 headers map to at least one known lead column (avoids all-blank writes). */
 function sheetHeaderMapHasRecognizedLeadKeys_(byKey) {
@@ -3632,12 +3638,11 @@ async function getSheetHeaderRowRaw_(sheets, tab) {
  * @param {{ convLinkFormula?: string }} [opts]
  */
 async function buildFullLeadRowValuesForSheet_(sheets, tab, lead, opts) {
-    void sheets;
-    void tab;
-    const rowValues = buildSheetRowValuesFromHeaders_(CANONICAL_LEAD_SHEET_HEADERS.slice(), lead, opts);
+    const headersRaw = await getSheetHeaderRowRaw_(sheets, tab);
+    const rowValues = buildSheetRowValuesFromHeaders_(headersRaw, lead, opts);
     if (leadRowValuesLookBlank_(rowValues, lead)) {
         console.warn(
-            "[chatbot-api] Sheets: assembled lead payload produced no mapped cells for canonical A–AE layout.",
+            "[chatbot-api] Sheets: assembled lead payload produced no mapped cells for sheet header layout.",
             typeof lead.clientSessionId === "string" ? lead.clientSessionId.slice(0, 36) : ""
         );
     }
@@ -3773,6 +3778,9 @@ function resolveLeadValueForNormalizedHeader_(nk, lead, opts) {
     }
     if (nk === "utmterm") {
         return sheetOutboundCell_(L.utmTerm);
+    }
+    if (nk === "fallback") {
+        return sheetOutboundCell_(L.fallBack);
     }
     return "";
 }
@@ -4655,10 +4663,8 @@ async function buildStandardLeadRowUpdates_(sheets, tab, rowNumber, lead) {
         const idx0 = getIdx(aliases, fallbackIdx);
         updates.push({ range: `${tab}!${col(idx0)}${rowNumber}`, values: [[v]] });
     };
-    const putMetricCell = (aliases, fallbackIdx, colLet, value) => {
-        const v = sheetOutboundCell_(value);
-        put(aliases, fallbackIdx, v, true);
-        updates.push({ range: `${tab}!${colLet}${rowNumber}`, values: [[v]] });
+    const putMetricCell = (aliases, fallbackIdx, value) => {
+        put(aliases, fallbackIdx, value, true);
     };
     const putDate = (aliases, fallbackIdx, raw) => {
         const cell = sheetDateCellForSheetsApi_(raw);
@@ -4715,48 +4721,35 @@ async function buildStandardLeadRowUpdates_(sheets, tab, rowNumber, lead) {
     put(SHEET_H_SESSION, 10, lead.clientSessionId);
     put(["device", "devicetype"], 11, formatDeviceTypeForSheetDisplay(lead.deviceType));
     put(["browser", "browsername"], 12, lead.browserName);
+    put(SHEET_H_OS, 13, lead.osName);
     put(
         ["city", "visitorcity", "usercity", "cityname", "location", "preferredcity"],
-        13,
+        14,
         lead.city
     );
-    put(["ip", "ipaddress", "ip_address"], 14, lead.ip);
+    put(["ip", "ipaddress", "ip_address"], 15, lead.ip);
     // Prefer exact "Appointment Booked" match only — aliases like `appointment` would hit Date/Time headers.
-    put(["appointmentbooked", "appointment_booked", "isappointmentbooked"], 15, lead.appointmentBooked);
-    putDate(["appointmentdate"], 16, lead.appointmentDate);
-    put(["appointmenttime"], 17, lead.appointmentTime);
+    put(["appointmentbooked", "appointment_booked", "isappointmentbooked"], 16, lead.appointmentBooked);
+    putDate(["appointmentdate"], 17, lead.appointmentDate);
+    put(["appointmenttime"], 18, lead.appointmentTime);
     put(
         ["document", "documents", "drivefilelink", "drive file link", "drivefile", "filelink", "filelinks", "drivelink"],
-        18,
+        19,
         lead.driveFileLink
     );
-    putMetricCell(SHEET_H_SENTIMENT, 19, SHEET_COL_SENTIMENT, lead.sentiment);
-    put(SHEET_H_FEEDBACK_RATING, 20, lead.feedbackRating);
-    put(SHEET_H_FEEDBACK_MESSAGE, 21, lead.feedbackMessage);
-    putMetricCell(SHEET_H_CHAT_DURATION, 22, SHEET_COL_DURATION, lead.duration);
-    putMetricCell(SHEET_H_CRM_PUSH_STATUS, 23, SHEET_COL_CRM_PUSH_STATUS, lead.crmPushStatus);
-    putMetricCell(SHEET_H_MESSAGE_COUNT, 24, SHEET_COL_MESSAGE_COUNT, lead.messageCount);
-    putMetricCell(SHEET_H_AVG_RESPONSE_MS, 25, SHEET_COL_AVG_RESPONSE_MS, lead.avgResponseTimeMs);
-    putMetricCell(SHEET_H_UTM_CAMPAIGN, 26, SHEET_COL_UTM_CAMPAIGN, lead.utmCampaign);
-    putMetricCell(SHEET_H_UTM_CONTENT, 27, SHEET_COL_UTM_CONTENT, lead.utmContent);
-    putMetricCell(SHEET_H_UTM_MEDIUM, 28, SHEET_COL_UTM_MEDIUM, lead.utmMedium);
-    putMetricCell(SHEET_H_UTM_SOURCE, 29, SHEET_COL_UTM_SOURCE, lead.utmSource);
-    putMetricCell(SHEET_H_UTM_TERM, 30, SHEET_COL_UTM_TERM, lead.utmTerm);
-
-    const fr = sheetOutboundCell_(lead.feedbackRating);
-    const fm = sheetOutboundCell_(lead.feedbackMessage);
-    if (String(fr || "").trim()) {
-        updates.push({
-            range: `${tab}!${SHEET_COL_FEEDBACK_RATING}${rowNumber}`,
-            values: [[fr]]
-        });
-    }
-    if (String(fm || "").trim()) {
-        updates.push({
-            range: `${tab}!${SHEET_COL_FEEDBACK_MESSAGE}${rowNumber}`,
-            values: [[fm]]
-        });
-    }
+    putMetricCell(SHEET_H_SENTIMENT, 20, lead.sentiment);
+    put(SHEET_H_FEEDBACK_RATING, 21, lead.feedbackRating);
+    put(SHEET_H_FEEDBACK_MESSAGE, 22, lead.feedbackMessage);
+    putMetricCell(SHEET_H_CHAT_DURATION, 23, lead.duration);
+    putMetricCell(SHEET_H_CRM_PUSH_STATUS, 24, lead.crmPushStatus);
+    putMetricCell(SHEET_H_MESSAGE_COUNT, 25, lead.messageCount);
+    putMetricCell(SHEET_H_AVG_RESPONSE_MS, 26, lead.avgResponseTimeMs);
+    putMetricCell(SHEET_H_UTM_CAMPAIGN, 27, lead.utmCampaign);
+    putMetricCell(SHEET_H_UTM_CONTENT, 28, lead.utmContent);
+    putMetricCell(SHEET_H_UTM_MEDIUM, 29, lead.utmMedium);
+    putMetricCell(SHEET_H_UTM_SOURCE, 30, lead.utmSource);
+    putMetricCell(SHEET_H_UTM_TERM, 31, lead.utmTerm);
+    put(SHEET_H_FALLBACK, 32, lead.fallBack);
 
     return updates;
 }

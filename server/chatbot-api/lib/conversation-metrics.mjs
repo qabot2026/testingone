@@ -769,7 +769,8 @@ export function conversationMetricsForSheetRow_(metrics, clientContext, incoming
         utmContent: m.utmContent || pick("utm_content", "utmcontent"),
         utmMedium: m.utmMedium || pick("utm_medium", "utmmedium"),
         utmSource: m.utmSource || pick("utm_source", "utmsource"),
-        utmTerm: m.utmTerm || pick("utm_term", "utmterm")
+        utmTerm: m.utmTerm || pick("utm_term", "utmterm"),
+        fallBack: pick("fallback", "fall_back", "fallBack", "fall back")
     };
 }
 
