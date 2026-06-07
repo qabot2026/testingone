@@ -35,7 +35,7 @@
   }
 
   var CHAT_HOST = chatHostFromLoaderSrc() || "https://qabot2026.github.io/testingone/";
-  var IFRAME_VERSION = "151-persona-one-per-message";
+  var IFRAME_VERSION = "152-persona-repair-stable";
 
   function getLoaderQuery() {
     var cur = document.currentScript;
