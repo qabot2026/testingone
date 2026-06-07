@@ -29646,12 +29646,6 @@ function decoratePersonaMessages(dfMessenger) {
             liveAgentRepairUserPersonaPairing_(list);
         }
     }
-
-    try {
-        schedulePersonaShadowFix(dfMessenger);
-    } catch {
-        /* ignore */
-    }
 }
 
 function getPersonaType(imageNode) {
