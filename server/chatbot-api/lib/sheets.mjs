@@ -2728,6 +2728,7 @@ function extractLiveAgentHandoffTailFromCsv_(csv) {
     return all.slice(start).join(", ");
 }
 
+function splitCsvValues_(raw) {
     const s = typeof raw === "string" ? raw : "";
     if (!s.trim()) {
         return [];
