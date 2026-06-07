@@ -112,8 +112,10 @@ window.COMPANY_CHAT_UI_CONFIG = {
       userImageNudgeDownPx: 3,
       /** Bot Quality name/time text only — nudge left (px). Cat image stays put. */
       botTextNudgeLeftPx: 10,
-      /** Human agent connected — bot cat image up (px) only. */
+      /** Human agent connected — bot cat image up (px). */
       liveAgentBotImageNudgeUpPx: 10,
+      /** Human agent connected — user persona row up (px). */
+      liveAgentUserPersonaNudgeUpPx: 10,
       /** AI co-pilot (Bot on) during handoff — user persona row up (px). */
       liveAgentAiUserPersonaNudgeUpPx: 2
     },
