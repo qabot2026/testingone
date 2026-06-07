@@ -20045,6 +20045,9 @@ function scrapeVisibleBotTranscriptTextsFromMessenger_(dfMessenger) {
  * @param {HTMLElement | null | undefined} dfMessenger
  */
 function captureDomBotTranscriptLines_(dfMessenger) {
+    if (liveAgentHandoffIsActive_()) {
+        return;
+    }
     const lines = scrapeVisibleBotTranscriptTextsFromMessenger_(dfMessenger);
     if (!lines.length) {
         return;
@@ -21224,6 +21227,8 @@ function extractAssistantVisibleTextsDeepFallback_(event) {
  */
 function normalizeChatTranscriptCompareText_(text) {
     return String(text || "")
+        .replace(/\u2060\u200d\u2060/g, "")
+        .replace(/[\u200B-\u200D\uFEFF\u2060]/g, "")
         .replace(/\s{2,}\n/g, " ")
         .replace(/\r\n/g, "\n")
         .replace(/\n+/g, " ")
@@ -22209,7 +22214,10 @@ function appendChatTranscriptAssistantLines_(lines, opts) {
             const text =
                 trimmed.length > MAX_CHAT_TRANSCRIPT_TEXT_CHARS
                     ? `${trimmed.slice(0, MAX_CHAT_TRANSCRIPT_TEXT_CHARS)}…`
-                    : trimmed;
+                    : trimmed.replace(/\u2060\u200d\u2060/g, "").replace(/[\u200B-\u200D\uFEFF\u2060]/g, "").trim();
+            if (!text) {
+                continue;
+            }
             const last = transcript.length ? transcript[transcript.length - 1] : null;
             const sameAsLast =
                 last

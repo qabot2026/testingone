@@ -4921,7 +4921,7 @@ function transcriptTurnsFromStoredChatArray_(arr) {
             continue;
         }
         if (role === "assistant") {
-            text = dedupeTranscriptDisplayText_(text);
+            text = dedupeTranscriptDisplayText_(stripLiveAgentTranscriptFingerprint_(text));
         }
         const atMs = coerceTranscriptAtMs_(o.at);
         const rawSeq = o.seq;
@@ -5317,14 +5317,89 @@ function isTranscriptOpenFormActionTurn_(turn) {
     return true;
 }
 
+/** Invisible fingerprint on live-agent chat lines (must strip before transcript compare). */
+const LIVE_AGENT_TRANSCRIPT_FINGERPRINT_RE_ = /\u2060\u200d\u2060|[\u200B-\u200D\uFEFF\u2060]/g;
+
+/** @param {unknown} text */
+function stripLiveAgentTranscriptFingerprint_(text) {
+    return String(text ?? "").replace(LIVE_AGENT_TRANSCRIPT_FINGERPRINT_RE_, "").trim();
+}
+
 /** Agent lines are often stored as `Name: message` in live-agent inbox. */
 function transcriptAgentBodyCompareNorm_(text) {
-    const raw = String(text ?? "").trim();
+    const raw = stripLiveAgentTranscriptFingerprint_(text);
     if (!raw) {
         return "";
     }
     const stripped = raw.replace(/^[^:]{1,48}:\s+/, "").trim();
     return transcriptAssistantCompareNorm_(stripped || raw);
+}
+
+/**
+ * @param {Set<string>} agentNorms
+ * @param {unknown} text
+ */
+function registerAgentTranscriptMirrorNorms_(agentNorms, text) {
+    const stripped = stripLiveAgentTranscriptFingerprint_(text);
+    if (!stripped) {
+        return;
+    }
+    agentNorms.add(transcriptAssistantCompareNorm_(stripped));
+    const bodyNorm = transcriptAgentBodyCompareNorm_(stripped);
+    if (bodyNorm) {
+        agentNorms.add(bodyNorm);
+    }
+    const lower = stripped.toLowerCase();
+    const copilotIdx = lower.indexOf("ai assistant is replying");
+    if (copilotIdx >= 0) {
+        agentNorms.add(transcriptAssistantCompareNorm_(stripped.slice(copilotIdx)));
+    }
+}
+
+/**
+ * @param {unknown} assistantText
+ * @param {Set<string>} agentNorms
+ */
+function assistantTextMirrorsAgentTranscript_(assistantText, agentNorms) {
+    if (!agentNorms.size) {
+        return false;
+    }
+    const stripped = stripLiveAgentTranscriptFingerprint_(assistantText);
+    if (!stripped) {
+        return false;
+    }
+    const norm = transcriptAssistantCompareNorm_(stripped);
+    if (norm && agentNorms.has(norm)) {
+        return true;
+    }
+    if (!norm || norm.length < 10) {
+        return false;
+    }
+    for (const agentNorm of agentNorms) {
+        if (!agentNorm || agentNorm.length < 10) {
+            continue;
+        }
+        if (agentNorm.includes(norm) || norm.includes(agentNorm)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/** @param {{ role: string, text: string, rich?: Record<string, unknown>, at?: number, seq?: number }[]} turns */
+function buildAgentTranscriptMirrorNormSet_(turns) {
+    /** @type {Set<string>} */
+    const agentNorms = new Set();
+    if (!Array.isArray(turns)) {
+        return agentNorms;
+    }
+    for (let i = 0; i < turns.length; i += 1) {
+        const t = turns[i];
+        if (t && t.role === "agent") {
+            registerAgentTranscriptMirrorNorms_(agentNorms, t.text);
+        }
+    }
+    return agentNorms;
 }
 
 /** Bot/user persona label + clock rows — not staff conversation content. */
@@ -5378,23 +5453,7 @@ function collapseLiveAgentAssistantMirrors_(turns) {
     if (!Array.isArray(turns) || turns.length < 2) {
         return Array.isArray(turns) ? turns.slice() : [];
     }
-    /** @type {Set<string>} */
-    const agentNorms = new Set();
-    for (let i = 0; i < turns.length; i += 1) {
-        const t = turns[i];
-        if (!t || t.role !== "agent") {
-            continue;
-        }
-        const text = String(t.text || "").trim();
-        if (!text) {
-            continue;
-        }
-        agentNorms.add(transcriptAssistantCompareNorm_(text));
-        const bodyNorm = transcriptAgentBodyCompareNorm_(text);
-        if (bodyNorm) {
-            agentNorms.add(bodyNorm);
-        }
-    }
+    const agentNorms = buildAgentTranscriptMirrorNormSet_(turns);
     if (!agentNorms.size) {
         return turns.slice();
     }
@@ -5402,18 +5461,13 @@ function collapseLiveAgentAssistantMirrors_(turns) {
         if (!t || t.role !== "assistant") {
             return true;
         }
-        const text = String(t.text || "").trim();
-        if (!text) {
-            return true;
-        }
-        const norm = transcriptAssistantCompareNorm_(text);
-        return !(norm && agentNorms.has(norm));
+        return !assistantTextMirrorsAgentTranscript_(t.text, agentNorms);
     });
 }
 
 /** Widget form bubbles use `  \\n` between rows; flatten before comparing assistant duplicates. */
 function transcriptAssistantCompareNorm_(text) {
-    return String(text ?? "")
+    return stripLiveAgentTranscriptFingerprint_(text)
         .replace(/\s{2,}\n/g, " ")
         .replace(/\r\n/g, "\n")
         .replace(/\n+/g, " ")
@@ -5622,6 +5676,7 @@ function dedupeTranscriptTurnsForDisplay_(turns) {
     let prevAgentNorm = "";
     /** @type {Set<string>} */
     const seenHandoffUserNorm = new Set();
+    const agentMirrorNorms = buildAgentTranscriptMirrorNormSet_(turns);
     for (let i = 0; i < turns.length; i += 1) {
         const t = turns[i];
         if (!t || typeof t !== "object") {
@@ -5651,6 +5706,9 @@ function dedupeTranscriptTurnsForDisplay_(turns) {
                 : rich
                   ? `rich:${JSON.stringify(rich)}`
                   : "";
+            if (assistantTextMirrorsAgentTranscript_(text, agentMirrorNorms)) {
+                continue;
+            }
             if (text && isTranscriptPersonaChromeText_(text)) {
                 continue;
             }

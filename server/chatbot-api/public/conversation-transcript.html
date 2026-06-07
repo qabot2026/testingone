@@ -807,6 +807,7 @@
 
       function cleanText(text, rich) {
         var t = typeof text === "string" ? text.trim() : "";
+        t = t.replace(/\u2060\u200d\u2060/g, "").replace(/[\u200B-\u200D\uFEFF\u2060]/g, "").trim();
         if (!t) return t;
         var chipLabels = rich ? chipLabelsFromRich(rich) : [];
         var seenLine = {};
