@@ -116,6 +116,8 @@ window.COMPANY_CHAT_UI_CONFIG = {
       userTextNudgeUpPx: 5,
       /** Bot Quality name/time text only — nudge left (px). Cat image stays put. */
       botTextNudgeLeftPx: 10,
+      /** Space between bot persona label (Quality) and time (~1 character). */
+      botLabelTimeGapPx: 4,
       /** Human agent connected — bot cat image up (px). */
       liveAgentBotImageNudgeUpPx: 10,
       /** Human agent connected — user persona row up (px). */

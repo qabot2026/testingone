@@ -288,6 +288,11 @@ function readPersonaDisplayConfig() {
             typeof pd.botTextNudgeLeftPx === "number" && Number.isFinite(pd.botTextNudgeLeftPx)
                 ? Math.max(-32, Math.min(32, pd.botTextNudgeLeftPx))
                 : 10,
+        /** Gap between bot persona label and time (px) — ~1 space at 11px. */
+        botLabelTimeGapPx:
+            typeof pd.botLabelTimeGapPx === "number" && Number.isFinite(pd.botLabelTimeGapPx)
+                ? Math.max(0, Math.min(24, pd.botLabelTimeGapPx))
+                : 4,
         /** Visitor + human agent connected — bot cat image up (px). */
         liveAgentBotImageNudgeUpPx:
             typeof pd.liveAgentBotImageNudgeUpPx === "number" && Number.isFinite(pd.liveAgentBotImageNudgeUpPx)
@@ -1168,6 +1173,10 @@ function cssUserPersonaLabelNudgeUpPx_() {
 
 function cssBotPersonaTextNudgeLeftPx_() {
     return Math.max(-32, Math.min(32, PERSONA_DISPLAY_CONFIG.botTextNudgeLeftPx ?? 10));
+}
+
+function cssBotPersonaLabelTimeGapPx_() {
+    return Math.max(0, Math.min(24, PERSONA_DISPLAY_CONFIG.botLabelTimeGapPx ?? 4));
 }
 
 function liveAgentHumanChatPersonaLayoutActive_() {
@@ -26721,7 +26730,7 @@ function buildPersonaImageMarkdownWithTime_(baseUrl, label, timeLabel, urlMarker
         if (marker === PERSONA_URL_MARKER_USER_IMG) {
             return `${imgMd} <span class="dfchat-user-persona-label">${l}</span> **${t}**`;
         }
-        return `${imgMd} ${l} **${t}**`;
+        return `${imgMd} <span class="dfchat-bot-persona-label">${l}</span>**${t}**`;
     }
     if (l) {
         if (marker === PERSONA_URL_MARKER_USER_IMG) {
@@ -26885,6 +26894,7 @@ function getPersonaImageGuardCss() {
     const personaDown = cfg.mode === "image" ? `${img.offsetDownPx}px` : "0px";
     const personaRight = cfg.mode === "image" ? `${img.offsetRightPx}px` : "0px";
     const botTextLeft = cssBotPersonaTextNudgeLeftPx_();
+    const botLabelTimeGap = `${cssBotPersonaLabelTimeGapPx_()}px`;
     const botCatImgX =
         cfg.mode === "image" ? `${img.offsetRightPx + botTextLeft}px` : `${botTextLeft}px`;
     const botCatImgY = `${cssBotCatImageOffsetDownPx_()}px`;
@@ -27010,6 +27020,13 @@ img[src*="%23dfchat-live-agent-label"] {
   filter: blur(${PERSONA_DISPLAY_CONFIG.blurPx}px) !important;
   opacity: ${PERSONA_DISPLAY_CONFIG.opacity} !important;
 }
+.message.bot-message.markdown:has(img[src*="dfchat-bot-persona"]) .dfchat-bot-persona-label,
+.message.bot-message.markdown:has(img[src*="%23dfchat-bot-persona"]) .dfchat-bot-persona-label,
+.message.bot-message.markdown:has(img[src*="dfchat-live-agent-label"]) .dfchat-bot-persona-label,
+.message.bot-message.markdown:has(img[src*="%23dfchat-live-agent-label"]) .dfchat-bot-persona-label {
+  display: inline !important;
+  vertical-align: baseline !important;
+}
 .message.bot-message.markdown:has(img[src*="dfchat-bot-persona"]) p strong,
 .message.bot-message.markdown:has(img[src*="%23dfchat-bot-persona"]) p strong,
 .message.bot-message.markdown:has(img[src*="dfchat-agent-persona"]) p strong,
@@ -27018,6 +27035,7 @@ img[src*="%23dfchat-live-agent-label"] {
 .message.bot-message.markdown:has(img[src*="%23dfchat-live-agent-label"]) p strong {
   display: inline !important;
   vertical-align: baseline !important;
+  margin-left: ${botLabelTimeGap} !important;
   transform: translate(${timeRight}, ${timeDown}) !important;
   color: ${PERSONA_DISPLAY_CONFIG.timeColor} !important;
   font-size: ${PERSONA_DISPLAY_CONFIG.timeFontSizePx}px !important;
