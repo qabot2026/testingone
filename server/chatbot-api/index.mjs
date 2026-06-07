@@ -5266,7 +5266,27 @@ function isTranscriptInternalUserToken_(text) {
 }
 
 function shouldOmitTranscriptUserTurn_(text) {
-    return isTranscriptHandoffRoutingToken_(text) || isTranscriptInternalUserToken_(text);
+    return (
+        isTranscriptHandoffRoutingToken_(text)
+        || isTranscriptInternalUserToken_(text)
+        || isTranscriptLiveAgentSheetStatusLine_(text)
+    );
+}
+
+/** Sheet1 queue snapshot (`[Live Agent] | Status: …`) — ops metadata, not visitor chat. */
+function isTranscriptLiveAgentSheetStatusLine_(text) {
+    const t = String(text ?? "").trim();
+    if (!t) {
+        return false;
+    }
+    if (/^\[Live Agent\]/i.test(t)) {
+        return true;
+    }
+    return (
+        /Status:\s*/i.test(t)
+        && /Dept:/i.test(t)
+        && (/Queue:/i.test(t) || /Agent:/i.test(t))
+    );
 }
 
 /** Typing indicators — ephemeral UI, not conversation content. */
@@ -6194,10 +6214,14 @@ function userTurnsFromSheetQueriesCsv_(csv) {
     if (bits.length === 0) {
         return [];
     }
-    if (bits.length === 1) {
-        return [{ role: "user", text: bits[0] }];
+    const kept = bits.filter((text) => !isTranscriptLiveAgentSheetStatusLine_(text));
+    if (!kept.length) {
+        return [];
     }
-    return bits.map((text) => ({ role: "user", text }));
+    if (kept.length === 1) {
+        return [{ role: "user", text: kept[0] }];
+    }
+    return kept.map((text) => ({ role: "user", text }));
 }
 
 app.options(PATHNAME_CONVERSATIONS_SHEET_JSON, (req, res) => {

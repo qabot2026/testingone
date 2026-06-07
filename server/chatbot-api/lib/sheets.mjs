@@ -2651,6 +2651,12 @@ export function sanitizeUserQueriesCsvForSheet(csv) {
         if (nk && USER_QUERY_NOISE_KEYS.has(nk)) {
             continue;
         }
+        if (/^\[Live Agent\]/i.test(t)) {
+            continue;
+        }
+        if (/Status:\s*/i.test(t) && /Dept:/i.test(t) && (/Queue:/i.test(t) || /Agent:/i.test(t))) {
+            continue;
+        }
         kept.push(t);
     }
     return kept.join(", ");

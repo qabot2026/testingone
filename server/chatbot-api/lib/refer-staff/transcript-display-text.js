@@ -74,8 +74,21 @@ function stripDialogflowActionPrefix(s) {
     .trim();
 }
 
+/** Internal Sheet1 queue snapshot — not visitor chat (see Live Agent tab for status). */
+function isLiveAgentSheetStatusLine(text) {
+  const t = String(text || '').trim();
+  if (!t) return false;
+  if (/^\[Live Agent\]/i.test(t)) return true;
+  return (
+    /Status:\s*/i.test(t)
+    && /Dept:/i.test(t)
+    && (/Queue:/i.test(t) || /Agent:/i.test(t))
+  );
+}
+
 function isInternalActionToken(s) {
   const t = stripDialogflowActionPrefix(s);
+  if (isLiveAgentSheetStatusLine(t)) return true;
   return (
     !t ||
     /^__GO_/i.test(t) ||
@@ -215,6 +228,7 @@ module.exports = {
   parseFormPayload,
   isFormSubmitPayload,
   isInternalActionToken,
+  isLiveAgentSheetStatusLine,
   isHumanAgentHandoffToken,
   isHandoffRequestLine,
   formatHumanAgentRequestForDesk,

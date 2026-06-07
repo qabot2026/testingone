@@ -876,6 +876,10 @@
           if (!userText || isTranscriptPersonaChromeLine(userText) || isTranscriptEphemeralStatusLine(userText)) {
             return false;
           }
+          if (/^\[Live Agent\]/i.test(userText)) return false;
+          if (/Status:\s*/i.test(userText) && /Dept:/i.test(userText) && (/Queue:/i.test(userText) || /Agent:/i.test(userText))) {
+            return false;
+          }
           return true;
         }
         return false;
