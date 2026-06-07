@@ -17723,6 +17723,7 @@ function setLiveAgentHandoffActive_(on) {
         liveAgentHumanChatActive = false;
         liveAgentPersonaLayoutWasHuman_ = false;
         liveAgentPersonaLayoutWasAi_ = false;
+        liveAgentCachedConvStatus = "closed";
         stopLiveAgentPoll_();
         liveAgentMessagesSinceIso = "";
         liveAgentCachedHumanMode = "";
@@ -17738,8 +17739,14 @@ function setLiveAgentHandoffActive_(on) {
         liveAgentVisitorUiRenderedKey_ = "";
         liveAgentVisitorUiRenderedAt_ = 0;
         try {
+            clearLiveAgentRequestedInSession_();
+        } catch {
+            /* ignore */
+        }
+        try {
             resetUserPersonaLayoutsFromLiveAgent_(ms);
             liveAgentScheduleRepairUserPersonaPairing_(ms);
+            schedulePruneOrphanUserPersonas_(ms);
         } catch {
             /* ignore */
         }
@@ -17855,9 +17862,35 @@ function syncLiveAgentModeCacheFromConversation_(conv, stData) {
     return copilotAi;
 }
 
+/** Refresh /status when handoff is on or session still carries live-agent flags. */
+function liveAgentShouldRefreshModeFromServer_() {
+    if (liveAgentHandoffIsActive_()) {
+        return true;
+    }
+    try {
+        return sessionRequestsLiveAgent_(readStoredClientContext());
+    } catch {
+        return false;
+    }
+}
+
+/** True when the next visitor line should go to Dialogflow (not agent inbox). */
+function liveAgentVisitorMessageShouldReachDialogflow_() {
+    if (!liveAgentHandoffIsActive_()) {
+        return true;
+    }
+    if (liveAgentCachedConvStatus === "closed") {
+        return true;
+    }
+    if (liveAgentCoPilotAiEnabled_()) {
+        return true;
+    }
+    return !liveAgentVisitorAgentChatActive_();
+}
+
 /** Refresh mode from server before routing a send (short TTL so Enable chatbot applies immediately). */
 async function liveAgentRefreshModeFromServer_(force) {
-    if (!liveAgentHandoffIsActive_()) {
+    if (!liveAgentShouldRefreshModeFromServer_()) {
         return;
     }
     if (!force && Date.now() - liveAgentModeRefreshAt_ < 700) {
@@ -17880,6 +17913,11 @@ async function liveAgentRefreshModeFromServer_(force) {
             liveAgentModeRefreshAt_ = Date.now();
             if (stData && stData.conversation) {
                 syncLiveAgentModeCacheFromConversation_(stData.conversation, stData);
+                const st = String(stData.conversation.status || "");
+                if (st === "closed" && liveAgentHandoffIsActive_()) {
+                    setLiveAgentHumanChatActive_(false);
+                    setLiveAgentHandoffActive_(false);
+                }
             }
         })
         .catch(() => {
@@ -18965,10 +19003,9 @@ async function liveAgentPollTick_(dfMessenger) {
         }
 
         if (status === "closed") {
-            liveAgentCachedConvStatus = "";
+            liveAgentCachedConvStatus = "closed";
             setLiveAgentHumanChatActive_(false);
             liveAgentClearVisitorTypingDraft_();
-            clearLiveAgentRequestedInSession_();
             setLiveAgentHandoffActive_(false);
             const ms0 = dfMessenger || activeDfMessenger;
             syncLiveAgentPersonaLayoutFlags_(ms0);
@@ -19012,7 +19049,6 @@ async function liveAgentPollTick_(dfMessenger) {
             Boolean(stData.humanActive || stData.humanHandoffActive);
         if (!keepPoll) {
             setLiveAgentHumanChatActive_(false);
-            clearLiveAgentRequestedInSession_();
             setLiveAgentHandoffActive_(false);
             return;
         }
@@ -19645,14 +19681,14 @@ function attachPersonaHandlers(dfMessenger) {
         async (event) => {
             const typed = extractDfUserInputEnteredText(event);
             const typedTrim = typeof typed === "string" ? typed.trim() : "";
+            if (typedTrim && liveAgentShouldRefreshModeFromServer_()) {
+                await liveAgentRefreshModeFromServer_(true);
+            }
             if (typedTrim && liveAgentShouldBlockDialogflowNow_()) {
                 preventDialogflowMessengerEvent_(event);
             }
             if (typedTrim && (await tryInterceptOutboundForLiveAgentHumanChat_(event, typedTrim))) {
                 return;
-            }
-            if (liveAgentHandoffIsActive_() && typedTrim) {
-                await liveAgentRefreshModeFromServer_(true);
             }
             if (consumeContactOnlyThanksSuppressForQuery_(event, typedTrim)) {
                 dfchatPendingTypedUtteranceForGate_ = "";
@@ -19706,14 +19742,14 @@ function attachPersonaHandlers(dfMessenger) {
             dfchatPendingTypedUtteranceForGate_ = "";
             const effectiveQuery = fromReq || pendingSnap;
 
+            if (effectiveQuery && liveAgentShouldRefreshModeFromServer_()) {
+                await liveAgentRefreshModeFromServer_(true);
+            }
             if (effectiveQuery && liveAgentShouldBlockDialogflowNow_()) {
                 preventDialogflowMessengerEvent_(event);
             }
             if (await tryInterceptOutboundForLiveAgentHumanChat_(event, effectiveQuery)) {
                 return;
-            }
-            if (liveAgentHandoffIsActive_()) {
-                await liveAgentRefreshModeFromServer_(true);
             }
 
             if (consumeContactOnlyThanksSuppressForQuery_(event, effectiveQuery)) {
@@ -19754,13 +19790,16 @@ function attachPersonaHandlers(dfMessenger) {
             if (effectiveQuery) {
                 recordUserMessageSentForResponseSpeed_();
                 const ms = activeDfMessenger;
+                const reachDialogflow = liveAgentVisitorMessageShouldReachDialogflow_();
                 if (
                     ms
                     && typeof ms.renderCustomText === "function"
-                    && (!liveAgentHandoffIsActive_() || liveAgentAllowDialogflowForUserText_())
+                    && reachDialogflow
                 ) {
                     renderUserPersona(ms);
                     liveAgentScheduleRepairUserPersonaPairing_(ms);
+                } else if (ms) {
+                    schedulePruneOrphanUserPersonas_(ms);
                 }
                 scheduleScrollMessageListToBottom_(ms, { force: true });
                 scheduleClearDfMessengerComposerInput_();
@@ -29153,13 +29192,29 @@ function snugBotPersonaEntryToNextBotContent_(personaEntry) {
  * Remove user persona captions that never received a user bubble (blocked send, thanks-only, etc.).
  * @param {HTMLElement | null | undefined} dfMessenger
  */
+function schedulePruneOrphanUserPersonas_(dfMessenger) {
+    const ms = dfMessenger || activeDfMessenger;
+    const run = () => {
+        try {
+            pruneOrphanUserPersonaCaptions_(ms);
+        } catch {
+            /* ignore */
+        }
+    };
+    run();
+    [350, 900, 2000].forEach((delayMs) => {
+        window.setTimeout(run, delayMs);
+    });
+}
+
 function pruneOrphanUserPersonaCaptions_(dfMessenger) {
     const list = findMessengerMessageListRoot(dfMessenger || activeDfMessenger);
     if (!list) {
         return;
     }
     const handoffActive = liveAgentHandoffIsActive_();
-    const orphanGraceMs = handoffActive ? 1200 : 3500;
+    const orphanGraceMs = handoffActive ? 1200 : 900;
+    const searchSpan = handoffActive ? 4 : 10;
     const children = Array.from(list.children);
     for (let i = 0; i < children.length; i += 1) {
         const row = children[i];
@@ -29167,7 +29222,7 @@ function pruneOrphanUserPersonaCaptions_(dfMessenger) {
             continue;
         }
         let foundUser = false;
-        for (let j = i + 1; j < Math.min(i + 4, children.length); j += 1) {
+        for (let j = i + 1; j < Math.min(i + searchSpan, children.length); j += 1) {
             const sib = children[j];
             if (!(sib instanceof HTMLElement)) {
                 continue;
