@@ -111,7 +111,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
       /** User avatar only — nudge image down (px). Label/time text stays put. */
       userImageNudgeDownPx: 3,
       /** Bot Quality name/time text only — nudge left (px). Cat image stays put. */
-      botTextNudgeLeftPx: 5
+      botTextNudgeLeftPx: 10
     },
 
     // Features ON / OFF — each block should include `enabled: true` or `false`

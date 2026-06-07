@@ -275,7 +275,7 @@ function readPersonaDisplayConfig() {
         botTextNudgeLeftPx:
             typeof pd.botTextNudgeLeftPx === "number" && Number.isFinite(pd.botTextNudgeLeftPx)
                 ? Math.max(-32, Math.min(32, pd.botTextNudgeLeftPx))
-                : 5
+                : 10
     };
 }
 
@@ -1130,7 +1130,7 @@ function cssUserPersonaImageNudgeDownPx_() {
 }
 
 function cssBotPersonaTextNudgeLeftPx_() {
-    return Math.max(-32, Math.min(32, PERSONA_DISPLAY_CONFIG.botTextNudgeLeftPx ?? 5));
+    return Math.max(-32, Math.min(32, PERSONA_DISPLAY_CONFIG.botTextNudgeLeftPx ?? 10));
 }
 
 /** User persona avatar transform (image only — not the caption row). */
