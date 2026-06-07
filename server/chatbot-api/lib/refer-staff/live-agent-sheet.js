@@ -120,14 +120,26 @@ function visitorQueriesFromSession(session) {
   const msgs = (session && session.messages) || [];
   const lines = [];
   msgs.forEach((m) => {
-    if (!m || trim(m.role) !== 'visitor') return;
+    if (!m) return;
+    const role = trim(m.role).toLowerCase();
     const raw = trim(m.text);
-    if (!raw || transcriptDisplay.isHandoffRequestLine(raw)) return;
-    const text = transcriptDisplay.normalizeUserQueryText(raw) || raw;
-    if (!text || transcriptDisplay.isInternalActionToken(text)) return;
-    lines.push(text);
+    if (!raw || role === 'internal') return;
+    if (role === 'visitor') {
+      if (transcriptDisplay.isHandoffRequestLine(raw)) return;
+      const text = transcriptDisplay.normalizeUserQueryText(raw) || raw;
+      if (!text || transcriptDisplay.isInternalActionToken(text)) return;
+      lines.push(text);
+      return;
+    }
+    if (role === 'agent' || role === 'staff') {
+      const who =
+        trim(m.senderDisplayName) ||
+        trim(session.assignedAgentDisplayName) ||
+        'Agent';
+      lines.push(`${who}: ${raw}`);
+    }
   });
-  return lines.join(' | ');
+  return lines.join(' | ').slice(0, 2000);
 }
 
 function liveAgentMetrics(session) {

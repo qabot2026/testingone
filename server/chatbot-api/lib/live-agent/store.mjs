@@ -45,6 +45,23 @@ export function resolveConversationId_(raw) {
     return safeConversationId_(raw);
 }
 
+/** Debounced Google Sheet row sync for the Live Agent tab (mirrors bot Sheet1 scheduleSheetSync). */
+function scheduleLiveAgentHandoffSheetSync_(conversationId) {
+    const id = trim_(conversationId);
+    if (!id) {
+        return;
+    }
+    void import("./live-agent-sheet-sync.mjs")
+        .then((mod) => {
+            if (mod && typeof mod.scheduleLiveAgentHandoffSheetSync_ === "function") {
+                mod.scheduleLiveAgentHandoffSheetSync_(id);
+            }
+        })
+        .catch((err) => {
+            console.warn(LOG_TAG, "live-agent sheet schedule:", err.message || err);
+        });
+}
+
 function botIdOrDefault_(v) {
     const s = trim_(v) || "default";
     if (!/^[A-Za-z0-9._-]{1,64}$/.test(s)) return "default";
@@ -305,6 +322,7 @@ export async function requestHumanAgent_({
     } catch (_) {
         /* non-fatal */
     }
+    scheduleLiveAgentHandoffSheetSync_(id);
     return { conversation, reopened: created, alreadyActive: false };
 }
 
@@ -530,6 +548,7 @@ export async function claimConversation_({ conversationId, agentEmail }) {
         } catch (_) {
             /* non-fatal */
         }
+        scheduleLiveAgentHandoffSheetSync_(id);
     })();
 
     return out;
@@ -782,6 +801,7 @@ export async function closeConversation_({ conversationId, closedBy, agentEmail 
         } catch (_) {
             /* non-fatal */
         }
+        scheduleLiveAgentHandoffSheetSync_(id);
     })();
     return out;
 }
@@ -896,7 +916,9 @@ export async function appendMessage_({
     });
 
     const snap = await msgRef.get();
-    return serializeMessage_(msgRef.id, snap.data());
+    const out = serializeMessage_(msgRef.id, snap.data());
+    scheduleLiveAgentHandoffSheetSync_(id);
+    return out;
 }
 
 export async function listMessages_({
