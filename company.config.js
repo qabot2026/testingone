@@ -103,7 +103,9 @@ window.COMPANY_CHAT_UI_CONFIG = {
       nameFontSizePx: 11,
       timeFontSizePx: 10,
       blurPx: 0.35,
-      opacity: 0.82
+      opacity: 0.82,
+      /** Move bot + user persona rows down toward the message bubble below (px). */
+      rowDownShiftPx: 20
     },
 
     // Features ON / OFF — each block should include `enabled: true` or `false`

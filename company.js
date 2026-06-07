@@ -255,7 +255,12 @@ function readPersonaDisplayConfig() {
             typeof pd.nameColor === "string" && pd.nameColor.trim() ? pd.nameColor.trim() : "#0c4a6e",
         /** Refer `qa-msg__persona-time` (#475569). */
         timeColor:
-            typeof pd.timeColor === "string" && pd.timeColor.trim() ? pd.timeColor.trim() : "#475569"
+            typeof pd.timeColor === "string" && pd.timeColor.trim() ? pd.timeColor.trim() : "#475569",
+        /** Nudge persona caption rows down toward the message below (both bot and user). */
+        rowDownShiftPx:
+            typeof pd.rowDownShiftPx === "number" && Number.isFinite(pd.rowDownShiftPx) && pd.rowDownShiftPx >= 0
+                ? Math.min(64, pd.rowDownShiftPx)
+                : 20
     };
 }
 
@@ -1090,6 +1095,15 @@ function cssUserPersonaTranslateX() {
             : 0;
     const tx = base + deskExtra + mobilePull;
     return Number.isFinite(tx) && tx !== 0 ? `translateX(${tx}px)` : "";
+}
+
+/** px — move persona row down toward the message below (bot + user). */
+function cssPersonaRowDownShiftPx_() {
+    return Math.max(0, Math.min(64, PERSONA_DISPLAY_CONFIG.rowDownShiftPx ?? 20));
+}
+
+function cssPersonaRowDownShift_() {
+    return `${cssPersonaRowDownShiftPx_()}px`;
 }
 
 /** User persona baseline pull is -6px; config adds extra upward nudge, or down when negative. */
@@ -26402,6 +26416,7 @@ function getPersonaImageGuardCss() {
     const mobX = `${(cfg.mode === "image" ? img.offsetRightPx : 0) - img.mobileNudgeLeftPx}px`;
     const timeDown = cfg.mode === "image" ? `${img.timeOffsetDownPx}px` : "0px";
     const timeRight = cfg.mode === "image" ? `${img.timeOffsetRightPx}px` : "0px";
+    const rowDown = cssPersonaRowDownShift_();
     return `
 img[src*="dfchat-bot-persona"],
 img[src*="%23dfchat-bot-persona"],
@@ -26443,6 +26458,16 @@ img[src*="%23dfchat-live-agent-label"] {
   box-shadow: none !important;
   border: none !important;
   padding: 0 8px !important;
+}
+.entry.bot:has(.message.bot-message.markdown img[src*="dfchat-bot-persona"]),
+.entry.bot:has(.message.bot-message.markdown img[src*="%23dfchat-bot-persona"]),
+.entry.bot:has(.message.bot-message.markdown img[src*="dfchat-agent-persona"]),
+.entry.bot:has(.message.bot-message.markdown img[src*="%23dfchat-agent-persona"]),
+.entry.bot:has(.message.bot-message.markdown img[src*="dfchat-live-agent-label"]),
+.entry.bot:has(.message.bot-message.markdown img[src*="%23dfchat-live-agent-label"]),
+.entry.bot.dfchat-user-persona-caption-bot-entry,
+.entry.bot.dfchat-user-persona-entry {
+  transform: translateY(${rowDown}) !important;
 }
 .message.bot-message.markdown:has(img[src*="dfchat-bot-persona"]) p,
 .message.bot-message.markdown:has(img[src*="%23dfchat-bot-persona"]) p,
@@ -27341,6 +27366,7 @@ function applyBotImagePersonaCaptionChrome_(imageNode) {
                 el.style.setProperty("margin-bottom", `${gap}px`, "important");
                 el.style.setProperty("padding", "0", "important");
                 el.style.setProperty("background", "transparent", "important");
+                el.style.setProperty("transform", `translateY(${cssPersonaRowDownShift_()})`, "important");
             }
             if (isBotMessageDiv) {
                 el.style.setProperty("background", "transparent", "important");
@@ -28024,6 +28050,7 @@ function snugUserPersonaEntryToUserRow_(personaEntry, userEntry) {
     try {
         personaEntry.style.setProperty("margin-bottom", `${gap}px`, "important");
         personaEntry.style.setProperty("padding-bottom", "0", "important");
+        personaEntry.style.setProperty("transform", `translateY(${cssPersonaRowDownShift_()})`, "important");
         userEntry.style.setProperty("margin-top", "0", "important");
         userEntry.style.setProperty("padding-top", "0", "important");
     } catch {
@@ -28037,6 +28064,7 @@ function snugBotPersonaEntryToNextBotContent_(personaEntry) {
     try {
         personaEntry.style.setProperty("margin-bottom", `${gap}px`, "important");
         personaEntry.style.setProperty("padding-bottom", "0", "important");
+        personaEntry.style.setProperty("transform", `translateY(${cssPersonaRowDownShift_()})`, "important");
         const next = personaEntry.nextElementSibling;
         if (
             next instanceof HTMLElement
