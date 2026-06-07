@@ -35,7 +35,7 @@
   }
 
   var CHAT_HOST = chatHostFromLoaderSrc() || "https://qabot2026.github.io/testingone/";
-  var IFRAME_VERSION = "163-fix-persona-timing-and-pairing";
+  var IFRAME_VERSION = "164-fix-agent-connect-persona-and-user-pairing";
 
   function getLoaderQuery() {
     var cur = document.currentScript;

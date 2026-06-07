@@ -1,0 +1,15 @@
+{
+  "files.watcherExclude": {
+    "**/node_modules/**": true,
+    "**/Only for Refer/**": true,
+    "**/__pycache__/**": true,
+    "**/.git/objects/**": true,
+    "**/.git/subtree-cache/**": true
+  },
+  "search.exclude": {
+    "**/node_modules": true,
+    "**/Only for Refer": true,
+    "**/__pycache__": true,
+    "**/server/chatbot-api/data/*.upload.json": true
+  }
+}

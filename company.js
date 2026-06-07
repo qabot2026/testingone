@@ -1296,30 +1296,10 @@ function resetUserPersonaLayoutsFromLiveAgent_(dfMessenger) {
         delete entry.dataset.dfchatUserPersonaFrozen;
         delete entry.dataset.dfchatPersonaPairSnugged;
         delete entry.dataset.dfchatUserPersonaEntryMoved;
+        delete entry.dataset.dfchatUserPersonaRowMoved;
         entry.style.removeProperty("transform");
         entry.style.removeProperty("margin-top");
-        let sibling = entry.nextElementSibling;
-        let paired = false;
-        while (sibling && sibling.nodeType === Node.ELEMENT_NODE) {
-            const h = /** @type {HTMLElement} */ (sibling);
-            if (h.classList && h.classList.contains("entry") && h.classList.contains("user")) {
-                snugUserPersonaEntryToUserRow_(entry, h);
-                paired = true;
-                break;
-            }
-            if (h.classList && h.classList.contains("entry")) {
-                break;
-            }
-            sibling = h.nextElementSibling;
-        }
-        if (!paired) {
-            try {
-                entry.style.setProperty("transform", `translateY(${cssUserPersonaRowDownShift_()})`, "important");
-                entry.style.setProperty("margin-top", cssUserPersonaMarginTopForEntry_(entry), "important");
-            } catch {
-                /* ignore */
-            }
-        }
+        entry.style.removeProperty("margin-bottom");
     });
     list.querySelectorAll(".message.bot-message.markdown.dfchat-user-persona-md").forEach((md) => {
         if (!(md instanceof HTMLElement)) {
@@ -1328,12 +1308,6 @@ function resetUserPersonaLayoutsFromLiveAgent_(dfMessenger) {
         delete md.dataset.dfchatUserPersonaFrozen;
         delete md.dataset.dfchatUserPersonaEntryMoved;
         md.style.removeProperty("transform");
-    });
-    list.querySelectorAll(".entry.bot.dfchat-user-persona-caption-bot-entry").forEach((row) => {
-        if (row instanceof HTMLElement) {
-            delete row.dataset.dfchatUserPersonaRowMoved;
-            delete row.dataset.dfchatPersonaPairSnugged;
-        }
     });
     try {
         applyPersonaImageGuardToMessenger(ms);
@@ -17138,16 +17112,20 @@ function liveAgentRepairUserPersonaPairing_(list) {
     const userRows = liveAgentCollectVisitorUserRows_(list);
     const personaPool = liveAgentCollectUserPersonaRows_(list);
 
-    while (personaPool.length > userRows.length) {
-        const extra = personaPool.pop();
-        if (!extra) {
-            break;
-        }
-        try {
-            extra.remove();
-        } catch {
-            if (extra instanceof HTMLElement) {
-                extra.style.display = "none";
+    // During normal bot chat, renderUserPersona runs before Dialogflow appends the user bubble —
+    // one extra persona row is expected briefly; never delete it outside active human-agent chat.
+    if (liveAgentVisitorAgentChatActive_()) {
+        while (personaPool.length > userRows.length) {
+            const extra = personaPool.pop();
+            if (!extra) {
+                break;
+            }
+            try {
+                extra.remove();
+            } catch {
+                if (extra instanceof HTMLElement) {
+                    extra.style.display = "none";
+                }
             }
         }
     }
@@ -17617,7 +17595,7 @@ function liveAgentAnnounceConnected_(dfMessenger, agentLabel, messageText, dedup
         return;
     }
     liveAgentSeenNoticeKeys_.add(key);
-    liveAgentRenderBotLineAtTranscriptEnd_(ms, text, { personaLabel: name, liveAgentHuman: true, tailPin: true });
+    liveAgentRenderBotLineAtTranscriptEnd_(ms, text, { withPersona: true, tailPin: true });
 }
 
 /**
@@ -17666,7 +17644,7 @@ function liveAgentAnnounceHumanRejoined_(dfMessenger, agentLabel, messageText, d
         return;
     }
     liveAgentSeenNoticeKeys_.add(key);
-    liveAgentRenderBotLineAtTranscriptEnd_(ms, text, { personaLabel: name, liveAgentHuman: true, tailPin: true });
+    liveAgentRenderBotLineAtTranscriptEnd_(ms, text, { withPersona: true, tailPin: true });
 }
 
 /**
@@ -17720,12 +17698,15 @@ function setLiveAgentHandoffActive_(on) {
     liveAgentHandoffActive = Boolean(on);
     if (!liveAgentHandoffActive) {
         liveAgentStopTailPinObserver_();
+        const ms = activeDfMessenger;
         try {
-            liveAgentRemoveTailAnchor_(findMessengerMessageListRoot(activeDfMessenger));
+            liveAgentRemoveTailAnchor_(findMessengerMessageListRoot(ms));
         } catch {
             /* ignore */
         }
         liveAgentHumanChatActive = false;
+        liveAgentPersonaLayoutWasHuman_ = false;
+        liveAgentPersonaLayoutWasAi_ = false;
         stopLiveAgentPoll_();
         liveAgentMessagesSinceIso = "";
         liveAgentCachedHumanMode = "";
@@ -17740,6 +17721,12 @@ function setLiveAgentHandoffActive_(on) {
         liveAgentVisitorQueryTrackedAt_ = 0;
         liveAgentVisitorUiRenderedKey_ = "";
         liveAgentVisitorUiRenderedAt_ = 0;
+        try {
+            resetUserPersonaLayoutsFromLiveAgent_(ms);
+            liveAgentScheduleRepairUserPersonaPairing_(ms);
+        } catch {
+            /* ignore */
+        }
     }
 }
 
@@ -18961,7 +18948,6 @@ async function liveAgentPollTick_(dfMessenger) {
             clearLiveAgentRequestedInSession_();
             setLiveAgentHandoffActive_(false);
             const ms0 = dfMessenger || activeDfMessenger;
-            resetUserPersonaLayoutsFromLiveAgent_(ms0);
             syncLiveAgentPersonaLayoutFlags_(ms0);
             if (ms0 && typeof ms0.renderCustomText === "function") {
                 liveAgentRenderBotLineAtTranscriptEnd_(
@@ -29115,6 +29101,8 @@ function pruneOrphanUserPersonaCaptions_(dfMessenger) {
     if (!list) {
         return;
     }
+    const handoffActive = liveAgentHandoffIsActive_();
+    const orphanGraceMs = handoffActive ? 1200 : 3500;
     const children = Array.from(list.children);
     for (let i = 0; i < children.length; i += 1) {
         const row = children[i];
@@ -29147,7 +29135,7 @@ function pruneOrphanUserPersonaCaptions_(dfMessenger) {
             row.dataset.dfchatUserPersonaCreatedAt = String(now);
             continue;
         }
-        if (now - created < 1200) {
+        if (now - created < orphanGraceMs) {
             continue;
         }
         try {
@@ -29647,12 +29635,12 @@ function decoratePersonaMessages(dfMessenger) {
         /* ignore */
     }
 
-    if (liveAgentVisitorAgentChatActive_()) {
-        const list = findMessengerMessageListRoot(dfMessenger);
-        if (list) {
+    const list = findMessengerMessageListRoot(dfMessenger);
+    if (list) {
+        if (liveAgentVisitorAgentChatActive_()) {
             liveAgentDiscoverAndMarkTailRows_(list);
-            liveAgentRepairUserPersonaPairing_(list);
         }
+        liveAgentRepairUserPersonaPairing_(list);
     }
 }
 

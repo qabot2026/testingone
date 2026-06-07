@@ -1,0 +1,25 @@
+﻿# Keep Cursor indexing lean — reduces OOM from huge folders (~13k+ files in this repo).
+
+# Dependencies (largest memory cost)
+**/node_modules/
+
+# Local reference copy — not deployed; includes its own node_modules + credentials risk
+Only for Refer/
+
+# Python / caches
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Git internals
+.git/
+
+# Generated / local runtime data
+server/chatbot-api/data/widget-settings-store.json
+.env
+.env.*
+*.log
+*.tmp
+
+# Upload JSON dumps (not needed for widget/chat work)
+server/chatbot-api/data/*.upload.json
