@@ -5734,9 +5734,9 @@ export async function fetchConversationLeadCaptureStats(opts = {}) {
     const mobileIdx = pickHeaderIndex_(headerMap, SHEET_H_MOBILE, 4);
     const emailIdx = pickHeaderIndex_(headerMap, SHEET_H_EMAIL, 5);
     const channelIdx = pickHeaderIndex_(headerMap, SHEET_H_CHANNEL, 6);
-    const appointmentBookedIdx = pickAppointmentStatsColumnIdx_(headerMap, headersRaw, 15);
-    const appointmentDateIdx = pickHeaderIndex_(headerMap, SHEET_H_APPOINTMENT_DATE, 16);
-    const appointmentTimeIdx = pickHeaderIndex_(headerMap, SHEET_H_APPOINTMENT_TIME, 17);
+    const appointmentBookedIdx = pickAppointmentStatsColumnIdx_(headerMap, headersRaw, 16);
+    const appointmentDateIdx = pickHeaderIndex_(headerMap, SHEET_H_APPOINTMENT_DATE, 17);
+    const appointmentTimeIdx = pickHeaderIndex_(headerMap, SHEET_H_APPOINTMENT_TIME, 18);
     const appointmentDatetimeIdx = firstHeaderIdxFromAliases_(headerMap, SHEET_H_APPOINTMENT_DATETIME);
 
     const scanMeta = await getConversationSheetScanMeta_(sheets, tab);
