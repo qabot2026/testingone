@@ -91,7 +91,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
 
     userPersona: {
       label: "You",
-      avatarSizePx: 18,
+      avatarSizePx: 15,
       gapBelowPx: 2,
       showTime: true,
       showSeconds: true,
