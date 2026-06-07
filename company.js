@@ -18280,6 +18280,42 @@ function liveAgentMarkVisitorUiRendered_(text) {
 }
 
 /**
+ * @param {HTMLElement | null | undefined} list
+ * @param {string} text
+ * @returns {boolean}
+ */
+function dfchatMessageListHasUserRowForText_(list, text) {
+    const norm = normalizeChatTranscriptCompareText_(text);
+    if (!list || !norm) {
+        return false;
+    }
+    let userEntries = [];
+    try {
+        userEntries = Array.from(list.querySelectorAll(".entry.user"));
+    } catch {
+        userEntries = [];
+    }
+    if (!userEntries.length) {
+        try {
+            userEntries = Array.from(list.querySelectorAll(".entry")).filter((entry) => {
+                return !!(entry.querySelector && entry.querySelector(".message.user-message"));
+            });
+        } catch {
+            userEntries = [];
+        }
+    }
+    for (let i = 0; i < userEntries.length; i += 1) {
+        const line = (userEntries[i].innerText || userEntries[i].textContent || "")
+            .replace(/\s+/g, " ")
+            .trim();
+        if (normalizeChatTranscriptCompareText_(line) === norm) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
  * @param {HTMLElement | null | undefined} dfMessenger
  * @param {string} text
  */
@@ -18291,16 +18327,7 @@ function liveAgentMaybeRenderVisitorBubbleOnce_(dfMessenger, text) {
     }
     liveAgentMarkVisitorUiRendered_(t);
     renderUserPersonaBeforeUserText_(ms, t);
-    scheduleScrollMessageListToBottom_(ms, { force: true });
-    const afterVisitorDom_ = () => {
-        liveAgentScheduleRepairUserPersonaPairing_(ms);
-        scheduleLiveAgentTailRepin_(ms);
-        liveAgentSchedulePinTailRowsToTranscriptEnd_(ms);
-    };
-    window.requestAnimationFrame(afterVisitorDom_);
-    [80, 200, 450, 900].forEach((delayMs) => {
-        window.setTimeout(afterVisitorDom_, delayMs);
-    });
+    scheduleSuppressDuplicateVisitorMessageRows_(ms, t);
 }
 
 let liveAgentComposerBridgeAttached = false;
@@ -18535,7 +18562,19 @@ async function liveAgentRouteVisitorOutboundOnce_(text, dfMessenger, event) {
     if (!t || !liveAgentHandoffIsActive_()) {
         return false;
     }
-    if (liveAgentShouldBlockDialogflowNow_() && event) {
+    if (liveAgentAlreadyRoutedOutbound_(t)) {
+        if (event) {
+            preventDialogflowMessengerEvent_(event);
+        }
+        scheduleSuppressDuplicateVisitorMessageRows_(ms, t);
+        scheduleClearDfMessengerComposerInput_();
+        scheduleSuppressDfMessengerErrorUi_();
+        return true;
+    }
+    // Claim synchronously before any await — df-user-input-entered + composer bridge fire together.
+    liveAgentMarkOutboundRouted_(t);
+    liveAgentMarkVisitorUiRendered_(t);
+    if (event) {
         preventDialogflowMessengerEvent_(event);
     }
     await liveAgentRefreshModeFromServer_(true);
@@ -18545,15 +18584,9 @@ async function liveAgentRouteVisitorOutboundOnce_(text, dfMessenger, event) {
     if (!liveAgentVisitorAgentChatActive_()) {
         return false;
     }
-    if (event) {
-        preventDialogflowMessengerEvent_(event);
-    }
     dfchatPendingTypedUtteranceForGate_ = "";
-    if (!liveAgentAlreadyRoutedOutbound_(t)) {
-        liveAgentMarkOutboundRouted_(t);
-        void liveAgentSendVisitorMessage_(ms, t, false);
-    }
-    liveAgentMaybeRenderVisitorBubbleOnce_(ms, t);
+    renderUserPersonaBeforeUserText_(ms, t);
+    void liveAgentSendVisitorMessage_(ms, t, false);
     scheduleSuppressDuplicateVisitorMessageRows_(ms, t);
     scheduleClearDfMessengerComposerInput_();
     liveAgentClearVisitorTypingDraft_();
@@ -18712,7 +18745,7 @@ function scheduleSuppressDuplicateVisitorMessageRows_(dfMessenger, text) {
         return;
     }
     const run = () => suppressDuplicateVisitorMessageRows_(dfMessenger, t);
-    [0, 50, 120, 280, 520, 900, 1400].forEach((ms) => {
+    [0, 50, 120, 280, 520, 900, 1400, 2200, 3500].forEach((ms) => {
         window.setTimeout(run, ms);
     });
 }
@@ -27242,11 +27275,26 @@ function renderUserPersonaBeforeUserText_(dfMessenger, userText) {
     if (!ms || typeof ms.renderCustomText !== "function" || !t) {
         return;
     }
+    const list = findMessengerMessageListRoot(ms);
+    if (list && dfchatMessageListHasUserRowForText_(list, t)) {
+        liveAgentScheduleRepairUserPersonaPairing_(ms);
+        scheduleSuppressDuplicateVisitorMessageRows_(ms, t);
+        return;
+    }
     renderUserPersona(ms, { skipThrottle: true, skipShadowFix: true });
     ms.renderCustomText(t, false);
     schedulePersonaShadowFix(ms);
     scheduleScrollMessageListToBottom_(ms, { force: true });
     liveAgentScheduleRepairUserPersonaPairing_(ms);
+    scheduleSuppressDuplicateVisitorMessageRows_(ms, t);
+    const afterVisitorDom_ = () => {
+        scheduleLiveAgentTailRepin_(ms);
+        liveAgentSchedulePinTailRowsToTranscriptEnd_(ms);
+    };
+    window.requestAnimationFrame(afterVisitorDom_);
+    [80, 200, 450, 900].forEach((delayMs) => {
+        window.setTimeout(afterVisitorDom_, delayMs);
+    });
 }
 
 function renderPersona(dfMessenger, personaType, label, timeLabelForUser, opts) {
