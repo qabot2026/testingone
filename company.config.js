@@ -105,7 +105,11 @@ window.COMPANY_CHAT_UI_CONFIG = {
       blurPx: 0.35,
       opacity: 0.82,
       /** Move bot + user persona rows down toward the message bubble below (px). */
-      rowDownShiftPx: 20
+      rowDownShiftPx: 20,
+      /** Bot cat avatar only — nudge image up (px). Name/time text stays put. */
+      botImageNudgeUpPx: 10,
+      /** User avatar only — nudge image down (px). Label/time text stays put. */
+      userImageNudgeDownPx: 3
     },
 
     // Features ON / OFF — each block should include `enabled: true` or `false`

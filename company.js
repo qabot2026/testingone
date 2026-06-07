@@ -260,7 +260,17 @@ function readPersonaDisplayConfig() {
         rowDownShiftPx:
             typeof pd.rowDownShiftPx === "number" && Number.isFinite(pd.rowDownShiftPx) && pd.rowDownShiftPx >= 0
                 ? Math.min(64, pd.rowDownShiftPx)
-                : 20
+                : 20,
+        /** Bot cat avatar only — move image up (px); name/time row unchanged. */
+        botImageNudgeUpPx:
+            typeof pd.botImageNudgeUpPx === "number" && Number.isFinite(pd.botImageNudgeUpPx)
+                ? Math.max(-32, Math.min(32, pd.botImageNudgeUpPx))
+                : 10,
+        /** User avatar only — move image down (px); label/time row unchanged. */
+        userImageNudgeDownPx:
+            typeof pd.userImageNudgeDownPx === "number" && Number.isFinite(pd.userImageNudgeDownPx)
+                ? Math.max(-32, Math.min(32, pd.userImageNudgeDownPx))
+                : 3
     };
 }
 
@@ -1104,6 +1114,27 @@ function cssPersonaRowDownShiftPx_() {
 
 function cssPersonaRowDownShift_() {
     return `${cssPersonaRowDownShiftPx_()}px`;
+}
+
+function cssBotPersonaImageNudgeUpPx_() {
+    return Math.max(-32, Math.min(32, PERSONA_DISPLAY_CONFIG.botImageNudgeUpPx ?? 10));
+}
+
+function cssUserPersonaImageNudgeDownPx_() {
+    return Math.max(-32, Math.min(32, PERSONA_DISPLAY_CONFIG.userImageNudgeDownPx ?? 3));
+}
+
+/** User persona avatar transform (image only — not the caption row). */
+function cssUserPersonaImageTransform_() {
+    const down = cssUserPersonaImageNudgeDownPx_();
+    const tx = cssUserPersonaTranslateX();
+    if (tx && tx.includes("translateX")) {
+        const m = tx.match(/translateX\(([^)]+)\)/);
+        if (m) {
+            return `translate(${m[1]}, ${down}px)`;
+        }
+    }
+    return `translateY(${down}px)`;
 }
 
 /** User persona baseline pull is -6px; config adds extra upward nudge, or down when negative. */
@@ -26412,8 +26443,12 @@ function getPersonaImageGuardCss() {
     const catH = cfg.mode === "image" ? `${img.heightPx}px` : "32px";
     const personaDown = cfg.mode === "image" ? `${img.offsetDownPx}px` : "0px";
     const personaRight = cfg.mode === "image" ? `${img.offsetRightPx}px` : "0px";
-    const mobY = `${cfg.mode === "image" ? img.offsetDownPx : 0}`;
+    const botCatImgY =
+        cfg.mode === "image" ? `${img.offsetDownPx - cssBotPersonaImageNudgeUpPx_()}px` : `${-cssBotPersonaImageNudgeUpPx_()}px`;
+    const mobY = `${cfg.mode === "image" ? img.offsetDownPx - cssBotPersonaImageNudgeUpPx_() : -cssBotPersonaImageNudgeUpPx_()}`;
+    const mobAgentY = `${cfg.mode === "image" ? img.offsetDownPx : 0}`;
     const mobX = `${(cfg.mode === "image" ? img.offsetRightPx : 0) - img.mobileNudgeLeftPx}px`;
+    const userImgDown = `${cssUserPersonaImageNudgeDownPx_()}px`;
     const timeDown = cfg.mode === "image" ? `${img.timeOffsetDownPx}px` : "0px";
     const timeRight = cfg.mode === "image" ? `${img.timeOffsetRightPx}px` : "0px";
     const rowDown = cssPersonaRowDownShift_();
@@ -26431,7 +26466,17 @@ img[src*="%23dfchat-live-agent-label"] {
   opacity: 1 !important;
 }
 img[src*="dfchat-bot-persona"],
-img[src*="%23dfchat-bot-persona"],
+img[src*="%23dfchat-bot-persona"] {
+  width: ${catW} !important;
+  height: ${catH} !important;
+  max-width: ${catW} !important;
+  max-height: ${catH} !important;
+  object-fit: cover !important;
+  display: inline-block !important;
+  vertical-align: middle !important;
+  box-sizing: border-box !important;
+  transform: translate(${personaRight}, ${botCatImgY}) !important;
+}
 img[src*="dfchat-agent-persona"],
 img[src*="%23dfchat-agent-persona"],
 img[src*="dfchat-live-agent-label"],
@@ -26513,15 +26558,17 @@ img[src*="dfchat-persona-bot-time"] {
 }
 @media (max-width: ${MOBILE_CHAT_BREAKPOINT_PX}px) {
 img[src*="dfchat-bot-persona"],
-img[src*="%23dfchat-bot-persona"],
+img[src*="%23dfchat-bot-persona"] {
+  transform: translate(${mobX}, ${mobY}px) !important;
+}
 img[src*="dfchat-agent-persona"],
 img[src*="%23dfchat-agent-persona"],
 img[src*="dfchat-live-agent-label"],
 img[src*="%23dfchat-live-agent-label"] {
-  transform: translate(${mobX}, ${mobY}px) !important;
+  transform: translate(${mobX}, ${mobAgentY}px) !important;
 }
 img[src*="dfchat-persona-bot-time"] {
-  transform: translate(${mobX}, ${mobY}px) !important;
+  transform: translate(${mobX}, ${mobAgentY}px) !important;
 }
 }
 img[src*="dfchat-persona-user|"],
@@ -26620,6 +26667,7 @@ img[src*="%23dfchat-user-persona-img"] {
   box-sizing: border-box !important;
   filter: none !important;
   opacity: 1 !important;
+  transform: translateY(${userImgDown}) !important;
 }
 .message.bot-message.markdown.dfchat-user-persona-md:has(img[src*="dfchat-user-persona-img"]) p + p,
 .message.bot-message.markdown.dfchat-user-persona-md:has(img[src*="%23dfchat-user-persona-img"]) p + p {
@@ -28739,6 +28787,11 @@ function stylePersonaContainer(container, imageNode, personaType) {
             if (showTime) {
                 imageNode.style.marginRight = "6px";
             }
+            if (isCat) {
+                const right = BOT_PERSONA_CONFIG.image.offsetRightPx || 0;
+                const down = (BOT_PERSONA_CONFIG.image.offsetDownPx || 0) - cssBotPersonaImageNudgeUpPx_();
+                imageNode.style.transform = `translate(${right}px, ${down}px)`;
+            }
         } else if (isTime) {
             imageNode.style.height = "28px";
             imageNode.style.width = "auto";
@@ -28781,8 +28834,7 @@ function stylePersonaContainer(container, imageNode, personaType) {
             imageNode.style.opacity = "1";
         }
         {
-            const t = cssUserPersonaTranslateX();
-            imageNode.style.transform = t || "";
+            imageNode.style.transform = cssUserPersonaImageTransform_();
         }
     }
 
