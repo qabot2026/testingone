@@ -165,6 +165,8 @@ let liveAgentUserPersonaLayoutFrozenMode_ = "";
 let liveAgentCachedAiEnabled = true;
 /** True when server reports AI co-pilot (bot may reply; visitor text not routed to agent inbox). */
 let liveAgentCachedAiCopilot_ = false;
+/** Prevents duplicate resume polls on messenger init. */
+let liveAgentResumeHandoffInFlight_ = false;
 /** @type {number} */
 let liveAgentModeRefreshAt_ = 0;
 /** @type {Promise<void> | null} */
@@ -3900,6 +3902,7 @@ function createAndMountMessenger() {
     installRenderedBotTranscriptHook_(df);
     installLiveAgentTailPinRenderHook_(df);
     attachPersonaHandlers(df);
+    void liveAgentResumeHandoffIfNeeded_(df);
     [0, 120, 500, 1200].forEach((ms) => {
         window.setTimeout(() => ensureMessageListScrollObserver_(df), ms);
     });
@@ -16737,7 +16740,12 @@ async function liveAgentAgentTypingPulseTick_(dfMessenger) {
             liveAgentDeskRev_ = st.revision;
         }
         if (st.conversation || st.agentConnected !== undefined) {
+            const wasHuman = liveAgentVisitorAgentChatActive_();
             syncLiveAgentModeCacheFromConversation_(st.conversation, st);
+            liveAgentOnVisitorHumanChatActivated_(dfMessenger, wasHuman);
+            if (!wasHuman && liveAgentVisitorAgentChatActive_()) {
+                liveAgentMaybeAnnounceConnectedFromStatus_(dfMessenger, st, wasHuman);
+            }
         }
         liveAgentLastAgentTypingLabel_ = st.agentTyping || "";
         liveAgentSetAgentTypingIndicator_(dfMessenger, liveAgentLastAgentTypingLabel_);
@@ -17755,6 +17763,48 @@ function liveAgentAnnounceHandoffToBot_(dfMessenger, messageText, dedupeKey) {
 }
 
 /**
+ * Visitor-side setup when an agent accepts (block bot, pin tail, persona layout).
+ * @param {HTMLElement | null | undefined} dfMessenger
+ * @param {boolean} wasHuman
+ */
+function liveAgentOnVisitorHumanChatActivated_(dfMessenger, wasHuman) {
+    if (!liveAgentVisitorAgentChatActive_() || wasHuman) {
+        return;
+    }
+    const ms = dfMessenger || activeDfMessenger;
+    liveAgentPersonaLayoutWasHuman_ = true;
+    liveAgentMessagesSinceIso = "";
+    liveAgentModeRefreshAt_ = 0;
+    suppressDfMessengerBotRepliesDuringHumanHandoff_(ms);
+    scheduleSuppressDfMessengerBotRepliesDuringHumanHandoff_();
+    liveAgentEnsureTailPinObserver_(ms);
+    liveAgentSchedulePinTailRowsToTranscriptEnd_(ms);
+    syncLiveAgentPersonaLayoutFlags_(ms);
+    try {
+        markLiveAgentHumanChatInSession_();
+    } catch {
+        /* ignore */
+    }
+}
+
+/**
+ * Fallback connect notice when sync/status shows agentConnected but system row was missed.
+ * @param {HTMLElement | null | undefined} dfMessenger
+ * @param {{ assignedAgentDisplayName?: string } | null | undefined} stData
+ * @param {boolean} wasHuman
+ */
+function liveAgentMaybeAnnounceConnectedFromStatus_(dfMessenger, stData, wasHuman) {
+    if (wasHuman || !liveAgentVisitorAgentChatActive_()) {
+        return;
+    }
+    const label =
+        stData && typeof stData.assignedAgentDisplayName === "string" && stData.assignedAgentDisplayName.trim()
+            ? stData.assignedAgentDisplayName.trim()
+            : "Support Agent";
+    liveAgentAnnounceConnected_(dfMessenger, label, undefined, "status|agent-connected");
+}
+
+/**
  * @param {HTMLElement | null | undefined} dfMessenger
  * @param {string} agentLabel
  * @param {string} [messageText]
@@ -18131,9 +18181,30 @@ function liveAgentShouldPostVisitorToAgent_(text) {
     return liveAgentVisitorToAgentInbox_();
 }
 
+/** Block Dialogflow bot replies and outbound sends once a human agent owns the chat. */
+function liveAgentShouldSuppressDialogflowBotReply_() {
+    if (!liveAgentHandoffIsActive_()) {
+        return false;
+    }
+    if (liveAgentCoPilotAiEnabled_()) {
+        return false;
+    }
+    if (liveAgentVisitorAgentChatActive_()) {
+        return true;
+    }
+    if (
+        liveAgentCachedConvStatus === "active"
+        && liveAgentCachedAgentConnected_
+        && liveAgentCachedHumanMode !== "ai"
+    ) {
+        return true;
+    }
+    return false;
+}
+
 /** Fast cache check before async /status refresh (refer: block only after agent joined). */
 function liveAgentShouldBlockDialogflowNow_() {
-    return liveAgentHandoffIsActive_() && liveAgentVisitorAgentChatActive_();
+    return liveAgentShouldSuppressDialogflowBotReply_();
 }
 
 /** Dialogflow when waiting in queue, or when agent turned chatbot back on (co-pilot). */
@@ -18987,6 +19058,62 @@ function clearLiveAgentCopilotInSession_() {
     }
 }
 
+/**
+ * Restart widget ↔ desk sync when session still requests an agent but poll was stopped (reload, etc.).
+ * @param {HTMLElement | null | undefined} dfMessenger
+ * @returns {Promise<void>}
+ */
+async function liveAgentResumeHandoffIfNeeded_(dfMessenger) {
+    if (!liveAgentWidgetEnabled_() || liveAgentHandoffIsActive_() || liveAgentResumeHandoffInFlight_) {
+        return;
+    }
+    let shouldResume = false;
+    try {
+        shouldResume = sessionRequestsLiveAgent_(readStoredClientContext());
+    } catch {
+        shouldResume = false;
+    }
+    if (!shouldResume) {
+        return;
+    }
+    const sid = liveAgentSessionId_();
+    const statusUrl = getApiEndpoint(
+        "/api/live-agent/status?clientSessionId=" + encodeURIComponent(sid)
+    );
+    if (!statusUrl || !sid) {
+        return;
+    }
+    liveAgentResumeHandoffInFlight_ = true;
+    try {
+        const res = await fetch(statusUrl);
+        const stData = await res.json().catch(() => ({}));
+        if (!res.ok || !stData || !stData.conversation) {
+            return;
+        }
+        const st = String(stData.conversation.status || "");
+        if (st !== "waiting" && st !== "active") {
+            if (st === "closed") {
+                clearLiveAgentRequestedInSession_();
+            }
+            return;
+        }
+        setLiveAgentHandoffActive_(true);
+        syncLiveAgentModeCacheFromConversation_(stData.conversation, stData);
+        if (typeof stData.revision === "number") {
+            liveAgentDeskRev_ = stData.revision;
+        }
+        const ms = dfMessenger || activeDfMessenger;
+        startLiveAgentPoll_(ms);
+        liveAgentOnVisitorHumanChatActivated_(ms, false);
+        liveAgentMaybeAnnounceConnectedFromStatus_(ms, stData, false);
+        void liveAgentPollTick_(ms);
+    } catch {
+        /* ignore */
+    } finally {
+        liveAgentResumeHandoffInFlight_ = false;
+    }
+}
+
 /** CX session hint: active human chat — bot should not reply (co-pilot clears this). */
 function markLiveAgentHumanChatInSession_() {
     try {
@@ -19096,7 +19223,16 @@ async function liveAgentPollTick_(dfMessenger) {
             liveAgentLastSyncMessageId_ = String(stData.lastMessageId);
         }
         if (stData.unchanged) {
-            await liveAgentRefreshModeFromServer_(false);
+            const wasHuman = liveAgentVisitorAgentChatActive_();
+            if (stData.conversation) {
+                syncLiveAgentModeCacheFromConversation_(stData.conversation, stData);
+                liveAgentOnVisitorHumanChatActivated_(dfMessenger, wasHuman);
+                liveAgentMaybeAnnounceConnectedFromStatus_(dfMessenger, stData, wasHuman);
+                liveAgentApplyConnectionNoticesFromSync_(dfMessenger, stData);
+            } else {
+                await liveAgentRefreshModeFromServer_(true);
+            }
+            liveAgentSetAgentTypingIndicator_(dfMessenger, stData.agentTyping || "");
             scheduleSuppressDfMessengerErrorUi_();
             return;
         }
@@ -19138,20 +19274,8 @@ async function liveAgentPollTick_(dfMessenger) {
         }
 
         if (liveAgentVisitorAgentChatActive_() && !wasHuman) {
-            liveAgentPersonaLayoutWasHuman_ = true;
-            liveAgentMessagesSinceIso = "";
-            liveAgentModeRefreshAt_ = 0;
-            const msHuman = dfMessenger || activeDfMessenger;
-            suppressDfMessengerBotRepliesDuringHumanHandoff_(msHuman);
-            scheduleSuppressDfMessengerBotRepliesDuringHumanHandoff_();
-            liveAgentEnsureTailPinObserver_(msHuman);
-            liveAgentSchedulePinTailRowsToTranscriptEnd_(msHuman);
-            syncLiveAgentPersonaLayoutFlags_(msHuman);
-            try {
-                markLiveAgentHumanChatInSession_();
-            } catch {
-                /* ignore */
-            }
+            liveAgentOnVisitorHumanChatActivated_(dfMessenger, wasHuman);
+            liveAgentMaybeAnnounceConnectedFromStatus_(dfMessenger, stData, wasHuman);
         }
 
         if (wasHuman && copilotAi) {
@@ -19451,10 +19575,10 @@ async function liveAgentSendVisitorMessage_(dfMessenger, text, shouldRenderCusto
 }
 
 async function handleDfResponseReceived(event) {
-    if (liveAgentHandoffIsActive_()) {
+    if (liveAgentShouldRefreshModeFromServer_()) {
         await liveAgentRefreshModeFromServer_(true);
     }
-    if (liveAgentHandoffIsActive_() && liveAgentVisitorAgentChatActive_()) {
+    if (liveAgentShouldSuppressDialogflowBotReply_()) {
         preventDialogflowMessengerEvent_(event);
         scheduleSuppressDfMessengerErrorUi_();
         scheduleSuppressDfMessengerBotRepliesDuringHumanHandoff_();

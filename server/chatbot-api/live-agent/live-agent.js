@@ -2858,6 +2858,14 @@
             await selectConversation(data.conversation, { skipRefresh: true });
             loadInbox(true);
             if (sendBtn) sendBtn.disabled = false;
+            if (selectedId) {
+                window.setTimeout(() => {
+                    void loadMessages(selectedId, true, true);
+                }, 280);
+                window.setTimeout(() => {
+                    void loadMessages(selectedId, true, true);
+                }, 900);
+            }
             if (claimHint) {
                 claimHint.classList.remove("claim-hint-error");
                 claimHint.textContent = "";
