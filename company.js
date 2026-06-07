@@ -2099,6 +2099,7 @@ function tickBotWritingDots() {
     if (typing) {
         if (!botWritingDotsWasTyping) {
             botWritingDotsPhase = 0;
+            dfchatSchedulePinBotTypingRowToConversationEnd_(ms);
         }
         botWritingDotsWasTyping = true;
         const dots = ".".repeat(botWritingDotsPhase + 1);
@@ -12644,6 +12645,7 @@ function ensureMessageListScrollObserver_(dfMessenger) {
         scheduled = true;
         window.requestAnimationFrame(() => {
             scheduled = false;
+            dfchatPinBotTypingRowToConversationEnd_(host);
             scheduleScrollMessageListToBottom_(host, { force: false });
         });
     });
@@ -12706,6 +12708,85 @@ function isDfchatInlineSyntheticRow(el) {
             || el.classList.contains(DFCHAT_INLINE_VIDEO_CLASS)
             || el.classList.contains(DFCHAT_INLINE_CARD_CAROUSEL_CLASS)
             || el.classList.contains(DFCHAT_INLINE_BOOKING_CAL_CLASS)));
+}
+
+/** Dialogflow Messenger `.typing-message` row (not live-agent agent draft). */
+function dfchatRowIsBotTypingIndicator_(row) {
+    if (!(row instanceof HTMLElement)) {
+        return false;
+    }
+    if (row.dataset && row.dataset.dfchatLiveAgentTyping === "1") {
+        return false;
+    }
+    return !!row.querySelector?.(".typing-message");
+}
+
+/** @param {HTMLElement | null | undefined} list */
+function dfchatFindBotTypingMessageListRow_(list) {
+    if (!list) {
+        return null;
+    }
+    for (const c of list.children) {
+        if (c instanceof HTMLElement && dfchatRowIsBotTypingIndicator_(c)) {
+            return c;
+        }
+    }
+    return null;
+}
+
+/**
+ * Keep Dialogflow "Typing…" at the bottom of the transcript — after the visitor's last message
+ * and any CX payloads (gallery / carousel) that belong above the current turn.
+ * @param {HTMLElement | null | undefined} dfMessenger
+ * @param {HTMLElement | null | undefined} [listOverride]
+ */
+function dfchatPinBotTypingRowToConversationEnd_(dfMessenger, listOverride) {
+    const list = listOverride || findMessengerMessageListRoot(dfMessenger || activeDfMessenger);
+    if (!list) {
+        return;
+    }
+    const typingRow = dfchatFindBotTypingMessageListRow_(list);
+    if (!typingRow) {
+        return;
+    }
+    const anchor = liveAgentHandoffIsActive_() ? liveAgentEnsureTailAnchor_(list) : null;
+    /** @type {Element | null} */
+    const insertBefore = anchor && anchor.parentNode === list ? anchor : null;
+    if (insertBefore) {
+        if (typingRow.parentNode === list && typingRow.nextElementSibling === insertBefore) {
+            if (liveAgentHandoffIsActive_() && liveAgentVisitorAgentChatActive_()) {
+                liveAgentPinTailRowsToTranscriptEnd_(dfMessenger, list);
+            }
+            return;
+        }
+        try {
+            list.insertBefore(typingRow, insertBefore);
+        } catch {
+            /* ignore */
+        }
+    } else if (list.lastElementChild !== typingRow) {
+        try {
+            list.appendChild(typingRow);
+        } catch {
+            /* ignore */
+        }
+    }
+    if (liveAgentHandoffIsActive_() && liveAgentVisitorAgentChatActive_()) {
+        liveAgentPinTailRowsToTranscriptEnd_(dfMessenger, list);
+    }
+}
+
+/** @param {HTMLElement | null | undefined} dfMessenger */
+function dfchatSchedulePinBotTypingRowToConversationEnd_(dfMessenger) {
+    const ms = dfMessenger || activeDfMessenger;
+    const run = () => {
+        dfchatPinBotTypingRowToConversationEnd_(ms);
+        scheduleScrollMessageListToBottom_(ms, { force: false });
+    };
+    run();
+    [40, 120, 320, 720].forEach((delayMs) => {
+        window.setTimeout(run, delayMs);
+    });
 }
 
 /** @param {Element | null | undefined} row */
@@ -12920,7 +13001,9 @@ function resolveGalleryInsertBeforeByCxOrder(messageList) {
             return el;
         }
     }
-    const realRows = children.filter((el) => !isDfchatInlineSyntheticRow(el));
+    const realRows = children.filter(
+        (el) => !isDfchatInlineSyntheticRow(el) && !dfchatRowIsBotTypingIndicator_(el)
+    );
     if (realRows.length < 2) {
         return null;
     }
@@ -13173,6 +13256,7 @@ function scheduleInjectInlineGalleryCarousel(dfMessenger, urlsOrItems, messages,
 
         injected = true;
         dfchatFixInlineGalleryStandaloneImageOrder_(ml);
+        dfchatSchedulePinBotTypingRowToConversationEnd_(msResolved);
         liveAgentPinTailRowsToTranscriptEnd_(msResolved, ml);
         try {
             ml.scrollTop = ml.scrollHeight;
@@ -13403,6 +13487,7 @@ function scheduleEnsureExistingInlineGalleryPosition(dfMessenger, urlsOrItems, o
                 ml.appendChild(dfchatLastInlineGalleryWrapEl);
             }
             liveAgentPinTailRowsToTranscriptEnd_(msResolved, ml);
+            dfchatSchedulePinBotTypingRowToConversationEnd_(msResolved);
             moved = true;
         }, delayMs);
     });
@@ -13935,6 +14020,7 @@ function scheduleInjectInlineVideoPlayer(dfMessenger, embedHttpsUrl, options, me
             ml.appendChild(wrap);
         }
         dfchatLastInlineVideoWrapEl = wrap;
+        dfchatSchedulePinBotTypingRowToConversationEnd_(msResolved);
         liveAgentPinTailRowsToTranscriptEnd_(msResolved, ml);
         injected = true;
         try {
@@ -14812,6 +14898,7 @@ function scheduleEnsureExistingInlineCardCarouselPosition(dfMessenger, cards, me
                 ml.appendChild(wrap);
             }
             liveAgentPinTailRowsToTranscriptEnd_(msResolved, ml);
+            dfchatSchedulePinBotTypingRowToConversationEnd_(msResolved);
             moved = true;
             try {
                 ml.scrollTop = ml.scrollHeight;
@@ -15118,6 +15205,7 @@ function scheduleInjectInlineCardCarousel(dfMessenger, cards, messageText) {
         }
         dfchatLastInlineCardCarouselWrapEl = wrap;
         refreshInlineCxPayloadLabels_();
+        dfchatSchedulePinBotTypingRowToConversationEnd_(dfMessenger);
         liveAgentPinTailRowsToTranscriptEnd_(dfMessenger, ml);
 
         injected = true;
@@ -15416,6 +15504,7 @@ function scheduleInjectInlineSelectDropdown(dfMessenger, options, placeholder, m
             ml.appendChild(wrap);
         }
         dfchatLastInlineSelectWrapEl = wrap;
+        dfchatSchedulePinBotTypingRowToConversationEnd_(dfMessenger);
         liveAgentPinTailRowsToTranscriptEnd_(dfMessenger, ml);
 
         injected = true;
@@ -15929,6 +16018,7 @@ function scheduleInjectBookingCalendar(dfMessenger, doctorId, doctorTitle) {
             ml.appendChild(wrap);
         }
         dfchatLastInlineBookingCalWrapEl = wrap;
+        dfchatSchedulePinBotTypingRowToConversationEnd_(dfMessenger);
         liveAgentPinTailRowsToTranscriptEnd_(dfMessenger, ml);
 
         try {
@@ -17241,6 +17331,9 @@ function liveAgentClassifyTranscriptRow_(row, tailSet) {
     if (isDfchatInlineSyntheticRow(row)) {
         return "synthetic";
     }
+    if (dfchatRowIsBotTypingIndicator_(row)) {
+        return "typing";
+    }
     if (dfchatMessageListRowIsUser_(row)) {
         return "user";
     }
@@ -17303,6 +17396,8 @@ function liveAgentPinTailRowsToTranscriptEnd_(dfMessenger, listOverride) {
     /** @type {Set<HTMLElement>} */
     const userPinConsumed_ = new Set();
     /** @type {HTMLElement[]} */
+    const typingBlocks = [];
+    /** @type {HTMLElement[]} */
     const tailBlocks = [];
     for (const c of list.children) {
         if (!(c instanceof HTMLElement)) {
@@ -17317,6 +17412,8 @@ function liveAgentPinTailRowsToTranscriptEnd_(dfMessenger, listOverride) {
         const kind = liveAgentClassifyTranscriptRow_(c, tailSet);
         if (kind === "tail") {
             tailBlocks.push(c);
+        } else if (kind === "typing") {
+            typingBlocks.push(c);
         } else if (kind === "synthetic") {
             syntheticRows.push(c);
         } else if (kind === "userPersona") {
@@ -17338,7 +17435,12 @@ function liveAgentPinTailRowsToTranscriptEnd_(dfMessenger, listOverride) {
     }
 
     /** @type {Element[]} */
-    const desiredOrder = botRows.concat(syntheticRows).concat(userRows).concat(tailBlocks).concat([anchor]);
+    const desiredOrder = botRows
+        .concat(syntheticRows)
+        .concat(userRows)
+        .concat(typingBlocks)
+        .concat(tailBlocks)
+        .concat([anchor]);
     const current = Array.from(list.children);
     let orderOk = current.length === desiredOrder.length;
     if (orderOk) {
@@ -17384,6 +17486,9 @@ function liveAgentPinTailRowsToTranscriptEnd_(dfMessenger, listOverride) {
         }
         for (let i = 0; i < userRows.length; i += 1) {
             frag.appendChild(userRows[i]);
+        }
+        for (let i = 0; i < typingBlocks.length; i += 1) {
+            frag.appendChild(typingBlocks[i]);
         }
         for (let i = 0; i < tailBlocks.length; i += 1) {
             frag.appendChild(tailBlocks[i]);
@@ -19815,6 +19920,7 @@ function attachPersonaHandlers(dfMessenger) {
                     schedulePruneOrphanUserPersonas_(ms);
                 }
                 scheduleScrollMessageListToBottom_(ms, { force: true });
+                dfchatSchedulePinBotTypingRowToConversationEnd_(ms);
                 scheduleClearDfMessengerComposerInput_();
             }
         },
