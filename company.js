@@ -17035,14 +17035,16 @@ function dfchatRowIsUserPersonaCaptionRow_(row) {
 
 /** @param {HTMLElement} personaRow @param {HTMLElement} userRow */
 function liveAgentSnugUserPersonaPair_(personaRow, userRow) {
+    if (!(personaRow instanceof HTMLElement) || !(userRow instanceof HTMLElement)) {
+        return;
+    }
     if (
-        personaRow instanceof HTMLElement
-        && userRow instanceof HTMLElement
-        && personaRow.dataset.dfchatPersonaPairSnugged === "1"
+        personaRow.dataset.dfchatPersonaPairSnugged === "1"
         && personaRow.nextElementSibling === userRow
     ) {
         return;
     }
+    delete personaRow.dataset.dfchatPersonaPairSnugged;
     const personaMd = personaRow.querySelector?.(".message.bot-message.markdown.dfchat-user-persona-md");
     const personaEntry =
         personaRow.classList.contains("entry")
@@ -17116,10 +17118,19 @@ function liveAgentRepairUserPersonaPairing_(list) {
     // one extra persona row is expected briefly; never delete it outside active human-agent chat.
     if (liveAgentVisitorAgentChatActive_()) {
         while (personaPool.length > userRows.length) {
-            const extra = personaPool.pop();
+            const extra = personaPool[personaPool.length - 1];
             if (!extra) {
                 break;
             }
+            let created = Number(extra.dataset.dfchatUserPersonaCreatedAt || 0);
+            if (!created) {
+                extra.dataset.dfchatUserPersonaCreatedAt = String(Date.now());
+                break;
+            }
+            if (Date.now() - created < 2500) {
+                break;
+            }
+            personaPool.pop();
             try {
                 extra.remove();
             } catch {
@@ -17135,6 +17146,11 @@ function liveAgentRepairUserPersonaPairing_(list) {
         const persona = personaPool[i];
         if (!persona) {
             continue;
+        }
+        if (persona instanceof HTMLElement) {
+            delete persona.dataset.dfchatPersonaPairSnugged;
+            delete persona.dataset.dfchatUserPersonaEntryMoved;
+            delete persona.dataset.dfchatUserPersonaRowMoved;
         }
         if (persona.nextElementSibling !== user) {
             try {
@@ -17270,9 +17286,9 @@ function liveAgentPinTailRowsToTranscriptEnd_(dfMessenger, listOverride) {
     /** @type {HTMLElement[]} */
     const syntheticRows = [];
     /** @type {HTMLElement[]} */
-    const userPersonaRows = [];
-    /** @type {HTMLElement[]} */
-    const userMessageRows = [];
+    const userRows = [];
+    /** @type {Set<HTMLElement>} */
+    const userPinConsumed_ = new Set();
     /** @type {HTMLElement[]} */
     const tailBlocks = [];
     for (const c of list.children) {
@@ -17282,30 +17298,30 @@ function liveAgentPinTailRowsToTranscriptEnd_(dfMessenger, listOverride) {
         if (c === anchor || c.dataset.dfchatLiveAgentAnchor === "1") {
             continue;
         }
+        if (userPinConsumed_.has(c)) {
+            continue;
+        }
         const kind = liveAgentClassifyTranscriptRow_(c, tailSet);
         if (kind === "tail") {
             tailBlocks.push(c);
         } else if (kind === "synthetic") {
             syntheticRows.push(c);
         } else if (kind === "userPersona") {
-            userPersonaRows.push(c);
+            userRows.push(c);
+            const next = c.nextElementSibling;
+            if (
+                next instanceof HTMLElement
+                && next.parentNode === list
+                && liveAgentClassifyTranscriptRow_(next, tailSet) === "user"
+            ) {
+                userRows.push(next);
+                userPinConsumed_.add(next);
+            }
         } else if (kind === "user") {
-            userMessageRows.push(c);
+            userRows.push(c);
         } else {
             botRows.push(c);
         }
-    }
-
-    /** @type {HTMLElement[]} */
-    const userRows = [];
-    for (let i = 0; i < userMessageRows.length; i += 1) {
-        if (i < userPersonaRows.length) {
-            userRows.push(userPersonaRows[i]);
-        }
-        userRows.push(userMessageRows[i]);
-    }
-    for (let i = userMessageRows.length; i < userPersonaRows.length; i += 1) {
-        userRows.push(userPersonaRows[i]);
     }
 
     /** @type {Element[]} */
@@ -18049,8 +18065,15 @@ function liveAgentMaybeRenderVisitorBubbleOnce_(dfMessenger, text) {
     liveAgentMarkVisitorUiRendered_(t);
     renderUserPersonaBeforeUserText_(ms, t);
     scheduleScrollMessageListToBottom_(ms, { force: true });
-    scheduleLiveAgentTailRepin_(ms);
-    liveAgentSchedulePinTailRowsToTranscriptEnd_(ms);
+    const afterVisitorDom_ = () => {
+        liveAgentScheduleRepairUserPersonaPairing_(ms);
+        scheduleLiveAgentTailRepin_(ms);
+        liveAgentSchedulePinTailRowsToTranscriptEnd_(ms);
+    };
+    window.requestAnimationFrame(afterVisitorDom_);
+    [80, 200, 450, 900].forEach((delayMs) => {
+        window.setTimeout(afterVisitorDom_, delayMs);
+    });
 }
 
 let liveAgentComposerBridgeAttached = false;
@@ -26961,6 +26984,17 @@ function renderPersona(dfMessenger, personaType, label, timeLabelForUser, opts) 
     // strips the bot-bubble chrome, and right-aligns it so it visually belongs to the user side.
     const md = buildUserPersonaMarkdownText_(label, timeLabel);
     dfMessenger.renderCustomText(md, true);
+    window.requestAnimationFrame(() => {
+        const list = findMessengerMessageListRoot(dfMessenger);
+        if (!list) {
+            return;
+        }
+        const rows = liveAgentCollectUserPersonaRows_(list);
+        const last = rows[rows.length - 1];
+        if (last instanceof HTMLElement && !last.dataset.dfchatUserPersonaCreatedAt) {
+            last.dataset.dfchatUserPersonaCreatedAt = String(Date.now());
+        }
+    });
     if (!(opts && opts.skipShadowFix)) {
         schedulePersonaShadowFix(dfMessenger);
     }
@@ -27367,10 +27401,19 @@ img[src*="%23dfchat-live-agent-label"] {
 .entry.bot:has(.message.bot-message.markdown img[src*="dfchat-agent-persona"]),
 .entry.bot:has(.message.bot-message.markdown img[src*="%23dfchat-agent-persona"]),
 .entry.bot:has(.message.bot-message.markdown img[src*="dfchat-live-agent-label"]),
-.entry.bot:has(.message.bot-message.markdown img[src*="%23dfchat-live-agent-label"]),
+.entry.bot:has(.message.bot-message.markdown img[src*="%23dfchat-live-agent-label"]) {
+  transform: translateY(${rowDown}) !important;
+}
 .entry.bot.dfchat-user-persona-caption-bot-entry,
 .entry.bot.dfchat-user-persona-entry {
-  transform: translateY(${rowDown}) !important;
+  transform: none !important;
+  position: relative !important;
+  z-index: 2 !important;
+}
+.entry.bot.dfchat-user-persona-caption-bot-entry[data-dfchat-persona-pair-snugged="1"],
+.entry.bot.dfchat-user-persona-entry[data-dfchat-persona-pair-snugged="1"] {
+  transform: none !important;
+  margin-top: 0 !important;
 }
 #message-list[data-dfchat-live-agent-human-chat="1"] img[src*="dfchat-bot-persona"],
 #message-list[data-dfchat-live-agent-human-chat="1"] img[src*="%23dfchat-bot-persona"] {
@@ -27382,31 +27425,31 @@ img[src*="%23dfchat-live-agent-label"] {
 }
 #message-list[data-dfchat-live-agent-human-chat="1"] .entry.bot.dfchat-user-persona-caption-bot-entry,
 #message-list[data-dfchat-live-agent-human-chat="1"] .entry.bot.dfchat-user-persona-entry {
-  transform: translateY(calc(${rowDown} - ${laUserUp}px)) !important;
+  transform: none !important;
 }
 #message-list[data-dfchat-live-agent-human-chat="1"] .message.bot-message.markdown.dfchat-user-persona-md {
-  transform: translateY(-${laUserUp}px) !important;
+  transform: none !important;
 }
 #message-list[data-dfchat-live-agent-ai-chat="1"] .entry.bot.dfchat-user-persona-caption-bot-entry,
 #message-list[data-dfchat-live-agent-ai-chat="1"] .entry.bot.dfchat-user-persona-entry {
-  transform: translateY(calc(${rowDown} - ${laAiUserUp}px)) !important;
+  transform: none !important;
 }
 #message-list[data-dfchat-live-agent-ai-chat="1"] .message.bot-message.markdown.dfchat-user-persona-md {
-  transform: translateY(-${laAiUserUp}px) !important;
+  transform: none !important;
 }
 .entry.bot.dfchat-user-persona-caption-bot-entry[data-dfchat-user-persona-frozen="human"],
 .entry.bot.dfchat-user-persona-entry[data-dfchat-user-persona-frozen="human"] {
-  transform: translateY(calc(${rowDown} - ${laUserUp}px)) !important;
+  transform: none !important;
 }
 .message.bot-message.markdown.dfchat-user-persona-md[data-dfchat-user-persona-frozen="human"] {
-  transform: translateY(-${laUserUp}px) !important;
+  transform: none !important;
 }
 .entry.bot.dfchat-user-persona-caption-bot-entry[data-dfchat-user-persona-frozen="ai"],
 .entry.bot.dfchat-user-persona-entry[data-dfchat-user-persona-frozen="ai"] {
-  transform: translateY(calc(${rowDown} - ${laAiUserUp}px)) !important;
+  transform: none !important;
 }
 .message.bot-message.markdown.dfchat-user-persona-md[data-dfchat-user-persona-frozen="ai"] {
-  transform: translateY(-${laAiUserUp}px) !important;
+  transform: none !important;
 }
 .message.bot-message.markdown:has(img[src*="dfchat-bot-persona"]) p,
 .message.bot-message.markdown:has(img[src*="%23dfchat-bot-persona"]) p {
@@ -29057,13 +29100,27 @@ function snugUserPersonaEntryToUserRow_(personaEntry, userEntry) {
         return;
     }
     const gap = Math.max(0, Math.min(16, USER_PERSONA_CONFIG.gapBelowPx ?? 2));
+    const directPair =
+        personaEntry instanceof HTMLElement
+        && userEntry instanceof HTMLElement
+        && personaEntry.parentElement === userEntry.parentElement
+        && personaEntry.nextElementSibling === userEntry;
     try {
         personaEntry.style.setProperty("margin-bottom", `${gap}px`, "important");
         personaEntry.style.setProperty("padding-bottom", "0", "important");
-        personaEntry.style.setProperty("transform", `translateY(${cssUserPersonaRowDownShift_()})`, "important");
-        personaEntry.style.setProperty("margin-top", cssUserPersonaMarginTopForEntry_(personaEntry), "important");
+        personaEntry.style.setProperty("position", "relative", "important");
+        personaEntry.style.setProperty("z-index", "2", "important");
+        if (directPair) {
+            personaEntry.style.setProperty("transform", "none", "important");
+            personaEntry.style.setProperty("margin-top", "0", "important");
+        } else {
+            personaEntry.style.setProperty("transform", `translateY(${cssUserPersonaRowDownShift_()})`, "important");
+            personaEntry.style.setProperty("margin-top", cssUserPersonaMarginTopForEntry_(personaEntry), "important");
+        }
         userEntry.style.setProperty("margin-top", "0", "important");
         userEntry.style.setProperty("padding-top", "0", "important");
+        userEntry.style.setProperty("position", "relative", "important");
+        userEntry.style.setProperty("z-index", "1", "important");
     } catch {
         /* ignore */
     }

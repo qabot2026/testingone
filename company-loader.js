@@ -35,7 +35,7 @@
   }
 
   var CHAT_HOST = chatHostFromLoaderSrc() || "https://qabot2026.github.io/testingone/";
-  var IFRAME_VERSION = "164-fix-agent-connect-persona-and-user-pairing";
+  var IFRAME_VERSION = "165-fix-user-persona-under-bubble-agent";
 
   function getLoaderQuery() {
     var cur = document.currentScript;
