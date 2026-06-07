@@ -4414,6 +4414,9 @@ async function transcriptTurnsFromLiveAgentInbox_(sessionId) {
             }
             const atMs = coerceTranscriptAtMs_(m.createdAt);
             if (roleRaw === "visitor") {
+                if (isTranscriptHandoffRoutingToken_(text) || isTranscriptInternalUserToken_(text)) {
+                    continue;
+                }
                 /** @type {{ role: string, text: string, at?: number }} */
                 const row = { role: "user", text };
                 if (typeof atMs === "number" && Number.isFinite(atMs)) {
@@ -4905,6 +4908,9 @@ function transcriptTurnsFromStoredChatArray_(arr) {
                 continue;
             }
         }
+        if (role === "user" && shouldOmitTranscriptUserTurn_(text)) {
+            continue;
+        }
         if (role === "assistant") {
             text = dedupeTranscriptDisplayText_(text);
         }
@@ -5216,6 +5222,43 @@ function transcriptUserCompareNorm_(text) {
     return String(text ?? "").trim().replace(/\s+/g, " ");
 }
 
+function stripDialogflowActionPrefixForTranscript_(text) {
+    return String(text ?? "")
+        .trim()
+        .replace(/^(?:query|event):/i, "")
+        .trim();
+}
+
+/** Raw CX routing tokens (e.g. query:__GO_human agent__) — hide from staff chatscript. */
+function isTranscriptHandoffRoutingToken_(text) {
+    const raw = stripDialogflowActionPrefixForTranscript_(text);
+    if (!raw) {
+        return false;
+    }
+    if (/^__GO_/i.test(raw) && /human\s*agent/i.test(raw)) {
+        return true;
+    }
+    const inner = raw.replace(/^__GO_/i, "").trim();
+    return /^human\s*agent$/i.test(inner) || /^human\s*agent$/i.test(raw);
+}
+
+/** Skip internal Dialogflow action tokens in transcript user turns. */
+function isTranscriptInternalUserToken_(text) {
+    const t = stripDialogflowActionPrefixForTranscript_(text);
+    if (!t) {
+        return true;
+    }
+    if (/^__GO_/i.test(t)) {
+        return true;
+    }
+    const low = t.toLowerCase();
+    return low === "upload" || low === "resend_otp";
+}
+
+function shouldOmitTranscriptUserTurn_(text) {
+    return isTranscriptHandoffRoutingToken_(text) || isTranscriptInternalUserToken_(text);
+}
+
 /** Widget form bubbles use `  \\n` between rows; flatten before comparing assistant duplicates. */
 function transcriptAssistantCompareNorm_(text) {
     return String(text ?? "")
@@ -5423,6 +5466,9 @@ function dedupeTranscriptTurnsForDisplay_(turns) {
     /** @type {{ role: string, text: string, rich?: Record<string, unknown>, at?: number, seq?: number }[]} */
     const out = [];
     let prevAssistantNorm = "";
+    let prevUserNorm = "";
+    /** @type {Set<string>} */
+    const seenHandoffUserNorm = new Set();
     for (let i = 0; i < turns.length; i += 1) {
         const t = turns[i];
         if (!t || typeof t !== "object") {
@@ -5459,8 +5505,25 @@ function dedupeTranscriptTurnsForDisplay_(turns) {
                 continue;
             }
             prevAssistantNorm = key;
+        } else if (role === "user") {
+            prevAssistantNorm = "";
+            if (shouldOmitTranscriptUserTurn_(text)) {
+                continue;
+            }
+            const userNorm = transcriptUserCompareNorm_(text);
+            if (userNorm && isTranscriptHandoffRoutingToken_(text)) {
+                if (seenHandoffUserNorm.has(userNorm)) {
+                    continue;
+                }
+                seenHandoffUserNorm.add(userNorm);
+            }
+            if (userNorm && userNorm === prevUserNorm) {
+                continue;
+            }
+            prevUserNorm = userNorm;
         } else {
             prevAssistantNorm = "";
+            prevUserNorm = "";
         }
         const row = /** @type {{ role: string, text: string, rich?: Record<string, unknown>, at?: number, seq?: number }} */ ({
             role,
@@ -5647,6 +5710,7 @@ function transcriptTurnsFromClientContext_(cx) {
             ? uqSrc
                   .filter((x) => typeof x === "string" && x.trim())
                   .map((x) => String(x).trim())
+                  .filter((x) => !shouldOmitTranscriptUserTurn_(x))
             : [];
 
     if (!base.length) {

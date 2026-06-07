@@ -18166,7 +18166,12 @@ function liveAgentVisitorToAgentInbox_() {
 
 /** CX chips / intents that must not be POSTed as visitor chat lines during human chat. */
 function liveAgentIsBoilerplateHandoffPhrase_(text) {
-    const n = normalizeWholeMessageIntentPhrase(text);
+    const raw = String(text || "").trim();
+    const stripped = raw.replace(/^(?:query|event):/i, "").trim();
+    if (/^__GO_/i.test(stripped)) {
+        return true;
+    }
+    const n = normalizeWholeMessageIntentPhrase(stripped || raw);
     if (!n) {
         return true;
     }
@@ -18336,6 +18341,21 @@ function liveAgentMarkVisitorUiRendered_(text) {
     liveAgentVisitorUiRenderedAt_ = Date.now();
 }
 
+function dfchatMessageListUserRowCompareText_(entry, fallbackText) {
+    if (entry && entry.querySelector) {
+        const msg = entry.querySelector(".message.user-message");
+        if (msg) {
+            return normalizeChatTranscriptCompareText_(msg.innerText || msg.textContent || "");
+        }
+    }
+    const line = fallbackText != null
+        ? String(fallbackText)
+        : entry
+          ? (entry.innerText || entry.textContent || "")
+          : "";
+    return normalizeChatTranscriptCompareText_(line.replace(/\s+/g, " ").trim());
+}
+
 /**
  * @param {HTMLElement | null | undefined} list
  * @param {string} text
@@ -18362,10 +18382,7 @@ function dfchatMessageListHasUserRowForText_(list, text) {
         }
     }
     for (let i = 0; i < userEntries.length; i += 1) {
-        const line = (userEntries[i].innerText || userEntries[i].textContent || "")
-            .replace(/\s+/g, " ")
-            .trim();
-        if (normalizeChatTranscriptCompareText_(line) === norm) {
+        if (dfchatMessageListUserRowCompareText_(userEntries[i], "") === norm) {
             return true;
         }
     }
@@ -18643,6 +18660,7 @@ async function liveAgentRouteVisitorOutboundOnce_(text, dfMessenger, event) {
     dfchatPendingTypedUtteranceForGate_ = "";
     renderUserPersonaBeforeUserText_(ms, t);
     void liveAgentSendVisitorMessage_(ms, t, false);
+    suppressDuplicateVisitorMessageRows_(ms, t);
     scheduleSuppressDuplicateVisitorMessageRows_(ms, t);
     scheduleClearDfMessengerComposerInput_();
     liveAgentClearVisitorTypingDraft_();
@@ -18663,6 +18681,17 @@ async function tryBlockDialogflowForLiveAgentHumanChat_(event, queryText) {
         return false;
     }
     if (liveAgentShouldBlockDialogflowNow_() && event) {
+        preventDialogflowMessengerEvent_(event);
+    }
+    return liveAgentRouteVisitorOutboundOnce_(t, activeDfMessenger, event);
+}
+
+async function tryInterceptLiveAgentOutboundBeforeRefresh_(event, queryText) {
+    const t = typeof queryText === "string" ? queryText.trim() : "";
+    if (!t || !liveAgentHandoffIsActive_() || !liveAgentShouldPreventNativeSendSync_(t)) {
+        return false;
+    }
+    if (event) {
         preventDialogflowMessengerEvent_(event);
     }
     return liveAgentRouteVisitorOutboundOnce_(t, activeDfMessenger, event);
@@ -18837,8 +18866,7 @@ function suppressDuplicateVisitorMessageRows_(dfMessenger, text) {
     const matches = [];
     for (let i = 0; i < userEntries.length; i += 1) {
         const entry = userEntries[i];
-        const line = (entry.innerText || entry.textContent || "").replace(/\s+/g, " ").trim();
-        if (normalizeChatTranscriptCompareText_(line) === norm) {
+        if (dfchatMessageListUserRowCompareText_(entry, "") === norm) {
             matches.push(entry);
         }
     }
@@ -20035,6 +20063,9 @@ function attachPersonaHandlers(dfMessenger) {
         async (event) => {
             const typed = extractDfUserInputEnteredText(event);
             const typedTrim = typeof typed === "string" ? typed.trim() : "";
+            if (typedTrim && (await tryInterceptLiveAgentOutboundBeforeRefresh_(event, typedTrim))) {
+                return;
+            }
             if (typedTrim && liveAgentShouldPreventNativeSendSync_(typedTrim)) {
                 preventDialogflowMessengerEvent_(event);
             }
@@ -20099,6 +20130,9 @@ function attachPersonaHandlers(dfMessenger) {
             dfchatPendingTypedUtteranceForGate_ = "";
             const effectiveQuery = fromReq || pendingSnap;
 
+            if (effectiveQuery && (await tryInterceptLiveAgentOutboundBeforeRefresh_(event, effectiveQuery))) {
+                return;
+            }
             if (effectiveQuery && liveAgentShouldPreventNativeSendSync_(effectiveQuery)) {
                 preventDialogflowMessengerEvent_(event);
             }
@@ -20272,7 +20306,7 @@ function trackAssistantQueryInSessionContext_(raw) {
 
 function trackChatUserQueryInSessionContext_(raw) {
     const tRaw = typeof raw === "string" ? raw.trim() : "";
-    if (!tRaw) {
+    if (!tRaw || liveAgentIsBoilerplateHandoffPhrase_(tRaw)) {
         return;
     }
     const t = tRaw.length > MAX_STORED_CHAT_USER_QUERY_CHARS
