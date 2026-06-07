@@ -157,6 +157,28 @@ function liveAgentQueriesFromSession(session) {
   return lines.join(' | ').slice(0, 2000);
 }
 
+/** Sheet1 User Queries tail after bot lines — markers plus handoff chat (not queue status). */
+function buildSheet1LiveAgentHandoffQueries(session) {
+  const parts = ['Human Agent Requested'];
+  const status = trim(session && session.status).toLowerCase();
+  if (
+    status === 'active'
+    || trim(session && session.acceptedAt)
+    || trim(session && session.claimedAt)
+    || trim(session && session.assignedAgentEmail)
+  ) {
+    parts.push('Connected with Agent');
+  }
+  const chatBody = liveAgentQueriesFromSession(session);
+  if (chatBody) {
+    chatBody.split(' | ').forEach((line) => {
+      const t = trim(line);
+      if (t) parts.push(t);
+    });
+  }
+  return parts.join(', ');
+}
+
 function liveAgentMetrics(session) {
   const msgs = (session && session.messages) || [];
   let count = 0;
@@ -405,5 +427,7 @@ module.exports = {
   syncSessionToSheet2,
   syncDashboardToSheet2,
   buildRowValues,
+  buildSheet1LiveAgentHandoffQueries,
+  liveAgentQueriesFromSession,
   sessionQualifies,
 };

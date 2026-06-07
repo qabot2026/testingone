@@ -1308,6 +1308,10 @@ export function assembleLeadSheetPayloadFromSources_(incomingRow, sheetExtrasSou
     const city = typeof row.city === "string" ? row.city.trim() : "";
     const ip = typeof row.ip === "string" ? row.ip.trim() : "";
     const sourceUrl = typeof row.sourceUrl === "string" ? row.sourceUrl.trim() : "";
+    const osName =
+        sheetOutboundCell_(/** @type {{ osName?: unknown }} */ (row).osName)
+        || sheetOutboundCell_(contactLookup && contactLookup.os_name)
+        || "";
     const appointmentBookedRaw =
         typeof row.appointmentBooked === "string" ? row.appointmentBooked.trim() : "";
     const appointmentBooked = appointmentBookedSheetValue_(appointmentBookedRaw);
@@ -1331,6 +1335,7 @@ export function assembleLeadSheetPayloadFromSources_(incomingRow, sheetExtrasSou
         clientSessionId: row.clientSessionId,
         deviceType: deviceForAppend,
         browserName: row.browserName,
+        osName,
         channel: ch,
         userQueriesCsv,
         city,
@@ -2662,7 +2667,67 @@ export function sanitizeUserQueriesCsvForSheet(csv) {
     return kept.join(", ");
 }
 
-function splitCsvValues_(raw) {
+/** Sheet1 queue snapshot / handoff markers — not bot visitor chat. */
+function isLiveAgentHandoffCsvSegment_(seg) {
+    const t = String(seg ?? "").trim();
+    if (!t) {
+        return false;
+    }
+    if (/^\[Live Agent\]/i.test(t)) {
+        return true;
+    }
+    if (/^human agent requested$/i.test(t)) {
+        return true;
+    }
+    if (/^connected with agent$/i.test(t)) {
+        return true;
+    }
+    return (
+        /Status:\s*/i.test(t)
+        && /Dept:/i.test(t)
+        && (/Queue:/i.test(t) || /Agent:/i.test(t))
+    );
+}
+
+/**
+ * Keep bot queries before the first handoff marker; replace the handoff tail on each live-agent sync.
+ *
+ * @param {string} existingCsv
+ * @param {string} newHandoffCsv
+ */
+function replaceLiveAgentHandoffBlockInCsv_(existingCsv, newHandoffCsv) {
+    const all = splitCsvValues_(existingCsv);
+    let cut = all.length;
+    for (let i = 0; i < all.length; i += 1) {
+        if (isLiveAgentHandoffCsvSegment_(all[i])) {
+            cut = i;
+            break;
+        }
+    }
+    const bot = all.slice(0, cut);
+    const handoff = splitCsvValues_(sanitizeUserQueriesCsvForSheet(newHandoffCsv));
+    if (!handoff.length) {
+        return bot.join(", ");
+    }
+    return [...bot, ...handoff].join(", ");
+}
+
+/** Handoff markers + live-agent chat tail already on the row (preserve across bot query refresh). */
+function extractLiveAgentHandoffTailFromCsv_(csv) {
+    const all = splitCsvValues_(csv);
+    let start = all.length;
+    for (let i = 0; i < all.length; i += 1) {
+        if (isLiveAgentHandoffCsvSegment_(all[i])) {
+            start = i;
+            break;
+        }
+    }
+    if (start >= all.length) {
+        return "";
+    }
+    return all.slice(start).join(", ");
+}
+
     const s = typeof raw === "string" ? raw : "";
     if (!s.trim()) {
         return [];
@@ -3640,6 +3705,9 @@ function resolveLeadValueForNormalizedHeader_(nk, lead, opts) {
     }
     if (nk === "browser" || nk === "browsername") {
         return sheetOutboundCell_(L.browserName);
+    }
+    if (nk === "os" || nk === "operatingsystem" || nk === "osname") {
+        return sheetOutboundCell_(L.osName);
     }
     if (nk === "city" || nk === "visitorcity") {
         return sheetOutboundCell_(L.city);
@@ -5378,8 +5446,13 @@ async function upsertSessionQueriesInSheet_(row) {
         if (incomingQ) {
             const replacePrefix =
                 typeof row.replaceCsvPrefix === "string" ? row.replaceCsvPrefix.trim() : "";
-            if (clientAuthoritativeQueries && !replacePrefix) {
-                merged = incomingQ;
+            if (clientAuthoritativeQueries && !replacePrefix && !row.replaceLiveAgentHandoffBlock) {
+                const handoffTail = extractLiveAgentHandoffTailFromCsv_(existingCsv);
+                merged = handoffTail
+                    ? replaceLiveAgentHandoffBlockInCsv_(incomingQ, handoffTail)
+                    : incomingQ;
+            } else if (row.replaceLiveAgentHandoffBlock) {
+                merged = replaceLiveAgentHandoffBlockInCsv_(existingCsv, incomingQ);
             } else {
                 merged = replacePrefix
                     ? replacePrefixedCsvSegment_(existingCsv, replacePrefix, incomingQ)

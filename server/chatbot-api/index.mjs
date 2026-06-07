@@ -3465,6 +3465,9 @@ app.post(
         const deviceType = typeof clientContext.device_type === "string"
             ? clientContext.device_type.trim()
             : "";
+        const osName = typeof clientContext.os_name === "string"
+            ? clientContext.os_name.trim()
+            : "";
         const formId = normalizeSheetFormId(body._contactFormId);
 
         /** @type {Record<string, string>} */
@@ -3551,6 +3554,7 @@ app.post(
                     clientSessionId,
                     browserName,
                     deviceType,
+                    osName,
                     channel,
                     fileLinks: "",
                     ip,
@@ -3562,7 +3566,7 @@ app.post(
                     userQueriesCsv,
                     chatTranscriptJson,
                     writeChatTranscriptOnSessionSync: true,
-                    lightweightSessionSync: !hasResolvedContact,
+                    lightweightSessionSync: false,
                     clientAuthoritativeQueries: true,
                     sheetExtrasSources: {
                         clientContext: mergedClientContext,
