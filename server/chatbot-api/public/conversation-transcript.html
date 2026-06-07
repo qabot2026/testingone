@@ -717,15 +717,7 @@
             })
           );
         } else if (action === "open_form") {
-          var rawFormId =
-            unwrapStr(pl.form_id) ||
-            unwrapStr(pl.formId) ||
-            unwrapStr(pl.form_key) ||
-            "";
-          var formLabel = staffFormDisplayLabel(rawFormId);
-          if (formLabel) {
-            html += '<p class="rc-text">Form: <strong>' + escapeHtml(formLabel) + "</strong></p>";
-          }
+          /* Staff transcript shows the form submission summary, not the routing marker. */
         }
         return html;
       }
@@ -871,6 +863,11 @@
         if (!turn) return false;
         if (turn.role === "assistant") {
           if (isTranscriptPersonaChromeLine(turn.text) || isTranscriptEphemeralStatusLine(turn.text)) return false;
+          var richProbe = resolveRich(turn);
+          if (richProbe && String(richProbe.action || "").toLowerCase() === "open_form") {
+            var summaryText = cleanText(turn.text, richProbe);
+            if (!summaryText || !/thank you for sharing/i.test(summaryText)) return false;
+          }
           return !!renderAssistantBody(turn);
         }
         if (turn.role === "user" || turn.role === "agent") {

@@ -4914,6 +4914,9 @@ function transcriptTurnsFromStoredChatArray_(arr) {
         if (isTranscriptEphemeralStatusText_(text)) {
             continue;
         }
+        if (isTranscriptOpenFormActionTurn_(/** @type {{ role?: string, text?: string, rich?: unknown, rich_json?: unknown }} */ ({ role, text, rich }))) {
+            continue;
+        }
         if (role === "assistant" && isTranscriptPersonaChromeText_(text)) {
             continue;
         }
@@ -5274,6 +5277,46 @@ function isTranscriptEphemeralStatusText_(text) {
     return /^typing(\.{0,3})?$/i.test(raw);
 }
 
+/** `open_form` routing marker — staff see the form summary bubble, not «Form: contact». */
+function isTranscriptOpenFormActionTurn_(turn) {
+    if (!turn || typeof turn !== "object") {
+        return false;
+    }
+    const role = String(turn.role || "")
+        .trim()
+        .toLowerCase();
+    if (role !== "assistant") {
+        return false;
+    }
+    let rich =
+        turn.rich && typeof turn.rich === "object" && !Array.isArray(turn.rich)
+            ? /** @type {Record<string, unknown>} */ (turn.rich)
+            : null;
+    if (!rich && typeof turn.rich_json === "string" && turn.rich_json.trim()) {
+        try {
+            const parsed = JSON.parse(turn.rich_json);
+            if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+                rich = /** @type {Record<string, unknown>} */ (parsed);
+            }
+        } catch {
+            /* ignore */
+        }
+    }
+    const act =
+        rich && typeof rich.action === "string" ? rich.action.trim().toLowerCase() : "";
+    if (act !== "open_form") {
+        return false;
+    }
+    const text = String(turn.text || "").trim();
+    if (text && isContactFormSubmissionSummaryAssistantText_(text)) {
+        return false;
+    }
+    if (!text || /^form\s*:/i.test(text)) {
+        return true;
+    }
+    return true;
+}
+
 /** Agent lines are often stored as `Name: message` in live-agent inbox. */
 function transcriptAgentBodyCompareNorm_(text) {
     const raw = String(text ?? "").trim();
@@ -5599,6 +5642,9 @@ function dedupeTranscriptTurnsForDisplay_(turns) {
         if (text && isTranscriptEphemeralStatusText_(text)) {
             continue;
         }
+        if (isTranscriptOpenFormActionTurn_(t)) {
+            continue;
+        }
         if (role === "assistant") {
             const key = text
                 ? transcriptAssistantCompareNorm_(text)
@@ -5665,9 +5711,8 @@ function dedupeTranscriptTurnsForDisplay_(turns) {
 }
 
 /**
- * Final ordering for staff JSON: sort by wall time (`at`), then widget `seq`, then merge order.
- * Widget rows carry low `seq` from bot phase; live-agent inbox rows carry Firestore `at` — `at` must win
- * so user/agent lines interleave instead of clustering at the bottom.
+ * Final ordering for staff JSON: widget `seq` first (capture order), then wall time (`at`), then merge order.
+ * Live-agent inbox rows usually lack `seq` and fall through to `at` so they interleave with bot-phase lines.
  *
  * @param {{ role: string, text: string, rich?: Record<string, unknown>, at?: number, seq?: number }[]} turns
  * @returns {{ role: string, text: string, rich?: Record<string, unknown>, at?: number, seq?: number }[]}
@@ -5678,18 +5723,18 @@ function orderTranscriptTurnsForDisplay_(turns) {
     }
     const tagged = turns.map((t, i) => ({ t, i }));
     tagged.sort((a, b) => {
-        const atA = typeof a.t.at === "number" && Number.isFinite(a.t.at) ? a.t.at : null;
-        const atB = typeof b.t.at === "number" && Number.isFinite(b.t.at) ? b.t.at : null;
-        if (atA !== null && atB !== null && atA !== atB) {
-            return atA - atB;
-        }
         const seqA = typeof a.t.seq === "number" && Number.isFinite(a.t.seq) ? a.t.seq : NaN;
         const seqB = typeof b.t.seq === "number" && Number.isFinite(b.t.seq) ? b.t.seq : NaN;
         if (Number.isFinite(seqA) && Number.isFinite(seqB) && seqA !== seqB) {
             return seqA - seqB;
         }
+        const atA = typeof a.t.at === "number" && Number.isFinite(a.t.at) ? a.t.at : null;
+        const atB = typeof b.t.at === "number" && Number.isFinite(b.t.at) ? b.t.at : null;
         if (atA !== null && atB !== null && atA !== atB) {
             return atA - atB;
+        }
+        if (Number.isFinite(seqA) && Number.isFinite(seqB) && seqA !== seqB) {
+            return seqA - seqB;
         }
         if (atA !== null && atB === null) {
             return -1;

@@ -21287,6 +21287,23 @@ function isWidgetFormThankYouSummaryLine_(text) {
     return !!(dashPairs && dashPairs.length >= 2);
 }
 
+/**
+ * `open_form` CX routing — not staff-facing conversation (form summary bubble is stored separately).
+ * @param {Record<string, unknown> | null | undefined} rich
+ * @param {string} [text]
+ * @returns {boolean}
+ */
+function isTranscriptOpenFormActionEntry_(rich, text) {
+    if (transcriptRichCxActionKey_(rich) !== "open_form") {
+        return false;
+    }
+    const t = typeof text === "string" ? text.trim() : "";
+    if (t && isWidgetFormThankYouSummaryLine_(t)) {
+        return false;
+    }
+    return true;
+}
+
 function chatTranscriptAlreadyHasAssistantText_(transcript, text) {
     const norm = normalizeChatTranscriptCompareText_(text);
     if (!norm) {
@@ -22033,34 +22050,8 @@ function resolveAssistantTranscriptPlacement_(transcript, opts) {
  * @param {"append" | "before_trailing_users"} placement
  */
 function applyAssistantTranscriptPlacement_(transcript, row, placement) {
-    if (placement !== "before_trailing_users") {
-        transcript.push(row);
-        return;
-    }
-    let insertAt = transcript.length;
-    while (insertAt > 0 && transcript[insertAt - 1] && transcript[insertAt - 1].role === "user") {
-        insertAt -= 1;
-    }
-    if (insertAt >= transcript.length) {
-        transcript.push(row);
-        return;
-    }
-    const anchor = transcript[insertAt];
-    if (anchor && typeof anchor.seq === "number" && Number.isFinite(anchor.seq)) {
-        row.seq = anchor.seq;
-        for (let i = insertAt; i < transcript.length; i += 1) {
-            const t = transcript[i];
-            if (t && typeof t.seq === "number" && Number.isFinite(t.seq)) {
-                t.seq += 1;
-            }
-        }
-    }
-    if (anchor && typeof anchor.at === "number" && Number.isFinite(anchor.at)) {
-        row.at = anchor.at - 1;
-    } else if (typeof row.at === "number" && Number.isFinite(row.at)) {
-        row.at = row.at - 1;
-    }
-    transcript.splice(insertAt, 0, row);
+    void placement;
+    transcript.push(row);
 }
 
 /**
@@ -22078,6 +22069,7 @@ function appendChatTranscriptAssistantEntries_(entries, opts) {
                 ? prev.chat_transcript.slice()
                 : [];
         const now = Date.now();
+        let tickAt = now;
         let seq =
             typeof prev.chat_transcript_seq === "number" && Number.isFinite(prev.chat_transcript_seq)
                 ? prev.chat_transcript_seq
@@ -22097,6 +22089,9 @@ function appendChatTranscriptAssistantEntries_(entries, opts) {
                 entry.rich && typeof entry.rich === "object" && !Array.isArray(entry.rich)
                     ? leanTranscriptRichForStorage_(entry.rich)
                     : null;
+            if (isTranscriptOpenFormActionEntry_(rich, text)) {
+                continue;
+            }
             if (
                 rich
                 && !text
@@ -22144,8 +22139,9 @@ function appendChatTranscriptAssistantEntries_(entries, opts) {
                 continue;
             }
             seq += 1;
+            tickAt += 1;
             /** @type {{ role: string, at: number, seq: number, text?: string, rich?: Record<string, unknown> }} */
-            const row = { role: "assistant", at: now, seq };
+            const row = { role: "assistant", at: tickAt, seq };
             if (text) {
                 row.text = text;
             }
@@ -22198,6 +22194,7 @@ function appendChatTranscriptAssistantLines_(lines, opts) {
                 ? prev.chat_transcript.slice()
                 : [];
         const now = Date.now();
+        let tickAt = now;
         let seq =
             typeof prev.chat_transcript_seq === "number" && Number.isFinite(prev.chat_transcript_seq)
                 ? prev.chat_transcript_seq
@@ -22228,8 +22225,9 @@ function appendChatTranscriptAssistantLines_(lines, opts) {
                 continue;
             }
             seq += 1;
+            tickAt += 1;
             /** @type {{ role: string, text: string, at: number, seq: number }} */
-            const row = { role: "assistant", text, at: now, seq };
+            const row = { role: "assistant", text, at: tickAt, seq };
             applyAssistantTranscriptPlacement_(transcript, row, placement);
             if (placement === "before_trailing_users") {
                 placement = "append";
