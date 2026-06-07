@@ -277,6 +277,16 @@ function readPersonaDisplayConfig() {
         botTextNudgeLeftPx:
             typeof pd.botTextNudgeLeftPx === "number" && Number.isFinite(pd.botTextNudgeLeftPx)
                 ? Math.max(-32, Math.min(32, pd.botTextNudgeLeftPx))
+                : 10,
+        /** Visitor + agent connected — extra bot cat image up (px). */
+        liveAgentBotImageNudgeUpPx:
+            typeof pd.liveAgentBotImageNudgeUpPx === "number" && Number.isFinite(pd.liveAgentBotImageNudgeUpPx)
+                ? Math.max(0, Math.min(32, pd.liveAgentBotImageNudgeUpPx))
+                : 5,
+        /** Visitor + agent connected — user persona row up (px, image + label + time). */
+        liveAgentUserPersonaNudgeUpPx:
+            typeof pd.liveAgentUserPersonaNudgeUpPx === "number" && Number.isFinite(pd.liveAgentUserPersonaNudgeUpPx)
+                ? Math.max(0, Math.min(32, pd.liveAgentUserPersonaNudgeUpPx))
                 : 10
     };
 }
@@ -1135,6 +1145,55 @@ function cssBotPersonaTextNudgeLeftPx_() {
     return Math.max(-32, Math.min(32, PERSONA_DISPLAY_CONFIG.botTextNudgeLeftPx ?? 10));
 }
 
+function liveAgentHumanChatPersonaLayoutActive_() {
+    return liveAgentHandoffIsActive_() && liveAgentVisitorAgentChatActive_();
+}
+
+function cssLiveAgentBotImageExtraNudgeUpPx_() {
+    return Math.max(0, Math.min(32, PERSONA_DISPLAY_CONFIG.liveAgentBotImageNudgeUpPx ?? 5));
+}
+
+function cssLiveAgentUserPersonaExtraNudgeUpPx_() {
+    return Math.max(0, Math.min(32, PERSONA_DISPLAY_CONFIG.liveAgentUserPersonaNudgeUpPx ?? 10));
+}
+
+/** Bot cat image Y offset (px number) — live-agent extra nudge applied via CSS flag / inline when active. */
+function cssBotCatImageOffsetDownPx_() {
+    const img = BOT_PERSONA_CONFIG.image;
+    const base = BOT_PERSONA_CONFIG.mode === "image" ? (img.offsetDownPx || 0) : 0;
+    return base - cssBotPersonaImageNudgeUpPx_();
+}
+
+function cssBotCatImageOffsetDownPxWithLiveAgent_() {
+    let y = cssBotCatImageOffsetDownPx_();
+    if (liveAgentHumanChatPersonaLayoutActive_()) {
+        y -= cssLiveAgentBotImageExtraNudgeUpPx_();
+    }
+    return y;
+}
+
+/** User persona entry row — less downward shift while live-agent human chat is active. */
+function cssUserPersonaRowDownShift_() {
+    const base = cssPersonaRowDownShiftPx_();
+    if (liveAgentHumanChatPersonaLayoutActive_()) {
+        return `${Math.max(0, base - cssLiveAgentUserPersonaExtraNudgeUpPx_())}px`;
+    }
+    return cssPersonaRowDownShift_();
+}
+
+/** @param {HTMLElement | null | undefined} dfMessenger */
+function syncLiveAgentHumanChatPersonaLayoutFlag_(dfMessenger) {
+    const list = findMessengerMessageListRoot(dfMessenger || activeDfMessenger);
+    if (!list) {
+        return;
+    }
+    if (liveAgentHumanChatPersonaLayoutActive_()) {
+        list.dataset.dfchatLiveAgentHumanChat = "1";
+    } else if (list.dataset.dfchatLiveAgentHumanChat) {
+        delete list.dataset.dfchatLiveAgentHumanChat;
+    }
+}
+
 /** User persona avatar transform (image only — not the caption row). */
 function cssUserPersonaImageTransform_() {
     const down = cssUserPersonaImageNudgeDownPx_();
@@ -1151,7 +1210,8 @@ function cssUserPersonaImageTransform_() {
 /** User persona baseline pull is -6px; config adds extra upward nudge, or down when negative. */
 function cssUserPersonaMarginTop() {
     const extra = Math.max(-48, Math.min(32, BOT_PERSONA_CONFIG.userPersonaNudgeUpPx ?? 0));
-    return `${-(6 + extra)}px`;
+    const laUp = liveAgentHumanChatPersonaLayoutActive_() ? cssLiveAgentUserPersonaExtraNudgeUpPx_() : 0;
+    return `${-(6 + extra + laUp)}px`;
 }
 
 /** Safe CSS border-radius for the floating launcher (blocks odd characters). */
@@ -18240,6 +18300,7 @@ async function liveAgentPollTick_(dfMessenger) {
             scheduleSuppressDfMessengerBotRepliesDuringHumanHandoff_();
             liveAgentEnsureTailPinObserver_(msHuman);
             liveAgentSchedulePinTailRowsToTranscriptEnd_(msHuman);
+            syncLiveAgentHumanChatPersonaLayoutFlag_(msHuman);
             try {
                 markLiveAgentHumanChatInSession_();
             } catch {
@@ -26551,8 +26612,9 @@ function getPersonaImageGuardCss() {
     const botTextLeft = cssBotPersonaTextNudgeLeftPx_();
     const botCatImgX =
         cfg.mode === "image" ? `${img.offsetRightPx + botTextLeft}px` : `${botTextLeft}px`;
-    const botCatImgY =
-        cfg.mode === "image" ? `${img.offsetDownPx - cssBotPersonaImageNudgeUpPx_()}px` : `${-cssBotPersonaImageNudgeUpPx_()}px`;
+    const botCatImgY = `${cssBotCatImageOffsetDownPx_()}px`;
+    const laBotImgUp = PERSONA_DISPLAY_CONFIG.liveAgentBotImageNudgeUpPx ?? 5;
+    const laUserUp = PERSONA_DISPLAY_CONFIG.liveAgentUserPersonaNudgeUpPx ?? 10;
     const mobY = `${cfg.mode === "image" ? img.offsetDownPx - cssBotPersonaImageNudgeUpPx_() : -cssBotPersonaImageNudgeUpPx_()}`;
     const mobAgentY = `${cfg.mode === "image" ? img.offsetDownPx : 0}`;
     const mobBotX = `${(cfg.mode === "image" ? img.offsetRightPx : 0) + botTextLeft - img.mobileNudgeLeftPx}px`;
@@ -26623,6 +26685,17 @@ img[src*="%23dfchat-live-agent-label"] {
 .entry.bot.dfchat-user-persona-entry {
   transform: translateY(${rowDown}) !important;
 }
+#message-list[data-dfchat-live-agent-human-chat="1"] img[src*="dfchat-bot-persona"],
+#message-list[data-dfchat-live-agent-human-chat="1"] img[src*="%23dfchat-bot-persona"] {
+  transform: translate(${botCatImgX}, calc(${botCatImgY} - ${laBotImgUp}px)) !important;
+}
+#message-list[data-dfchat-live-agent-human-chat="1"] .entry.bot.dfchat-user-persona-caption-bot-entry,
+#message-list[data-dfchat-live-agent-human-chat="1"] .entry.bot.dfchat-user-persona-entry {
+  transform: translateY(calc(${rowDown} - ${laUserUp}px)) !important;
+}
+#message-list[data-dfchat-live-agent-human-chat="1"] .message.bot-message.markdown.dfchat-user-persona-md {
+  transform: translateY(-${laUserUp}px) !important;
+}
 .message.bot-message.markdown:has(img[src*="dfchat-bot-persona"]) p,
 .message.bot-message.markdown:has(img[src*="%23dfchat-bot-persona"]) p {
   color: ${PERSONA_DISPLAY_CONFIG.nameColor} !important;
@@ -26679,6 +26752,10 @@ img[src*="dfchat-persona-bot-time"] {
 img[src*="dfchat-bot-persona"],
 img[src*="%23dfchat-bot-persona"] {
   transform: translate(${mobBotX}, ${mobY}px) !important;
+}
+#message-list[data-dfchat-live-agent-human-chat="1"] img[src*="dfchat-bot-persona"],
+#message-list[data-dfchat-live-agent-human-chat="1"] img[src*="%23dfchat-bot-persona"] {
+  transform: translate(${mobBotX}, calc(${mobY}px - ${laBotImgUp}px)) !important;
 }
 img[src*="dfchat-agent-persona"],
 img[src*="%23dfchat-agent-persona"],
@@ -26919,6 +26996,7 @@ function startPersonaDecorator(dfMessenger) {
         }
         applyPersonaImageGuardToMessenger(ms);
         decoratePersonaMessages(ms);
+        syncLiveAgentHumanChatPersonaLayoutFlag_(ms);
         if (liveAgentHandoffIsActive_() && liveAgentVisitorAgentChatActive_()) {
             liveAgentPinTailRowsToTranscriptEnd_(ms);
         }
@@ -28225,7 +28303,8 @@ function snugUserPersonaEntryToUserRow_(personaEntry, userEntry) {
     try {
         personaEntry.style.setProperty("margin-bottom", `${gap}px`, "important");
         personaEntry.style.setProperty("padding-bottom", "0", "important");
-        personaEntry.style.setProperty("transform", `translateY(${cssPersonaRowDownShift_()})`, "important");
+        personaEntry.style.setProperty("transform", `translateY(${cssUserPersonaRowDownShift_()})`, "important");
+        personaEntry.style.setProperty("margin-top", cssUserPersonaMarginTop(), "important");
         userEntry.style.setProperty("margin-top", "0", "important");
         userEntry.style.setProperty("padding-top", "0", "important");
     } catch {
@@ -28916,7 +28995,7 @@ function stylePersonaContainer(container, imageNode, personaType) {
             }
             if (isCat) {
                 const right = (BOT_PERSONA_CONFIG.image.offsetRightPx || 0) + cssBotPersonaTextNudgeLeftPx_();
-                const down = (BOT_PERSONA_CONFIG.image.offsetDownPx || 0) - cssBotPersonaImageNudgeUpPx_();
+                const down = cssBotCatImageOffsetDownPxWithLiveAgent_();
                 imageNode.style.transform = `translate(${right}px, ${down}px)`;
             }
         } else if (isTime) {
