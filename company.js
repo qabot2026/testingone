@@ -157,6 +157,8 @@ let liveAgentCachedConvStatus = "";
 /** From poll: human | waiting | ai — when ai, visitor gets Dialogflow again. */
 let liveAgentCachedHumanMode = "";
 /** From poll / conversation: false = agent-only (no bot replies). */
+let liveAgentPersonaLayoutWasHuman_ = false;
+let liveAgentPersonaLayoutWasAi_ = false;
 let liveAgentCachedAiEnabled = true;
 /** True when server reports AI co-pilot (bot may reply; visitor text not routed to agent inbox). */
 let liveAgentCachedAiCopilot_ = false;
@@ -1214,15 +1216,73 @@ function cssBotCatImageOffsetDownPx_() {
 }
 
 /** User persona entry row — less downward shift while live-agent AI or human chat is active. */
+function cssUserPersonaRowDownShiftPxForLaUp_(laUp) {
+    const base = cssPersonaRowDownShiftPx_();
+    return Math.max(0, base - Math.max(0, laUp));
+}
+
+function cssUserPersonaRowDownShiftForLaUp_(laUp) {
+    return `${cssUserPersonaRowDownShiftPxForLaUp_(laUp)}px`;
+}
+
 function cssUserPersonaRowDownShift_() {
     const base = cssPersonaRowDownShiftPx_();
     if (liveAgentHumanChatPersonaLayoutActive_()) {
-        return `${Math.max(0, base - cssLiveAgentUserPersonaNudgeUpPx_())}px`;
+        return cssUserPersonaRowDownShiftForLaUp_(cssLiveAgentUserPersonaNudgeUpPx_());
     }
     if (liveAgentAiChatPersonaLayoutActive_()) {
-        return `${Math.max(0, base - cssLiveAgentAiUserPersonaNudgeUpPx_())}px`;
+        return cssUserPersonaRowDownShiftForLaUp_(cssLiveAgentAiUserPersonaNudgeUpPx_());
     }
     return cssPersonaRowDownShift_();
+}
+
+function cssUserPersonaMarginTopWithLaUp_(laUp, personaEntry) {
+    const extra = Math.max(-48, Math.min(32, BOT_PERSONA_CONFIG.userPersonaNudgeUpPx ?? 0));
+    let px = -(6 + extra + Math.max(0, laUp));
+    if (personaEntry && userPersonaEntryFollowsUserEntry_(personaEntry)) {
+        px += Math.max(0, Math.min(32, USER_PERSONA_CONFIG.gapAfterPreviousUserPx ?? 16));
+    }
+    return `${px}px`;
+}
+
+function userPersonaEntryLayoutFrozen_(entry) {
+    return entry instanceof HTMLElement && !!entry.dataset.dfchatUserPersonaFrozen;
+}
+
+/** Keep user persona rows at live-agent offsets after human/AI handoff ends. */
+function freezeUserPersonaLayoutFromLiveAgent_(dfMessenger, mode) {
+    const list = findMessengerMessageListRoot(dfMessenger || activeDfMessenger);
+    if (!list) {
+        return;
+    }
+    const laUserUp =
+        mode === "ai" ? cssLiveAgentAiUserPersonaNudgeUpPx_() : cssLiveAgentUserPersonaNudgeUpPx_();
+    const rowShift = cssUserPersonaRowDownShiftForLaUp_(laUserUp);
+    list.querySelectorAll(
+        ".entry.bot.dfchat-user-persona-caption-bot-entry, .entry.bot.dfchat-user-persona-entry"
+    ).forEach((entry) => {
+        if (!(entry instanceof HTMLElement) || userPersonaEntryLayoutFrozen_(entry)) {
+            return;
+        }
+        entry.dataset.dfchatUserPersonaFrozen = mode;
+        try {
+            entry.style.setProperty("transform", `translateY(${rowShift})`, "important");
+            entry.style.setProperty("margin-top", cssUserPersonaMarginTopWithLaUp_(laUserUp, entry), "important");
+        } catch {
+            /* ignore */
+        }
+    });
+    list.querySelectorAll(".message.bot-message.markdown.dfchat-user-persona-md").forEach((md) => {
+        if (!(md instanceof HTMLElement) || md.dataset.dfchatUserPersonaFrozen) {
+            return;
+        }
+        md.dataset.dfchatUserPersonaFrozen = mode;
+        try {
+            md.style.setProperty("transform", `translateY(-${laUserUp}px)`, "important");
+        } catch {
+            /* ignore */
+        }
+    });
 }
 
 /** Re-apply user persona snug offsets after live-agent layout flags change. */
@@ -1241,6 +1301,9 @@ function refreshLiveAgentUserPersonaLayout_(dfMessenger) {
         ".entry.bot.dfchat-user-persona-caption-bot-entry, .entry.bot.dfchat-user-persona-entry"
     ).forEach((entry) => {
         if (!(entry instanceof HTMLElement)) {
+            return;
+        }
+        if (userPersonaEntryLayoutFrozen_(entry)) {
             return;
         }
         let sibling = entry.nextElementSibling;
@@ -1266,6 +1329,9 @@ function refreshLiveAgentUserPersonaLayout_(dfMessenger) {
         if (!(md instanceof HTMLElement)) {
             return;
         }
+        if (md.dataset.dfchatUserPersonaFrozen) {
+            return;
+        }
         try {
             if (up > 0) {
                 md.style.setProperty("transform", `translateY(-${up}px)`, "important");
@@ -1280,11 +1346,22 @@ function refreshLiveAgentUserPersonaLayout_(dfMessenger) {
 
 /** @param {HTMLElement | null | undefined} dfMessenger */
 function syncLiveAgentPersonaLayoutFlags_(dfMessenger) {
-    const list = findMessengerMessageListRoot(dfMessenger || activeDfMessenger);
+    const ms = dfMessenger || activeDfMessenger;
+    const list = findMessengerMessageListRoot(ms);
     if (!list) {
         return;
     }
-    if (liveAgentHumanChatPersonaLayoutActive_()) {
+    const humanNow = liveAgentHumanChatPersonaLayoutActive_();
+    const aiNow = liveAgentAiChatPersonaLayoutActive_();
+    if (liveAgentPersonaLayoutWasHuman_ && !humanNow) {
+        freezeUserPersonaLayoutFromLiveAgent_(ms, "human");
+    }
+    if (liveAgentPersonaLayoutWasAi_ && !aiNow) {
+        freezeUserPersonaLayoutFromLiveAgent_(ms, "ai");
+    }
+    liveAgentPersonaLayoutWasHuman_ = humanNow;
+    liveAgentPersonaLayoutWasAi_ = aiNow;
+    if (humanNow) {
         list.dataset.dfchatLiveAgentHumanChat = "1";
     } else if (list.dataset.dfchatLiveAgentHumanChat) {
         delete list.dataset.dfchatLiveAgentHumanChat;
@@ -18642,6 +18719,7 @@ async function liveAgentPollTick_(dfMessenger) {
             } catch {
                 /* ignore */
             }
+            syncLiveAgentPersonaLayoutFlags_(dfMessenger || activeDfMessenger);
         }
 
         if (status === "closed") {
@@ -18651,6 +18729,7 @@ async function liveAgentPollTick_(dfMessenger) {
             clearLiveAgentRequestedInSession_();
             setLiveAgentHandoffActive_(false);
             const ms0 = dfMessenger || activeDfMessenger;
+            syncLiveAgentPersonaLayoutFlags_(ms0);
             if (ms0 && typeof ms0.renderCustomText === "function") {
                 liveAgentRenderBotLineAtTranscriptEnd_(
                     ms0,
@@ -27076,6 +27155,20 @@ img[src*="%23dfchat-live-agent-label"] {
 #message-list[data-dfchat-live-agent-ai-chat="1"] .message.bot-message.markdown.dfchat-user-persona-md {
   transform: translateY(-${laAiUserUp}px) !important;
 }
+.entry.bot.dfchat-user-persona-caption-bot-entry[data-dfchat-user-persona-frozen="human"],
+.entry.bot.dfchat-user-persona-entry[data-dfchat-user-persona-frozen="human"] {
+  transform: translateY(calc(${rowDown} - ${laUserUp}px)) !important;
+}
+.message.bot-message.markdown.dfchat-user-persona-md[data-dfchat-user-persona-frozen="human"] {
+  transform: translateY(-${laUserUp}px) !important;
+}
+.entry.bot.dfchat-user-persona-caption-bot-entry[data-dfchat-user-persona-frozen="ai"],
+.entry.bot.dfchat-user-persona-entry[data-dfchat-user-persona-frozen="ai"] {
+  transform: translateY(calc(${rowDown} - ${laAiUserUp}px)) !important;
+}
+.message.bot-message.markdown.dfchat-user-persona-md[data-dfchat-user-persona-frozen="ai"] {
+  transform: translateY(-${laAiUserUp}px) !important;
+}
 .message.bot-message.markdown:has(img[src*="dfchat-bot-persona"]) p,
 .message.bot-message.markdown:has(img[src*="%23dfchat-bot-persona"]) p {
   color: ${PERSONA_DISPLAY_CONFIG.nameColor} !important;
@@ -28725,6 +28818,9 @@ function dfchatRowIsUserPersonaCaptionRow_(row) {
 
 /** @param {HTMLElement} personaEntry @param {HTMLElement} userEntry */
 function snugUserPersonaEntryToUserRow_(personaEntry, userEntry) {
+    if (userPersonaEntryLayoutFrozen_(personaEntry)) {
+        return;
+    }
     const gap = Math.max(0, Math.min(16, USER_PERSONA_CONFIG.gapBelowPx ?? 2));
     try {
         personaEntry.style.setProperty("margin-bottom", `${gap}px`, "important");
