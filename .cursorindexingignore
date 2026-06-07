@@ -1,0 +1,16 @@
+# Indexing-only excludes — files stay readable by Agent when opened/@-mentioned,
+# but are omitted from codebase search/index (saves renderer memory).
+
+# Large widget bundle (1.1MB+) — edit via search/navigation, not semantic index
+company.js
+
+# Large server entrypoints
+server/chatbot-api/index.mjs
+server/chatbot-api/lib/sheets.mjs
+
+# Large static pages rarely edited via semantic search
+server/chatbot-api/public/conversations-sheet.html
+server/chatbot-api/public/conversation-transcript.html
+
+# Generated upload data
+**/*.upload.json

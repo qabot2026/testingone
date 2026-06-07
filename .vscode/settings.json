@@ -4,12 +4,30 @@
     "**/Only for Refer/**": true,
     "**/__pycache__/**": true,
     "**/.git/objects/**": true,
-    "**/.git/subtree-cache/**": true
+    "**/.git/subtree-cache/**": true,
+    "**/server/chatbot-api/data/**": true,
+    "**/*.upload.json": true,
+    "**/dist/**": true,
+    "**/build/**": true
   },
   "search.exclude": {
     "**/node_modules": true,
     "**/Only for Refer": true,
     "**/__pycache__": true,
-    "**/server/chatbot-api/data/*.upload.json": true
-  }
+    "**/server/chatbot-api/data": true,
+    "**/server/chatbot-api/data/*.upload.json": true,
+    "**/*.upload.json": true,
+    "**/dist": true,
+    "**/build": true,
+    "CHATBOT_CODEBASE_STUDY.md": true
+  },
+  "files.exclude": {
+    "**/node_modules": true,
+    "**/Only for Refer": true,
+    "**/__pycache__": true
+  },
+  "files.maxMemoryForLargeFilesMB": 64,
+  "editor.largeFileOptimizations": true,
+  "search.followSymlinks": false,
+  "search.maxResults": 5000
 }

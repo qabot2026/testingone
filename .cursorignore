@@ -1,25 +1,46 @@
-﻿# Keep Cursor indexing lean — reduces OOM from huge folders (~13k+ files in this repo).
+﻿# Keep Cursor indexing lean — reduces OOM (~13k+ files on disk; most are deps).
 
 # Dependencies (largest memory cost)
 **/node_modules/
+server/chatbot-api/node_modules/
 
-# Local reference copy — not deployed; includes its own node_modules + credentials risk
+# Local reference copy — not deployed; own node_modules + credentials risk
 Only for Refer/
 
 # Python / caches
 __pycache__/
 *.pyc
 .pytest_cache/
+.mypy_cache/
 
 # Git internals
 .git/
+**/.git/objects/**
 
 # Generated / local runtime data
-server/chatbot-api/data/widget-settings-store.json
+server/chatbot-api/data/
 .env
 .env.*
 *.log
 *.tmp
+*.bak
 
-# Upload JSON dumps (not needed for widget/chat work)
+# Upload JSON dumps (large; not needed for widget/chat work)
+**/*.upload.json
 server/chatbot-api/data/*.upload.json
+
+# Lockfiles (Cursor already skips indexing; block agent reads too)
+package-lock.json
+**/package-lock.json
+pnpm-lock.yaml
+yarn.lock
+
+# Build / maps / binaries
+**/dist/
+**/build/
+**/*.map
+**/*.min.js
+
+# Large study / doc artifacts (keep in git; skip AI + index)
+CHATBOT_CODEBASE_STUDY.md
+Meta integration.md
