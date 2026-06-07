@@ -16141,6 +16141,33 @@ function tryRenderThanksAfterMergeSuppressDf_(event, raw, before) {
     return true;
 }
 
+/** Session params synced to df-messenger — live-agent flags are server-only (avoid CX session refresh / cleared UI). */
+const DF_MESSENGER_SESSION_PARAM_BLOCKLIST_ = new Set([
+    "request_live_agent",
+    "live_agent",
+    "request_human_agent",
+    "human_agent",
+    "handoff_live_agent",
+    "speak_to_agent",
+    "request_human",
+    "live_agent_copilot",
+    "live_agent_human_chat",
+    "live_agent_requested"
+]);
+
+/** @param {HTMLElement | null | undefined} dfMessenger */
+function liveAgentMarkPreHandoffTranscriptRows_(dfMessenger) {
+    const list = findMessengerMessageListRoot(dfMessenger || activeDfMessenger);
+    if (!list) {
+        return;
+    }
+    for (const c of list.children) {
+        if (c instanceof HTMLElement && c.dataset.dfchatLiveAgentAnchor !== "1") {
+            c.dataset.dfchatPreHandoffTranscriptRow = "1";
+        }
+    }
+}
+
 function liveAgentWidgetEnabled_() {
     const cfg =
         COMMON_CONFIG.liveAgent && typeof COMMON_CONFIG.liveAgent === "object"
@@ -16492,12 +16519,12 @@ function installLiveAgentTailPinRenderHook_(host) {
     el.renderCustomText = (text, isBot) => {
         const ret = orig(text, isBot);
         try {
-            if (liveAgentHandoffIsActive_()) {
+            if (liveAgentHandoffIsActive_() && liveAgentVisitorAgentChatActive_()) {
                 const s = typeof text === "string" ? text : String(text ?? "");
                 if (s.includes(USER_PERSONA_TEXT_SENTINEL)) {
                     return ret;
                 }
-                if (!isBot && liveAgentVisitorAgentChatActive_()) {
+                if (!isBot) {
                     return ret;
                 }
                 scheduleLiveAgentTailRepin_(el);
@@ -17084,6 +17111,10 @@ function liveAgentPinTailRowsToTranscriptEnd_(dfMessenger, listOverride) {
     }
     const list = listOverride || findMessengerMessageListRoot(dfMessenger || activeDfMessenger);
     if (!list || !liveAgentHandoffIsActive_()) {
+        return;
+    }
+    if (!liveAgentVisitorAgentChatActive_()) {
+        liveAgentEnsureTailAnchor_(list);
         return;
     }
     liveAgentDiscoverAndMarkTailRows_(list);
@@ -17888,7 +17919,9 @@ function liveAgentMaybeRenderVisitorBubbleOnce_(dfMessenger, text) {
     }
     liveAgentMarkVisitorUiRendered_(t);
     renderUserPersonaBeforeUserText_(ms, t);
-    scheduleLiveAgentTailRepin_(ms);
+    if (liveAgentVisitorAgentChatActive_()) {
+        scheduleLiveAgentTailRepin_(ms);
+    }
 }
 
 let liveAgentComposerBridgeAttached = false;
@@ -18255,6 +18288,16 @@ function suppressDfMessengerBotRepliesDuringHumanHandoff_(dfMessenger) {
         }
         for (let ei = entries.length - 1; ei >= 0; ei -= 1) {
             const entry = entries[ei];
+            if (!(entry instanceof HTMLElement)) {
+                continue;
+            }
+            const hostRow = liveAgentResolveListDirectChild_(findMessengerMessageListRoot(ms), entry) || entry;
+            if (hostRow.dataset && hostRow.dataset.dfchatPreHandoffTranscriptRow === "1") {
+                continue;
+            }
+            if (dfchatRowIsUserPersonaCaptionRow_(hostRow)) {
+                continue;
+            }
             const text = (entry.innerText || entry.textContent || "")
                 .toLowerCase()
                 .replace(/\s+/g, " ");
@@ -18523,6 +18566,7 @@ async function requestLiveAgentHandoff_(spec) {
         liveAgentMessagesSinceIso = "";
         liveAgentSeenMessageIds_.clear();
         const ms = activeDfMessenger;
+        liveAgentMarkPreHandoffTranscriptRows_(ms);
         attachLiveAgentComposerBridge_(ms);
         if (ms && typeof ms.renderCustomText === "function") {
             const waitLine =
@@ -18794,6 +18838,7 @@ async function liveAgentPollTick_(dfMessenger) {
             liveAgentMessagesSinceIso = "";
             liveAgentModeRefreshAt_ = 0;
             const msHuman = dfMessenger || activeDfMessenger;
+            liveAgentMarkPreHandoffTranscriptRows_(msHuman);
             suppressDfMessengerBotRepliesDuringHumanHandoff_(msHuman);
             scheduleSuppressDfMessengerBotRepliesDuringHumanHandoff_();
             liveAgentEnsureTailPinObserver_(msHuman);
@@ -18870,7 +18915,9 @@ async function liveAgentPollTick_(dfMessenger) {
                 liveAgentRenderBotLineAtTranscriptEnd_(ms, text, { withPersona: true });
             }
         }
-        liveAgentSchedulePinTailRowsToTranscriptEnd_(ms);
+        if (liveAgentVisitorAgentChatActive_()) {
+            liveAgentSchedulePinTailRowsToTranscriptEnd_(ms);
+        }
         scheduleSuppressDfMessengerErrorUi_();
     } catch {
         /* ignore */
@@ -25514,6 +25561,9 @@ function syncDfMessengerSessionParametersFromClientContext(dfMessenger) {
                     .toLowerCase()
                     .replace(/[^a-z0-9_]/g, "");
                 if (!nk || Object.prototype.hasOwnProperty.call(parameters, nk)) {
+                    continue;
+                }
+                if (DF_MESSENGER_SESSION_PARAM_BLOCKLIST_.has(nk)) {
                     continue;
                 }
                 const s = dfParameterScalarToString(val);
