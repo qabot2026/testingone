@@ -511,6 +511,37 @@
         chip: 1
       };
 
+      function stripTranscriptMarkupForPersonaProbe(line) {
+        return String(line || "")
+          .replace(/<[^>]+>/g, " ")
+          .replace(/!\[[^\]]*\]\([^)]*\)/g, " ")
+          .replace(/\*\*([^*]+)\*\*/g, "$1")
+          .replace(/\s+/g, " ")
+          .trim();
+      }
+
+      /** Bot/user persona caption chrome — not staff conversation content. */
+      function isTranscriptPersonaChromeLine(line) {
+        var raw = typeof line === "string" ? line.trim() : "";
+        if (!raw) return true;
+        if (/dfchat-(bot|user|live-agent)-persona-label/i.test(raw)) return true;
+        if (/!\[[^\]]*\]\([^)]*#dfchat-bot-persona/i.test(raw)) return true;
+        if (/!\[[^\]]*\]\([^)]*data:image\/svg\+xml/i.test(raw) && /persona/i.test(raw)) return true;
+        var stripped = stripTranscriptMarkupForPersonaProbe(raw);
+        if (!stripped) return true;
+        if (/^\d{1,2}:\d{2}(:\d{2})?\s*(am|pm)?$/i.test(stripped)) return true;
+        if (
+          stripped.length <= 48
+          && /\d{1,2}:\d{2}(:\d{2})?\s*(am|pm)?/i.test(stripped)
+        ) {
+          var withoutTime = stripped
+            .replace(/\d{1,2}:\d{2}(:\d{2})?\s*(am|pm)?/gi, "")
+            .trim();
+          if (withoutTime.length > 0 && withoutTime.length <= 24 && !/[.!?]/.test(withoutTime)) return true;
+        }
+        return false;
+      }
+
       function unwrapStr(v) {
         if (typeof v === "string") return v.trim();
         if (v && typeof v === "object" && typeof v.stringValue === "string") return v.stringValue.trim();
@@ -787,6 +818,7 @@
           })
           .filter(function (ln) {
             if (!ln || TRANSCRIPT_NOISE[ln]) return false;
+            if (isTranscriptPersonaChromeLine(ln)) return false;
             if (rich && ln === "Chips" && rich.richContent) return false;
             if (chipLabels.length && chipLabels.indexOf(ln.toLowerCase()) >= 0) return false;
             if (rich && richHasActionUi(rich)) {
@@ -1220,6 +1252,9 @@
           thread.appendChild(dayLine);
           for (var i = 0; i < turns.length; i++) {
             var t = turns[i];
+            if (!t) continue;
+            if (t.role === "assistant" && isTranscriptPersonaChromeLine(t.text)) continue;
+            if (t.role === "user" && isTranscriptPersonaChromeLine(t.text)) continue;
             var role =
               t && t.role === "assistant"
                 ? "assistant"

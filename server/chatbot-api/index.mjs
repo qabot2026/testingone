@@ -4911,6 +4911,9 @@ function transcriptTurnsFromStoredChatArray_(arr) {
         if (role === "user" && shouldOmitTranscriptUserTurn_(text)) {
             continue;
         }
+        if (role === "assistant" && isTranscriptPersonaChromeText_(text)) {
+            continue;
+        }
         if (role === "assistant") {
             text = dedupeTranscriptDisplayText_(text);
         }
@@ -5259,6 +5262,89 @@ function shouldOmitTranscriptUserTurn_(text) {
     return isTranscriptHandoffRoutingToken_(text) || isTranscriptInternalUserToken_(text);
 }
 
+/** Bot/user persona label + clock rows — not staff conversation content. */
+function isTranscriptPersonaChromeText_(text) {
+    const raw = String(text ?? "").trim();
+    if (!raw) {
+        return true;
+    }
+    if (/dfchat-(bot|user|live-agent)-persona-label/i.test(raw)) {
+        return true;
+    }
+    if (/!\[[^\]]*\]\([^)]*#dfchat-bot-persona/i.test(raw)) {
+        return true;
+    }
+    if (/!\[[^\]]*\]\([^)]*data:image\/svg\+xml/i.test(raw) && /persona/i.test(raw)) {
+        return true;
+    }
+    const stripped = raw
+        .replace(/<[^>]+>/g, " ")
+        .replace(/!\[[^\]]*\]\([^)]*\)/g, " ")
+        .replace(/\*\*([^*]+)\*\*/g, "$1")
+        .replace(/\s+/g, " ")
+        .trim();
+    if (!stripped) {
+        return true;
+    }
+    if (/^\d{1,2}:\d{2}(:\d{2})?\s*(am|pm)?$/i.test(stripped)) {
+        return true;
+    }
+    if (
+        stripped.length <= 48
+        && /\d{1,2}:\d{2}(:\d{2})?\s*(am|pm)?/i.test(stripped)
+    ) {
+        const withoutTime = stripped
+            .replace(/\d{1,2}:\d{2}(:\d{2})?\s*(am|pm)?/gi, "")
+            .trim();
+        if (withoutTime.length > 0 && withoutTime.length <= 24 && !/[.!?]/.test(withoutTime)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * Assign monotonic seq to turns missing it so live-agent + widget rows sort chronologically.
+ *
+ * @param {{ role: string, text: string, rich?: Record<string, unknown>, at?: number, seq?: number }[]} turns
+ */
+function assignTranscriptSeqForOrdering_(turns) {
+    if (!Array.isArray(turns) || turns.length < 2) {
+        return;
+    }
+    let maxSeq = 0;
+    for (let i = 0; i < turns.length; i += 1) {
+        const s = turns[i] && typeof turns[i].seq === "number" ? turns[i].seq : NaN;
+        if (Number.isFinite(s) && s > maxSeq) {
+            maxSeq = s;
+        }
+    }
+    const tagged = turns.map((t, i) => ({ t, i }));
+    tagged.sort((a, b) => {
+        const atA =
+            typeof a.t.at === "number" && Number.isFinite(a.t.at) ? a.t.at : Number.POSITIVE_INFINITY;
+        const atB =
+            typeof b.t.at === "number" && Number.isFinite(b.t.at) ? b.t.at : Number.POSITIVE_INFINITY;
+        if (atA !== atB) {
+            return atA - atB;
+        }
+        const seqA = typeof a.t.seq === "number" && Number.isFinite(a.t.seq) ? a.t.seq : NaN;
+        const seqB = typeof b.t.seq === "number" && Number.isFinite(b.t.seq) ? b.t.seq : NaN;
+        if (Number.isFinite(seqA) && Number.isFinite(seqB) && seqA !== seqB) {
+            return seqA - seqB;
+        }
+        return a.i - b.i;
+    });
+    let next = maxSeq + 1;
+    for (let j = 0; j < tagged.length; j += 1) {
+        const row = tagged[j].t;
+        if (typeof row.seq !== "number" || !Number.isFinite(row.seq)) {
+            row.seq = next;
+            next += 1;
+        }
+    }
+}
+
 /** Widget form bubbles use `  \\n` between rows; flatten before comparing assistant duplicates. */
 function transcriptAssistantCompareNorm_(text) {
     return String(text ?? "")
@@ -5469,6 +5555,8 @@ function dedupeTranscriptTurnsForDisplay_(turns) {
     let prevUserNorm = "";
     /** @type {Set<string>} */
     const seenHandoffUserNorm = new Set();
+    /** @type {Set<string>} */
+    const seenUserNormGlobal = new Set();
     for (let i = 0; i < turns.length; i += 1) {
         const t = turns[i];
         if (!t || typeof t !== "object") {
@@ -5496,6 +5584,9 @@ function dedupeTranscriptTurnsForDisplay_(turns) {
                 : rich
                   ? `rich:${JSON.stringify(rich)}`
                   : "";
+            if (text && isTranscriptPersonaChromeText_(text)) {
+                continue;
+            }
             if (text && isContactFormSubmissionSummaryAssistantText_(text)) {
                 if (seenFormSummary.has(key)) {
                     continue;
@@ -5519,6 +5610,12 @@ function dedupeTranscriptTurnsForDisplay_(turns) {
             }
             if (userNorm && userNorm === prevUserNorm) {
                 continue;
+            }
+            if (userNorm && seenUserNormGlobal.has(userNorm)) {
+                continue;
+            }
+            if (userNorm) {
+                seenUserNormGlobal.add(userNorm);
             }
             prevUserNorm = userNorm;
         } else {
@@ -6237,12 +6334,31 @@ app.get(PATHNAME_CONVERSATION_TRANSCRIPT_JSON, async (req, res) => {
             }
         }
 
-        const liveAgentTurns = await transcriptTurnsFromLiveAgentInbox_(session);
-        if (liveAgentTurns.length) {
-            sourceParts.push("live_agent_inbox");
-            turns = mergeConversationTranscriptTurnSources_(turns, liveAgentTurns);
+        const liveAgentTurnsRaw = await transcriptTurnsFromLiveAgentInbox_(session);
+        if (liveAgentTurnsRaw.length) {
+            const existingUserNorms = new Set(
+                turns
+                    .filter((t) => t && t.role === "user")
+                    .map((t) => transcriptUserCompareNorm_(t.text))
+            );
+            const liveAgentTurns = liveAgentTurnsRaw.filter((t) => {
+                if (!t || t.role !== "user") {
+                    return true;
+                }
+                const norm = transcriptUserCompareNorm_(t.text);
+                if (!norm || existingUserNorms.has(norm)) {
+                    return false;
+                }
+                existingUserNorms.add(norm);
+                return true;
+            });
+            if (liveAgentTurns.length) {
+                sourceParts.push("live_agent_inbox");
+                turns = mergeConversationTranscriptTurnSources_(turns, liveAgentTurns);
+            }
         }
 
+        assignTranscriptSeqForOrdering_(turns);
         turns = orderTranscriptTurnsForDisplay_(turns);
         turns = collapseIdenticalAssistantTranscriptTurns_(turns);
         turns = collapseRedundantAssistantTranscriptTurns_(turns);

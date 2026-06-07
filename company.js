@@ -19985,6 +19985,12 @@ function scrapeVisibleBotTranscriptTextsFromMessenger_(dfMessenger) {
         if (!(msg instanceof HTMLElement)) {
             continue;
         }
+        if (
+            msg.querySelector?.(".dfchat-bot-persona-label, .dfchat-user-persona-label")
+            || msg.classList?.contains("dfchat-user-persona-md")
+        ) {
+            continue;
+        }
         if (msg.querySelector?.(`img[src*='#${PERSONA_URL_MARKER_BOT_IMG}']`)) {
             continue;
         }
@@ -21347,13 +21353,63 @@ const TRANSCRIPT_NOISE_LINE_SET = new Set([
     "chip"
 ]);
 
+/** @param {string} line */
+function stripTranscriptMarkupForPersonaProbe_(line) {
+    return String(line || "")
+        .replace(/<[^>]+>/g, " ")
+        .replace(/!\[[^\]]*\]\([^)]*\)/g, " ")
+        .replace(/\*\*([^*]+)\*\*/g, "$1")
+        .replace(/\s+/g, " ")
+        .trim();
+}
+
+/**
+ * Bot/user persona caption chrome (label + clock) — not conversation content for chatscript.
+ * @param {string} line
+ * @returns {boolean}
+ */
+function isTranscriptPersonaChromeLine_(line) {
+    const raw = typeof line === "string" ? line.trim() : "";
+    if (!raw) {
+        return true;
+    }
+    if (/dfchat-(bot|user|live-agent)-persona-label/i.test(raw)) {
+        return true;
+    }
+    if (/!\[[^\]]*\]\([^)]*#dfchat-bot-persona/i.test(raw)) {
+        return true;
+    }
+    if (/!\[[^\]]*\]\([^)]*data:image\/svg\+xml/i.test(raw) && /persona/i.test(raw)) {
+        return true;
+    }
+    const stripped = stripTranscriptMarkupForPersonaProbe_(raw);
+    if (!stripped) {
+        return true;
+    }
+    if (/^\d{1,2}:\d{2}(:\d{2})?\s*(am|pm)?$/i.test(stripped)) {
+        return true;
+    }
+    if (
+        stripped.length <= 48
+        && /\d{1,2}:\d{2}(:\d{2})?\s*(am|pm)?/i.test(stripped)
+    ) {
+        const withoutTime = stripped
+            .replace(/\d{1,2}:\d{2}(:\d{2})?\s*(am|pm)?/gi, "")
+            .trim();
+        if (withoutTime.length > 0 && withoutTime.length <= 24 && !/[.!?]/.test(withoutTime)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 /**
  * @param {string} line
  * @returns {boolean}
  */
 function isTranscriptNoiseLine_(line) {
     const t = typeof line === "string" ? line.trim() : "";
-    return !t || TRANSCRIPT_NOISE_LINE_SET.has(t);
+    return !t || TRANSCRIPT_NOISE_LINE_SET.has(t) || isTranscriptPersonaChromeLine_(t);
 }
 
 /**
@@ -22097,7 +22153,7 @@ function appendChatTranscriptAssistantLines_(lines, opts) {
         for (let i = 0; i < batch.length; i += 1) {
             const raw = batch[i];
             const trimmed = typeof raw === "string" ? raw.trim() : "";
-            if (!trimmed) {
+            if (!trimmed || isTranscriptPersonaChromeLine_(trimmed)) {
                 continue;
             }
             const text =
