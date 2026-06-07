@@ -1083,7 +1083,7 @@ function readUserPersonaConfig() {
         avatarSizePx:
             typeof raw.avatarSizePx === "number" && Number.isFinite(raw.avatarSizePx) && raw.avatarSizePx > 0
                 ? raw.avatarSizePx
-                : 15,
+                : 8,
         gapBelowPx,
         showTime: raw.showTime !== false,
         showSeconds: raw.showSeconds !== false,
@@ -16686,6 +16686,51 @@ function liveAgentSnugUserPersonaPair_(personaRow, userRow) {
 }
 
 /**
+ * Pair each visitor bubble with the next available user persona; optionally render missing personas.
+ * @param {HTMLElement | null | undefined} dfMessenger
+ * @param {HTMLElement | null | undefined} listOverride
+ * @param {{ allowRender?: boolean }} [opts]
+ */
+function liveAgentEnsureUserPersonasForAllVisitorRows_(dfMessenger, listOverride, opts) {
+    const ms = dfMessenger || activeDfMessenger;
+    const list = listOverride || findMessengerMessageListRoot(ms);
+    if (!list || !ms || !liveAgentVisitorAgentChatActive_()) {
+        return;
+    }
+    /** @type {HTMLElement[]} */
+    const userRows = [];
+    for (const c of list.children) {
+        if (!(c instanceof HTMLElement)) {
+            continue;
+        }
+        if (c.dataset.dfchatLiveAgentAnchor === "1") {
+            continue;
+        }
+        if (liveAgentRowIsTranscriptTailBlock_(c)) {
+            continue;
+        }
+        if (dfchatMessageListRowIsUser_(c)) {
+            userRows.push(c);
+        }
+    }
+    let personaCount = 0;
+    for (const c of list.children) {
+        if (c instanceof HTMLElement && dfchatRowIsUserPersonaCaptionRow_(c)) {
+            personaCount += 1;
+        }
+    }
+    const allowRender = !opts || opts.allowRender !== false;
+    const missing = userRows.length - personaCount;
+    if (allowRender && missing > 0 && typeof ms.renderCustomText === "function") {
+        for (let i = 0; i < missing; i += 1) {
+            renderUserPersona(ms, { skipThrottle: true });
+        }
+        schedulePersonaShadowFix(ms);
+    }
+    liveAgentRepairUserPersonaPairing_(list);
+}
+
+/**
  * Pair each user persona caption with its user bubble (chronological index match).
  * @param {HTMLElement | null | undefined} list
  */
@@ -16694,7 +16739,14 @@ function liveAgentRepairUserPersonaPairing_(list) {
         return;
     }
     /** @type {HTMLElement[]} */
-    const personaRows = [];
+    const personaPool = [];
+    for (const c of list.children) {
+        if (c instanceof HTMLElement && dfchatRowIsUserPersonaCaptionRow_(c)) {
+            personaPool.push(c);
+        }
+    }
+    /** @type {Set<HTMLElement>} */
+    const assigned = new Set();
     /** @type {HTMLElement[]} */
     const userRows = [];
     for (const c of list.children) {
@@ -16710,16 +16762,34 @@ function liveAgentRepairUserPersonaPairing_(list) {
         if (isDfchatInlineSyntheticRow(c)) {
             continue;
         }
-        if (dfchatRowIsUserPersonaCaptionRow_(c)) {
-            personaRows.push(c);
-        } else if (dfchatMessageListRowIsUser_(c)) {
+        if (dfchatMessageListRowIsUser_(c)) {
             userRows.push(c);
         }
     }
-    const pairCount = Math.min(personaRows.length, userRows.length);
-    for (let i = 0; i < pairCount; i += 1) {
-        const persona = personaRows[i];
-        const user = userRows[i];
+    let poolIdx = 0;
+    for (let ui = 0; ui < userRows.length; ui += 1) {
+        const user = userRows[ui];
+        const prev = user.previousElementSibling;
+        if (prev instanceof HTMLElement && dfchatRowIsUserPersonaCaptionRow_(prev) && !assigned.has(prev)) {
+            assigned.add(prev);
+            while (poolIdx < personaPool.length && personaPool[poolIdx] !== prev) {
+                poolIdx += 1;
+            }
+            if (poolIdx < personaPool.length && personaPool[poolIdx] === prev) {
+                poolIdx += 1;
+            }
+            liveAgentSnugUserPersonaPair_(prev, user);
+            continue;
+        }
+        while (poolIdx < personaPool.length && assigned.has(personaPool[poolIdx])) {
+            poolIdx += 1;
+        }
+        if (poolIdx >= personaPool.length) {
+            break;
+        }
+        const persona = personaPool[poolIdx];
+        assigned.add(persona);
+        poolIdx += 1;
         if (persona.nextElementSibling !== user) {
             try {
                 list.insertBefore(persona, user);
@@ -16735,13 +16805,10 @@ function liveAgentRepairUserPersonaPairing_(list) {
 function liveAgentScheduleRepairUserPersonaPairing_(dfMessenger) {
     const ms = dfMessenger || activeDfMessenger;
     const run = () => {
-        const list = findMessengerMessageListRoot(ms);
-        if (list) {
-            liveAgentRepairUserPersonaPairing_(list);
-        }
+        liveAgentEnsureUserPersonasForAllVisitorRows_(ms);
     };
     run();
-    [40, 120, 320, 720].forEach((msDelay) => {
+    [40, 120, 320, 720, 1500].forEach((msDelay) => {
         window.setTimeout(run, msDelay);
     });
 }
@@ -16874,7 +16941,7 @@ function liveAgentPinTailRowsToTranscriptEnd_(dfMessenger, listOverride) {
         }
     }
     if (orderOk) {
-        liveAgentRepairUserPersonaPairing_(list);
+        liveAgentEnsureUserPersonasForAllVisitorRows_(dfMessenger || activeDfMessenger, list);
         return;
     }
 
@@ -16889,6 +16956,16 @@ function liveAgentPinTailRowsToTranscriptEnd_(dfMessenger, listOverride) {
         }
     }
     try {
+        let scrollBefore = 0;
+        let scrollHeightBefore = 0;
+        let pinAtBottom = true;
+        try {
+            scrollBefore = list.scrollTop;
+            scrollHeightBefore = list.scrollHeight;
+            pinAtBottom = list.scrollHeight - list.scrollTop - list.clientHeight < 96;
+        } catch {
+            /* ignore */
+        }
         const frag = document.createDocumentFragment();
         for (let i = 0; i < botRows.length; i += 1) {
             frag.appendChild(botRows[i]);
@@ -16907,11 +16984,15 @@ function liveAgentPinTailRowsToTranscriptEnd_(dfMessenger, listOverride) {
             list.appendChild(anchor);
         }
         try {
-            list.scrollTop = list.scrollHeight;
+            if (pinAtBottom) {
+                list.scrollTop = list.scrollHeight;
+            } else if (scrollHeightBefore > 0) {
+                list.scrollTop = Math.max(0, scrollBefore + (list.scrollHeight - scrollHeightBefore));
+            }
         } catch {
             /* ignore */
         }
-        liveAgentRepairUserPersonaPairing_(list);
+        liveAgentEnsureUserPersonasForAllVisitorRows_(dfMessenger || activeDfMessenger, list);
     } catch (pinErr) {
         if (typeof console !== "undefined" && console.warn) {
             console.warn("[live-agent] transcript pin failed:", pinErr);
@@ -27184,6 +27265,7 @@ function startPersonaDecorator(dfMessenger) {
         decoratePersonaMessages(ms);
         syncLiveAgentPersonaLayoutFlags_(ms);
         if (liveAgentHandoffIsActive_() && liveAgentVisitorAgentChatActive_()) {
+            liveAgentEnsureUserPersonasForAllVisitorRows_(ms);
             liveAgentPinTailRowsToTranscriptEnd_(ms);
         }
     };
@@ -28189,17 +28271,24 @@ function dfchatRowHasPersonaAvatar_(row) {
         || row.querySelector?.(`img[src*='%23${PERSONA_URL_MARKER_LIVE_AGENT_LABEL}']`)
         || row.querySelector?.(`img[src*='#${PERSONA_URL_MARKER_AGENT_IMG}']`)
         || row.querySelector?.(`img[src*='%23${PERSONA_URL_MARKER_AGENT_IMG}']`)
+        || row.querySelector?.(`img[src*='#${PERSONA_URL_MARKER_USER_IMG}']`)
+        || row.querySelector?.(`img[src*='%23${PERSONA_URL_MARKER_USER_IMG}']`)
     ) {
         return true;
     }
     return !!(row.querySelector?.("img[src*='dfchat-persona-bot|']")
-        || row.querySelector?.("img[src*='dfchat-persona-bot%7C']"));
+        || row.querySelector?.("img[src*='dfchat-persona-bot%7C']")
+        || row.querySelector?.("img[src*='dfchat-persona-user|']")
+        || row.querySelector?.("img[src*='dfchat-persona-user%7C']"));
 }
 
 /**
  * @param {HTMLElement} row
  */
 function dfchatRowLooksLikeCxBotAssistantRow_(row) {
+    if (dfchatRowIsUserPersonaCaptionRow_(row)) {
+        return false;
+    }
     if (!row.querySelectorAll) {
         return false;
     }
