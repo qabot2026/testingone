@@ -486,7 +486,8 @@ export async function enrichClientContextForSheetMetricsAsync_(clientContext, op
     }
     const sid = typeof opts.sessionId === "string" ? opts.sessionId.trim() : "";
     const wantFs = opts.fetchFirestore !== false;
-    if (sid && wantFs && process.env.DISABLE_FIRESTORE !== "1") {
+    const hasClientTranscript = coerceChatTranscriptArray_(cx.chat_transcript).length > 0;
+    if (sid && wantFs && !hasClientTranscript && process.env.DISABLE_FIRESTORE !== "1") {
         try {
             const { fetchSessionChatTranscriptContext, fetchLatestContactSubmissionForClientSession } =
                 await import("./firestore.mjs");

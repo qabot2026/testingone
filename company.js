@@ -206,6 +206,8 @@ function liveAgentRememberSeenMessageId_(id) {
 const CHAT_FEEDBACK_ENDPOINT = "/chat-feedback";
 /** Caps how long the Submit button waits for the API before aborting (Sheets/Firestore latency). */
 const CONTACT_FORM_SUBMIT_FETCH_TIMEOUT_MS = 90000;
+/** Refer-style: close form + thank-you immediately; POST runs in background (not appointment / OTP mobile-update). */
+const CONTACT_FORM_OPTIMISTIC_SUBMIT = true;
 const API_BASE_URL_META_NAME = "dfchat-api-base-url";
 const MOBILE_CHAT_BREAKPOINT_PX = 768;
 /** Extra `nudgeRight` for Language / Restart + Powered by on small viewports only (see company.config.js mobile layout). */
@@ -21704,6 +21706,181 @@ function scheduleContactFormOpen() {
     }, CONTACT_FORM_OPEN_DELAY_MS);
 }
 
+/** @param {Array<{ type?: string }> | null | undefined} fieldDefs */
+function contactFormFieldDefsHasAppointmentBooking_(fieldDefs) {
+    if (!Array.isArray(fieldDefs)) {
+        return false;
+    }
+    for (let i = 0; i < fieldDefs.length; i += 1) {
+        const t = fieldDefs[i] && String(fieldDefs[i].type || "").toLowerCase();
+        if (t === "appointmentdoctor" || t === "appointmentgeneral") {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * Appointment slot checks and OTP mobile-update must wait for the server before changing UI.
+ * @param {{ formKey?: string }} cfg0
+ * @param {Array<{ type?: string }>} fieldDefs
+ * @param {boolean} isOtpUpdateMobile
+ */
+function contactFormShouldAwaitServerBeforeUi_(cfg0, fieldDefs, isOtpUpdateMobile) {
+    if (isOtpUpdateMobile) {
+        return true;
+    }
+    if (contactFormFieldDefsHasAppointmentBooking_(fieldDefs)) {
+        return true;
+    }
+    if (!CONTACT_FORM_OPTIMISTIC_SUBMIT) {
+        return true;
+    }
+    return false;
+}
+
+/** @param {string} [message] */
+function notifyContactFormSubmitFailureInChat_(message) {
+    const line =
+        typeof message === "string" && message.trim()
+            ? message.trim()
+            : getTranslation("statusSubmissionFailed");
+    if (!activeDfMessenger || typeof activeDfMessenger.renderCustomText !== "function") {
+        return;
+    }
+    try {
+        renderBotPersona(activeDfMessenger, Date.now());
+        activeDfMessenger.renderCustomText(line, true);
+    } catch {
+        /* ignore */
+    }
+}
+
+/**
+ * @param {{ formKey?: string, nextFormId?: string }} cfg0
+ * @param {Array<{ id?: string, type?: string, hiddenDateId?: string, hiddenTimeId?: string }>} fieldDefs
+ * @param {Record<string, unknown>} payload
+ * @param {Record<string, string> | null} chatSummaryPayload
+ */
+function applyContactFormSubmitSuccessUi_(cfg0, fieldDefs, payload, chatSummaryPayload) {
+    const summaryForChat = chatSummaryPayload != null ? chatSummaryPayload : payload;
+    let mobileToRemember = "";
+    if (summaryForChat && typeof summaryForChat.mobile === "string") {
+        mobileToRemember = summaryForChat.mobile.trim();
+    } else if (payload && typeof payload.mobile === "string") {
+        mobileToRemember = payload.mobile.trim();
+    }
+    if (mobileToRemember) {
+        mergeVisitorMobileIntoStoredContext(mobileToRemember, { syncSheet: false, force: true });
+    }
+    const updatedContext = { ...readStoredClientContext() };
+    if (payload && payload.client_context && typeof payload.client_context === "object") {
+        const pc = /** @type {Record<string, unknown>} */ (payload.client_context);
+        if (Array.isArray(pc.chat_transcript)) {
+            updatedContext.chat_transcript = pc.chat_transcript.slice();
+        }
+        if (typeof pc.chat_transcript_seq === "number" && Number.isFinite(pc.chat_transcript_seq)) {
+            updatedContext.chat_transcript_seq = pc.chat_transcript_seq;
+        }
+        if (Array.isArray(pc.user_queries)) {
+            updatedContext.user_queries = pc.user_queries.slice();
+        }
+    }
+    for (const key in payload) {
+        if (typeof payload[key] === "string" && /** @type {string} */ (payload[key]).trim()) {
+            updatedContext[key] = payload[key];
+        }
+    }
+    persistClientContext(updatedContext);
+    syncDfMessengerSessionParametersFromClientContext(activeDfMessenger);
+    renderContactFormSubmissionResponse(summaryForChat);
+
+    for (const def of fieldDefs) {
+        if (!def || !def.id) {
+            continue;
+        }
+        const apptReset = String(def.type || "").toLowerCase();
+        if (apptReset === "appointmentdoctor" || apptReset === "appointmentgeneral") {
+            const hidDateId =
+                typeof def.hiddenDateId === "string" && def.hiddenDateId.trim()
+                    ? def.hiddenDateId.trim()
+                    : `${def.id}__date`;
+            const hidTimeId =
+                typeof def.hiddenTimeId === "string" && def.hiddenTimeId.trim()
+                    ? def.hiddenTimeId.trim()
+                    : `${def.id}__time`;
+            const dEl = document.getElementById(hidDateId);
+            const tEl = document.getElementById(hidTimeId);
+            if (dEl && "value" in dEl) {
+                dEl.value = "";
+            }
+            if (tEl && "value" in tEl) {
+                tEl.value = "";
+            }
+            continue;
+        }
+        const el = document.getElementById(def.id);
+        if (el && "value" in el) {
+            el.value = "";
+        }
+    }
+
+    closeForm();
+    dispatchPendingOpenFormFollowup_("submit");
+    try {
+        const forms = getRuntimeMergedFormDefinitions_();
+        let resolvedNext = consumeNextRegisteredFormFromPendingChain_(forms);
+        if (!resolvedNext && cfg0 && typeof cfg0.nextFormId === "string" && cfg0.nextFormId.trim()) {
+            const cand = canonicalContactFormId_(cfg0.nextFormId.trim());
+            if (forms[cand]) {
+                resolvedNext = cand;
+            }
+        }
+        if (resolvedNext && forms[resolvedNext]) {
+            window.setTimeout(() => {
+                setActiveContactFormId(resolvedNext);
+                openContactForm();
+            }, 250);
+        }
+    } catch {
+        /* ignore */
+    }
+}
+
+/**
+ * @param {{ formKey?: string }} cfg0
+ * @param {Record<string, unknown>} payload
+ */
+function runContactFormSubmitTailWork_(cfg0, payload) {
+    if (hasChatUserEngaged_()) {
+        postSessionQueriesToSheetRow_({ force: true });
+    }
+    if (cfg0.formKey === "feedback") {
+        let ratingNum;
+        const rawRating = payload.rating != null ? payload.rating : payload.feedback_rating;
+        if (typeof rawRating === "number" && Number.isFinite(rawRating)) {
+            ratingNum = Math.round(rawRating);
+        } else if (typeof rawRating === "string" && rawRating.trim()) {
+            const ri = Math.round(Number(rawRating));
+            if (ri >= 1 && ri <= 5) {
+                ratingNum = ri;
+            }
+        }
+        const commentTrim =
+            typeof payload.message === "string"
+                ? payload.message.trim().slice(0, 2000)
+                : typeof payload.feedback_message === "string"
+                  ? payload.feedback_message.trim().slice(0, 2000)
+                  : "";
+        if (ratingNum !== undefined || commentTrim) {
+            postChatFeedbackToApi_({
+                rating: ratingNum,
+                comment: commentTrim
+            });
+        }
+    }
+}
+
 function submitContactForm(event) {
     event.preventDefault();
 
@@ -22030,9 +22207,13 @@ function submitContactForm(event) {
         return;
     }
 
+    const awaitServerUi = contactFormShouldAwaitServerBeforeUi_(cfg0, fieldDefs, isOtpUpdateMobile);
+
     if (status) {
-        status.textContent = getTranslation("statusSubmitting");
-        status.classList.remove("is-success", "is-error");
+        if (awaitServerUi) {
+            status.textContent = getTranslation("statusSubmitting");
+            status.classList.remove("is-success", "is-error");
+        }
     }
 
     if (submitButton) {
@@ -22294,6 +22475,8 @@ function submitContactForm(event) {
         ? verifySmsOtpViaApi_(mobileForVerify, otpCodeForVerify)
         : Promise.resolve({ ok: true });
 
+    let optimisticUiApplied = false;
+
     verifyPromise
         .then((verifyRes) => {
             if (!verifyRes || verifyRes.ok !== true) {
@@ -22301,6 +22484,10 @@ function submitContactForm(event) {
                 const err = new Error(friendly);
                 /** @type {any} */ (err).__smsOtpVerifyFailed = true;
                 throw err;
+            }
+            if (!awaitServerUi) {
+                applyContactFormSubmitSuccessUi_(cfg0, fieldDefs, payload, chatSummaryPayload);
+                optimisticUiApplied = true;
             }
             return fetch(endpoint, fetchInit);
         })
@@ -22340,154 +22527,63 @@ function submitContactForm(event) {
                 return;
             }
 
-            if (status) {
-                let line = responsePayload.message || getTranslation("statusSubmitted");
-                const si =
-                    responsePayload.sheet_integration && typeof responsePayload.sheet_integration === "object"
-                        ? responsePayload.sheet_integration
-                        : null;
-                const sh =
-                    responsePayload.sheet && typeof responsePayload.sheet === "object"
-                        ? responsePayload.sheet
-                        : null;
-                if (si && si.enabled === false) {
-                    const r = typeof si.reason === "string" ? si.reason.trim() : "";
-                    const h = typeof si.hint === "string" ? si.hint.trim() : "";
-                    line = `${line} • Sheets: OFF — ${r}${h ? ` ${h}` : ""}`.trim();
-                    status.textContent = line;
-                    status.classList.remove("is-success");
-                    status.classList.add("is-error");
-                } else {
-                    if (
-                        sh
-                        && sh.action === "duplicate_noop"
-                        && sh.patched === false
-                    ) {
-                        const tabHint =
-                            typeof sh.tab === "string" && sh.tab.trim()
-                                ? ` (${sh.tab})`
-                                : "";
-                        line += ` Sheet: no cell changes (duplicate session row)${tabHint}. Check column F matches this visit or verify Railway SHEETS_RANGE / spreadsheet tab.`;
-                    }
-                    status.textContent = line;
-                    status.classList.add("is-success");
-                    status.classList.remove("is-error");
-                }
-            }
+            const si =
+                responsePayload.sheet_integration && typeof responsePayload.sheet_integration === "object"
+                    ? responsePayload.sheet_integration
+                    : null;
+            const sh =
+                responsePayload.sheet && typeof responsePayload.sheet === "object"
+                    ? responsePayload.sheet
+                    : null;
+            const sheetsFailed = !!(si && si.enabled === false);
 
-            if (hasChatUserEngaged_()) {
-                postSessionQueriesToSheetRow_({ force: true });
-            }
-
-            const summaryForChat = chatSummaryPayload != null ? chatSummaryPayload : payload;
-            let mobileToRemember = "";
-            if (summaryForChat && typeof summaryForChat.mobile === "string") {
-                mobileToRemember = summaryForChat.mobile.trim();
-            } else if (payload && typeof payload.mobile === "string") {
-                mobileToRemember = payload.mobile.trim();
-            }
-            if (mobileToRemember) {
-                mergeVisitorMobileIntoStoredContext(mobileToRemember, { syncSheet: false, force: true });
-            }
-            const updatedContext = { ...readStoredClientContext() };
-            if (payload && payload.client_context && typeof payload.client_context === "object") {
-                const pc = /** @type {Record<string, unknown>} */ (payload.client_context);
-                if (Array.isArray(pc.chat_transcript)) {
-                    updatedContext.chat_transcript = pc.chat_transcript.slice();
-                }
-                if (typeof pc.chat_transcript_seq === "number" && Number.isFinite(pc.chat_transcript_seq)) {
-                    updatedContext.chat_transcript_seq = pc.chat_transcript_seq;
-                }
-                if (Array.isArray(pc.user_queries)) {
-                    updatedContext.user_queries = pc.user_queries.slice();
-                }
-            }
-            for (const key in payload) {
-                if (typeof payload[key] === 'string' && payload[key].trim()) {
-                    updatedContext[key] = payload[key];
-                }
-            }
-            persistClientContext(updatedContext);
-            syncDfMessengerSessionParametersFromClientContext(activeDfMessenger);
-            renderContactFormSubmissionResponse(summaryForChat);
-
-            if (cfg0.formKey === "feedback") {
-                let ratingNum;
-                const rawRating = payload.rating != null ? payload.rating : payload.feedback_rating;
-                if (typeof rawRating === "number" && Number.isFinite(rawRating)) {
-                    ratingNum = Math.round(rawRating);
-                } else if (typeof rawRating === "string" && rawRating.trim()) {
-                    const ri = Math.round(Number(rawRating));
-                    if (ri >= 1 && ri <= 5) {
-                        ratingNum = ri;
+            if (!optimisticUiApplied) {
+                if (status) {
+                    let line = responsePayload.message || getTranslation("statusSubmitted");
+                    if (sheetsFailed) {
+                        const r = typeof si.reason === "string" ? si.reason.trim() : "";
+                        const h = typeof si.hint === "string" ? si.hint.trim() : "";
+                        line = `${line} • Sheets: OFF — ${r}${h ? ` ${h}` : ""}`.trim();
+                        status.textContent = line;
+                        status.classList.remove("is-success");
+                        status.classList.add("is-error");
+                    } else {
+                        if (
+                            sh
+                            && sh.action === "duplicate_noop"
+                            && sh.patched === false
+                        ) {
+                            const tabHint =
+                                typeof sh.tab === "string" && sh.tab.trim()
+                                    ? ` (${sh.tab})`
+                                    : "";
+                            line += ` Sheet: no cell changes (duplicate session row)${tabHint}. Check column F matches this visit or verify Railway SHEETS_RANGE / spreadsheet tab.`;
+                        }
+                        status.textContent = line;
+                        status.classList.add("is-success");
+                        status.classList.remove("is-error");
                     }
                 }
-                const commentTrim =
-                    typeof payload.message === "string"
-                        ? payload.message.trim().slice(0, 2000)
-                        : typeof payload.feedback_message === "string"
-                          ? payload.feedback_message.trim().slice(0, 2000)
-                          : "";
-                if (ratingNum !== undefined || commentTrim) {
-                    postChatFeedbackToApi_({
-                        rating: ratingNum,
-                        comment: commentTrim
-                    });
-                }
+                applyContactFormSubmitSuccessUi_(cfg0, fieldDefs, payload, chatSummaryPayload);
+            } else if (sheetsFailed) {
+                const r = typeof si.reason === "string" ? si.reason.trim() : "";
+                const h = typeof si.hint === "string" ? si.hint.trim() : "";
+                notifyContactFormSubmitFailureInChat_(
+                    `${getTranslation("statusSubmissionFailed")} • Sheets: OFF — ${r}${h ? ` ${h}` : ""}`.trim()
+                );
             }
 
-            for (const def of fieldDefs) {
-                if (!def || !def.id) {
-                    continue;
-                }
-                const apptReset = String(def.type || "").toLowerCase();
-                if (apptReset === "appointmentdoctor" || apptReset === "appointmentgeneral") {
-                    const hidDateId = typeof def.hiddenDateId === "string" && def.hiddenDateId.trim()
-                        ? def.hiddenDateId.trim()
-                        : `${def.id}__date`;
-                    const hidTimeId = typeof def.hiddenTimeId === "string" && def.hiddenTimeId.trim()
-                        ? def.hiddenTimeId.trim()
-                        : `${def.id}__time`;
-                    const dEl = document.getElementById(hidDateId);
-                    const tEl = document.getElementById(hidTimeId);
-                    if (dEl && "value" in dEl) {
-                        dEl.value = "";
-                    }
-                    if (tEl && "value" in tEl) {
-                        tEl.value = "";
-                    }
-                    continue;
-                }
-                const el = document.getElementById(def.id);
-                if (el && "value" in el) {
-                    el.value = "";
-                }
-            }
-
-            closeForm();
-            dispatchPendingOpenFormFollowup_("submit");
-            // Optional chaining: open the next queued form after each successful submit (FIFO).
-            try {
-                const forms = getRuntimeMergedFormDefinitions_();
-                let resolvedNext = consumeNextRegisteredFormFromPendingChain_(forms);
-                if (!resolvedNext && cfg0 && typeof cfg0.nextFormId === "string" && cfg0.nextFormId.trim()) {
-                    const cand = canonicalContactFormId_(cfg0.nextFormId.trim());
-                    if (forms[cand]) {
-                        resolvedNext = cand;
-                    }
-                }
-                if (resolvedNext && forms[resolvedNext]) {
-                    window.setTimeout(() => {
-                        setActiveContactFormId(resolvedNext);
-                        openContactForm();
-                    }, 250);
-                }
-            } catch {
-                /* ignore */
-            }
+            runContactFormSubmitTailWork_(cfg0, payload);
         })
         .catch((error) => {
-            if (status) {
+            if (optimisticUiApplied) {
+                let line = error.message || getTranslation("statusSubmissionFailed");
+                if (error && error.name === "AbortError") {
+                    line =
+                        "Request timed out — your details may not have been saved. Please try again or contact support.";
+                }
+                notifyContactFormSubmitFailureInChat_(line);
+            } else if (status) {
                 let line = error.message || getTranslation("statusSubmissionFailed");
                 if (error && error.name === "AbortError") {
                     line =
