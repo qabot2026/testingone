@@ -168,7 +168,12 @@ async function enrichMessagesWithAgentNames_(messages, options = {}) {
                               settings,
                               assignedAgentEmail
                           )
-                        : formatSystemMessageTextForVisitor_(m.text, settings, m.senderEmail);
+                        : formatSystemMessageTextForVisitor_(
+                              m.text,
+                              settings,
+                              m.senderEmail,
+                              assignedAgentEmail
+                          );
                 return {
                     ...m,
                     text
@@ -942,7 +947,8 @@ export async function listMessages_({
     let visitorDisplayName = "";
     let assignedAgentEmail = "";
     const enrichAudience = audience === "agent" ? "agent" : "visitor";
-    const needsConvMeta = markReadFor === "agent" || enrichAudience === "agent";
+    const needsConvMeta =
+        markReadFor === "agent" || enrichAudience === "agent" || enrichAudience === "visitor";
     if (needsConvMeta) {
         try {
             const convSnap = await convRef.get();
@@ -966,7 +972,7 @@ export async function listMessages_({
         audience: enrichAudience,
         visitorDisplayName,
         viewingAgentEmail: enrichAudience === "agent" ? viewingAgentEmail : "",
-        assignedAgentEmail: enrichAudience === "agent" ? assignedAgentEmail : ""
+        assignedAgentEmail
     });
 }
 

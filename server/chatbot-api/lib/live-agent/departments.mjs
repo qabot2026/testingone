@@ -221,21 +221,22 @@ export function formatSystemMessageTextForAgent_(
 }
 
 /** Visitor-safe system line (no email addresses). */
-export function formatSystemMessageTextForVisitor_(text, settings, senderEmail) {
+export function formatSystemMessageTextForVisitor_(text, settings, senderEmail, assignedAgentEmail) {
     let t = trim_(text);
     if (!t) {
         return t;
     }
+    const agentEmail = normalizeEmail_(senderEmail) || normalizeEmail_(assignedAgentEmail);
     if (t === LIVE_AGENT_HUMAN_CONNECTED_MARKER_) {
-        const name = resolveAgentDisplayName_(senderEmail, settings);
+        const name = resolveAgentDisplayName_(agentEmail, settings);
         return `You are now chatting with ${name}.`;
     }
     if (t === LIVE_AGENT_HUMAN_REJOINED_MARKER_) {
-        const name = resolveAgentDisplayName_(senderEmail, settings);
+        const name = resolveAgentDisplayName_(agentEmail, settings);
         return `${name} joined again.`;
     }
     if (t === LIVE_AGENT_HANDOFF_TO_BOT_MARKER_ || t === LIVE_AGENT_BOT_ACTIVE_MARKER_) {
-        const name = resolveAgentDisplayName_(senderEmail, settings);
+        const name = resolveAgentDisplayName_(agentEmail, settings);
         return `${name} stepped away. ${LIVE_AGENT_BOT_ACTIVE_VISITOR_TEXT_}`;
     }
     const tLower = t.toLowerCase();
@@ -257,7 +258,10 @@ export function formatSystemMessageTextForVisitor_(text, settings, senderEmail) 
     }
     const joined = t.match(/^(.+?)\s+joined the chat\.?$/i);
     if (joined) {
-        const name = resolveAgentDisplayName_(joined[1], settings);
+        const who = trim_(joined[1]);
+        const name = /@/.test(who)
+            ? resolveAgentDisplayName_(who, settings)
+            : resolveAgentDisplayName_(agentEmail, settings);
         return `You are now chatting with ${name}.`;
     }
     if (/ended|closed/i.test(t)) {

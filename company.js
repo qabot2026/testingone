@@ -16391,15 +16391,18 @@ function liveAgentIsConnectNoticeMessageText_(text) {
     if (t === LIVE_AGENT_HUMAN_CONNECTED_MARKER) {
         return true;
     }
-    return /^you are now chatting with/i.test(t);
+    if (/^you are now chatting with/i.test(t)) {
+        return true;
+    }
+    return /\s+joined the chat\.?$/i.test(t);
 }
 
 function liveAgentResolveAgentLabelFromSync_(stData, m) {
-    if (m && typeof m.senderDisplayName === "string" && m.senderDisplayName.trim()) {
-        return m.senderDisplayName.trim();
-    }
     if (stData && stData.assignedAgentDisplayName) {
         return String(stData.assignedAgentDisplayName).trim();
+    }
+    if (m && typeof m.senderDisplayName === "string" && m.senderDisplayName.trim()) {
+        return m.senderDisplayName.trim();
     }
     if (m && m.senderEmail) {
         return liveAgentDisplayNameForEmail_(m.senderEmail);
@@ -17380,8 +17383,9 @@ function liveAgentApplyConnectionNoticesFromSync_(dfMessenger, stData) {
         const mk = m.id ? String(m.id) : "";
         const label = liveAgentResolveAgentLabelFromSync_(stData, m);
         const line = liveAgentVisitorLineText_(m);
-        if (liveAgentIsConnectNoticeMessageText_(raw) && line) {
-            liveAgentAnnounceConnected_(dfMessenger, label, line, mk ? "notice|" + mk : "");
+        if (liveAgentIsConnectNoticeMessageText_(raw)) {
+            const connectLine = "You are now chatting with " + label + ".";
+            liveAgentAnnounceConnected_(dfMessenger, label, connectLine, mk ? "notice|" + mk : "");
             if (mk) {
                 liveAgentRememberSeenMessageId_(mk);
             }
@@ -17870,6 +17874,9 @@ function liveAgentVisitorShouldHideSystemLine_(text) {
     if (/^you are now chatting with/i.test(t)) {
         return true;
     }
+    if (/\s+joined the chat\.?$/i.test(t)) {
+        return true;
+    }
     return false;
 }
 
@@ -17898,9 +17905,11 @@ function liveAgentVisitorLineText_(m) {
         }
         const joined = text.match(/^(.+?)\s+joined the chat\.?$/i);
         if (joined) {
-            const who = joined[1];
-            const name = /@/.test(who) ? liveAgentDisplayNameForEmail_(who) : who;
-            return "You are now chatting with " + name + ".";
+            const agentName =
+                typeof m.senderDisplayName === "string" && m.senderDisplayName.trim()
+                    ? m.senderDisplayName.trim()
+                    : liveAgentDisplayNameForEmail_(m.senderEmail);
+            return "You are now chatting with " + agentName + ".";
         }
         const legacy = text.match(/^Agent\s+(\S+@\S+)\s+accepted the chat\.?$/i);
         if (legacy) {

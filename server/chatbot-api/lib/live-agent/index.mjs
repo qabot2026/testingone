@@ -145,7 +145,8 @@ async function buildVisitorSyncPayload_(clientSessionId, clientRev, waitMs, last
             conversationId: id,
             clientRev: rev,
             waitMs: wait,
-            lastMessageId: lastId || undefined
+            lastMessageId: lastId || undefined,
+            audience: "visitor"
         });
     } else {
         const typing = await getTypingState_(id);

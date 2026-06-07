@@ -157,15 +157,17 @@ export async function listDeskMessages_({
     sinceId,
     limit,
     markReadFor,
-    viewingAgentEmail
+    viewingAgentEmail,
+    audience
 }) {
+    const enrichAudience = audience === "visitor" ? "visitor" : "agent";
     let messages = await listMessages_({
         conversationId,
         sinceIso: sinceIso || undefined,
         limit: limit || 80,
         markReadFor: markReadFor || undefined,
-        audience: "agent",
-        viewingAgentEmail: trim_(viewingAgentEmail)
+        audience: enrichAudience,
+        viewingAgentEmail: enrichAudience === "agent" ? trim_(viewingAgentEmail) : ""
     });
     if (sinceId) {
         messages = filterMessagesSinceId_(messages, sinceId);
@@ -183,7 +185,8 @@ export async function liveSyncPoll_({
     waitMs,
     sinceId,
     lastMessageId,
-    viewingAgentEmail
+    viewingAgentEmail,
+    audience
 }) {
     const id = trim_(conversationId);
     const deadline = Date.now() + Math.min(Math.max(Number(waitMs) || 900, 400), 28000);
@@ -197,7 +200,8 @@ export async function liveSyncPoll_({
             conversationId: id,
             sinceId: since || undefined,
             limit: 80,
-            viewingAgentEmail
+            viewingAgentEmail,
+            audience
         });
         const messageHint = !!(
             typing.lastMessageId &&
