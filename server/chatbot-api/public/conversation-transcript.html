@@ -575,7 +575,6 @@
           if (/^(contact|feedback|appointment|upload|resend|otp|human|agent|book|booking|help|support|menu|services|location|hours|cancel|confirm|continue|back|home|chat|live|whatsapp)$/.test(nk)) {
             return true;
           }
-          if (words.length === 1 && /^[a-z][a-z0-9_-]{2,31}$/.test(raw)) return true;
         }
         return false;
       }
@@ -848,7 +847,8 @@
         return labels;
       }
 
-      function cleanText(text, rich) {
+      function cleanText(text, rich, opts) {
+        var forUser = opts && opts.forUser === true;
         var t = typeof text === "string" ? text.trim() : "";
         t = t.replace(/\u2060\u200d\u2060/g, "").replace(/[\u200B-\u200D\uFEFF\u2060]/g, "").trim();
         if (!t) return t;
@@ -865,7 +865,7 @@
             if (isTranscriptEphemeralStatusLine(ln)) return false;
             if (rich && ln === "Chips" && rich.richContent) return false;
             if (chipLabels.length && chipLabels.indexOf(ln.toLowerCase()) >= 0) return false;
-            if (!rich && isTranscriptStandaloneChipOrMenuLabel(ln)) return false;
+            if (!forUser && !rich && isTranscriptStandaloneChipOrMenuLabel(ln)) return false;
             if (rich && richHasActionUi(rich)) {
               if (/^https?:\/\//i.test(ln)) return false;
               if (/^card_\d+$/i.test(ln)) return false;
@@ -918,7 +918,7 @@
           return !!renderAssistantBody(turn);
         }
         if (turn.role === "user" || turn.role === "agent") {
-          var userText = cleanText(turn.text, null);
+          var userText = formatUserTranscriptPlain(turn.text);
           if (!userText || isTranscriptPersonaChromeLine(userText) || isTranscriptEphemeralStatusLine(userText)) {
             return false;
           }
@@ -1351,7 +1351,10 @@
               role === "assistant"
                 ? renderAssistantBody(t)
                 : (function () {
-                    var plain = cleanText(formatUserTranscriptPlain(t.text), null);
+                    var plain = formatUserTranscriptPlain(t.text);
+                    if (plain) {
+                      plain = cleanText(plain, null, { forUser: true });
+                    }
                     return plain
                       ? '<p class="rc-text">' + escapeHtml(plain) + "</p>"
                       : "";

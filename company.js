@@ -21669,9 +21669,6 @@ function isTranscriptStandaloneChipOrMenuLabel_(line) {
         if (nk && TRANSCRIPT_CHIP_MENU_LABEL_KEYS_.has(nk)) {
             return true;
         }
-        if (words.length === 1 && /^[a-z][a-z0-9_-]{2,31}$/.test(t)) {
-            return true;
-        }
     }
     return false;
 }

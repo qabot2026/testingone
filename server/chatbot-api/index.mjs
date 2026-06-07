@@ -5395,9 +5395,6 @@ function isTranscriptStandaloneChipOrMenuLabel_(text) {
         ) {
             return true;
         }
-        if (words.length === 1 && /^[a-z][a-z0-9_-]{2,31}$/.test(t)) {
-            return true;
-        }
     }
     return false;
 }
