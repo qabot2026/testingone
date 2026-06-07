@@ -19832,6 +19832,22 @@ async function handleDfResponseReceived(event) {
 }
 
 /**
+ * Staff-facing label when CX opens a form with no plain-text bot line (e.g. feedback overlay).
+ *
+ * @param {Event | null | undefined} event
+ * @returns {string}
+ */
+function assistantFormOpenTranscriptLineFromDfEvent_(event) {
+    if (!shouldOpenContactForm(event)) {
+        return "";
+    }
+    const rawId = extractOpenFormIdFromEvent(event);
+    const formId = rawId ? canonicalContactFormId_(rawId) : getDefaultContactFormId();
+    const label = staffFormLabelForKey_(formId || "contact");
+    return label ? `Form: ${label}` : "Form opened";
+}
+
+/**
  * Persist at least one assistant line per bot turn for the staff script (structured + plain + fallback).
  *
  * @param {Event & { detail?: { raw?: { queryResult?: { responseMessages?: Array<unknown> } }, data?: { messages?: Array<unknown> }, messages?: Array<unknown> } }} event
@@ -19911,6 +19927,13 @@ function ensureAssistantTranscriptCapturedForDfEvent_(event) {
     }
     if (forceLines.length) {
         appendChatTranscriptAssistantLines_(forceLines, dfTranscriptOpts);
+        return;
+    }
+
+    const formOpenLine = assistantFormOpenTranscriptLineFromDfEvent_(event);
+    if (formOpenLine) {
+        appendChatTranscriptAssistantLines_([formOpenLine], dfTranscriptOpts);
+        scheduleDomBotTranscriptCapture_(activeDfMessenger);
         return;
     }
 
@@ -20185,6 +20208,10 @@ function attachPersonaHandlers(dfMessenger) {
             dfchatPendingTypedUtteranceForGate_ = "";
             const effectiveQuery = fromReq || pendingSnap;
 
+            if (effectiveQuery) {
+                trackChatUserQueryInSessionContext_(effectiveQuery);
+            }
+
             if (effectiveQuery && (await tryInterceptLiveAgentOutboundBeforeRefresh_(event, effectiveQuery))) {
                 return;
             }
@@ -20221,9 +20248,6 @@ function attachPersonaHandlers(dfMessenger) {
             const hadM2 = hasStoredMobileForChatBlockGate_();
             const prev2 = readStoredClientContext();
             const hadE2 = !!(dfParameterScalarToString(prev2 && prev2.email != null ? prev2.email : "").trim());
-            if (effectiveQuery) {
-                trackChatUserQueryInSessionContext_(effectiveQuery);
-            }
             mergeLikelyContactHintsFromChatText_(effectiveQuery);
             if (tryRenderThanksAfterMergeSuppressDf_(event, effectiveQuery, { hadMobile: hadM2, hadEmail: hadE2 })) {
                 return;
@@ -22211,6 +22235,20 @@ function appendChatTranscriptAssistantEntries_(entries, opts) {
                     ? leanTranscriptRichForStorage_(entry.rich)
                     : null;
             if (isTranscriptOpenFormActionEntry_(rich, text)) {
+                const formLine = assistantFormOpenTranscriptLineFromDfEvent_(
+                    opts && opts.dfEvent ? opts.dfEvent : null
+                );
+                if (formLine && !chatTranscriptAlreadyHasAssistantText_(transcript, formLine)) {
+                    seq += 1;
+                    tickAt += 1;
+                    /** @type {{ role: string, text: string, at: number, seq: number }} */
+                    const formRow = { role: "assistant", text: formLine, at: tickAt, seq };
+                    applyAssistantTranscriptPlacement_(transcript, formRow, placement);
+                    if (placement === "before_trailing_users") {
+                        placement = "append";
+                    }
+                    trackAssistantQueryInSessionContext_(formLine);
+                }
                 continue;
             }
             if (

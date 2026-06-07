@@ -206,7 +206,8 @@ async function patchSessionTranscriptFirestore_(sessionId, clientContext) {
     const cx = /** @type {Record<string, unknown>} */ ({ ...clientContext });
     const ct = coerceChatTranscriptArray_(cx.chat_transcript);
     const aq = Array.isArray(cx.assistant_queries) ? cx.assistant_queries : [];
-    if (!ct.length && !aq.length) {
+    const uq = Array.isArray(cx.user_queries) ? cx.user_queries : [];
+    if (!ct.length && !aq.length && !uq.length) {
         return { sessionStored: false, leadPatched: false };
     }
     cx.chat_transcript = ct;
@@ -6059,6 +6060,10 @@ function transcriptTurnsFromClientContext_(cx) {
                   .map((x) => String(x).trim())
                   .filter((x) => !shouldOmitTranscriptUserTurn_(x))
             : [];
+    const baseAt =
+        typeof cx.user_queries_last_at === "number" && Number.isFinite(cx.user_queries_last_at)
+            ? cx.user_queries_last_at
+            : Date.now();
 
     if (!base.length) {
         if (!uqList.length) {
@@ -6077,7 +6082,11 @@ function transcriptTurnsFromClientContext_(cx) {
         if (!norm || userTextsInChat.has(norm)) {
             continue;
         }
-        missingUsers.push({ role: "user", text: uqList[i].trim() });
+        missingUsers.push({
+            role: "user",
+            text: uqList[i].trim(),
+            at: baseAt - (uqList.length - 1 - i) * 1500
+        });
         userTextsInChat.add(norm);
     }
     if (!missingUsers.length) {
@@ -6106,6 +6115,122 @@ function transcriptTurnsFromClientContext_(cx) {
     }
 
     return orderTranscriptTurnsForDisplay_(mergeConversationTranscriptTurnSources_(base, missingUsers));
+}
+
+/** @param {Record<string, unknown>} ctx */
+function userTurnsFromContextUserQueries_(ctx) {
+    if (!ctx || typeof ctx !== "object") {
+        return [];
+    }
+    const lines = collectUserQueriesLinesFromContext_(ctx);
+    if (!lines.length) {
+        return [];
+    }
+    const baseAt =
+        typeof ctx.user_queries_last_at === "number" && Number.isFinite(ctx.user_queries_last_at)
+            ? ctx.user_queries_last_at
+            : Date.now();
+    /** @type {{ role: string, text: string, at: number }[]} */
+    const out = [];
+    for (let i = 0; i < lines.length; i += 1) {
+        const text = lines[i].trim();
+        if (!text || shouldOmitTranscriptUserTurn_(text)) {
+            continue;
+        }
+        out.push({
+            role: "user",
+            text,
+            at: baseAt - (lines.length - 1 - i) * 1500
+        });
+    }
+    return out;
+}
+
+/**
+ * Union user_queries from lead + live session context into transcript turns (bot lines alone hide visitor chat).
+ *
+ * @param {{ role: string, text: string, rich?: Record<string, unknown>, at?: number, seq?: number }[]} turns
+ * @param {Array<Record<string, unknown> | null | undefined>} contexts
+ */
+function augmentTranscriptWithMissingUserQueries_(turns, contexts) {
+    const base = Array.isArray(turns) ? turns.slice() : [];
+    const existing = new Set(
+        base
+            .filter((t) => t && t.role === "user")
+            .map((t) => transcriptUserCompareNorm_(t.text))
+            .filter(Boolean)
+    );
+    /** @type {{ role: string, text: string, at?: number }[]} */
+    const extra = [];
+    const list = Array.isArray(contexts) ? contexts : [];
+    for (let c = 0; c < list.length; c += 1) {
+        const ctx = list[c];
+        if (!ctx || typeof ctx !== "object") {
+            continue;
+        }
+        const fromCtx = userTurnsFromContextUserQueries_(ctx);
+        for (let i = 0; i < fromCtx.length; i += 1) {
+            const row = fromCtx[i];
+            const norm = transcriptUserCompareNorm_(row.text);
+            if (!norm || existing.has(norm)) {
+                continue;
+            }
+            existing.add(norm);
+            extra.push(row);
+        }
+    }
+    if (!extra.length) {
+        return base;
+    }
+    return orderTranscriptTurnsForDisplay_(mergeConversationTranscriptTurnSources_(base, extra));
+}
+
+/** Replace legacy "(Bot response)" placeholders when the stored rich payload was an open_form action. */
+function polishTranscriptAssistantPlaceholderTurn_(turn) {
+    if (!turn || typeof turn !== "object") {
+        return turn;
+    }
+    const role = normalizeTranscriptItemRole_(/** @type {Record<string, unknown>} */ (turn));
+    if (role !== "assistant") {
+        return turn;
+    }
+    const text = String(turn.text || "").trim();
+    if (text !== "(Bot response)" && text !== "(Bot message)") {
+        return turn;
+    }
+    let rich =
+        turn.rich && typeof turn.rich === "object" && !Array.isArray(turn.rich)
+            ? /** @type {Record<string, unknown>} */ (turn.rich)
+            : null;
+    if (!rich && typeof turn.rich_json === "string" && turn.rich_json.trim()) {
+        try {
+            const parsed = JSON.parse(turn.rich_json);
+            if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+                rich = /** @type {Record<string, unknown>} */ (parsed);
+            }
+        } catch {
+            /* ignore */
+        }
+    }
+    const act =
+        rich && typeof rich.action === "string" ? rich.action.trim().toLowerCase() : "";
+    if (act !== "open_form") {
+        return turn;
+    }
+    const fid =
+        (typeof rich.form_id === "string" && rich.form_id.trim())
+        || (typeof rich.formId === "string" && rich.formId.trim())
+        || (typeof rich.form_key === "string" && rich.form_key.trim())
+        || "contact";
+    return { ...turn, role: "assistant", text: `Form: ${fid}` };
+}
+
+/** @param {{ role: string, text: string, rich?: Record<string, unknown>, at?: number, seq?: number }[]} turns */
+function polishTranscriptAssistantPlaceholderTurns_(turns) {
+    if (!Array.isArray(turns) || !turns.length) {
+        return Array.isArray(turns) ? turns.slice() : [];
+    }
+    return turns.map((t) => polishTranscriptAssistantPlaceholderTurn_(t));
 }
 
 /** Max transcript items kept in sync with widget (`company.js` MAX_CHAT_TRANSCRIPT_TURNS). */
@@ -6666,6 +6791,14 @@ app.get(PATHNAME_CONVERSATION_TRANSCRIPT_JSON, async (req, res) => {
                 turns = mergeConversationTranscriptTurnSources_(turns, liveAgentTurns);
             }
         }
+
+        turns = augmentTranscriptWithMissingUserQueries_(turns, [
+            firestoreRec && typeof firestoreRec.client_context === "object"
+                ? /** @type {Record<string, unknown>} */ (firestoreRec.client_context)
+                : null,
+            liveCx && typeof liveCx === "object" ? liveCx : null
+        ]);
+        turns = polishTranscriptAssistantPlaceholderTurns_(turns);
 
         turns = orderTranscriptTurnsForDisplay_(turns);
         turns = collapseLiveAgentAssistantMirrors_(turns);
