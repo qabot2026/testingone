@@ -270,7 +270,12 @@ function readPersonaDisplayConfig() {
         userImageNudgeDownPx:
             typeof pd.userImageNudgeDownPx === "number" && Number.isFinite(pd.userImageNudgeDownPx)
                 ? Math.max(-32, Math.min(32, pd.userImageNudgeDownPx))
-                : 3
+                : 3,
+        /** Bot persona name/time text only — nudge left (px); cat image stays put. */
+        botTextNudgeLeftPx:
+            typeof pd.botTextNudgeLeftPx === "number" && Number.isFinite(pd.botTextNudgeLeftPx)
+                ? Math.max(-32, Math.min(32, pd.botTextNudgeLeftPx))
+                : 5
     };
 }
 
@@ -1122,6 +1127,10 @@ function cssBotPersonaImageNudgeUpPx_() {
 
 function cssUserPersonaImageNudgeDownPx_() {
     return Math.max(-32, Math.min(32, PERSONA_DISPLAY_CONFIG.userImageNudgeDownPx ?? 3));
+}
+
+function cssBotPersonaTextNudgeLeftPx_() {
+    return Math.max(-32, Math.min(32, PERSONA_DISPLAY_CONFIG.botTextNudgeLeftPx ?? 5));
 }
 
 /** User persona avatar transform (image only — not the caption row). */
@@ -26443,10 +26452,14 @@ function getPersonaImageGuardCss() {
     const catH = cfg.mode === "image" ? `${img.heightPx}px` : "32px";
     const personaDown = cfg.mode === "image" ? `${img.offsetDownPx}px` : "0px";
     const personaRight = cfg.mode === "image" ? `${img.offsetRightPx}px` : "0px";
+    const botTextLeft = cssBotPersonaTextNudgeLeftPx_();
+    const botCatImgX =
+        cfg.mode === "image" ? `${img.offsetRightPx + botTextLeft}px` : `${botTextLeft}px`;
     const botCatImgY =
         cfg.mode === "image" ? `${img.offsetDownPx - cssBotPersonaImageNudgeUpPx_()}px` : `${-cssBotPersonaImageNudgeUpPx_()}px`;
     const mobY = `${cfg.mode === "image" ? img.offsetDownPx - cssBotPersonaImageNudgeUpPx_() : -cssBotPersonaImageNudgeUpPx_()}`;
     const mobAgentY = `${cfg.mode === "image" ? img.offsetDownPx : 0}`;
+    const mobBotX = `${(cfg.mode === "image" ? img.offsetRightPx : 0) + botTextLeft - img.mobileNudgeLeftPx}px`;
     const mobX = `${(cfg.mode === "image" ? img.offsetRightPx : 0) - img.mobileNudgeLeftPx}px`;
     const userImgDown = `${cssUserPersonaImageNudgeDownPx_()}px`;
     const timeDown = cfg.mode === "image" ? `${img.timeOffsetDownPx}px` : "0px";
@@ -26475,7 +26488,7 @@ img[src*="%23dfchat-bot-persona"] {
   display: inline-block !important;
   vertical-align: middle !important;
   box-sizing: border-box !important;
-  transform: translate(${personaRight}, ${botCatImgY}) !important;
+  transform: translate(${botCatImgX}, ${botCatImgY}) !important;
 }
 img[src*="dfchat-agent-persona"],
 img[src*="%23dfchat-agent-persona"],
@@ -26515,7 +26528,17 @@ img[src*="%23dfchat-live-agent-label"] {
   transform: translateY(${rowDown}) !important;
 }
 .message.bot-message.markdown:has(img[src*="dfchat-bot-persona"]) p,
-.message.bot-message.markdown:has(img[src*="%23dfchat-bot-persona"]) p,
+.message.bot-message.markdown:has(img[src*="%23dfchat-bot-persona"]) p {
+  color: ${PERSONA_DISPLAY_CONFIG.nameColor} !important;
+  font-size: ${PERSONA_DISPLAY_CONFIG.nameFontSizePx}px !important;
+  font-weight: 600 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  line-height: 1.15 !important;
+  filter: blur(${PERSONA_DISPLAY_CONFIG.blurPx}px) !important;
+  opacity: ${PERSONA_DISPLAY_CONFIG.opacity} !important;
+  transform: translateX(-${botTextLeft}px) !important;
+}
 .message.bot-message.markdown:has(img[src*="dfchat-agent-persona"]) p,
 .message.bot-message.markdown:has(img[src*="%23dfchat-agent-persona"]) p,
 .message.bot-message.markdown:has(img[src*="dfchat-live-agent-label"]) p,
@@ -26559,7 +26582,7 @@ img[src*="dfchat-persona-bot-time"] {
 @media (max-width: ${MOBILE_CHAT_BREAKPOINT_PX}px) {
 img[src*="dfchat-bot-persona"],
 img[src*="%23dfchat-bot-persona"] {
-  transform: translate(${mobX}, ${mobY}px) !important;
+  transform: translate(${mobBotX}, ${mobY}px) !important;
 }
 img[src*="dfchat-agent-persona"],
 img[src*="%23dfchat-agent-persona"],
@@ -27435,6 +27458,14 @@ function applyBotImagePersonaCaptionChrome_(imageNode) {
                     pNode.style.setProperty("line-height", "1.15", "important");
                     pNode.style.setProperty("filter", `blur(${PERSONA_DISPLAY_CONFIG.blurPx}px)`, "important");
                     pNode.style.setProperty("opacity", String(PERSONA_DISPLAY_CONFIG.opacity), "important");
+                    const src = imageNode.getAttribute("src") || "";
+                    if (src.includes(`#${PERSONA_URL_MARKER_BOT_IMG}`) || src.includes(`%23${PERSONA_URL_MARKER_BOT_IMG}`)) {
+                        pNode.style.setProperty(
+                            "transform",
+                            `translateX(-${cssBotPersonaTextNudgeLeftPx_()}px)`,
+                            "important"
+                        );
+                    }
                 }
                 const strongNode = el.querySelector(":scope > p strong, :scope p strong");
                 if (strongNode && strongNode.style) {
@@ -28788,7 +28819,7 @@ function stylePersonaContainer(container, imageNode, personaType) {
                 imageNode.style.marginRight = "6px";
             }
             if (isCat) {
-                const right = BOT_PERSONA_CONFIG.image.offsetRightPx || 0;
+                const right = (BOT_PERSONA_CONFIG.image.offsetRightPx || 0) + cssBotPersonaTextNudgeLeftPx_();
                 const down = (BOT_PERSONA_CONFIG.image.offsetDownPx || 0) - cssBotPersonaImageNudgeUpPx_();
                 imageNode.style.transform = `translate(${right}px, ${down}px)`;
             }
