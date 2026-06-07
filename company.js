@@ -16874,7 +16874,7 @@ function liveAgentEnsureUserPersonasForAllVisitorRows_(dfMessenger, listOverride
 
     const userRows = liveAgentCollectVisitorUserRows_(list);
     const personaCount = liveAgentCollectUserPersonaRows_(list).length;
-    const allowRender = !opts || opts.allowRender !== false;
+    const allowRender = !!(opts && opts.allowRender);
     const missing = userRows.length - personaCount;
     if (allowRender && missing > 0 && typeof ms.renderCustomText === "function") {
         for (let i = 0; i < missing; i += 1) {
@@ -16888,12 +16888,15 @@ function liveAgentEnsureUserPersonasForAllVisitorRows_(dfMessenger, listOverride
 /** @param {HTMLElement | null | undefined} dfMessenger */
 function liveAgentScheduleRepairUserPersonaPairing_(dfMessenger) {
     const ms = dfMessenger || activeDfMessenger;
-    const run = (allowRender) => {
-        liveAgentEnsureUserPersonasForAllVisitorRows_(ms, null, { allowRender: allowRender !== false });
+    const runRepair = () => {
+        const list = findMessengerMessageListRoot(ms);
+        if (list) {
+            liveAgentRepairUserPersonaPairing_(list);
+        }
     };
-    run(false);
-    [120, 320, 720, 1500].forEach((msDelay) => {
-        window.setTimeout(() => run(true), msDelay);
+    runRepair();
+    [100, 300, 700].forEach((msDelay) => {
+        window.setTimeout(runRepair, msDelay);
     });
 }
 
@@ -26592,7 +26595,7 @@ function renderUserPersona(dfMessenger, opts) {
     const timeLabel = u.showTime
         ? getBotPersonaMessageTimeLabel(u.timeZone, now, u.messageTimeIncludesDate === true)
         : "";
-    renderPersona(ms, "user", u.label, timeLabel);
+    renderPersona(ms, "user", u.label, timeLabel, opts);
 }
 
 /**
@@ -26606,7 +26609,7 @@ function renderUserPersonaBeforeUserText_(dfMessenger, userText) {
     if (!ms || typeof ms.renderCustomText !== "function" || !t) {
         return;
     }
-    renderUserPersona(ms, { skipThrottle: true });
+    renderUserPersona(ms, { skipThrottle: true, skipShadowFix: true });
     ms.renderCustomText(t, false);
     schedulePersonaShadowFix(ms);
     if (liveAgentHumanChatPersonaLayoutActive_()) {
@@ -26614,7 +26617,7 @@ function renderUserPersonaBeforeUserText_(dfMessenger, userText) {
     }
 }
 
-function renderPersona(dfMessenger, personaType, label, timeLabelForUser) {
+function renderPersona(dfMessenger, personaType, label, timeLabelForUser, opts) {
     if (personaType === "bot") {
         renderBotPersona(dfMessenger, Date.now());
         return;
@@ -26631,7 +26634,9 @@ function renderPersona(dfMessenger, personaType, label, timeLabelForUser) {
     // strips the bot-bubble chrome, and right-aligns it so it visually belongs to the user side.
     const md = buildUserPersonaMarkdownText_(label, timeLabel);
     dfMessenger.renderCustomText(md, true);
-    schedulePersonaShadowFix(dfMessenger);
+    if (!(opts && opts.skipShadowFix)) {
+        schedulePersonaShadowFix(dfMessenger);
+    }
 }
 
 function sanitizeUserPersonaLabelForMarkdown(label) {
