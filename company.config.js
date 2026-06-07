@@ -91,7 +91,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
 
     userPersona: {
       label: "You",
-      avatarSizePx: 8,
+      avatarSizePx: 10,
       gapBelowPx: 2,
       showTime: true,
       showSeconds: true,
@@ -110,6 +110,8 @@ window.COMPANY_CHAT_UI_CONFIG = {
       botImageNudgeUpPx: 10,
       /** User avatar only — nudge image down (px). Label/time text stays put. */
       userImageNudgeDownPx: 3,
+      /** User persona name/time text only — nudge up (px). Avatar stays put. */
+      userTextNudgeUpPx: 5,
       /** Bot Quality name/time text only — nudge left (px). Cat image stays put. */
       botTextNudgeLeftPx: 10,
       /** Human agent connected — bot cat image up (px). */

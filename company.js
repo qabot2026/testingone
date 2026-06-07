@@ -273,6 +273,11 @@ function readPersonaDisplayConfig() {
             typeof pd.userImageNudgeDownPx === "number" && Number.isFinite(pd.userImageNudgeDownPx)
                 ? Math.max(-32, Math.min(32, pd.userImageNudgeDownPx))
                 : 3,
+        /** User persona name/time text only — nudge up (px); avatar image stays put. */
+        userTextNudgeUpPx:
+            typeof pd.userTextNudgeUpPx === "number" && Number.isFinite(pd.userTextNudgeUpPx)
+                ? Math.max(-32, Math.min(32, pd.userTextNudgeUpPx))
+                : 5,
         /** Bot persona name/time text only — nudge left (px); cat image stays put. */
         botTextNudgeLeftPx:
             typeof pd.botTextNudgeLeftPx === "number" && Number.isFinite(pd.botTextNudgeLeftPx)
@@ -1083,7 +1088,7 @@ function readUserPersonaConfig() {
         avatarSizePx:
             typeof raw.avatarSizePx === "number" && Number.isFinite(raw.avatarSizePx) && raw.avatarSizePx > 0
                 ? raw.avatarSizePx
-                : 8,
+                : 10,
         gapBelowPx,
         showTime: raw.showTime !== false,
         showSeconds: raw.showSeconds !== false,
@@ -1146,6 +1151,10 @@ function cssBotPersonaImageNudgeUpPx_() {
 
 function cssUserPersonaImageNudgeDownPx_() {
     return Math.max(-32, Math.min(32, PERSONA_DISPLAY_CONFIG.userImageNudgeDownPx ?? 3));
+}
+
+function cssUserPersonaTextNudgeUpPx_() {
+    return Math.max(-32, Math.min(32, PERSONA_DISPLAY_CONFIG.userTextNudgeUpPx ?? 5));
 }
 
 function cssBotPersonaTextNudgeLeftPx_() {
@@ -16804,12 +16813,12 @@ function liveAgentRepairUserPersonaPairing_(list) {
 /** @param {HTMLElement | null | undefined} dfMessenger */
 function liveAgentScheduleRepairUserPersonaPairing_(dfMessenger) {
     const ms = dfMessenger || activeDfMessenger;
-    const run = () => {
-        liveAgentEnsureUserPersonasForAllVisitorRows_(ms);
+    const run = (allowRender) => {
+        liveAgentEnsureUserPersonasForAllVisitorRows_(ms, null, { allowRender: allowRender !== false });
     };
-    run();
-    [40, 120, 320, 720, 1500].forEach((msDelay) => {
-        window.setTimeout(run, msDelay);
+    run(false);
+    [120, 320, 720, 1500].forEach((msDelay) => {
+        window.setTimeout(() => run(true), msDelay);
     });
 }
 
@@ -26872,6 +26881,7 @@ function getPersonaImageGuardCss() {
     const mobBotX = `${(cfg.mode === "image" ? img.offsetRightPx : 0) + botTextLeft - img.mobileNudgeLeftPx}px`;
     const mobX = `${(cfg.mode === "image" ? img.offsetRightPx : 0) - img.mobileNudgeLeftPx}px`;
     const userImgDown = `${cssUserPersonaImageNudgeDownPx_()}px`;
+    const userTextUp = `${cssUserPersonaTextNudgeUpPx_()}px`;
     const timeDown = cfg.mode === "image" ? `${img.timeOffsetDownPx}px` : "0px";
     const timeRight = cfg.mode === "image" ? `${img.timeOffsetRightPx}px` : "0px";
     const rowDown = cssPersonaRowDownShift_();
@@ -27137,12 +27147,14 @@ img[src*="%23dfchat-user-persona-img"] {
   color: ${PERSONA_TEXT_COLOR} !important;
   font-size: ${PERSONA_DISPLAY_CONFIG.nameFontSizePx}px !important;
   font-weight: 600 !important;
+  transform: translateY(-${userTextUp}) !important;
 }
 .message.bot-message.markdown.dfchat-user-persona-md:has(img[src*="dfchat-user-persona-img"]) p strong,
 .message.bot-message.markdown.dfchat-user-persona-md:has(img[src*="%23dfchat-user-persona-img"]) p strong {
   font-size: ${PERSONA_DISPLAY_CONFIG.timeFontSizePx}px !important;
   filter: blur(${PERSONA_DISPLAY_CONFIG.blurPx}px) !important;
   opacity: ${PERSONA_DISPLAY_CONFIG.opacity} !important;
+  transform: translateY(-${userTextUp}) !important;
 }
 .entry.bot.dfchat-user-persona-caption-bot-entry {
   align-self: flex-end !important;
