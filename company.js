@@ -292,7 +292,7 @@ function readPersonaDisplayConfig() {
         botLabelTimeGapPx:
             typeof pd.botLabelTimeGapPx === "number" && Number.isFinite(pd.botLabelTimeGapPx)
                 ? Math.max(0, Math.min(24, pd.botLabelTimeGapPx))
-                : 4,
+                : 6,
         /** Visitor + human agent connected — bot cat image up (px). */
         liveAgentBotImageNudgeUpPx:
             typeof pd.liveAgentBotImageNudgeUpPx === "number" && Number.isFinite(pd.liveAgentBotImageNudgeUpPx)
@@ -1098,7 +1098,7 @@ function readUserPersonaConfig() {
         && Number.isFinite(raw.gapAfterPreviousUserPx)
         && raw.gapAfterPreviousUserPx >= 0
             ? Math.min(32, raw.gapAfterPreviousUserPx)
-            : 12;
+            : 16;
     return {
         label,
         avatarSizePx:
@@ -1183,7 +1183,7 @@ function cssBotPersonaTextNudgeLeftPx_() {
 }
 
 function cssBotPersonaLabelTimeGapPx_() {
-    return Math.max(0, Math.min(24, PERSONA_DISPLAY_CONFIG.botLabelTimeGapPx ?? 4));
+    return Math.max(0, Math.min(24, PERSONA_DISPLAY_CONFIG.botLabelTimeGapPx ?? 6));
 }
 
 function liveAgentHumanChatPersonaLayoutActive_() {
@@ -1338,7 +1338,7 @@ function userPersonaEntryFollowsUserEntry_(personaEntry) {
 function cssUserPersonaMarginTopForEntry_(personaEntry) {
     let px = parseFloat(cssUserPersonaMarginTop()) || 0;
     if (userPersonaEntryFollowsUserEntry_(personaEntry)) {
-        px += Math.max(0, Math.min(32, USER_PERSONA_CONFIG.gapAfterPreviousUserPx ?? 12));
+        px += Math.max(0, Math.min(32, USER_PERSONA_CONFIG.gapAfterPreviousUserPx ?? 16));
     }
     return `${px}px`;
 }
@@ -16744,70 +16744,12 @@ function liveAgentSnugUserPersonaPair_(personaRow, userRow) {
     }
 }
 
-/**
- * Pair each visitor bubble with the next available user persona; optionally render missing personas.
- * @param {HTMLElement | null | undefined} dfMessenger
- * @param {HTMLElement | null | undefined} listOverride
- * @param {{ allowRender?: boolean }} [opts]
- */
-function liveAgentEnsureUserPersonasForAllVisitorRows_(dfMessenger, listOverride, opts) {
-    const ms = dfMessenger || activeDfMessenger;
-    const list = listOverride || findMessengerMessageListRoot(ms);
-    if (!list || !ms || !liveAgentVisitorAgentChatActive_()) {
-        return;
-    }
+function liveAgentCollectVisitorUserRows_(list) {
     /** @type {HTMLElement[]} */
     const userRows = [];
-    for (const c of list.children) {
-        if (!(c instanceof HTMLElement)) {
-            continue;
-        }
-        if (c.dataset.dfchatLiveAgentAnchor === "1") {
-            continue;
-        }
-        if (liveAgentRowIsTranscriptTailBlock_(c)) {
-            continue;
-        }
-        if (dfchatMessageListRowIsUser_(c)) {
-            userRows.push(c);
-        }
-    }
-    let personaCount = 0;
-    for (const c of list.children) {
-        if (c instanceof HTMLElement && dfchatRowIsUserPersonaCaptionRow_(c)) {
-            personaCount += 1;
-        }
-    }
-    const allowRender = !opts || opts.allowRender !== false;
-    const missing = userRows.length - personaCount;
-    if (allowRender && missing > 0 && typeof ms.renderCustomText === "function") {
-        for (let i = 0; i < missing; i += 1) {
-            renderUserPersona(ms, { skipThrottle: true });
-        }
-        schedulePersonaShadowFix(ms);
-    }
-    liveAgentRepairUserPersonaPairing_(list);
-}
-
-/**
- * Pair each user persona caption with its user bubble (chronological index match).
- * @param {HTMLElement | null | undefined} list
- */
-function liveAgentRepairUserPersonaPairing_(list) {
     if (!list) {
-        return;
+        return userRows;
     }
-    /** @type {HTMLElement[]} */
-    const personaPool = [];
-    for (const c of list.children) {
-        if (c instanceof HTMLElement && dfchatRowIsUserPersonaCaptionRow_(c)) {
-            personaPool.push(c);
-        }
-    }
-    /** @type {Set<HTMLElement>} */
-    const assigned = new Set();
-    /** @type {HTMLElement[]} */
-    const userRows = [];
     for (const c of list.children) {
         if (!(c instanceof HTMLElement)) {
             continue;
@@ -16825,30 +16767,55 @@ function liveAgentRepairUserPersonaPairing_(list) {
             userRows.push(c);
         }
     }
-    let poolIdx = 0;
-    for (let ui = 0; ui < userRows.length; ui += 1) {
-        const user = userRows[ui];
-        const prev = user.previousElementSibling;
-        if (prev instanceof HTMLElement && dfchatRowIsUserPersonaCaptionRow_(prev) && !assigned.has(prev)) {
-            assigned.add(prev);
-            while (poolIdx < personaPool.length && personaPool[poolIdx] !== prev) {
-                poolIdx += 1;
-            }
-            if (poolIdx < personaPool.length && personaPool[poolIdx] === prev) {
-                poolIdx += 1;
-            }
-            liveAgentSnugUserPersonaPair_(prev, user);
-            continue;
+    return userRows;
+}
+
+/** @param {HTMLElement | null | undefined} list */
+function liveAgentCollectUserPersonaRows_(list) {
+    /** @type {HTMLElement[]} */
+    const personaRows = [];
+    if (!list) {
+        return personaRows;
+    }
+    for (const c of list.children) {
+        if (c instanceof HTMLElement && dfchatRowIsUserPersonaCaptionRow_(c)) {
+            personaRows.push(c);
         }
-        while (poolIdx < personaPool.length && assigned.has(personaPool[poolIdx])) {
-            poolIdx += 1;
-        }
-        if (poolIdx >= personaPool.length) {
+    }
+    return personaRows;
+}
+
+/**
+ * Force exactly one persona row immediately before each visitor bubble (chronological index).
+ * @param {HTMLElement | null | undefined} list
+ */
+function liveAgentRepairUserPersonaPairing_(list) {
+    if (!list) {
+        return;
+    }
+    const userRows = liveAgentCollectVisitorUserRows_(list);
+    const personaPool = liveAgentCollectUserPersonaRows_(list);
+
+    while (personaPool.length > userRows.length) {
+        const extra = personaPool.pop();
+        if (!extra) {
             break;
         }
-        const persona = personaPool[poolIdx];
-        assigned.add(persona);
-        poolIdx += 1;
+        try {
+            extra.remove();
+        } catch {
+            if (extra instanceof HTMLElement) {
+                extra.style.display = "none";
+            }
+        }
+    }
+
+    for (let i = 0; i < userRows.length; i += 1) {
+        const user = userRows[i];
+        const persona = personaPool[i];
+        if (!persona) {
+            continue;
+        }
         if (persona.nextElementSibling !== user) {
             try {
                 list.insertBefore(persona, user);
@@ -16858,6 +16825,33 @@ function liveAgentRepairUserPersonaPairing_(list) {
         }
         liveAgentSnugUserPersonaPair_(persona, user);
     }
+}
+
+/**
+ * Pair each visitor bubble with the next available user persona; optionally render missing personas.
+ * @param {HTMLElement | null | undefined} dfMessenger
+ * @param {HTMLElement | null | undefined} listOverride
+ * @param {{ allowRender?: boolean }} [opts]
+ */
+function liveAgentEnsureUserPersonasForAllVisitorRows_(dfMessenger, listOverride, opts) {
+    const ms = dfMessenger || activeDfMessenger;
+    const list = listOverride || findMessengerMessageListRoot(ms);
+    if (!list || !ms || !liveAgentVisitorAgentChatActive_()) {
+        return;
+    }
+    liveAgentRepairUserPersonaPairing_(list);
+
+    const userRows = liveAgentCollectVisitorUserRows_(list);
+    const personaCount = liveAgentCollectUserPersonaRows_(list).length;
+    const allowRender = !opts || opts.allowRender !== false;
+    const missing = userRows.length - personaCount;
+    if (allowRender && missing > 0 && typeof ms.renderCustomText === "function") {
+        for (let i = 0; i < missing; i += 1) {
+            renderUserPersona(ms, { skipThrottle: true });
+        }
+        schedulePersonaShadowFix(ms);
+    }
+    liveAgentRepairUserPersonaPairing_(list);
 }
 
 /** @param {HTMLElement | null | undefined} dfMessenger */
@@ -19375,7 +19369,11 @@ function attachPersonaHandlers(dfMessenger) {
 
             if (effectiveQuery) {
                 const ms = activeDfMessenger;
-                if (ms && typeof ms.renderCustomText === "function") {
+                if (
+                    ms
+                    && typeof ms.renderCustomText === "function"
+                    && (!liveAgentHandoffIsActive_() || liveAgentAllowDialogflowForUserText_())
+                ) {
                     renderUserPersona(ms);
                 }
                 scheduleClearDfMessengerComposerInput_();
@@ -27248,7 +27246,11 @@ img[src*="%23dfchat-user-persona-img"] {
 }
 .entry.user + .entry.bot.dfchat-user-persona-caption-bot-entry,
 .entry.user + .entry.bot.dfchat-user-persona-entry {
-  margin-top: calc(${cssUserPersonaMarginTop()} + ${USER_PERSONA_CONFIG.gapAfterPreviousUserPx ?? 12}px) !important;
+  margin-top: calc(${cssUserPersonaMarginTop()} + ${USER_PERSONA_CONFIG.gapAfterPreviousUserPx ?? 16}px) !important;
+}
+.entry.user:has(+ .entry.bot.dfchat-user-persona-caption-bot-entry),
+.entry.user:has(+ .entry.bot.dfchat-user-persona-entry) {
+  margin-bottom: 8px !important;
 }
 df-markdown-message.dfchat-user-persona-caption-md-host {
   align-self: flex-end !important;
