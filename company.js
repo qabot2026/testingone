@@ -191,6 +191,8 @@ let liveAgentTailRepinFollowUpTimerId_ = 0;
 const liveAgentSeenMessageIds_ = new Set();
 /** @type {Set<string>} */
 const liveAgentSeenNoticeKeys_ = new Set();
+/** @type {string} */
+let liveAgentWaitingLineShownKey_ = "";
 let liveAgentAgentTypingPulseTimerId = 0;
 let liveAgentAgentTypingPulseInFlight_ = false;
 let liveAgentLastAgentTypingLabel_ = "";
@@ -12580,7 +12582,7 @@ function scrollMessageListToBottom_(dfMessenger, opts) {
     }
     const force = !!(opts && opts.force);
     try {
-        if (!force && !cfg.alwaysOnNewMessage) {
+        if (!force) {
             const gap = ml.scrollHeight - ml.scrollTop - ml.clientHeight;
             if (gap > cfg.nearBottomPx) {
                 return;
@@ -16744,7 +16746,7 @@ async function liveAgentAgentTypingPulseTick_(dfMessenger) {
             syncLiveAgentModeCacheFromConversation_(st.conversation, st);
             liveAgentOnVisitorHumanChatActivated_(dfMessenger, wasHuman);
             if (!wasHuman && liveAgentVisitorAgentChatActive_()) {
-                liveAgentMaybeAnnounceConnectedFromStatus_(dfMessenger, st, wasHuman);
+                liveAgentApplyConnectionNoticesFromSync_(dfMessenger, st);
             }
         }
         liveAgentLastAgentTypingLabel_ = st.agentTyping || "";
@@ -17720,6 +17722,41 @@ function dfchatPersonaBelongsToLiveAgentRow_(personaMessage) {
  * @param {string} [messageText]
  * @param {string} [dedupeKey]
  */
+function liveAgentConnectNoticeNormKey_(text) {
+    return "connected|" + normalizeChatTranscriptCompareText_(text);
+}
+
+/**
+ * @param {HTMLElement | null | undefined} dfMessenger
+ * @param {string} text
+ * @returns {boolean}
+ */
+function liveAgentTranscriptHasBotLineForText_(dfMessenger, text) {
+    const norm = normalizeChatTranscriptCompareText_(text);
+    if (!norm) {
+        return false;
+    }
+    const list = findMessengerMessageListRoot(dfMessenger || activeDfMessenger);
+    if (!list) {
+        return false;
+    }
+    let botEntries = [];
+    try {
+        botEntries = Array.from(list.querySelectorAll(".entry.bot"));
+    } catch {
+        botEntries = [];
+    }
+    for (let i = 0; i < botEntries.length; i += 1) {
+        const line = (botEntries[i].innerText || botEntries[i].textContent || "")
+            .replace(/\s+/g, " ")
+            .trim();
+        if (normalizeChatTranscriptCompareText_(line) === norm) {
+            return true;
+        }
+    }
+    return false;
+}
+
 function liveAgentAnnounceConnected_(dfMessenger, agentLabel, messageText, dedupeKey) {
     const ms = dfMessenger || activeDfMessenger;
     if (!ms || typeof ms.renderCustomText !== "function") {
@@ -17732,10 +17769,17 @@ function liveAgentAnnounceConnected_(dfMessenger, agentLabel, messageText, dedup
     const text =
         (messageText && String(messageText).trim())
         || "You are now chatting with " + name + ".";
-    const key = dedupeKey || "connected|" + text.toLowerCase();
-    if (liveAgentSeenNoticeKeys_.has(key)) {
+    const normKey = liveAgentConnectNoticeNormKey_(text);
+    const key = dedupeKey || normKey;
+    if (liveAgentSeenNoticeKeys_.has(normKey) || liveAgentSeenNoticeKeys_.has(key)) {
         return;
     }
+    if (liveAgentTranscriptHasBotLineForText_(ms, text)) {
+        liveAgentSeenNoticeKeys_.add(normKey);
+        liveAgentSeenNoticeKeys_.add(key);
+        return;
+    }
+    liveAgentSeenNoticeKeys_.add(normKey);
     liveAgentSeenNoticeKeys_.add(key);
     liveAgentRenderBotLineAtTranscriptEnd_(ms, text, { withPersona: true, tailPin: true });
 }
@@ -17906,6 +17950,7 @@ function setLiveAgentHandoffActive_(on) {
         liveAgentVisitorQueryTrackedAt_ = 0;
         liveAgentVisitorUiRenderedKey_ = "";
         liveAgentVisitorUiRenderedAt_ = 0;
+        liveAgentWaitingLineShownKey_ = "";
         try {
             clearLiveAgentRequestedInSession_();
         } catch {
@@ -18205,6 +18250,18 @@ function liveAgentShouldSuppressDialogflowBotReply_() {
 /** Fast cache check before async /status refresh (refer: block only after agent joined). */
 function liveAgentShouldBlockDialogflowNow_() {
     return liveAgentShouldSuppressDialogflowBotReply_();
+}
+
+/** Sync guard before any await in df send handlers — blocks native bubble while refresh runs. */
+function liveAgentShouldPreventNativeSendSync_(queryText) {
+    const t = typeof queryText === "string" ? queryText.trim() : "";
+    if (!t || !liveAgentHandoffIsActive_()) {
+        return false;
+    }
+    if (liveAgentShouldBlockDialogflowNow_()) {
+        return true;
+    }
+    return liveAgentVisitorAgentChatActive_();
 }
 
 /** Dialogflow when waiting in queue, or when agent turned chatbot back on (co-pilot). */
@@ -18573,7 +18630,6 @@ async function liveAgentRouteVisitorOutboundOnce_(text, dfMessenger, event) {
     }
     // Claim synchronously before any await — df-user-input-entered + composer bridge fire together.
     liveAgentMarkOutboundRouted_(t);
-    liveAgentMarkVisitorUiRendered_(t);
     if (event) {
         preventDialogflowMessengerEvent_(event);
     }
@@ -18617,8 +18673,11 @@ async function tryInterceptOutboundForLiveAgentHumanChat_(event, queryText) {
     if (!t || !liveAgentHandoffIsActive_()) {
         return false;
     }
-    if (!liveAgentShouldBlockDialogflowNow_() && !liveAgentVisitorAgentChatActive_()) {
+    if (!liveAgentShouldPreventNativeSendSync_(t)) {
         return false;
+    }
+    if (event) {
+        preventDialogflowMessengerEvent_(event);
     }
     return liveAgentRouteVisitorOutboundOnce_(t, activeDfMessenger, event);
 }
@@ -18920,6 +18979,26 @@ function extractLiveAgentHandoffFromEvent_(event) {
 }
 
 /**
+ * @param {HTMLElement | null | undefined} dfMessenger
+ * @param {string} waitLine
+ */
+function liveAgentShowWaitingLineOnce_(dfMessenger, waitLine) {
+    const line = typeof waitLine === "string" ? waitLine.trim() : "";
+    const ms = dfMessenger || activeDfMessenger;
+    if (!line || !ms || typeof ms.renderCustomText !== "function") {
+        return;
+    }
+    const key = normalizeChatTranscriptCompareText_(line);
+    if (!key || liveAgentWaitingLineShownKey_ === key) {
+        return;
+    }
+    liveAgentWaitingLineShownKey_ = key;
+    renderBotPersona(ms, Date.now());
+    ms.renderCustomText(line, true);
+    scheduleScrollMessageListToBottom_(ms, { force: true });
+}
+
+/**
  * @param {{ departmentId?: string, waitingMessage?: string, initialMessage?: string }} spec
  * @returns {Promise<boolean>}
  */
@@ -18946,6 +19025,11 @@ async function requestLiveAgentHandoff_(spec) {
         return false;
     }
     const s = spec && typeof spec === "object" ? spec : {};
+    const waitLine =
+        typeof s.waitingMessage === "string" && s.waitingMessage.trim()
+            ? s.waitingMessage.trim()
+            : "Connecting you with an agent. Please wait…";
+    liveAgentShowWaitingLineOnce_(activeDfMessenger, waitLine);
     try {
         const res = await fetch(endpoint, {
             method: "POST",
@@ -18974,14 +19058,6 @@ async function requestLiveAgentHandoff_(spec) {
         liveAgentSeenMessageIds_.clear();
         const ms = activeDfMessenger;
         attachLiveAgentComposerBridge_(ms);
-        if (ms && typeof ms.renderCustomText === "function") {
-            const waitLine =
-                typeof s.waitingMessage === "string" && s.waitingMessage.trim()
-                    ? s.waitingMessage.trim()
-                    : "Connecting you to our team. Please wait.";
-            renderBotPersona(ms, Date.now());
-            ms.renderCustomText(waitLine, true);
-        }
         startLiveAgentPoll_(ms);
         return Boolean(data && data.ok);
     } catch {
@@ -19138,7 +19214,6 @@ async function liveAgentResumeHandoffIfNeeded_(dfMessenger) {
         const ms = dfMessenger || activeDfMessenger;
         startLiveAgentPoll_(ms);
         liveAgentOnVisitorHumanChatActivated_(ms, false);
-        liveAgentMaybeAnnounceConnectedFromStatus_(ms, stData, false);
         void liveAgentPollTick_(ms);
     } catch {
         /* ignore */
@@ -19216,8 +19291,13 @@ function tryRequestLiveAgentFromBotResponse_(event) {
             return;
         }
     }
+    const waitLine =
+        typeof spec.waitingMessage === "string" && spec.waitingMessage.trim()
+            ? spec.waitingMessage.trim()
+            : "Connecting you with an agent. Please wait…";
+    liveAgentShowWaitingLineOnce_(activeDfMessenger, waitLine);
     markLiveAgentRequestedInSession_(spec.initialMessage);
-    requestLiveAgentHandoff_(spec);
+    void requestLiveAgentHandoff_(spec);
 }
 
 /**
@@ -19260,7 +19340,6 @@ async function liveAgentPollTick_(dfMessenger) {
             if (stData.conversation) {
                 syncLiveAgentModeCacheFromConversation_(stData.conversation, stData);
                 liveAgentOnVisitorHumanChatActivated_(dfMessenger, wasHuman);
-                liveAgentMaybeAnnounceConnectedFromStatus_(dfMessenger, stData, wasHuman);
                 liveAgentApplyConnectionNoticesFromSync_(dfMessenger, stData);
             } else {
                 await liveAgentRefreshModeFromServer_(true);
@@ -19308,7 +19387,6 @@ async function liveAgentPollTick_(dfMessenger) {
 
         if (liveAgentVisitorAgentChatActive_() && !wasHuman) {
             liveAgentOnVisitorHumanChatActivated_(dfMessenger, wasHuman);
-            liveAgentMaybeAnnounceConnectedFromStatus_(dfMessenger, stData, wasHuman);
         }
 
         if (wasHuman && copilotAi) {
@@ -19440,7 +19518,7 @@ function attachLiveAgentComposerBridge_(dfMessenger) {
                                 return;
                             }
                             if (
-                                liveAgentShouldBlockDialogflowNow_()
+                                liveAgentShouldPreventNativeSendSync_(text)
                                 && !liveAgentIsBoilerplateHandoffPhrase_(text)
                             ) {
                                 try {
@@ -19455,7 +19533,7 @@ function attachLiveAgentComposerBridge_(dfMessenger) {
                             }
                             void (async () => {
                                 if (
-                                    liveAgentShouldBlockDialogflowNow_()
+                                    liveAgentShouldPreventNativeSendSync_(text)
                                     && !liveAgentIsBoilerplateHandoffPhrase_(text)
                                 ) {
                                     await liveAgentRouteVisitorOutboundOnce_(text, ms, null);
@@ -19608,14 +19686,17 @@ async function liveAgentSendVisitorMessage_(dfMessenger, text, shouldRenderCusto
 }
 
 async function handleDfResponseReceived(event) {
-    if (liveAgentShouldRefreshModeFromServer_()) {
-        await liveAgentRefreshModeFromServer_(true);
-    }
     if (liveAgentShouldSuppressDialogflowBotReply_()) {
         preventDialogflowMessengerEvent_(event);
         scheduleSuppressDfMessengerErrorUi_();
         scheduleSuppressDfMessengerBotRepliesDuringHumanHandoff_();
         return;
+    }
+
+    tryRequestLiveAgentFromBotResponse_(event);
+
+    if (liveAgentShouldRefreshModeFromServer_()) {
+        await liveAgentRefreshModeFromServer_(true);
     }
 
     const messages = event.detail && event.detail.data && Array.isArray(event.detail.data.messages)
@@ -19709,8 +19790,6 @@ async function handleDfResponseReceived(event) {
     if (contactFormOpenPending) {
         scheduleContactFormOpen();
     }
-
-    tryRequestLiveAgentFromBotResponse_(event);
 
     maybeIncrementBubbleUnreadFromResponse(event);
 
@@ -19956,6 +20035,9 @@ function attachPersonaHandlers(dfMessenger) {
         async (event) => {
             const typed = extractDfUserInputEnteredText(event);
             const typedTrim = typeof typed === "string" ? typed.trim() : "";
+            if (typedTrim && liveAgentShouldPreventNativeSendSync_(typedTrim)) {
+                preventDialogflowMessengerEvent_(event);
+            }
             if (typedTrim && liveAgentShouldRefreshModeFromServer_()) {
                 await liveAgentRefreshModeFromServer_(true);
             }
@@ -20017,6 +20099,9 @@ function attachPersonaHandlers(dfMessenger) {
             dfchatPendingTypedUtteranceForGate_ = "";
             const effectiveQuery = fromReq || pendingSnap;
 
+            if (effectiveQuery && liveAgentShouldPreventNativeSendSync_(effectiveQuery)) {
+                preventDialogflowMessengerEvent_(event);
+            }
             if (effectiveQuery && liveAgentShouldRefreshModeFromServer_()) {
                 await liveAgentRefreshModeFromServer_(true);
             }

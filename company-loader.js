@@ -35,7 +35,7 @@
   }
 
   var CHAT_HOST = chatHostFromLoaderSrc() || "https://qabot2026.github.io/testingone/";
-  var IFRAME_VERSION = "171-visitor-send-dedupe";
+  var IFRAME_VERSION = "172-handoff-scroll-dedupe";
 
   function getLoaderQuery() {
     var cur = document.currentScript;
