@@ -6085,23 +6085,7 @@ function transcriptTurnsFromClientContext_(cx) {
         return uqList.map((text) => ({ role: "user", text }));
     }
 
-    const userTextsInChat = new Set(
-        base.filter((t) => t.role === "user").map((t) => transcriptUserCompareNorm_(t.text))
-    );
-    /** @type {{ role: string, text: string, at?: number }[]} */
-    const missingUsers = [];
-    for (let i = 0; i < uqList.length; i++) {
-        const norm = transcriptUserCompareNorm_(uqList[i]);
-        if (!norm || userTextsInChat.has(norm)) {
-            continue;
-        }
-        missingUsers.push({
-            role: "user",
-            text: uqList[i].trim(),
-            at: baseAt - (uqList.length - 1 - i) * 1500
-        });
-        userTextsInChat.add(norm);
-    }
+    const missingUsers = missingUserTurnsFromQueryLines_(base, uqList, baseAt);
     if (!missingUsers.length) {
         return base;
     }
@@ -6135,7 +6119,15 @@ function userTurnsFromContextUserQueries_(ctx) {
     if (!ctx || typeof ctx !== "object") {
         return [];
     }
-    const lines = collectUserQueriesLinesFromContext_(ctx);
+    const uq = Array.isArray(ctx.user_queries) ? ctx.user_queries : [];
+    /** @type {string[]} */
+    const lines = [];
+    for (let i = 0; i < uq.length; i += 1) {
+        const cell = typeof uq[i] === "string" ? uq[i].trim() : "";
+        if (cell) {
+            lines.push(cell);
+        }
+    }
     if (!lines.length) {
         return [];
     }
@@ -6143,20 +6135,7 @@ function userTurnsFromContextUserQueries_(ctx) {
         typeof ctx.user_queries_last_at === "number" && Number.isFinite(ctx.user_queries_last_at)
             ? ctx.user_queries_last_at
             : Date.now();
-    /** @type {{ role: string, text: string, at: number }[]} */
-    const out = [];
-    for (let i = 0; i < lines.length; i += 1) {
-        const text = lines[i].trim();
-        if (!text || shouldOmitTranscriptUserTurn_(text)) {
-            continue;
-        }
-        out.push({
-            role: "user",
-            text,
-            at: baseAt - (lines.length - 1 - i) * 1500
-        });
-    }
-    return out;
+    return missingUserTurnsFromQueryLines_([], lines, baseAt);
 }
 
 /**
@@ -6167,35 +6146,61 @@ function userTurnsFromContextUserQueries_(ctx) {
  */
 function augmentTranscriptWithMissingUserQueries_(turns, contexts) {
     const base = Array.isArray(turns) ? turns.slice() : [];
-    const existing = new Set(
-        base
-            .filter((t) => t && t.role === "user")
-            .map((t) => transcriptUserCompareNorm_(t.text))
-            .filter(Boolean)
-    );
-    /** @type {{ role: string, text: string, at?: number }[]} */
-    const extra = [];
+    /** @type {string[]} */
+    const allLines = [];
+    let atBase = Date.now();
     const list = Array.isArray(contexts) ? contexts : [];
     for (let c = 0; c < list.length; c += 1) {
         const ctx = list[c];
         if (!ctx || typeof ctx !== "object") {
             continue;
         }
-        const fromCtx = userTurnsFromContextUserQueries_(ctx);
-        for (let i = 0; i < fromCtx.length; i += 1) {
-            const row = fromCtx[i];
-            const norm = transcriptUserCompareNorm_(row.text);
-            if (!norm || existing.has(norm)) {
-                continue;
+        const uq = Array.isArray(ctx.user_queries) ? ctx.user_queries : [];
+        for (let i = 0; i < uq.length; i += 1) {
+            const cell = typeof uq[i] === "string" ? uq[i].trim() : "";
+            if (cell) {
+                allLines.push(cell);
             }
-            existing.add(norm);
-            extra.push(row);
+        }
+        if (
+            typeof ctx.user_queries_last_at === "number"
+            && Number.isFinite(ctx.user_queries_last_at)
+        ) {
+            atBase = Math.max(atBase, ctx.user_queries_last_at);
         }
     }
+    if (!allLines.length) {
+        return base;
+    }
+    const extra = missingUserTurnsFromQueryLines_(base, allLines, atBase);
     if (!extra.length) {
         return base;
     }
     return orderTranscriptTurnsForDisplay_(mergeConversationTranscriptTurnSources_(base, extra));
+}
+
+/** Staff-facing form label for open_form transcript rows (mirrors widget `staffFormLabelForKey_`). */
+function transcriptStaffFormLabelForKey_(formKey) {
+    const key = typeof formKey === "string" ? formKey.trim() : "";
+    if (!key || key === "default") {
+        return "contact";
+    }
+    if (key === "uploadDocument") {
+        return "upload";
+    }
+    if (key === "nearestBranch") {
+        return "nearest-branch";
+    }
+    if (key === "appintmentformgeneral") {
+        return "general-appointment";
+    }
+    if (key === "appintmentformdoctor") {
+        return "doctor-appointment";
+    }
+    if (key === "birthform") {
+        return "birth";
+    }
+    return key;
 }
 
 /** Replace legacy "(Bot response)" placeholders when the stored rich payload was an open_form action. */
@@ -6231,11 +6236,12 @@ function polishTranscriptAssistantPlaceholderTurn_(turn) {
         return turn;
     }
     const fid =
-        (typeof rich.form_id === "string" && rich.form_id.trim())
+        (typeof rich.form_key === "string" && rich.form_key.trim())
+        || (typeof rich.formKey === "string" && rich.formKey.trim())
+        || (typeof rich.form_id === "string" && rich.form_id.trim())
         || (typeof rich.formId === "string" && rich.formId.trim())
-        || (typeof rich.form_key === "string" && rich.form_key.trim())
         || "contact";
-    return { ...turn, role: "assistant", text: `Form: ${fid}` };
+    return { ...turn, role: "assistant", text: `Form: ${transcriptStaffFormLabelForKey_(fid)}` };
 }
 
 /** @param {{ role: string, text: string, rich?: Record<string, unknown>, at?: number, seq?: number }[]} turns */
@@ -6475,16 +6481,21 @@ function canonicalLeadFieldKeyForTranscript_(rawKey) {
 }
 
 /** @param {string} csv */
-function userTurnsFromSheetQueriesCsv_(csv) {
+function userQueryLinesFromCsv_(csv) {
     const s = typeof csv === "string" ? csv.trim() : "";
     if (!s) {
         return [];
     }
     const bits = s.split(",").map((x) => x.trim()).filter(Boolean);
-    if (bits.length === 0) {
+    if (!bits.length) {
         return [];
     }
-    const kept = bits.filter((text) => !isTranscriptLiveAgentSheetStatusLine_(text));
+    return bits.filter((text) => !isTranscriptLiveAgentSheetStatusLine_(text));
+}
+
+/** @param {string} csv */
+function userTurnsFromSheetQueriesCsv_(csv) {
+    const kept = userQueryLinesFromCsv_(csv);
     if (!kept.length) {
         return [];
     }
@@ -6492,6 +6503,81 @@ function userTurnsFromSheetQueriesCsv_(csv) {
         return [{ role: "user", text: kept[0] }];
     }
     return kept.map((text) => ({ role: "user", text }));
+}
+
+/**
+ * Match sheet / session user-query lists to transcript user bubbles by multiset (keep duplicate utterances).
+ *
+ * @param {{ role: string, text: string, rich?: Record<string, unknown>, at?: number, seq?: number }[]} turns
+ * @param {string[]} lines
+ * @param {number} [atBase]
+ */
+function missingUserTurnsFromQueryLines_(turns, lines, atBase) {
+    if (!Array.isArray(lines) || !lines.length) {
+        return [];
+    }
+    /** @type {string[]} */
+    const pendingNorms = [];
+    for (let i = 0; i < turns.length; i += 1) {
+        const t = turns[i];
+        if (t && t.role === "user") {
+            const norm = transcriptUserCompareNorm_(t.text);
+            if (norm) {
+                pendingNorms.push(norm);
+            }
+        }
+    }
+    let maxSeq = 0;
+    for (let j = 0; j < turns.length; j += 1) {
+        const seq = turns[j] && typeof turns[j].seq === "number" ? turns[j].seq : NaN;
+        if (Number.isFinite(seq)) {
+            maxSeq = Math.max(maxSeq, seq);
+        }
+    }
+    const baseAt =
+        typeof atBase === "number" && Number.isFinite(atBase) ? atBase : Date.now();
+    /** @type {{ role: string, text: string, at: number, seq: number }[]} */
+    const extra = [];
+    for (let k = 0; k < lines.length; k += 1) {
+        const text = typeof lines[k] === "string" ? lines[k].trim() : "";
+        if (!text || shouldOmitTranscriptUserTurn_(text)) {
+            continue;
+        }
+        const norm = transcriptUserCompareNorm_(text);
+        if (!norm) {
+            continue;
+        }
+        const idx = pendingNorms.indexOf(norm);
+        if (idx >= 0) {
+            pendingNorms.splice(idx, 1);
+            continue;
+        }
+        maxSeq += 1;
+        extra.push({
+            role: "user",
+            text,
+            seq: maxSeq,
+            at: baseAt - (lines.length - 1 - k) * 1500
+        });
+        pendingNorms.push(norm);
+    }
+    return extra;
+}
+
+/**
+ * @param {{ role: string, text: string, rich?: Record<string, unknown>, at?: number, seq?: number }[]} turns
+ * @param {string} csv
+ */
+function reinforceTranscriptUserTurnsFromQueriesCsv_(turns, csv) {
+    const lines = userQueryLinesFromCsv_(csv);
+    if (!lines.length) {
+        return Array.isArray(turns) ? turns.slice() : [];
+    }
+    const extra = missingUserTurnsFromQueryLines_(turns, lines);
+    if (!extra.length) {
+        return Array.isArray(turns) ? turns.slice() : [];
+    }
+    return orderTranscriptTurnsForDisplay_(mergeConversationTranscriptTurnSources_(turns, extra));
 }
 
 app.options(PATHNAME_CONVERSATIONS_SHEET_JSON, (req, res) => {
@@ -6626,6 +6712,8 @@ app.get(PATHNAME_CONVERSATION_TRANSCRIPT_JSON, async (req, res) => {
 
         /** Union-merge: prefer the richer source first (Firestore is patched on session sync; Sheet JSON is optional legacy). */
         let turns;
+        /** @type {string} */
+        let authoritativeUserQueriesCsv = "";
         const fbRich = transcriptSourceRichness_(fbTurns);
         const sheetRich = transcriptSourceRichness_(sheetChatTurns);
         if (sheetRich > fbRich) {
@@ -6646,7 +6734,10 @@ app.get(PATHNAME_CONVERSATION_TRANSCRIPT_JSON, async (req, res) => {
         if (!SHEETS_DISABLED) {
             try {
                 const { csv } = await fetchLeadSheetUserQueriesForSession(session);
-                const fromSheetQueries = userTurnsFromSheetQueriesCsv_(csv);
+                const { mergedSheet1UserQueriesCsv_ } = await import("./lib/live-agent/sheet-sync.mjs");
+                authoritativeUserQueriesCsv =
+                    (await mergedSheet1UserQueriesCsv_(session, csv || "")) || csv || "";
+                const fromSheetQueries = userTurnsFromSheetQueriesCsv_(authoritativeUserQueriesCsv);
                 if (fromSheetQueries.length) {
                     const existingUserN = new Set(
                         turns.filter((t) => t.role === "user").map((t) => transcriptUserCompareNorm_(t.text))
@@ -6811,6 +6902,10 @@ app.get(PATHNAME_CONVERSATION_TRANSCRIPT_JSON, async (req, res) => {
                 : null,
             liveCx && typeof liveCx === "object" ? liveCx : null
         ]);
+        if (authoritativeUserQueriesCsv) {
+            turns = reinforceTranscriptUserTurnsFromQueriesCsv_(turns, authoritativeUserQueriesCsv);
+            sourceParts.push("sheet_user_queries_reinforced");
+        }
         turns = polishTranscriptAssistantPlaceholderTurns_(turns);
 
         turns = orderTranscriptTurnsForDisplay_(turns);
@@ -6859,32 +6954,17 @@ app.get(PATHNAME_CONVERSATION_TRANSCRIPT_JSON, async (req, res) => {
                         .toLowerCase() === "assistant"
             ).length;
 
-        if (!SHEETS_DISABLED) {
-            try {
-                const { csv: sheetQueriesCsv } = await fetchLeadSheetUserQueriesForSession(session);
-                const { mergedSheet1UserQueriesCsv_ } = await import("./lib/live-agent/sheet-sync.mjs");
-                const mergedQueries = await mergedSheet1UserQueriesCsv_(session, sheetQueriesCsv);
-                if (mergedQueries && mergedQueries !== sheetQueriesCsv) {
-                    meta = { ...meta, user_queries: mergedQueries };
-                    if (sheet && sheet.columns && typeof sheet.columns === "object") {
-                        const colKeys = Object.keys(sheet.columns);
-                        for (let qi = 0; qi < colKeys.length; qi += 1) {
-                            const colKey = colKeys[qi];
-                            if (canonicalLeadFieldKeyForTranscript_(colKey) === "user_queries") {
-                                sheet.columns[colKey] = mergedQueries;
-                                break;
-                            }
-                        }
+        if (authoritativeUserQueriesCsv) {
+            meta = { ...meta, user_queries: authoritativeUserQueriesCsv };
+            if (sheet && sheet.columns && typeof sheet.columns === "object") {
+                const colKeys = Object.keys(sheet.columns);
+                for (let qi = 0; qi < colKeys.length; qi += 1) {
+                    const colKey = colKeys[qi];
+                    if (canonicalLeadFieldKeyForTranscript_(colKey) === "user_queries") {
+                        sheet.columns[colKey] = authoritativeUserQueriesCsv;
+                        break;
                     }
-                } else if (sheetQueriesCsv) {
-                    meta = { ...meta, user_queries: sheetQueriesCsv };
                 }
-            } catch (uqErr) {
-                const msg =
-                    uqErr && /** @type {{ message?: string }} */ (uqErr).message
-                        ? String(uqErr.message)
-                        : String(uqErr);
-                console.warn("[chatbot-api] conversation-transcript user queries merge:", msg.slice(0, 240));
             }
         }
 

@@ -7305,6 +7305,14 @@ function applyDefaultContactFormForBareOpenFormAction(event) {
             setActiveContactFormId("uploadDocument");
             return;
         }
+        if (
+            intentName
+            && merged.feedback
+            && /\b(feedback|rating|review|survey|csat)\b/i.test(intentName)
+        ) {
+            setActiveContactFormId("feedback");
+            return;
+        }
     } catch {
         /* ignore */
     }
@@ -7316,6 +7324,10 @@ function applyDefaultContactFormForBareOpenFormAction(event) {
         const uploadRe = /\b(upload|uploading|document|documents|docs|pdf|file|files|attachment|attachments)\b/i;
         if (merged.uploadDocument && recent.some((line) => line && uploadRe.test(line))) {
             setActiveContactFormId("uploadDocument");
+            return;
+        }
+        if (merged.feedback && recent.some((line) => line === "feedback")) {
+            setActiveContactFormId("feedback");
             return;
         }
     } catch {
@@ -19832,17 +19844,69 @@ async function handleDfResponseReceived(event) {
 }
 
 /**
+ * Resolve which form opened for staff transcript lines (payload, active widget form, or recent chip).
+ *
+ * @param {Event | null | undefined} event
+ * @param {Record<string, unknown> | null | undefined} [rich]
+ * @returns {string}
+ */
+function resolveOpenFormIdForTranscript_(event, rich) {
+    if (rich && typeof rich === "object") {
+        const rawRich =
+            rich.form_key != null && String(rich.form_key).trim()
+                ? String(rich.form_key).trim()
+                : rich.formKey != null && String(rich.formKey).trim()
+                  ? String(rich.formKey).trim()
+                  : rich.form_id != null && String(rich.form_id).trim()
+                    ? String(rich.form_id).trim()
+                    : rich.formId != null && String(rich.formId).trim()
+                      ? String(rich.formId).trim()
+                      : "";
+        if (rawRich) {
+            const fromRich = canonicalContactFormId_(rawRich);
+            if (fromRich) {
+                return fromRich;
+            }
+        }
+    }
+    const fromEvent = extractOpenFormIdFromEvent(event);
+    if (fromEvent) {
+        const fromEv = canonicalContactFormId_(fromEvent);
+        if (fromEv) {
+            return fromEv;
+        }
+    }
+    try {
+        if (activeContactFormId) {
+            const fromActive = canonicalContactFormId_(activeContactFormId);
+            if (fromActive) {
+                return fromActive;
+            }
+        }
+        const cfg = readContactFormConfig();
+        if (cfg.formKey) {
+            return cfg.formKey;
+        }
+    } catch {
+        /* ignore */
+    }
+    return getDefaultContactFormId();
+}
+
+/**
  * Staff-facing label when CX opens a form with no plain-text bot line (e.g. feedback overlay).
  *
  * @param {Event | null | undefined} event
+ * @param {Record<string, unknown> | null | undefined} [rich]
  * @returns {string}
  */
-function assistantFormOpenTranscriptLineFromDfEvent_(event) {
-    if (!shouldOpenContactForm(event)) {
+function assistantFormOpenTranscriptLineFromDfEvent_(event, rich) {
+    const opensFromEvent = event && shouldOpenContactForm(event);
+    const opensFromRich = rich && transcriptRichCxActionKey_(rich) === "open_form";
+    if (!opensFromEvent && !opensFromRich) {
         return "";
     }
-    const rawId = extractOpenFormIdFromEvent(event);
-    const formId = rawId ? canonicalContactFormId_(rawId) : getDefaultContactFormId();
+    const formId = resolveOpenFormIdForTranscript_(event, rich);
     const label = staffFormLabelForKey_(formId || "contact");
     return label ? `Form: ${label}` : "Form opened";
 }
@@ -22236,7 +22300,8 @@ function appendChatTranscriptAssistantEntries_(entries, opts) {
                     : null;
             if (isTranscriptOpenFormActionEntry_(rich, text)) {
                 const formLine = assistantFormOpenTranscriptLineFromDfEvent_(
-                    opts && opts.dfEvent ? opts.dfEvent : null
+                    opts && opts.dfEvent ? opts.dfEvent : null,
+                    rich
                 );
                 if (formLine && !chatTranscriptAlreadyHasAssistantText_(transcript, formLine)) {
                     seq += 1;
@@ -22561,8 +22626,13 @@ function extractOpenFormIdFromEvent(event) {
         if (!payload || payload.action !== CONTACT_FORM_OPEN_ACTION) {
             continue;
         }
-        const id = (payload.form_id != null && String(payload.form_id).trim() ? String(payload.form_id).trim() : null)
-            || (payload.formId != null && String(payload.formId).trim() ? String(payload.formId).trim() : null);
+        const id =
+            (payload.form_id != null && String(payload.form_id).trim() ? String(payload.form_id).trim() : null)
+            || (payload.formId != null && String(payload.formId).trim() ? String(payload.formId).trim() : null)
+            || (payload.form_key != null && String(payload.form_key).trim()
+                ? String(payload.form_key).trim()
+                : null)
+            || (payload.formKey != null && String(payload.formKey).trim() ? String(payload.formKey).trim() : null);
         if (id) {
             return id;
         }
