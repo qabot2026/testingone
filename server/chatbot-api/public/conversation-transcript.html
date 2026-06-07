@@ -549,6 +549,17 @@
         return false;
       }
 
+      /** CX routing tokens and unresolved `$session.params.*` — not staff conversation content. */
+      function isTranscriptInternalCxToken(line) {
+        var raw = typeof line === "string" ? line.trim() : "";
+        if (!raw) return true;
+        if (/^\$session\.params\.[a-z0-9_]+$/i.test(raw) || raw.indexOf("$session.params.") !== -1) return true;
+        if (/^\$request\.[\w.]+\.[a-z0-9_]+$/i.test(raw) || /\$parameter\.\w+/i.test(raw)) return true;
+        var stripped = raw.replace(/^(?:query|event):/i, "").trim();
+        if (/^__GO_/i.test(stripped)) return true;
+        return false;
+      }
+
       function unwrapStr(v) {
         if (typeof v === "string") return v.trim();
         if (v && typeof v === "object" && typeof v.stringValue === "string") return v.stringValue.trim();
@@ -864,6 +875,7 @@
         if (!turn) return false;
         if (turn.role === "assistant") {
           if (isTranscriptPersonaChromeLine(turn.text) || isTranscriptEphemeralStatusLine(turn.text)) return false;
+          if (isTranscriptInternalCxToken(turn.text)) return false;
           var richProbe = resolveRich(turn);
           if (richProbe && String(richProbe.action || "").toLowerCase() === "open_form") {
             var summaryText = cleanText(turn.text, richProbe);
@@ -876,6 +888,7 @@
           if (!userText || isTranscriptPersonaChromeLine(userText) || isTranscriptEphemeralStatusLine(userText)) {
             return false;
           }
+          if (isTranscriptInternalCxToken(userText)) return false;
           if (/^\[Live Agent\]/i.test(userText)) return false;
           if (/Status:\s*/i.test(userText) && /Dept:/i.test(userText) && (/Queue:/i.test(userText) || /Agent:/i.test(userText))) {
             return false;

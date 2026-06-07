@@ -21256,7 +21256,7 @@ function dedupeAssistantTranscriptTextLines_(lines) {
     const norms = new Set();
     for (let i = 0; i < lines.length; i += 1) {
         const t = typeof lines[i] === "string" ? lines[i].trim() : "";
-        if (!t) {
+        if (!t || isTranscriptNoiseLine_(t)) {
             continue;
         }
         const norm = normalizeChatTranscriptCompareText_(t);
@@ -21479,6 +21479,30 @@ function isTranscriptEphemeralStatusLine_(line) {
 }
 
 /**
+ * CX routing tokens and unresolved parameter templates — not staff-facing chat.
+ *
+ * @param {string} line
+ * @returns {boolean}
+ */
+function isTranscriptInternalCxToken_(line) {
+    const t = typeof line === "string" ? line.trim() : "";
+    if (!t) {
+        return true;
+    }
+    if (/^\$session\.params\.[a-z0-9_]+$/i.test(t) || t.indexOf("$session.params.") !== -1) {
+        return true;
+    }
+    if (/^\$request\.[\w.]+\.[a-z0-9_]+$/i.test(t) || /\$parameter\.\w+/i.test(t)) {
+        return true;
+    }
+    const stripped = t.replace(/^(?:query|event):/i, "").trim();
+    if (/^__GO_/i.test(stripped)) {
+        return true;
+    }
+    return false;
+}
+
+/**
  * @param {string} line
  * @returns {boolean}
  */
@@ -21489,6 +21513,7 @@ function isTranscriptNoiseLine_(line) {
         || TRANSCRIPT_NOISE_LINE_SET.has(t)
         || isTranscriptPersonaChromeLine_(t)
         || isTranscriptEphemeralStatusLine_(t)
+        || isTranscriptInternalCxToken_(t)
     );
 }
 
@@ -22131,6 +22156,9 @@ function appendChatTranscriptAssistantEntries_(entries, opts) {
             if (!text && !rich) {
                 continue;
             }
+            if (text && isTranscriptNoiseLine_(text)) {
+                continue;
+            }
             const last = transcript.length ? transcript[transcript.length - 1] : null;
             const richKey = rich ? JSON.stringify(rich) : "";
             const sameAsLast =
@@ -22213,7 +22241,7 @@ function appendChatTranscriptAssistantLines_(lines, opts) {
         for (let i = 0; i < batch.length; i += 1) {
             const raw = batch[i];
             const trimmed = typeof raw === "string" ? raw.trim() : "";
-            if (!trimmed || isTranscriptPersonaChromeLine_(trimmed)) {
+            if (!trimmed || isTranscriptPersonaChromeLine_(trimmed) || isTranscriptNoiseLine_(trimmed)) {
                 continue;
             }
             const text =

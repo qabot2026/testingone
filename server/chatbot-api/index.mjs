@@ -4919,6 +4919,9 @@ function transcriptTurnsFromStoredChatArray_(arr) {
         if (isTranscriptEphemeralStatusText_(text)) {
             continue;
         }
+        if (isTranscriptCxInternalToken_(text)) {
+            continue;
+        }
         if (isTranscriptOpenFormActionTurn_(/** @type {{ role?: string, text?: string, rich?: unknown, rich_json?: unknown }} */ ({ role, text, rich }))) {
             continue;
         }
@@ -5262,11 +5265,33 @@ function isTranscriptInternalUserToken_(text) {
     if (!t) {
         return true;
     }
+    if (isTranscriptCxInternalToken_(text)) {
+        return true;
+    }
     if (/^__GO_/i.test(t)) {
         return true;
     }
     const low = t.toLowerCase();
     return low === "upload" || low === "resend_otp";
+}
+
+/** CX routing tokens and unresolved `$session.params.*` templates — hide from staff chatscript. */
+function isTranscriptCxInternalToken_(text) {
+    const raw = String(text ?? "").trim();
+    if (!raw) {
+        return true;
+    }
+    if (/^\$session\.params\.[a-z0-9_]+$/i.test(raw) || raw.includes("$session.params.")) {
+        return true;
+    }
+    if (/^\$request\.[\w.]+\.[a-z0-9_]+$/i.test(raw) || /\$parameter\.\w+/i.test(raw)) {
+        return true;
+    }
+    const stripped = stripDialogflowActionPrefixForTranscript_(raw);
+    if (/^__GO_/i.test(stripped)) {
+        return true;
+    }
+    return false;
 }
 
 function shouldOmitTranscriptUserTurn_(text) {
@@ -5720,6 +5745,9 @@ function dedupeTranscriptTurnsForDisplay_(turns) {
             continue;
         }
         if (text && isTranscriptEphemeralStatusText_(text)) {
+            continue;
+        }
+        if (text && isTranscriptCxInternalToken_(text)) {
             continue;
         }
         if (isTranscriptOpenFormActionTurn_(t)) {

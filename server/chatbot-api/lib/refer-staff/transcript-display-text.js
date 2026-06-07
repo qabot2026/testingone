@@ -89,6 +89,9 @@ function isLiveAgentSheetStatusLine(text) {
 function isInternalActionToken(s) {
   const t = stripDialogflowActionPrefix(s);
   if (isLiveAgentSheetStatusLine(t)) return true;
+  const raw = String(s || '').trim();
+  if (/^\$session\.params\.[a-z0-9_]+$/i.test(raw) || raw.includes('$session.params.')) return true;
+  if (/^\$request\.[\w.]+\.[a-z0-9_]+$/i.test(raw) || /\$parameter\.\w+/i.test(raw)) return true;
   return (
     !t ||
     /^__GO_/i.test(t) ||
