@@ -2675,21 +2675,27 @@ const USER_QUERY_NOISE_KEYS = new Set(
     ].map(normalizedUserQueryNoiseKey_)
 );
 
-/** @param {string} csv */
-export function sanitizeUserQueriesCsvForSheet(csv) {
+/**
+ * @param {string} csv
+ * @param {{ preserveAllChatQueries?: boolean }} [options]
+ */
+export function sanitizeUserQueriesCsvForSheet(csv, options = {}) {
     const s = typeof csv === "string" ? csv.trim() : "";
     if (!s) {
         return "";
     }
+    const preserveAllChatQueries = options.preserveAllChatQueries === true;
     const kept = [];
     for (const p of splitCsvValues_(csv)) {
         const t = String(p || "").trim();
         if (!t) {
             continue;
         }
-        const nk = normalizedUserQueryNoiseKey_(t);
-        if (nk && USER_QUERY_NOISE_KEYS.has(nk)) {
-            continue;
+        if (!preserveAllChatQueries) {
+            const nk = normalizedUserQueryNoiseKey_(t);
+            if (nk && USER_QUERY_NOISE_KEYS.has(nk)) {
+                continue;
+            }
         }
         if (/^\[Live Agent\]/i.test(t)) {
             continue;
@@ -5479,12 +5485,14 @@ async function upsertSessionQueriesInSheet_(row) {
         throw new Error("Missing SHEETS_SPREADSHEET_ID in env (or set DISABLE_SHEETS=1).");
     }
     const incomingQRaw = typeof row.userQueriesCsv === "string" ? row.userQueriesCsv.trim() : "";
-    const incomingQ = sanitizeUserQueriesCsvForSheet(incomingQRaw);
+    const clientAuthoritativeQueries = row.clientAuthoritativeQueries === true;
+    const incomingQ = sanitizeUserQueriesCsvForSheet(incomingQRaw, {
+        preserveAllChatQueries: clientAuthoritativeQueries
+    });
     const chatTranscriptJson =
         typeof row.chatTranscriptJson === "string" ? row.chatTranscriptJson.trim() : "";
     const writeChatTranscriptOnSessionSync = row.writeChatTranscriptOnSessionSync === true;
     const lightweightSessionSync = row.lightweightSessionSync === true;
-    const clientAuthoritativeQueries = row.clientAuthoritativeQueries === true;
     if (!incomingQ && !chatTranscriptJson) {
         return { mode: "skipped_empty_queries" };
     }

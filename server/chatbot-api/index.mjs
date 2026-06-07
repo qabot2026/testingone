@@ -689,18 +689,61 @@ function collectUserQueriesLinesFromContext_(ctx) {
     return out;
 }
 
+/** @param {string} raw */
+function userQueryLineForDisplayAndSheet_(raw) {
+    const t = typeof raw === "string" ? raw.trim() : "";
+    if (!t) {
+        return "";
+    }
+    const closed = /^__form_closed:(.+)$/i.exec(t);
+    if (closed) {
+        const fk = String(closed[1] || "").trim();
+        if (!fk) {
+            return "Form closed.";
+        }
+        return `${fk.charAt(0).toUpperCase()}${fk.slice(1)} form closed.`;
+    }
+    return t;
+}
+
+/** Ordered `user_queries` array — no dedupe (Sheet + chatscript need every visitor line). */
+function userQueryLinesFromContextOrdered_(ctx) {
+    if (!ctx || typeof ctx !== "object") {
+        return [];
+    }
+    /** @type {string[]} */
+    const out = [];
+    const uq = Array.isArray(ctx.user_queries) ? ctx.user_queries : [];
+    for (let i = 0; i < uq.length; i += 1) {
+        const raw = typeof uq[i] === "string" ? uq[i].trim() : "";
+        if (!raw || shouldOmitTranscriptUserTurn_(raw)) {
+            continue;
+        }
+        const line = userQueryLineForDisplayAndSheet_(raw);
+        if (line) {
+            out.push(line);
+        }
+    }
+    return out;
+}
+
 function normalizeUserQueriesCsvFromClientContext(clientContext) {
     const ctx = clientContext && typeof clientContext === "object" ? clientContext : {};
 
-    const fromArrays = collectUserQueriesLinesFromContext_(ctx);
-    let csv = sanitizeUserQueriesCsvForSheet(fromArrays.join(", "));
+    let lines = userQueryLinesFromContextOrdered_(ctx);
+    if (!lines.length) {
+        lines = collectUserQueriesLinesFromContext_(ctx);
+    }
+    let csv = sanitizeUserQueriesCsvForSheet(lines.join(", "), { preserveAllChatQueries: true });
     const extraCsv =
         stringifyClientContextCsvHint_(ctx.user_queries_csv)
         || stringifyClientContextCsvHint_(ctx.chat_queries_csv)
         || stringifyClientContextCsvHint_(ctx.queries_csv);
-    const extraSan = sanitizeUserQueriesCsvForSheet(extraCsv);
+    const extraSan = sanitizeUserQueriesCsvForSheet(extraCsv, { preserveAllChatQueries: true });
     if (extraSan) {
-        csv = sanitizeUserQueriesCsvForSheet(csv ? `${csv}, ${extraSan}` : extraSan);
+        csv = sanitizeUserQueriesCsvForSheet(csv ? `${csv}, ${extraSan}` : extraSan, {
+            preserveAllChatQueries: true
+        });
     }
     return csv;
 }
@@ -6618,6 +6661,88 @@ function missingUserTurnsFromQueryLines_(turns, lines, atBase) {
 }
 
 /**
+ * User before bot, user before bot, … then any trailing user lines after the last bot reply.
+ *
+ * @param {{ role: string, text: string, rich?: Record<string, unknown>, at?: number, seq?: number }[]} users
+ * @param {{ role: string, text: string, rich?: Record<string, unknown>, at?: number, seq?: number }[]} bots
+ */
+function weaveTranscriptUserAndBotTurns_(users, bots) {
+    /** @type {typeof users} */
+    const out = [];
+    const botCount = bots.length;
+    for (let i = 0; i < botCount; i += 1) {
+        if (i < users.length) {
+            out.push(users[i]);
+        }
+        out.push(bots[i]);
+    }
+    for (let j = botCount; j < users.length; j += 1) {
+        out.push(users[j]);
+    }
+    return out;
+}
+
+/**
+ * @param {{ role: string, text: string, rich?: Record<string, unknown>, at?: number, seq?: number }[]} turns
+ * @param {number} [baseAt]
+ */
+function assignMonotonicTranscriptSequence_(turns, baseAt) {
+    const start =
+        typeof baseAt === "number" && Number.isFinite(baseAt)
+            ? baseAt - turns.length * 2500
+            : Date.now() - turns.length * 2500;
+    return turns.map((t, idx) => ({
+        ...t,
+        seq: idx + 1,
+        at: start + idx * 2500
+    }));
+}
+
+/** True when stored widget `chat_transcript` already interleaves user + bot rows by `seq`. */
+function storedChatTranscriptTurnsAreInterleaved_(turns) {
+    if (!Array.isArray(turns) || turns.length < 2) {
+        return false;
+    }
+    const ordered = orderTranscriptTurnsForDisplay_(turns);
+    const users = ordered.filter((t) => t && t.role === "user");
+    const bots = ordered.filter((t) => t && (t.role === "assistant" || t.role === "agent"));
+    if (!users.length || !bots.length) {
+        return false;
+    }
+    const botSeqs = bots
+        .map((t) => (typeof t.seq === "number" && Number.isFinite(t.seq) ? t.seq : NaN))
+        .filter((n) => Number.isFinite(n));
+    const userSeqs = users
+        .map((t) => (typeof t.seq === "number" && Number.isFinite(t.seq) ? t.seq : NaN))
+        .filter((n) => Number.isFinite(n));
+    if (!botSeqs.length || !userSeqs.length) {
+        return false;
+    }
+    return Math.min(...userSeqs) < Math.max(...botSeqs);
+}
+
+/**
+ * @param {string} sheetCsv
+ * @param {Array<Record<string, unknown> | null | undefined>} contexts
+ */
+function mergeAuthoritativeUserQueriesCsv_(sheetCsv, contexts) {
+    /** @type {string[]} */
+    let best = userQueryLinesFromCsv_(sheetCsv);
+    const list = Array.isArray(contexts) ? contexts : [];
+    for (let i = 0; i < list.length; i += 1) {
+        const ctx = list[i];
+        if (!ctx || typeof ctx !== "object") {
+            continue;
+        }
+        const fromCtx = userQueryLinesFromContextOrdered_(ctx);
+        if (fromCtx.length > best.length) {
+            best = fromCtx;
+        }
+    }
+    return best.join(", ");
+}
+
+/**
  * Rebuild user bubbles in Sheet / session query order and interleave with bot rows via `seq` / `at`.
  *
  * @param {{ role: string, text: string, rich?: Record<string, unknown>, at?: number, seq?: number }[]} turns
@@ -6650,7 +6775,6 @@ function reorderTranscriptUsersFromAuthoritativeLines_(turns, lines) {
     const baseAt = Date.now();
     /** @type {{ role: string, text: string, rich?: Record<string, unknown>, at?: number, seq?: number }[]} */
     const usersOrdered = [];
-    let userSlot = 0;
     for (let k = 0; k < lines.length; k += 1) {
         const text = typeof lines[k] === "string" ? lines[k].trim() : "";
         if (!text || shouldOmitTranscriptUserTurn_(text)) {
@@ -6662,25 +6786,18 @@ function reorderTranscriptUsersFromAuthoritativeLines_(turns, lines) {
         }
         const queue = userQueues.get(norm);
         if (queue && queue.length) {
-            usersOrdered.push(queue.shift());
-            userSlot += 1;
+            const prev = queue.shift();
+            usersOrdered.push({
+                role: "user",
+                text: typeof prev.text === "string" && prev.text.trim() ? prev.text.trim() : text,
+                rich: prev.rich
+            });
             continue;
         }
-        const slot = seqAtForUserQuerySlot_(userSlot, assistants, baseAt);
-        usersOrdered.push({
-            role: "user",
-            text,
-            seq: slot.seq,
-            at: slot.at
-        });
-        userSlot += 1;
+        usersOrdered.push({ role: "user", text });
     }
-    for (const leftover of userQueues.values()) {
-        for (let u = 0; u < leftover.length; u += 1) {
-            usersOrdered.push(leftover[u]);
-        }
-    }
-    return orderTranscriptTurnsForDisplay_([...usersOrdered, ...assistants]);
+    const woven = weaveTranscriptUserAndBotTurns_(usersOrdered, assistants);
+    return assignMonotonicTranscriptSequence_(woven, baseAt);
 }
 
 /**
@@ -6969,6 +7086,37 @@ app.get(PATHNAME_CONVERSATION_TRANSCRIPT_JSON, async (req, res) => {
             }
         }
 
+        if (authoritativeUserQueriesCsv || liveCx || firestoreRec?.client_context) {
+            authoritativeUserQueriesCsv = mergeAuthoritativeUserQueriesCsv_(authoritativeUserQueriesCsv, [
+                liveCx && typeof liveCx === "object" ? liveCx : null,
+                firestoreRec && typeof firestoreRec.client_context === "object"
+                    ? /** @type {Record<string, unknown>} */ (firestoreRec.client_context)
+                    : null
+            ]);
+        }
+
+        const liveChatRawArr = liveCx ? coerceChatTranscriptArray_(liveCx.chat_transcript) : [];
+        const liveChatTurns = transcriptTurnsFromStoredChatArray_(liveChatRawArr);
+        const useLiveChatBackbone = storedChatTranscriptTurnsAreInterleaved_(liveChatTurns);
+
+        if (useLiveChatBackbone) {
+            const agentOnly = turns.filter((t) => t && t.role === "agent");
+            turns = orderTranscriptTurnsForDisplay_(
+                mergeConversationTranscriptTurnSources_(liveChatTurns, agentOnly)
+            );
+            sourceParts.push("live_chat_transcript_backbone");
+        } else if (authoritativeUserQueriesCsv) {
+            turns = reinforceTranscriptUserTurnsFromQueriesCsv_(turns, authoritativeUserQueriesCsv);
+            sourceParts.push("sheet_user_queries_interleaved");
+        } else {
+            turns = augmentTranscriptWithMissingUserQueries_(turns, [
+                firestoreRec && typeof firestoreRec.client_context === "object"
+                    ? /** @type {Record<string, unknown>} */ (firestoreRec.client_context)
+                    : null,
+                liveCx && typeof liveCx === "object" ? liveCx : null
+            ]);
+        }
+
         const liveAgentTurnsRaw = await transcriptTurnsFromLiveAgentInbox_(session);
         if (liveAgentTurnsRaw.length) {
             const existingUserNorms = new Set(
@@ -7008,20 +7156,10 @@ app.get(PATHNAME_CONVERSATION_TRANSCRIPT_JSON, async (req, res) => {
             if (liveAgentTurns.length) {
                 sourceParts.push("live_agent_inbox");
                 turns = mergeConversationTranscriptTurnSources_(turns, liveAgentTurns);
+                turns = orderTranscriptTurnsForDisplay_(turns);
             }
         }
 
-        if (authoritativeUserQueriesCsv) {
-            turns = reinforceTranscriptUserTurnsFromQueriesCsv_(turns, authoritativeUserQueriesCsv);
-            sourceParts.push("sheet_user_queries_interleaved");
-        } else {
-            turns = augmentTranscriptWithMissingUserQueries_(turns, [
-                firestoreRec && typeof firestoreRec.client_context === "object"
-                    ? /** @type {Record<string, unknown>} */ (firestoreRec.client_context)
-                    : null,
-                liveCx && typeof liveCx === "object" ? liveCx : null
-            ]);
-        }
         turns = polishTranscriptAssistantPlaceholderTurns_(turns);
 
         turns = orderTranscriptTurnsForDisplay_(turns);
