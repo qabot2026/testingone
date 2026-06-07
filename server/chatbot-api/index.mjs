@@ -5914,11 +5914,6 @@ app.options(PATHNAME_CONVERSATIONS_SHEET_STATS, (req, res) => {
     res.status(204).end();
 });
 
-app.options(PATHNAME_CONVERSATIONS_SHEET_SYNC_DASHBOARD, (req, res) => {
-    setConversationsSheetCors_(req, res);
-    res.status(204).end();
-});
-
 app.options(PATHNAME_CONVERSATIONS_SHEET_EXPORT, (req, res) => {
     setConversationsSheetCors_(req, res);
     res.status(204).end();
