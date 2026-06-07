@@ -411,6 +411,23 @@ window.COMPANY_CHAT_UI_CONFIG = {
         topRight: "0",
         bottomLeft: "0",
         bottomRight: "0"
+      },
+      // Keep the latest message in view (user send, bot reply, agent chat, personas, galleries).
+      scrollToBottom: {
+        enabled: true,
+        /** Always jump on send/reply. false = only when already near the bottom. */
+        alwaysOnNewMessage: true,
+        /** When alwaysOnNewMessage is false, scroll only if within this many px of the bottom. */
+        nearBottomPx: 120,
+        /** Re-scroll after async DOM settles (personas, CX payloads, live-agent pin). ms. */
+        followUpDelaysMs: [72, 180, 400, 800, 1600]
+      },
+      // Bot reply pacing — edit to control how quickly responses feel.
+      responseSpeed: {
+        /** Minimum “Typing…” time after the user sends before bot persona/extras (ms). 0 = no extra wait. */
+        minTypingIndicatorMs: 0,
+        /** Extra delay before bot persona caption after a reply (ms). */
+        botPersonaDelayMs: 0
       }
     },
 

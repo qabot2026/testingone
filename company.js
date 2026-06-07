@@ -3845,6 +3845,9 @@ function createAndMountMessenger() {
     installRenderedBotTranscriptHook_(df);
     installLiveAgentTailPinRenderHook_(df);
     attachPersonaHandlers(df);
+    [0, 120, 500, 1200].forEach((ms) => {
+        window.setTimeout(() => ensureMessageListScrollObserver_(df), ms);
+    });
     // Lightbox is handled via a global click handler (shadow-DOM safe composedPath checks).
     ensureChatActionBar();
     ensurePoweredByStrip();
@@ -12438,6 +12441,166 @@ function removeAllDfchatInlineGalleries(dfMessenger) {
     dfchatLastInlineGalleryWrapEl = null;
 }
 
+/** @type {number} */
+let dfchatLastUserMessageSentAt_ = 0;
+/** @type {number[]} */
+let messageListScrollFollowTimerIds_ = [];
+
+function readChatScrollToBottomConfig_() {
+    const raw =
+        CHAT_MESSAGELIST_CONFIG.scrollToBottom && typeof CHAT_MESSAGELIST_CONFIG.scrollToBottom === "object"
+            ? CHAT_MESSAGELIST_CONFIG.scrollToBottom
+            : {};
+    if (raw.enabled === false) {
+        return {
+            enabled: false,
+            followUpDelaysMs: /** @type {number[]} */ ([]),
+            alwaysOnNewMessage: true,
+            nearBottomPx: 120
+        };
+    }
+    const followRaw = Array.isArray(raw.followUpDelaysMs) ? raw.followUpDelaysMs : null;
+    const defaultFollow = [72, 180, 400, 800, 1600];
+    const followUpDelaysMs = (followRaw && followRaw.length ? followRaw : defaultFollow)
+        .map((n) => Number(n))
+        .filter((n) => Number.isFinite(n) && n >= 0)
+        .slice(0, 12);
+    const nearBottomPxRaw = Number(raw.nearBottomPx);
+    return {
+        enabled: true,
+        followUpDelaysMs: followUpDelaysMs.length ? followUpDelaysMs : defaultFollow,
+        alwaysOnNewMessage: raw.alwaysOnNewMessage !== false,
+        nearBottomPx:
+            Number.isFinite(nearBottomPxRaw) && nearBottomPxRaw >= 0
+                ? Math.min(600, nearBottomPxRaw)
+                : 120
+    };
+}
+
+function readMessageResponseSpeedConfig_() {
+    const raw =
+        CHAT_MESSAGELIST_CONFIG.responseSpeed && typeof CHAT_MESSAGELIST_CONFIG.responseSpeed === "object"
+            ? CHAT_MESSAGELIST_CONFIG.responseSpeed
+            : {};
+    const minRaw = Number(raw.minTypingIndicatorMs);
+    const personaRaw = Number(raw.botPersonaDelayMs);
+    return {
+        minTypingIndicatorMs:
+            Number.isFinite(minRaw) && minRaw >= 0 ? Math.min(15000, Math.round(minRaw)) : 0,
+        botPersonaDelayMs:
+            Number.isFinite(personaRaw) && personaRaw >= 0 ? Math.min(5000, Math.round(personaRaw)) : 0
+    };
+}
+
+function chatScrollFollowUpDelaysMs_() {
+    return readChatScrollToBottomConfig_().followUpDelaysMs;
+}
+
+function computeBotResponseExtraDelayMs_() {
+    const rs = readMessageResponseSpeedConfig_();
+    const elapsed = dfchatLastUserMessageSentAt_ ? Date.now() - dfchatLastUserMessageSentAt_ : 0;
+    const typingWait = Math.max(0, rs.minTypingIndicatorMs - elapsed);
+    return typingWait + rs.botPersonaDelayMs;
+}
+
+function recordUserMessageSentForResponseSpeed_() {
+    dfchatLastUserMessageSentAt_ = Date.now();
+}
+
+/**
+ * @param {HTMLElement | null | undefined} dfMessenger
+ * @param {{ force?: boolean }} [opts]
+ */
+function scrollMessageListToBottom_(dfMessenger, opts) {
+    const cfg = readChatScrollToBottomConfig_();
+    if (!cfg.enabled) {
+        return;
+    }
+    const ml = findMessengerMessageListRoot(dfMessenger || activeDfMessenger);
+    if (!ml) {
+        return;
+    }
+    const force = !!(opts && opts.force);
+    try {
+        if (!force && !cfg.alwaysOnNewMessage) {
+            const gap = ml.scrollHeight - ml.scrollTop - ml.clientHeight;
+            if (gap > cfg.nearBottomPx) {
+                return;
+            }
+        }
+        ml.scrollTop = ml.scrollHeight;
+    } catch {
+        /* ignore */
+    }
+}
+
+/**
+ * @param {HTMLElement | null | undefined} dfMessenger
+ * @param {{ force?: boolean }} [opts]
+ */
+function scheduleScrollMessageListToBottom_(dfMessenger, opts) {
+    const cfg = readChatScrollToBottomConfig_();
+    if (!cfg.enabled) {
+        return;
+    }
+    const ms = dfMessenger || activeDfMessenger;
+    scrollMessageListToBottom_(ms, opts);
+    try {
+        if (typeof requestAnimationFrame === "function") {
+            requestAnimationFrame(() => {
+                scrollMessageListToBottom_(ms, opts);
+            });
+        }
+    } catch {
+        /* ignore */
+    }
+    for (let i = 0; i < messageListScrollFollowTimerIds_.length; i += 1) {
+        window.clearTimeout(messageListScrollFollowTimerIds_[i]);
+    }
+    messageListScrollFollowTimerIds_ = [];
+    for (let i = 0; i < cfg.followUpDelaysMs.length; i += 1) {
+        const delayMs = cfg.followUpDelaysMs[i];
+        messageListScrollFollowTimerIds_.push(
+            window.setTimeout(() => {
+                scrollMessageListToBottom_(ms, opts);
+            }, delayMs)
+        );
+    }
+}
+
+/** @param {HTMLElement | null | undefined} dfMessenger */
+function ensureMessageListScrollObserver_(dfMessenger) {
+    const cfg = readChatScrollToBottomConfig_();
+    if (!cfg.enabled || !dfMessenger) {
+        return;
+    }
+    const host = /** @type {HTMLElement & { _dfchatScrollMo?: MutationObserver }} */ (dfMessenger);
+    if (host._dfchatScrollMo) {
+        return;
+    }
+    const ml = findMessengerMessageListRoot(host);
+    if (!ml) {
+        return;
+    }
+    let scheduled = false;
+    const mo = new MutationObserver(() => {
+        if (scheduled) {
+            return;
+        }
+        scheduled = true;
+        window.requestAnimationFrame(() => {
+            scheduled = false;
+            scheduleScrollMessageListToBottom_(host, { force: false });
+        });
+    });
+    try {
+        mo.observe(ml, { childList: true, subtree: true });
+        host._dfchatScrollMo = mo;
+    } catch {
+        /* ignore */
+    }
+}
+
 /**
  * Locate the Messenger scroll pane so we can append a horizontally scrollable carousel.
  * @param {HTMLElement | null | undefined} dfMessenger
@@ -12990,7 +13153,7 @@ function scheduleInjectInlineGalleryCarousel(dfMessenger, urlsOrItems, messages,
         }
     }
 
-    const delaysMs = [72, 180, 400, 800, 1600];
+    const delaysMs = chatScrollFollowUpDelaysMs_();
 
     delaysMs.forEach((delayMs) => {
         const tid = window.setTimeout(() => {
@@ -13163,7 +13326,7 @@ function scheduleEnsureExistingInlineGalleryPosition(dfMessenger, urlsOrItems, o
         return findMessengerMessageListRoot(msResolved);
     }
 
-    const delaysMs = [72, 180, 400, 800, 1600];
+    const delaysMs = chatScrollFollowUpDelaysMs_();
     delaysMs.forEach((delayMs) => {
         window.setTimeout(() => {
             if (moved) {
@@ -13733,7 +13896,7 @@ function scheduleInjectInlineVideoPlayer(dfMessenger, embedHttpsUrl, options, me
         }
     }
 
-    const delaysMs = [72, 180, 400, 800, 1600];
+    const delaysMs = chatScrollFollowUpDelaysMs_();
 
     delaysMs.forEach((delayMs) => {
         const tid = window.setTimeout(() => {
@@ -14567,7 +14730,7 @@ function scheduleEnsureExistingInlineCardCarouselPosition(dfMessenger, cards, me
         || (typeof document !== "undefined" ? document.querySelector("df-messenger") : null);
     const msg = typeof messageText === "string" ? messageText.trim() : "";
 
-    const delaysMs = [72, 180, 400, 800, 1600];
+    const delaysMs = chatScrollFollowUpDelaysMs_();
     delaysMs.forEach((delayMs) => {
         window.setTimeout(() => {
             if (moved) {
@@ -14918,7 +15081,7 @@ function scheduleInjectInlineCardCarousel(dfMessenger, cards, messageText) {
         }
     }
 
-    const delaysMs = [72, 180, 400, 800, 1600];
+    const delaysMs = chatScrollFollowUpDelaysMs_();
     delaysMs.forEach((delayMs) => {
         const tid = window.setTimeout(() => {
             tryAppend();
@@ -15216,7 +15379,7 @@ function scheduleInjectInlineSelectDropdown(dfMessenger, options, placeholder, m
         }
     }
 
-    const delaysMs = [72, 180, 400, 800, 1600];
+    const delaysMs = chatScrollFollowUpDelaysMs_();
     delaysMs.forEach((delayMs) => {
         const tid = window.setTimeout(() => {
             tryAppend();
@@ -15728,7 +15891,7 @@ function scheduleInjectBookingCalendar(dfMessenger, doctorId, doctorTitle) {
         }
     }
 
-    const delaysMs = [72, 180, 400, 800, 1600];
+    const delaysMs = chatScrollFollowUpDelaysMs_();
     delaysMs.forEach((delayMs) => {
         const tid = window.setTimeout(() => {
             void tryAppend();
@@ -16572,6 +16735,7 @@ function installLiveAgentTailPinRenderHook_(host) {
                 }
                 scheduleLiveAgentTailRepin_(el);
             }
+            scheduleScrollMessageListToBottom_(el, { force: liveAgentHandoffIsActive_() && liveAgentVisitorAgentChatActive_() });
         } catch {
             /* ignore */
         }
@@ -17830,6 +17994,7 @@ function liveAgentMaybeRenderVisitorBubbleOnce_(dfMessenger, text) {
     }
     liveAgentMarkVisitorUiRendered_(t);
     renderUserPersonaBeforeUserText_(ms, t);
+    scheduleScrollMessageListToBottom_(ms, { force: true });
     scheduleLiveAgentTailRepin_(ms);
     liveAgentSchedulePinTailRowsToTranscriptEnd_(ms);
 }
@@ -18821,6 +18986,7 @@ async function liveAgentPollTick_(dfMessenger) {
             }
         }
         liveAgentSchedulePinTailRowsToTranscriptEnd_(ms);
+        scheduleScrollMessageListToBottom_(ms, { force: true });
         scheduleSuppressDfMessengerErrorUi_();
     } catch {
         /* ignore */
@@ -19069,9 +19235,20 @@ async function handleDfResponseReceived(event) {
 
     if (messages.length > 0 && !isFormOnlyOpenResponse_(event)) {
         const ms = activeDfMessenger;
-        if (ms && typeof ms.renderCustomText === "function") {
-            renderBotPersona(ms, Date.now());
+        const renderPersonaForResponse = () => {
+            if (ms && typeof ms.renderCustomText === "function") {
+                renderBotPersona(ms, Date.now());
+            }
+            scheduleScrollMessageListToBottom_(ms, { force: true });
+        };
+        const extraDelay = computeBotResponseExtraDelayMs_();
+        if (extraDelay > 0) {
+            window.setTimeout(renderPersonaForResponse, extraDelay);
+        } else {
+            renderPersonaForResponse();
         }
+    } else {
+        scheduleScrollMessageListToBottom_(activeDfMessenger, { force: true });
     }
 
     const cxResponseMessagesMerged = mergeCxResponseEnvelopeForGallery(event);
@@ -19155,6 +19332,7 @@ async function handleDfResponseReceived(event) {
     }
 
     scheduleDomTranslationRefresh();
+    scheduleScrollMessageListToBottom_(activeDfMessenger, { force: true });
 }
 
 /**
@@ -19496,6 +19674,7 @@ function attachPersonaHandlers(dfMessenger) {
             }
 
             if (effectiveQuery) {
+                recordUserMessageSentForResponseSpeed_();
                 const ms = activeDfMessenger;
                 if (
                     ms
@@ -19504,6 +19683,7 @@ function attachPersonaHandlers(dfMessenger) {
                 ) {
                     renderUserPersona(ms);
                 }
+                scheduleScrollMessageListToBottom_(ms, { force: true });
                 scheduleClearDfMessengerComposerInput_();
             }
         },
@@ -19518,6 +19698,7 @@ function attachPersonaHandlers(dfMessenger) {
         }
         trackChatUserQueryInSessionContext_(q);
         mergeLikelyContactHintsFromChatText_(q);
+        recordUserMessageSentForResponseSpeed_();
         if (tryPreventChatSendForMissingMobileGate_(null, q)) {
             return;
         }
@@ -21513,6 +21694,9 @@ function installRenderedBotTranscriptHook_(host) {
                 maybeRecordRenderedBotMarkdownForTranscript_(text);
                 scheduleDomBotTranscriptCapture_(host);
             }
+            scheduleScrollMessageListToBottom_(host, {
+                force: isBot === false || (typeof text === "string" && text.includes(USER_PERSONA_TEXT_SENTINEL))
+            });
         } catch {
             /* ignore */
         }
@@ -26700,6 +26884,7 @@ function renderUserPersonaBeforeUserText_(dfMessenger, userText) {
     renderUserPersona(ms, { skipThrottle: true, skipShadowFix: true });
     ms.renderCustomText(t, false);
     schedulePersonaShadowFix(ms);
+    scheduleScrollMessageListToBottom_(ms, { force: true });
     if (liveAgentHumanChatPersonaLayoutActive_()) {
         liveAgentScheduleRepairUserPersonaPairing_(ms);
     }
