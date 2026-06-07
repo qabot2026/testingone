@@ -1093,6 +1093,12 @@ function readUserPersonaConfig() {
         typeof raw.gapBelowPx === "number" && Number.isFinite(raw.gapBelowPx) && raw.gapBelowPx >= 0
             ? raw.gapBelowPx
             : 2;
+    const gapAfterPreviousUserPx =
+        typeof raw.gapAfterPreviousUserPx === "number"
+        && Number.isFinite(raw.gapAfterPreviousUserPx)
+        && raw.gapAfterPreviousUserPx >= 0
+            ? Math.min(32, raw.gapAfterPreviousUserPx)
+            : 12;
     return {
         label,
         avatarSizePx:
@@ -1100,6 +1106,7 @@ function readUserPersonaConfig() {
                 ? raw.avatarSizePx
                 : 10,
         gapBelowPx,
+        gapAfterPreviousUserPx,
         showTime: raw.showTime !== false,
         showSeconds: raw.showSeconds !== false,
         messageTimeIncludesDate: raw.messageTimeIncludesDate === true,
@@ -1246,7 +1253,7 @@ function refreshLiveAgentUserPersonaLayout_(dfMessenger) {
         }
         try {
             entry.style.setProperty("transform", `translateY(${cssUserPersonaRowDownShift_()})`, "important");
-            entry.style.setProperty("margin-top", cssUserPersonaMarginTop(), "important");
+            entry.style.setProperty("margin-top", cssUserPersonaMarginTopForEntry_(entry), "important");
         } catch {
             /* ignore */
         }
@@ -1309,6 +1316,31 @@ function cssUserPersonaMarginTop() {
         laUp = cssLiveAgentAiUserPersonaNudgeUpPx_();
     }
     return `${-(6 + extra + laUp)}px`;
+}
+
+/** @param {HTMLElement | null | undefined} personaEntry */
+function userPersonaEntryFollowsUserEntry_(personaEntry) {
+    if (!personaEntry) {
+        return false;
+    }
+    let probe = personaEntry.previousElementSibling;
+    while (probe && probe.nodeType === Node.ELEMENT_NODE) {
+        const h = /** @type {HTMLElement} */ (probe);
+        if (h.classList && h.classList.contains("entry")) {
+            return h.classList.contains("user");
+        }
+        probe = h.previousElementSibling;
+    }
+    return false;
+}
+
+/** @param {HTMLElement | null | undefined} personaEntry */
+function cssUserPersonaMarginTopForEntry_(personaEntry) {
+    let px = parseFloat(cssUserPersonaMarginTop()) || 0;
+    if (userPersonaEntryFollowsUserEntry_(personaEntry)) {
+        px += Math.max(0, Math.min(32, USER_PERSONA_CONFIG.gapAfterPreviousUserPx ?? 12));
+    }
+    return `${px}px`;
 }
 
 /** Safe CSS border-radius for the floating launcher (blocks odd characters). */
@@ -27214,6 +27246,10 @@ img[src*="%23dfchat-user-persona-img"] {
   margin-top: 0 !important;
   padding-top: 0 !important;
 }
+.entry.user + .entry.bot.dfchat-user-persona-caption-bot-entry,
+.entry.user + .entry.bot.dfchat-user-persona-entry {
+  margin-top: calc(${cssUserPersonaMarginTop()} + ${USER_PERSONA_CONFIG.gapAfterPreviousUserPx ?? 12}px) !important;
+}
 df-markdown-message.dfchat-user-persona-caption-md-host {
   align-self: flex-end !important;
   margin-left: auto !important;
@@ -28635,7 +28671,7 @@ function snugUserPersonaEntryToUserRow_(personaEntry, userEntry) {
         personaEntry.style.setProperty("margin-bottom", `${gap}px`, "important");
         personaEntry.style.setProperty("padding-bottom", "0", "important");
         personaEntry.style.setProperty("transform", `translateY(${cssUserPersonaRowDownShift_()})`, "important");
-        personaEntry.style.setProperty("margin-top", cssUserPersonaMarginTop(), "important");
+        personaEntry.style.setProperty("margin-top", cssUserPersonaMarginTopForEntry_(personaEntry), "important");
         userEntry.style.setProperty("margin-top", "0", "important");
         userEntry.style.setProperty("padding-top", "0", "important");
     } catch {

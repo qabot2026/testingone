@@ -93,6 +93,8 @@ window.COMPANY_CHAT_UI_CONFIG = {
       label: "You",
       avatarSizePx: 10,
       gapBelowPx: 2,
+      /** Extra space when visitor sends two user messages in a row (px). */
+      gapAfterPreviousUserPx: 12,
       showTime: true,
       showSeconds: true,
       timeZone: "Asia/Kolkata",
