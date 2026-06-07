@@ -148,6 +148,24 @@ async function loadSessionForSheet_(sessionId) {
     : liveAgentStore.getSession(sid);
 }
 
+/** Visitor lines during live-agent chat — for Sheet1 User Queries (not bot transcript). */
+function liveAgentVisitorQueriesFromSession(session) {
+  const msgs = (session && session.messages) || [];
+  const lines = [];
+  msgs.forEach((m) => {
+    if (!m) return;
+    const role = trim(m.role).toLowerCase();
+    if (role !== 'visitor') return;
+    const raw = trim(m.text);
+    if (!raw) return;
+    if (transcriptDisplay.isHandoffRequestLine(raw)) return;
+    const text = transcriptDisplay.normalizeUserQueryText(raw) || raw;
+    if (!text || transcriptDisplay.isInternalActionToken(text)) return;
+    lines.push(text);
+  });
+  return lines.join(' | ').slice(0, 2000);
+}
+
 /** User + agent lines from the handoff only — not the full bot transcript (see chatscript link). */
 function liveAgentQueriesFromSession(session) {
   const msgs = (session && session.messages) || [];
@@ -197,7 +215,7 @@ function buildSheet1LiveAgentHandoffQueries(session) {
   ) {
     parts.push('Connected with Agent');
   }
-  const chatBody = liveAgentQueriesFromSession(session);
+  const chatBody = liveAgentVisitorQueriesFromSession(session);
   if (chatBody) {
     chatBody.split(' | ').forEach((line) => {
       const t = trim(line);

@@ -833,11 +833,22 @@ export async function appendMessage_({
         senderDisplayName = resolveAgentDisplayName_(senderEmail, settings);
     }
 
+    let scheduleSheet1AfterMessage = false;
+
     await db.runTransaction(async (tx) => {
         const snap = await tx.get(convRef);
         if (!snap.exists) throw new Error("Conversation not found");
         const cur = snap.data() || {};
         if (cur.status === "closed") throw new Error("Conversation is closed");
+        scheduleSheet1AfterMessage = !!(
+            cur.requestedAt
+            || cur.claimedAt
+            || trim_(cur.status).toLowerCase() === "waiting"
+            || (
+                trim_(cur.status).toLowerCase() === "active"
+                && trim_(cur.humanMode).toLowerCase() !== "ai"
+            )
+        );
 
         const roleNorm = trim_(role).toLowerCase();
         if (roleNorm === "agent" || roleNorm === "staff") {
@@ -918,6 +929,17 @@ export async function appendMessage_({
     const snap = await msgRef.get();
     const out = serializeMessage_(msgRef.id, snap.data());
     scheduleLiveAgentHandoffSheetSync_(id);
+    if (scheduleSheet1AfterMessage) {
+        void import("./sheet-sync.mjs")
+            .then((mod) => {
+                if (mod && typeof mod.scheduleLiveAgentSheet1Sync_ === "function") {
+                    mod.scheduleLiveAgentSheet1Sync_(id);
+                }
+            })
+            .catch((err) => {
+                console.warn(LOG_TAG, "live-agent sheet1 schedule:", err.message || err);
+            });
+    }
     return out;
 }
 

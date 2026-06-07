@@ -5365,6 +5365,12 @@ function isTranscriptLiveAgentSheetStatusLine_(text) {
     if (/^\[Live Agent\]/i.test(t)) {
         return true;
     }
+    if (/^human agent requested$/i.test(t)) {
+        return true;
+    }
+    if (/^connected with agent$/i.test(t)) {
+        return true;
+    }
     return (
         /Status:\s*/i.test(t)
         && /Dept:/i.test(t)
@@ -6293,6 +6299,43 @@ function transcriptTimeIncludesDateFromEnv_() {
     return s === "1" || s === "true" || s === "yes";
 }
 
+/** Sheet column header → semantic id for transcript summary patching. */
+function canonicalLeadFieldKeyForTranscript_(rawKey) {
+    const k = String(rawKey || "")
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, " ");
+    const kn = k.replace(/\s/g, "");
+    if (k === "name") {
+        return "name";
+    }
+    if (k === "email") {
+        return "email";
+    }
+    if (k === "mobile" || k === "phone") {
+        return "mobile";
+    }
+    if (k === "user queries" || k === "userqueries") {
+        return "user_queries";
+    }
+    if (k === "device" || k === "device type" || kn === "devicetype") {
+        return "device";
+    }
+    if (k === "channel") {
+        return "channel";
+    }
+    if (k === "browser" || k === "browser name" || kn === "browsername") {
+        return "browser";
+    }
+    if (k === "conv. date" || k === "conv date" || k === "conversation date" || kn === "conversationdate") {
+        return "conv_date";
+    }
+    if (k === "conv. time" || k === "conv time" || k === "conversation time" || kn === "conversationtime") {
+        return "conv_time";
+    }
+    return null;
+}
+
 /** @param {string} csv */
 function userTurnsFromSheetQueriesCsv_(csv) {
     const s = typeof csv === "string" ? csv.trim() : "";
@@ -6669,6 +6712,35 @@ app.get(PATHNAME_CONVERSATION_TRANSCRIPT_JSON, async (req, res) => {
                         .trim()
                         .toLowerCase() === "assistant"
             ).length;
+
+        if (!SHEETS_DISABLED) {
+            try {
+                const { csv: sheetQueriesCsv } = await fetchLeadSheetUserQueriesForSession(session);
+                const { mergedSheet1UserQueriesCsv_ } = await import("./lib/live-agent/sheet-sync.mjs");
+                const mergedQueries = await mergedSheet1UserQueriesCsv_(session, sheetQueriesCsv);
+                if (mergedQueries && mergedQueries !== sheetQueriesCsv) {
+                    meta = { ...meta, user_queries: mergedQueries };
+                    if (sheet && sheet.columns && typeof sheet.columns === "object") {
+                        const colKeys = Object.keys(sheet.columns);
+                        for (let qi = 0; qi < colKeys.length; qi += 1) {
+                            const colKey = colKeys[qi];
+                            if (canonicalLeadFieldKeyForTranscript_(colKey) === "user_queries") {
+                                sheet.columns[colKey] = mergedQueries;
+                                break;
+                            }
+                        }
+                    }
+                } else if (sheetQueriesCsv) {
+                    meta = { ...meta, user_queries: sheetQueriesCsv };
+                }
+            } catch (uqErr) {
+                const msg =
+                    uqErr && /** @type {{ message?: string }} */ (uqErr).message
+                        ? String(uqErr.message)
+                        : String(uqErr);
+                console.warn("[chatbot-api] conversation-transcript user queries merge:", msg.slice(0, 240));
+            }
+        }
 
         return res.json({
             ok: true,

@@ -1160,8 +1160,8 @@
         var emailVal = pickSemantic("email", meta.email);
         var mobileVal = pickSemantic("mobile", meta.mobile);
 
-        var userQueriesVal = "";
-        if (cols) {
+        var userQueriesVal = pickSemantic("user_queries", meta.user_queries);
+        if (!userQueriesVal && cols) {
           var uqHit = findColumnEntryBySemantic(cols, "user_queries", consumedCol);
           if (uqHit) {
             consumedCol[uqHit.key] = true;
