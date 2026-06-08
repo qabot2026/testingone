@@ -119,7 +119,12 @@ function serializeConversation_(id, data) {
                   : "",
         closedAt: tsToIso_(d.closedAt),
         closedByEmail: typeof d.closedByEmail === "string" ? d.closedByEmail : "",
-        lastMessageAt: tsToIso_(d.lastMessageAt)
+        lastMessageAt: tsToIso_(d.lastMessageAt),
+        sheetVisitorQueryLines: Array.isArray(d.sheetVisitorQueryLines)
+            ? d.sheetVisitorQueryLines
+                  .map((line) => (typeof line === "string" ? line.trim() : String(line ?? "").trim()))
+                  .filter(Boolean)
+            : []
     };
 }
 
@@ -921,6 +926,25 @@ export async function appendMessage_({
             } else if (cur.status === "waiting") {
                 convPatch.aiEnabled = true;
                 convPatch.humanMode = "waiting";
+            }
+            if (
+                cur.status === "active"
+                && !aiCopilotActive
+                && (curHm === "human" || cur.aiEnabled === false || trim_(cur.assignedAgentEmail))
+            ) {
+                const prevSheetQ = Array.isArray(cur.sheetVisitorQueryLines)
+                    ? cur.sheetVisitorQueryLines
+                          .map((line) => String(line ?? "").trim())
+                          .filter(Boolean)
+                    : [];
+                const nextText = body.trim();
+                if (nextText) {
+                    const key = nextText.toLowerCase();
+                    const dup = prevSheetQ.some((line) => line.toLowerCase() === key);
+                    if (!dup) {
+                        convPatch.sheetVisitorQueryLines = [...prevSheetQ, nextText].slice(-80);
+                    }
+                }
             }
         }
         tx.update(convRef, convPatch);

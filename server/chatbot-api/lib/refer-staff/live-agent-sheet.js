@@ -189,6 +189,134 @@ function mergeUniqueVisitorQueryLines_(primary, secondary) {
   return out;
 }
 
+function sessionAgentWasConnected_(session) {
+  if (!session) return false;
+  if (trim(session.acceptedAt) || trim(session.claimedAt) || trim(session.assignedAgentEmail)) {
+    return true;
+  }
+  const st = trim(session.status).toLowerCase();
+  return st === 'active' || st === 'closed';
+}
+
+/** Persisted on conversation doc when visitor POSTs during human chat (most reliable for column J). */
+function sheetVisitorQueriesFromConversationDoc_(session) {
+  const raw = session && session.sheetVisitorQueryLines;
+  if (!Array.isArray(raw) || !raw.length) {
+    return [];
+  }
+  /** @type {string[]} */
+  const lines = [];
+  for (let i = 0; i < raw.length; i += 1) {
+    appendLiveAgentVisitorQueryLine_(lines, String(raw[i] ?? ''));
+  }
+  return lines;
+}
+
+/** Inbox visitor lines after the first agent/staff message (queue lines before that are skipped). */
+function inboxVisitorQueriesAfterFirstAgent_(session) {
+  if (!sessionAgentWasConnected_(session)) {
+    return [];
+  }
+  const msgs = (session && session.messages) || [];
+  let firstAgentIdx = -1;
+  for (let i = 0; i < msgs.length; i += 1) {
+    const role = trim(msgs[i] && msgs[i].role).toLowerCase();
+    if (role === 'agent' || role === 'staff') {
+      firstAgentIdx = i;
+      break;
+    }
+  }
+  if (firstAgentIdx < 0) {
+    return [];
+  }
+  /** @type {string[]} */
+  const lines = [];
+  for (let i = firstAgentIdx + 1; i < msgs.length; i += 1) {
+    const m = msgs[i];
+    if (!m || trim(m.role).toLowerCase() !== 'visitor') continue;
+    appendLiveAgentVisitorQueryLine_(lines, trim(m.text));
+  }
+  return lines;
+}
+
+/** Widget lines that match a visitor inbox message (when timestamps/window logic misses). */
+function widgetVisitorQueriesMatchingInbox_(session) {
+  const uq = session && session._widgetUserQueries;
+  if (!Array.isArray(uq) || !uq.length) {
+    return [];
+  }
+  const msgs = (session && session.messages) || [];
+  /** @type {Set<string>} */
+  const inboxKeys = new Set();
+  for (let i = 0; i < msgs.length; i += 1) {
+    const m = msgs[i];
+    if (!m || trim(m.role).toLowerCase() !== 'visitor') continue;
+    const text = transcriptDisplay.normalizeUserQueryText(trim(m.text)) || trim(m.text);
+    const k = userQueryLineKey_(text);
+    if (k) inboxKeys.add(k);
+  }
+  if (!inboxKeys.size) {
+    return [];
+  }
+  /** @type {string[]} */
+  const lines = [];
+  for (let i = 0; i < uq.length; i += 1) {
+    const raw = typeof uq[i] === 'string' ? uq[i].trim() : '';
+    if (!raw || /^connected with agent$/i.test(raw) || raw === WIDGET_ENDED_MARKER_) continue;
+    const norm = transcriptDisplay.normalizeUserQueryText(raw) || raw;
+    const k = userQueryLineKey_(norm);
+    if (k && inboxKeys.has(k)) {
+      appendLiveAgentVisitorQueryLine_(lines, raw);
+    }
+  }
+  return lines;
+}
+
+/** Widget lines after handoff/connect marker when Connected marker was not recorded. */
+function widgetQueriesAfterHandoffPhrase_(session) {
+  if (!sessionAgentWasConnected_(session)) {
+    return [];
+  }
+  const uq = session && session._widgetUserQueries;
+  if (!Array.isArray(uq) || !uq.length) {
+    return [];
+  }
+  let start = -1;
+  for (let i = 0; i < uq.length; i += 1) {
+    const raw = typeof uq[i] === 'string' ? uq[i].trim() : '';
+    if (!raw) continue;
+    if (/^connected with agent$/i.test(raw)) {
+      start = i + 1;
+      break;
+    }
+    if (transcriptDisplay.isHandoffRequestLine(raw)) {
+      start = i + 1;
+    }
+  }
+  if (start < 0) {
+    return [];
+  }
+  /** @type {string[]} */
+  const lines = [];
+  for (let i = start; i < uq.length; i += 1) {
+    const raw = typeof uq[i] === 'string' ? uq[i].trim() : '';
+    if (!raw || raw === WIDGET_ENDED_MARKER_) break;
+    if (/^connected with agent$/i.test(raw)) continue;
+    appendLiveAgentVisitorQueryLine_(lines, raw);
+  }
+  return lines;
+}
+
+function collectSheet2VisitorQueryLines_(session) {
+  let lines = sheetVisitorQueriesFromConversationDoc_(session);
+  lines = mergeUniqueVisitorQueryLines_(lines, liveAgentVisitorQueriesInConnectedWindow_(session));
+  lines = mergeUniqueVisitorQueryLines_(lines, inboxVisitorQueriesAfterFirstAgent_(session));
+  lines = mergeUniqueVisitorQueryLines_(lines, widgetVisitorQueriesMatchingInbox_(session));
+  lines = mergeUniqueVisitorQueryLines_(lines, widgetQueriesAfterHandoffPhrase_(session));
+  lines = mergeUniqueVisitorQueryLines_(lines, widgetHandoffUserQueryLines_(session));
+  return lines;
+}
+
 /** Connected = agent accepted/claimed; disconnected = session closed (if still open, no upper bound). */
 function liveAgentConnectedWindowBounds_(session) {
   let connected =
@@ -273,11 +401,10 @@ function liveAgentVisitorQueriesInConnectedWindow_(session) {
 }
 
 /**
- * Live Agent sheet User Queries — visitor lines only while connected to an agent
- * (accepted/claimed through closed). Queue/waiting messages are excluded.
+ * Live Agent sheet User Queries (column J) — visitor lines while agent was connected.
  */
 function buildSheet2UserQueriesForSheet(session) {
-  const lines = liveAgentVisitorQueriesInConnectedWindow_(session);
+  const lines = collectSheet2VisitorQueryLines_(session);
   if (!lines.length) {
     return '';
   }
@@ -381,7 +508,7 @@ function buildSheet1LiveAgentHandoffQueries(session) {
   ) {
     parts.push('Connected with Agent');
   }
-  liveAgentVisitorQueriesInConnectedWindow_(session).forEach((line) => {
+  collectSheet2VisitorQueryLines_(session).forEach((line) => {
     const t = trim(line);
     if (t) parts.push(t);
   });

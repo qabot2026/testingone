@@ -6,7 +6,7 @@ import admin from "firebase-admin";
 import { getFirestore } from "firebase-admin/firestore";
 
 import { firebaseAdminInit } from "../firebase-admin-init.mjs";
-import { fetchSessionChatTranscriptContext } from "../firestore.mjs";
+import { fetchLatestContactSubmissionForClientSession, fetchSessionChatTranscriptContext } from "../firestore.mjs";
 import { getVisitorContext_ } from "./context.mjs";
 import { getLiveAgentSettings_, resolveAgentDisplayName_ } from "./departments.mjs";
 
@@ -79,7 +79,12 @@ function serializeFirestoreConversation_(id, data) {
         closedAt: tsToIso_(d.closedAt),
         lastMessageAt: tsToIso_(d.lastMessageAt),
         updatedAt: tsToIso_(d.updatedAt),
-        sheet2Row: typeof d.sheet2Row === "number" ? d.sheet2Row : Number(d.sheet2Row) || 0
+        sheet2Row: typeof d.sheet2Row === "number" ? d.sheet2Row : Number(d.sheet2Row) || 0,
+        sheetVisitorQueryLines: Array.isArray(d.sheetVisitorQueryLines)
+            ? d.sheetVisitorQueryLines
+                  .map((line) => (typeof line === "string" ? line.trim() : String(line ?? "").trim()))
+                  .filter(Boolean)
+            : []
     };
 }
 
@@ -145,23 +150,46 @@ async function enrichSessionForSheet_(base) {
     } catch (ctxErr) {
         console.warn(LOG_TAG, "visitor context:", ctxErr.message || ctxErr);
     }
-    /** @type {string[] | undefined} */
-    let widgetUserQueries;
+    /** @type {string[]} */
+    let widgetUserQueries = [];
     try {
         const transcriptCx = await fetchSessionChatTranscriptContext(base.sessionId);
-        if (transcriptCx && Array.isArray(transcriptCx.user_queries) && transcriptCx.user_queries.length) {
-            widgetUserQueries = transcriptCx.user_queries.filter(
-                (line) => typeof line === "string" && line.trim()
-            );
+        if (transcriptCx && Array.isArray(transcriptCx.user_queries)) {
+            for (let i = 0; i < transcriptCx.user_queries.length; i += 1) {
+                const line = transcriptCx.user_queries[i];
+                if (typeof line === "string" && line.trim()) {
+                    widgetUserQueries.push(line.trim());
+                }
+            }
         }
     } catch (uqErr) {
         console.warn(LOG_TAG, "widget user_queries:", uqErr.message || uqErr);
+    }
+    try {
+        const lead = await fetchLatestContactSubmissionForClientSession(base.sessionId);
+        const leadCx =
+            lead && lead.client_context && typeof lead.client_context === "object"
+                ? /** @type {Record<string, unknown>} */ (lead.client_context)
+                : null;
+        const leadUq = leadCx && Array.isArray(leadCx.user_queries) ? leadCx.user_queries : [];
+        /** @type {Set<string>} */
+        const seenUq = new Set(widgetUserQueries.map((line) => line.toLowerCase()));
+        for (let i = 0; i < leadUq.length; i += 1) {
+            const line = typeof leadUq[i] === "string" ? leadUq[i].trim() : "";
+            if (!line) continue;
+            const key = line.toLowerCase();
+            if (seenUq.has(key)) continue;
+            seenUq.add(key);
+            widgetUserQueries.push(line);
+        }
+    } catch (leadErr) {
+        console.warn(LOG_TAG, "lead user_queries:", leadErr.message || leadErr);
     }
     return {
         ...base,
         assignedAgentDisplayName,
         _sheetMeta: sheetMeta,
-        _widgetUserQueries: widgetUserQueries,
+        _widgetUserQueries: widgetUserQueries.length ? widgetUserQueries : undefined,
         messages: base.messages || []
     };
 }
