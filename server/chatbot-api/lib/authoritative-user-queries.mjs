@@ -2,13 +2,18 @@
  * Single source of truth for Sheet1 "User Queries" — same merge as chatscript Summary.
  */
 
+import { createRequire } from "node:module";
+
 import { fetchSessionChatTranscriptContext } from "./firestore.mjs";
 import {
+    assembleFullUserQueriesCsv_,
     fetchLeadSheetUserQueriesForSession,
-    mergeClientAuthoritativeQueriesPreservingHandoff_,
+    LIVE_AGENT_ENDED_USER_QUERY_MARKER,
     sanitizeUserQueriesCsvForSheet
 } from "./sheets.mjs";
 import { mergedSheet1UserQueriesCsv_ } from "./live-agent/sheet-sync.mjs";
+
+const require = createRequire(import.meta.url);
 
 function trim_(v) {
     return typeof v === "string" ? v.trim() : "";
@@ -28,45 +33,12 @@ function isUserQuerySheetAndSummaryNoise_(raw) {
     return false;
 }
 
-function isTranscriptLiveAgentSheetStatusLine_(text) {
-    const t = String(text ?? "").trim();
-    if (!t) {
-        return false;
-    }
-    if (/^\[Live Agent\]/i.test(t)) {
-        return true;
-    }
-    if (/^human agent requested$/i.test(t)) {
-        return true;
-    }
-    if (/^connected with agent$/i.test(t)) {
-        return true;
-    }
-    return (
-        /Status:\s*/i.test(t)
-        && /Dept:/i.test(t)
-        && (/Queue:/i.test(t) || /Agent:/i.test(t))
-    );
+function isConnectedWithAgentMarker_(raw) {
+    return /^connected with agent$/i.test(trim_(raw));
 }
 
-function shouldOmitTranscriptUserTurn_(text) {
-    if (/^__form_closed:/i.test(String(text ?? "").trim())) {
-        return false;
-    }
-    return isTranscriptLiveAgentSheetStatusLine_(text);
-}
-
-/** @param {string} raw */
-function userQueryLineForDisplayAndSheet_(raw) {
-    const t = trim_(raw);
-    if (!t || isUserQuerySheetAndSummaryNoise_(t)) {
-        return "";
-    }
-    return t;
-}
-
-/** @param {Record<string, unknown> | null | undefined} ctx */
-function userQueryLinesFromContextOrdered_(ctx) {
+/** Ordered widget lines for sheet assembly (keeps phase markers used for splitting). */
+function userQueryLinesFromContextForSheet_(ctx) {
     if (!ctx || typeof ctx !== "object") {
         return [];
     }
@@ -75,40 +47,32 @@ function userQueryLinesFromContextOrdered_(ctx) {
     const uq = Array.isArray(ctx.user_queries) ? ctx.user_queries : [];
     for (let i = 0; i < uq.length; i += 1) {
         const raw = typeof uq[i] === "string" ? uq[i].trim() : "";
-        if (!raw || shouldOmitTranscriptUserTurn_(raw)) {
+        if (!raw) {
             continue;
         }
-        const line = userQueryLineForDisplayAndSheet_(raw);
+        if (raw === LIVE_AGENT_ENDED_USER_QUERY_MARKER || isConnectedWithAgentMarker_(raw)) {
+            out.push(isConnectedWithAgentMarker_(raw) ? "Connected with Agent" : raw);
+            continue;
+        }
+        if (/^\[Live Agent\]/i.test(raw)) {
+            continue;
+        }
+        if (/^human agent requested$/i.test(raw)) {
+            continue;
+        }
+        if (
+            /Status:\s*/i.test(raw)
+            && /Dept:/i.test(raw)
+            && (/Queue:/i.test(raw) || /Agent:/i.test(raw))
+        ) {
+            continue;
+        }
+        const line = isUserQuerySheetAndSummaryNoise_(raw) ? "" : raw;
         if (line) {
             out.push(line);
         }
     }
     return out;
-}
-
-/** @param {string} csv */
-function userQueryLinesFromCsv_(csv) {
-    const s = trim_(csv);
-    if (!s) {
-        return [];
-    }
-    const bits = s.split(",").map((x) => x.trim()).filter(Boolean);
-    if (!bits.length) {
-        return [];
-    }
-    return bits.filter((text) => !isTranscriptLiveAgentSheetStatusLine_(text));
-}
-
-/** @param {Record<string, unknown> | null | undefined} ctx */
-function normalizeUserQueriesCsvFromClientContext_(ctx) {
-    if (!ctx || typeof ctx !== "object") {
-        return "";
-    }
-    const lines = userQueryLinesFromContextOrdered_(ctx);
-    if (!lines.length) {
-        return "";
-    }
-    return sanitizeUserQueriesCsvForSheet(lines.join(", "), { preserveAllChatQueries: true });
 }
 
 /** @param {Record<string, unknown>[]} contexts */
@@ -121,7 +85,7 @@ function longestUserQueryLinesFromContexts_(contexts) {
         if (!ctx || typeof ctx !== "object") {
             continue;
         }
-        const fromCtx = userQueryLinesFromContextOrdered_(ctx);
+        const fromCtx = userQueryLinesFromContextForSheet_(ctx);
         if (fromCtx.length > best.length) {
             best = fromCtx;
         }
@@ -136,6 +100,7 @@ function longestUserQueryLinesFromContexts_(contexts) {
  * @param {{
  *   sheetCsv?: string,
  *   clientContext?: Record<string, unknown> | null,
+ *   contexts?: Array<Record<string, unknown> | null | undefined>,
  *   loadFirestoreContext?: boolean
  * }} [options]
  */
@@ -147,8 +112,19 @@ export async function buildAuthoritativeSheet1UserQueriesCsv_(sessionId, options
 
     /** @type {Record<string, unknown>[]} */
     const contexts = [];
+    if (Array.isArray(options.contexts)) {
+        for (let i = 0; i < options.contexts.length; i += 1) {
+            const ctx = options.contexts[i];
+            if (ctx && typeof ctx === "object") {
+                contexts.push(ctx);
+            }
+        }
+    }
     if (options.clientContext && typeof options.clientContext === "object") {
-        contexts.push(options.clientContext);
+        const dup = contexts.some((c) => c === options.clientContext);
+        if (!dup) {
+            contexts.push(options.clientContext);
+        }
     }
 
     if (options.loadFirestoreContext !== false) {
@@ -165,38 +141,32 @@ export async function buildAuthoritativeSheet1UserQueriesCsv_(sessionId, options
         }
     }
 
-    let sheetCsv = options.sheetCsv;
-    if (sheetCsv === undefined) {
+    const clientLines = longestUserQueryLinesFromContexts_(contexts);
+
+    let handoffCsv = "";
+    try {
+        handoffCsv = (await mergedSheet1UserQueriesCsv_(sid, "")) || "";
+    } catch {
+        handoffCsv = "";
+    }
+
+    let csv = assembleFullUserQueriesCsv_(clientLines, handoffCsv);
+
+    if (!csv && clientLines.length) {
+        csv = sanitizeUserQueriesCsvForSheet(clientLines.join(", "), { preserveAllChatQueries: true });
+    }
+
+    if (!csv && options.sheetCsv === undefined) {
         try {
             const got = await fetchLeadSheetUserQueriesForSession(sid);
-            sheetCsv = got && typeof got.csv === "string" ? got.csv : "";
+            const sheetCsv = got && typeof got.csv === "string" ? got.csv.trim() : "";
+            if (sheetCsv) {
+                csv = sanitizeUserQueriesCsvForSheet(sheetCsv, { preserveAllChatQueries: true });
+            }
         } catch {
-            sheetCsv = "";
+            /* ignore */
         }
     }
 
-    const clientLines = longestUserQueryLinesFromContexts_(contexts);
-    const clientCsv = clientLines.length
-        ? sanitizeUserQueriesCsvForSheet(clientLines.join(", "), { preserveAllChatQueries: true })
-        : "";
-
-    let base = typeof sheetCsv === "string" ? sheetCsv.trim() : "";
-    if (!base && clientCsv) {
-        base = clientCsv;
-    }
-
-    let csv = "";
-    try {
-        csv = (await mergedSheet1UserQueriesCsv_(sid, base)) || base || "";
-    } catch {
-        csv = base || "";
-    }
-
-    if (clientCsv) {
-        csv = mergeClientAuthoritativeQueriesPreservingHandoff_(csv, clientCsv);
-    } else if (!csv && base) {
-        csv = base;
-    }
-
-    return sanitizeUserQueriesCsvForSheet(csv, { preserveAllChatQueries: true });
+    return csv;
 }

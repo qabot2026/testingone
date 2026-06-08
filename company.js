@@ -17842,6 +17842,7 @@ function liveAgentOnVisitorHumanChatActivated_(dfMessenger, wasHuman) {
     } catch {
         /* ignore */
     }
+    appendLiveAgentUserQueryPhaseMarker_(LIVE_AGENT_CONNECTED_USER_QUERY_LABEL);
 }
 
 /**
@@ -18212,6 +18213,35 @@ function liveAgentIsBoilerplateHandoffPhrase_(text) {
 }
 
 const LIVE_AGENT_HUMAN_CONNECTED_MARKER = "live_agent_human_connected";
+/** Split marker in `user_queries` — server uses to place post-agent AI lines after handoff block. */
+const LIVE_AGENT_ENDED_USER_QUERY_MARKER = "__live_agent_ended__";
+const LIVE_AGENT_CONNECTED_USER_QUERY_LABEL = "Connected with Agent";
+
+/**
+ * Phase marker in Sheet1/Summary user queries (not a visitor chat line).
+ * @param {string} marker
+ */
+function appendLiveAgentUserQueryPhaseMarker_(marker) {
+    const m = typeof marker === "string" ? marker.trim() : "";
+    if (!m) {
+        return;
+    }
+    try {
+        const prev = readStoredClientContext();
+        const existing = prev && Array.isArray(prev.user_queries) ? prev.user_queries : [];
+        const norm = m.toLowerCase();
+        for (let i = 0; i < existing.length; i += 1) {
+            const x = typeof existing[i] === "string" ? existing[i].trim().toLowerCase() : "";
+            if (x === norm) {
+                return;
+            }
+        }
+        trackChatUserQueryInSessionContext_(m);
+        scheduleSessionQueriesSheetSync_();
+    } catch {
+        /* ignore */
+    }
+}
 
 /** When true, handoff only starts from CX custom payload `action: request_live_agent` (not session params alone). */
 function liveAgentRequiresCxHandoffPayload_() {
@@ -19414,6 +19444,7 @@ async function liveAgentPollTick_(dfMessenger) {
             setLiveAgentHumanChatActive_(false);
             liveAgentClearVisitorTypingDraft_();
             setLiveAgentHandoffActive_(false);
+            appendLiveAgentUserQueryPhaseMarker_(LIVE_AGENT_ENDED_USER_QUERY_MARKER);
             const ms0 = dfMessenger || activeDfMessenger;
             syncLiveAgentPersonaLayoutFlags_(ms0);
             if (ms0 && typeof ms0.renderCustomText === "function") {

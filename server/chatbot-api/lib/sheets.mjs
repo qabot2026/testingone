@@ -3074,6 +3074,109 @@ export function mergeClientAuthoritativeQueriesPreservingHandoff_(existingSheetC
     return merged.length ? merged.join(", ") : "";
 }
 
+export const LIVE_AGENT_ENDED_USER_QUERY_MARKER = "__live_agent_ended__";
+
+function isConnectedWithAgentUserQueryMarker_(line) {
+    return /^connected with agent$/i.test(String(line ?? "").trim());
+}
+
+function isLiveAgentPhaseSplitMarker_(line) {
+    const t = String(line ?? "").trim();
+    return isConnectedWithAgentUserQueryMarker_(t) || t === LIVE_AGENT_ENDED_USER_QUERY_MARKER;
+}
+
+/**
+ * Sheet1 / Summary: pre-bot + live-agent handoff block + post-bot (AI after agent ends).
+ *
+ * @param {string[]} clientLines ordered widget `user_queries` (may include phase markers)
+ * @param {string} handoffCsv from live-agent session (`Connected with Agent` + agent-era visitor lines)
+ */
+export function assembleFullUserQueriesCsv_(clientLines, handoffCsv) {
+    const lines = Array.isArray(clientLines)
+        ? clientLines.map((x) => String(x ?? "").trim()).filter(Boolean)
+        : [];
+    const handoffSegs = splitCsvValues_(sanitizeUserQueriesCsvForSheet(handoffCsv));
+    const handoffVisitorKeys = new Set(
+        handoffSegs
+            .filter((s) => !isLiveAgentHandoffCsvSegment_(s))
+            .map((s) => userQuerySegmentDedupeKey_(s))
+            .filter(Boolean)
+    );
+
+    /** @type {string[]} */
+    let pre = [];
+    /** @type {string[]} */
+    let post = [];
+
+    const connectIdx = lines.findIndex((l) => isConnectedWithAgentUserQueryMarker_(l));
+    const endIdx = lines.findIndex((l) => l === LIVE_AGENT_ENDED_USER_QUERY_MARKER);
+
+    if (connectIdx >= 0) {
+        pre = lines.slice(0, connectIdx).filter((l) => !isLiveAgentPhaseSplitMarker_(l));
+        post =
+            endIdx >= 0
+                ? lines.slice(endIdx + 1).filter((l) => !isLiveAgentPhaseSplitMarker_(l))
+                : [];
+    } else {
+        let firstMatch = -1;
+        let lastMatch = -1;
+        for (let i = 0; i < lines.length; i += 1) {
+            const key = userQuerySegmentDedupeKey_(lines[i]);
+            if (key && handoffVisitorKeys.has(key)) {
+                if (firstMatch < 0) {
+                    firstMatch = i;
+                }
+                lastMatch = i;
+            }
+        }
+        if (firstMatch >= 0) {
+            pre = lines.slice(0, firstMatch);
+            post = lines.slice(lastMatch + 1);
+        } else if (endIdx >= 0) {
+            pre = lines.slice(0, endIdx).filter((l) => !isLiveAgentPhaseSplitMarker_(l));
+            post = lines.slice(endIdx + 1).filter((l) => !isLiveAgentPhaseSplitMarker_(l));
+        } else {
+            pre = lines.filter((l) => !isLiveAgentPhaseSplitMarker_(l));
+            post = [];
+        }
+    }
+
+    const handoffBody = handoffSegs.length
+        ? dedupeHandoffSegmentsAgainstBot_(
+              pre,
+              splitCsvValues_(sanitizeUserQueriesCsvForSheet(handoffSegs.join(", ")))
+          )
+        : [];
+
+    /** @type {Set<string>} */
+    const seen = new Set();
+    [...pre, ...handoffBody].forEach((s) => {
+        const k = userQuerySegmentDedupeKey_(s);
+        if (k) {
+            seen.add(k);
+        }
+    });
+    /** @type {string[]} */
+    const postExtra = [];
+    for (const seg of post) {
+        const t = String(seg ?? "").trim();
+        if (!t || isUserQuerySheetNoiseSegment_(t) || isLiveAgentPhaseSplitMarker_(t)) {
+            continue;
+        }
+        const k = userQuerySegmentDedupeKey_(t);
+        if (!k || seen.has(k)) {
+            continue;
+        }
+        seen.add(k);
+        postExtra.push(t);
+    }
+
+    const merged = [...pre, ...handoffBody, ...postExtra];
+    return merged.length
+        ? sanitizeUserQueriesCsvForSheet(merged.join(", "), { preserveAllChatQueries: true })
+        : "";
+}
+
 /** Handoff markers + live-agent chat tail already on the row (preserve across bot query refresh). */
 function extractLiveAgentHandoffTailFromCsv_(csv) {
     const all = splitCsvValues_(csv);

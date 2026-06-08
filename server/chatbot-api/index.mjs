@@ -7082,18 +7082,24 @@ app.get(PATHNAME_CONVERSATION_TRANSCRIPT_JSON, async (req, res) => {
                 const { buildAuthoritativeSheet1UserQueriesCsv_ } = await import(
                     "./lib/authoritative-user-queries.mjs"
                 );
-                /** @type {Record<string, unknown> | null} */
-                const transcriptClientCx =
-                    liveCx && typeof liveCx === "object"
-                        ? liveCx
-                        : firestoreRec &&
-                            firestoreRec.client_context &&
-                            typeof firestoreRec.client_context === "object"
-                          ? /** @type {Record<string, unknown>} */ (firestoreRec.client_context)
-                          : null;
+                /** @type {Record<string, unknown>[]} */
+                const transcriptContexts = [];
+                if (liveCx && typeof liveCx === "object") {
+                    transcriptContexts.push(liveCx);
+                }
+                if (
+                    firestoreRec &&
+                    firestoreRec.client_context &&
+                    typeof firestoreRec.client_context === "object"
+                ) {
+                    const fcx = /** @type {Record<string, unknown>} */ (firestoreRec.client_context);
+                    if (!transcriptContexts.some((c) => c === fcx)) {
+                        transcriptContexts.push(fcx);
+                    }
+                }
                 authoritativeUserQueriesCsv = await buildAuthoritativeSheet1UserQueriesCsv_(session, {
-                    clientContext: transcriptClientCx,
-                    loadFirestoreContext: !transcriptClientCx
+                    contexts: transcriptContexts,
+                    loadFirestoreContext: true
                 });
                 const fromSheetQueries = userTurnsFromSheetQueriesCsv_(authoritativeUserQueriesCsv);
                 if (fromSheetQueries.length) {
