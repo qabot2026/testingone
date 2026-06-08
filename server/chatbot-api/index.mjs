@@ -3648,6 +3648,25 @@ app.post(
                 syncDetail = await runCoalescedSessionSheetSync_(clientSessionId, () =>
                     upsertSessionQueriesInSheet(rowPayload)
                 );
+                const uqArr = Array.isArray(mergedClientContext.user_queries)
+                    ? mergedClientContext.user_queries
+                    : [];
+                const hasLiveAgentPhase = uqArr.some(
+                    (line) =>
+                        typeof line === "string"
+                        && (/^connected with agent$/i.test(line.trim())
+                            || line.trim() === "__live_agent_ended__")
+                );
+                if (hasLiveAgentPhase) {
+                    try {
+                        const { scheduleLiveAgentHandoffSheetSync_ } = await import(
+                            "./lib/live-agent/live-agent-sheet-sync.mjs"
+                        );
+                        scheduleLiveAgentHandoffSheetSync_(clientSessionId);
+                    } catch {
+                        /* non-fatal */
+                    }
+                }
             } catch (se) {
                 const detail = se && se.message ? se.message : String(se);
                 console.error("[chatbot-api] session-sheet-sync", detail, se);
@@ -7098,8 +7117,22 @@ app.get(PATHNAME_CONVERSATION_TRANSCRIPT_JSON, async (req, res) => {
                         transcriptContexts.push(fcx);
                     }
                 }
+                /** Prefer live session transcript context — has freshest post-agent user_queries. */
+                let primaryTranscriptCx = null;
+                if (liveCx && typeof liveCx === "object") {
+                    primaryTranscriptCx = liveCx;
+                } else if (
+                    firestoreRec &&
+                    firestoreRec.client_context &&
+                    typeof firestoreRec.client_context === "object"
+                ) {
+                    primaryTranscriptCx = /** @type {Record<string, unknown>} */ (
+                        firestoreRec.client_context
+                    );
+                }
                 authoritativeUserQueriesCsv = await buildAuthoritativeSheet1UserQueriesCsv_(session, {
                     contexts: transcriptContexts,
+                    clientContext: primaryTranscriptCx,
                     loadFirestoreContext: true
                 });
                 const fromSheetQueries = userTurnsFromSheetQueriesCsv_(authoritativeUserQueriesCsv);

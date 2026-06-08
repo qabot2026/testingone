@@ -141,6 +141,54 @@ function parseSessionIsoMs_(iso) {
   return Number.isFinite(ms) ? ms : 0;
 }
 
+const WIDGET_ENDED_MARKER_ = '__live_agent_ended__';
+
+function userQueryLineKey_(line) {
+  return String(line ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
+}
+
+/** Widget `user_queries` between connect and disconnect markers (agent connected window). */
+function widgetHandoffUserQueryLines_(session) {
+  const uq = session && session._widgetUserQueries;
+  if (!Array.isArray(uq) || !uq.length) {
+    return [];
+  }
+  /** @type {string[]} */
+  const lines = [];
+  let inHandoff = false;
+  for (let i = 0; i < uq.length; i += 1) {
+    const raw = typeof uq[i] === 'string' ? uq[i].trim() : '';
+    if (!raw) continue;
+    if (/^connected with agent$/i.test(raw)) {
+      inHandoff = true;
+      continue;
+    }
+    if (raw === WIDGET_ENDED_MARKER_) {
+      break;
+    }
+    if (!inHandoff) continue;
+    appendLiveAgentVisitorQueryLine_(lines, raw);
+  }
+  return lines;
+}
+
+function mergeUniqueVisitorQueryLines_(primary, secondary) {
+  const out = Array.isArray(primary) ? primary.slice() : [];
+  const seen = new Set(out.map((line) => userQueryLineKey_(line)).filter(Boolean));
+  const extra = Array.isArray(secondary) ? secondary : [];
+  for (let i = 0; i < extra.length; i += 1) {
+    const line = extra[i];
+    const k = userQueryLineKey_(line);
+    if (!k || seen.has(k)) continue;
+    seen.add(k);
+    out.push(line);
+  }
+  return out;
+}
+
 /** Connected = agent accepted/claimed; disconnected = session closed (if still open, no upper bound). */
 function liveAgentConnectedWindowBounds_(session) {
   let connected =
@@ -181,61 +229,47 @@ function appendLiveAgentVisitorQueryLine_(lines, raw) {
  */
 function liveAgentVisitorQueriesInConnectedWindow_(session) {
   const msgs = (session && session.messages) || [];
-  if (!msgs.length) {
-    return [];
-  }
   const bounds = liveAgentConnectedWindowBounds_(session);
+  /** @type {string[]} */
+  const inboxLines = [];
 
-  let startIdx = msgs.length;
-  for (let i = 0; i < msgs.length; i += 1) {
-    const role = trim(msgs[i] && msgs[i].role).toLowerCase();
-    if (role === 'agent' || role === 'staff') {
-      startIdx = Math.min(startIdx, i);
-      break;
-    }
-  }
   if (bounds && bounds.connected) {
     for (let i = 0; i < msgs.length; i += 1) {
-      const msgMs = parseSessionIsoMs_(msgs[i] && msgs[i].createdAt);
-      if (msgMs >= bounds.connected) {
+      const m = msgs[i];
+      if (!m) continue;
+      const role = trim(m.role).toLowerCase();
+      if (role !== 'visitor') continue;
+      const msgMs = parseSessionIsoMs_(m.createdAt);
+      if (msgMs > 0) {
+        if (msgMs < bounds.connected) continue;
+        if (bounds.disconnected && msgMs > bounds.disconnected) continue;
+      }
+      const raw = trim(m.text);
+      if (!raw) continue;
+      appendLiveAgentVisitorQueryLine_(inboxLines, raw);
+    }
+  } else if (msgs.length) {
+    let startIdx = msgs.length;
+    for (let i = 0; i < msgs.length; i += 1) {
+      const role = trim(msgs[i] && msgs[i].role).toLowerCase();
+      if (role === 'agent' || role === 'staff') {
         startIdx = Math.min(startIdx, i);
         break;
       }
     }
-  }
-  if (startIdx >= msgs.length) {
-    return [];
-  }
-
-  let endIdx = msgs.length - 1;
-  if (bounds && bounds.disconnected) {
-    endIdx = msgs.length - 1;
-    for (let i = msgs.length - 1; i >= startIdx; i -= 1) {
-      const msgMs = parseSessionIsoMs_(msgs[i] && msgs[i].createdAt);
-      if (msgMs > 0 && msgMs <= bounds.disconnected) {
-        endIdx = i;
-        break;
+    if (startIdx < msgs.length) {
+      for (let i = startIdx; i < msgs.length; i += 1) {
+        const m = msgs[i];
+        if (!m) continue;
+        if (trim(m.role).toLowerCase() !== 'visitor') continue;
+        const raw = trim(m.text);
+        if (!raw) continue;
+        appendLiveAgentVisitorQueryLine_(inboxLines, raw);
       }
     }
   }
 
-  /** @type {string[]} */
-  const lines = [];
-  for (let i = startIdx; i <= endIdx; i += 1) {
-    const m = msgs[i];
-    if (!m) continue;
-    const role = trim(m.role).toLowerCase();
-    if (role !== 'visitor') continue;
-    const msgMs = parseSessionIsoMs_(m.createdAt);
-    if (bounds && msgMs > 0) {
-      if (msgMs < bounds.connected) continue;
-      if (bounds.disconnected && msgMs > bounds.disconnected) continue;
-    }
-    const raw = trim(m.text);
-    if (!raw) continue;
-    appendLiveAgentVisitorQueryLine_(lines, raw);
-  }
-  return lines;
+  return mergeUniqueVisitorQueryLines_(inboxLines, widgetHandoffUserQueryLines_(session));
 }
 
 /**

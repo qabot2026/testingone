@@ -6,6 +6,7 @@ import admin from "firebase-admin";
 import { getFirestore } from "firebase-admin/firestore";
 
 import { firebaseAdminInit } from "../firebase-admin-init.mjs";
+import { fetchSessionChatTranscriptContext } from "../firestore.mjs";
 import { getVisitorContext_ } from "./context.mjs";
 import { getLiveAgentSettings_, resolveAgentDisplayName_ } from "./departments.mjs";
 
@@ -144,10 +145,23 @@ async function enrichSessionForSheet_(base) {
     } catch (ctxErr) {
         console.warn(LOG_TAG, "visitor context:", ctxErr.message || ctxErr);
     }
+    /** @type {string[] | undefined} */
+    let widgetUserQueries;
+    try {
+        const transcriptCx = await fetchSessionChatTranscriptContext(base.sessionId);
+        if (transcriptCx && Array.isArray(transcriptCx.user_queries) && transcriptCx.user_queries.length) {
+            widgetUserQueries = transcriptCx.user_queries.filter(
+                (line) => typeof line === "string" && line.trim()
+            );
+        }
+    } catch (uqErr) {
+        console.warn(LOG_TAG, "widget user_queries:", uqErr.message || uqErr);
+    }
     return {
         ...base,
         assignedAgentDisplayName,
         _sheetMeta: sheetMeta,
+        _widgetUserQueries: widgetUserQueries,
         messages: base.messages || []
     };
 }

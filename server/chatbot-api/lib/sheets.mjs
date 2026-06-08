@@ -3181,6 +3181,10 @@ export function assembleFullUserQueriesCsv_(clientLines, handoffCsv) {
             seen.add(k);
         }
     });
+    /** @type {Set<string>} */
+    const preSeen = new Set(
+        pre.map((s) => userQuerySegmentDedupeKey_(s)).filter(Boolean)
+    );
     /** @type {string[]} */
     const postExtra = [];
     for (const seg of post) {
@@ -3189,10 +3193,18 @@ export function assembleFullUserQueriesCsv_(clientLines, handoffCsv) {
             continue;
         }
         const k = userQuerySegmentDedupeKey_(t);
-        if (!k || seen.has(k)) {
+        if (!k) {
+            continue;
+        }
+        if (endIdx >= 0) {
+            if (preSeen.has(k)) {
+                continue;
+            }
+        } else if (seen.has(k)) {
             continue;
         }
         seen.add(k);
+        preSeen.add(k);
         postExtra.push(t);
     }
 

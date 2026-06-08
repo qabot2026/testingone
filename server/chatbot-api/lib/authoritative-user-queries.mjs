@@ -201,6 +201,39 @@ function mergeUserQueryLinesFromContexts_(contexts, primaryContext) {
     return merged;
 }
 
+/** Lines after `__live_agent_ended__` in widget context — always append to assembled CSV tail. */
+function postAgentWidgetLinesFromMerged_(clientLines) {
+    const lines = Array.isArray(clientLines) ? clientLines : [];
+    const endIdx = lines.indexOf(LIVE_AGENT_ENDED_USER_QUERY_MARKER);
+    if (endIdx < 0) {
+        return [];
+    }
+    /** @type {string[]} */
+    const out = [];
+    for (let i = endIdx + 1; i < lines.length; i += 1) {
+        const raw = String(lines[i] ?? "").trim();
+        if (!raw || raw === LIVE_AGENT_ENDED_USER_QUERY_MARKER || isConnectedWithAgentMarker_(raw)) {
+            continue;
+        }
+        if (isUserQuerySheetAndSummaryNoise_(raw)) {
+            continue;
+        }
+        out.push(raw);
+    }
+    return out;
+}
+
+function appendPostAgentWidgetLinesToCsv_(assembledCsv, postWidgetLines) {
+    const postLines = Array.isArray(postWidgetLines) ? postWidgetLines : [];
+    if (!postLines.length) {
+        return typeof assembledCsv === "string" ? assembledCsv.trim() : "";
+    }
+    const postCsv = sanitizeUserQueriesCsvForSheet(postLines.join(", "), {
+        preserveAllChatQueries: true
+    });
+    return mergeUserQueriesCsvPreferRicher_(assembledCsv || "", postCsv);
+}
+
 /**
  * Build Sheet1 User Queries CSV — mirrors chatscript Summary `meta.user_queries`.
  *
@@ -275,6 +308,8 @@ export async function buildAuthoritativeSheet1UserQueriesCsv_(sessionId, options
     if (!csv && clientLines.length) {
         csv = sanitizeUserQueriesCsvForSheet(clientLines.join(", "), { preserveAllChatQueries: true });
     }
+
+    csv = appendPostAgentWidgetLinesToCsv_(csv || "", postAgentWidgetLinesFromMerged_(clientLines));
 
     if (sheetCsvExisting) {
         csv = mergeUserQueriesCsvPreferRicher_(sheetCsvExisting, csv || "");
