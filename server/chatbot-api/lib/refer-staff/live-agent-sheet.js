@@ -69,6 +69,18 @@ function formatTime(d) {
   return `${hour}:${minute}:${second}${dayPeriod}`;
 }
 
+/** Sheet Department column: "General" not "General Department" (strip trailing " Department"). */
+function formatDepartmentNameForSheet_(departmentName, departmentId) {
+  let name = trim(departmentName);
+  if (!name) {
+    const id = trim(departmentId).toLowerCase();
+    if (!id || id === 'general') return 'General';
+    return trim(departmentId).charAt(0).toUpperCase() + trim(departmentId).slice(1);
+  }
+  name = name.replace(/\s+department\s*$/i, '').trim();
+  return name || 'General';
+}
+
 function formatMobileForSheet(meta) {
   const rawMobile = String(meta.mobile || meta.phone || '').trim();
   if (!rawMobile) return '';
@@ -270,7 +282,7 @@ function buildRowValues(session) {
     trim(session.assignedAgentDisplayName) ||
       resolveAgentNameForSheet_(session) ||
       '',
-    trim(session.departmentName) || trim(session.departmentId) || 'General',
+    formatDepartmentNameForSheet_(session.departmentName, session.departmentId),
     trim(session.status) || 'waiting',
     liveAgentSheetUserQueries_(session),
     sid,
