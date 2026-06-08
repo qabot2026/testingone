@@ -3007,8 +3007,35 @@ export function mergeClientAuthoritativeQueriesPreservingHandoff_(existingSheetC
             break;
         }
     }
-    const sheetBotCount = handoffStart;
+    let sheetBotCount = handoffStart;
     const handoffBlock = existing.slice(handoffStart);
+
+    if (
+        handoffStart === 0
+        && handoffBlock.length > 0
+        && isLiveAgentHandoffCsvSegment_(handoffBlock[0])
+        && clientSegs.length > 0
+    ) {
+        const handoffVisitorKeys = new Set(
+            handoffBlock
+                .filter((s) => !isLiveAgentHandoffCsvSegment_(s))
+                .map((s) => userQuerySegmentDedupeKey_(s))
+                .filter(Boolean)
+        );
+        let firstDupIdx = clientSegs.length;
+        for (let i = 0; i < clientSegs.length; i += 1) {
+            const key = userQuerySegmentDedupeKey_(clientSegs[i]);
+            if (key && handoffVisitorKeys.has(key)) {
+                firstDupIdx = i;
+                break;
+            }
+        }
+        if (firstDupIdx >= clientSegs.length) {
+            sheetBotCount = clientSegs.length;
+        } else {
+            sheetBotCount = firstDupIdx;
+        }
+    }
 
     const clientPre = clientSegs.slice(0, Math.min(sheetBotCount, clientSegs.length));
     const clientPost = clientSegs.slice(sheetBotCount);
@@ -5858,7 +5885,7 @@ async function upsertSessionQueriesInSheet_(row) {
     if (rowNumber > 0) {
         const queriesCol = await getUserQueriesColumnInfo_(sheets, tab);
         let existingCsv = "";
-        if (incomingQ && !clientAuthoritativeQueries) {
+        if (incomingQ) {
             const gotQ = await sheetsValuesGet_(sheets, {
                 spreadsheetId: SPREADSHEET_ID,
                 range: `${tab}!${queriesCol.colLetter}${rowNumber}`
@@ -5874,7 +5901,7 @@ async function upsertSessionQueriesInSheet_(row) {
             const replacePrefix =
                 typeof row.replaceCsvPrefix === "string" ? row.replaceCsvPrefix.trim() : "";
             if (clientAuthoritativeQueries && !replacePrefix && !row.replaceLiveAgentHandoffBlock) {
-                merged = mergeClientAuthoritativeQueriesPreservingHandoff_(existingCsv, incomingQ);
+                merged = incomingQ;
             } else if (row.replaceLiveAgentHandoffBlock) {
                 merged = replaceLiveAgentHandoffBlockInCsv_(existingCsv, incomingQ);
             } else {

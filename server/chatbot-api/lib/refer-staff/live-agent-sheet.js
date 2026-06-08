@@ -143,9 +143,21 @@ function parseSessionIsoMs_(iso) {
 
 /** Connected = agent accepted/claimed; disconnected = session closed (if still open, no upper bound). */
 function liveAgentConnectedWindowBounds_(session) {
-  const connected =
+  let connected =
     parseSessionIsoMs_(session && session.acceptedAt)
     || parseSessionIsoMs_(session && session.claimedAt);
+  if (!connected) {
+    const msgs = (session && session.messages) || [];
+    for (let i = 0; i < msgs.length; i += 1) {
+      const role = trim(msgs[i] && msgs[i].role).toLowerCase();
+      if (role !== 'agent' && role !== 'staff') continue;
+      const ms = parseSessionIsoMs_(msgs[i] && msgs[i].createdAt);
+      if (ms > 0) {
+        connected = ms;
+        break;
+      }
+    }
+  }
   if (!connected) {
     return null;
   }
@@ -252,7 +264,10 @@ function liveAgentVisitorQueriesInConnectedWindow_(session) {
       const role = trim(m.role).toLowerCase();
       if (role !== 'visitor') continue;
       const msgMs = parseSessionIsoMs_(m.createdAt);
-      if (msgMs > 0 && !messageInLiveAgentConnectedWindow_(msgMs, bounds)) continue;
+      if (msgMs > 0) {
+        if (msgMs < bounds.connected) continue;
+        if (bounds.disconnected && msgMs > bounds.disconnected) continue;
+      }
       const raw = trim(m.text);
       if (!raw) continue;
       appendLiveAgentVisitorQueryLine_(lines, raw);

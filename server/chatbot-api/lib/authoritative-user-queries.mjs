@@ -111,13 +111,10 @@ function normalizeUserQueriesCsvFromClientContext_(ctx) {
     return sanitizeUserQueriesCsvForSheet(lines.join(", "), { preserveAllChatQueries: true });
 }
 
-/**
- * @param {string} sheetCsv
- * @param {Array<Record<string, unknown> | null | undefined>} contexts
- */
-function mergeAuthoritativeUserQueriesCsv_(sheetCsv, contexts) {
+/** @param {Record<string, unknown>[]} contexts */
+function longestUserQueryLinesFromContexts_(contexts) {
     /** @type {string[]} */
-    let best = userQueryLinesFromCsv_(sheetCsv);
+    let best = [];
     const list = Array.isArray(contexts) ? contexts : [];
     for (let i = 0; i < list.length; i += 1) {
         const ctx = list[i];
@@ -129,7 +126,7 @@ function mergeAuthoritativeUserQueriesCsv_(sheetCsv, contexts) {
             best = fromCtx;
         }
     }
-    return best.join(", ");
+    return best;
 }
 
 /**
@@ -146,23 +143,6 @@ export async function buildAuthoritativeSheet1UserQueriesCsv_(sessionId, options
     const sid = trim_(sessionId);
     if (!sid) {
         return "";
-    }
-
-    let sheetCsv = options.sheetCsv;
-    if (sheetCsv === undefined) {
-        try {
-            const got = await fetchLeadSheetUserQueriesForSession(sid);
-            sheetCsv = got && typeof got.csv === "string" ? got.csv : "";
-        } catch {
-            sheetCsv = "";
-        }
-    }
-
-    let csv = "";
-    try {
-        csv = (await mergedSheet1UserQueriesCsv_(sid, sheetCsv || "")) || sheetCsv || "";
-    } catch {
-        csv = sheetCsv || "";
     }
 
     /** @type {Record<string, unknown>[]} */
@@ -185,13 +165,38 @@ export async function buildAuthoritativeSheet1UserQueriesCsv_(sessionId, options
         }
     }
 
-    for (let i = 0; i < contexts.length; i += 1) {
-        const clientCsv = normalizeUserQueriesCsvFromClientContext_(contexts[i]);
-        if (clientCsv) {
-            csv = mergeClientAuthoritativeQueriesPreservingHandoff_(csv, clientCsv);
+    let sheetCsv = options.sheetCsv;
+    if (sheetCsv === undefined) {
+        try {
+            const got = await fetchLeadSheetUserQueriesForSession(sid);
+            sheetCsv = got && typeof got.csv === "string" ? got.csv : "";
+        } catch {
+            sheetCsv = "";
         }
     }
 
-    csv = mergeAuthoritativeUserQueriesCsv_(csv, contexts);
+    const clientLines = longestUserQueryLinesFromContexts_(contexts);
+    const clientCsv = clientLines.length
+        ? sanitizeUserQueriesCsvForSheet(clientLines.join(", "), { preserveAllChatQueries: true })
+        : "";
+
+    let base = typeof sheetCsv === "string" ? sheetCsv.trim() : "";
+    if (!base && clientCsv) {
+        base = clientCsv;
+    }
+
+    let csv = "";
+    try {
+        csv = (await mergedSheet1UserQueriesCsv_(sid, base)) || base || "";
+    } catch {
+        csv = base || "";
+    }
+
+    if (clientCsv) {
+        csv = mergeClientAuthoritativeQueriesPreservingHandoff_(csv, clientCsv);
+    } else if (!csv && base) {
+        csv = base;
+    }
+
     return sanitizeUserQueriesCsvForSheet(csv, { preserveAllChatQueries: true });
 }

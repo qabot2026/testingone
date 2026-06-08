@@ -120,9 +120,11 @@ export async function syncLiveAgentToSheet_(conversationId) {
     }
 
     const { buildAuthoritativeSheet1UserQueriesCsv_ } = await import("../authoritative-user-queries.mjs");
-    const authoritativeCsv = await buildAuthoritativeSheet1UserQueriesCsv_(id);
+    const authoritativeCsv = await buildAuthoritativeSheet1UserQueriesCsv_(id, {
+        loadFirestoreContext: true
+    });
     if (!authoritativeCsv) {
-        return { ok: false, skipped: "empty_handoff_queries" };
+        return { ok: false, skipped: "empty_user_queries" };
     }
 
     const meta =
