@@ -40,7 +40,10 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
+
+const require_ = createRequire(import.meta.url);
 import express from "express";
 import cors from "cors";
 import multer from "multer";
@@ -7217,6 +7220,25 @@ app.get(PATHNAME_CONVERSATION_TRANSCRIPT_JSON, async (req, res) => {
                     }
                 }
             }
+        }
+
+        try {
+            const { loadSessionForLiveAgentSheet } = await import("./lib/live-agent/firestore-bridge.mjs");
+            const laSession = await loadSessionForLiveAgentSheet(session);
+            if (laSession) {
+                const liveAgentSheet = require_("./lib/refer-staff/live-agent-sheet.js");
+                if (typeof liveAgentSheet.buildSheet2UserQueriesForSheet === "function") {
+                    const laUq = liveAgentSheet.buildSheet2UserQueriesForSheet(laSession);
+                    if (laUq) {
+                        meta = { ...meta, live_agent_user_queries: laUq };
+                    }
+                }
+            }
+        } catch (laMetaErr) {
+            console.warn(
+                "[chatbot-api] conversation-transcript live_agent_user_queries:",
+                laMetaErr && laMetaErr.message ? laMetaErr.message : laMetaErr
+            );
         }
 
         return res.json({

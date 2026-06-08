@@ -128,10 +128,75 @@ function sessionQualifies(session) {
   });
 }
 
+function parseSessionIsoMs_(iso) {
+  const ms = Date.parse(iso || '');
+  return Number.isFinite(ms) ? ms : 0;
+}
+
+/** Connected = agent accepted/claimed; disconnected = session closed (if still open, no upper bound). */
+function liveAgentConnectedWindowBounds_(session) {
+  const connected =
+    parseSessionIsoMs_(session && session.acceptedAt)
+    || parseSessionIsoMs_(session && session.claimedAt);
+  if (!connected) {
+    return null;
+  }
+  const disconnected = parseSessionIsoMs_(session && session.closedAt);
+  return {
+    connected,
+    disconnected: disconnected > connected ? disconnected : 0
+  };
+}
+
+function messageInLiveAgentConnectedWindow_(msgMs, bounds) {
+  if (!bounds) {
+    return false;
+  }
+  if (msgMs > 0) {
+    if (msgMs < bounds.connected) {
+      return false;
+    }
+    if (bounds.disconnected && msgMs > bounds.disconnected) {
+      return false;
+    }
+    return true;
+  }
+  // Undated message: only while session is still open (no closedAt).
+  return !bounds.disconnected;
+}
+
+/**
+ * Live Agent sheet User Queries — visitor lines only while connected to an agent
+ * (accepted/claimed through closed). Queue/waiting messages are excluded.
+ */
+function buildSheet2UserQueriesForSheet(session) {
+  const bounds = liveAgentConnectedWindowBounds_(session);
+  if (!bounds) {
+    return '';
+  }
+  const msgs = (session && session.messages) || [];
+  const lines = [];
+  msgs.forEach((m) => {
+    if (!m) return;
+    const role = trim(m.role).toLowerCase();
+    if (role !== 'visitor') return;
+    const msgMs = parseSessionIsoMs_(m.createdAt);
+    if (!messageInLiveAgentConnectedWindow_(msgMs, bounds)) return;
+    const raw = trim(m.text);
+    if (!raw) return;
+    if (transcriptDisplay.isHandoffRequestLine(raw)) return;
+    const text = transcriptDisplay.normalizeUserQueryText(raw) || raw;
+    if (!text || transcriptDisplay.isInternalActionToken(text)) return;
+    lines.push(text);
+  });
+  if (!lines.length) {
+    return '';
+  }
+  return lines.join(', ').slice(0, 2000);
+}
+
 function liveAgentSheetUserQueries_(session) {
-  const handoff = buildSheet1LiveAgentHandoffQueries(session);
-  if (handoff) return handoff;
-  return liveAgentQueriesFromSession(session);
+  return buildSheet2UserQueriesForSheet(session);
 }
 
 function resolveAgentNameForSheet_(session) {
@@ -160,7 +225,7 @@ async function loadSessionForSheet_(sessionId) {
     : liveAgentStore.getSession(sid);
 }
 
-/** Visitor lines during live-agent chat — for Sheet1 User Queries (not bot transcript). */
+/** Visitor lines during live-agent chat — all handoff messages (Sheet1 tail; not time-filtered). */
 function liveAgentVisitorQueriesFromSession(session) {
   const msgs = (session && session.messages) || [];
   const lines = [];
@@ -499,6 +564,7 @@ module.exports = {
   syncDashboardToSheet2,
   buildRowValues,
   buildSheet1LiveAgentHandoffQueries,
+  buildSheet2UserQueriesForSheet,
   liveAgentQueriesFromSession,
   sessionQualifies,
 };

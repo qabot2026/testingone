@@ -1215,6 +1215,9 @@
 
         if (userQueriesVal) pairs.push(["User queries", String(userQueriesVal)]);
 
+        var liveAgentUq = normalizeDetailValue(meta.live_agent_user_queries);
+        if (liveAgentUq) pairs.push(["Live agent queries", String(liveAgentUq)]);
+
         if (!pairs.length) {
           detailsWrap.hidden = true;
           summaryRail.hidden = true;
