@@ -143,6 +143,10 @@ const SESSION_TRANSCRIPT_SYNC_ENDPOINT = "/api/session-transcript-sync";
 /** Dialogflow custom payload `action` → hand off to human agent inbox (`/live-agent`). */
 const LIVE_AGENT_REQUEST_ACTION = "request_live_agent";
 const LIVE_AGENT_POLL_INTERVAL_MS = 500;
+/** Faster sync while visitor waits in queue for an agent to accept. */
+const LIVE_AGENT_WAITING_POLL_INTERVAL_MS = 250;
+const LIVE_AGENT_WAITING_SYNC_WAIT_MS = 120;
+const LIVE_AGENT_ACTIVE_SYNC_WAIT_MS = 350;
 let liveAgentHandoffActive = false;
 /** True only after an agent has accepted (active human chat) — visitor text goes to agent inbox, not Dialogflow. */
 let liveAgentHumanChatActive = false;
@@ -172,6 +176,8 @@ let liveAgentModeRefreshAt_ = 0;
 /** @type {Promise<void> | null} */
 let liveAgentModeRefreshInFlight_ = null;
 let liveAgentPollTimerId = 0;
+let liveAgentPollTickInFlight_ = false;
+let liveAgentWaitingPollBoostTimerId_ = 0;
 let liveAgentMessagesSinceIso = "";
 /** Keeps agent chat lines after async CX galleries / carousels (refer uses sync append; DF CX does not). */
 let liveAgentTailPinObserver_ = null;
@@ -16636,7 +16642,48 @@ function stopLiveAgentPoll_() {
         window.clearInterval(liveAgentPollTimerId);
         liveAgentPollTimerId = 0;
     }
+    if (liveAgentWaitingPollBoostTimerId_) {
+        window.clearTimeout(liveAgentWaitingPollBoostTimerId_);
+        liveAgentWaitingPollBoostTimerId_ = 0;
+    }
+    liveAgentPollTickInFlight_ = false;
     liveAgentStopAgentTypingPulse_();
+}
+
+function liveAgentSyncWaitMs_() {
+    if (liveAgentCachedConvStatus === "waiting") {
+        return LIVE_AGENT_WAITING_SYNC_WAIT_MS;
+    }
+    return LIVE_AGENT_ACTIVE_SYNC_WAIT_MS;
+}
+
+function liveAgentPollIntervalMs_() {
+    if (liveAgentCachedConvStatus === "waiting") {
+        return LIVE_AGENT_WAITING_POLL_INTERVAL_MS;
+    }
+    return LIVE_AGENT_POLL_INTERVAL_MS;
+}
+
+/**
+ * Extra poll while queue status is waiting so accept is noticed without waiting for the next interval tick.
+ * @param {HTMLElement | null | undefined} dfMessenger
+ * @param {number} [delayMs]
+ */
+function liveAgentScheduleExtraPollWhileWaiting_(dfMessenger, delayMs) {
+    if (!liveAgentHandoffIsActive_() || liveAgentCachedConvStatus !== "waiting") {
+        return;
+    }
+    if (liveAgentWaitingPollBoostTimerId_) {
+        return;
+    }
+    const wait = typeof delayMs === "number" && delayMs >= 0 ? delayMs : 140;
+    liveAgentWaitingPollBoostTimerId_ = window.setTimeout(() => {
+        liveAgentWaitingPollBoostTimerId_ = 0;
+        if (!liveAgentHandoffIsActive_() || liveAgentCachedConvStatus !== "waiting") {
+            return;
+        }
+        void liveAgentPollTick_(dfMessenger);
+    }, wait);
 }
 
 function liveAgentStopAgentTypingPulse_() {
@@ -19453,6 +19500,9 @@ async function liveAgentPollTick_(dfMessenger) {
     if (!liveAgentHandoffIsActive_()) {
         return;
     }
+    if (liveAgentPollTickInFlight_) {
+        return;
+    }
     const sid = liveAgentSessionId_();
     if (!sid) {
         return;
@@ -19462,12 +19512,15 @@ async function liveAgentPollTick_(dfMessenger) {
             + encodeURIComponent(sid)
             + "&rev="
             + liveAgentDeskRev_
-            + "&waitMs=350&lastMessageId="
+            + "&waitMs="
+            + liveAgentSyncWaitMs_()
+            + "&lastMessageId="
             + encodeURIComponent(liveAgentLastSyncMessageId_)
     );
     if (!syncUrl) {
         return;
     }
+    liveAgentPollTickInFlight_ = true;
     try {
         const stRes = await fetch(syncUrl);
         const stData = await stRes.json().catch(() => ({}));
@@ -19486,6 +19539,7 @@ async function liveAgentPollTick_(dfMessenger) {
                 syncLiveAgentModeCacheFromConversation_(stData.conversation, stData);
                 liveAgentOnVisitorHumanChatActivated_(dfMessenger, wasHuman);
                 liveAgentApplyConnectionNoticesFromSync_(dfMessenger, stData);
+                liveAgentMaybeAnnounceConnectedFromStatus_(dfMessenger, stData, wasHuman);
             } else {
                 await liveAgentRefreshModeFromServer_(true);
             }
@@ -19547,6 +19601,7 @@ async function liveAgentPollTick_(dfMessenger) {
 
         liveAgentSetAgentTypingIndicator_(dfMessenger, stData.agentTyping || "");
         liveAgentApplyConnectionNoticesFromSync_(dfMessenger, stData);
+        liveAgentMaybeAnnounceConnectedFromStatus_(dfMessenger, stData, wasHuman);
 
         const keepPoll =
             status === "waiting" ||
@@ -19613,12 +19668,12 @@ async function liveAgentPollTick_(dfMessenger) {
         scheduleSuppressDfMessengerErrorUi_();
     } catch {
         /* ignore */
+    } finally {
+        liveAgentPollTickInFlight_ = false;
+        liveAgentScheduleExtraPollWhileWaiting_(dfMessenger);
     }
 }
 
-/**
- * @param {HTMLElement | null | undefined} dfMessenger
- */
 /**
  * Reliable send path: native textarea Enter (df-request-sent often stops after agent connect).
  * @param {HTMLElement | null | undefined} dfMessenger
@@ -19744,7 +19799,7 @@ function startLiveAgentPoll_(dfMessenger) {
     const tick = () => {
         liveAgentPollTick_(ms);
     };
-    liveAgentPollTimerId = window.setInterval(tick, LIVE_AGENT_POLL_INTERVAL_MS);
+    liveAgentPollTimerId = window.setInterval(tick, liveAgentPollIntervalMs_());
     tick();
 }
 

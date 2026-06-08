@@ -189,7 +189,8 @@ export async function liveSyncPoll_({
     audience
 }) {
     const id = trim_(conversationId);
-    const deadline = Date.now() + Math.min(Math.max(Number(waitMs) || 900, 400), 28000);
+    const waitBudget = Math.min(Math.max(Number(waitMs) || 900, 80), 28000);
+    const deadline = Date.now() + waitBudget;
     const since = trim_(sinceId || lastMessageId);
 
     while (Date.now() < deadline) {
