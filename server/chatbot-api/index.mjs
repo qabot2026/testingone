@@ -3509,13 +3509,6 @@ app.post(
             });
         }
 
-        const { buildAuthoritativeSheet1UserQueriesCsv_ } = await import(
-            "./lib/authoritative-user-queries.mjs"
-        );
-        const userQueriesCsv = await buildAuthoritativeSheet1UserQueriesCsv_(clientSessionId, {
-            clientContext: mergedClientContext,
-            loadFirestoreContext: true
-        });
         const coercedTranscript = coerceChatTranscriptArray_(mergedClientContext.chat_transcript);
         mergedClientContext.chat_transcript = coercedTranscript;
         const assistantQueries = Array.isArray(mergedClientContext.assistant_queries)
@@ -3523,12 +3516,6 @@ app.post(
             : [];
         const hasLiveChatTranscript =
             coercedTranscript.length > 0 || assistantQueries.length > 0;
-        const chatTranscriptJson = sheetsWriteChatTranscriptJsonEnabled_()
-            ? stringifyChatTranscriptForSheetPayload_(mergedClientContext)
-            : "";
-        if (!userQueriesCsv && !hasLiveChatTranscript) {
-            return res.status(200).json({ ok: true, message: "Nothing to sync." });
-        }
 
         const browserName = typeof clientContext.browser_name === "string"
             ? clientContext.browser_name.trim()
@@ -3571,7 +3558,7 @@ app.post(
         const sourceUrl = resolveSourceUrlForSheet(mergedClientContext);
         mergedClientContext = await enrichClientContextForSheetMetricsAsync_(mergedClientContext, {
             sessionId: clientSessionId,
-            incomingRow: chatTranscriptJson ? { chatTranscriptJson } : {}
+            incomingRow: {}
         });
         const conversationMetricsSync = computeConversationMetricsFromClientContext_(mergedClientContext);
         mergedClientContext = mergeConversationMetricsIntoClientContext_(
@@ -3581,7 +3568,7 @@ app.post(
 
         let sessionTranscriptStored = false;
         let leadTranscriptPatched = false;
-        if (!FIRESTORE_DISABLED && (hasLiveChatTranscript || userQueriesCsv)) {
+        if (!FIRESTORE_DISABLED && (hasLiveChatTranscript || clientContextHasUserChatEngagement_(mergedClientContext))) {
             try {
                 const fsPatch = await patchSessionTranscriptFirestore_(
                     clientSessionId,
@@ -3593,6 +3580,20 @@ app.post(
                 const detail = fe && fe.message ? fe.message : String(fe);
                 console.warn("[chatbot-api] session-sheet-sync Firestore transcript patch:", detail.slice(0, 240));
             }
+        }
+
+        const { buildAuthoritativeSheet1UserQueriesCsv_ } = await import(
+            "./lib/authoritative-user-queries.mjs"
+        );
+        const userQueriesCsv = await buildAuthoritativeSheet1UserQueriesCsv_(clientSessionId, {
+            clientContext: mergedClientContext,
+            loadFirestoreContext: true
+        });
+        const chatTranscriptJson = sheetsWriteChatTranscriptJsonEnabled_()
+            ? stringifyChatTranscriptForSheetPayload_(mergedClientContext)
+            : "";
+        if (!userQueriesCsv && !hasLiveChatTranscript) {
+            return res.status(200).json({ ok: true, message: "Nothing to sync." });
         }
 
         /** @type {Record<string, unknown>} */

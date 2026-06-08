@@ -20526,6 +20526,7 @@ function trackChatUserQueryInSessionContext_(raw) {
         }
         const existing = prev && Array.isArray(prev.user_queries) ? prev.user_queries : [];
         const next = existing.filter((x) => typeof x === "string" && x.trim());
+        const inPostAgentPhase = next.includes(LIVE_AGENT_ENDED_USER_QUERY_MARKER);
 
         // Deduplicate: `df-user-input-entered` and `df-request-sent` can fire for the same user message.
         const last = next.length ? String(next[next.length - 1]).trim() : "";
@@ -20534,16 +20535,18 @@ function trackChatUserQueryInSessionContext_(raw) {
         if (lastKey && key && lastKey === key) {
             return;
         }
-        const transcriptProbe =
-            prev.chat_transcript && Array.isArray(prev.chat_transcript) ? prev.chat_transcript : [];
-        for (let ti = transcriptProbe.length - 1; ti >= Math.max(0, transcriptProbe.length - 6); ti -= 1) {
-            const tr = transcriptProbe[ti];
-            if (
-                tr
-                && tr.role === "user"
-                && normalizeChatTranscriptCompareText_(tr.text) === key
-            ) {
-                return;
+        if (!inPostAgentPhase) {
+            const transcriptProbe =
+                prev.chat_transcript && Array.isArray(prev.chat_transcript) ? prev.chat_transcript : [];
+            for (let ti = transcriptProbe.length - 1; ti >= Math.max(0, transcriptProbe.length - 6); ti -= 1) {
+                const tr = transcriptProbe[ti];
+                if (
+                    tr
+                    && tr.role === "user"
+                    && normalizeChatTranscriptCompareText_(tr.text) === key
+                ) {
+                    return;
+                }
             }
         }
         const now = Date.now();
@@ -20572,6 +20575,13 @@ function trackChatUserQueryInSessionContext_(raw) {
         });
         scheduleSessionQueriesSheetSync_();
         scheduleSessionTranscriptFirestoreSync_();
+        if (inPostAgentPhase) {
+            try {
+                postSessionQueriesToSheetRow_({ force: true });
+            } catch {
+                /* ignore */
+            }
+        }
     } catch {
         /* ignore */
     }

@@ -76,33 +76,129 @@ function userQueryLinesFromContextForSheet_(ctx) {
     return out;
 }
 
-/** Prefer the fullest context; when tied, prefer one that recorded agent disconnect. */
-function bestUserQueryLinesFromContexts_(contexts) {
-    /** @type {string[]} */
-    let best = [];
-    /** @type {string[]} */
-    let bestEnded = [];
+function userQueryLineKey_(line) {
+    return String(line ?? "")
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, " ");
+}
+
+/**
+ * Merge widget + Firestore `user_queries` without dropping post-agent lines.
+ * Stale Firestore snapshots can be longer but miss `__live_agent_ended__`; always union post-end lines.
+ *
+ * @param {Record<string, unknown>[]} contexts
+ * @param {Record<string, unknown> | null | undefined} [primaryContext] live request context wins as base
+ */
+function mergeUserQueryLinesFromContexts_(contexts, primaryContext) {
+    /** @type {{ lines: string[], lastAt: number, isPrimary: boolean }[]} */
+    const parsed = [];
     const list = Array.isArray(contexts) ? contexts : [];
+
+    if (primaryContext && typeof primaryContext === "object") {
+        const lines = userQueryLinesFromContextForSheet_(primaryContext);
+        if (lines.length) {
+            const lastAt =
+                typeof primaryContext.user_queries_last_at === "number"
+                && Number.isFinite(primaryContext.user_queries_last_at)
+                    ? primaryContext.user_queries_last_at
+                    : Number.MAX_SAFE_INTEGER;
+            parsed.push({ lines, lastAt, isPrimary: true });
+        }
+    }
+
     for (let i = 0; i < list.length; i += 1) {
         const ctx = list[i];
         if (!ctx || typeof ctx !== "object") {
             continue;
         }
-        const fromCtx = userQueryLinesFromContextForSheet_(ctx);
-        if (fromCtx.length > best.length) {
-            best = fromCtx;
+        if (ctx === primaryContext) {
+            continue;
         }
-        if (
-            fromCtx.includes(LIVE_AGENT_ENDED_USER_QUERY_MARKER)
-            && fromCtx.length >= bestEnded.length
-        ) {
-            bestEnded = fromCtx;
+        const lines = userQueryLinesFromContextForSheet_(ctx);
+        if (!lines.length) {
+            continue;
+        }
+        const lastAt =
+            typeof ctx.user_queries_last_at === "number" && Number.isFinite(ctx.user_queries_last_at)
+                ? ctx.user_queries_last_at
+                : 0;
+        parsed.push({ lines, lastAt, isPrimary: false });
+    }
+
+    if (!parsed.length) {
+        return [];
+    }
+    if (parsed.length === 1) {
+        return parsed[0].lines;
+    }
+
+    let baseIdx = parsed.findIndex((p) => p.isPrimary);
+    if (baseIdx < 0) {
+        baseIdx = 0;
+        for (let i = 0; i < parsed.length; i += 1) {
+            const cur = parsed[i];
+            const base = parsed[baseIdx];
+            const curHasEnd = cur.lines.includes(LIVE_AGENT_ENDED_USER_QUERY_MARKER);
+            const baseHasEnd = base.lines.includes(LIVE_AGENT_ENDED_USER_QUERY_MARKER);
+            if (curHasEnd && !baseHasEnd) {
+                baseIdx = i;
+            } else if (curHasEnd && baseHasEnd) {
+                if (
+                    cur.lastAt > base.lastAt
+                    || (cur.lastAt === base.lastAt && cur.lines.length > base.lines.length)
+                ) {
+                    baseIdx = i;
+                }
+            } else if (!baseHasEnd) {
+                if (
+                    cur.lastAt > base.lastAt
+                    || (cur.lastAt === base.lastAt && cur.lines.length > base.lines.length)
+                ) {
+                    baseIdx = i;
+                }
+            }
         }
     }
-    if (bestEnded.length) {
-        return bestEnded.length >= best.length ? bestEnded : best;
+
+    const merged = parsed[baseIdx].lines.slice();
+    /** @type {Set<string>} */
+    const seen = new Set(merged.map((line) => userQueryLineKey_(line)).filter(Boolean));
+
+    /** @type {string[]} */
+    const postEndUnion = [];
+    let anyEndMarker = merged.includes(LIVE_AGENT_ENDED_USER_QUERY_MARKER);
+
+    for (let i = 0; i < parsed.length; i += 1) {
+        const { lines } = parsed[i];
+        if (lines.includes(LIVE_AGENT_ENDED_USER_QUERY_MARKER)) {
+            anyEndMarker = true;
+        }
+        const endIdx = lines.indexOf(LIVE_AGENT_ENDED_USER_QUERY_MARKER);
+        if (endIdx < 0) {
+            continue;
+        }
+        for (let j = endIdx + 1; j < lines.length; j += 1) {
+            const line = lines[j];
+            const k = userQueryLineKey_(line);
+            if (!k || seen.has(k)) {
+                continue;
+            }
+            seen.add(k);
+            postEndUnion.push(line);
+        }
     }
-    return best;
+
+    if (postEndUnion.length) {
+        if (!merged.includes(LIVE_AGENT_ENDED_USER_QUERY_MARKER)) {
+            merged.push(LIVE_AGENT_ENDED_USER_QUERY_MARKER);
+        }
+        merged.push(...postEndUnion);
+    } else if (anyEndMarker && !merged.includes(LIVE_AGENT_ENDED_USER_QUERY_MARKER)) {
+        merged.push(LIVE_AGENT_ENDED_USER_QUERY_MARKER);
+    }
+
+    return merged;
 }
 
 /**
@@ -153,7 +249,7 @@ export async function buildAuthoritativeSheet1UserQueriesCsv_(sessionId, options
         }
     }
 
-    const clientLines = bestUserQueryLinesFromContexts_(contexts);
+    const clientLines = mergeUserQueryLinesFromContexts_(contexts, options.clientContext);
 
     let sheetCsvExisting = "";
     if (options.sheetCsv === undefined) {
