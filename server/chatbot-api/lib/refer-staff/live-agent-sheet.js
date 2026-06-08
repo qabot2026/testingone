@@ -117,6 +117,14 @@ function formatMobileForSheet(meta) {
   return rawMobile.replace(/^\+/, '').trim();
 }
 
+function isUserQuerySheetNoise_(text) {
+  const t = trim(text);
+  if (!t) return true;
+  if (/^__form_closed:/i.test(t)) return true;
+  if (/\bform\s+closed\.?$/i.test(t)) return true;
+  return false;
+}
+
 function sessionQualifies(session) {
   if (!session || !session.sessionId) return false;
   if (session.requestedAt || session.createdAt) return true;
@@ -186,7 +194,7 @@ function buildSheet2UserQueriesForSheet(session) {
     if (!raw) return;
     if (transcriptDisplay.isHandoffRequestLine(raw)) return;
     const text = transcriptDisplay.normalizeUserQueryText(raw) || raw;
-    if (!text || transcriptDisplay.isInternalActionToken(text)) return;
+    if (!text || transcriptDisplay.isInternalActionToken(text) || isUserQuerySheetNoise_(text)) return;
     lines.push(text);
   });
   if (!lines.length) {
@@ -237,7 +245,7 @@ function liveAgentVisitorQueriesFromSession(session) {
     if (!raw) return;
     if (transcriptDisplay.isHandoffRequestLine(raw)) return;
     const text = transcriptDisplay.normalizeUserQueryText(raw) || raw;
-    if (!text || transcriptDisplay.isInternalActionToken(text)) return;
+    if (!text || transcriptDisplay.isInternalActionToken(text) || isUserQuerySheetNoise_(text)) return;
     lines.push(text);
   });
   return lines.join(' | ').slice(0, 2000);

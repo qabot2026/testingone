@@ -2836,6 +2836,60 @@ const USER_QUERY_NOISE_KEYS = new Set(
     ].map(normalizedUserQueryNoiseKey_)
 );
 
+/** Form closed / dismiss actions — staff script only, not Sheet User Queries or Summary. */
+function isUserQuerySheetNoiseSegment_(seg) {
+    const t = String(seg ?? "").trim();
+    if (!t) {
+        return true;
+    }
+    if (/^__form_closed:/i.test(t)) {
+        return true;
+    }
+    if (/\bform\s+closed\.?$/i.test(t)) {
+        return true;
+    }
+    return false;
+}
+
+function userQuerySegmentDedupeKey_(seg) {
+    return String(seg ?? "")
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, " ");
+}
+
+/**
+ * Drop handoff visitor lines already present in the bot prefix (e.g. repeat B, D after connect).
+ *
+ * @param {string[]} botSegments
+ * @param {string[]} handoffSegments
+ */
+function dedupeHandoffSegmentsAgainstBot_(botSegments, handoffSegments) {
+    const seen = new Set(
+        botSegments
+            .filter((s) => !isLiveAgentHandoffCsvSegment_(s))
+            .map(userQuerySegmentDedupeKey_)
+    );
+    const out = [];
+    for (const seg of handoffSegments) {
+        const t = String(seg ?? "").trim();
+        if (!t || isUserQuerySheetNoiseSegment_(t)) {
+            continue;
+        }
+        if (isLiveAgentHandoffCsvSegment_(t)) {
+            out.push(t);
+            continue;
+        }
+        const key = userQuerySegmentDedupeKey_(t);
+        if (seen.has(key)) {
+            continue;
+        }
+        seen.add(key);
+        out.push(t);
+    }
+    return out;
+}
+
 /**
  * @param {string} csv
  * @param {{ preserveAllChatQueries?: boolean }} [options]
@@ -2850,6 +2904,9 @@ export function sanitizeUserQueriesCsvForSheet(csv, options = {}) {
     for (const p of splitCsvValues_(csv)) {
         const t = String(p || "").trim();
         if (!t) {
+            continue;
+        }
+        if (isUserQuerySheetNoiseSegment_(t)) {
             continue;
         }
         if (!preserveAllChatQueries) {
@@ -2907,11 +2964,24 @@ function replaceLiveAgentHandoffBlockInCsv_(existingCsv, newHandoffCsv) {
         }
     }
     const bot = all.slice(0, cut);
-    const handoff = splitCsvValues_(sanitizeUserQueriesCsvForSheet(newHandoffCsv));
+    const handoff = dedupeHandoffSegmentsAgainstBot_(
+        bot,
+        splitCsvValues_(sanitizeUserQueriesCsvForSheet(newHandoffCsv))
+    );
     if (!handoff.length) {
         return bot.join(", ");
     }
     return [...bot, ...handoff].join(", ");
+}
+
+/**
+ * Merge live-agent handoff tail into Sheet1 User Queries (exported for sheet-sync read path).
+ *
+ * @param {string} existingCsv
+ * @param {string} newHandoffCsv
+ */
+export function mergeLiveAgentHandoffIntoUserQueriesCsv_(existingCsv, newHandoffCsv) {
+    return replaceLiveAgentHandoffBlockInCsv_(existingCsv, newHandoffCsv);
 }
 
 /** Handoff markers + live-agent chat tail already on the row (preserve across bot query refresh). */

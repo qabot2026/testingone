@@ -8,6 +8,7 @@ import { createRequire } from "node:module";
 import {
     formatChannelForSheetDisplay,
     formatMobileForSheetDisplay,
+    mergeLiveAgentHandoffIntoUserQueriesCsv_,
     upsertSessionQueriesInSheet
 } from "../sheets.mjs";
 import { isSheet1SyncExcluded_ } from "../sheet-sync-suppression.mjs";
@@ -20,56 +21,6 @@ const sheet1SyncChains = new Map();
 
 function trim_(v) {
     return typeof v === "string" ? v.trim() : "";
-}
-
-function splitCsvValues_(raw) {
-    const s = typeof raw === "string" ? raw : "";
-    if (!s.trim()) {
-        return [];
-    }
-    return s
-        .split(",")
-        .map((x) => x.trim())
-        .filter(Boolean);
-}
-
-function isLiveAgentHandoffCsvSegment_(seg) {
-    const t = String(seg ?? "").trim();
-    if (!t) {
-        return false;
-    }
-    if (/^\[Live Agent\]/i.test(t)) {
-        return true;
-    }
-    if (/^human agent requested$/i.test(t)) {
-        return true;
-    }
-    if (/^connected with agent$/i.test(t)) {
-        return true;
-    }
-    return (
-        /Status:\s*/i.test(t)
-        && /Dept:/i.test(t)
-        && (/Queue:/i.test(t) || /Agent:/i.test(t))
-    );
-}
-
-/** Keep bot queries before the first handoff marker; replace the handoff tail on each sync. */
-function mergeHandoffIntoUserQueriesCsv_(existingCsv, newHandoffCsv) {
-    const all = splitCsvValues_(existingCsv);
-    let cut = all.length;
-    for (let i = 0; i < all.length; i += 1) {
-        if (isLiveAgentHandoffCsvSegment_(all[i])) {
-            cut = i;
-            break;
-        }
-    }
-    const bot = all.slice(0, cut);
-    const handoff = splitCsvValues_(typeof newHandoffCsv === "string" ? newHandoffCsv.trim() : "");
-    if (!handoff.length) {
-        return bot.join(", ");
-    }
-    return [...bot, ...handoff].join(", ");
 }
 
 /**
@@ -138,7 +89,7 @@ export async function mergedSheet1UserQueriesCsv_(sessionId, existingCsv) {
     if (!handoff) {
         return base;
     }
-    return mergeHandoffIntoUserQueriesCsv_(base, handoff);
+    return mergeLiveAgentHandoffIntoUserQueriesCsv_(base, handoff);
 }
 
 /**

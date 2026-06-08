@@ -20458,6 +20458,23 @@ function trackChatUserQueryInSessionContext_(raw) {
         : tRaw;
     try {
         const prev = readStoredClientContext();
+        if (/^__form_closed:/i.test(t)) {
+            const now = Date.now();
+            const seq = bumpChatTranscriptSeq_(prev);
+            const transcript =
+                prev.chat_transcript && Array.isArray(prev.chat_transcript)
+                    ? prev.chat_transcript.slice()
+                    : [];
+            transcript.push({ role: "user", text: t, at: now, seq });
+            notifyUserActivityForIdleEnd_(activeDfMessenger);
+            persistClientContext({
+                ...prev,
+                chat_transcript: transcript.slice(-MAX_CHAT_TRANSCRIPT_TURNS),
+                chat_transcript_seq: seq
+            });
+            scheduleSessionTranscriptFirestoreSync_();
+            return;
+        }
         const existing = prev && Array.isArray(prev.user_queries) ? prev.user_queries : [];
         const next = existing.filter((x) => typeof x === "string" && x.trim());
 

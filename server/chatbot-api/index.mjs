@@ -654,7 +654,7 @@ function collectUserQueriesLinesFromContext_(ctx) {
     /** @param {string} cell */
     const pushLine = (cell) => {
         const t = typeof cell === "string" ? cell.trim() : "";
-        if (!t || t.length > 8000) {
+        if (!t || t.length > 8000 || isUserQuerySheetAndSummaryNoise_(t)) {
             return;
         }
         const nk = userQueryLineCompareNorm_(t);
@@ -693,19 +693,26 @@ function collectUserQueriesLinesFromContext_(ctx) {
     return out;
 }
 
+/** Form dismiss / internal tokens — script transcript only, not Sheet or Summary. */
+function isUserQuerySheetAndSummaryNoise_(raw) {
+    const t = typeof raw === "string" ? raw.trim() : "";
+    if (!t) {
+        return true;
+    }
+    if (/^__form_closed:/i.test(t)) {
+        return true;
+    }
+    if (/\bform\s+closed\.?$/i.test(t)) {
+        return true;
+    }
+    return false;
+}
+
 /** @param {string} raw */
 function userQueryLineForDisplayAndSheet_(raw) {
     const t = typeof raw === "string" ? raw.trim() : "";
-    if (!t) {
+    if (!t || isUserQuerySheetAndSummaryNoise_(t)) {
         return "";
-    }
-    const closed = /^__form_closed:(.+)$/i.exec(t);
-    if (closed) {
-        const fk = String(closed[1] || "").trim();
-        if (!fk) {
-            return "Form closed.";
-        }
-        return `${fk.charAt(0).toUpperCase()}${fk.slice(1)} form closed.`;
     }
     return t;
 }
