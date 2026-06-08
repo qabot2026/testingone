@@ -338,6 +338,11 @@ async function runSheet2Sync(sessionId) {
   const sid = String(sessionId || '').trim();
   if (!sid) return { skipped: true, reason: 'no_session' };
 
+  const suppression = await import('../sheet-sync-suppression.mjs');
+  if (await suppression.isSheet2SyncExcluded_(sid)) {
+    return { skipped: true, reason: 'sheet2_excluded' };
+  }
+
   const liveAgentStore = require('./live-agent-store');
   let session = await loadSessionForSheet_(sid);
   if (!session) {
@@ -359,20 +364,25 @@ async function runSheet2Sync(sessionId) {
     await sheets.writeChatscriptForRowOnTab(tab, rowNum, sid);
   };
 
-  let rowNum = session.sheet2Row && Number(session.sheet2Row);
-  if (!(rowNum >= 2)) {
-    const found = await sheets.fetchSheetRowBySessionIdOnTab(
-      tab,
-      sid,
-      LIVE_AGENT_SHEET_HEADERS
-    );
-    if (found && found.rowNumber >= 2) rowNum = found.rowNumber;
+  const found = await sheets.fetchSheetRowBySessionIdOnTab(
+    tab,
+    sid,
+    LIVE_AGENT_SHEET_HEADERS
+  );
+  if (found && found.rowNumber >= 2) {
+    await writeRow(found.rowNumber);
+    persistSheet2Row(session, found.rowNumber);
+    return { ok: true, updated: found.rowNumber };
   }
 
-  if (rowNum >= 2) {
-    await writeRow(rowNum);
-    persistSheet2Row(session, rowNum);
-    return { ok: true, updated: rowNum };
+  const priorRow = session.sheet2Row && Number(session.sheet2Row);
+  const sheet2State = await suppression.fetchSheet2SyncState_(sid);
+  if (sheet2State.excluded) {
+    return { skipped: true, reason: 'sheet2_excluded' };
+  }
+  if (priorRow >= 2 || sheet2State.sheet2Row >= 2) {
+    await suppression.markSheet2SyncExcluded_(sid, 'row_removed');
+    return { skipped: true, reason: 'sheet2_row_removed' };
   }
 
   const appended = await sheets.appendRowValuesOnTab(tab, values);

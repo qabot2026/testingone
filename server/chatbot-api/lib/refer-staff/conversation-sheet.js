@@ -374,6 +374,9 @@ async function runSheetSync(sessionId) {
   const sid = String(sessionId || '').trim();
   const doc = chatTranscript.getSessionDoc(sid);
   doc.meta = doc.meta || {};
+  if (doc.meta.sheet1_excluded) {
+    return { skipped: true, reason: 'sheet1_excluded' };
+  }
   const hasUpload = sessionHasUploadMeta(doc.meta);
   if (!chatTranscript.sessionHasUserEngagement(doc) && !hasUpload) {
     return { skipped: true, reason: 'no_user_engagement' };
@@ -405,10 +408,17 @@ async function runSheetSync(sessionId) {
     await sheets.writeConvLinkForRow(rowNum, sid);
   };
 
-  let sheetRow = doc.sheetRow && Number(doc.sheetRow);
-  if (sheetRow >= 2) {
-    await writeRow(sheetRow);
-    return { ok: true, updated: sheetRow, convLink: values[0] ? 'yes' : 'no' };
+  const found = await sheets.fetchSheetRowBySessionId(sid);
+  if (found && found.rowNumber >= 2) {
+    await writeRow(found.rowNumber);
+    chatTranscript.setSheetRow(sid, found.rowNumber);
+    return { ok: true, updated: found.rowNumber, convLink: values[0] ? 'yes' : 'no' };
+  }
+
+  const priorRow = doc.sheetRow && Number(doc.sheetRow);
+  if (priorRow >= 2) {
+    chatTranscript.markSheet1Excluded(sid);
+    return { skipped: true, reason: 'sheet1_row_removed' };
   }
 
   const rowNum = await sheets.appendRowValues(values);

@@ -10,6 +10,7 @@ import {
     formatMobileForSheetDisplay,
     upsertSessionQueriesInSheet
 } from "../sheets.mjs";
+import { isSheet1SyncExcluded_ } from "../sheet-sync-suppression.mjs";
 import { loadSessionForLiveAgentSheet } from "./firestore-bridge.mjs";
 
 const require = createRequire(import.meta.url);
@@ -161,6 +162,10 @@ export async function syncLiveAgentToSheet_(conversationId) {
     }
     if (!session) {
         return { ok: false, skipped: "no_session" };
+    }
+
+    if (await isSheet1SyncExcluded_(id)) {
+        return { ok: false, skipped: "sheet1_excluded" };
     }
 
     const liveAgentSheet = require("../refer-staff/live-agent-sheet.js");

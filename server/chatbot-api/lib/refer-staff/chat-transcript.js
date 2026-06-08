@@ -192,6 +192,16 @@ function setSheetRow(sessionId, rowNum) {
   );
 }
 
+function markSheet1Excluded(sessionId) {
+  const sid = String(sessionId || '').trim();
+  if (!sid) return;
+  const doc = getSessionDoc(sid);
+  doc.meta = Object.assign({}, doc.meta || {}, { sheet1_excluded: true });
+  delete doc.sheetRow;
+  ensureDir();
+  fs.writeFileSync(sessionPath(sid), JSON.stringify(doc, null, 2), 'utf8');
+}
+
 function appendTurns(sessionId, turns) {
   if (!Array.isArray(turns)) return [];
   const out = [];
@@ -487,6 +497,7 @@ module.exports = {
   filterDuplicateUploadFilesForSession,
   mergeSessionMeta,
   setSheetRow,
+  markSheet1Excluded,
   listSessions,
   getAnalyticsSummary,
   sessionHasUserEngagement,

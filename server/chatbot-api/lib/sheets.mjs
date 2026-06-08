@@ -26,6 +26,12 @@ import {
 } from "./conversation-metrics.mjs";
 import { getServiceAccountCredentials } from "./google-service-account.mjs";
 import { defaultApiBaseUrl_ } from "./default-api-base.mjs";
+import {
+    fetchSheet1SyncState_,
+    isSheet1SyncExcluded_,
+    markSheet1SyncExcluded_,
+    persistSheet1Row_
+} from "./sheet-sync-suppression.mjs";
 
 const SHEET_CONFIG_DIR = path.dirname(fileURLToPath(import.meta.url));
 const SHEET_INTEGRATION_CONFIG_PATH = path.join(SHEET_CONFIG_DIR, "..", "sheet-integration.config.json");
@@ -2242,6 +2248,69 @@ async function isLeadSheetRowEmptyAt_(sheets, tab, rowNumber1Based) {
     return isLeadSheetDataRowEmpty_(row, mobileCol.mobileColIdx);
 }
 
+/** @param {unknown[]} row */
+function sessionIdFromLeadSheetRowCells_(row) {
+    const r = Array.isArray(row) ? row : [];
+    const primary =
+        sheetCellString_(r[STANDARD_SESSION_COLUMN_INDEX0_PRIMARY])
+        || sheetCellString_(r[STANDARD_SESSION_COLUMN_INDEX0_PRE_TRANSCRIPT])
+        || sheetCellString_(r[STANDARD_SESSION_COLUMN_INDEX0_LEGACY]);
+    if (primary) {
+        return primary;
+    }
+    for (let c = 0; c < r.length; c += 1) {
+        const cell = sheetCellString_(r[c]);
+        if (cell && /^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(cell)) {
+            return cell;
+        }
+    }
+    return "";
+}
+
+/**
+ * @param {import("googleapis").sheets_v4.Sheets} sheets
+ * @param {string} tab
+ * @param {number} rowNumber1Based
+ */
+async function sessionIdOnLeadSheetRow_(sheets, tab, rowNumber1Based) {
+    const rn = Math.trunc(rowNumber1Based);
+    if (!Number.isFinite(rn) || rn < 2) {
+        return "";
+    }
+    if (await isLeadSheetRowEmptyAt_(sheets, tab, rn)) {
+        return "";
+    }
+    const got = await sheetsValuesGet_(sheets, {
+        spreadsheetId: SPREADSHEET_ID,
+        range: `${tab}!A${rn}:S${rn}`
+    });
+    const row = Array.isArray(got.data.values) && got.data.values[0] ? got.data.values[0] : [];
+    return sessionIdFromLeadSheetRowCells_(row);
+}
+
+/** @param {string} tab @param {string} sessionId */
+async function markSheet1ExcludedIfPreviouslySynced_(tab, sessionId, reason) {
+    const sid = typeof sessionId === "string" ? sessionId.trim() : "";
+    if (!sid || (await isSheet1SyncExcluded_(sid))) {
+        return true;
+    }
+    const state = await fetchSheet1SyncState_(sid);
+    if (state.excluded) {
+        return true;
+    }
+    if (
+        state.sheet1Row >= 2
+        || sessionLastQueriesWritten_.has(sid)
+        || sessionLastFullRowSyncAt_.has(sid)
+        || getCachedSessionLeadRow_(tab, sid) >= 2
+    ) {
+        sessionLeadRowCache_.delete(`${tab}|${sid}`);
+        await markSheet1SyncExcluded_(sid, reason);
+        return true;
+    }
+    return false;
+}
+
 /**
  * @param {import("googleapis").sheets_v4.Sheets} sheets
  * @param {string} tab
@@ -2252,15 +2321,28 @@ async function getValidatedCachedSessionLeadRow_(sheets, tab, sessionId) {
     if (!sid) {
         return 0;
     }
+    if (await isSheet1SyncExcluded_(sid)) {
+        return 0;
+    }
     const cached = getCachedSessionLeadRow_(tab, sid);
-    if (!cached) {
+    const state = await fetchSheet1SyncState_(sid);
+    if (state.excluded) {
         return 0;
     }
-    if (await isLeadSheetRowEmptyAt_(sheets, tab, cached)) {
-        sessionLeadRowCache_.delete(`${tab}|${sid}`);
+    const knownRow = cached || state.sheet1Row;
+    if (!(knownRow >= 2)) {
         return 0;
     }
-    return cached;
+    const rowSid = await sessionIdOnLeadSheetRow_(sheets, tab, knownRow);
+    if (rowSid === sid) {
+        if (!cached) {
+            setCachedSessionLeadRow_(tab, sid, knownRow);
+        }
+        return knownRow;
+    }
+    sessionLeadRowCache_.delete(`${tab}|${sid}`);
+    await markSheet1SyncExcluded_(sid, rowSid ? "row_replaced" : "row_removed");
+    return 0;
 }
 
 /**
@@ -3245,6 +3327,7 @@ function setCachedSessionLeadRow_(tab, sessionId, rowNumber) {
         return;
     }
     sessionLeadRowCache_.set(`${tab}|${sid}`, { rowNumber, at: Date.now() });
+    void persistSheet1Row_(sid, rowNumber);
 }
 
 /** @param {string} tab @param {string} sessionId */
@@ -5283,6 +5366,15 @@ async function appendContactRowToSheet_(row, opts) {
     const sidForDedup =
         typeof row.clientSessionId === "string" ? row.clientSessionId.trim() : "";
 
+    if (sidForDedup && (await isSheet1SyncExcluded_(sidForDedup))) {
+        return {
+            action: "duplicate_noop",
+            patched: false,
+            tab: tabResolved,
+            skipped_sheet1_excluded: true
+        };
+    }
+
     const tab = tabNameFromRange(RANGE);
     const appendRangeUsed = appendRangeSchemaWidth_(RANGE);
     let duplicateRowNum = sidForDedup
@@ -5304,6 +5396,14 @@ async function appendContactRowToSheet_(row, opts) {
         duplicateRowNum = 0;
         if (sidForDedup) {
             sessionLeadRowCache_.delete(`${tabResolved}|${sidForDedup}`);
+            if (await markSheet1ExcludedIfPreviouslySynced_(tabResolved, sidForDedup, "row_removed")) {
+                return {
+                    action: "duplicate_noop",
+                    patched: false,
+                    tab: tabResolved,
+                    skipped_sheet1_excluded: true
+                };
+            }
         }
     }
     if (duplicateRowNum) {
@@ -5362,6 +5462,14 @@ async function appendContactRowToSheet_(row, opts) {
                 appendRangeUsed
             );
         }
+    }
+    if (sid0 && (await markSheet1ExcludedIfPreviouslySynced_(tabResolved, sid0, "row_removed"))) {
+        return {
+            action: "duplicate_noop",
+            patched: false,
+            tab: tabResolved,
+            skipped_sheet1_excluded: true
+        };
     }
     const colAFormula = await conversationLinkFormulaForLeadSheetCell_(sheets, tabResolved, 0, sid0);
     const fullLeadAppend = assembleLeadSheetPayloadFromSources_(
@@ -5586,6 +5694,9 @@ async function upsertSessionQueriesInSheet_(row) {
     if (!sid) {
         throw new Error("Missing clientSessionId");
     }
+    if (await isSheet1SyncExcluded_(sid)) {
+        return { mode: "skipped_sheet1_excluded" };
+    }
     const sheetExtrasSources =
         row.sheetExtrasSources && typeof row.sheetExtrasSources === "object"
             ? row.sheetExtrasSources
@@ -5607,6 +5718,9 @@ async function upsertSessionQueriesInSheet_(row) {
     if (rowNumber > 0 && (await isLeadSheetRowEmptyAt_(sheets, tab, rowNumber))) {
         sessionLeadRowCache_.delete(`${tab}|${sid}`);
         rowNumber = 0;
+    }
+    if (!rowNumber && (await markSheet1ExcludedIfPreviouslySynced_(tab, sid, "row_removed"))) {
+        return { mode: "skipped_sheet1_excluded" };
     }
     if (rowNumber > 0) {
         const queriesCol = await getUserQueriesColumnInfo_(sheets, tab);
