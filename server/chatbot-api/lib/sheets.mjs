@@ -1317,10 +1317,14 @@ export function assembleLeadSheetPayloadFromSources_(incomingRow, sheetExtrasSou
         resolveContactName(fieldsRec, {}, contactLookup)
         || sheetOutboundCell_(row.name)
         || (preserve && preserve.name ? preserve.name : "");
-    const mobileResolved =
+    const mobileRaw =
         resolveContactMobile(fieldsRec, {}, contactLookup)
         || sheetOutboundCell_(row.mobile)
         || (preserve && preserve.mobile ? preserve.mobile : "");
+    const mobileResolved = formatMobileForSheetDisplay(
+        mobileRaw,
+        contactMetaForSheetMobile_(fieldsRec, contactLookup)
+    );
     const emailResolved =
         resolveContactEmail(fieldsRec, {}, contactLookup)
         || sheetOutboundCell_(row.email)
@@ -1959,6 +1963,81 @@ async function getUserQueriesColumnInfo_(sheets, tab) {
 /** @param {string} s */
 function mobileDigitsOnly(s) {
     return String(s || "").replace(/\D/g, "");
+}
+
+/**
+ * Sheet Mobile column: "91 9966006600" (dial digits without "+") from mobile + dial_code in context/fields.
+ *
+ * @param {unknown} mobileRaw
+ * @param {Record<string, unknown> | null | undefined} meta
+ */
+export function formatMobileForSheetDisplay(mobileRaw, meta) {
+    const metaObj = meta && typeof meta === "object" && !Array.isArray(meta) ? meta : {};
+    const rawMobile = String(
+        mobileRaw != null && String(mobileRaw).trim()
+            ? mobileRaw
+            : metaObj.mobile || metaObj.phone || ""
+    ).trim();
+    if (!rawMobile) {
+        return "";
+    }
+
+    const compact = rawMobile.replace(/\s+/g, "");
+    if (/^\+?\d{11,}$/.test(compact)) {
+        const digits = compact.replace(/\D/g, "");
+        const local = digits.slice(-10);
+        const dialDigits = digits.slice(0, digits.length - 10);
+        if (dialDigits && local) {
+            return `${dialDigits} ${local}`;
+        }
+        return digits;
+    }
+
+    let dialDigits = String(
+        metaObj.dial_code
+        ?? metaObj.dialCode
+        ?? metaObj.dialcode
+        ?? metaObj.country_dial_code
+        ?? metaObj.countryDialCode
+        ?? ""
+    )
+        .trim()
+        .replace(/\D/g, "");
+
+    if (!dialDigits) {
+        const digits = rawMobile.replace(/\D/g, "");
+        if (digits.length === 10) {
+            dialDigits = "91";
+        }
+    }
+
+    let local = rawMobile.replace(/\D/g, "");
+    if (dialDigits) {
+        if (local.startsWith(dialDigits) && local.length > dialDigits.length) {
+            local = local.slice(dialDigits.length);
+        }
+        if (local.length > 10) {
+            local = local.slice(-10);
+        }
+        return `${dialDigits} ${local}`;
+    }
+
+    return rawMobile.replace(/^\+/, "").trim();
+}
+
+/** @param {Record<string, string>} fieldsRec @param {Record<string, unknown>} contactLookup */
+function contactMetaForSheetMobile_(fieldsRec, contactLookup) {
+    return {
+        ...contactLookup,
+        dial_code:
+            fieldsRec.dial_code
+            || fieldsRec.dialCode
+            || fieldsRec.dialcode
+            || contactLookup.dial_code
+            || contactLookup.dialCode
+            || contactLookup.country_dial_code
+            || contactLookup.countryDialCode
+    };
 }
 
 /**
@@ -5449,9 +5528,13 @@ function resolvedIncomingContactForSheetRow_(row, sheetExtrasSources) {
     const lookup = contactContextLookupRecord_(ctx);
     const name =
         resolveContactName(fieldsRec, {}, lookup) || sheetOutboundCell_(/** @type {{ name?: unknown }} */ (r).name);
-    const mobile =
+    const mobileRaw =
         resolveContactMobile(fieldsRec, {}, lookup)
         || sheetOutboundCell_(/** @type {{ mobile?: unknown }} */ (r).mobile);
+    const mobile = formatMobileForSheetDisplay(
+        mobileRaw,
+        contactMetaForSheetMobile_(fieldsRec, lookup)
+    );
     const email =
         resolveContactEmail(fieldsRec, {}, lookup)
         || sheetOutboundCell_(/** @type {{ email?: unknown }} */ (r).email);

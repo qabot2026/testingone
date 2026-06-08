@@ -5,7 +5,11 @@
 
 import { createRequire } from "node:module";
 
-import { formatChannelForSheetDisplay, upsertSessionQueriesInSheet } from "../sheets.mjs";
+import {
+    formatChannelForSheetDisplay,
+    formatMobileForSheetDisplay,
+    upsertSessionQueriesInSheet
+} from "../sheets.mjs";
 import { loadSessionForLiveAgentSheet } from "./firestore-bridge.mjs";
 
 const require = createRequire(import.meta.url);
@@ -163,7 +167,7 @@ export async function syncLiveAgentToSheet_(conversationId) {
     const handoffCsv =
         liveAgentSheet && typeof liveAgentSheet.buildSheet1LiveAgentHandoffQueries === "function"
             ? liveAgentSheet.buildSheet1LiveAgentHandoffQueries(session)
-            : "Human Agent Requested";
+            : "";
     if (!handoffCsv) {
         return { ok: false, skipped: "empty_handoff_queries" };
     }
@@ -181,9 +185,9 @@ export async function syncLiveAgentToSheet_(conversationId) {
         /** @type {Parameters<typeof upsertSessionQueriesInSheet>[0]} */
         const row = {
             clientSessionId: id,
-            name: trim(session.visitorName) || trim(meta.name) || "",
-            mobile: trim(meta.mobile) || trim(meta.phone) || "",
-            email: trim(meta.email) || "",
+            name: trim_(session.visitorName) || trim_(meta.name) || "",
+            mobile: formatMobileForSheetDisplay(trim_(meta.mobile) || trim_(meta.phone) || "", meta),
+            email: trim_(meta.email) || "",
             browserName: "",
             deviceType: "",
             channel,

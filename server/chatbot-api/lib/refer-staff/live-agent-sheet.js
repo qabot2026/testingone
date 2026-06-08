@@ -203,9 +203,9 @@ function liveAgentQueriesFromSession(session) {
   return lines.join(' | ').slice(0, 2000);
 }
 
-/** Sheet1 User Queries tail after bot lines — markers plus handoff chat (not queue status). */
+/** Sheet1 User Queries tail after bot lines — connected marker plus handoff chat (not queue status). */
 function buildSheet1LiveAgentHandoffQueries(session) {
-  const parts = ['Human Agent Requested'];
+  const parts = [];
   const status = trim(session && session.status).toLowerCase();
   if (
     status === 'active'
