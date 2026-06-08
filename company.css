@@ -1146,7 +1146,7 @@
  
  .dfchat-contact-form__submit:disabled {
    opacity: 0.7;
-   cursor: wait;
+   cursor: not-allowed;
  }
  
  .dfchat-contact-form.dfchat-contact-form--docked {

@@ -8885,6 +8885,7 @@ function mountContactFormFieldsFromConfig() {
     applyDetectedDialCodeToContactForm_();
     scheduleVisitorCityCapture_();
     syncSuppressAppointmentContactRows_();
+    resetContactFormSubmitButtonState_();
 }
 
 function applyContactFormLayoutFromConfig() {
@@ -23170,6 +23171,14 @@ function convertDialogflowValue(value) {
     return null;
 }
 
+function resetContactFormSubmitButtonState_() {
+    const submitButton = document.getElementById("dfchat-contact-form-submit");
+    if (submitButton) {
+        submitButton.disabled = false;
+        submitButton.removeAttribute("aria-busy");
+    }
+}
+
 function openContactForm() {
     const form = document.getElementById("dfchat-contact-form");
     const status = document.getElementById("dfchat-contact-form-status");
@@ -23186,6 +23195,7 @@ function openContactForm() {
     form.classList.add("dfchat-is-open");
     form.setAttribute("aria-hidden", "false");
     contactFormOpenPending = false;
+    resetContactFormSubmitButtonState_();
     resetChatActionBarPositionCaches();
     window.setTimeout(() => {
         syncContactFormPosition();
@@ -23228,6 +23238,7 @@ function closeForm(options) {
     stripContactFormDocking();
     form.classList.remove("dfchat-is-open");
     form.setAttribute("aria-hidden", "true");
+    resetContactFormSubmitButtonState_();
     resetChatActionBarPositionCaches();
     scheduleSyncChatActionBarPosition();
 
@@ -23774,6 +23785,7 @@ function submitContactForm(event) {
 
     if (submitButton) {
         submitButton.disabled = true;
+        submitButton.setAttribute("aria-busy", "true");
     }
 
     let fetchBody;
@@ -24044,6 +24056,7 @@ function submitContactForm(event) {
             if (!awaitServerUi) {
                 applyContactFormSubmitSuccessUi_(cfg0, fieldDefs, payload, chatSummaryPayload);
                 optimisticUiApplied = true;
+                resetContactFormSubmitButtonState_();
             }
             return fetch(endpoint, fetchInit);
         })
@@ -24157,6 +24170,7 @@ function submitContactForm(event) {
             }
             if (submitButton) {
                 submitButton.disabled = false;
+                submitButton.removeAttribute("aria-busy");
             }
         });
 }
