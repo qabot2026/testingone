@@ -196,7 +196,7 @@ export async function liveSyncPoll_({
     while (Date.now() < deadline) {
         const typing = await getTypingState_(id);
         const conv = await getConversation_(id);
-        const rev = Math.max(typing.revision, conversationRevision_(conv));
+        const rev = typing.revision;
         const messages = await listDeskMessages_({
             conversationId: id,
             sinceId: since || undefined,

@@ -357,7 +357,7 @@ async function inboxDeskSettings_(skipEscalation) {
 }
 
 /** Cached settings for hot paths (every message / poll) — avoids extra Firestore reads. */
-async function cachedLiveAgentSettings_() {
+export async function cachedLiveAgentSettings_() {
     return inboxDeskSettings_(true);
 }
 
@@ -519,15 +519,17 @@ export async function claimConversation_({ conversationId, agentEmail }) {
 
     try {
         const { LIVE_AGENT_HUMAN_CONNECTED_MARKER_ } = await import("./departments.mjs");
-        await appendMessage_({
+        void appendMessage_({
             conversationId: id,
             role: "system",
             text: LIVE_AGENT_HUMAN_CONNECTED_MARKER_,
             senderEmail: email,
             bumpUnread: { agent: 0, visitor: 1 }
+        }).catch((msgErr) => {
+            console.warn(LOG_TAG, "accept system message:", msgErr.message || msgErr);
         });
     } catch (msgErr) {
-        console.warn(LOG_TAG, "accept system message:", msgErr.message || msgErr);
+        console.warn(LOG_TAG, "accept system message import:", msgErr.message || msgErr);
     }
 
     const snap = await ref.get();

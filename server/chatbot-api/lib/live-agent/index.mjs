@@ -55,7 +55,8 @@ import {
     requestHumanAgent_,
     resolveConversationId_,
     updateConversationMode_,
-    transferConversation_
+    transferConversation_,
+    cachedLiveAgentSettings_
 } from "./store.mjs";
 import {
     createDepartment_,
@@ -176,8 +177,8 @@ async function buildVisitorSyncPayload_(clientSessionId, clientRev, waitMs, last
     );
     const humanHandoffActive = visitorAgentChatActive_(conversation);
     const aiCopilot = isLiveAgentAiCopilot_(conversation);
-    const { getLiveAgentSettings_, resolveAgentDisplayName_ } = await import("./departments.mjs");
-    const settings = await getLiveAgentSettings_();
+    const { resolveAgentDisplayName_ } = await import("./departments.mjs");
+    const settings = await cachedLiveAgentSettings_();
     let assignedAgentDisplayName = "";
     if (assigned) {
         assignedAgentDisplayName = resolveAgentDisplayName_(assigned, settings);
@@ -999,21 +1000,30 @@ export function mountLiveAgentRoutes(app) {
             const clientLastMsgId = trim_(req.query && req.query.lastMessageId);
             const typing = await getTypingState_(clientSessionId);
             const conversation = await getConversation_(clientSessionId);
-            const rev = Math.max(clientRev, typing.revision);
+            const rev = typing.revision;
             const agentTyping = typing.agentTypingVisitor;
             const lastMessageId = typing.lastMessageId;
             const messageHint = !!(lastMessageId && clientLastMsgId && lastMessageId !== clientLastMsgId);
+            const assigned = trim_(conversation && conversation.assignedAgentEmail);
+            const agentConnected = !!(
+                conversation &&
+                conversation.status === "active" &&
+                assigned
+            );
+            const { resolveAgentDisplayName_ } = await import("./departments.mjs");
+            const settings = await cachedLiveAgentSettings_();
+            let assignedAgentDisplayName = "";
+            if (assigned) {
+                assignedAgentDisplayName = resolveAgentDisplayName_(assigned, settings);
+            }
             res.json({
                 ok: true,
                 revision: rev,
                 agentTyping,
                 lastMessageId,
                 conversation,
-                agentConnected: !!(
-                    conversation &&
-                    conversation.status === "active" &&
-                    trim_(conversation.assignedAgentEmail)
-                ),
+                agentConnected,
+                assignedAgentDisplayName,
                 humanHandoffActive: visitorAgentChatActive_(conversation),
                 changed: rev > clientRev || messageHint,
                 newMessage: messageHint
