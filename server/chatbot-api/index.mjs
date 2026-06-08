@@ -66,6 +66,7 @@ import {
     fetchLeadSheetUserQueriesForSession,
     fetchLeadSheetRowKeyValuesForSession,
     fetchLeadSheetChatTranscriptJsonForSession,
+    formatMobileForSheetDisplay,
     getConversationDateTimeZoneForTranscript,
     formatConversationDateForSheet,
     formatConversationTimeForSheet,
@@ -6523,6 +6524,88 @@ function canonicalLeadFieldKeyForTranscript_(rawKey) {
     return null;
 }
 
+/** Dial + local context for chatscript Summary phone (Sheet uses same `91 9876543210` shape). */
+function transcriptSummaryDialContext_(firestoreRec, liveCx) {
+    /** @type {Record<string, unknown>} */
+    const out = {};
+    const absorb = (cx) => {
+        if (!cx || typeof cx !== "object" || Array.isArray(cx)) {
+            return;
+        }
+        Object.assign(out, contactContextLookupRecord_(/** @type {Record<string, unknown>} */ (cx)));
+    };
+    if (
+        firestoreRec
+        && typeof firestoreRec === "object"
+        && firestoreRec.client_context
+        && typeof firestoreRec.client_context === "object"
+    ) {
+        absorb(firestoreRec.client_context);
+    }
+    absorb(liveCx);
+    const fields =
+        firestoreRec
+        && typeof firestoreRec === "object"
+        && firestoreRec.fields
+        && typeof firestoreRec.fields === "object"
+            ? /** @type {Record<string, unknown>} */ (firestoreRec.fields)
+            : null;
+    if (fields) {
+        for (const [k, val] of Object.entries(fields)) {
+            const nk = String(k || "").trim().toLowerCase();
+            if (nk === "dial_code" || nk === "dialcode" || nk === "country_dial_code") {
+                const s = scalarFormValue(val);
+                if (s) {
+                    out.dial_code = s;
+                }
+            }
+        }
+    }
+    return out;
+}
+
+/**
+ * @param {Record<string, unknown>} meta
+ * @param {Record<string, unknown> | null} firestoreRec
+ * @param {Record<string, unknown> | null} liveCx
+ * @param {{ rowNumber?: number, columns?: Record<string, string> } | null} sheet
+ */
+function applyTranscriptSummaryMobileWithDialCode_(meta, firestoreRec, liveCx, sheet) {
+    const base = meta && typeof meta === "object" ? { ...meta } : {};
+    let mobileRaw = scalarFormValue(base.mobile);
+    if (!mobileRaw && sheet && sheet.columns && typeof sheet.columns === "object") {
+        for (const [colKey, colVal] of Object.entries(sheet.columns)) {
+            if (canonicalLeadFieldKeyForTranscript_(colKey) === "mobile") {
+                mobileRaw = scalarFormValue(colVal);
+                break;
+            }
+        }
+    }
+    if (!mobileRaw) {
+        return base;
+    }
+    const dialCtx = transcriptSummaryDialContext_(firestoreRec, liveCx);
+    const formatted = formatMobileForSheetDisplay(mobileRaw, dialCtx);
+    if (!formatted) {
+        return base;
+    }
+    base.mobile = formatted;
+    const dialDigits = scalarFormValue(
+        dialCtx.dial_code ?? dialCtx.dialCode ?? dialCtx.country_dial_code
+    ).replace(/\D/g, "");
+    if (dialDigits) {
+        base.dial_code = dialDigits;
+    }
+    if (sheet && sheet.columns && typeof sheet.columns === "object") {
+        for (const colKey of Object.keys(sheet.columns)) {
+            if (canonicalLeadFieldKeyForTranscript_(colKey) === "mobile") {
+                sheet.columns[colKey] = formatted;
+            }
+        }
+    }
+    return base;
+}
+
 /** @param {string} csv */
 function userQueryLinesFromCsv_(csv) {
     const s = typeof csv === "string" ? csv.trim() : "";
@@ -7240,6 +7323,8 @@ app.get(PATHNAME_CONVERSATION_TRANSCRIPT_JSON, async (req, res) => {
                 laMetaErr && laMetaErr.message ? laMetaErr.message : laMetaErr
             );
         }
+
+        meta = applyTranscriptSummaryMobileWithDialCode_(meta, firestoreRec, liveCx, sheet);
 
         return res.json({
             ok: true,

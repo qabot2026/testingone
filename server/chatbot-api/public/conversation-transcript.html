@@ -1021,6 +1021,29 @@
       }
 
       /** Match `formatChannelForSheetDisplay` in sheets.mjs (e.g. Web/WhatsApp/…). */
+      function formatMobileForSummary(mobile, meta) {
+        var raw = String(mobile == null ? "" : mobile).trim();
+        if (!raw) return "";
+        if (/^\d{1,4}\s+\d{6,}$/.test(raw.replace(/\s+/g, " "))) return raw;
+        var dial = "";
+        if (meta && typeof meta === "object") {
+          dial = String(
+            meta.dial_code || meta.dialCode || meta.country_dial_code || ""
+          ).replace(/\D/g, "");
+        }
+        if (!dial) {
+          var digitsOnly = raw.replace(/\D/g, "");
+          if (digitsOnly.length === 10) dial = "91";
+        }
+        if (!dial) return raw;
+        var local = raw.replace(/\D/g, "");
+        if (local.indexOf(dial) === 0 && local.length > dial.length) {
+          local = local.slice(dial.length);
+        }
+        if (local.length > 10) local = local.slice(-10);
+        return dial + " " + local;
+      }
+
       function formatChannelForSummary(raw) {
         var s = normalizeDetailValue(raw);
         if (!s) return "";
@@ -1171,7 +1194,7 @@
 
         if (nameVal) pairs.push(["Name", String(nameVal)]);
         if (emailVal) pairs.push(["Email", String(emailVal)]);
-        if (mobileVal) pairs.push(["Phone", String(mobileVal)]);
+        if (mobileVal) pairs.push(["Phone", formatMobileForSummary(mobileVal, meta)]);
 
         var deviceVal = takeSemanticCol("device");
         var channelVal = takeSemanticCol("channel");
