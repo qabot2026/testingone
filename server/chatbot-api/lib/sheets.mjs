@@ -90,7 +90,7 @@ function loadSheetExtraMappingsFromDisk_() {
 
 const SPREADSHEET_ID = (process.env.SHEETS_SPREADSHEET_ID || "").trim();
 // Default schema: no Form ID (A–S). Col A = Conv. link (HYPERLINK), B Date, C Time (12h TZ from SHEETS_CONV_DATETIME_TZ), then name… through S = Document. Sheet JSON transcript column is opt-in only (SHEETS_CHAT_TRANSCRIPT_JSON_COLUMN).
-const RANGE = (process.env.SHEETS_RANGE || "Sheet1!A:S").trim();
+const RANGE = (process.env.SHEETS_RANGE || "'All Conversations'!A:S").trim();
 /**
  * Optional A1 column letter (e.g. S). When set, new/updated rows get =HYPERLINK(...) to open that row in this spreadsheet.
  * Leave unset to skip (default). Add a matching header on row 1 in your sheet if you want a label.
@@ -511,13 +511,13 @@ function conversationPartsFromIncomingRow_(row) {
 function tabNameFromRange(raw) {
     const s = (raw || "").trim();
     if (!s) {
-        return "Sheet1";
+        return "All Conversations";
     }
     const bang = s.indexOf("!");
     if (bang === -1) {
-        return s;
+        return s.replace(/^'|'$/g, "");
     }
-    return s.slice(0, bang) || "Sheet1";
+    return s.slice(0, bang).replace(/^'|'$/g, "") || "All Conversations";
 }
 
 function normalizedHeaderKey_(s) {
@@ -598,7 +598,7 @@ function normalizedSheetTabKey_(tab) {
 
 /** A1 notation tab prefix (quoted for names with spaces/special chars). */
 function sheetA1TabPrefix_(title) {
-    const t = String(title || "").trim().replace(/'/g, "''") || "Sheet1";
+    const t = String(title || "").trim().replace(/'/g, "''") || "All Conversations";
     return `'${t}'`;
 }
 

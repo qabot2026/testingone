@@ -48,7 +48,7 @@ Optional: **Dialogflow** in `company.config.js` is separate from this API.
 
 5. In **Railway → Variables** add:
    - **`SHEETS_SPREADSHEET_ID`** = that id  
-   - Optional: **`SHEETS_RANGE`** = e.g. `Sheet1!A:F` (default) or `Leads!A:F` if your tab is named `Leads`  
+   - Optional: **`SHEETS_RANGE`** = e.g. `'All Conversations'!A:AG` (default) or `'Chat Leads'!A:AG` if your tab is named differently  
    - To turn Sheets off but keep Firestore: **`DISABLE_SHEETS`** = `1`, or remove **`SHEETS_SPREADSHEET_ID`**.
 
 Each **POST** to `/contact-form-submissions` appends **one row** when Sheets is enabled.
@@ -87,7 +87,7 @@ If Railway gives you a **new** domain later, update both places (and the line ab
 | **`Sheets:` … default credentials** / **Could not load the default credentials** | **Railway** must have **`FIREBASE_SERVICE_ACCOUNT_JSON`** (full service account JSON — same as Firestore). Without it, Sheets cannot sign requests. Redeploy after adding the variable. |
 | **`Sheets:` … No Google service account JSON** | Paste the full JSON in **`FIREBASE_SERVICE_ACCOUNT_JSON`** (must include `"type":"service_account"` and **`private_key`**). Client-only Firebase web config is not valid here. |
 | **`Sheets:` … permission / 403** | Sheet **Shared** with **`client_email`** from the JSON as **Editor**. **Google Sheets API** enabled in the same GCP project as Firebase. |
-| **`Sheets:` … Unable to parse range** | **`SHEETS_RANGE`** must match an existing tab name, e.g. `Sheet1!A:F`. |
+| **`Sheets:` … Unable to parse range** | **`SHEETS_RANGE`** must match an existing tab name, e.g. `'All Conversations'!A:AG`. |
 | Build fails on Railway | **Deploy logs** — `railway.json` **`dockerfilePath`** must match **`server/chatbot-api/Dockerfile`**. |
 
 ---

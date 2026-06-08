@@ -44,7 +44,7 @@ const SHEET_COL_HEADERS = [
 ];
 
 const SPREADSHEET_ID = String(process.env.SHEETS_SPREADSHEET_ID || '').trim();
-const RANGE = String(process.env.SHEETS_RANGE || 'Sheet1!A:AG').trim();
+const RANGE = String(process.env.SHEETS_RANGE || "'All Conversations'!A:AG").trim();
 const DASHBOARD_RANGE = String(
   process.env.SHEETS_DASHBOARD_RANGE || 'Sheet2!A:M'
 ).trim();
@@ -103,7 +103,7 @@ function columnToLetter(n) {
 
 function tabFromRange(rangeStr) {
   const bang = rangeStr.indexOf('!');
-  return bang >= 0 ? rangeStr.slice(0, bang).replace(/^'|'$/g, '') : 'Sheet1';
+  return bang >= 0 ? rangeStr.slice(0, bang).replace(/^'|'$/g, '') : 'All Conversations';
 }
 
 function colEndFromRange(rangeStr) {
@@ -127,7 +127,7 @@ function dashboardTabName() {
 function liveAgentTabName() {
   const custom = String(process.env.SHEETS_LIVE_AGENT_TAB || '').trim();
   if (custom) return custom;
-  return 'Live Agent';
+  return 'Agent Handoffs';
 }
 
 function isConfigured() {

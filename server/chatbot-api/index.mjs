@@ -4124,7 +4124,7 @@ app.get("/contact-form-sheets-health", async (_req, res) => {
             disable_sheets_flag: process.env.DISABLE_SHEETS === "1",
             spreadsheet_id_configured: !!id,
             spreadsheet_id_suffix: id ? id.slice(-8) : "",
-            sheets_default_range_env: (process.env.SHEETS_RANGE || "Sheet1!A:S").trim(),
+            sheets_default_range_env: (process.env.SHEETS_RANGE || "'All Conversations'!A:S").trim(),
             strict_session_dedup: process.env.SHEETS_STRICT_SESSION_DEDUP === "1",
             service_account_credentials_present: !!getServiceAccountCredentials()
         };
@@ -4133,7 +4133,9 @@ app.get("/contact-form-sheets-health", async (_req, res) => {
             try {
                 const { google } = await import("googleapis");
                 const key = getServiceAccountCredentials();
-                const tab = (process.env.SHEETS_RANGE || "Sheet1!A:S").split("!")[0] || "Sheet1";
+                const tab = (
+                    (process.env.SHEETS_RANGE || "'All Conversations'!A:S").split("!")[0] || "All Conversations"
+                ).replace(/^'|'$/g, "");
                 const auth = new google.auth.GoogleAuth({
                     credentials: key,
                     scopes: ["https://www.googleapis.com/auth/spreadsheets"]
