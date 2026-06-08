@@ -3514,7 +3514,7 @@ app.post(
         );
         const userQueriesCsv = await buildAuthoritativeSheet1UserQueriesCsv_(clientSessionId, {
             clientContext: mergedClientContext,
-            loadFirestoreContext: false
+            loadFirestoreContext: true
         });
         const coercedTranscript = coerceChatTranscriptArray_(mergedClientContext.chat_transcript);
         mergedClientContext.chat_transcript = coercedTranscript;

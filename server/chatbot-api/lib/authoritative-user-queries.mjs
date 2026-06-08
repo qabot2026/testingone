@@ -9,6 +9,7 @@ import {
     assembleFullUserQueriesCsv_,
     fetchLeadSheetUserQueriesForSession,
     LIVE_AGENT_ENDED_USER_QUERY_MARKER,
+    mergeUserQueriesCsvPreferRicher_,
     sanitizeUserQueriesCsvForSheet
 } from "./sheets.mjs";
 import { mergedSheet1UserQueriesCsv_ } from "./live-agent/sheet-sync.mjs";
@@ -75,10 +76,12 @@ function userQueryLinesFromContextForSheet_(ctx) {
     return out;
 }
 
-/** @param {Record<string, unknown>[]} contexts */
-function longestUserQueryLinesFromContexts_(contexts) {
+/** Prefer the fullest context; when tied, prefer one that recorded agent disconnect. */
+function bestUserQueryLinesFromContexts_(contexts) {
     /** @type {string[]} */
     let best = [];
+    /** @type {string[]} */
+    let bestEnded = [];
     const list = Array.isArray(contexts) ? contexts : [];
     for (let i = 0; i < list.length; i += 1) {
         const ctx = list[i];
@@ -89,6 +92,15 @@ function longestUserQueryLinesFromContexts_(contexts) {
         if (fromCtx.length > best.length) {
             best = fromCtx;
         }
+        if (
+            fromCtx.includes(LIVE_AGENT_ENDED_USER_QUERY_MARKER)
+            && fromCtx.length >= bestEnded.length
+        ) {
+            bestEnded = fromCtx;
+        }
+    }
+    if (bestEnded.length) {
+        return bestEnded.length >= best.length ? bestEnded : best;
     }
     return best;
 }
@@ -141,7 +153,19 @@ export async function buildAuthoritativeSheet1UserQueriesCsv_(sessionId, options
         }
     }
 
-    const clientLines = longestUserQueryLinesFromContexts_(contexts);
+    const clientLines = bestUserQueryLinesFromContexts_(contexts);
+
+    let sheetCsvExisting = "";
+    if (options.sheetCsv === undefined) {
+        try {
+            const got = await fetchLeadSheetUserQueriesForSession(sid);
+            sheetCsvExisting = got && typeof got.csv === "string" ? got.csv.trim() : "";
+        } catch {
+            sheetCsvExisting = "";
+        }
+    } else {
+        sheetCsvExisting = typeof options.sheetCsv === "string" ? options.sheetCsv.trim() : "";
+    }
 
     let handoffCsv = "";
     try {
@@ -156,16 +180,8 @@ export async function buildAuthoritativeSheet1UserQueriesCsv_(sessionId, options
         csv = sanitizeUserQueriesCsvForSheet(clientLines.join(", "), { preserveAllChatQueries: true });
     }
 
-    if (!csv && options.sheetCsv === undefined) {
-        try {
-            const got = await fetchLeadSheetUserQueriesForSession(sid);
-            const sheetCsv = got && typeof got.csv === "string" ? got.csv.trim() : "";
-            if (sheetCsv) {
-                csv = sanitizeUserQueriesCsvForSheet(sheetCsv, { preserveAllChatQueries: true });
-            }
-        } catch {
-            /* ignore */
-        }
+    if (sheetCsvExisting) {
+        csv = mergeUserQueriesCsvPreferRicher_(sheetCsvExisting, csv || "");
     }
 
     return csv;

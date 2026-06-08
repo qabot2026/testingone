@@ -3113,10 +3113,35 @@ export function assembleFullUserQueriesCsv_(clientLines, handoffCsv) {
 
     if (connectIdx >= 0) {
         pre = lines.slice(0, connectIdx).filter((l) => !isLiveAgentPhaseSplitMarker_(l));
-        post =
-            endIdx >= 0
-                ? lines.slice(endIdx + 1).filter((l) => !isLiveAgentPhaseSplitMarker_(l))
-                : [];
+        if (endIdx >= 0) {
+            post = lines.slice(endIdx + 1).filter((l) => !isLiveAgentPhaseSplitMarker_(l));
+        } else {
+            const afterConnect = lines.slice(connectIdx + 1);
+            let lastHandoffMatch = -1;
+            for (let i = 0; i < afterConnect.length; i += 1) {
+                const l = afterConnect[i];
+                if (isLiveAgentPhaseSplitMarker_(l)) {
+                    continue;
+                }
+                const k = userQuerySegmentDedupeKey_(l);
+                if (k && handoffVisitorKeys.has(k)) {
+                    lastHandoffMatch = i;
+                }
+            }
+            if (lastHandoffMatch >= 0) {
+                post = afterConnect
+                    .slice(lastHandoffMatch + 1)
+                    .filter((l) => !isLiveAgentPhaseSplitMarker_(l));
+            } else {
+                post = afterConnect.filter((l) => {
+                    if (isLiveAgentPhaseSplitMarker_(l)) {
+                        return false;
+                    }
+                    const k = userQuerySegmentDedupeKey_(l);
+                    return !(k && handoffVisitorKeys.has(k));
+                });
+            }
+        }
     } else {
         let firstMatch = -1;
         let lastMatch = -1;
@@ -3175,6 +3200,42 @@ export function assembleFullUserQueriesCsv_(clientLines, handoffCsv) {
     return merged.length
         ? sanitizeUserQueriesCsvForSheet(merged.join(", "), { preserveAllChatQueries: true })
         : "";
+}
+
+/**
+ * Never drop segments when a stale sync writes fewer lines than the sheet already has.
+ *
+ * @param {string} existingCsv
+ * @param {string} incomingCsv
+ */
+export function mergeUserQueriesCsvPreferRicher_(existingCsv, incomingCsv) {
+    const ex = splitCsvValues_(sanitizeUserQueriesCsvForSheet(existingCsv));
+    const inn = splitCsvValues_(
+        sanitizeUserQueriesCsvForSheet(incomingCsv, { preserveAllChatQueries: true })
+    );
+    if (!inn.length) {
+        return ex.join(", ");
+    }
+    if (!ex.length) {
+        return inn.join(", ");
+    }
+    const primary = inn.length >= ex.length ? inn : ex;
+    const secondary = primary === inn ? ex : inn;
+    /** @type {Set<string>} */
+    const seen = new Set(
+        primary.map((s) => userQuerySegmentDedupeKey_(s)).filter(Boolean)
+    );
+    /** @type {string[]} */
+    const tail = [];
+    for (let i = 0; i < secondary.length; i += 1) {
+        const k = userQuerySegmentDedupeKey_(secondary[i]);
+        if (k && !seen.has(k)) {
+            seen.add(k);
+            tail.push(secondary[i]);
+        }
+    }
+    const merged = tail.length ? [...primary, ...tail] : primary;
+    return merged.join(", ");
 }
 
 /** Handoff markers + live-agent chat tail already on the row (preserve across bot query refresh). */
@@ -6004,7 +6065,7 @@ async function upsertSessionQueriesInSheet_(row) {
             const replacePrefix =
                 typeof row.replaceCsvPrefix === "string" ? row.replaceCsvPrefix.trim() : "";
             if (clientAuthoritativeQueries && !replacePrefix && !row.replaceLiveAgentHandoffBlock) {
-                merged = incomingQ;
+                merged = mergeUserQueriesCsvPreferRicher_(existingCsv, incomingQ);
             } else if (row.replaceLiveAgentHandoffBlock) {
                 merged = replaceLiveAgentHandoffBlockInCsv_(existingCsv, incomingQ);
             } else {

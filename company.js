@@ -18142,8 +18142,7 @@ async function liveAgentRefreshModeFromServer_(force) {
                 syncLiveAgentModeCacheFromConversation_(stData.conversation, stData);
                 const st = String(stData.conversation.status || "");
                 if (st === "closed" && liveAgentHandoffIsActive_()) {
-                    setLiveAgentHumanChatActive_(false);
-                    setLiveAgentHandoffActive_(false);
+                    liveAgentMarkHandoffEndedInSession_({ forceSheetSync: true });
                 }
             }
         })
@@ -18240,6 +18239,23 @@ function appendLiveAgentUserQueryPhaseMarker_(marker) {
         scheduleSessionQueriesSheetSync_();
     } catch {
         /* ignore */
+    }
+}
+
+/**
+ * Record agent disconnect in user_queries so Sheet1/Summary can append post-AI lines after handoff.
+ * @param {{ forceSheetSync?: boolean }} [opts]
+ */
+function liveAgentMarkHandoffEndedInSession_(opts) {
+    setLiveAgentHumanChatActive_(false);
+    setLiveAgentHandoffActive_(false);
+    appendLiveAgentUserQueryPhaseMarker_(LIVE_AGENT_ENDED_USER_QUERY_MARKER);
+    if (!opts || opts.forceSheetSync !== false) {
+        try {
+            postSessionQueriesToSheetRow_({ force: true });
+        } catch {
+            scheduleSessionQueriesSheetSync_();
+        }
     }
 }
 
@@ -19441,10 +19457,8 @@ async function liveAgentPollTick_(dfMessenger) {
 
         if (status === "closed") {
             liveAgentCachedConvStatus = "closed";
-            setLiveAgentHumanChatActive_(false);
             liveAgentClearVisitorTypingDraft_();
-            setLiveAgentHandoffActive_(false);
-            appendLiveAgentUserQueryPhaseMarker_(LIVE_AGENT_ENDED_USER_QUERY_MARKER);
+            liveAgentMarkHandoffEndedInSession_({ forceSheetSync: true });
             const ms0 = dfMessenger || activeDfMessenger;
             syncLiveAgentPersonaLayoutFlags_(ms0);
             if (ms0 && typeof ms0.renderCustomText === "function") {
@@ -19473,8 +19487,12 @@ async function liveAgentPollTick_(dfMessenger) {
             status === "active" ||
             Boolean(stData.humanActive || stData.humanHandoffActive);
         if (!keepPoll) {
-            setLiveAgentHumanChatActive_(false);
-            setLiveAgentHandoffActive_(false);
+            if (status === "closed") {
+                liveAgentMarkHandoffEndedInSession_({ forceSheetSync: false });
+            } else {
+                setLiveAgentHumanChatActive_(false);
+                setLiveAgentHandoffActive_(false);
+            }
             return;
         }
         const messages = Array.isArray(stData.messages) ? stData.messages : [];
