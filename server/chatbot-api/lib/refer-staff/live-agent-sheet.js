@@ -608,16 +608,13 @@ function scheduleSheet2Sync(sessionId) {
   if (!sheets.isConfigured()) return;
   const sid = String(sessionId || '').trim();
   if (!sid) return;
-  if (syncTimers.has(sid)) clearTimeout(syncTimers.get(sid));
-  syncTimers.set(
-    sid,
-    setTimeout(() => {
-      syncTimers.delete(sid);
-      syncSessionToSheet2(sid).catch((e) => {
-        console.warn('[live-agent-sheet] sync failed:', e.message);
-      });
-    }, 2500)
-  );
+  void import('../sheet-sync-gate.mjs')
+    .then((gate) => {
+      gate.scheduleSheetSyncJob_(sid, 'sheet2', () => syncSessionToSheet2(sid));
+    })
+    .catch((err) => {
+      console.warn('[live-agent-sheet] schedule gate:', err.message || err);
+    });
 }
 
 function persistSheet2Row(session, rowNum) {
@@ -666,6 +663,23 @@ async function runSheet2Sync(sessionId) {
     await sheets.writeChatscriptForRowOnTab(tab, rowNum, sid);
   };
 
+  const sheet2State = await suppression.fetchSheet2SyncState_(sid);
+  if (sheet2State.excluded) {
+    return { skipped: true, reason: 'sheet2_excluded' };
+  }
+  if (sheet2State.sheet2Row >= 2) {
+    await writeRow(sheet2State.sheet2Row);
+    persistSheet2Row(session, sheet2State.sheet2Row);
+    return { ok: true, updated: sheet2State.sheet2Row, cached: true };
+  }
+
+  const priorRow = session.sheet2Row && Number(session.sheet2Row);
+  if (priorRow >= 2) {
+    await writeRow(priorRow);
+    persistSheet2Row(session, priorRow);
+    return { ok: true, updated: priorRow, cached: true };
+  }
+
   const found = await sheets.fetchSheetRowBySessionIdOnTab(
     tab,
     sid,
@@ -677,11 +691,6 @@ async function runSheet2Sync(sessionId) {
     return { ok: true, updated: found.rowNumber };
   }
 
-  const priorRow = session.sheet2Row && Number(session.sheet2Row);
-  const sheet2State = await suppression.fetchSheet2SyncState_(sid);
-  if (sheet2State.excluded) {
-    return { skipped: true, reason: 'sheet2_excluded' };
-  }
   if (priorRow >= 2 || sheet2State.sheet2Row >= 2) {
     await suppression.markSheet2SyncExcluded_(sid, 'row_removed');
     return { skipped: true, reason: 'sheet2_row_removed' };

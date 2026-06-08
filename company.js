@@ -20748,22 +20748,31 @@ function trackChatUserQueryInSessionContext_(raw) {
 let sessionSheetSyncDebounceTimer = 0;
 /** Debounced batch before POST session-sheet-sync (~1.2s feels real-time; server coalesces further). */
 const SESSION_SHEET_SYNC_DEBOUNCE_MS = 1200;
+/** No Sheet API calls until this long after chat starts on this tab (matches server gate). */
+const SESSION_SHEET_SYNC_START_DELAY_MS = 60000;
 /** Min gap between session-sheet-sync POSTs from this tab (server also coalesces per session). */
 const SESSION_SHEET_SYNC_MIN_CLIENT_INTERVAL_MS = 2000;
 let sessionSheetSyncLastPostAt = 0;
+let sessionChatStartedAtMs_ = 0;
 
 function scheduleSessionQueriesSheetSync_() {
     if (!shouldSyncChatSessionToBackend_()) {
         return;
     }
+    if (!sessionChatStartedAtMs_) {
+        sessionChatStartedAtMs_ = Date.now();
+    }
     if (sessionSheetSyncDebounceTimer) {
         window.clearTimeout(sessionSheetSyncDebounceTimer);
     }
+    const elapsed = Date.now() - sessionChatStartedAtMs_;
+    const waitForStart = Math.max(0, SESSION_SHEET_SYNC_START_DELAY_MS - elapsed);
+    const delay = Math.max(SESSION_SHEET_SYNC_DEBOUNCE_MS, waitForStart);
     sessionSheetSyncDebounceTimer = window.setTimeout(() => {
         sessionSheetSyncDebounceTimer = 0;
         postSessionQueriesToSheetRow_();
         postSessionTranscriptToFirestore_();
-    }, SESSION_SHEET_SYNC_DEBOUNCE_MS);
+    }, delay);
 }
 
 /**

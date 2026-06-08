@@ -11,12 +11,12 @@ import {
     mergeLiveAgentHandoffIntoUserQueriesCsv_,
     upsertSessionQueriesInSheet
 } from "../sheets.mjs";
+import { scheduleSheetSyncJob_ } from "../sheet-sync-gate.mjs";
 import { isSheet1SyncExcluded_ } from "../sheet-sync-suppression.mjs";
 import { loadSessionForLiveAgentSheet } from "./firestore-bridge.mjs";
 
 const require = createRequire(import.meta.url);
 
-const sheet1SyncTimers = new Map();
 const sheet1SyncChains = new Map();
 
 function trim_(v) {
@@ -36,27 +36,20 @@ export function scheduleLiveAgentSheet1Sync_(sessionId) {
     if (trim_(process.env.DISABLE_SHEETS) === "1") {
         return;
     }
-    if (sheet1SyncTimers.has(sid)) {
-        clearTimeout(sheet1SyncTimers.get(sid));
-    }
-    sheet1SyncTimers.set(
-        sid,
-        setTimeout(() => {
-            sheet1SyncTimers.delete(sid);
-            const prev = sheet1SyncChains.get(sid) || Promise.resolve();
-            const job = prev
-                .then(() => syncLiveAgentToSheet_(sid))
-                .catch((err) => {
-                    console.warn("[live-agent/sheet-sync]", err.message || err);
-                });
-            sheet1SyncChains.set(sid, job);
-            void job.finally(() => {
-                if (sheet1SyncChains.get(sid) === job) {
-                    sheet1SyncChains.delete(sid);
-                }
+    scheduleSheetSyncJob_(sid, "live-agent-sheet1", () => {
+        const prev = sheet1SyncChains.get(sid) || Promise.resolve();
+        const job = prev
+            .then(() => syncLiveAgentToSheet_(sid))
+            .catch((err) => {
+                console.warn("[live-agent/sheet-sync]", err.message || err);
             });
-        }, 2500)
-    );
+        sheet1SyncChains.set(sid, job);
+        return job.finally(() => {
+            if (sheet1SyncChains.get(sid) === job) {
+                sheet1SyncChains.delete(sid);
+            }
+        });
+    });
 }
 
 /**

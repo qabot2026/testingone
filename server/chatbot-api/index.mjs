@@ -3489,6 +3489,13 @@ app.post(
             return res.status(400).json({ ok: false, error: "Missing client_session_id in client_context." });
         }
 
+        try {
+            const { noteChatSessionStarted_ } = await import("./lib/sheet-sync-gate.mjs");
+            noteChatSessionStarted_(clientSessionId);
+        } catch {
+            /* ignore */
+        }
+
         let liveAgentQueue = { queued: false, reason: "not_checked" };
         try {
             const { maybeQueueLiveAgentFromClientContext_ } = await import(

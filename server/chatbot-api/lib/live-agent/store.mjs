@@ -45,6 +45,21 @@ export function resolveConversationId_(raw) {
     return safeConversationId_(raw);
 }
 
+function scheduleLiveAgentSheet1Sync_(conversationId) {
+    const id = trim_(conversationId);
+    if (!id) {
+        return;
+    }
+    void import("./sheet-sync.mjs")
+        .then((mod) => {
+            if (mod && typeof mod.scheduleLiveAgentSheet1Sync_ === "function") {
+                mod.scheduleLiveAgentSheet1Sync_(id);
+            }
+        })
+        .catch((err) => {
+            console.warn(LOG_TAG, "live-agent sheet1 schedule:", err.message || err);
+        });
+}
 /** Debounced Google Sheet row sync for the Live Agent tab (mirrors bot Sheet1 scheduleSheetSync). */
 function scheduleLiveAgentHandoffSheetSync_(conversationId) {
     const id = trim_(conversationId);
@@ -319,14 +334,9 @@ export async function requestHumanAgent_({
     }
 
     const { applyInitialRoundRobin_ } = await import("./routing.mjs");
-    const { syncLiveAgentToSheet_ } = await import("./sheet-sync.mjs");
     let conversation;
     conversation = await applyInitialRoundRobin_(id, departmentId);
-    try {
-        await syncLiveAgentToSheet_(id);
-    } catch (_) {
-        /* non-fatal */
-    }
+    scheduleLiveAgentSheet1Sync_(id);
     scheduleLiveAgentHandoffSheetSync_(id);
     return { conversation, reopened: created, alreadyActive: false };
 }
@@ -550,8 +560,7 @@ export async function claimConversation_({ conversationId, agentEmail }) {
             console.warn(LOG_TAG, "agent stats on accept:", err.message || err);
         }
         try {
-            const { syncLiveAgentToSheet_ } = await import("./sheet-sync.mjs");
-            await syncLiveAgentToSheet_(id);
+            scheduleLiveAgentSheet1Sync_(id);
         } catch (_) {
             /* non-fatal */
         }
@@ -708,7 +717,6 @@ export async function reopenConversationForAgent_({ conversationId, agentEmail }
     });
 
     const { applyInitialRoundRobin_ } = await import("./routing.mjs");
-    const { syncLiveAgentToSheet_ } = await import("./sheet-sync.mjs");
     await applyInitialRoundRobin_(id, null);
     const out = await getConversation_(id);
     const who = trim_(agentEmail).toLowerCase();
@@ -726,11 +734,8 @@ export async function reopenConversationForAgent_({ conversationId, agentEmail }
             console.warn(LOG_TAG, "agent stats on reopen:", err.message || err);
         }
     }
-    try {
-        await syncLiveAgentToSheet_(id);
-    } catch (_) {
-        /* non-fatal */
-    }
+    scheduleLiveAgentSheet1Sync_(id);
+    scheduleLiveAgentHandoffSheetSync_(id);
     return out;
 }
 
@@ -802,12 +807,7 @@ export async function closeConversation_({ conversationId, closedBy, agentEmail 
                 console.warn(LOG_TAG, "agent stats on close:", err.message || err);
             }
         }
-        try {
-            const { syncLiveAgentToSheet_ } = await import("./sheet-sync.mjs");
-            await syncLiveAgentToSheet_(id);
-        } catch (_) {
-            /* non-fatal */
-        }
+        scheduleLiveAgentSheet1Sync_(id);
         scheduleLiveAgentHandoffSheetSync_(id);
     })();
     return out;
@@ -955,16 +955,8 @@ export async function appendMessage_({
     const snap = await msgRef.get();
     const out = serializeMessage_(msgRef.id, snap.data());
     scheduleLiveAgentHandoffSheetSync_(id);
-    if (scheduleSheet1AfterMessage) {
-        void import("./sheet-sync.mjs")
-            .then((mod) => {
-                if (mod && typeof mod.scheduleLiveAgentSheet1Sync_ === "function") {
-                    mod.scheduleLiveAgentSheet1Sync_(id);
-                }
-            })
-            .catch((err) => {
-                console.warn(LOG_TAG, "live-agent sheet1 schedule:", err.message || err);
-            });
+    if (scheduleSheet1AfterMessage && roleNormEarly !== "visitor") {
+        scheduleLiveAgentSheet1Sync_(id);
     }
     return out;
 }

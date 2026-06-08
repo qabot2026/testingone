@@ -344,16 +344,13 @@ function scheduleSheetSync(sessionId) {
   if (!sheets.isConfigured()) return;
   const sid = String(sessionId || '').trim();
   if (!sid) return;
-  if (syncTimers.has(sid)) clearTimeout(syncTimers.get(sid));
-  syncTimers.set(
-    sid,
-    setTimeout(() => {
-      syncTimers.delete(sid);
-      syncSessionToSheet(sid).catch((e) => {
-        console.warn('[conversation-sheet] sync failed:', e.message);
-      });
-    }, 2500)
-  );
+  void import('../sheet-sync-gate.mjs')
+    .then((gate) => {
+      gate.scheduleSheetSyncJob_(sid, 'sheet1', () => syncSessionToSheet(sid));
+    })
+    .catch((err) => {
+      console.warn('[conversation-sheet] schedule gate:', err.message || err);
+    });
 }
 
 function sessionHasUploadMeta(meta) {
@@ -408,10 +405,41 @@ async function runSheetSync(sessionId) {
     await sheets.writeConvLinkForRow(rowNum, sid);
   };
 
+  let suppression = null;
+  try {
+    suppression = await import('../sheet-sync-suppression.mjs');
+  } catch {
+    suppression = null;
+  }
+  if (suppression && typeof suppression.fetchSheet1SyncState_ === 'function') {
+    const sheet1State = await suppression.fetchSheet1SyncState_(sid);
+    if (sheet1State.excluded) {
+      return { skipped: true, reason: 'sheet1_excluded' };
+    }
+    if (sheet1State.sheet1Row >= 2) {
+      await writeRow(sheet1State.sheet1Row);
+      chatTranscript.setSheetRow(sid, sheet1State.sheet1Row);
+      if (typeof suppression.persistSheet1Row_ === 'function') {
+        await suppression.persistSheet1Row_(sid, sheet1State.sheet1Row);
+      }
+      return { ok: true, updated: sheet1State.sheet1Row, cached: true };
+    }
+  }
+
+  const priorCached = doc.sheetRow && Number(doc.sheetRow);
+  if (priorCached >= 2) {
+    await writeRow(priorCached);
+    chatTranscript.setSheetRow(sid, priorCached);
+    return { ok: true, updated: priorCached, cached: true };
+  }
+
   const found = await sheets.fetchSheetRowBySessionId(sid);
   if (found && found.rowNumber >= 2) {
     await writeRow(found.rowNumber);
     chatTranscript.setSheetRow(sid, found.rowNumber);
+    if (suppression && typeof suppression.persistSheet1Row_ === 'function') {
+      await suppression.persistSheet1Row_(sid, found.rowNumber);
+    }
     return { ok: true, updated: found.rowNumber, convLink: values[0] ? 'yes' : 'no' };
   }
 
@@ -429,6 +457,9 @@ async function runSheetSync(sessionId) {
 
   await sheets.writeConvLinkForRow(rowNum, sid);
   chatTranscript.setSheetRow(sid, rowNum);
+  if (suppression && typeof suppression.persistSheet1Row_ === 'function') {
+    await suppression.persistSheet1Row_(sid, rowNum);
+  }
 
   const after = chatTranscript.getSessionDoc(sid);
   if (after.sheetRow && Number(after.sheetRow) !== rowNum) {

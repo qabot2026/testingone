@@ -3632,6 +3632,20 @@ async function flushSessionSheetCoalesceBucket_(sid) {
     }
     sessionSheetCoalesceBuckets_.delete(sid);
     const { run, resolvers, rejecters } = bucket;
+    const { noteChatSessionStarted_, msUntilSheetSyncAllowed_ } = await import("./sheet-sync-gate.mjs");
+    noteChatSessionStarted_(sid);
+    const wait = msUntilSheetSyncAllowed_(sid);
+    if (wait > 0) {
+        setTimeout(() => {
+            void flushSessionSheetCoalesceBucketRun_(sid, run, resolvers, rejecters);
+        }, wait);
+        return;
+    }
+    await flushSessionSheetCoalesceBucketRun_(sid, run, resolvers, rejecters);
+}
+
+/** @param {string} sid @param {() => Promise<unknown>} run @param {Array<(v: unknown) => void>} resolvers @param {Array<(e: unknown) => void>} rejecters */
+async function flushSessionSheetCoalesceBucketRun_(sid, run, resolvers, rejecters) {
     try {
         const result = await run();
         for (let i = 0; i < resolvers.length; i += 1) {
