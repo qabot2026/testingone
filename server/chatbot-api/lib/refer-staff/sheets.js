@@ -922,7 +922,8 @@ async function fetchLiveAgentGrid() {
     );
   }
   const tab = liveAgentTabName();
-  const colEnd = colEndFromRange(DASHBOARD_RANGE);
+  /** All Conversations (33) + Agent / Department / Status = 36 columns. */
+  const colEnd = columnToLetter(36);
   const meta = await client.spreadsheets.get({
     spreadsheetId: SPREADSHEET_ID,
     fields: 'properties.title',

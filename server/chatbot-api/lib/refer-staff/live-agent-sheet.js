@@ -1,30 +1,38 @@
 /**
- * Google Sheet2 — one row per live-agent handoff with Chatscript link (column A).
+ * Agent Handoffs tab — one row per live-agent handoff (All Conversations columns + Agent / Department / Status).
  */
 
 const sheets = require('./sheets');
 const chatTranscript = require('./chat-transcript');
+const conversationSheet = require('./conversation-sheet');
 const sheetDateFormat = require('./sheet-date-format');
 const transcriptDisplay = require('./transcript-display-text');
 
 const TZ = process.env.SHEETS_CONV_DATETIME_TZ || 'Asia/Kolkata';
 
-/** Row 1 on Sheet2 — match your spreadsheet tab. */
-const LIVE_AGENT_SHEET_HEADERS = [
-  'Chatscript',
-  'Conv. Date',
-  'Conv. Time',
-  'Name',
-  'Mobile',
-  'Email',
-  'Agent',
-  'Department',
-  'Status',
-  'User Queries',
-  'Session ID',
-  'Message Count',
-  'Duration',
-];
+/** All Conversations headers with Agent / Department / Status after User Queries. */
+function buildLiveAgentSheetHeaders_() {
+  const base = conversationSheet.SHEET_HEADERS;
+  const at = base.indexOf('User Queries');
+  if (at < 0) {
+    return base.concat(['Agent', 'Department', 'Status']);
+  }
+  return [
+    ...base.slice(0, at + 1),
+    'Agent',
+    'Department',
+    'Status',
+    ...base.slice(at + 1),
+  ];
+}
+
+const LIVE_AGENT_SHEET_HEADERS = buildLiveAgentSheetHeaders_();
+
+const USER_QUERIES_COL_IDX_ = conversationSheet.SHEET_HEADERS.indexOf('User Queries');
+const NAME_COL_IDX_ = conversationSheet.SHEET_HEADERS.indexOf('Name');
+const MOBILE_COL_IDX_ = conversationSheet.SHEET_HEADERS.indexOf('Mobile');
+const CONV_DATE_COL_IDX_ = conversationSheet.SHEET_HEADERS.indexOf('Conv. Date');
+const CONV_TIME_COL_IDX_ = conversationSheet.SHEET_HEADERS.indexOf('Conv. Time');
 
 const syncTimers = new Map();
 const syncChains = new Map();
@@ -527,58 +535,56 @@ function buildSheet1LiveAgentHandoffQueries(session) {
   return parts.join(', ');
 }
 
-function liveAgentMetrics(session) {
-  const msgs = (session && session.messages) || [];
-  let count = 0;
-  msgs.forEach((m) => {
-    const role = trim(m && m.role);
-    if (role === 'visitor' || role === 'agent') count += 1;
-  });
-
-  const startMs = Date.parse(session.requestedAt || session.createdAt || '');
-  const endRaw = session.closedAt || session.lastMessageAt || session.updatedAt || '';
-  const endMs = Date.parse(endRaw);
-  let duration = '';
-  if (Number.isFinite(startMs) && Number.isFinite(endMs) && endMs >= startMs) {
-    const sec = Math.round((endMs - startMs) / 1000);
-    duration = sec < 60 ? `${sec}s` : `${Math.round(sec / 60)}m`;
-  }
-  return { messageCount: String(count), duration };
-}
-
-function buildRowValues(session) {
+async function buildRowValues(session) {
   const sid = trim(session.sessionId);
   const doc = chatTranscript.getSessionDoc(sid);
-  const meta =
-    (session._sheetMeta && typeof session._sheetMeta === 'object'
-      ? session._sheetMeta
-      : null) ||
-    (doc && doc.meta) ||
-    {};
+  doc.meta = doc.meta || {};
+  if (session._sheetMeta && typeof session._sheetMeta === 'object') {
+    Object.assign(doc.meta, session._sheetMeta);
+  }
+  const visitorName = trim(session.visitorName);
+  if (visitorName) {
+    doc.meta.name = visitorName;
+  }
+  if (!doc.meta.repeatedUserLabel && !doc.meta.repeatedUser) {
+    doc.meta.repeatedUserLabel = await conversationSheet.resolveRepeatedUserLabel(doc);
+  }
+
+  const baseRow = conversationSheet.buildRowValues(doc);
+  const splitAt = USER_QUERIES_COL_IDX_ >= 0 ? USER_QUERIES_COL_IDX_ + 1 : baseRow.length;
+  const before = baseRow.slice(0, splitAt);
+  const after = baseRow.slice(splitAt);
+
+  if (USER_QUERIES_COL_IDX_ >= 0 && USER_QUERIES_COL_IDX_ < before.length) {
+    before[USER_QUERIES_COL_IDX_] = liveAgentSheetUserQueries_(session);
+  }
+  if (NAME_COL_IDX_ >= 0 && NAME_COL_IDX_ < before.length) {
+    const name = visitorName || trim(doc.meta.name) || trim(doc.meta.visitorName);
+    if (name) before[NAME_COL_IDX_] = name;
+  }
+  if (MOBILE_COL_IDX_ >= 0 && MOBILE_COL_IDX_ < before.length) {
+    before[MOBILE_COL_IDX_] = formatMobileForSheet(doc.meta, sid);
+  }
+
   const startedRaw =
     session.requestedAt || session.createdAt || (doc.turns && doc.turns[0] && doc.turns[0].at);
-  const started = startedRaw ? new Date(startedRaw) : new Date();
-  const metrics = liveAgentMetrics(session);
-  const name =
-    trim(session.visitorName) || trim(meta.name) || trim(meta.visitorName);
+  if (startedRaw) {
+    const started = new Date(startedRaw);
+    if (CONV_DATE_COL_IDX_ >= 0 && CONV_DATE_COL_IDX_ < before.length) {
+      before[CONV_DATE_COL_IDX_] = formatDateForSheet(started);
+    }
+    if (CONV_TIME_COL_IDX_ >= 0 && CONV_TIME_COL_IDX_ < before.length) {
+      before[CONV_TIME_COL_IDX_] = formatTime(started);
+    }
+  }
 
-  return [
-    sheets.chatscriptSheetCell(sid),
-    formatDateForSheet(started),
-    formatTime(started),
-    name,
-    formatMobileForSheet(meta, sid),
-    scalar(meta.email),
-    trim(session.assignedAgentDisplayName) ||
-      resolveAgentNameForSheet_(session) ||
-      '',
+  const agentCols = [
+    trim(session.assignedAgentDisplayName) || resolveAgentNameForSheet_(session) || '',
     formatDepartmentNameForSheet_(session.departmentName, session.departmentId),
     trim(session.status) || 'waiting',
-    liveAgentSheetUserQueries_(session),
-    sid,
-    metrics.messageCount,
-    metrics.duration,
   ];
+
+  return [...before, ...agentCols, ...after];
 }
 
 function sessionYmdInTz(iso) {
@@ -654,7 +660,7 @@ async function runSheet2Sync(sessionId) {
     return { skipped: true, reason: 'not_live_agent' };
   }
 
-  const values = buildRowValues(session);
+  const values = await buildRowValues(session);
   const tab = tabName();
   await sheets.ensureHeaderRowOnTab(tab, LIVE_AGENT_SHEET_HEADERS);
 

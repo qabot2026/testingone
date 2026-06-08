@@ -496,4 +496,5 @@ module.exports = {
   scheduleSheetSync,
   syncSessionToSheet,
   buildRowValues,
+  resolveRepeatedUserLabel,
 };
