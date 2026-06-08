@@ -118,6 +118,50 @@ async function loadMessagesForSession_(convRef, limit = 300) {
     }
 }
 
+function mergeWidgetMetaFromContext_(sheetMeta, cx) {
+    if (!cx || typeof cx !== "object") {
+        return sheetMeta;
+    }
+    const sp =
+        cx.session_params && typeof cx.session_params === "object" && !Array.isArray(cx.session_params)
+            ? /** @type {Record<string, unknown>} */ (cx.session_params)
+            : {};
+    const pick = (...keys) => {
+        for (let i = 0; i < keys.length; i += 1) {
+            const k = keys[i];
+            const v = cx[k] != null && String(cx[k]).trim() !== "" ? String(cx[k]).trim() : "";
+            if (v) return v;
+            const sv = sp[k] != null && String(sp[k]).trim() !== "" ? String(sp[k]).trim() : "";
+            if (sv) return sv;
+        }
+        return "";
+    };
+    return {
+        ...sheetMeta,
+        name: pick("name", "visitor_name") || sheetMeta.name,
+        email: pick("email") || sheetMeta.email,
+        mobile: pick("mobile", "phone") || sheetMeta.mobile,
+        dial_code: pick("dial_code", "dialCode", "country_dial_code") || sheetMeta.dial_code,
+        phone: pick("mobile", "phone") || sheetMeta.phone,
+        channel: pick("channel") || sheetMeta.channel || "Web",
+        sourceUrl: pick("sourceUrl", "pageUrl", "url") || sheetMeta.sourceUrl,
+        device: pick("device") || sheetMeta.device,
+        browser: pick("browser") || sheetMeta.browser,
+        os: pick("os") || sheetMeta.os,
+        city: pick("city", "user_city", "visitor_city") || sheetMeta.city,
+        ip: pick("ip", "ipAddress") || sheetMeta.ip,
+        utm_campaign: pick("utm_campaign", "utmCampaign") || sheetMeta.utm_campaign,
+        utm_content: pick("utm_content", "utmContent") || sheetMeta.utm_content,
+        utm_medium: pick("utm_medium", "utmMedium") || sheetMeta.utm_medium,
+        utm_source: pick("utm_source", "utmSource") || sheetMeta.utm_source,
+        utm_term: pick("utm_term", "utmTerm") || sheetMeta.utm_term,
+        fallback: pick("fallback", "fallBack") || sheetMeta.fallback,
+        crmPushStatus: pick("crmPushStatus") || sheetMeta.crmPushStatus,
+        rating: pick("rating", "feedbackRating") || sheetMeta.rating,
+        feedback: pick("feedback", "feedbackMessage", "message") || sheetMeta.feedback
+    };
+}
+
 async function enrichSessionForSheet_(base) {
     const settings = await getLiveAgentSettings_().catch(() => null);
     const agentEmail =
@@ -152,8 +196,9 @@ async function enrichSessionForSheet_(base) {
     }
     /** @type {string[]} */
     let widgetUserQueries = [];
+    let transcriptCx = null;
     try {
-        const transcriptCx = await fetchSessionChatTranscriptContext(base.sessionId);
+        transcriptCx = await fetchSessionChatTranscriptContext(base.sessionId);
         if (transcriptCx && Array.isArray(transcriptCx.user_queries)) {
             for (let i = 0; i < transcriptCx.user_queries.length; i += 1) {
                 const line = transcriptCx.user_queries[i];
@@ -165,6 +210,7 @@ async function enrichSessionForSheet_(base) {
     } catch (uqErr) {
         console.warn(LOG_TAG, "widget user_queries:", uqErr.message || uqErr);
     }
+    sheetMeta = mergeWidgetMetaFromContext_(sheetMeta, transcriptCx);
     try {
         const lead = await fetchLatestContactSubmissionForClientSession(base.sessionId);
         const leadCx =

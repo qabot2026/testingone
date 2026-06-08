@@ -67,7 +67,11 @@ export function msUntilSheetSyncAllowed_(sessionId) {
  * @param {string} sessionId
  * @returns {number}
  */
-function computeScheduleDelayMs_(sessionId) {
+function computeScheduleDelayMs_(sessionId, channel) {
+    const ch = trim_(channel);
+    if (ch === "sheet2") {
+        return SHEET_SYNC_DEBOUNCE_MS;
+    }
     const waitForStart = msUntilSheetSyncAllowed_(sessionId);
     return waitForStart + SHEET_SYNC_DEBOUNCE_MS;
 }
@@ -91,7 +95,7 @@ export function scheduleSheetSyncJob_(sessionId, channel, job) {
     if (existing) {
         clearTimeout(existing);
     }
-    const delay = computeScheduleDelayMs_(sid);
+    const delay = computeScheduleDelayMs_(sid, channel);
     const timer = setTimeout(() => {
         timers_.delete(key);
         const prev = chains_.get(key) || Promise.resolve();

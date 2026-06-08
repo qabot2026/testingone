@@ -103,7 +103,24 @@ function columnToLetter(n) {
 
 function tabFromRange(rangeStr) {
   const bang = rangeStr.indexOf('!');
-  return bang >= 0 ? rangeStr.slice(0, bang).replace(/^'|'$/g, '') : 'All Conversations';
+  const raw = bang >= 0 ? rangeStr.slice(0, bang).replace(/^'|'$/g, '') : 'All Conversations';
+  return stripEnvQuotes_(raw) || 'All Conversations';
+}
+
+/** Strip surrounding quotes Railway users sometimes include in env values. */
+function stripEnvQuotes_(s) {
+  return String(s || '').trim().replace(/^["']+|["']+$/g, '');
+}
+
+/** A1 notation tab prefix (quoted for names with spaces/special chars). */
+function sheetTabA1Prefix_(tabTitle) {
+  const t = stripEnvQuotes_(tabTitle).replace(/'/g, "''");
+  if (!t) return "'Sheet'";
+  return `'${t}'`;
+}
+
+function sheetTabRange_(tabTitle, a1Suffix) {
+  return `${sheetTabA1Prefix_(tabTitle)}!${a1Suffix}`;
 }
 
 function colEndFromRange(rangeStr) {
@@ -125,7 +142,7 @@ function dashboardTabName() {
 
 /** Human-agent handoff rows (ua-conversations) — live-agent sync tab, not the web KPI dashboard. */
 function liveAgentTabName() {
-  const custom = String(process.env.SHEETS_LIVE_AGENT_TAB || '').trim();
+  const custom = stripEnvQuotes_(process.env.SHEETS_LIVE_AGENT_TAB || '');
   if (custom) return custom;
   return 'Agent Handoffs';
 }
@@ -213,7 +230,7 @@ async function writeConvLinkForRow(rowNumber1Based, sessionId) {
   try {
     await client.spreadsheets.values.update({
       spreadsheetId: SPREADSHEET_ID,
-      range: `${tab}!A${rowNumber1Based}`,
+      range: sheetTabRange_(tab, `A${rowNumber1Based}`),
       valueInputOption: 'USER_ENTERED',
       requestBody: { values: [[cell]] },
     });
@@ -225,7 +242,7 @@ async function writeConvLinkForRow(rowNumber1Based, sessionId) {
       try {
         await client.spreadsheets.values.update({
           spreadsheetId: SPREADSHEET_ID,
-          range: `${tab}!A${rowNumber1Based}`,
+          range: sheetTabRange_(tab, `A${rowNumber1Based}`),
           valueInputOption: 'USER_ENTERED',
           requestBody: { values: [[plain]] },
         });
@@ -247,7 +264,7 @@ async function getNextDataRowNumber() {
   try {
     const res = await client.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
-      range: `${tab}!A:AG`,
+      range: sheetTabRange_(tab, 'A:AG'),
     });
     const rows = res.data.values || [];
     return Math.max(2, rows.length + 1);
@@ -280,7 +297,7 @@ async function fetchSheetRowBySessionId(sessionId) {
   try {
     const res = await client.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
-      range: `${tab}!A2:AG`,
+      range: sheetTabRange_(tab, 'A2:AG'),
     });
     const rows = res.data.values || [];
     for (let i = 0; i < rows.length; i++) {
@@ -361,7 +378,7 @@ async function ensureHeaderRowOnTab(tab, headers) {
     logSheetError('ensureHeaderRowOnTab', new Error('Sheets client not created — check credentials'));
     return;
   }
-  const headerRange = `${tab}!A1:${columnToLetter(headers.length)}1`;
+  const headerRange = sheetTabRange_(tab, `A1:${columnToLetter(headers.length)}1`);
   try {
     const res = await client.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
@@ -371,7 +388,7 @@ async function ensureHeaderRowOnTab(tab, headers) {
     if (row.length && String(row[0] || '').trim()) return;
     await client.spreadsheets.values.update({
       spreadsheetId: SPREADSHEET_ID,
-      range: `${tab}!A1`,
+      range: sheetTabRange_(tab, 'A1'),
       valueInputOption: 'USER_ENTERED',
       requestBody: { values: [headers] },
     });
@@ -389,7 +406,7 @@ async function ensureHeaderRow(headers) {
     return;
   }
   const tab = tabName();
-  const headerRange = `${tab}!A1:${columnToLetter(headers.length)}1`;
+  const headerRange = sheetTabRange_(tab, `A1:${columnToLetter(headers.length)}1`);
   try {
     const res = await client.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
@@ -403,7 +420,7 @@ async function ensureHeaderRow(headers) {
     }
     await client.spreadsheets.values.update({
       spreadsheetId: SPREADSHEET_ID,
-      range: `${tab}!A1`,
+      range: sheetTabRange_(tab, 'A1'),
       valueInputOption: 'USER_ENTERED',
       requestBody: { values: [headers] },
     });
@@ -434,7 +451,7 @@ async function updateRowOnTab(tab, rowNumber1Based, values) {
   const client = getSheetsClient();
   if (!client) return false;
   const endCol = columnToLetter(values.length);
-  const range = `${tab}!A${rowNumber1Based}:${endCol}${rowNumber1Based}`;
+  const range = sheetTabRange_(tab, `A${rowNumber1Based}:${endCol}${rowNumber1Based}`);
   try {
     await client.spreadsheets.values.update({
       spreadsheetId: SPREADSHEET_ID,
@@ -464,7 +481,7 @@ async function getNextDataRowNumberOnTab(tab, colEnd) {
   try {
     const res = await client.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
-      range: `${tab}!A:${end}`,
+      range: sheetTabRange_(tab, `A:${end}`),
     });
     const rows = res.data.values || [];
     return Math.max(2, rows.length + 1);
@@ -501,7 +518,7 @@ async function writeChatscriptForRowOnTab(tab, rowNumber1Based, sessionId) {
   try {
     await client.spreadsheets.values.update({
       spreadsheetId: SPREADSHEET_ID,
-      range: `${tab}!A${rowNumber1Based}`,
+      range: sheetTabRange_(tab, `A${rowNumber1Based}`),
       valueInputOption: 'USER_ENTERED',
       requestBody: { values: [[cell]] },
     });
@@ -513,7 +530,7 @@ async function writeChatscriptForRowOnTab(tab, rowNumber1Based, sessionId) {
       try {
         await client.spreadsheets.values.update({
           spreadsheetId: SPREADSHEET_ID,
-          range: `${tab}!A${rowNumber1Based}`,
+          range: sheetTabRange_(tab, `A${rowNumber1Based}`),
           valueInputOption: 'USER_ENTERED',
           requestBody: { values: [[plain]] },
         });
@@ -541,7 +558,7 @@ async function fetchSheetRowBySessionIdOnTab(tab, sessionId, headers) {
   try {
     const res = await client.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
-      range: `${tab}!A2:${colEnd}`,
+      range: sheetTabRange_(tab, `A2:${colEnd}`),
     });
     const rows = res.data.values || [];
     for (let i = 0; i < rows.length; i += 1) {
@@ -640,7 +657,7 @@ async function listSheetMobiles(excludeRowNumber1Based) {
       mobileIdx >= 0 ? columnToLetter(mobileIdx + 1) : 'E';
     const res = await client.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
-      range: `${tab}!${mobileCol}2:${mobileCol}`,
+      range: sheetTabRange_(tab, `${mobileCol}2:${mobileCol}`),
     });
     const rows = res.data.values || [];
     const out = [];
@@ -723,7 +740,7 @@ async function loadDocumentEnrichmentByFolder() {
   try {
     const res = await client.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
-      range: `${tab}!A2:AG`,
+      range: sheetTabRange_(tab, 'A2:AG'),
     });
     const rows = res.data.values || [];
     rows.forEach((row) => {
@@ -777,7 +794,7 @@ async function loadSheetDocumentEntries() {
   try {
     const res = await client.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
-      range: `${tab}!A2:AG`,
+      range: sheetTabRange_(tab, 'A2:AG'),
     });
     const rows = res.data.values || [];
     rows.forEach((row) => {
@@ -846,7 +863,7 @@ async function backfillConvLinkColumn() {
   try {
     const res = await client.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
-      range: `${tab}!${sidCol}2:${sidCol}`,
+      range: sheetTabRange_(tab, `${sidCol}2:${sidCol}`),
     });
     const rows = res.data.values || [];
     let updated = 0;
@@ -898,7 +915,7 @@ async function fetchConversationGrid() {
       : '';
   const res = await client.spreadsheets.values.get({
     spreadsheetId: SPREADSHEET_ID,
-    range: `${tab}!A:AG`,
+    range: sheetTabRange_(tab, 'A:AG'),
     valueRenderOption: 'FORMATTED_VALUE',
     dateTimeRenderOption: 'FORMATTED_STRING',
   });
@@ -934,7 +951,7 @@ async function fetchLiveAgentGrid() {
       : '';
   const res = await client.spreadsheets.values.get({
     spreadsheetId: SPREADSHEET_ID,
-    range: `${tab}!A:${colEnd}`,
+    range: sheetTabRange_(tab, `A:${colEnd}`),
     valueRenderOption: 'FORMATTED_VALUE',
     dateTimeRenderOption: 'FORMATTED_STRING',
   });

@@ -539,6 +539,7 @@ async function buildRowValues(session) {
   const sid = trim(session.sessionId);
   const doc = chatTranscript.getSessionDoc(sid);
   doc.meta = doc.meta || {};
+  doc.sessionId = doc.sessionId || sid;
   if (session._sheetMeta && typeof session._sheetMeta === 'object') {
     Object.assign(doc.meta, session._sheetMeta);
   }
@@ -547,7 +548,11 @@ async function buildRowValues(session) {
     doc.meta.name = visitorName;
   }
   if (!doc.meta.repeatedUserLabel && !doc.meta.repeatedUser) {
-    doc.meta.repeatedUserLabel = await conversationSheet.resolveRepeatedUserLabel(doc);
+    try {
+      doc.meta.repeatedUserLabel = await conversationSheet.resolveRepeatedUserLabel(doc);
+    } catch (repeatErr) {
+      console.warn('[live-agent-sheet] repeated user:', repeatErr.message || repeatErr);
+    }
   }
 
   const baseRow = conversationSheet.buildRowValues(doc);
@@ -584,7 +589,18 @@ async function buildRowValues(session) {
     trim(session.status) || 'waiting',
   ];
 
-  return [...before, ...agentCols, ...after];
+  const row = [...before, ...agentCols, ...after];
+  if (row.length !== LIVE_AGENT_SHEET_HEADERS.length) {
+    console.warn(
+      '[live-agent-sheet] row width mismatch',
+      row.length,
+      'expected',
+      LIVE_AGENT_SHEET_HEADERS.length,
+      'session',
+      sid
+    );
+  }
+  return row;
 }
 
 function sessionYmdInTz(iso) {
@@ -665,7 +681,17 @@ async function runSheet2Sync(sessionId) {
   await sheets.ensureHeaderRowOnTab(tab, LIVE_AGENT_SHEET_HEADERS);
 
   const writeRow = async (rowNum) => {
-    await sheets.updateRowOnTab(tab, rowNum, values);
+    const ok = await sheets.updateRowOnTab(tab, rowNum, values);
+    if (!ok) {
+      const st = sheets.getStatus();
+      console.warn(
+        '[live-agent-sheet] update failed tab=',
+        tab,
+        'row=',
+        rowNum,
+        st.lastError || ''
+      );
+    }
     await sheets.writeChatscriptForRowOnTab(tab, rowNum, sid);
   };
 
@@ -704,7 +730,9 @@ async function runSheet2Sync(sessionId) {
 
   const appended = await sheets.appendRowValuesOnTab(tab, values);
   if (!appended) {
-    return { ok: false, error: 'append_failed' };
+    const st = sheets.getStatus();
+    console.warn('[live-agent-sheet] append_failed tab=', tab, 'session=', sid, st.lastError || '');
+    return { ok: false, error: 'append_failed', tab, detail: st.lastError || null };
   }
   await sheets.writeChatscriptForRowOnTab(tab, appended, sid);
   persistSheet2Row(session, appended);
