@@ -81,9 +81,21 @@ function formatDepartmentNameForSheet_(departmentName, departmentId) {
   return name || 'General';
 }
 
-function formatMobileForSheet(meta) {
+function formatMobileForSheet(meta, sessionId) {
+  const sid = trim(sessionId);
   const rawMobile = String(meta.mobile || meta.phone || '').trim();
   if (!rawMobile) return '';
+  const digits = rawMobile.replace(/\D/g, '');
+  if (digits.length >= 9 && sid) {
+    const sidDigits = sid.replace(/\D/g, '');
+    if (
+      rawMobile.toLowerCase() === sid.toLowerCase()
+      || (sidDigits.length >= 9 && (digits === sidDigits || sidDigits.includes(digits) || digits.includes(sidDigits)))
+      || (digits.length === 13 && Number(digits) >= 1400000000000 && Number(digits) <= 2200000000000)
+    ) {
+      return '';
+    }
+  }
 
   const compact = rawMobile.replace(/\s+/g, '');
   if (/^\+?\d{11,}$/.test(compact)) {
@@ -555,7 +567,7 @@ function buildRowValues(session) {
     formatDateForSheet(started),
     formatTime(started),
     name,
-    formatMobileForSheet(meta),
+    formatMobileForSheet(meta, sid),
     scalar(meta.email),
     trim(session.assignedAgentDisplayName) ||
       resolveAgentNameForSheet_(session) ||

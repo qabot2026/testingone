@@ -16356,12 +16356,14 @@ function mergeLikelyMobileFromChatText(raw) {
         && digitsOnly.length <= 15
         && /^[\d\s+().\-]+$/i.test(normalized)
     ) {
-        mergeVisitorMobileIntoStoredContext(digitsOnly, { syncSheet: false, fromChat: true });
+        if (rejectMobileDerivedFromSessionId_(digitsOnly)) {
+            mergeVisitorMobileIntoStoredContext(digitsOnly, { syncSheet: false, fromChat: true });
+        }
         return;
     }
 
     const extracted = extractLikelyMobileDigitsForMerge_(t);
-    if (extracted && extracted.replace(/\D/g, "").length >= 9) {
+    if (extracted && rejectMobileDerivedFromSessionId_(extracted)) {
         mergeVisitorMobileIntoStoredContext(extracted.replace(/\D/g, ""), { syncSheet: false, fromChat: true });
     }
 }
@@ -26648,6 +26650,7 @@ function readStoredClientContext() {
             return {};
         }
         const out = /** @type {Record<string, unknown>} */ ({ ...parsedValue });
+        const sidForGuard = dfParameterScalarToString(out.client_session_id || "");
         for (const key of ["name", "email", "mobile"]) {
             if (!(key in out)) {
                 continue;
@@ -26658,6 +26661,11 @@ function readStoredClientContext() {
                 continue;
             }
             out[key] = cleaned;
+        }
+        if (typeof out.mobile === "string" && out.mobile.trim()) {
+            if (!rejectMobileDerivedFromSessionId_(out.mobile, sidForGuard)) {
+                delete out.mobile;
+            }
         }
         return out;
     } catch {
@@ -27122,6 +27130,67 @@ function postCapturedMobileToSheetRow(mobileValue) {
         });
 }
 
+/** Reject phone digits parsed from `client_session_id` (e.g. `chat-{epoch}-…` timestamps). */
+function isEpochMillisDigitRun_(digits) {
+    const d = String(digits || "").replace(/\D/g, "");
+    if (d.length !== 13) {
+        return false;
+    }
+    const n = Number(d);
+    return Number.isFinite(n) && n >= 1400000000000 && n <= 2200000000000;
+}
+
+function sessionIdForMobileGuard_() {
+    try {
+        const rawValue = window.sessionStorage.getItem(CHAT_CLIENT_CONTEXT_STORAGE_KEY);
+        if (!rawValue) {
+            return "";
+        }
+        const parsedValue = JSON.parse(rawValue);
+        if (!parsedValue || typeof parsedValue !== "object") {
+            return "";
+        }
+        return dfParameterScalarToString(
+            /** @type {Record<string, unknown>} */ (parsedValue).client_session_id || ""
+        ).trim();
+    } catch {
+        return "";
+    }
+}
+
+function rejectMobileDerivedFromSessionId_(rawMobile, sessionIdOpt) {
+    const v = typeof rawMobile === "string" ? rawMobile.trim() : "";
+    if (!v || !/\d/.test(v)) {
+        return "";
+    }
+    const d = v.replace(/\D/g, "");
+    if (!d || d.length < 9 || isEpochMillisDigitRun_(d)) {
+        return "";
+    }
+    const sid =
+        typeof sessionIdOpt === "string" && sessionIdOpt.trim()
+            ? sessionIdOpt.trim()
+            : sessionIdForMobileGuard_();
+    if (!sid) {
+        return d;
+    }
+    const sidNorm = sid.replace(/\s+/g, "").toLowerCase();
+    const vNorm = v.replace(/\s+/g, "").toLowerCase();
+    if (vNorm === sidNorm || sidNorm.includes(vNorm)) {
+        return "";
+    }
+    const sidDigits = sid.replace(/\D/g, "");
+    if (sidDigits.length >= 9) {
+        if (d === sidDigits || sidDigits.includes(d) || d.includes(sidDigits)) {
+            return "";
+        }
+    }
+    if (sid.includes(d)) {
+        return "";
+    }
+    return d;
+}
+
 /**
  * Remember the visitor’s mobile after Contact / OTP forms so document uploads (no tel field)
  * still send `mobile` inside `client_context` for backend Drive folder naming.
@@ -27131,6 +27200,10 @@ function postCapturedMobileToSheetRow(mobileValue) {
 function mergeVisitorMobileIntoStoredContext(rawMobile, opts) {
     const v = typeof rawMobile === "string" ? rawMobile.trim() : "";
     if (!v || !/\d/.test(v)) {
+        return;
+    }
+    const safeDigits = rejectMobileDerivedFromSessionId_(v);
+    if (!safeDigits || safeDigits.length < 9) {
         return;
     }
     const o = opts && typeof opts === "object" ? opts : {};
@@ -27337,6 +27410,16 @@ function mergeDfParameterDigitsFallback(prefill) {
     var pk = Object.keys(prefill);
     var bestRun = "";
     for (var p = 0; p < pk.length; p += 1) {
+        var keyNorm = String(pk[p] || "")
+            .toLowerCase()
+            .replace(/[^a-z0-9]/g, "");
+        if (
+            keyNorm === "clientsessionid"
+            || keyNorm === "sessionid"
+            || keyNorm.includes("session")
+        ) {
+            continue;
+        }
         var vx = dfParameterScalarToString(prefill[pk[p]]);
         if (!vx) {
             continue;
@@ -27346,12 +27429,15 @@ function mergeDfParameterDigitsFallback(prefill) {
             continue;
         }
         for (var r = 0; r < runs.length; r += 1) {
+            if (isEpochMillisDigitRun_(runs[r])) {
+                continue;
+            }
             if (runs[r].length >= 9 && runs[r].length <= 15 && runs[r].length > bestRun.length) {
                 bestRun = runs[r];
             }
         }
     }
-    if (bestRun) {
+    if (bestRun && rejectMobileDerivedFromSessionId_(bestRun)) {
         mergeVisitorMobileIntoStoredContext(bestRun);
     }
 }
@@ -27590,7 +27676,7 @@ function digitRunFromDigitsOnlyUtterance(raw) {
     if (!/^[\d\s+().\-]+$/i.test(t.replace(/\u00a0/g, " "))) {
         return "";
     }
-    return digits;
+    return rejectMobileDerivedFromSessionId_(digits);
 }
 
 /** When the user sends only a phone number, CX fills `mobile` asynchronously; utterance appears on `queryResult.text` / `match.resolvedInput`. */

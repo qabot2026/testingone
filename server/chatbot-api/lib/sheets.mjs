@@ -14,6 +14,7 @@ import { fileURLToPath } from "url";
 import { google } from "googleapis";
 import {
     contactContextLookupRecord_,
+    rejectSessionDerivedMobileDigits,
     resolveContactEmail,
     resolveContactMobile,
     resolveContactName,
@@ -1985,6 +1986,15 @@ export function formatMobileForSheetDisplay(mobileRaw, meta) {
             : metaObj.mobile || metaObj.phone || ""
     ).trim();
     if (!rawMobile) {
+        return "";
+    }
+    const sid =
+        typeof metaObj.client_session_id === "string" && metaObj.client_session_id.trim()
+            ? metaObj.client_session_id.trim()
+            : typeof metaObj.clientSessionId === "string" && metaObj.clientSessionId.trim()
+              ? metaObj.clientSessionId.trim()
+              : "";
+    if (sid && !rejectSessionDerivedMobileDigits(rawMobile.replace(/\D/g, ""), sid)) {
         return "";
     }
 

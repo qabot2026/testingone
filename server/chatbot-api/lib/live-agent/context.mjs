@@ -6,6 +6,7 @@ import {
     fetchLatestContactSubmissionForClientSession,
     fetchSessionChatTranscriptContext
 } from "../firestore.mjs";
+import { rejectSessionDerivedMobileDigits } from "../contact-mobile.mjs";
 import { isPlausibleVisitorDisplayName_ } from "./visitor-name.mjs";
 
 const NAME_KEYS = ["name", "visitor_name", "full_name", "customer_name"];
@@ -230,7 +231,8 @@ export async function getVisitorContext_(sessionId, options = {}) {
     const rawName = pickFirst_(sources, NAME_KEYS);
     base.name = isPlausibleVisitorDisplayName_(rawName) ? rawName : "";
     base.email = pickFirst_(sources, EMAIL_KEYS);
-    base.mobile = pickFirst_(sources, MOBILE_KEYS);
+    const rawMobile = pickFirst_(sources, MOBILE_KEYS);
+    base.mobile = rejectSessionDerivedMobileDigits(rawMobile, sid) ? rawMobile : "";
     base.channel = pickFirst_(sources, CHANNEL_KEYS);
     base.sourceUrl = pickFirst_(sources, SOURCE_KEYS);
 

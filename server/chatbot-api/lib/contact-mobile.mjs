@@ -96,10 +96,25 @@ function pickMobileFromLooseKeys(obj) {
  * @param {Record<string, unknown>} body
  * @param {Record<string, unknown>} [clientContext]
  */
+function acceptResolvedMobile_(raw, clientContext) {
+    const v = scalarFormValue(raw);
+    if (!v) {
+        return "";
+    }
+    const digits = normalizeMobileDigits(v);
+    if (digits.length >= 9) {
+        return rejectSessionDerivedMobileDigits_(digits, clientContext) ? v.trim() : "";
+    }
+    return v.trim();
+}
+
 export function resolveContactMobile(fields, body, clientContext) {
     for (const k of MOBILE_KEYS) {
         // Form POST fields must win over stale client_context / merged body (session can carry empty "mobile").
-        const v = scalarFormValue(fields[k]) || scalarFormValue(body[k]);
+        const v = acceptResolvedMobile_(
+            scalarFormValue(fields[k]) || scalarFormValue(body[k]),
+            clientContext
+        );
         if (v) {
             return v;
         }
@@ -107,22 +122,26 @@ export function resolveContactMobile(fields, body, clientContext) {
     if (clientContext && typeof clientContext === "object") {
         const lookup = contactContextLookupRecord_(clientContext);
         for (const k of MOBILE_KEYS) {
-            const v = scalarFormValue(lookup[k]);
+            const v = acceptResolvedMobile_(scalarFormValue(lookup[k]), clientContext);
             if (v) {
                 return v;
             }
         }
     }
     let loose = pickMobileFromLooseKeys(fields);
+    loose = acceptResolvedMobile_(loose, clientContext);
     if (loose) {
         return loose;
     }
-    loose = pickMobileFromLooseKeys(body);
+    loose = acceptResolvedMobile_(pickMobileFromLooseKeys(body), clientContext);
     if (loose) {
         return loose;
     }
     if (clientContext && typeof clientContext === "object") {
-        loose = pickMobileFromLooseKeys(contactContextLookupRecord_(clientContext));
+        loose = acceptResolvedMobile_(
+            pickMobileFromLooseKeys(contactContextLookupRecord_(clientContext)),
+            clientContext
+        );
         if (loose) {
             return loose;
         }
@@ -378,26 +397,76 @@ function stringLikelyContainsUuid_(s) {
     return UUID_V4_TEXT_RE.test(String(s || ""));
 }
 
-/** @param {string} digits @param {Record<string, unknown>} [clientContext] */
-function rejectSessionDerivedMobileDigits_(digits, clientContext) {
+/** @param {string} digits */
+function isEpochMillisDigitRun_(digits) {
     const d = normalizeMobileDigits(digits);
-    if (!d) {
+    if (d.length !== 13) {
+        return false;
+    }
+    const n = Number(d);
+    return Number.isFinite(n) && n >= 1_400_000_000_000 && n <= 2_200_000_000_000;
+}
+
+/** @param {Record<string, unknown> | null | undefined} clientContext */
+function sessionIdFromClientContext_(clientContext) {
+    if (!clientContext || typeof clientContext !== "object") {
+        return "";
+    }
+    const cx = /** @type {Record<string, unknown>} */ (clientContext);
+    const direct =
+        typeof cx.client_session_id === "string" && cx.client_session_id.trim()
+            ? cx.client_session_id.trim()
+            : "";
+    if (direct) {
+        return direct;
+    }
+    const nested =
+        cx.client_context
+        && typeof cx.client_context === "object"
+        && !Array.isArray(cx.client_context)
+        && typeof /** @type {Record<string, unknown>} */ (cx.client_context).client_session_id === "string"
+            ? String(/** @type {Record<string, unknown>} */ (cx.client_context).client_session_id).trim()
+            : "";
+    return nested;
+}
+
+/**
+ * Reject mobiles parsed from session ids (UUID fragments, `chat-{epoch}-…` timestamps, etc.).
+ * @param {string} digits
+ * @param {Record<string, unknown> | string | null | undefined} clientContextOrSessionId
+ */
+export function rejectSessionDerivedMobileDigits(digits, clientContextOrSessionId) {
+    const d = normalizeMobileDigits(digits);
+    if (!d || isEpochMillisDigitRun_(d)) {
         return "";
     }
     const sid =
-        clientContext
-        && typeof clientContext.client_session_id === "string"
-        && clientContext.client_session_id.trim()
-            ? clientContext.client_session_id.trim()
-            : "";
+        typeof clientContextOrSessionId === "string"
+            ? clientContextOrSessionId.trim()
+            : sessionIdFromClientContext_(clientContextOrSessionId);
     if (!sid) {
         return d;
     }
+    const sidNorm = sid.replace(/\s+/g, "").toLowerCase();
+    const mobileNorm = String(digits || "").replace(/\s+/g, "").toLowerCase();
+    if (mobileNorm && (mobileNorm === sidNorm || sidNorm.includes(mobileNorm))) {
+        return "";
+    }
     const sidDigits = sid.replace(/\D/g, "");
-    if (sidDigits.length >= 9 && sidDigits.includes(d)) {
+    if (sidDigits.length >= 9) {
+        if (d === sidDigits || sidDigits.includes(d) || d.includes(sidDigits)) {
+            return "";
+        }
+    }
+    if (d.length >= 9 && sid.includes(d)) {
         return "";
     }
     return d;
+}
+
+/** @param {string} digits @param {Record<string, unknown>} [clientContext] */
+function rejectSessionDerivedMobileDigits_(digits, clientContext) {
+    return rejectSessionDerivedMobileDigits(digits, clientContext);
 }
 
 const USER_QUERY_CONTEXT_KEYS = [
@@ -428,8 +497,11 @@ function pickMobileFromUserQueriesInContext_(ctx) {
             if (!line || looksLikeUuidString_(line) || stringLikelyContainsUuid_(line)) {
                 continue;
             }
-            const digits = normalizeMobileDigits(line);
-            if (digits.length >= 9 && digits.length <= 15) {
+            const digits = rejectSessionDerivedMobileDigits_(
+                normalizeMobileDigits(line),
+                ctx
+            );
+            if (digits.length >= 9 && digits.length <= 15 && !isEpochMillisDigitRun_(digits)) {
                 return digits;
             }
         }
@@ -517,6 +589,8 @@ function longestDigitRunDeep_(val, depth) {
                     continue;
                 }
                 if (
+                    nk === "clientsessionid" ||
+                    nk === "sessionid" ||
                     nk.includes("session") ||
                     nk.includes("clientsession") ||
                     nk.includes("timestamp") ||
@@ -556,7 +630,6 @@ export function resolveSubmissionMobileDigits(fields, body, clientContext) {
         return direct;
     }
     const ctx = clientContext && typeof clientContext === "object" ? clientContext : {};
-    const bodyObj = body && typeof body === "object" ? body : {};
     const fromQueries = rejectSessionDerivedMobileDigits_(
         pickMobileFromUserQueriesInContext_(ctx),
         clientContext
@@ -564,9 +637,10 @@ export function resolveSubmissionMobileDigits(fields, body, clientContext) {
     if (fromQueries) {
         return fromQueries;
     }
-    const scanned =
-        longestDigitRunDeep_(fields, 0) ||
-        longestDigitRunDeep_(ctx, 0) ||
-        longestDigitRunDeep_(bodyObj, 0);
-    return rejectSessionDerivedMobileDigits_(scanned, clientContext);
+    // Only scan explicit form fields — never deep-scan session/client_context (session ids look like phones).
+    const fromFields = rejectSessionDerivedMobileDigits_(
+        longestDigitRunDeep_(fields, 0),
+        clientContext
+    );
+    return fromFields || "";
 }
