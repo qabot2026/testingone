@@ -4996,6 +4996,9 @@ function transcriptTurnsFromStoredChatArray_(arr) {
         if (isTranscriptCxInternalToken_(text)) {
             continue;
         }
+        if (role === "assistant" && text && !rich && isTranscriptIntentDisplayNoise_(text)) {
+            continue;
+        }
         if (role === "assistant" && text && !rich && isTranscriptStandaloneChipOrMenuLabel_(text)) {
             continue;
         }
@@ -5350,6 +5353,18 @@ function isTranscriptInternalUserToken_(text) {
     }
     const low = t.toLowerCase();
     return low === "upload" || low === "resend_otp";
+}
+
+/** Dialogflow/CX intent display names — hide from staff chatscript (fulfillment text remains). */
+function isTranscriptIntentDisplayNoise_(text) {
+    const t = String(text ?? "").trim();
+    if (!t) {
+        return false;
+    }
+    if (/^default\s+welcome\s+intent$/i.test(t)) {
+        return true;
+    }
+    return /^.+\s+intent$/i.test(t) && t.length <= 96;
 }
 
 /** CX routing tokens and unresolved `$session.params.*` templates — hide from staff chatscript. */
@@ -5873,6 +5888,9 @@ function dedupeTranscriptTurnsForDisplay_(turns) {
             continue;
         }
         if (text && isTranscriptCxInternalToken_(text)) {
+            continue;
+        }
+        if (role === "assistant" && text && !rich && isTranscriptIntentDisplayNoise_(text)) {
             continue;
         }
         if (role === "assistant" && text && !rich && isTranscriptStandaloneChipOrMenuLabel_(text)) {
@@ -7057,8 +7075,26 @@ app.get(PATHNAME_CONVERSATION_TRANSCRIPT_JSON, async (req, res) => {
             try {
                 const { csv } = await fetchLeadSheetUserQueriesForSession(session);
                 const { mergedSheet1UserQueriesCsv_ } = await import("./lib/live-agent/sheet-sync.mjs");
+                const { mergeClientAuthoritativeQueriesPreservingHandoff_ } = await import("./lib/sheets.mjs");
                 authoritativeUserQueriesCsv =
                     (await mergedSheet1UserQueriesCsv_(session, csv || "")) || csv || "";
+                const clientCxForUq =
+                    liveCx && typeof liveCx === "object"
+                        ? liveCx
+                        : firestoreRec &&
+                            firestoreRec.client_context &&
+                            typeof firestoreRec.client_context === "object"
+                          ? /** @type {Record<string, unknown>} */ (firestoreRec.client_context)
+                          : null;
+                const clientUqCsv = clientCxForUq
+                    ? normalizeUserQueriesCsvFromClientContext(clientCxForUq)
+                    : "";
+                if (clientUqCsv) {
+                    authoritativeUserQueriesCsv = mergeClientAuthoritativeQueriesPreservingHandoff_(
+                        authoritativeUserQueriesCsv,
+                        clientUqCsv
+                    );
+                }
                 const fromSheetQueries = userTurnsFromSheetQueriesCsv_(authoritativeUserQueriesCsv);
                 if (fromSheetQueries.length) {
                     const existingUserN = new Set(

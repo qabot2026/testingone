@@ -2984,6 +2984,69 @@ export function mergeLiveAgentHandoffIntoUserQueriesCsv_(existingCsv, newHandoff
     return replaceLiveAgentHandoffBlockInCsv_(existingCsv, newHandoffCsv);
 }
 
+/**
+ * Widget `user_queries` are authoritative; live-agent handoff tail stays mid-session.
+ * Visitor lines after agent disconnect append after the handoff block (not before it).
+ *
+ * @param {string} existingSheetCsv
+ * @param {string} incomingClientCsv
+ */
+export function mergeClientAuthoritativeQueriesPreservingHandoff_(existingSheetCsv, incomingClientCsv) {
+    const existing = splitCsvValues_(sanitizeUserQueriesCsvForSheet(existingSheetCsv));
+    const clientSegs = splitCsvValues_(
+        sanitizeUserQueriesCsvForSheet(incomingClientCsv, { preserveAllChatQueries: true })
+    );
+    if (!clientSegs.length) {
+        return existing.join(", ");
+    }
+
+    let handoffStart = existing.length;
+    for (let i = 0; i < existing.length; i += 1) {
+        if (isLiveAgentHandoffCsvSegment_(existing[i])) {
+            handoffStart = i;
+            break;
+        }
+    }
+    const sheetBotCount = handoffStart;
+    const handoffBlock = existing.slice(handoffStart);
+
+    const clientPre = clientSegs.slice(0, Math.min(sheetBotCount, clientSegs.length));
+    const clientPost = clientSegs.slice(sheetBotCount);
+
+    const handoffDeduped = handoffBlock.length
+        ? dedupeHandoffSegmentsAgainstBot_(
+              clientPre,
+              splitCsvValues_(sanitizeUserQueriesCsvForSheet(handoffBlock.join(", ")))
+          )
+        : [];
+
+    /** @type {Set<string>} */
+    const seen = new Set();
+    [...clientPre, ...handoffDeduped].forEach((s) => {
+        const k = userQuerySegmentDedupeKey_(s);
+        if (k) {
+            seen.add(k);
+        }
+    });
+    /** @type {string[]} */
+    const postExtra = [];
+    for (const seg of clientPost) {
+        const t = String(seg ?? "").trim();
+        if (!t || isUserQuerySheetNoiseSegment_(t)) {
+            continue;
+        }
+        const k = userQuerySegmentDedupeKey_(t);
+        if (!k || seen.has(k)) {
+            continue;
+        }
+        seen.add(k);
+        postExtra.push(t);
+    }
+
+    const merged = [...clientPre, ...handoffDeduped, ...postExtra];
+    return merged.length ? merged.join(", ") : "";
+}
+
 /** Handoff markers + live-agent chat tail already on the row (preserve across bot query refresh). */
 function extractLiveAgentHandoffTailFromCsv_(csv) {
     const all = splitCsvValues_(csv);
@@ -5811,10 +5874,7 @@ async function upsertSessionQueriesInSheet_(row) {
             const replacePrefix =
                 typeof row.replaceCsvPrefix === "string" ? row.replaceCsvPrefix.trim() : "";
             if (clientAuthoritativeQueries && !replacePrefix && !row.replaceLiveAgentHandoffBlock) {
-                const handoffTail = extractLiveAgentHandoffTailFromCsv_(existingCsv);
-                merged = handoffTail
-                    ? replaceLiveAgentHandoffBlockInCsv_(incomingQ, handoffTail)
-                    : incomingQ;
+                merged = mergeClientAuthoritativeQueriesPreservingHandoff_(existingCsv, incomingQ);
             } else if (row.replaceLiveAgentHandoffBlock) {
                 merged = replaceLiveAgentHandoffBlockInCsv_(existingCsv, incomingQ);
             } else {

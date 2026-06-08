@@ -35,7 +35,7 @@
   }
 
   var CHAT_HOST = chatHostFromLoaderSrc() || "https://qabot2026.github.io/testingone/";
-  var IFRAME_VERSION = "187-user-queries-no-form-closed";
+  var IFRAME_VERSION = "188-hide-welcome-intent-post-handoff-queries";
 
   function getLoaderQuery() {
     var cur = document.currentScript;

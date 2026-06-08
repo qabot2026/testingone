@@ -19975,7 +19975,7 @@ function ensureAssistantTranscriptCapturedForDfEvent_(event) {
     const intentLabel = getIntentDisplayNameFromDfEvent(event);
     /** @type {string[]} */
     const forceLines = [];
-    if (intentLabel && !isTranscriptNoiseLine_(intentLabel)) {
+    if (intentLabel && !isTranscriptIntentDisplayNoise_(intentLabel) && !isTranscriptNoiseLine_(intentLabel)) {
         forceLines.push(intentLabel);
     }
     const d = event && event.detail;
@@ -21532,8 +21532,25 @@ const TRANSCRIPT_NOISE_LINE_SET = new Set([
     "Virtual Agent",
     "Chips",
     "chips",
-    "chip"
+    "chip",
+    "Default Welcome Intent"
 ]);
+
+/**
+ * Dialogflow/CX intent display names (e.g. "Default Welcome Intent") — not staff-facing chat.
+ * @param {string} line
+ * @returns {boolean}
+ */
+function isTranscriptIntentDisplayNoise_(line) {
+    const t = typeof line === "string" ? line.trim() : "";
+    if (!t) {
+        return false;
+    }
+    if (/^default\s+welcome\s+intent$/i.test(t)) {
+        return true;
+    }
+    return /^.+\s+intent$/i.test(t) && t.length <= 96;
+}
 
 /** @param {string} line */
 function stripTranscriptMarkupForPersonaProbe_(line) {
@@ -21700,6 +21717,7 @@ function isTranscriptNoiseLine_(line) {
     return (
         !t
         || TRANSCRIPT_NOISE_LINE_SET.has(t)
+        || isTranscriptIntentDisplayNoise_(t)
         || isTranscriptPersonaChromeLine_(t)
         || isTranscriptEphemeralStatusLine_(t)
         || isTranscriptInternalCxToken_(t)
