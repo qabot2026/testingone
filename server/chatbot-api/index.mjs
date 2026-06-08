@@ -3509,7 +3509,13 @@ app.post(
             });
         }
 
-        const userQueriesCsv = normalizeUserQueriesCsvFromClientContext(mergedClientContext);
+        const { buildAuthoritativeSheet1UserQueriesCsv_ } = await import(
+            "./lib/authoritative-user-queries.mjs"
+        );
+        const userQueriesCsv = await buildAuthoritativeSheet1UserQueriesCsv_(clientSessionId, {
+            clientContext: mergedClientContext,
+            loadFirestoreContext: false
+        });
         const coercedTranscript = coerceChatTranscriptArray_(mergedClientContext.chat_transcript);
         mergedClientContext.chat_transcript = coercedTranscript;
         const assistantQueries = Array.isArray(mergedClientContext.assistant_queries)
@@ -7073,12 +7079,11 @@ app.get(PATHNAME_CONVERSATION_TRANSCRIPT_JSON, async (req, res) => {
 
         if (!SHEETS_DISABLED) {
             try {
-                const { csv } = await fetchLeadSheetUserQueriesForSession(session);
-                const { mergedSheet1UserQueriesCsv_ } = await import("./lib/live-agent/sheet-sync.mjs");
-                const { mergeClientAuthoritativeQueriesPreservingHandoff_ } = await import("./lib/sheets.mjs");
-                authoritativeUserQueriesCsv =
-                    (await mergedSheet1UserQueriesCsv_(session, csv || "")) || csv || "";
-                const clientCxForUq =
+                const { buildAuthoritativeSheet1UserQueriesCsv_ } = await import(
+                    "./lib/authoritative-user-queries.mjs"
+                );
+                /** @type {Record<string, unknown> | null} */
+                const transcriptClientCx =
                     liveCx && typeof liveCx === "object"
                         ? liveCx
                         : firestoreRec &&
@@ -7086,15 +7091,10 @@ app.get(PATHNAME_CONVERSATION_TRANSCRIPT_JSON, async (req, res) => {
                             typeof firestoreRec.client_context === "object"
                           ? /** @type {Record<string, unknown>} */ (firestoreRec.client_context)
                           : null;
-                const clientUqCsv = clientCxForUq
-                    ? normalizeUserQueriesCsvFromClientContext(clientCxForUq)
-                    : "";
-                if (clientUqCsv) {
-                    authoritativeUserQueriesCsv = mergeClientAuthoritativeQueriesPreservingHandoff_(
-                        authoritativeUserQueriesCsv,
-                        clientUqCsv
-                    );
-                }
+                authoritativeUserQueriesCsv = await buildAuthoritativeSheet1UserQueriesCsv_(session, {
+                    clientContext: transcriptClientCx,
+                    loadFirestoreContext: !transcriptClientCx
+                });
                 const fromSheetQueries = userTurnsFromSheetQueriesCsv_(authoritativeUserQueriesCsv);
                 if (fromSheetQueries.length) {
                     const existingUserN = new Set(
@@ -7210,15 +7210,6 @@ app.get(PATHNAME_CONVERSATION_TRANSCRIPT_JSON, async (req, res) => {
                     break;
                 }
             }
-        }
-
-        if (authoritativeUserQueriesCsv || liveCx || firestoreRec?.client_context) {
-            authoritativeUserQueriesCsv = mergeAuthoritativeUserQueriesCsv_(authoritativeUserQueriesCsv, [
-                liveCx && typeof liveCx === "object" ? liveCx : null,
-                firestoreRec && typeof firestoreRec.client_context === "object"
-                    ? /** @type {Record<string, unknown>} */ (firestoreRec.client_context)
-                    : null
-            ]);
         }
 
         const liveChatRawArr = liveCx ? coerceChatTranscriptArray_(liveCx.chat_transcript) : [];

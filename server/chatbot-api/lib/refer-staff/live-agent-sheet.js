@@ -173,17 +173,93 @@ function messageInLiveAgentConnectedWindow_(msgMs, bounds) {
   return !bounds.disconnected;
 }
 
+/** Index range [start, end] for visitor lines after agent connect and before disconnect. */
+function liveAgentConnectedMessageIndexWindow_(session, bounds) {
+  const msgs = (session && session.messages) || [];
+  if (!bounds || !msgs.length) {
+    return null;
+  }
+
+  let windowStartIdx = msgs.length;
+  let windowEndIdx = -1;
+
+  for (let i = 0; i < msgs.length; i += 1) {
+    const msgMs = parseSessionIsoMs_(msgs[i] && msgs[i].createdAt);
+    if (msgMs >= bounds.connected) {
+      windowStartIdx = Math.min(windowStartIdx, i);
+    }
+    if (bounds.disconnected && msgMs > 0 && msgMs <= bounds.disconnected) {
+      windowEndIdx = Math.max(windowEndIdx, i);
+    }
+  }
+
+  if (windowStartIdx >= msgs.length) {
+    for (let i = 0; i < msgs.length; i += 1) {
+      const role = trim(msgs[i] && msgs[i].role).toLowerCase();
+      if (role === 'agent' || role === 'staff') {
+        windowStartIdx = i;
+        break;
+      }
+    }
+  }
+
+  if (windowEndIdx < 0) {
+    if (bounds.disconnected) {
+      windowEndIdx = msgs.length - 1;
+      for (let i = msgs.length - 1; i >= 0; i -= 1) {
+        const msgMs = parseSessionIsoMs_(msgs[i] && msgs[i].createdAt);
+        if (msgMs > 0 && msgMs <= bounds.disconnected) {
+          windowEndIdx = i;
+          break;
+        }
+      }
+    } else {
+      windowEndIdx = msgs.length - 1;
+    }
+  }
+
+  if (windowStartIdx >= msgs.length || windowEndIdx < windowStartIdx) {
+    return null;
+  }
+  return { start: windowStartIdx, end: windowEndIdx };
+}
+
+function appendLiveAgentVisitorQueryLine_(lines, raw) {
+  if (transcriptDisplay.isHandoffRequestLine(raw)) return;
+  const text = transcriptDisplay.normalizeUserQueryText(raw) || raw;
+  if (!text || transcriptDisplay.isInternalActionToken(text) || isUserQuerySheetNoise_(text)) return;
+  lines.push(text);
+}
+
 /**
- * Live Agent sheet User Queries — visitor lines only while connected to an agent
- * (accepted/claimed through closed). Queue/waiting messages are excluded.
+ * Visitor lines only while connected to an agent (accepted/claimed through closed).
+ * Queue/waiting messages before connect are excluded.
  */
-function buildSheet2UserQueriesForSheet(session) {
+function liveAgentVisitorQueriesInConnectedWindow_(session) {
   const bounds = liveAgentConnectedWindowBounds_(session);
   if (!bounds) {
-    return '';
+    return [];
   }
   const msgs = (session && session.messages) || [];
+  const indexWindow = liveAgentConnectedMessageIndexWindow_(session, bounds);
+  /** @type {string[]} */
   const lines = [];
+
+  if (indexWindow) {
+    for (let i = indexWindow.start; i <= indexWindow.end; i += 1) {
+      const m = msgs[i];
+      if (!m) continue;
+      const role = trim(m.role).toLowerCase();
+      if (role !== 'visitor') continue;
+      const msgMs = parseSessionIsoMs_(m.createdAt);
+      if (msgMs > 0 && !messageInLiveAgentConnectedWindow_(msgMs, bounds)) continue;
+      const raw = trim(m.text);
+      if (!raw) continue;
+      appendLiveAgentVisitorQueryLine_(lines, raw);
+    }
+    return lines;
+  }
+
   msgs.forEach((m) => {
     if (!m) return;
     const role = trim(m.role).toLowerCase();
@@ -192,11 +268,17 @@ function buildSheet2UserQueriesForSheet(session) {
     if (!messageInLiveAgentConnectedWindow_(msgMs, bounds)) return;
     const raw = trim(m.text);
     if (!raw) return;
-    if (transcriptDisplay.isHandoffRequestLine(raw)) return;
-    const text = transcriptDisplay.normalizeUserQueryText(raw) || raw;
-    if (!text || transcriptDisplay.isInternalActionToken(text) || isUserQuerySheetNoise_(text)) return;
-    lines.push(text);
+    appendLiveAgentVisitorQueryLine_(lines, raw);
   });
+  return lines;
+}
+
+/**
+ * Live Agent sheet User Queries — visitor lines only while connected to an agent
+ * (accepted/claimed through closed). Queue/waiting messages are excluded.
+ */
+function buildSheet2UserQueriesForSheet(session) {
+  const lines = liveAgentVisitorQueriesInConnectedWindow_(session);
   if (!lines.length) {
     return '';
   }
@@ -288,7 +370,7 @@ function liveAgentQueriesFromSession(session) {
   return lines.join(' | ').slice(0, 2000);
 }
 
-/** Sheet1 User Queries tail after bot lines — connected marker plus handoff chat (not queue status). */
+/** Sheet1 User Queries tail after bot lines — connected marker plus in-window handoff chat only. */
 function buildSheet1LiveAgentHandoffQueries(session) {
   const parts = [];
   const status = trim(session && session.status).toLowerCase();
@@ -300,13 +382,10 @@ function buildSheet1LiveAgentHandoffQueries(session) {
   ) {
     parts.push('Connected with Agent');
   }
-  const chatBody = liveAgentVisitorQueriesFromSession(session);
-  if (chatBody) {
-    chatBody.split(' | ').forEach((line) => {
-      const t = trim(line);
-      if (t) parts.push(t);
-    });
-  }
+  liveAgentVisitorQueriesInConnectedWindow_(session).forEach((line) => {
+    const t = trim(line);
+    if (t) parts.push(t);
+  });
   return parts.join(', ');
 }
 

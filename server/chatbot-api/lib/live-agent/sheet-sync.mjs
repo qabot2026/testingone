@@ -119,12 +119,9 @@ export async function syncLiveAgentToSheet_(conversationId) {
         return { ok: false, skipped: "sheet1_excluded" };
     }
 
-    const liveAgentSheet = require("../refer-staff/live-agent-sheet.js");
-    const handoffCsv =
-        liveAgentSheet && typeof liveAgentSheet.buildSheet1LiveAgentHandoffQueries === "function"
-            ? liveAgentSheet.buildSheet1LiveAgentHandoffQueries(session)
-            : "";
-    if (!handoffCsv) {
+    const { buildAuthoritativeSheet1UserQueriesCsv_ } = await import("../authoritative-user-queries.mjs");
+    const authoritativeCsv = await buildAuthoritativeSheet1UserQueriesCsv_(id);
+    if (!authoritativeCsv) {
         return { ok: false, skipped: "empty_handoff_queries" };
     }
 
@@ -147,8 +144,8 @@ export async function syncLiveAgentToSheet_(conversationId) {
             browserName: "",
             deviceType: "",
             channel,
-            userQueriesCsv: handoffCsv,
-            replaceLiveAgentHandoffBlock: true,
+            userQueriesCsv: authoritativeCsv,
+            clientAuthoritativeQueries: true,
             lightweightSessionSync: false
         };
         const result = await upsertSessionQueriesInSheet(row);
