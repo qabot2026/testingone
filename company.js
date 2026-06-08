@@ -17817,6 +17817,12 @@ function liveAgentAnnounceHandoffToBot_(dfMessenger, messageText, dedupeKey) {
     liveAgentSeenNoticeKeys_.add(key);
     liveAgentRemoveAgentTypingDraft_(ms);
     liveAgentRenderBotLineAtTranscriptEnd_(ms, text, { withPersona: true });
+    try {
+        appendChatTranscriptAssistantLines_([text], { placement: "append" });
+        scheduleSessionTranscriptFirestoreSync_();
+    } catch {
+        /* ignore */
+    }
 }
 
 /**
@@ -18086,6 +18092,13 @@ function syncLiveAgentModeCacheFromConversation_(conv, stData) {
             console.warn("[live-agent] session copilot flags:", sessErr);
         }
     }
+    if (copilotAi && !prevCopilot) {
+        try {
+            liveAgentMarkPostAgentAiPhaseInSession_({ forceSheetSync: false });
+        } catch {
+            /* ignore */
+        }
+    }
     return copilotAi;
 }
 
@@ -18167,6 +18180,45 @@ function liveAgentCoPilotAiEnabled_() {
         return true;
     }
     return liveAgentCachedHumanMode === "ai" && liveAgentCachedAiEnabled !== false;
+}
+
+/** Widget transcript + DOM bot capture resume after agent steps away or chat closes. */
+function liveAgentShouldCaptureWidgetTranscriptNow_() {
+    if (!liveAgentHandoffIsActive_()) {
+        return true;
+    }
+    if (liveAgentCoPilotAiEnabled_()) {
+        return true;
+    }
+    if (liveAgentCachedConvStatus === "closed") {
+        return true;
+    }
+    try {
+        const prev = readStoredClientContext();
+        const uq = prev && Array.isArray(prev.user_queries) ? prev.user_queries : [];
+        if (uq.includes(LIVE_AGENT_ENDED_USER_QUERY_MARKER)) {
+            return true;
+        }
+    } catch {
+        /* ignore */
+    }
+    return !liveAgentVisitorAgentChatActive_();
+}
+
+/**
+ * Record post-agent AI phase for Sheet1/Summary without stopping live-agent poll.
+ * @param {{ forceSheetSync?: boolean }} [opts]
+ */
+function liveAgentMarkPostAgentAiPhaseInSession_(opts) {
+    appendLiveAgentUserQueryPhaseMarker_(LIVE_AGENT_ENDED_USER_QUERY_MARKER);
+    try {
+        scheduleSessionTranscriptFirestoreSync_();
+        if (!opts || opts.forceSheetSync !== false) {
+            postSessionQueriesToSheetRow_({ force: true });
+        }
+    } catch {
+        scheduleSessionQueriesSheetSync_();
+    }
 }
 
 /** Visitor messages go to agent inbox only during active human chat (not waiting, not AI co-pilot). */
@@ -18695,6 +18747,9 @@ async function liveAgentRouteVisitorOutboundOnce_(text, dfMessenger, event) {
     if (!t || !liveAgentHandoffIsActive_()) {
         return false;
     }
+    if (liveAgentAllowDialogflowForUserText_()) {
+        return false;
+    }
     if (liveAgentAlreadyRoutedOutbound_(t)) {
         if (event) {
             preventDialogflowMessengerEvent_(event);
@@ -18737,6 +18792,9 @@ async function liveAgentRouteVisitorOutboundOnce_(text, dfMessenger, event) {
 async function tryBlockDialogflowForLiveAgentHumanChat_(event, queryText) {
     const t = typeof queryText === "string" ? queryText.trim() : "";
     if (!t || !liveAgentHandoffIsActive_()) {
+        return false;
+    }
+    if (liveAgentAllowDialogflowForUserText_()) {
         return false;
     }
     if (liveAgentShouldBlockDialogflowNow_() && event) {
@@ -19449,6 +19507,7 @@ async function liveAgentPollTick_(dfMessenger) {
             try {
                 markLiveAgentCopilotInSession_();
                 clearLiveAgentHumanChatInSession_();
+                liveAgentMarkPostAgentAiPhaseInSession_({ forceSheetSync: true });
             } catch {
                 /* ignore */
             }
@@ -19462,11 +19521,18 @@ async function liveAgentPollTick_(dfMessenger) {
             const ms0 = dfMessenger || activeDfMessenger;
             syncLiveAgentPersonaLayoutFlags_(ms0);
             if (ms0 && typeof ms0.renderCustomText === "function") {
+                const endLine = "Chat with agent ended. You can continue with the assistant.";
                 liveAgentRenderBotLineAtTranscriptEnd_(
                     ms0,
-                    "Chat with agent ended. You can continue with the assistant.",
+                    endLine,
                     { withPersona: true }
                 );
+                try {
+                    appendChatTranscriptAssistantLines_([endLine], { placement: "append" });
+                    scheduleSessionTranscriptFirestoreSync_();
+                } catch {
+                    /* ignore */
+                }
             }
             return;
         }
@@ -20193,7 +20259,7 @@ function scrapeVisibleBotTranscriptTextsFromMessenger_(dfMessenger) {
  * @param {HTMLElement | null | undefined} dfMessenger
  */
 function captureDomBotTranscriptLines_(dfMessenger) {
-    if (liveAgentHandoffIsActive_()) {
+    if (!liveAgentShouldCaptureWidgetTranscriptNow_()) {
         return;
     }
     const lines = scrapeVisibleBotTranscriptTextsFromMessenger_(dfMessenger);
@@ -20578,6 +20644,7 @@ function trackChatUserQueryInSessionContext_(raw) {
         if (inPostAgentPhase) {
             try {
                 postSessionQueriesToSheetRow_({ force: true });
+                postSessionTranscriptToFirestore_();
             } catch {
                 /* ignore */
             }
@@ -22567,6 +22634,14 @@ function appendChatTranscriptAssistantLines_(lines, opts) {
         });
         scheduleSessionQueriesSheetSync_();
         scheduleSessionTranscriptFirestoreSync_();
+        try {
+            const uq = prev && Array.isArray(prev.user_queries) ? prev.user_queries : [];
+            if (uq.includes(LIVE_AGENT_ENDED_USER_QUERY_MARKER)) {
+                postSessionTranscriptToFirestore_();
+            }
+        } catch {
+            /* ignore */
+        }
     } catch {
         /* ignore */
     }
