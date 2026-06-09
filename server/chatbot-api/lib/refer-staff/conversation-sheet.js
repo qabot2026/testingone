@@ -386,6 +386,21 @@ async function loadSheetExtrasSourcesForSession_(sessionId, docMeta) {
   } catch {
     /* ignore */
   }
+  try {
+    const {
+      enrichClientContextForSheetMetricsAsync_,
+      computeConversationMetricsFromClientContext_,
+      mergeConversationMetricsIntoClientContext_,
+    } = await import('../conversation-metrics.mjs');
+    clientContext = await enrichClientContextForSheetMetricsAsync_(clientContext, {
+      sessionId,
+      incomingRow: {},
+    });
+    const metrics = computeConversationMetricsFromClientContext_(clientContext);
+    clientContext = mergeConversationMetricsIntoClientContext_(clientContext, metrics);
+  } catch (metricsErr) {
+    console.warn('[conversation-sheet] metrics enrich:', metricsErr.message || metricsErr);
+  }
   return { clientContext, fields: {} };
 }
 

@@ -53,10 +53,38 @@ const checks = [
     ["appointmentBooked", lead.appointmentBooked, "Scheduled"],
     ["appointmentDate", lead.appointmentDate, "15-06-2026"],
     ["appointmentTime", lead.appointmentTime, "10:30 AM"],
-    ["fallBack", lead.fallBack, "1"]
+    ["fallBack", lead.fallBack, "1"],
+    ["agentName", lead.agentName, ""],
+    ["departmentName", lead.departmentName, ""],
+    ["agentStatus", lead.agentStatus, ""]
 ];
 
 let failed = 0;
+
+const leadWithAgent = assembleLeadSheetPayloadFromSources_(
+    {
+        clientSessionId: "verify_session_agent",
+        agentName: "Dr. Smith",
+        departmentName: "General",
+        agentStatus: "Active",
+        channel: "web"
+    },
+    { clientContext: ctx, fields: {} }
+);
+const agentChecks = [
+    ["agentName", leadWithAgent.agentName, "Dr. Smith"],
+    ["departmentName", leadWithAgent.departmentName, "General"],
+    ["agentStatus", leadWithAgent.agentStatus, "Active"]
+];
+for (const [label, got, want] of agentChecks) {
+    if (got !== want) {
+        console.error(`FAIL ${label}: got ${JSON.stringify(got)} want ${JSON.stringify(want)}`);
+        failed += 1;
+    } else {
+        console.log(`OK   ${label}: ${got}`);
+    }
+}
+
 for (const [label, got, want] of checks) {
     if (got !== want) {
         console.error(`FAIL ${label}: got ${JSON.stringify(got)} want ${JSON.stringify(want)}`);

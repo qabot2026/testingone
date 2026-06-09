@@ -602,6 +602,30 @@ async function buildSheet2LeadPayload_(session) {
   } catch {
     /* ignore */
   }
+  try {
+    const {
+      enrichClientContextForSheetMetricsAsync_,
+      computeConversationMetricsFromClientContext_,
+      mergeConversationMetricsIntoClientContext_,
+    } = await import('../conversation-metrics.mjs');
+    clientContext = await enrichClientContextForSheetMetricsAsync_(clientContext, {
+      sessionId: sid,
+      incomingRow: {},
+    });
+    const metrics = computeConversationMetricsFromClientContext_(clientContext);
+    clientContext = mergeConversationMetricsIntoClientContext_(clientContext, metrics);
+  } catch (metricsErr) {
+    console.warn('[live-agent-sheet] metrics enrich:', metricsErr.message || metricsErr);
+  }
+  const agentDisplay = trim(session.assignedAgentDisplayName) || resolveAgentNameForSheet_(session);
+  const deptDisplay = formatDepartmentNameForSheet_(session.departmentName, session.departmentId);
+  const statusDisplay = trim(session.status) || 'waiting';
+  clientContext = {
+    ...clientContext,
+    assignedAgentDisplayName: agentDisplay || clientContext.assignedAgentDisplayName,
+    departmentName: deptDisplay || clientContext.departmentName,
+    status: statusDisplay || clientContext.status,
+  };
   const doc = chatTranscript.getSessionDoc(sid);
   doc.meta = doc.meta || {};
   if (session._sheetMeta && typeof session._sheetMeta === 'object') {
@@ -853,11 +877,21 @@ async function runSheet2Sync(sessionId) {
     return { skipped: true, reason: 'sheet2_row_removed' };
   }
 
-  const appended = await sheets.appendRowValuesOnTab(tab, values);
-  if (!appended) {
-    const st = sheets.getStatus();
-    console.warn('[live-agent-sheet] append_failed tab=', tab, 'session=', sid, st.lastError || '');
-    return { ok: false, error: 'append_failed', tab, detail: st.lastError || null };
+  const { findFirstEmptyLeadRowOnTab_, writeLeadRowToSheetTab_ } = await import('../sheets.mjs');
+  const appended = await findFirstEmptyLeadRowOnTab_(tab);
+  try {
+    await writeLeadRowToSheetTab_(tab, appended, lead, sheetExtrasSources);
+  } catch (appendWriteErr) {
+    console.warn(
+      '[live-agent-sheet] header-mapped append failed, positional fallback:',
+      appendWriteErr.message || appendWriteErr
+    );
+    const ok = await sheets.updateRowOnTab(tab, appended, values);
+    if (!ok) {
+      const st = sheets.getStatus();
+      console.warn('[live-agent-sheet] append_failed tab=', tab, 'session=', sid, st.lastError || '');
+      return { ok: false, error: 'append_failed', tab, detail: st.lastError || null };
+    }
   }
   await sheets.writeChatscriptForRowOnTab(tab, appended, sid);
   persistSheet2Row(session, appended);

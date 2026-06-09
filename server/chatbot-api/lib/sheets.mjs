@@ -650,6 +650,46 @@ function resolveAppointmentFieldsForSheet_(row, contactLookup, fieldsRec, ctx) {
 }
 
 /**
+ * Agent Handoffs tab: Agent / Department / Status from row payload or live-agent session context.
+ *
+ * @param {*} row
+ * @param {Record<string, unknown>} ctx
+ */
+function resolveLiveAgentFieldsForSheet_(row, ctx) {
+    const ro = row && typeof row === "object" ? /** @type {Record<string, unknown>} */ (row) : {};
+    const cx = ctx && typeof ctx === "object" && !Array.isArray(ctx) ? ctx : {};
+    /** @param {string[]} keys */
+    const pick = (...keys) => {
+        for (let i = 0; i < keys.length; i += 1) {
+            const k = keys[i];
+            const v = sheetOutboundCell_(ro[k]) || sheetOutboundCell_(cx[k]);
+            if (v) {
+                return v;
+            }
+        }
+        return "";
+    };
+    const agentName = pick(
+        "agentName",
+        "agent_name",
+        "assignedAgentDisplayName",
+        "assigned_agent_display_name",
+        "acceptedByEmail",
+        "assignedAgentEmail",
+        "currentAssigneeEmail"
+    );
+    let departmentName = pick("departmentName", "department_name", "department");
+    if (departmentName) {
+        departmentName = departmentName.replace(/\s+department\s*$/i, "").trim() || departmentName;
+    }
+    const agentStatusRaw = pick("agentStatus", "agent_status", "status", "live_agent_status");
+    const agentStatus = agentStatusRaw
+        ? agentStatusRaw.charAt(0).toUpperCase() + agentStatusRaw.slice(1).toLowerCase()
+        : "";
+    return { agentName, departmentName, agentStatus };
+}
+
+/**
  * Copy contact-form appointment field keys onto `client_context` for later session sheet syncs.
  *
  * @param {Record<string, unknown>} clientContext
@@ -1575,6 +1615,7 @@ export function assembleLeadSheetPayloadFromSources_(incomingRow, sheetExtrasSou
             ? row.repeated.trim()
             : "";
     const parts = conversationPartsFromIncomingRow_(row);
+    const liveAgentFields = resolveLiveAgentFieldsForSheet_(row, ctxEnriched);
 
     return {
         convDate: parts.convDate,
@@ -1596,6 +1637,9 @@ export function assembleLeadSheetPayloadFromSources_(incomingRow, sheetExtrasSou
         appointmentDate,
         appointmentTime,
         driveFileLink: fileLinks,
+        agentName: liveAgentFields.agentName,
+        departmentName: liveAgentFields.departmentName,
+        agentStatus: liveAgentFields.agentStatus,
         feedbackRating:
             (typeof row.feedbackRating === "string" && row.feedbackRating.trim())
             || fb.feedbackRating,
@@ -2441,6 +2485,22 @@ async function findFirstEmptyLeadRow1Based_(sheets, tab) {
         }
     }
     return nLast >= 2 ? nLast + 1 : 2;
+}
+
+/**
+ * First empty lead row on a tab (reuses gaps; used by Agent Handoffs append).
+ *
+ * @param {string} tabTitle
+ * @returns {Promise<number>}
+ */
+export async function findFirstEmptyLeadRowOnTab_(tabTitle) {
+    if (!SPREADSHEET_ID) {
+        return 2;
+    }
+    const tab = String(tabTitle || "").trim() || tabNameFromRange(RANGE);
+    const client = await getSheetsAuthClient();
+    const sheets = google.sheets({ version: "v4", auth: client });
+    return findFirstEmptyLeadRow1Based_(sheets, tab);
 }
 
 /**
@@ -4351,6 +4411,10 @@ const SHEET_H_FALLBACK = [
     "fallbackcount"
 ];
 
+const SHEET_H_AGENT = ["agent", "agentname", "assignedagent", "liveagent", "staffagent"];
+const SHEET_H_DEPARTMENT = ["department", "dept", "departmentname", "liveagentdepartment"];
+const SHEET_H_AGENT_STATUS = ["status", "agentstatus", "handoffstatus", "liveagentstatus"];
+
 /** True when row-1 headers map to at least one known lead column (avoids all-blank writes). */
 function sheetHeaderMapHasRecognizedLeadKeys_(byKey) {
     if (!byKey || typeof byKey !== "object") {
@@ -5569,6 +5633,14 @@ async function buildStandardLeadRowUpdates_(sheets, tab, rowNumber, lead) {
     const putMetricCell = (aliases, fallbackIdx, value) => {
         put(aliases, fallbackIdx, value, true);
     };
+    /** Write only when row 1 has a matching header (skips Agent Handoffs columns on All Conversations). */
+    const putWhenHeader = (aliases, value) => {
+        const idx0 = firstHeaderIdxFromAliases_(headerMap, aliases);
+        if (idx0 === undefined) {
+            return;
+        }
+        put(aliases, idx0, value);
+    };
     const putDate = (aliases, fallbackIdx, raw) => {
         const cell = sheetDateCellForSheetsApi_(raw);
         if (cell === "" || cell == null) {
@@ -5619,6 +5691,9 @@ async function buildStandardLeadRowUpdates_(sheets, tab, rowNumber, lead) {
         7,
         lead.userQueriesCsv
     );
+    putWhenHeader(SHEET_H_AGENT, lead.agentName);
+    putWhenHeader(SHEET_H_DEPARTMENT, lead.departmentName);
+    putWhenHeader(SHEET_H_AGENT_STATUS, lead.agentStatus);
     put(["repeateduser", "repeated_user", "isrepeated", "repuser"], 8, lead.repeated);
     put(["sourceurl", "source_url", "pageurl", "embedurl"], 9, lead.sourceUrl);
     put(SHEET_H_SESSION, 10, lead.clientSessionId);
