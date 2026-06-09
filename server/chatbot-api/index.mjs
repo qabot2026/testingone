@@ -623,6 +623,10 @@ function extractRequestIp(req) {
     if (real) {
         return real;
     }
+    const expressIp = req && typeof req.ip === "string" ? normalizeRemoteAddress_(req.ip) : "";
+    if (expressIp && expressIp !== "127.0.0.1" && expressIp !== "::1") {
+        return expressIp;
+    }
     const ra = req && req.socket && typeof req.socket.remoteAddress === "string"
         ? normalizeRemoteAddress_(req.socket.remoteAddress)
         : "";
@@ -905,6 +909,7 @@ if (hasFirebaseCredentials()) {
 }
 
 const app = express();
+app.set("trust proxy", true);
 app.use(cors({
     origin: corsOriginOption(),
     methods: ["GET", "POST", "OPTIONS"],
@@ -1271,7 +1276,7 @@ async function mergeVisitorCityIntoClientContext_(ctx, req) {
     const hasCountryCode = typeof merged.country_code === "string" && merged.country_code.trim()
         || typeof merged.countryCode === "string" && merged.countryCode.trim();
     if (hasCity && hasCountryCode) {
-        return merged;
+        return mergeVisitorIpIntoClientContext_(merged, req);
     }
     const geo = await resolveGeoForRequest(req);
     if (!hasCity && geo.city) {
@@ -1283,6 +1288,25 @@ async function mergeVisitorCityIntoClientContext_(ctx, req) {
     if (geo.country && !(typeof merged.country === "string" && merged.country.trim())) {
         merged.country = geo.country;
     }
+    return mergeVisitorIpIntoClientContext_(merged, req);
+}
+
+/** Persist visitor IP on `client_context` so Sheets row assembly can fill column P on later syncs. */
+function mergeVisitorIpIntoClientContext_(ctx, req) {
+    const merged = ctx && typeof ctx === "object" ? { ...ctx } : {};
+    const existing =
+        (typeof merged.ip === "string" && merged.ip.trim())
+        || (typeof merged.ip_address === "string" && merged.ip_address.trim())
+        || (typeof merged.ipAddress === "string" && merged.ipAddress.trim());
+    if (existing) {
+        return merged;
+    }
+    const ip = extractRequestIp(req);
+    if (!ip) {
+        return merged;
+    }
+    merged.ip = ip;
+    merged.ip_address = ip;
     return merged;
 }
 
@@ -2876,9 +2900,11 @@ app.post(
         const submittedAtIso = convAt.toISOString();
         const convSheetDate = formatConversationDateForSheet(convAt);
         const convSheetTime = formatConversationTimeForSheet(convAt);
-        const ip = extractRequestIp(req);
         const mergedWithCity = await mergeVisitorCityIntoClientContext_(mergedClientContext, req);
         mergedClientContext = mergeCampaignParamsIntoClientContextRecord_(mergedWithCity);
+        const ip =
+            (typeof mergedClientContext.ip === "string" && mergedClientContext.ip.trim())
+            || extractRequestIp(req);
         const cityFromFields = typeof fields.city === "string" ? fields.city.trim() : "";
         const cityFromContext = pickCityFromClientContextMerged_(mergedClientContext);
         const city = cityFromFields || cityFromContext || (await resolveCityForRequest(req));
@@ -3329,9 +3355,11 @@ app.post(
         const convAt = new Date();
         const convSheetDate = formatConversationDateForSheet(convAt);
         const convSheetTime = formatConversationTimeForSheet(convAt);
-        const ip = extractRequestIp(req);
         const mergedWithCity = await mergeVisitorCityIntoClientContext_(mergedClientContext, req);
         mergedClientContext = mergeCampaignParamsIntoClientContextRecord_(mergedWithCity);
+        const ip =
+            (typeof mergedClientContext.ip === "string" && mergedClientContext.ip.trim())
+            || extractRequestIp(req);
         const city = pickCityFromClientContextMerged_(mergedClientContext)
             || (await resolveCityForRequest(req));
         const userQueriesCsv = normalizeUserQueriesCsvFromClientContext(mergedClientContext);
@@ -3557,9 +3585,11 @@ app.post(
         const convAt = new Date();
         const convSheetDate = formatConversationDateForSheet(convAt);
         const convSheetTime = formatConversationTimeForSheet(convAt);
-        const ip = extractRequestIp(req);
         const mergedWithCity = await mergeVisitorCityIntoClientContext_(mergedClientContext, req);
         mergedClientContext = mergeCampaignParamsIntoClientContextRecord_(mergedWithCity);
+        const ip =
+            (typeof mergedClientContext.ip === "string" && mergedClientContext.ip.trim())
+            || extractRequestIp(req);
         const city = pickCityFromClientContextMerged_(mergedClientContext)
             || (await resolveCityForRequest(req));
         const sourceUrl = resolveSourceUrlForSheet(mergedClientContext);

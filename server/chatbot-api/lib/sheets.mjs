@@ -135,8 +135,9 @@ const STANDARD_SESSION_COLUMN_INDEX0_PRE_TRANSCRIPT = 9;
 const STANDARD_SESSION_COLUMN_INDEX0_LEGACY = 8;
 /** Column A (0): staff “Chat script” = Conv. link HYPERLINK — never raw JSON. */
 const STANDARD_CHAT_SCRIPT_LINK_COL_INDEX0 = 0;
-/** Column S (18): Document / drive file links — never transcript JSON or duplicate link. */
-/** Document column (0-based) when row 1 matches canonical layout including OS. */
+/** Column S (18): App. Time in canonical layout — never Chat script / transcript link. */
+const STANDARD_APPOINTMENT_TIME_COL_INDEX0 = 18;
+/** Document column (0-based) when row 1 matches canonical layout including OS (column T). */
 const STANDARD_DOCUMENT_COL_INDEX0 = 19;
 /** Only used when env mistakenly targets A or S for JSON — never written by default. */
 const STANDARD_CHAT_TRANSCRIPT_JSON_COL_LETTER = "T";
@@ -5075,7 +5076,25 @@ async function maybeWriteSheetRowOpenLink_(sheets, tabTitle, rowNumber, clientSe
         return;
     }
     const colIdx0 = columnLetterToIndex0_(col);
-    if (colIdx0 === STANDARD_DOCUMENT_COL_INDEX0) {
+    if (
+        colIdx0 === STANDARD_CHAT_SCRIPT_LINK_COL_INDEX0
+        || colIdx0 === STANDARD_APPOINTMENT_TIME_COL_INDEX0
+        || colIdx0 === STANDARD_DOCUMENT_COL_INDEX0
+    ) {
+        console.warn(
+            "[chatbot-api] SHEETS_ROW_OPEN_LINK_COLUMN targets a reserved column (Conv. link / App. Time / Document);",
+            "leave it empty — column A is the Chat script link. Skipping write to",
+            col
+        );
+        return;
+    }
+    const headerKey = await sheetHeaderKeyAtIndex_(sheets, tabTitle, colIdx0);
+    if (isForbiddenRowOpenLinkHeaderKey_(headerKey)) {
+        console.warn(
+            "[chatbot-api] SHEETS_ROW_OPEN_LINK_COLUMN targets column",
+            col,
+            `(${headerKey || "unknown header"}) — not a transcript link column; skipping.`
+        );
         return;
     }
     const sid = typeof clientSessionId === "string" ? clientSessionId.trim() : "";
@@ -5134,6 +5153,17 @@ function isReservedColumnForChatTranscriptJson_(idx0) {
         || idx0 === STANDARD_DOCUMENT_COL_INDEX0
         || idx0 >= 16
     );
+}
+
+/** Never write SHEETS_ROW_OPEN_LINK_COLUMN HYPERLINK into lead / appointment / IP columns. */
+function isForbiddenRowOpenLinkHeaderKey_(nk) {
+    if (!nk) {
+        return true;
+    }
+    if (nk === "ip" || nk === "ipaddress") {
+        return true;
+    }
+    return isForbiddenTranscriptJsonHeaderKey_(nk);
 }
 
 /** Never store raw JSON in appointment / link / document columns (S = App. Time in current layout). */
