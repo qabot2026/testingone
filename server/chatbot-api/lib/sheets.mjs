@@ -5500,6 +5500,25 @@ async function buildStandardLeadRowUpdates_(sheets, tab, rowNumber, lead) {
  * @param {{ clientContext?: Record<string, unknown> | null, fields?: Record<string, unknown> | null } | null | undefined} [sheetExtrasSources]
  * @param {{ partialPatch?: boolean }} [options] partialPatch=true: only update cells present on `lead` (feedback patch).
  */
+/**
+ * Header-mapped full row write for any tab (All Conversations, Agent Handoffs, …).
+ *
+ * @param {string} tab
+ * @param {number} rowNumber 1-based
+ * @param {*} lead
+ * @param {{ clientContext?: Record<string, unknown> | null, fields?: Record<string, unknown> | null } | null | undefined} [sheetExtrasSources]
+ */
+export async function writeLeadRowToSheetTab_(tab, rowNumber, lead, sheetExtrasSources) {
+    if (!SPREADSHEET_ID || !rowNumber || rowNumber < 2) {
+        return false;
+    }
+    const tabTitle = String(tab || "").trim() || tabNameFromRange(RANGE);
+    const client = await getSheetsAuthClient();
+    const sheets = google.sheets({ version: "v4", auth: client });
+    await writeLeadRowByHeader_(sheets, tabTitle, rowNumber, lead, sheetExtrasSources);
+    return true;
+}
+
 async function writeLeadRowByHeader_(sheets, tab, rowNumber, lead, sheetExtrasSources, options = {}) {
     if (!rowNumber) {
         return;
@@ -6244,7 +6263,8 @@ async function upsertSessionQueriesInSheet_(row) {
             !lightweightSessionSync
             || incomingHasContact
             || !lastFull
-            || now - lastFull >= SESSION_SHEET_FULL_ROW_MIN_INTERVAL_MS;
+            || now - lastFull >= SESSION_SHEET_FULL_ROW_MIN_INTERVAL_MS
+            || !!(sheetExtrasSources && sheetExtrasSources.clientContext);
         const repeatedLabel = await resolveRepeatedUserLabelForLead_(
             sheets,
             tab,

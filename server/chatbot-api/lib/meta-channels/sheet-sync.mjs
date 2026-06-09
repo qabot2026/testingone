@@ -97,7 +97,7 @@ export async function syncMetaInboundMessageToSheet_(input) {
         appointmentDate: "",
         appointmentTime: "",
         userQueriesCsv: userText,
-        lightweightSessionSync: true,
+        lightweightSessionSync: false,
         clientAuthoritativeQueries: false,
         sheetExtrasSources: {
             clientContext: {

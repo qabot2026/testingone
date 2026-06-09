@@ -588,6 +588,71 @@ function buildSheet1LiveAgentHandoffQueries(session) {
   return parts.join(', ');
 }
 
+async function buildSheet2LeadPayload_(session) {
+  const sid = trim(session.sessionId);
+  const meta = session._sheetMeta && typeof session._sheetMeta === 'object' ? session._sheetMeta : {};
+  /** @type {Record<string, unknown>} */
+  let clientContext = { ...meta };
+  try {
+    const { fetchSessionChatTranscriptContext } = await import('../firestore.mjs');
+    const fsCx = await fetchSessionChatTranscriptContext(sid);
+    if (fsCx && typeof fsCx === 'object') {
+      clientContext = { ...fsCx, ...meta };
+    }
+  } catch {
+    /* ignore */
+  }
+  const doc = chatTranscript.getSessionDoc(sid);
+  doc.meta = doc.meta || {};
+  if (session._sheetMeta && typeof session._sheetMeta === 'object') {
+    Object.assign(doc.meta, session._sheetMeta);
+  }
+  const visitorName = trim(session.visitorName);
+  if (visitorName) {
+    doc.meta.name = visitorName;
+  }
+  if (!doc.meta.repeatedUserLabel && !doc.meta.repeatedUser) {
+    try {
+      doc.meta.repeatedUserLabel = await conversationSheet.resolveRepeatedUserLabel(doc);
+    } catch (repeatErr) {
+      console.warn('[live-agent-sheet] repeated user:', repeatErr.message || repeatErr);
+    }
+  }
+  const startedRaw =
+    session.requestedAt || session.createdAt || (doc.turns && doc.turns[0] && doc.turns[0].at);
+  const started = startedRaw ? new Date(startedRaw) : new Date();
+  const userQueriesCsv = liveAgentSheetUserQueries_(session);
+  const { assembleLeadSheetPayloadFromSources_ } = await import('../sheets.mjs');
+  return {
+    lead: assembleLeadSheetPayloadFromSources_(
+      {
+        clientSessionId: sid,
+        convDate: formatDateForSheet(started),
+        convTime: formatTime(started),
+        name: visitorName || trim(doc.meta.name) || trim(meta.name),
+        mobile: formatMobileForSheet(doc.meta, sid),
+        email: trim(doc.meta.email) || trim(meta.email),
+        channel: trim(doc.meta.channel) || trim(meta.channel) || trim(session.channel) || 'Web',
+        browserName: trim(doc.meta.browser || doc.meta.browser_name || meta.browser || meta.browser_name),
+        deviceType: trim(doc.meta.device || doc.meta.device_type || meta.device || meta.device_type),
+        osName: trim(doc.meta.os || doc.meta.os_name || meta.os || meta.os_name),
+        city: trim(doc.meta.city || meta.city),
+        ip: trim(doc.meta.ip || doc.meta.ipAddress || meta.ip || meta.ipAddress),
+        sourceUrl: trim(doc.meta.sourceUrl || doc.meta.source_url || meta.sourceUrl || meta.source_url),
+        feedbackRating: trim(doc.meta.rating || doc.meta.feedbackRating || meta.rating || meta.feedbackRating),
+        feedbackMessage: trim(doc.meta.feedback || doc.meta.feedbackMessage || meta.feedback || meta.feedbackMessage),
+        userQueriesCsv,
+        repeated: trim(doc.meta.repeatedUserLabel || doc.meta.repeatedUser),
+        agentName: trim(session.assignedAgentDisplayName) || resolveAgentNameForSheet_(session) || '',
+        departmentName: formatDepartmentNameForSheet_(session.departmentName, session.departmentId),
+        agentStatus: trim(session.status) || 'waiting',
+      },
+      { clientContext, fields: {} }
+    ),
+    sheetExtrasSources: { clientContext, fields: {} },
+  };
+}
+
 async function buildRowValues(session) {
   const sid = trim(session.sessionId);
   const doc = chatTranscript.getSessionDoc(sid);
@@ -732,18 +797,25 @@ async function runSheet2Sync(sessionId) {
   const values = await buildRowValues(session);
   const tab = tabName();
   await sheets.ensureHeaderRowOnTab(tab, LIVE_AGENT_SHEET_HEADERS);
+  const { lead, sheetExtrasSources } = await buildSheet2LeadPayload_(session);
 
   const writeRow = async (rowNum) => {
-    const ok = await sheets.updateRowOnTab(tab, rowNum, values);
-    if (!ok) {
-      const st = sheets.getStatus();
-      console.warn(
-        '[live-agent-sheet] update failed tab=',
-        tab,
-        'row=',
-        rowNum,
-        st.lastError || ''
-      );
+    try {
+      const { writeLeadRowToSheetTab_ } = await import('../sheets.mjs');
+      await writeLeadRowToSheetTab_(tab, rowNum, lead, sheetExtrasSources);
+    } catch (writeErr) {
+      console.warn('[live-agent-sheet] header-mapped write failed, positional fallback:', writeErr.message || writeErr);
+      const ok = await sheets.updateRowOnTab(tab, rowNum, values);
+      if (!ok) {
+        const st = sheets.getStatus();
+        console.warn(
+          '[live-agent-sheet] update failed tab=',
+          tab,
+          'row=',
+          rowNum,
+          st.lastError || ''
+        );
+      }
     }
     await sheets.writeChatscriptForRowOnTab(tab, rowNum, sid);
   };

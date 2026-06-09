@@ -137,6 +137,18 @@ export async function syncLiveAgentToSheet_(conversationId) {
     const feedbackRating = trim_(meta.rating) || trim_(meta.feedbackRating) || "";
     const feedbackMessage = trim_(meta.feedback) || trim_(meta.feedbackMessage) || "";
 
+    /** @type {Record<string, unknown>} */
+    let clientContext = { ...meta };
+    try {
+        const { fetchSessionChatTranscriptContext } = await import("../firestore.mjs");
+        const fsCx = await fetchSessionChatTranscriptContext(id);
+        if (fsCx && typeof fsCx === "object") {
+            clientContext = { ...fsCx, ...meta };
+        }
+    } catch {
+        /* ignore */
+    }
+
     try {
         /** @type {Parameters<typeof upsertSessionQueriesInSheet>[0]} */
         const row = {
@@ -157,7 +169,8 @@ export async function syncLiveAgentToSheet_(conversationId) {
             clientAuthoritativeQueries: true,
             lightweightSessionSync: false,
             sheetExtrasSources: {
-                clientContext: meta
+                clientContext,
+                fields: {}
             }
         };
         const result = await upsertSessionQueriesInSheet(row);

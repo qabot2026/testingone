@@ -218,6 +218,9 @@ async function enrichSessionForSheet_(base) {
             lead && lead.client_context && typeof lead.client_context === "object"
                 ? /** @type {Record<string, unknown>} */ (lead.client_context)
                 : null;
+        if (leadCx) {
+            sheetMeta = mergeWidgetMetaFromContext_(sheetMeta, leadCx);
+        }
         const leadUq = leadCx && Array.isArray(leadCx.user_queries) ? leadCx.user_queries : [];
         /** @type {Set<string>} */
         const seenUq = new Set(widgetUserQueries.map((line) => line.toLowerCase()));

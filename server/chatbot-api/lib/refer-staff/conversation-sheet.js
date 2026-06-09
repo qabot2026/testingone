@@ -240,11 +240,11 @@ function buildRowValues(doc) {
     scalar(meta.channel || 'Web'),
     userQueriesFromTurns(turns),
     scalar(meta.repeatedUserLabel || meta.repeatedUser),
-    scalar(meta.sourceUrl || meta.pageUrl || meta.url),
+    scalar(meta.sourceUrl || meta.source_url || meta.pageUrl || meta.url),
     sid,
-    scalar(meta.device),
-    scalar(meta.browser),
-    scalar(meta.os),
+    scalar(meta.device || meta.device_type || meta.deviceType),
+    scalar(meta.browser || meta.browser_name || meta.browserName),
+    scalar(meta.os || meta.os_name || meta.osName),
     scalar(meta.city),
     scalar(meta.ip || meta.ipAddress),
     appointmentBookedForSheet(meta),
@@ -373,6 +373,67 @@ function sessionHasUploadMeta(meta) {
   );
 }
 
+async function loadSheetExtrasSourcesForSession_(sessionId, docMeta) {
+  const meta = docMeta && typeof docMeta === 'object' ? docMeta : {};
+  /** @type {Record<string, unknown>} */
+  let clientContext = { ...meta };
+  try {
+    const { fetchSessionChatTranscriptContext } = await import('../firestore.mjs');
+    const fsCx = await fetchSessionChatTranscriptContext(sessionId);
+    if (fsCx && typeof fsCx === 'object') {
+      clientContext = { ...fsCx, ...meta };
+    }
+  } catch {
+    /* ignore */
+  }
+  return { clientContext, fields: {} };
+}
+
+async function buildSheet1LeadPayload_(doc, sessionId, sheetExtrasSources) {
+  const sid = String(sessionId || '').trim();
+  const meta = doc.meta || {};
+  const turns = doc.turns || [];
+  const started = turns[0] && turns[0].at ? new Date(turns[0].at) : new Date();
+  let userQueriesCsv = userQueriesFromTurns(turns);
+  try {
+    const { buildAuthoritativeSheet1UserQueriesCsv_ } = await import(
+      '../authoritative-user-queries.mjs'
+    );
+    const auth = await buildAuthoritativeSheet1UserQueriesCsv_(sid, {
+      clientContext: sheetExtrasSources.clientContext,
+      loadFirestoreContext: false,
+    });
+    if (auth) {
+      userQueriesCsv = auth;
+    }
+  } catch {
+    /* ignore */
+  }
+  const { assembleLeadSheetPayloadFromSources_ } = await import('../sheets.mjs');
+  return assembleLeadSheetPayloadFromSources_(
+    {
+      clientSessionId: sid,
+      convDate: formatDateForSheet(started),
+      convTime: formatTime(started),
+      name: scalar(meta.name),
+      mobile: formatMobileForSheet(meta),
+      email: scalar(meta.email),
+      channel: scalar(meta.channel || 'Web'),
+      browserName: scalar(meta.browser || meta.browser_name || meta.browserName),
+      deviceType: scalar(meta.device || meta.device_type || meta.deviceType),
+      osName: scalar(meta.os || meta.os_name || meta.osName),
+      city: scalar(meta.city),
+      ip: scalar(meta.ip || meta.ipAddress),
+      sourceUrl: scalar(meta.sourceUrl || meta.source_url || meta.pageUrl || meta.url),
+      feedbackRating: scalar(meta.rating || meta.feedbackRating),
+      feedbackMessage: scalar(meta.feedback || meta.feedbackMessage || meta.message_feedback),
+      userQueriesCsv,
+      repeated: scalar(meta.repeatedUserLabel || meta.repeatedUser),
+    },
+    sheetExtrasSources
+  );
+}
+
 async function runSheetSync(sessionId) {
   if (!sheets.isConfigured()) return { skipped: true };
   const sid = String(sessionId || '').trim();
@@ -404,11 +465,14 @@ async function runSheetSync(sessionId) {
   doc.meta = doc.meta || {};
   doc.meta.repeatedUserLabel = await resolveRepeatedUserLabel(doc);
 
-  const values = buildRowValues(doc);
+  const sheetExtrasSources = await loadSheetExtrasSourcesForSession_(sid, doc.meta);
+  const fullLead = await buildSheet1LeadPayload_(doc, sid, sheetExtrasSources);
+  const tab = sheets.tabName();
   await sheets.ensureHeaderRow(SHEET_HEADERS);
 
   const writeRow = async (rowNum) => {
-    await sheets.updateRow(rowNum, values);
+    const { writeLeadRowToSheetTab_ } = await import('../sheets.mjs');
+    await writeLeadRowToSheetTab_(tab, rowNum, fullLead, sheetExtrasSources);
     await sheets.writeConvLinkForRow(rowNum, sid);
   };
 
@@ -447,7 +511,7 @@ async function runSheetSync(sessionId) {
     if (suppression && typeof suppression.persistSheet1Row_ === 'function') {
       await suppression.persistSheet1Row_(sid, found.rowNumber);
     }
-    return { ok: true, updated: found.rowNumber, convLink: values[0] ? 'yes' : 'no' };
+    return { ok: true, updated: found.rowNumber, convLink: 'yes' };
   }
 
   const priorRow = doc.sheetRow && Number(doc.sheetRow);
@@ -456,13 +520,13 @@ async function runSheetSync(sessionId) {
     return { skipped: true, reason: 'sheet1_row_removed' };
   }
 
-  const rowNum = await sheets.appendRowValues(values);
+  const rowNum = await sheets.appendRowValues(buildRowValues(doc));
   if (!rowNum) {
     console.warn('[conversation-sheet] append returned no row for', sid);
     return { ok: false, error: 'append_failed' };
   }
 
-  await sheets.writeConvLinkForRow(rowNum, sid);
+  await writeRow(rowNum);
   chatTranscript.setSheetRow(sid, rowNum);
   if (suppression && typeof suppression.persistSheet1Row_ === 'function') {
     await suppression.persistSheet1Row_(sid, rowNum);
@@ -474,7 +538,7 @@ async function runSheetSync(sessionId) {
     return { ok: true, updated: after.sheetRow, deduped: true };
   }
 
-  return { ok: true, appended: rowNum, convLink: values[0] ? 'yes' : 'no' };
+  return { ok: true, appended: rowNum, convLink: 'yes' };
 }
 
 async function syncSessionToSheet(sessionId) {

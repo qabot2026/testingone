@@ -995,6 +995,7 @@ module.exports = {
   resolvePublicBaseUrl,
   dashboardTabName,
   liveAgentTabName,
+  tabName,
   SHEET_COL_HEADERS,
   SPREADSHEET_ID,
   RANGE,
