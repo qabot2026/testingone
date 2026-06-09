@@ -567,6 +567,45 @@ function resolveVisitorDeviceFieldsForSheet_(row, contactLookup, ctx) {
     };
 }
 
+/** Source page URL from row payload or nested client_context / session_params. */
+function resolveSourceUrlFromContextForSheet_(ctx, rowSourceUrl) {
+    const explicit = sheetOutboundCell_(rowSourceUrl);
+    if (explicit) {
+        return explicit;
+    }
+    if (!ctx || typeof ctx !== "object" || Array.isArray(ctx)) {
+        return "";
+    }
+    const o = /** @type {Record<string, unknown>} */ (ctx);
+    const sp =
+        o.session_params && typeof o.session_params === "object" && !Array.isArray(o.session_params)
+            ? /** @type {Record<string, unknown>} */ (o.session_params)
+            : {};
+    /** @param {string[]} keys */
+    const pick = (...keys) => {
+        for (let i = 0; i < keys.length; i += 1) {
+            const k = keys[i];
+            const v =
+                sheetOutboundCell_(o[k])
+                || sheetOutboundCell_(sp[k]);
+            if (v) {
+                return v;
+            }
+        }
+        return "";
+    };
+    const direct = pick("source_url", "sourceUrl", "page_url", "pageurl", "url", "embed_url");
+    if (direct) {
+        return direct;
+    }
+    const po = pick("page_origin");
+    const pp = pick("page_path");
+    if (po && pp) {
+        return `${po}${pp}`;
+    }
+    return pick("referrer_url", "referrer");
+}
+
 /** City from row payload or nested client_context / session_params. */
 function resolveCityFromClientContextForSheet_(ctx, rowCity) {
     const explicit = sheetOutboundCell_(rowCity);
@@ -1397,7 +1436,7 @@ export function assembleLeadSheetPayloadFromSources_(incomingRow, sheetExtrasSou
         typeof row.fileLinks === "string" && row.fileLinks.trim() ? row.fileLinks.trim() : "";
     const city = visitorFields.city;
     const ip = visitorFields.ip;
-    const sourceUrl = typeof row.sourceUrl === "string" ? row.sourceUrl.trim() : "";
+    const sourceUrl = resolveSourceUrlFromContextForSheet_(ctxEnriched, row.sourceUrl);
     const osName = visitorFields.osName;
     const appointmentBookedRaw =
         typeof row.appointmentBooked === "string" ? row.appointmentBooked.trim() : "";
@@ -4413,7 +4452,10 @@ function resolveLeadValueForNormalizedHeader_(nk, lead, opts) {
     }
     if (nk === "fallback" || nk === "fallbackcount" || nk === "fall_back") {
         const fb = sheetOutboundCell_(L.fallBack);
-        return fb !== "" ? fb : "0";
+        if (!fb || fb === "0") {
+            return "";
+        }
+        return fb;
     }
     return "";
 }
@@ -5445,7 +5487,7 @@ async function buildStandardLeadRowUpdates_(sheets, tab, rowNumber, lead) {
     putMetricCell(SHEET_H_UTM_MEDIUM, 29, lead.utmMedium);
     putMetricCell(SHEET_H_UTM_SOURCE, 30, lead.utmSource);
     putMetricCell(SHEET_H_UTM_TERM, 31, lead.utmTerm);
-    put(SHEET_H_FALLBACK, 32, lead.fallBack != null && String(lead.fallBack).trim() !== "" ? lead.fallBack : "0");
+    put(SHEET_H_FALLBACK, 32, lead.fallBack);
 
     return updates;
 }
@@ -6227,11 +6269,14 @@ async function upsertSessionQueriesInSheet_(row) {
                         clientSessionId: sid,
                         browserName: row.browserName,
                         deviceType: row.deviceType,
+                        osName: row.osName,
                         channel: row.channel,
                         fileLinks: row.fileLinks,
                         city: row.city,
                         ip: row.ip,
                         sourceUrl: row.sourceUrl,
+                        feedbackRating: row.feedbackRating,
+                        feedbackMessage: row.feedbackMessage,
                         appointmentBooked: row.appointmentBooked,
                         appointmentDate: row.appointmentDate,
                         appointmentTime: row.appointmentTime,

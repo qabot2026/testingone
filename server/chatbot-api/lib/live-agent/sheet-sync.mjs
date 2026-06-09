@@ -133,6 +133,9 @@ export async function syncLiveAgentToSheet_(conversationId) {
     const osName = trim_(meta.os) || trim_(meta.os_name) || "";
     const city = trim_(meta.city) || "";
     const ip = trim_(meta.ip) || trim_(meta.ipAddress) || "";
+    const sourceUrl = trim_(meta.sourceUrl) || trim_(meta.source_url) || "";
+    const feedbackRating = trim_(meta.rating) || trim_(meta.feedbackRating) || "";
+    const feedbackMessage = trim_(meta.feedback) || trim_(meta.feedbackMessage) || "";
 
     try {
         /** @type {Parameters<typeof upsertSessionQueriesInSheet>[0]} */
@@ -146,6 +149,9 @@ export async function syncLiveAgentToSheet_(conversationId) {
             osName,
             city,
             ip,
+            sourceUrl,
+            feedbackRating,
+            feedbackMessage,
             channel,
             userQueriesCsv: authoritativeCsv,
             clientAuthoritativeQueries: true,

@@ -144,7 +144,7 @@ function mergeWidgetMetaFromContext_(sheetMeta, cx) {
         dial_code: pick("dial_code", "dialCode", "country_dial_code") || sheetMeta.dial_code,
         phone: pick("mobile", "phone") || sheetMeta.phone,
         channel: pick("channel") || sheetMeta.channel || "Web",
-        sourceUrl: pick("sourceUrl", "pageUrl", "url") || sheetMeta.sourceUrl,
+        sourceUrl: pick("sourceUrl", "source_url", "pageUrl", "page_url", "url") || sheetMeta.sourceUrl,
         device: pick("device", "device_type", "deviceType") || sheetMeta.device,
         browser: pick("browser", "browser_name", "browserName") || sheetMeta.browser,
         os: pick("os", "os_name", "osName") || sheetMeta.os,
@@ -155,10 +155,11 @@ function mergeWidgetMetaFromContext_(sheetMeta, cx) {
         utm_medium: pick("utm_medium", "utmMedium") || sheetMeta.utm_medium,
         utm_source: pick("utm_source", "utmSource") || sheetMeta.utm_source,
         utm_term: pick("utm_term", "utmTerm") || sheetMeta.utm_term,
-        fallback: pick("fallback", "fallBack") || sheetMeta.fallback,
-        crmPushStatus: pick("crmPushStatus") || sheetMeta.crmPushStatus,
-        rating: pick("rating", "feedbackRating") || sheetMeta.rating,
-        feedback: pick("feedback", "feedbackMessage", "message") || sheetMeta.feedback
+        rating: pick("rating", "feedbackRating", "feedback_rating") || sheetMeta.rating,
+        feedback: pick("feedback", "feedbackMessage", "feedback_message", "message") || sheetMeta.feedback,
+        fallback: pick("fallback", "fallBack", "fallback_message_count", "fallbackMessageCount")
+            || sheetMeta.fallback,
+        crmPushStatus: pick("crmPushStatus", "crm_push_status") || sheetMeta.crmPushStatus,
     };
 }
 

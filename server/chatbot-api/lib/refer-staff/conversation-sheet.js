@@ -268,7 +268,6 @@ function buildRowValues(doc) {
         || meta.fallBack
         || meta.unanswered_questions
         || meta.unansweredQuestions
-        || '0'
     ),
   ];
 }
@@ -288,7 +287,9 @@ function metaFromClientBody(body) {
   pick(['dial_code', 'dialCode', 'country_dial_code'], 'dial_code');
   pick(['email'], 'email');
   pick(['channel'], 'channel');
-  pick(['sourceUrl', 'pageUrl', 'url'], 'sourceUrl');
+  pick(['sourceUrl', 'source_url', 'pageUrl', 'url'], 'sourceUrl');
+  pick(['city', 'user_city', 'visitor_city'], 'city');
+  pick(['ip', 'ipAddress', 'ip_address'], 'ip');
   pick(['device', 'device_type', 'deviceType'], 'device');
   pick(['browser', 'browser_name', 'browserName'], 'browser');
   pick(['os', 'os_name', 'osName'], 'os');

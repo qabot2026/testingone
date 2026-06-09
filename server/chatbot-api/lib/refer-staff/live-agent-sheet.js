@@ -374,14 +374,16 @@ function collectPostAgentUserQueryLines_(session) {
   return lines;
 }
 
-function collectSheet2VisitorQueryLines_(session) {
-  let lines = sheetVisitorQueriesFromConversationDoc_(session);
-  lines = mergeUniqueVisitorQueryLines_(lines, liveAgentVisitorQueriesInConnectedWindow_(session));
-  lines = mergeUniqueVisitorQueryLines_(lines, inboxVisitorQueriesAfterFirstAgent_(session));
-  lines = mergeUniqueVisitorQueryLines_(lines, widgetVisitorQueriesMatchingInbox_(session));
-  lines = mergeUniqueVisitorQueryLines_(lines, widgetQueriesAfterHandoffPhrase_(session));
+/** Visitor lines only during the agent-connected window (inbox timestamps + widget handoff slice). */
+function collectHandoffWindowVisitorQueryLines_(session) {
+  let lines = liveAgentVisitorQueriesInConnectedWindow_(session);
   lines = mergeUniqueVisitorQueryLines_(lines, widgetHandoffUserQueryLines_(session));
+  lines = mergeUniqueVisitorQueryLines_(lines, sheetVisitorQueriesFromConversationDoc_(session));
   return lines;
+}
+
+function collectSheet2VisitorQueryLines_(session) {
+  return collectHandoffWindowVisitorQueryLines_(session);
 }
 
 /** Connected = agent accepted/claimed; disconnected = session closed (if still open, no upper bound). */
@@ -479,8 +481,7 @@ function buildSheet2UserQueriesForSheet(session) {
 }
 
 function liveAgentSheetUserQueries_(session) {
-  let lines = collectSheet2VisitorQueryLines_(session);
-  lines = mergeUniqueVisitorQueryLines_(lines, collectPostAgentUserQueryLines_(session));
+  const lines = collectHandoffWindowVisitorQueryLines_(session);
   if (!lines.length) {
     return '';
   }
@@ -580,7 +581,7 @@ function buildSheet1LiveAgentHandoffQueries(session) {
   ) {
     parts.push('Connected with Agent');
   }
-  collectSheet2VisitorQueryLines_(session).forEach((line) => {
+  collectHandoffWindowVisitorQueryLines_(session).forEach((line) => {
     const t = trim(line);
     if (t) parts.push(t);
   });

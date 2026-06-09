@@ -397,6 +397,28 @@ function isBotFallbackAssistantText_(text) {
     return false;
 }
 
+/** Count bot/assistant turns whose text matches a fallback apology (Sheet “Fall back” column). */
+function countBotFallbackAssistantTurns_(turns) {
+    if (!Array.isArray(turns)) {
+        return 0;
+    }
+    let n = 0;
+    for (let i = 0; i < turns.length; i += 1) {
+        const t = turns[i];
+        if (!t) {
+            continue;
+        }
+        const role = String(t.role || "").trim().toLowerCase();
+        if (role !== "assistant" && role !== "bot") {
+            continue;
+        }
+        if (isBotFallbackAssistantText_(t.text)) {
+            n += 1;
+        }
+    }
+    return n;
+}
+
 /** @param {string} text */
 function isUserQuestionText_(text) {
     const t = String(text || "").trim();
@@ -687,6 +709,7 @@ export function computeConversationMetricsFromClientContext_(clientContext) {
             }
         }
     }
+    const fallbackMessageCount = countBotFallbackAssistantTurns_(turns);
 
     const camp = campaignParamsFromClientContext_(cx);
     return {
@@ -696,7 +719,8 @@ export function computeConversationMetricsFromClientContext_(clientContext) {
         messageCount,
         avgResponseTimeMs,
         sentiment,
-        unansweredQuestions: unansweredQuestions ? String(unansweredQuestions) : "0",
+        unansweredQuestions: unansweredQuestions ? String(unansweredQuestions) : "",
+        fallbackMessageCount: fallbackMessageCount > 0 ? String(fallbackMessageCount) : "",
         utmCampaign: camp.utm_campaign || "",
         utmContent: camp.utm_content || "",
         utmMedium: camp.utm_medium || "",
@@ -734,7 +758,7 @@ export function conversationMetricsForSheetRow_(metrics, clientContext, incoming
     const unanswered =
         m.unansweredQuestions != null && String(m.unansweredQuestions) !== ""
             ? String(m.unansweredQuestions)
-            : pick("unanswered_questions", "unansweredQuestions") || "0";
+            : pick("unanswered_questions", "unansweredQuestions") || "";
     const messageCount =
         (m.messageCount && looksLikeUserBotMessageCount_(m.messageCount) ? m.messageCount : "")
         || pick("message_count", "messageCount");
@@ -771,11 +795,11 @@ export function conversationMetricsForSheetRow_(metrics, clientContext, incoming
         utmSource: m.utmSource || pick("utm_source", "utmsource"),
         utmTerm: m.utmTerm || pick("utm_term", "utmterm"),
         fallBack:
-            m.unansweredQuestions != null && String(m.unansweredQuestions).trim() !== ""
-                ? String(m.unansweredQuestions).trim()
-                : pick("fallback", "fall_back", "fallBack", "fall back", "unanswered_questions", "unansweredQuestions")
-                    || unanswered
-                    || "0"
+            (m.fallbackMessageCount && String(m.fallbackMessageCount).trim() && String(m.fallbackMessageCount) !== "0"
+                ? String(m.fallbackMessageCount).trim()
+                : "")
+            || pick("fallback_message_count", "fallbackMessageCount", "fallback", "fall_back", "fallBack", "fall back")
+            || (unanswered && unanswered !== "0" ? unanswered : "")
     };
 }
 
@@ -820,7 +844,11 @@ export function mergeConversationMetricsIntoClientContext_(clientContext, metric
     setSp("utm_source", m.utmSource);
     setSp("utmterm", m.utmTerm);
     setSp("utm_term", m.utmTerm);
-    if (m.unansweredQuestions !== "") {
+    if (m.fallbackMessageCount !== "") {
+        setSp("fallback", m.fallbackMessageCount);
+        setSp("fall_back", m.fallbackMessageCount);
+        setSp("fallback_message_count", m.fallbackMessageCount);
+    } else if (m.unansweredQuestions !== "") {
         setSp("fallback", m.unansweredQuestions);
         setSp("fall_back", m.unansweredQuestions);
     }
@@ -845,7 +873,11 @@ export function mergeConversationMetricsIntoClientContext_(clientContext, metric
     if (m.sentiment) {
         cx.sentiment = m.sentiment;
     }
-    if (m.unansweredQuestions !== "") {
+    if (m.fallbackMessageCount !== "") {
+        cx.fallback = m.fallbackMessageCount;
+        cx.fall_back = m.fallbackMessageCount;
+        cx.fallback_message_count = m.fallbackMessageCount;
+    } else if (m.unansweredQuestions !== "") {
         cx.unanswered_questions = m.unansweredQuestions;
         cx.fallback = m.unansweredQuestions;
         cx.fall_back = m.unansweredQuestions;
