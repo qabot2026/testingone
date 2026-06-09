@@ -32,7 +32,13 @@ const lead = assembleLeadSheetPayloadFromSources_(
         email: "test@example.com",
         channel: "web"
     },
-    { clientContext: ctx, fields: {} }
+    {
+        clientContext: ctx,
+        fields: {
+            appointmentdate: "15-06-2026",
+            appointmenttime: "10:30 AM"
+        }
+    }
 );
 
 const checks = [
@@ -43,7 +49,11 @@ const checks = [
     ["deviceType", lead.deviceType, "Desktop"],
     ["osName", lead.osName, "Windows 10"],
     ["feedbackRating", lead.feedbackRating, "4"],
-    ["feedbackMessage", lead.feedbackMessage, "Helpful chat"]
+    ["feedbackMessage", lead.feedbackMessage, "Helpful chat"],
+    ["appointmentBooked", lead.appointmentBooked, "Scheduled"],
+    ["appointmentDate", lead.appointmentDate, "15-06-2026"],
+    ["appointmentTime", lead.appointmentTime, "10:30 AM"],
+    ["fallBack", lead.fallBack, "1"]
 ];
 
 let failed = 0;

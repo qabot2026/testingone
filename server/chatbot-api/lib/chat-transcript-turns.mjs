@@ -508,6 +508,18 @@ export async function enrichClientContextForSheetMetricsAsync_(clientContext, op
             if (leadCx) {
                 cx = mergeClientContextRecords_(cx, leadCx);
             }
+            const leadFields =
+                leadRec
+                && typeof leadRec === "object"
+                && leadRec.fields
+                && typeof leadRec.fields === "object"
+                && !Array.isArray(leadRec.fields)
+                    ? /** @type {Record<string, unknown>} */ (leadRec.fields)
+                    : null;
+            if (leadFields) {
+                const { mergeAppointmentFormFieldsIntoClientContext_ } = await import("./sheets.mjs");
+                cx = mergeAppointmentFormFieldsIntoClientContext_(cx, leadFields);
+            }
         } catch (e) {
             const m = e && /** @type {{ message?: string }} */ (e).message ? String(e.message) : String(e);
             console.warn("[chatbot-api] enrichClientContextForSheetMetrics Firestore:", m.slice(0, 200));

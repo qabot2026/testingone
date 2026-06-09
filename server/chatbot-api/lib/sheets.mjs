@@ -568,6 +568,130 @@ function resolveVisitorDeviceFieldsForSheet_(row, contactLookup, ctx) {
     };
 }
 
+/**
+ * App. Booked / App. Date / App. Time from form fields, client_context, session_params, or row.
+ * Ignores row-level `No` when date/time exist in context (session sync used to hardcode `No`).
+ *
+ * @param {*} row
+ * @param {Record<string, unknown>} contactLookup
+ * @param {Record<string, unknown>} fieldsRec
+ * @param {Record<string, unknown>} ctx
+ */
+function resolveAppointmentFieldsForSheet_(row, contactLookup, fieldsRec, ctx) {
+    const ro = row && typeof row === "object" ? /** @type {Record<string, unknown>} */ (row) : {};
+    const lookup = contactLookup && typeof contactLookup === "object" ? contactLookup : {};
+    const fields = fieldsRec && typeof fieldsRec === "object" ? fieldsRec : {};
+    const cx = ctx && typeof ctx === "object" && !Array.isArray(ctx) ? ctx : {};
+    const sp =
+        cx.session_params && typeof cx.session_params === "object" && !Array.isArray(cx.session_params)
+            ? /** @type {Record<string, unknown>} */ (cx.session_params)
+            : {};
+    /** @param {string[]} keys */
+    const pick = (...keys) => {
+        for (let i = 0; i < keys.length; i += 1) {
+            const k = keys[i];
+            /** @type {Record<string, unknown>[]} */
+            const sources = [fields, cx, sp, lookup, ro];
+            for (let s = 0; s < sources.length; s += 1) {
+                const v = sheetOutboundCell_(sources[s][k]);
+                if (v) {
+                    return v;
+                }
+            }
+        }
+        return "";
+    };
+    const appointmentDate = pick(
+        "appointmentDate",
+        "appointmentdate",
+        "appointment_date",
+        "appointmentDateDisplay",
+        "appointment_date_display"
+    );
+    const appointmentTime = pick(
+        "appointmentTime",
+        "appointmenttime",
+        "appointment_time",
+        "appointmentTimeDisplay",
+        "appointment_time_display"
+    );
+    let appointmentBookedRaw = pick(
+        "appointmentBooked",
+        "appointmentbooked",
+        "appointment_booked",
+        "isappointmentbooked"
+    );
+    if (/^no$/i.test(appointmentBookedRaw) && !(appointmentDate || appointmentTime)) {
+        appointmentBookedRaw = "";
+    }
+    if (!appointmentBookedRaw && (appointmentDate || appointmentTime)) {
+        appointmentBookedRaw = "Yes";
+    }
+    const formId =
+        pick("form_id", "formId")
+        || (typeof row.formId === "string" ? row.formId.trim() : "");
+    if (
+        !appointmentBookedRaw
+        && !appointmentDate
+        && !appointmentTime
+        && /appintmentform|appointment/i.test(formId)
+    ) {
+        const d = pick("appointmentdate", "appointment_date");
+        const t = pick("appointmenttime", "appointment_time");
+        if (d || t) {
+            appointmentBookedRaw = "Yes";
+        }
+    }
+    return {
+        appointmentBooked: appointmentBookedSheetValue_(appointmentBookedRaw),
+        appointmentDate,
+        appointmentTime
+    };
+}
+
+/**
+ * Copy contact-form appointment field keys onto `client_context` for later session sheet syncs.
+ *
+ * @param {Record<string, unknown>} clientContext
+ * @param {Record<string, unknown>} fields
+ */
+export function mergeAppointmentFormFieldsIntoClientContext_(clientContext, fields) {
+    const cx =
+        clientContext && typeof clientContext === "object" && !Array.isArray(clientContext)
+            ? { ...clientContext }
+            : {};
+    const f = fields && typeof fields === "object" && !Array.isArray(fields) ? fields : {};
+    /** @param {string[]} keys */
+    const pick = (...keys) => {
+        for (let i = 0; i < keys.length; i += 1) {
+            const v = sheetOutboundCell_(f[keys[i]]);
+            if (v) {
+                return v;
+            }
+        }
+        return "";
+    };
+    const date = pick("appointmentdate", "appointmentDate", "appointment_date");
+    const time = pick("appointmenttime", "appointmentTime", "appointment_time");
+    const booked = pick("appointmentbooked", "appointmentBooked", "appointment_booked");
+    if (date) {
+        cx.appointmentdate = date;
+        cx.appointment_date = date;
+    }
+    if (time) {
+        cx.appointmenttime = time;
+        cx.appointment_time = time;
+    }
+    if (booked) {
+        cx.appointmentbooked = booked;
+        cx.appointment_booked = booked;
+    } else if (date && time) {
+        cx.appointmentbooked = "Yes";
+        cx.appointment_booked = "Yes";
+    }
+    return cx;
+}
+
 /** Source page URL from row payload or nested client_context / session_params. */
 function resolveSourceUrlFromContextForSheet_(ctx, rowSourceUrl) {
     const explicit = sheetOutboundCell_(rowSourceUrl);
@@ -1439,11 +1563,10 @@ export function assembleLeadSheetPayloadFromSources_(incomingRow, sheetExtrasSou
     const ip = visitorFields.ip;
     const sourceUrl = resolveSourceUrlFromContextForSheet_(ctxEnriched, row.sourceUrl);
     const osName = visitorFields.osName;
-    const appointmentBookedRaw =
-        typeof row.appointmentBooked === "string" ? row.appointmentBooked.trim() : "";
-    const appointmentBooked = appointmentBookedSheetValue_(appointmentBookedRaw);
-    const appointmentDate = typeof row.appointmentDate === "string" ? row.appointmentDate.trim() : "";
-    const appointmentTime = typeof row.appointmentTime === "string" ? row.appointmentTime.trim() : "";
+    const appointmentFields = resolveAppointmentFieldsForSheet_(row, contactLookup, fieldsRec, ctxEnriched);
+    const appointmentBooked = appointmentFields.appointmentBooked;
+    const appointmentDate = appointmentFields.appointmentDate;
+    const appointmentTime = appointmentFields.appointmentTime;
     const userQueriesCsv = sanitizeUserQueriesCsvForSheet(
         typeof row.userQueriesCsv === "string" ? row.userQueriesCsv : ""
     );
@@ -4219,7 +4342,14 @@ const SHEET_H_UTM_MEDIUM = ["utmmedium", "utm_medium"];
 const SHEET_H_UTM_SOURCE = ["utmsource", "utm_source"];
 const SHEET_H_UTM_TERM = ["utmterm", "utm_term"];
 const SHEET_H_OS = ["os", "operatingsystem", "osname"];
-const SHEET_H_FALLBACK = ["fallback", "fallbackflag", "fall_back"];
+const SHEET_H_FALLBACK = [
+    "fallback",
+    "fallbackflag",
+    "fall_back",
+    "fallbackmessagecount",
+    "fallback_message_count",
+    "fallbackcount"
+];
 
 /** True when row-1 headers map to at least one known lead column (avoids all-blank writes). */
 function sheetHeaderMapHasRecognizedLeadKeys_(byKey) {
@@ -4451,7 +4581,12 @@ function resolveLeadValueForNormalizedHeader_(nk, lead, opts) {
     if (nk === "utmterm") {
         return sheetOutboundCell_(L.utmTerm);
     }
-    if (nk === "fallback" || nk === "fallbackcount" || nk === "fall_back") {
+    if (
+        nk === "fallback"
+        || nk === "fallbackcount"
+        || nk === "fall_back"
+        || nk === "fallbackmessagecount"
+    ) {
         const fb = sheetOutboundCell_(L.fallBack);
         if (!fb || fb === "0") {
             return "";

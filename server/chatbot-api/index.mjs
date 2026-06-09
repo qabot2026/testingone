@@ -75,7 +75,8 @@ import {
     upsertSessionQueriesInSheet,
     runCoalescedSessionSheetSync_,
     patchSheetLeadBySessionId_,
-    feedbackFieldsFromLeadSources_
+    feedbackFieldsFromLeadSources_,
+    mergeAppointmentFormFieldsIntoClientContext_
 } from "./lib/sheets.mjs";
 import {
     extractCampaignParamsFromUrl,
@@ -2896,6 +2897,8 @@ app.post(
             }
         }
 
+        mergedClientContext = mergeAppointmentFormFieldsIntoClientContext_(mergedClientContext, fields);
+
         const convAt = new Date();
         const submittedAtIso = convAt.toISOString();
         const convSheetDate = formatConversationDateForSheet(convAt);
@@ -3330,6 +3333,7 @@ app.post(
                 }
             }
         }
+        mergedClientContext = mergeAppointmentFormFieldsIntoClientContext_(mergedClientContext, fields);
 
         const formId = normalizeSheetFormId(body._contactFormId);
         let mobile =
@@ -3395,9 +3399,6 @@ app.post(
                     ip,
                     city,
                     sourceUrl,
-                    appointmentBooked: "No",
-                    appointmentDate: "",
-                    appointmentTime: "",
                     userQueriesCsv,
                     ...(chatTranscriptJsonMobile
                         ? { chatTranscriptJson: chatTranscriptJsonMobile }
@@ -3573,6 +3574,7 @@ app.post(
                 }
             }
         }
+        mergedClientContext = mergeAppointmentFormFieldsIntoClientContext_(mergedClientContext, fields);
 
         let mobile =
             resolveContactMobile(fields, body, mergedClientContext)
@@ -3669,9 +3671,6 @@ app.post(
                     ip,
                     city,
                     sourceUrl,
-                    appointmentBooked: "No",
-                    appointmentDate: "",
-                    appointmentTime: "",
                     userQueriesCsv,
                     chatTranscriptJson,
                     writeChatTranscriptOnSessionSync: false,
