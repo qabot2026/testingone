@@ -51,8 +51,12 @@ function userQueryLinesFromContextForSheet_(ctx) {
         if (!raw) {
             continue;
         }
-        if (raw === LIVE_AGENT_ENDED_USER_QUERY_MARKER || isConnectedWithAgentMarker_(raw)) {
-            out.push(isConnectedWithAgentMarker_(raw) ? "Connected with Agent" : raw);
+        if (raw === LIVE_AGENT_ENDED_USER_QUERY_MARKER) {
+            out.push(raw);
+            continue;
+        }
+        if (isConnectedWithAgentMarker_(raw)) {
+            out.push("Connected with Agent");
             continue;
         }
         if (/^\[Live Agent\]/i.test(raw)) {

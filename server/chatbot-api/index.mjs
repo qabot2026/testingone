@@ -5464,6 +5464,10 @@ function shouldOmitTranscriptUserTurn_(text) {
     if (/^__form_closed:/i.test(String(text ?? "").trim())) {
         return false;
     }
+    const t = String(text ?? "").trim();
+    if (t === "__live_agent_ended__") {
+        return true;
+    }
     return (
         isTranscriptHandoffRoutingToken_(text)
         || isTranscriptInternalUserToken_(text)

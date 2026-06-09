@@ -210,7 +210,7 @@ function formatMobileForSheet(meta) {
 async function resolveRepeatedUserLabel(doc) {
   const meta = doc.meta || {};
   const norm = sheets.normalizeMobile(formatMobileForSheet(meta));
-  if (!norm) return '';
+  if (!norm) return 'First Time';
 
   const excludeRow =
     doc.sheetRow && Number(doc.sheetRow) >= 2 ? Number(doc.sheetRow) : null;
@@ -263,7 +263,12 @@ function buildRowValues(doc) {
     scalar(meta.utm_medium || meta.utmMedium),
     scalar(meta.utm_source || meta.utmSource),
     scalar(meta.utm_term || meta.utmTerm),
-    scalar(meta.fallback || meta.fallBack),
+    scalar(
+      meta.fallback
+        || meta.fallBack
+        || meta.unanswered_questions
+        || meta.unansweredQuestions
+    ),
   ];
 }
 

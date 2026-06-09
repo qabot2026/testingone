@@ -2928,6 +2928,9 @@ export function sanitizeUserQueriesCsvForSheet(csv, options = {}) {
         if (/^\[Live Agent\]/i.test(t)) {
             continue;
         }
+        if (t === LIVE_AGENT_ENDED_USER_QUERY_MARKER) {
+            continue;
+        }
         if (/Status:\s*/i.test(t) && /Dept:/i.test(t) && (/Queue:/i.test(t) || /Agent:/i.test(t))) {
             continue;
         }
@@ -3197,6 +3200,8 @@ export function assembleFullUserQueriesCsv_(clientLines, handoffCsv) {
     );
     /** @type {string[]} */
     const postExtra = [];
+    /** @type {Set<string>} */
+    const postSeen = new Set();
     for (const seg of post) {
         const t = String(seg ?? "").trim();
         if (!t || isUserQuerySheetNoiseSegment_(t) || isLiveAgentPhaseSplitMarker_(t)) {
@@ -3207,10 +3212,14 @@ export function assembleFullUserQueriesCsv_(clientLines, handoffCsv) {
             continue;
         }
         if (endIdx >= 0) {
-            if (preSeen.has(k)) {
+            if (postSeen.has(k)) {
                 continue;
             }
-        } else if (seen.has(k)) {
+            postSeen.add(k);
+            postExtra.push(t);
+            continue;
+        }
+        if (seen.has(k)) {
             continue;
         }
         seen.add(k);

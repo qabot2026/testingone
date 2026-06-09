@@ -770,7 +770,12 @@ export function conversationMetricsForSheetRow_(metrics, clientContext, incoming
         utmMedium: m.utmMedium || pick("utm_medium", "utmmedium"),
         utmSource: m.utmSource || pick("utm_source", "utmsource"),
         utmTerm: m.utmTerm || pick("utm_term", "utmterm"),
-        fallBack: pick("fallback", "fall_back", "fallBack", "fall back")
+        fallBack:
+            m.unansweredQuestions != null && String(m.unansweredQuestions).trim() !== ""
+                ? String(m.unansweredQuestions).trim()
+                : pick("fallback", "fall_back", "fallBack", "fall back", "unanswered_questions", "unansweredQuestions")
+                    || unanswered
+                    || "0"
     };
 }
 
@@ -815,6 +820,10 @@ export function mergeConversationMetricsIntoClientContext_(clientContext, metric
     setSp("utm_source", m.utmSource);
     setSp("utmterm", m.utmTerm);
     setSp("utm_term", m.utmTerm);
+    if (m.unansweredQuestions !== "") {
+        setSp("fallback", m.unansweredQuestions);
+        setSp("fall_back", m.unansweredQuestions);
+    }
 
     cx.session_params = sp;
     if (m.crmPushStatus) {
@@ -838,6 +847,8 @@ export function mergeConversationMetricsIntoClientContext_(clientContext, metric
     }
     if (m.unansweredQuestions !== "") {
         cx.unanswered_questions = m.unansweredQuestions;
+        cx.fallback = m.unansweredQuestions;
+        cx.fall_back = m.unansweredQuestions;
     }
 
     return cx;

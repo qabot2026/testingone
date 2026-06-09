@@ -235,6 +235,19 @@
       margin-right: 10%;
       border: 1px solid rgba(109, 40, 217, 0.18);
     }
+    .msg--live-phase.msg--user,
+    .msg--live-phase.msg--assistant,
+    .msg--live-phase.msg--agent {
+      background: #fef9c3;
+      border-color: rgba(202, 138, 4, 0.28);
+    }
+    .msg--live-phase.msg--user .who {
+      color: #a16207;
+    }
+    .msg--live-phase.msg--assistant .who,
+    .msg--live-phase.msg--agent .who {
+      color: #a16207;
+    }
     .msg .who {
       display: flex;
       flex-wrap: wrap;
@@ -582,6 +595,8 @@
       function formatUserTranscriptPlain(text) {
         var t = typeof text === "string" ? text.trim() : "";
         if (!t) return t;
+        if (t === "__live_agent_ended__") return "";
+        if (/^connected with agent$/i.test(t)) return "";
         var closed = t.match(/^__form_closed:(\S+)/i);
         if (closed) {
           var id = String(closed[1] || "contact").replace(/_/g, " ");
@@ -589,6 +604,60 @@
           return name + " form closed.";
         }
         return t;
+      }
+
+      function formatUserQueriesForSummary(raw) {
+        if (raw == null || raw === "") return "";
+        return String(raw)
+          .split(",")
+          .map(function (part) {
+            return part.trim();
+          })
+          .filter(function (part) {
+            if (!part) return false;
+            if (part === "__live_agent_ended__") return false;
+            if (/^connected with agent$/i.test(part)) return false;
+            if (/^\[Live Agent\]/i.test(part)) return false;
+            return true;
+          })
+          .join(", ");
+      }
+
+      /** Yellow highlight: first agent turn through first bot reply after last agent. */
+      function buildLivePhaseYellowIndexSet(turns) {
+        var yellow = {};
+        if (!Array.isArray(turns) || !turns.length) return yellow;
+        var firstAgent = -1;
+        var lastAgent = -1;
+        for (var i = 0; i < turns.length; i += 1) {
+          if (turns[i] && turns[i].role === "agent") {
+            if (firstAgent < 0) firstAgent = i;
+            lastAgent = i;
+          }
+        }
+        if (firstAgent < 0) return yellow;
+        var postBotIdx = -1;
+        for (var j = lastAgent + 1; j < turns.length; j += 1) {
+          if (turns[j] && turns[j].role === "assistant") {
+            postBotIdx = j;
+            break;
+          }
+        }
+        var endIdx = postBotIdx >= 0 ? postBotIdx : lastAgent;
+        for (var k = firstAgent; k <= endIdx; k += 1) {
+          var role = turns[k] && turns[k].role;
+          if (role === "agent" || role === "user" || (k === postBotIdx && role === "assistant")) {
+            yellow[k] = true;
+          }
+        }
+        for (var u = firstAgent - 1; u >= 0; u -= 1) {
+          if (turns[u] && turns[u].role === "user") {
+            yellow[u] = true;
+          } else {
+            break;
+          }
+        }
+        return yellow;
       }
 
       function unwrapStr(v) {
@@ -924,6 +993,8 @@
           }
           if (isTranscriptInternalCxToken(userText)) return false;
           if (/^\[Live Agent\]/i.test(userText)) return false;
+          if (userText === "__live_agent_ended__") return false;
+          if (/^connected with agent$/i.test(userText)) return false;
           if (/Status:\s*/i.test(userText) && /Dept:/i.test(userText) && (/Queue:/i.test(userText) || /Agent:/i.test(userText))) {
             return false;
           }
@@ -1192,6 +1263,10 @@
           }
         }
 
+        if (userQueriesVal) {
+          userQueriesVal = formatUserQueriesForSummary(userQueriesVal);
+        }
+
         if (nameVal) pairs.push(["Name", String(nameVal)]);
         if (emailVal) pairs.push(["Email", String(emailVal)]);
         if (mobileVal) pairs.push(["Phone", formatMobileForSummary(mobileVal, meta)]);
@@ -1238,7 +1313,7 @@
 
         if (userQueriesVal) pairs.push(["User queries", String(userQueriesVal)]);
 
-        var liveAgentUq = normalizeDetailValue(meta.live_agent_user_queries);
+        var liveAgentUq = formatUserQueriesForSummary(normalizeDetailValue(meta.live_agent_user_queries));
         if (liveAgentUq) pairs.push(["Live agent queries", String(liveAgentUq)]);
 
         if (!pairs.length) {
@@ -1349,6 +1424,7 @@
           dayLine.className = "day-line";
           dayLine.textContent = "Messages";
           thread.appendChild(dayLine);
+          var livePhaseYellow = buildLivePhaseYellowIndexSet(turns);
           for (var i = 0; i < turns.length; i++) {
             var t = turns[i];
             if (!t || !turnHasRenderableBody(t)) continue;
@@ -1386,7 +1462,8 @@
                       : "";
                   })();
             var row = document.createElement("div");
-            row.className = "msg msg--" + role;
+            row.className =
+              "msg msg--" + role + (livePhaseYellow[i] ? " msg--live-phase" : "");
             row.innerHTML =
               '<div class="who"><span class="who-label">' +
               escapeHtml(who) +
