@@ -327,6 +327,53 @@ function widgetQueriesAfterHandoffPhrase_(session) {
   return lines;
 }
 
+function widgetPostAgentQueriesFromSession_(session) {
+  const uq = session && session._widgetUserQueries;
+  if (!Array.isArray(uq) || !uq.length) {
+    return [];
+  }
+  const endIdx = uq.findIndex(
+    (line) => typeof line === 'string' && line.trim() === WIDGET_ENDED_MARKER_
+  );
+  if (endIdx < 0) {
+    return [];
+  }
+  /** @type {string[]} */
+  const lines = [];
+  for (let i = endIdx + 1; i < uq.length; i += 1) {
+    const raw = typeof uq[i] === 'string' ? uq[i].trim() : '';
+    if (!raw || raw === WIDGET_ENDED_MARKER_) continue;
+    appendLiveAgentVisitorQueryLine_(lines, raw);
+  }
+  return lines;
+}
+
+/** Visitor inbox lines after the agent session closed (post-handoff bot chat). */
+function postAgentVisitorMessagesFromSession_(session) {
+  const bounds = liveAgentConnectedWindowBounds_(session);
+  if (!bounds || !bounds.disconnected) {
+    return [];
+  }
+  const msgs = (session && session.messages) || [];
+  /** @type {string[]} */
+  const lines = [];
+  for (let i = 0; i < msgs.length; i += 1) {
+    const m = msgs[i];
+    if (!m || trim(m.role).toLowerCase() !== 'visitor') continue;
+    const msgMs = parseSessionIsoMs_(m.createdAt);
+    if (msgMs > 0 && msgMs <= bounds.disconnected) continue;
+    appendLiveAgentVisitorQueryLine_(lines, trim(m.text));
+  }
+  return lines;
+}
+
+/** User queries after agent disconnect — widget context tail + late inbox visitor lines. */
+function collectPostAgentUserQueryLines_(session) {
+  let lines = widgetPostAgentQueriesFromSession_(session);
+  lines = mergeUniqueVisitorQueryLines_(lines, postAgentVisitorMessagesFromSession_(session));
+  return lines;
+}
+
 function collectSheet2VisitorQueryLines_(session) {
   let lines = sheetVisitorQueriesFromConversationDoc_(session);
   lines = mergeUniqueVisitorQueryLines_(lines, liveAgentVisitorQueriesInConnectedWindow_(session));
@@ -432,7 +479,12 @@ function buildSheet2UserQueriesForSheet(session) {
 }
 
 function liveAgentSheetUserQueries_(session) {
-  return buildSheet2UserQueriesForSheet(session);
+  let lines = collectSheet2VisitorQueryLines_(session);
+  lines = mergeUniqueVisitorQueryLines_(lines, collectPostAgentUserQueryLines_(session));
+  if (!lines.length) {
+    return '';
+  }
+  return lines.join(', ').slice(0, 2000);
 }
 
 function resolveAgentNameForSheet_(session) {
@@ -833,6 +885,7 @@ module.exports = {
   buildRowValues,
   buildSheet1LiveAgentHandoffQueries,
   buildSheet2UserQueriesForSheet,
+  collectPostAgentUserQueryLines_,
   liveAgentQueriesFromSession,
   sessionQualifies,
 };

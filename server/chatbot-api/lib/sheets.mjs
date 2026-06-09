@@ -527,6 +527,46 @@ function normalizedHeaderKey_(s) {
         .replace(/[^a-z0-9]/g, "");
 }
 
+/**
+ * Device / browser / OS / city / IP from row payload, flattened client_context, or session_params.
+ *
+ * @param {*} row
+ * @param {Record<string, unknown>} contactLookup
+ * @param {Record<string, unknown>} ctx
+ */
+function resolveVisitorDeviceFieldsForSheet_(row, contactLookup, ctx) {
+    const ro = row && typeof row === "object" ? /** @type {Record<string, unknown>} */ (row) : {};
+    const lookup = contactLookup && typeof contactLookup === "object" ? contactLookup : {};
+    const cx = ctx && typeof ctx === "object" && !Array.isArray(ctx) ? ctx : {};
+    const sp =
+        cx.session_params && typeof cx.session_params === "object" && !Array.isArray(cx.session_params)
+            ? /** @type {Record<string, unknown>} */ (cx.session_params)
+            : {};
+    /** @param {string[]} keys */
+    const pick = (...keys) => {
+        for (let i = 0; i < keys.length; i += 1) {
+            const k = keys[i];
+            const v =
+                sheetOutboundCell_(ro[k])
+                || sheetOutboundCell_(lookup[k])
+                || sheetOutboundCell_(cx[k])
+                || sheetOutboundCell_(sp[k]);
+            if (v) {
+                return v;
+            }
+        }
+        return "";
+    };
+    const deviceRaw = pick("deviceType", "device_type", "device");
+    return {
+        deviceType: deviceRaw ? formatDeviceTypeForSheetDisplay(deviceRaw) : "",
+        browserName: pick("browserName", "browser_name", "browser"),
+        osName: pick("osName", "os_name", "os", "operating_system"),
+        city: resolveCityFromClientContextForSheet_(cx, pick("city")),
+        ip: pick("ip", "ipAddress", "ip_address")
+    };
+}
+
 /** City from row payload or nested client_context / session_params. */
 function resolveCityFromClientContextForSheet_(ctx, rowCity) {
     const explicit = sheetOutboundCell_(rowCity);
@@ -600,6 +640,12 @@ function normalizedSheetTabKey_(tab) {
 function sheetA1TabPrefix_(title) {
     const t = String(title || "").trim().replace(/'/g, "''") || "All Conversations";
     return `'${t}'`;
+}
+
+/** Quoted tab + A1 suffix (e.g. `'All Conversations'!A1`). */
+function sheetTabRange_(tabTitle, a1Suffix) {
+    const suffix = String(a1Suffix || "").replace(/^!/, "");
+    return `${sheetA1TabPrefix_(tabTitle)}!${suffix}`;
 }
 
 /**
@@ -879,7 +925,7 @@ async function getMobileColumnInfo_(sheets, tab) {
     try {
         const got = await sheets.spreadsheets.values.get({
             spreadsheetId: SPREADSHEET_ID,
-            range: `${tab}!1:1`
+            range: sheetTabRange_(tab, "1:1")
         });
         const header = Array.isArray(got.data.values) && got.data.values[0] ? got.data.values[0] : [];
         const want = new Set([
@@ -1346,18 +1392,13 @@ export function assembleLeadSheetPayloadFromSources_(incomingRow, sheetExtrasSou
 
     const chRaw = resolveLeadChannelRawForSheet_(row);
     const ch = formatChannelForSheetDisplay(chRaw);
-    const deviceForAppend = formatDeviceTypeForSheetDisplay(
-        typeof row.deviceType === "string" ? row.deviceType.trim() : ""
-    );
+    const visitorFields = resolveVisitorDeviceFieldsForSheet_(row, contactLookup, ctxEnriched);
     const fileLinks =
         typeof row.fileLinks === "string" && row.fileLinks.trim() ? row.fileLinks.trim() : "";
-    const city = resolveCityFromClientContextForSheet_(ctxEnriched, row.city);
-    const ip = typeof row.ip === "string" ? row.ip.trim() : "";
+    const city = visitorFields.city;
+    const ip = visitorFields.ip;
     const sourceUrl = typeof row.sourceUrl === "string" ? row.sourceUrl.trim() : "";
-    const osName =
-        sheetOutboundCell_(/** @type {{ osName?: unknown }} */ (row).osName)
-        || sheetOutboundCell_(contactLookup && contactLookup.os_name)
-        || "";
+    const osName = visitorFields.osName;
     const appointmentBookedRaw =
         typeof row.appointmentBooked === "string" ? row.appointmentBooked.trim() : "";
     const appointmentBooked = appointmentBookedSheetValue_(appointmentBookedRaw);
@@ -1379,8 +1420,8 @@ export function assembleLeadSheetPayloadFromSources_(incomingRow, sheetExtrasSou
         mobile: mobileResolved,
         email: emailResolved,
         clientSessionId: row.clientSessionId,
-        deviceType: deviceForAppend,
-        browserName: row.browserName,
+        deviceType: visitorFields.deviceType,
+        browserName: visitorFields.browserName,
         osName,
         channel: ch,
         userQueriesCsv,
@@ -1880,7 +1921,7 @@ async function getRepeatedColumnInfo_(sheets, tab) {
     try {
         const got = await sheets.spreadsheets.values.get({
             spreadsheetId: SPREADSHEET_ID,
-            range: `${tab}!1:1`
+            range: sheetTabRange_(tab, "1:1")
         });
         const header = Array.isArray(got.data.values) && got.data.values[0] ? got.data.values[0] : [];
         /** Avoid matching generic “Duplicate…” / “Existing…” columns ahead of Repeated User (wrong column patches). */
@@ -1936,7 +1977,7 @@ async function getUserQueriesColumnInfo_(sheets, tab) {
     try {
         const got = await sheets.spreadsheets.values.get({
             spreadsheetId: SPREADSHEET_ID,
-            range: `${tab}!1:1`
+            range: sheetTabRange_(tab, "1:1")
         });
         const header = Array.isArray(got.data.values) && got.data.values[0] ? got.data.values[0] : [];
         const want = new Set(
@@ -3354,7 +3395,7 @@ async function updateExistingSessionRow_(sheets, tab, rowNumber, incoming, optio
     const queriesCol = await getUserQueriesColumnInfo_(sheets, tab);
     const got = await sheets.spreadsheets.values.get({
         spreadsheetId: SPREADSHEET_ID,
-        range: `${tab}!A${rowNumber}:S${rowNumber}`
+        range: sheetTabRange_(tab, `A${rowNumber}:AG${rowNumber}`)
     });
     const row = Array.isArray(got.data.values) && got.data.values[0] ? got.data.values[0] : [];
     const colL = columnLetterFromIndex_;
@@ -3405,8 +3446,10 @@ async function updateExistingSessionRow_(sheets, tab, rowNumber, incoming, optio
     const deviceType = deviceTypeRaw ? formatDeviceTypeForSheetDisplay(deviceTypeRaw) : "";
     const browserName =
         patchScalarInto(typeof incoming.browserName === "string" ? incoming.browserName : "", 12);
-    const city = patchScalarInto(typeof incoming.city === "string" ? incoming.city : "", 13);
-    const ip = patchScalarInto(typeof incoming.ip === "string" ? incoming.ip : "", 14);
+    const osName =
+        patchScalarInto(typeof incoming.osName === "string" ? incoming.osName : "", 13);
+    const city = patchScalarInto(typeof incoming.city === "string" ? incoming.city : "", 14);
+    const ip = patchScalarInto(typeof incoming.ip === "string" ? incoming.ip : "", 15);
 
     const repeatedIncoming = typeof incoming.repeated === "string" ? incoming.repeated.trim() : "";
     const existingRepeatedSem = repeatedUserSheetSemantics_(sheetCellString_(row[repeatedCol.repeatedColIdx]));
@@ -3426,7 +3469,7 @@ async function updateExistingSessionRow_(sheets, tab, rowNumber, incoming, optio
     );
     const incomingAbRaw = typeof incoming.appointmentBooked === "string" ? incoming.appointmentBooked : "";
     const desiredAb = appointmentBookedSheetValue_(incomingAbRaw);
-    const existingAbSem = appointmentBookedSheetValue_(sheetCellString_(row[15]));
+    const existingAbSem = appointmentBookedSheetValue_(sheetCellString_(row[16]));
     /** @type {string | null} */
     let appointmentBookedPatch = null;
     if (preferIncomingContact) {
@@ -3438,15 +3481,15 @@ async function updateExistingSessionRow_(sheets, tab, rowNumber, incoming, optio
     }
     const appointmentDate = patchScalarInto(
         typeof incoming.appointmentDate === "string" ? incoming.appointmentDate : "",
-        16
+        17
     );
     const appointmentTime = patchScalarInto(
         typeof incoming.appointmentTime === "string" ? incoming.appointmentTime : "",
-        17
+        18
     );
     const fileLinks = patchScalarInto(
         typeof incoming.fileLinks === "string" ? incoming.fileLinks : "",
-        18
+        19
     );
 
     const existingQueries = sheetCellString_(row[queriesCol.colIdx]);
@@ -3455,29 +3498,35 @@ async function updateExistingSessionRow_(sheets, tab, rowNumber, incoming, optio
 
     /** @type {Array<{ range: string, values: string[][] }>} */
     const data = [];
-    if (name) data.push({ range: `${tab}!${colL(3)}${rowNumber}`, values: [[name]] });
-    if (mobile) data.push({ range: `${tab}!${colL(4)}${rowNumber}`, values: [[mobile]] });
-    if (email) data.push({ range: `${tab}!${colL(5)}${rowNumber}`, values: [[email]] });
-    if (channel) data.push({ range: `${tab}!${colL(6)}${rowNumber}`, values: [[channel]] });
-    if (repeated) data.push({ range: `${tab}!${repeatedCol.repeatedColLetter}${rowNumber}`, values: [[repeated]] });
-    if (sourceUrl) data.push({ range: `${tab}!${colL(9)}${rowNumber}`, values: [[sourceUrl]] });
-    if (deviceType) data.push({ range: `${tab}!${colL(11)}${rowNumber}`, values: [[deviceType]] });
-    if (browserName) data.push({ range: `${tab}!${colL(12)}${rowNumber}`, values: [[browserName]] });
-    if (city) data.push({ range: `${tab}!${colL(13)}${rowNumber}`, values: [[city]] });
-    if (ip) data.push({ range: `${tab}!${colL(14)}${rowNumber}`, values: [[ip]] });
+    if (name) data.push({ range: sheetTabRange_(tab, `${colL(3)}${rowNumber}`), values: [[name]] });
+    if (mobile) data.push({ range: sheetTabRange_(tab, `${colL(4)}${rowNumber}`), values: [[mobile]] });
+    if (email) data.push({ range: sheetTabRange_(tab, `${colL(5)}${rowNumber}`), values: [[email]] });
+    if (channel) data.push({ range: sheetTabRange_(tab, `${colL(6)}${rowNumber}`), values: [[channel]] });
+    if (repeated) {
+        data.push({
+            range: sheetTabRange_(tab, `${repeatedCol.repeatedColLetter}${rowNumber}`),
+            values: [[repeated]]
+        });
+    }
+    if (sourceUrl) data.push({ range: sheetTabRange_(tab, `${colL(9)}${rowNumber}`), values: [[sourceUrl]] });
+    if (deviceType) data.push({ range: sheetTabRange_(tab, `${colL(11)}${rowNumber}`), values: [[deviceType]] });
+    if (browserName) data.push({ range: sheetTabRange_(tab, `${colL(12)}${rowNumber}`), values: [[browserName]] });
+    if (osName) data.push({ range: sheetTabRange_(tab, `${colL(13)}${rowNumber}`), values: [[osName]] });
+    if (city) data.push({ range: sheetTabRange_(tab, `${colL(14)}${rowNumber}`), values: [[city]] });
+    if (ip) data.push({ range: sheetTabRange_(tab, `${colL(15)}${rowNumber}`), values: [[ip]] });
     if (appointmentBookedPatch !== null) {
-        data.push({ range: `${tab}!${colL(15)}${rowNumber}`, values: [[appointmentBookedPatch]] });
+        data.push({ range: sheetTabRange_(tab, `${colL(16)}${rowNumber}`), values: [[appointmentBookedPatch]] });
     }
     if (appointmentDate) {
         const apptDateCell = sheetDateCellForSheetsApi_(appointmentDate);
         if (apptDateCell !== "") {
-            data.push({ range: `${tab}!${colL(16)}${rowNumber}`, values: [[apptDateCell]] });
+            data.push({ range: sheetTabRange_(tab, `${colL(17)}${rowNumber}`), values: [[apptDateCell]] });
         }
     }
-    if (appointmentTime) data.push({ range: `${tab}!${colL(17)}${rowNumber}`, values: [[appointmentTime]] });
-    if (fileLinks) data.push({ range: `${tab}!${colL(18)}${rowNumber}`, values: [[fileLinks]] });
+    if (appointmentTime) data.push({ range: sheetTabRange_(tab, `${colL(18)}${rowNumber}`), values: [[appointmentTime]] });
+    if (fileLinks) data.push({ range: sheetTabRange_(tab, `${colL(19)}${rowNumber}`), values: [[fileLinks]] });
     if (userQueriesCsv) {
-        data.push({ range: `${tab}!${queriesCol.colLetter}${rowNumber}`, values: [[userQueriesCsv]] });
+        data.push({ range: sheetTabRange_(tab, `${queriesCol.colLetter}${rowNumber}`), values: [[userQueriesCsv]] });
     }
 
     if (!data.length) {
@@ -3549,7 +3598,7 @@ async function getHeaderIndexMap_(sheets, tab) {
     try {
         const got = await sheetsValuesGet_(sheets, {
             spreadsheetId: SPREADSHEET_ID,
-            range: `${tab}!1:1`
+            range: sheetTabRange_(tab, "1:1")
         });
         const header = Array.isArray(got.data.values) && got.data.values[0] ? got.data.values[0] : [];
         headersRaw = header;
@@ -4192,8 +4241,13 @@ function leadRowValuesLookBlank_(values, lead) {
 async function getSheetHeaderRowRaw_(sheets, tab) {
     const byKey = await getHeaderIndexMap_(sheets, tab);
     const raw = sheetSchemaCache_.headersRaw;
-    if (Array.isArray(raw) && raw.length && sheetHeaderMapHasRecognizedLeadKeys_(byKey)) {
-        return raw;
+    if (Array.isArray(raw) && raw.length) {
+        if (sheetHeaderMapHasRecognizedLeadKeys_(byKey)) {
+            return raw;
+        }
+        if (raw.some((h) => normalizedHeaderKey_(sheetCellString_(h)))) {
+            return raw;
+        }
     }
     return CANONICAL_LEAD_SHEET_HEADERS.slice();
 }
@@ -4260,6 +4314,15 @@ function resolveLeadValueForNormalizedHeader_(nk, lead, opts) {
     }
     if (nk === "userqueries" || nk === "userqueriescsv") {
         return sheetOutboundCell_(L.userQueriesCsv);
+    }
+    if (nk === "agent") {
+        return sheetOutboundCell_(L.agentName);
+    }
+    if (nk === "department" || nk === "dept") {
+        return sheetOutboundCell_(L.departmentName);
+    }
+    if (nk === "status") {
+        return sheetOutboundCell_(L.agentStatus);
     }
     if (nk === "repeateduser" || nk === "repeated") {
         return sheetOutboundCell_(L.repeated);
@@ -4348,8 +4411,9 @@ function resolveLeadValueForNormalizedHeader_(nk, lead, opts) {
     if (nk === "utmterm") {
         return sheetOutboundCell_(L.utmTerm);
     }
-    if (nk === "fallback") {
-        return sheetOutboundCell_(L.fallBack);
+    if (nk === "fallback" || nk === "fallbackcount" || nk === "fall_back") {
+        const fb = sheetOutboundCell_(L.fallBack);
+        return fb !== "" ? fb : "0";
     }
     return "";
 }
@@ -5293,7 +5357,7 @@ async function buildStandardLeadRowUpdates_(sheets, tab, rowNumber, lead) {
             return;
         }
         const idx0 = getIdx(aliases, fallbackIdx);
-        updates.push({ range: `${tab}!${col(idx0)}${rowNumber}`, values: [[v]] });
+        updates.push({ range: sheetTabRange_(tab, `${col(idx0)}${rowNumber}`), values: [[v]] });
     };
     const putMetricCell = (aliases, fallbackIdx, value) => {
         put(aliases, fallbackIdx, value, true);
@@ -5304,7 +5368,7 @@ async function buildStandardLeadRowUpdates_(sheets, tab, rowNumber, lead) {
             return;
         }
         const idx0 = getIdx(aliases, fallbackIdx);
-        updates.push({ range: `${tab}!${col(idx0)}${rowNumber}`, values: [[cell]] });
+        updates.push({ range: sheetTabRange_(tab, `${col(idx0)}${rowNumber}`), values: [[cell]] });
     };
 
     // Prefer declared A–S schema (Chat transcript, Date, Time, then lead fields…); aliases correct column when order differs.
@@ -5381,7 +5445,7 @@ async function buildStandardLeadRowUpdates_(sheets, tab, rowNumber, lead) {
     putMetricCell(SHEET_H_UTM_MEDIUM, 29, lead.utmMedium);
     putMetricCell(SHEET_H_UTM_SOURCE, 30, lead.utmSource);
     putMetricCell(SHEET_H_UTM_TERM, 31, lead.utmTerm);
-    put(SHEET_H_FALLBACK, 32, lead.fallBack);
+    put(SHEET_H_FALLBACK, 32, lead.fallBack != null && String(lead.fallBack).trim() !== "" ? lead.fallBack : "0");
 
     return updates;
 }
@@ -5411,7 +5475,7 @@ async function writeLeadRowByHeader_(sheets, tab, rowNumber, lead, sheetExtrasSo
         });
         const lastCol = columnLetterFromIndex_(Math.max(0, rowValues.length - 1));
         updates.push({
-            range: `${tab}!A${rowNumber}:${lastCol}${rowNumber}`,
+            range: sheetTabRange_(tab, `A${rowNumber}:${lastCol}${rowNumber}`),
             values: [rowValues]
         });
     }
@@ -6097,7 +6161,7 @@ async function upsertSessionQueriesInSheet_(row) {
         if (incomingQ) {
             const gotQ = await sheetsValuesGet_(sheets, {
                 spreadsheetId: SPREADSHEET_ID,
-                range: `${tab}!${queriesCol.colLetter}${rowNumber}`
+                range: sheetTabRange_(tab, `${queriesCol.colLetter}${rowNumber}`)
             });
             const q0 = Array.isArray(gotQ.data.values) && gotQ.data.values[0] ? gotQ.data.values[0] : [];
             existingCsv = sanitizeUserQueriesCsvForSheet(sheetCellString_(q0[0]));
@@ -6125,7 +6189,7 @@ async function upsertSessionQueriesInSheet_(row) {
                     spreadsheetId: SPREADSHEET_ID,
                     requestBody: {
                         valueInputOption: "USER_ENTERED",
-                        data: [{ range: `${tab}!${queriesCol.colLetter}${rowNumber}`, values: [[merged]] }]
+                        data: [{ range: sheetTabRange_(tab, `${queriesCol.colLetter}${rowNumber}`), values: [[merged]] }]
                     }
                 });
                 googleBatchQueries = googleBatchSummaryFromResponse_(nBatch);
@@ -6998,7 +7062,7 @@ export async function fetchConversationSheetExport(opts = {}) {
 
     const headerGot = await sheets.spreadsheets.values.get({
         spreadsheetId: SPREADSHEET_ID,
-        range: `${tab}!1:1`
+        range: sheetTabRange_(tab, "1:1")
     });
     const headersRaw = Array.isArray(headerGot.data.values) && headerGot.data.values[0]
         ? /** @type {unknown[]} */ (headerGot.data.values[0])

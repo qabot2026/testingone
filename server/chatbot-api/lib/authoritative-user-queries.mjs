@@ -315,6 +315,20 @@ export async function buildAuthoritativeSheet1UserQueriesCsv_(sessionId, options
 
     csv = appendPostAgentWidgetLinesToCsv_(csv || "", postAgentWidgetLinesFromMerged_(clientLines));
 
+    try {
+        const { loadSessionForLiveAgentSheet } = await import("./live-agent/firestore-bridge.mjs");
+        const laSession = await loadSessionForLiveAgentSheet(sid);
+        if (laSession) {
+            const liveAgentSheet = require("../refer-staff/live-agent-sheet.js");
+            if (typeof liveAgentSheet.collectPostAgentUserQueryLines_ === "function") {
+                const postAgentLines = liveAgentSheet.collectPostAgentUserQueryLines_(laSession);
+                csv = appendPostAgentWidgetLinesToCsv_(csv || "", postAgentLines);
+            }
+        }
+    } catch {
+        /* non-fatal */
+    }
+
     if (sheetCsvExisting) {
         csv = mergeUserQueriesCsvPreferRicher_(sheetCsvExisting, csv || "");
     }

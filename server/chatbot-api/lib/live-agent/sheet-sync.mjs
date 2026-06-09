@@ -124,10 +124,15 @@ export async function syncLiveAgentToSheet_(conversationId) {
         session._sheetMeta && typeof session._sheetMeta === "object" ? session._sheetMeta : {};
     let channel = "";
     try {
-        channel = formatChannelForSheetDisplay(session.channel || "web");
+        channel = formatChannelForSheetDisplay(session.channel || meta.channel || "web");
     } catch {
         channel = formatChannelForSheetDisplay("web");
     }
+    const browserName = trim_(meta.browser) || trim_(meta.browser_name) || "";
+    const deviceType = trim_(meta.device) || trim_(meta.device_type) || "";
+    const osName = trim_(meta.os) || trim_(meta.os_name) || "";
+    const city = trim_(meta.city) || "";
+    const ip = trim_(meta.ip) || trim_(meta.ipAddress) || "";
 
     try {
         /** @type {Parameters<typeof upsertSessionQueriesInSheet>[0]} */
@@ -136,12 +141,18 @@ export async function syncLiveAgentToSheet_(conversationId) {
             name: trim_(session.visitorName) || trim_(meta.name) || "",
             mobile: formatMobileForSheetDisplay(trim_(meta.mobile) || trim_(meta.phone) || "", meta),
             email: trim_(meta.email) || "",
-            browserName: "",
-            deviceType: "",
+            browserName,
+            deviceType,
+            osName,
+            city,
+            ip,
             channel,
             userQueriesCsv: authoritativeCsv,
             clientAuthoritativeQueries: true,
-            lightweightSessionSync: false
+            lightweightSessionSync: false,
+            sheetExtrasSources: {
+                clientContext: meta
+            }
         };
         const result = await upsertSessionQueriesInSheet(row);
         return { ok: true, result };

@@ -268,6 +268,7 @@ function buildRowValues(doc) {
         || meta.fallBack
         || meta.unanswered_questions
         || meta.unansweredQuestions
+        || '0'
     ),
   ];
 }
@@ -288,9 +289,9 @@ function metaFromClientBody(body) {
   pick(['email'], 'email');
   pick(['channel'], 'channel');
   pick(['sourceUrl', 'pageUrl', 'url'], 'sourceUrl');
-  pick(['device'], 'device');
-  pick(['browser'], 'browser');
-  pick(['os'], 'os');
+  pick(['device', 'device_type', 'deviceType'], 'device');
+  pick(['browser', 'browser_name', 'browserName'], 'browser');
+  pick(['os', 'os_name', 'osName'], 'os');
   pick(['city'], 'city');
   pick(['ip', 'ipAddress'], 'ip');
   pick(['document', 'upload'], 'document');
