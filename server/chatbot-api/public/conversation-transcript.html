@@ -623,38 +623,64 @@
           .join(", ");
       }
 
-      /** Yellow highlight: first agent turn through first bot reply after last agent. */
+      function turnPlainTextForLivePhaseProbe_(turn) {
+        if (!turn) return "";
+        var role = turn.role === "assistant" ? "assistant" : turn.role === "agent" ? "agent" : "user";
+        if (role === "user" || role === "agent") {
+          return formatUserTranscriptPlain(turn.text) || String(turn.text || "").trim();
+        }
+        var plain = cleanText(turn.text, resolveRich(turn));
+        return plain || String(turn.text || "").trim();
+      }
+
+      function isLiveAgentConnectAnnouncement_(turn) {
+        var text = turnPlainTextForLivePhaseProbe_(turn);
+        return /^you are now chatting with\s+/i.test(text);
+      }
+
+      function isLiveAgentDisconnectAnnouncement_(turn) {
+        var text = turnPlainTextForLivePhaseProbe_(turn);
+        var raw = String((turn && turn.text) || "").trim();
+        if (/^live_agent_handoff_to_bot$/i.test(raw)) return true;
+        return /stepped away/i.test(text) && /ai assistant is replying/i.test(text);
+      }
+
+      /** Yellow: visitor + agent lines only, after connect notice and before disconnect notice. */
       function buildLivePhaseYellowIndexSet(turns) {
         var yellow = {};
         if (!Array.isArray(turns) || !turns.length) return yellow;
-        var firstAgent = -1;
-        var lastAgent = -1;
+        var startAfter = -1;
+        var endBefore = turns.length;
         for (var i = 0; i < turns.length; i += 1) {
-          if (turns[i] && turns[i].role === "agent") {
-            if (firstAgent < 0) firstAgent = i;
-            lastAgent = i;
+          if (isLiveAgentConnectAnnouncement_(turns[i])) {
+            startAfter = i;
           }
-        }
-        if (firstAgent < 0) return yellow;
-        var postBotIdx = -1;
-        for (var j = lastAgent + 1; j < turns.length; j += 1) {
-          if (turns[j] && turns[j].role === "assistant") {
-            postBotIdx = j;
+          if (isLiveAgentDisconnectAnnouncement_(turns[i])) {
+            endBefore = i;
             break;
           }
         }
-        var endIdx = postBotIdx >= 0 ? postBotIdx : lastAgent;
-        for (var k = firstAgent; k <= endIdx; k += 1) {
+        if (startAfter < 0) {
+          for (var a = 0; a < turns.length; a += 1) {
+            if (turns[a] && turns[a].role === "agent") {
+              startAfter = a - 1;
+              break;
+            }
+          }
+        }
+        if (startAfter < 0) return yellow;
+        if (endBefore <= startAfter + 1) {
+          for (var b = turns.length - 1; b > startAfter; b -= 1) {
+            if (turns[b] && turns[b].role === "agent") {
+              endBefore = b + 1;
+              break;
+            }
+          }
+        }
+        for (var k = startAfter + 1; k < endBefore; k += 1) {
           var role = turns[k] && turns[k].role;
-          if (role === "agent" || role === "user" || (k === postBotIdx && role === "assistant")) {
+          if (role === "agent" || role === "user") {
             yellow[k] = true;
-          }
-        }
-        for (var u = firstAgent - 1; u >= 0; u -= 1) {
-          if (turns[u] && turns[u].role === "user") {
-            yellow[u] = true;
-          } else {
-            break;
           }
         }
         return yellow;
