@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>FAQs</title>
+    <link rel="stylesheet" href="dashboard.css" />
+    <link rel="stylesheet" href="dashboard-nav.css?v=20260626a" />
+    <link rel="stylesheet" href="faqs.css?v=20260625e" />
+  </head>
+  <body>
+    <div class="dash-page-content" style="display:none">
+      <div class="dash-app faq-app">
+        <p class="dash-muted">
+          Add questions and answers for the selected bot. Matching user messages return these answers before Dialogflow.
+        </p>
+
+        <div class="faq-toolbar">
+          <button type="button" id="faq-refresh" class="dash-btn dash-btn--primary">Refresh</button>
+          <label class="faq-page-size-label">
+            Per page
+            <select id="faq-page-size" class="faq-page-size-select" aria-label="FAQs per page">
+              <option value="10" selected>10</option>
+              <option value="20">20</option>
+              <option value="50">50</option>
+            </select>
+          </label>
+        </div>
+
+        <form class="faq-form" id="faq-form">
+          <input type="hidden" id="faq-edit-id" />
+          <label>
+            Question
+            <input id="faq-question" required placeholder="What are your office hours?" />
+          </label>
+          <label>
+            Answer
+            <textarea id="faq-answer" required placeholder="We are open Monday to Friday, 9 AM – 6 PM."></textarea>
+          </label>
+          <label style="display:flex;align-items:center;gap:0.45rem;font-weight:500">
+            <input type="checkbox" id="faq-published" checked />
+            Published (live in chat)
+          </label>
+          <label>
+            After this answer
+            <input id="faq-next-phrase" type="text" placeholder="Training phrase (e.g. price, main menu)" autocomplete="off" />
+          </label>
+          <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
+            <button type="submit" class="dash-btn dash-btn--primary" id="faq-save-btn">Save FAQ</button>
+            <button type="button" class="dash-btn dash-btn--ghost" id="faq-cancel-btn" hidden>Cancel edit</button>
+          </div>
+          <p class="faq-status" id="faq-form-status" hidden></p>
+        </form>
+
+        <div class="faq-list" id="faq-list"></div>
+        <footer class="faq-pager" id="faq-pager" hidden aria-label="FAQs pagination">
+          <div class="faq-pager-controls">
+            <button type="button" class="faq-pager-btn faq-pager-btn--jump" id="faq-page-first" title="First page" aria-label="First page">1</button>
+            <button type="button" class="faq-pager-btn" id="faq-page-prev" title="Previous page" aria-label="Previous page">&lt;</button>
+            <span class="faq-pager-num is-current" id="faq-page-num" aria-live="polite">1</span>
+            <button type="button" class="faq-pager-btn" id="faq-page-next" title="Next page" aria-label="Next page">&gt;</button>
+            <button type="button" class="faq-pager-btn faq-pager-btn--jump" id="faq-page-last" title="Last page" aria-label="Last page">1</button>
+          </div>
+          <span class="faq-pager-hint" id="faq-page-hint"></span>
+        </footer>
+        <p class="faq-status" id="faq-list-status" hidden></p>
+      </div>
+    </div>
+    <script src="desk-auth.js"></script>
+    <script src="dashboard-nav.js?v=20260626a"></script>
+    <script src="faqs.js?v=20260625e"></script>
+  </body>
+</html>

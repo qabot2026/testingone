@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Actions</title>
+    <link rel="stylesheet" href="dashboard.css" />
+    <link rel="stylesheet" href="dashboard-nav.css?v=20260626a" />
+    <link rel="stylesheet" href="admin-pages.css?v=20260615a" />
+  </head>
+  <body>
+    <div class="dash-page-content" style="display:none">
+      <div class="dash-app admin-app">
+        <p class="dash-muted">
+          API calls made on this server — method, path, count, request and response bodies (truncated).
+        </p>
+
+        <div class="admin-toolbar">
+          <label>
+            Days
+            <select id="actions-days">
+              <option value="1">Today</option>
+              <option value="7" selected>Last 7 days</option>
+              <option value="30">Last 30 days</option>
+            </select>
+          </label>
+          <label>
+            Bot ID filter
+            <input id="actions-bot" placeholder="10002" inputmode="numeric" maxlength="5" />
+          </label>
+          <label>
+            Path contains
+            <input id="actions-path" placeholder="/api/faqs" />
+          </label>
+          <button type="button" id="actions-refresh" class="dash-btn dash-btn--primary">Refresh</button>
+        </div>
+
+        <div class="admin-summary" id="actions-summary"></div>
+
+        <div class="admin-table-wrap">
+          <table class="admin-table" aria-label="API actions">
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Method</th>
+                <th>Path</th>
+                <th>Status</th>
+                <th>Duration</th>
+                <th>Bot</th>
+                <th>Actor</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="actions-body"></tbody>
+          </table>
+        </div>
+        <p class="admin-status" id="actions-status" hidden></p>
+      </div>
+    </div>
+    <script src="desk-auth.js"></script>
+    <script src="dashboard-nav.js?v=20260626a"></script>
+    <script src="actions.js?v=20260615a"></script>
+  </body>
+</html>

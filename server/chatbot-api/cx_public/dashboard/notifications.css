@@ -1,0 +1,211 @@
+.notifications-app {
+  max-width: none;
+  width: 100%;
+  padding: 0 0 1.5rem;
+}
+
+.notifications-intro {
+  margin: 0 0 1rem;
+}
+
+.notifications-status {
+  margin: 0 0 1rem;
+  padding: 0.55rem 0.75rem;
+  border-radius: 8px;
+  font-size: 0.88rem;
+}
+
+.notifications-status--error {
+  background: #fef2f2;
+  color: #b91c1c;
+  border: 1px solid #fecaca;
+}
+
+.notifications-status--ok {
+  background: #ecfdf5;
+  color: #047857;
+  border: 1px solid #a7f3d0;
+}
+
+.notifications-layout {
+  display: grid;
+  gap: 1rem;
+}
+
+.notifications-card {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 1rem 1.15rem;
+}
+
+.notifications-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.65rem;
+}
+
+.notifications-card__head h2,
+.notifications-section-title {
+  margin: 0;
+  font-size: 1rem;
+  line-height: 1.35;
+}
+
+.notifications-section-title {
+  margin-bottom: 0.85rem;
+}
+
+.notifications-inline-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.85rem 1.25rem;
+  margin-bottom: 0.65rem;
+}
+
+.notifications-field {
+  display: block;
+  margin-bottom: 0.65rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #334155;
+}
+
+.notifications-field--compact {
+  margin-bottom: 0;
+  width: auto;
+}
+
+.notifications-field input,
+.notifications-field select,
+.notifications-field textarea {
+  display: block;
+  width: 100%;
+  margin-top: 0.28rem;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  font: inherit;
+  font-weight: 400;
+  box-sizing: border-box;
+}
+
+.notifications-input-compact {
+  width: 4.25rem !important;
+  min-width: 4.25rem;
+}
+
+.notifications-select-compact {
+  width: auto !important;
+  min-width: 8.5rem;
+  max-width: 100%;
+}
+
+.notifications-select-time {
+  width: auto !important;
+  min-width: 6.75rem;
+  max-width: 100%;
+  font-size: 0.82rem;
+  padding: 0.35rem 0.45rem !important;
+}
+
+.notifications-field small {
+  display: block;
+  margin-top: 0.25rem;
+  font-weight: 400;
+  color: #64748b;
+}
+
+.notifications-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #475569;
+  cursor: pointer;
+}
+
+.notifications-details {
+  margin: 0.5rem 0 0.75rem;
+  padding: 0.6rem 0.8rem;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  font-size: 0.85rem;
+}
+
+.notifications-details summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: #334155;
+}
+
+.notifications-conditions-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0.65rem 0.85rem;
+  margin-top: 0.65rem;
+}
+
+.notifications-recipients-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+@media (max-width: 960px) {
+  .notifications-recipients-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.notifications-recipient-block h3 {
+  margin: 0 0 0.55rem;
+  font-size: 0.9rem;
+  color: #334155;
+}
+
+.notifications-recipients {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.notifications-recipients .notifications-field textarea {
+  min-height: 2.35rem;
+}
+
+.notifications-mail-extra {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0 0 0.25rem;
+}
+
+.notifications-mail-extra[hidden] {
+  display: none !important;
+}
+
+.notifications-mail-extra-field {
+  display: none;
+}
+
+.notifications-mail-extra-field.is-visible {
+  display: block;
+}
+
+.notifications-mail-extra .dash-btn {
+  padding: 0.28rem 0.55rem;
+  font-size: 0.78rem;
+}
+
+.notifications-actions {
+  position: sticky;
+  bottom: 0;
+  padding: 0.85rem 0;
+  margin-top: 0.5rem;
+  background: linear-gradient(to top, #f8fafc 70%, transparent);
+}

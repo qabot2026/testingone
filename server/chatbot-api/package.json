@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node index.mjs",
+    "start": "node cx_private/index.mjs",
     "get-drive-refresh-token": "node scripts/get-google-drive-refresh-token.mjs",
     "upload-catalog-from-csv": "node scripts/upload-catalog-from-csv.mjs"
   },

@@ -22,14 +22,10 @@ ENV PORT=8080
 ENV NODE_OPTIONS=--max-old-space-size=4096
 COPY --from=deps /app/node_modules ./node_modules
 COPY package.json ./
-COPY index.mjs ./
-COPY lib ./lib
-COPY data ./data
-COPY public ./public
-COPY dashboard ./dashboard
-COPY live-agent ./live-agent
+COPY cx_private ./cx_private
+COPY cx_public ./cx_public
 COPY api-base.config.js ./api-base.config.js
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||8080)+'/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
-CMD ["node", "index.mjs"]
+CMD ["node", "cx_private/index.mjs"]

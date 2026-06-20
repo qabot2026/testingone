@@ -1,0 +1,786 @@
+{
+  "_help": "Key = EXACT English text from Dialogflow (reply, chip, dropdown, table). Works for whole bot — not per intent.",
+  "_help2": "Add one line once. Wherever that English appears, hi/mr will show after user selects language.",
+  "_help3": "_ui = form/button labels (internal keys). _chips = chip value keys (lowercase, e.g. location). Rest = exact English from chat.",
+  "_help4": "open_gallery / open_card_carousel: message, urls[].name or cards title/subtitle/ctaLabel — EXACT English as key.",
+  "Animal": {
+    "hi": "जानवर",
+    "mr": "प्राणी"
+  },
+  "Appointment": {
+    "hi": "अपॉइंटमेंट",
+    "mr": "अपॉइंटमेंट"
+  },
+  "Area": {
+    "hi": "क्षेत्र",
+    "mr": "भाग"
+  },
+  "Ask something…": {
+    "hi": "कुछ पूछें…",
+    "mr": "इथे टाइप करा…"
+  },
+  "Available slots": {
+    "hi": "उपलब्ध स्लॉट",
+    "mr": "उपलब्ध स्लॉट"
+  },
+  "Back": {
+    "hi": "वापस",
+    "mr": "मागे"
+  },
+  "Book Consultation": {
+    "hi": "परामर्श बुक करें",
+    "mr": "सल्ला बुक करा"
+  },
+  "Book appointment": {
+    "hi": "अपॉइंटमेंट बुक करें",
+    "mr": "अपॉइंटमेंट बुक करा"
+  },
+  "Book consultation": {
+    "hi": "परामर्श बुक करें",
+    "mr": "सल्ला बुक करा"
+  },
+  "Book now": {
+    "hi": "अभी बुक करें",
+    "mr": "आत्ता बुक करा"
+  },
+  "Branch": {
+    "hi": "शाखा",
+    "mr": "शाखा"
+  },
+  "Branches": {
+    "hi": "शाखाएँ",
+    "mr": "शाखा"
+  },
+  "Cancel": {
+    "hi": "रद्द करें",
+    "mr": "रद्द करा"
+  },
+  "City": {
+    "hi": "शहर",
+    "mr": "शहर"
+  },
+  "Consultation": {
+    "hi": "परामर्श",
+    "mr": "सल्ला"
+  },
+  "Contact": {
+    "hi": "संपर्क",
+    "mr": "संपर्क"
+  },
+  "Contact Us": {
+    "hi": "हमसे संपर्क करें",
+    "mr": "आमच्याशी संपर्क करा"
+  },
+  "Contact us": {
+    "hi": "हमसे संपर्क करें",
+    "mr": "आमच्याशी संपर्क करा"
+  },
+  "Continue": {
+    "hi": "जारी रखें",
+    "mr": "पुढे"
+  },
+  "Date": {
+    "hi": "तिथि",
+    "mr": "तारीख"
+  },
+  "Diagnostics": {
+    "hi": "डायग्नोस्टिक",
+    "mr": "डायग्नोस्टिक"
+  },
+  "Doctor": {
+    "hi": "डॉक्टर",
+    "mr": "डॉक्टर"
+  },
+  "Done": {
+    "hi": "पूर्ण",
+    "mr": "पूर्ण"
+  },
+  "Email": {
+    "hi": "ईमेल",
+    "mr": "ईमेल"
+  },
+  "Feedback": {
+    "hi": "फीडबैक",
+    "mr": "अभिप्राय"
+  },
+  "Find nearest office": {
+    "hi": "नज़दीकी कार्यालय खोजें",
+    "mr": "जवळचे कार्यालय शोधा"
+  },
+  "Get started": {
+    "hi": "शुरू करें",
+    "mr": "सुरू करा"
+  },
+  "Hello! How can I help you?": {
+    "hi": "नमस्ते! मैं आपकी कैसे मदद कर सकता हूँ?",
+    "mr": "नमस्कार! मी तुम्हाला कशी मदत करू शकतो?"
+  },
+  "Help": {
+    "hi": "सहायता",
+    "mr": "साथ"
+  },
+  "Hi! How can I help you today?": {
+    "hi": "नमस्ते! आज मैं आपकी कैसे मदद कर सकता हूँ?",
+    "mr": "नमस्कार! आज मी तुम्हाला कशी मदत करू शकतो?"
+  },
+  "Home Care": {
+    "hi": "होम केयर",
+    "mr": "होम केअर"
+  },
+  "Home care": {
+    "hi": "होम केयर",
+    "mr": "होम केअर"
+  },
+  "Home care request received. We will contact you soon.": {
+    "hi": "होम केयर अनुरोध मिला। हम जल्द संपर्क करेंगे।",
+    "mr": "होम केअर विनंती मिळाली. आम्ही लवकर संपर्क करू."
+  },
+  "How can I help you?": {
+    "hi": "मैं आपकी कैसे मदद कर सकता हूँ?",
+    "mr": "मी तुम्हाला कशी मदत करू शकतो?"
+  },
+  "Lab Tests": {
+    "hi": "लैब टेस्ट",
+    "mr": "लॅब चाचण्या"
+  },
+  "Lab tests": {
+    "hi": "लैब टेस्ट",
+    "mr": "लॅब चाचण्या"
+  },
+  "Learn more": {
+    "hi": "और जानें",
+    "mr": "अधिक जाणून घ्या"
+  },
+  "Live": {
+    "hi": "लाइव",
+    "mr": "लाइव्ह"
+  },
+  "Location": {
+    "hi": "स्थान",
+    "mr": "स्थान"
+  },
+  "Main Menu": {
+    "hi": "मुख्य मेनू",
+    "mr": "मुख्य मेनू"
+  },
+  "Menu": {
+    "hi": "मेनू",
+    "mr": "मेनू"
+  },
+  "Mobile": {
+    "hi": "मोबाइल",
+    "mr": "मोबाईल"
+  },
+  "Name": {
+    "hi": "नाम",
+    "mr": "नाव"
+  },
+  "Nearest branch": {
+    "hi": "नज़दीकी शाखा",
+    "mr": "जवळची शाखा"
+  },
+  "Next": {
+    "hi": "आगे",
+    "mr": "पुढे"
+  },
+  "No": {
+    "hi": "नहीं",
+    "mr": "नाही"
+  },
+  "Not available": {
+    "hi": "उपलब्ध नहीं",
+    "mr": "उपलब्ध नाही"
+  },
+  "OK": {
+    "hi": "ठीक है",
+    "mr": "ठीक आहे"
+  },
+  "Okay": {
+    "hi": "ठीक है",
+    "mr": "ठीक आहे"
+  },
+  "Online": {
+    "hi": "ऑनलाइन",
+    "mr": "ऑनलाइन"
+  },
+  "Our Branches": {
+    "hi": "हमारी शाखाएँ",
+    "mr": "आमच्या शाखा"
+  },
+  "Please choose a different date and time.": {
+    "hi": "कृपया दूसरी तारीख और समय चुनें।",
+    "mr": "कृपया दुसरी तारीख आणि वेळ निवडा."
+  },
+  "Please select a branch first (branch_id). Doctors are listed per branch, not by city alone.": {
+    "hi": "पहले शाखा चुनें। डॉक्टर शाखा के अनुसार दिखाए जाते हैं।",
+    "mr": "प्रथम शाखा निवडा. डॉक्टर शाखेनुसार दाखवले जातात."
+  },
+  "Please select a branch first (session parameter branch_id / branchId).": {
+    "hi": "पहले शाखा चुनें।",
+    "mr": "प्रथम शाखा निवडा."
+  },
+  "Please select a city and area first.": {
+    "hi": "पहले शहर और क्षेत्र चुनें।",
+    "mr": "प्रथम शहर आणि भाग निवडा."
+  },
+  "Please select a city first.": {
+    "hi": "पहले शहर चुनें।",
+    "mr": "प्रथम शहर निवडा."
+  },
+  "Please select a city:": {
+    "hi": "कृपया शहर चुनें:",
+    "mr": "कृपया शहर निवडा:"
+  },
+  "Please select a specialization:": {
+    "hi": "कृपया विशेषज्ञता चुनें:",
+    "mr": "कृपया विशेषज्ञता निवडा:"
+  },
+  "Please select a state:": {
+    "hi": "कृपया राज्य चुनें:",
+    "mr": "कृपया राज्य निवडा:"
+  },
+  "Please select an area in": {
+    "hi": "इस क्षेत्र में चुनें:",
+    "mr": "या भागात निवडा:"
+  },
+  "Please select another date.": {
+    "hi": "कृपया दूसरी तारीख चुनें।",
+    "mr": "कृपया दुसरी तारीख निवडा."
+  },
+  "Please select both state and city.": {
+    "hi": "राज्य और शहर दोनों चुनें।",
+    "mr": "राज्य आणि शहर दोन्ही निवडा."
+  },
+  "Previous": {
+    "hi": "पिछला",
+    "mr": "मागे"
+  },
+  "Restart": {
+    "hi": "रीस्टार्ट",
+    "mr": "रीस्टार्ट"
+  },
+  "Robot": {
+    "hi": "रोबोट",
+    "mr": "रोबोट"
+  },
+  "Robots": {
+    "hi": "रोबोट",
+    "mr": "रोबोट"
+  },
+  "Select date": {
+    "hi": "तारीख चुनें",
+    "mr": "तारीख निवडा"
+  },
+  "Select time": {
+    "hi": "समय चुनें",
+    "mr": "वेळ निवडा"
+  },
+  "Send message": {
+    "hi": "संदेश भेजें",
+    "mr": "संदेश पाठवा"
+  },
+  "Services": {
+    "hi": "सेवाएँ",
+    "mr": "सेवा"
+  },
+  "Share your contact details.": {
+    "hi": "अपनी संपर्क जानकारी साझा करें।",
+    "mr": "तुमची संपर्क माहिती शेअर करा."
+  },
+  "Slot already booked": {
+    "hi": "स्लॉट पहले से बुक है",
+    "mr": "स्लॉट आधीच बुक आहे"
+  },
+  "Specialization": {
+    "hi": "विशेषज्ञता",
+    "mr": "विशेषज्ञता"
+  },
+  "State": {
+    "hi": "राज्य",
+    "mr": "राज्य"
+  },
+  "Submit": {
+    "hi": "जमा करें",
+    "mr": "सबमिट"
+  },
+  "Thank you": {
+    "hi": "धन्यवाद",
+    "mr": "धन्यवाद"
+  },
+  "Thank you.": {
+    "hi": "धन्यवाद।",
+    "mr": "धन्यवाद."
+  },
+  "Time": {
+    "hi": "समय",
+    "mr": "वेळ"
+  },
+  "Time slot": {
+    "hi": "समय स्लॉट",
+    "mr": "वेळ स्लॉट"
+  },
+  "Type your message": {
+    "hi": "अपना संदेश लिखें",
+    "mr": "तुमचा संदेश लिहा"
+  },
+  "Typing": {
+    "hi": "टाइप कर रहे हैं",
+    "mr": "टाइप करत आहे"
+  },
+  "Typing...": {
+    "hi": "टाइप कर रहे हैं...",
+    "mr": "टाइप करत आहे..."
+  },
+  "Video": {
+    "hi": "वीडियो",
+    "mr": "व्हिडिओ"
+  },
+  "View details": {
+    "hi": "विवरण देखें",
+    "mr": "तपशील पहा"
+  },
+  "Verify OTP": {
+    "hi": "OTP सत्यापित करें",
+    "mr": "OTP सत्यापित करा"
+  },
+  "We have following robots": {
+    "hi": "नीचे देखें",
+    "mr": "खाली पहा"
+  },
+  "We will contact you soon.": {
+    "hi": "हम जल्द संपर्क करेंगे।",
+    "mr": "आम्ही लवकर संपर्क करू."
+  },
+  "Welcome to Artemis event": {
+    "hi": "Artemis में आपका स्वागत है",
+    "mr": "Artemis मध्ये आपले स्वागत आहे"
+  },
+  "Welcome to Artemis event.": {
+    "hi": "Artemis में आपका स्वागत है।",
+    "mr": "Artemis मध्ये आपले स्वागत आहे."
+  },
+  "Yes": {
+    "hi": "हाँ",
+    "mr": "होय"
+  },
+  "Your appointment": {
+    "hi": "आपकी अपॉइंटमेंट",
+    "mr": "तुमची अपॉइंटमेंट"
+  },
+  "help": {
+    "hi": "सहायता",
+    "mr": "साथ"
+  },
+  "✅ Home care request received. We will contact you soon.": {
+    "hi": "✅ होम केयर अनुरोध मिला। हम जल्द संपर्क करेंगे।",
+    "mr": "✅ होम केअर विनंती मिळाली. आम्ही लवकर संपर्क करू."
+  },
+  "🟢 Online": {
+    "hi": "🟢 ऑनलाइन",
+    "mr": "🟢 ऑनलाइन"
+  },
+  "🟢 We are online to assist you": {
+    "hi": "🟢 हम आपकी सहायता के लिए ऑनलाइन हैं",
+    "mr": "🟢 आम्ही मदतीसाठी ऑनलाइन आहोत"
+  },
+  "_ui": {
+    "headerTitle": {
+      "hi": "Artemis",
+      "mr": "Artemis"
+    },
+    "headerSubtitle": {
+      "hi": "🟢 हम आपकी सहायता के लिए ऑनलाइन हैं",
+      "mr": "🟢 आम्ही मदतीसाठी ऑनलाइन आहोत"
+    },
+    "botWritingText": {
+      "hi": "टाइप कर रहे हैं",
+      "mr": "टाइप करत आहे"
+    },
+    "contactFormTitle": {
+      "hi": "संपर्क करें",
+      "mr": "आमच्याशी संपर्क करा"
+    },
+    "contactFormSubtitle": {
+      "hi": "अपनी जानकारी साझा करें, हम आपसे संपर्क करेंगे।",
+      "mr": "तुमची माहिती शेअर करा, आम्ही तुमच्याशी संपर्क करू."
+    },
+    "closeFormAria": {
+      "hi": "फॉर्म बंद करें",
+      "mr": "फॉर्म बंद करा"
+    },
+    "namePlaceholder": {
+      "hi": "नाम",
+      "mr": "नाव"
+    },
+    "dialCodePlaceholder": {
+      "hi": "डायल कोड",
+      "mr": "डायल कोड"
+    },
+    "mobilePlaceholder": {
+      "hi": "मोबाइल नंबर",
+      "mr": "मोबाईल नंबर"
+    },
+    "emailPlaceholder": {
+      "hi": "ईमेल",
+      "mr": "ईमेल"
+    },
+    "messagePlaceholder": {
+      "hi": "हम आपकी कैसे मदद कर सकते हैं?",
+      "mr": "आम्ही तुम्हाला कशी मदत करू शकतो?"
+    },
+    "otpCodePlaceholder": {
+      "hi": "OTP दर्ज करें",
+      "mr": "OTP टाका"
+    },
+    "summaryNameLabel": {
+      "hi": "नाम",
+      "mr": "नाव"
+    },
+    "summaryDialCodeLabel": {
+      "hi": "डायल कोड",
+      "mr": "डायल कोड"
+    },
+    "summaryMobileLabel": {
+      "hi": "मोबाइल",
+      "mr": "मोबाईल"
+    },
+    "summaryEmailLabel": {
+      "hi": "ईमेल",
+      "mr": "ईमेल"
+    },
+    "summaryDateLabel": {
+      "hi": "तिथि",
+      "mr": "तारीख"
+    },
+    "summaryBirthDateLabel": {
+      "hi": "जन्म तिथि",
+      "mr": "जन्मतारीख"
+    },
+    "birthDatePlaceholder": {
+      "hi": "अपनी जन्म तिथि चुनें",
+      "mr": "तुमची जन्मतारीख निवडा"
+    },
+    "summaryTimeLabel": {
+      "hi": "समय",
+      "mr": "वेळ"
+    },
+    "summaryDoctorIdLabel": {
+      "hi": "डॉक्टर",
+      "mr": "डॉक्टर"
+    },
+    "summaryLocationLabel": {
+      "hi": "स्थान",
+      "mr": "ठिकाण"
+    },
+    "summaryOtpLabel": {
+      "hi": "OTP",
+      "mr": "OTP"
+    },
+    "submitButton": {
+      "hi": "जमा करें",
+      "mr": "सबमिट"
+    },
+    "languageLabel": {
+      "hi": "भाषा",
+      "mr": "भाषा"
+    },
+    "restartButtonLabel": {
+      "hi": "रीस्टार्ट",
+      "mr": "रीस्टार्ट"
+    },
+    "chatInputPlaceholder": {
+      "hi": "कुछ पूछें…",
+      "mr": "इथे टाइप करा…"
+    },
+    "statusOpenViaFlask": {
+      "hi": "फॉर्म जमा करने के लिए इस पेज को Flask ऐप URL से खोलें।",
+      "mr": "फॉर्म सबमिट करण्यासाठी हा पेज Flask अ‍ॅप URL वरून उघडा."
+    },
+    "statusSubmitting": {
+      "hi": "जमा किया जा रहा है...",
+      "mr": "सबमिट होत आहे..."
+    },
+    "statusSubmitted": {
+      "hi": "सफलतापूर्वक जमा किया गया।",
+      "mr": "यशस्वीरित्या सबमिट झाले."
+    },
+    "statusSubmissionFailed": {
+      "hi": "जमा नहीं हो सका। कृपया फिर से प्रयास करें।",
+      "mr": "सबमिट झाले नाही. कृपया पुन्हा प्रयत्न करा."
+    },
+    "contactResponseThanks": {
+      "hi": "जानकारी साझा करने के लिए धन्यवाद",
+      "mr": "माहिती शेअर केल्याबद्दल धन्यवाद"
+    },
+    "fieldRequired": {
+      "hi": "कृपया यह भरें।",
+      "mr": "कृपया हे क्षेत्र भरा."
+    },
+    "invalidEmail": {
+      "hi": "कृपया मान्य ईमेल दर्ज करें।",
+      "mr": "कृपया वैध ईमेल टाका."
+    },
+    "invalidPhone": {
+      "hi": "कृपया मान्य फोन नंबर दर्ज करें।",
+      "mr": "कृपया वैध फोन क्रमांक टाका."
+    },
+    "invalidPattern": {
+      "hi": "यह मान आवश्यक प्रारूप से मेल नहीं खाता।",
+      "mr": "हे मूल्य आवश्यक स्वरूपाशी जुळत नाही."
+    },
+    "invalidPastBirthDate": {
+      "hi": "कृपया अतीत की जन्म तिथि चुनें (आज या भविष्य की तारीख मान्य नहीं)।",
+      "mr": "कृपया भूतकाळातील जन्मतारीख निवडा (आज किंवा भविष्यातील तारीख मान्य नाही)."
+    },
+    "invalidOtp": {
+      "hi": "मान्य OTP दर्ज करें (4–8 अंक)।",
+      "mr": "वैध OTP टाका (४–८ अंक)."
+    },
+    "changeMobileButton": {
+      "hi": "मोबाइल नंबर बदलें",
+      "mr": "मोबाईल क्रमांक बदला"
+    },
+    "backToOtpButton": {
+      "hi": "OTP पर वापस",
+      "mr": "OTPकडे परत"
+    },
+    "resendOtpButton": {
+      "hi": "नहीं मिला? फिर से OTP भेजें",
+      "mr": "मिळाला नाही? पुन्हा OTP पाठवा"
+    },
+    "statusOtpResent": {
+      "hi": "नया कोड भेज दिया गया। संदेश देखें।",
+      "mr": "नवा कोड पाठवला. मेसेज पहा."
+    },
+    "statusMobileNumberSaved": {
+      "hi": "नंबर अपडेट। नया कोड ऊपर दर्ज करें।",
+      "mr": "नंबर अपडेट. नवा कोड वर टाका."
+    },
+    "otpFormSubtitleMobile": {
+      "hi": "मोबाइल नंबर दर्ज करें और जमा करें।",
+      "mr": "मोबाईल क्रमांक टाका आणि सबमिट करा."
+    },
+    "documentUploadAria": {
+      "hi": "अपलोड के लिए फ़ाइल चुनें",
+      "mr": "अपलोडसाठी फाइल निवडा"
+    },
+    "summaryDocumentLabel": {
+      "hi": "दस्तावेज़",
+      "mr": "दस्तऐवज"
+    },
+    "invalidVideoFile": {
+      "hi": "वीडियो फ़ाइलें मान्य नहीं। छवि, PDF या Word आदि भेजें।",
+      "mr": "व्हिडिओ फाइल्सना परवानगी नाही. प्रतिमा, PDF किंवा Word वापरा."
+    },
+    "clearFileSelectionButton": {
+      "hi": "चयन रद्द करें",
+      "mr": "निवड रद्द करा"
+    },
+    "appointmentSlotAlreadyBooked": {
+      "hi": "यह समय पहले से बुक है। कृपया कोई और समय चुनें।",
+      "mr": "ही वेळ आधीच बुक आहे. कृपया दुसरी वेळ निवडा."
+    },
+    "appointmentPickerSelected": {
+      "hi": "चयनित",
+      "mr": "निवडलेले"
+    },
+    "appointmentPickerPickDayIntro": {
+      "hi": "पहले दिन चुनें, फिर समय।",
+      "mr": "आधी दिवस निवडा, मग वेळ."
+    },
+    "appointmentPickerChooseTime": {
+      "hi": "नीचे समय चुनें।",
+      "mr": "खाली वेळ निवडा."
+    },
+    "appointmentPickTimeSlot": {
+      "hi": "कृपया समय चुनें।",
+      "mr": "कृपया वेळ निवडा."
+    },
+    "appointmentPickDate": {
+      "hi": "कृपया कैलेंडर से तारीख चुनें।",
+      "mr": "कृपया दिनदर्शिकेतून तारीख निवडा."
+    },
+    "appointmentPickDateAndTime": {
+      "hi": "कृपया तारीख और समय चुनें।",
+      "mr": "कृपया तारीख आणि वेळ निवडा."
+    },
+    "poweredByLabel": {
+      "hi": "Powered by",
+      "mr": "Powered by"
+    }
+  },
+  "_chips": {
+    "location": {
+      "hi": "स्थान",
+      "mr": "स्थान"
+    },
+    "robots": {
+      "hi": "रोबोट",
+      "mr": "रोबोट"
+    },
+    "robot": {
+      "hi": "रोबोट",
+      "mr": "रोबोट"
+    },
+    "live": {
+      "hi": "लाइव",
+      "mr": "लाइव्ह"
+    },
+    "animal": {
+      "hi": "जानवर",
+      "mr": "प्राणी"
+    },
+    "video": {
+      "hi": "वीडियो",
+      "mr": "व्हिडिओ"
+    },
+    "help": {
+      "hi": "सहायता",
+      "mr": "साथ"
+    },
+    "yes": {
+      "hi": "हाँ",
+      "mr": "होय"
+    },
+    "no": {
+      "hi": "नहीं",
+      "mr": "नाही"
+    },
+    "back": {
+      "hi": "वापस",
+      "mr": "मागे"
+    },
+    "menu": {
+      "hi": "मेनू",
+      "mr": "मेनू"
+    },
+    "main menu": {
+      "hi": "मुख्य मेनू",
+      "mr": "मुख्य मेनू"
+    },
+    "restart": {
+      "hi": "रीस्टार्ट",
+      "mr": "रीस्टार्ट"
+    },
+    "cancel": {
+      "hi": "रद्द करें",
+      "mr": "रद्द करा"
+    },
+    "submit": {
+      "hi": "जमा करें",
+      "mr": "सबमिट"
+    },
+    "contact": {
+      "hi": "संपर्क",
+      "mr": "संपर्क"
+    },
+    "feedback": {
+      "hi": "फीडबैक",
+      "mr": "अभिप्राय"
+    },
+    "appointment": {
+      "hi": "अपॉइंटमेंट",
+      "mr": "अपॉइंटमेंट"
+    },
+    "consultation": {
+      "hi": "परामर्श",
+      "mr": "सल्ला"
+    },
+    "diagnostics": {
+      "hi": "डायग्नोस्टिक",
+      "mr": "डायग्नोस्टिक"
+    },
+    "lab tests": {
+      "hi": "लैब टेस्ट",
+      "mr": "लॅब चाचण्या"
+    },
+    "home care": {
+      "hi": "होम केयर",
+      "mr": "होम केअर"
+    },
+    "branches": {
+      "hi": "शाखाएँ",
+      "mr": "शाखा"
+    },
+    "doctors": {
+      "hi": "डॉक्टर",
+      "mr": "डॉक्टर"
+    },
+    "syntax": {
+      "hi": "सिंटैक्स",
+      "mr": "सिंटॅक्स"
+    },
+    "services": {
+      "hi": "सेवाएँ",
+      "mr": "सेवा"
+    }
+  },
+  "Welcome back! What would you like to do?": {
+    "hi": "वापसी पर स्वागत है! आप क्या करना चाहेंगे?",
+    "mr": "पुन्हा स्वागत आहे! तुम्हाला काय करायचे आहे?"
+  },
+  "Hello! How can I help you today?": {
+    "hi": "नमस्ते! आज मैं आपकी कैसे मदद कर सकता हूँ?",
+    "mr": "नमस्कार! आज मी तुम्हाला कशी मदत करू शकतो?"
+  },
+  "Project is located in Gachibowli, Hyderabad.": {
+    "hi": "यह प्रोजैक्ट गच्चीबोवली, हैदराबाद में स्थित है।",
+    "mr": "प्रकल्प गच्चीबोवली, हैदराबादमध्ये स्थित आहे."
+  },
+  "Welcome to Artemis helpdesk.": {
+    "hi": "Artemis में आपका स्वागत",
+    "mr": "Artemis मध्ये आपले स्वागत"
+  },
+  "Image 1": {
+    "hi": "छवि 1",
+    "mr": "प्रतिमा १"
+  },
+  "Image 2": {
+    "hi": "छवि 2",
+    "mr": "प्रतिमा २"
+  },
+  "Please choose:": {
+    "hi": "कृपया चुनें:",
+    "mr": "कृपया निवडा:"
+  },
+  "Syntax": {
+    "hi": "सिंटैक्स",
+    "mr": "सिंटॅक्स"
+  },
+  "doctors": {
+    "hi": "डॉक्टर",
+    "mr": "डॉक्टर"
+  },
+  "Pick one option:": {
+    "hi": "कृपया एक विकल्प चुनें:",
+    "mr": "कृपया एक पर्याय निवडा:"
+  },
+  "View": {
+    "hi": "देखें",
+    "mr": "पहा"
+  },
+  "Luxury Villa": {
+    "hi": "लक्ज़री विला",
+    "mr": "लक्झरी व्हिला"
+  },
+  "4 BHK • Pool • Garden": {
+    "hi": "4 BHK • पूल • गार्डन",
+    "mr": "4 BHK • पूल • गार्डन"
+  },
+  "Modern Apartment": {
+    "hi": "आधुनिक अपार्टमेंट",
+    "mr": "आधुनिक अपार्टमेंट"
+  },
+  "3 BHK • City View": {
+    "hi": "3 BHK • शहर का नज़ारा",
+    "mr": "3 BHK • शहराचे दृश्य"
+  },
+  "Family House": {
+    "hi": "फैमिली हाउस",
+    "mr": "कुटुंबाचे घर"
+  },
+  "2 BHK • Parking • Garden": {
+    "hi": "2 BHK • पार्किंग • गार्डन",
+    "mr": "2 BHK • पार्किंग • गार्डन"
+  }
+}

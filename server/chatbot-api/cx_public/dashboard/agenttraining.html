@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+
+<html lang="en">
+
+  <head>
+
+    <meta charset="utf-8" />
+
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>AI agent training</title>
+
+    <link rel="stylesheet" href="dashboard.css" />
+
+    <link rel="stylesheet" href="dashboard-nav.css?v=20260626a" />
+
+    <link rel="stylesheet" href="../widget/chat-widget.css" />
+
+    <link rel="stylesheet" href="agenttraining.css?v=20260620e" />
+
+  </head>
+
+  <body>
+
+    <div class="dash-page-content" style="display:none">
+
+      <div class="dash-app qap-app">
+
+        <section class="qap-toolbar-section">
+
+          <div class="qap-toolbar-row">
+
+            <div class="qap-toolbar-group qap-toolbar-group--upload">
+
+              <span class="qap-toolbar-label">Upload/Download Responses</span>
+
+              <div class="qap-toolbar-inline">
+
+                <button type="button" id="qap-choose-file" class="dash-btn dash-btn--primary">
+
+                  Choose file to upload
+
+                </button>
+
+                <span class="qap-file-name" id="qap-file-name">No file chosen</span>
+
+                <input type="file" id="qap-file" accept=".xlsx,.xls" hidden />
+
+                <button type="button" id="qap-download-btn" class="dash-btn dash-btn--ghost">
+
+                  Download
+
+                </button>
+
+              </div>
+
+            </div>
+
+            <span class="qap-toolbar-sep" aria-hidden="true">|</span>
+
+            <div class="qap-toolbar-group">
+
+              <button type="button" id="qap-pull-live" class="dash-btn dash-btn--ghost qap-pull-live-btn">
+
+                Pull Live Changes
+
+              </button>
+
+            </div>
+
+            <span class="qap-toolbar-sep" aria-hidden="true">|</span>
+
+            <div class="qap-toolbar-group qap-toolbar-group--restore">
+
+              <div class="qap-restore" id="qap-restore">
+
+                <select id="qap-backup-select" class="qap-restore-select" aria-label="Choose backup to restore or download">
+
+                  <option value="">Choose a backup…</option>
+
+                </select>
+
+                <button type="button" id="qap-restore-backup" class="dash-btn dash-btn--ghost qap-restore-btn">
+
+                  Restore
+
+                </button>
+
+                <button type="button" id="qap-download-backup" class="dash-btn dash-btn--ghost qap-restore-btn" title="Download selected backup as Excel">
+
+                  Download
+
+                </button>
+
+              </div>
+
+            </div>
+
+          </div>
+
+          <p class="qap-status" id="qap-upload-status" hidden></p>
+
+        </section>
+
+
+
+        <section class="qap-list-section">
+
+          <h2 class="qap-section-title">Responses</h2>
+
+          <div class="qap-list" id="qap-list"></div>
+
+          <footer class="qap-pager" id="qap-pager" hidden aria-label="Agent training responses pagination">
+
+            <div class="qap-pager-controls">
+
+              <button type="button" class="qap-pager-btn qap-pager-btn--jump" id="qap-page-first" title="First page" aria-label="First page">1</button>
+
+              <button type="button" class="qap-pager-btn" id="qap-page-prev" title="Previous page" aria-label="Previous page">&lt;</button>
+
+              <span class="qap-pager-num is-current" id="qap-page-num" aria-live="polite">1</span>
+
+              <button type="button" class="qap-pager-btn" id="qap-page-next" title="Next page" aria-label="Next page">&gt;</button>
+
+              <button type="button" class="qap-pager-btn qap-pager-btn--jump" id="qap-page-last" title="Last page" aria-label="Last page">1</button>
+
+            </div>
+
+            <span class="qap-pager-hint" id="qap-page-hint"></span>
+
+            <label class="qap-page-size-label">
+
+              Per page
+
+              <select id="qap-page-size" class="qap-page-size-select" aria-label="Rows per page">
+
+                <option value="25">25</option>
+
+                <option value="50" selected>50</option>
+
+                <option value="100">100</option>
+
+              </select>
+
+            </label>
+
+          </footer>
+
+          <p class="qap-status" id="qap-list-status" hidden></p>
+
+        </section>
+
+      </div>
+
+
+
+      <div class="qap-live-bar" id="qap-live-bar">
+        <span class="qap-live-bar-msg" id="qap-live-bar-msg" hidden></span>
+        <div class="qap-live-bar-actions">
+          <span class="qap-live-bar-drafts" id="qap-draft-count">0 draft change(s) pending</span>
+          <button type="button" id="qap-make-live" class="dash-btn dash-btn--primary qap-live-bar-btn">
+            Make Live
+          </button>
+        </div>
+      </div>
+
+    </div>
+
+    <script src="desk-auth.js"></script>
+
+    <script src="dashboard-nav.js?v=20260626a"></script>
+
+    <script src="../widget/message-syntax.js"></script>
+
+    <script src="agenttraining-rich-editor.js?v=20260619c"></script>
+
+    <script src="agenttraining.js?v=20260620f"></script>
+
+  </body>
+
+</html>
+
+

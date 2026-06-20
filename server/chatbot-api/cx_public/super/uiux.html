@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>Additional features</title>
+  <link rel="stylesheet" href="/bot-settings/bot-settings.css" />
+</head>
+<body data-page="project" class="bot-settings-project bot-settings-additional-features">
+  <div id="app"></div>
+  <script>window.BOT_SETTINGS_MODE = 'additional-features';</script>
+  <script src="/bot-configs/bootstrap.js"></script>
+  <script src="/bot-configs/load-chain.js"></script>
+  <script>
+    ESLoadScriptChain([
+      '/company.config.js',
+      '/dashboard/desk-auth.js',
+      '/dashboard/dashboard-nav.js?v=20260620a',
+      '/super/uiux.js?v=20260621a'
+    ]);
+  </script>
+</body>
+</html>

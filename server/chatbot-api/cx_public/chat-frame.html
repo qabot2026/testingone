@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!-- Default API: api-base.config.js (override with ?apiBase= on URL) -->
+  <script src="api-base.config.js?v=2"></script>
+  <!-- After GitHub “Make live” mirror: optional static JSON on your site origin (falls back to `/api/public/widget-settings`). -->
+  <!-- <meta name="dfchat-published-widget-path" content="published-widget-settings.json" /> -->
+  <title>Chat</title>
+  <link rel="stylesheet" href="https://www.gstatic.com/dialogflow-console/fast/df-messenger/prod/v1/themes/df-messenger-default.css" />
+  <link rel="stylesheet" href="company.css?v=82" />
+  <script src="https://www.gstatic.com/dialogflow-console/fast/df-messenger/prod/v1/df-messenger.js"></script>
+  <script>
+    (function () {
+      var p = new URLSearchParams(window.location.search);
+      var b = p.get("botid");
+      if (b) window.COMPANY_EMBED_BOT_ID = b.trim();
+      var api = (p.get("apiBase") || "").trim();
+      function httpsApiBase_(url) {
+        var s = String(url || "").trim().replace(/\/+$/, "");
+        if (!s) return "";
+        if (window.location.protocol === "https:" && /^http:\/\//i.test(s)) {
+          return "https://" + s.replace(/^https?:\/\//i, "");
+        }
+        return s;
+      }
+      if (api) {
+        window.COMPANY_API_BASE_URL = httpsApiBase_(api);
+      } else {
+        try {
+          var fromConfig = typeof window.COMPANY_DEFAULT_API_BASE_URL === "string"
+            ? window.COMPANY_DEFAULT_API_BASE_URL.trim()
+            : "";
+          if (fromConfig) {
+            window.COMPANY_API_BASE_URL = httpsApiBase_(fromConfig);
+          } else {
+            var mt = document.querySelector('meta[name="dfchat-api-base-url"]')
+              || document.querySelector('meta[name="company-api-base-url"]');
+            var mc = mt && mt.content ? String(mt.content).trim() : "";
+            if (mc) window.COMPANY_API_BASE_URL = mc;
+          }
+        } catch (e1) { /* ignore */ }
+      }
+      var hostPage = (p.get("hostPage") || "").trim();
+      if (hostPage) window.COMPANY_EMBED_PARENT_URL = hostPage;
+      // Optional: explicit cross-origin source allowed to push live settings (admin dashboard preview).
+      var adminOrigin = (p.get("adminOrigin") || "").trim();
+      if (adminOrigin) window.COMPANY_ADMIN_PREVIEW_ORIGIN = adminOrigin;
+      // One-time token: dashboard adds same value to postMessage so preview works even if origins differ slightly.
+      var previewBridge = (p.get("previewBridge") || "").trim();
+      if (previewBridge) window.COMPANY_PREVIEW_BRIDGE = previewBridge;
+      var pwp = (p.get("publishedWidget") || "").trim();
+      if (pwp) window.COMPANY_PUBLISHED_WIDGET_PATH = pwp;
+    })();
+  </script>
+  <!-- In-chat form definitions (must load before company.config.js merges into COMPANY_CHAT_UI_CONFIG). -->
+  <script src="forms/contact.js"></script>
+  <script src="forms/feedback.js"></script>
+  <script src="forms/appointment.js"></script>
+  <script src="forms/appointment-doctor.js"></script>
+  <script src="forms/appointment-general.js"></script>
+  <script src="forms/otp.js"></script>
+  <script src="forms/upload.js"></script>
+  <script src="forms/birthform.js"></script>
+  <script src="forms/nearest-branch.js"></script>
+  <script src="translations/load-strings.js?v=2"></script>
+  <script src="company.config.js?v=154"></script>
+  <script src="company.js?v=154"></script>
+  <script>
+    (function () {
+      function parseHexRgb(hex) {
+        if (typeof hex !== "string") return null;
+        var m = String(hex).trim().match(/^#?([0-9a-fA-F]{6})$/);
+        if (!m) return null;
+        var int = parseInt(m[1], 16);
+        return { r: (int >> 16) & 255, g: (int >> 8) & 255, b: int & 255 };
+      }
+
+      function mixRgb(a, b, w) {
+        return {
+          r: Math.round(a.r * (1 - w) + b.r * w),
+          g: Math.round(a.g * (1 - w) + b.g * w),
+          b: Math.round(a.b * (1 - w) + b.b * w),
+        };
+      }
+
+      function toRgbCss(rgb) {
+        return "rgb(" + rgb.r + ", " + rgb.g + ", " + rgb.b + ")";
+      }
+
+      function tintHex(hex, w) {
+        var rgb = parseHexRgb(hex);
+        if (!rgb) return null;
+        return toRgbCss(mixRgb(rgb, { r: 255, g: 255, b: 255 }, w));
+      }
+
+      function shadeHex(hex, w) {
+        var rgb = parseHexRgb(hex);
+        if (!rgb) return null;
+        return toRgbCss(mixRgb(rgb, { r: 0, g: 0, b: 0 }, w));
+      }
+
+      function normalizeHex6ForMessengerVar(val) {
+        if (!val || typeof val !== "string") return "";
+        var m = String(val).trim().match(/^#?([0-9a-fA-F]{6})$/);
+        return m ? "#" + m[1].toLowerCase() : "";
+      }
+
+      function applyThemeVarsLive(settings) {
+        try {
+          var df = document.querySelector("df-messenger");
+          if (!df || !df.style || typeof df.style.setProperty !== "function") return;
+
+          var primary = settings && typeof settings.chatbotPrimaryColor === "string" ? settings.chatbotPrimaryColor.trim() : "";
+          var userBg = settings && typeof settings.userMessageBg === "string" ? settings.userMessageBg.trim() : "";
+          var botBg = settings && typeof settings.botMessageBg === "string" ? settings.botMessageBg.trim() : "";
+          var userText = settings && typeof settings.userMessageText === "string" ? settings.userMessageText.trim() : "";
+          var botText = settings && typeof settings.botMessageText === "string" ? settings.botMessageText.trim() : "";
+
+          var primaryLight = tintHex(primary, 0.35);
+          var primaryDark = shadeHex(primary, 0.35);
+
+          // Primary + title bar + bubble gradients.
+          if (primary) df.style.setProperty("--df-messenger-primary-color", primary);
+          if (primaryLight && primaryDark) {
+            df.style.setProperty(
+              "--df-messenger-titlebar-background",
+              "linear-gradient(180deg, rgba(255, 255, 255, 0.38) 0%, rgba(255, 255, 255, 0.1) 24%, transparent 46%), "
+                + "linear-gradient(168deg, " + primaryLight + " 0%, " + primary + " 42%, " + primaryDark + " 100%)"
+            );
+            df.style.setProperty(
+              "--df-messenger-chat-bubble-background",
+              "linear-gradient(160deg, " + primaryLight + " 0%, " + primary + " 48%, " + primaryDark + " 100%)"
+            );
+          }
+
+          // User/bot message backgrounds (gradients).
+          var userShade = shadeHex(userBg, 0.25);
+          var userTint = tintHex(userBg, 0.45);
+          if (userShade && userTint) {
+            df.style.setProperty(
+              "--df-messenger-message-user-background",
+              "linear-gradient(145deg, " + userShade + " 0%, " + userTint + " 100%)"
+            );
+          } else if (userBg) {
+            df.style.setProperty("--df-messenger-message-user-background", userBg);
+          }
+
+          var botShade = shadeHex(botBg, 0.15);
+          var botTint = tintHex(botBg, 0.70);
+          if (botShade && botTint) {
+            df.style.setProperty(
+              "--df-messenger-message-bot-background",
+              "linear-gradient(168deg, " + botShade + " 0%, " + botTint + " 100%)"
+            );
+          } else if (botBg) {
+            df.style.setProperty("--df-messenger-message-bot-background", botBg);
+          }
+
+          if (userText) df.style.setProperty("--df-messenger-message-user-font-color", userText);
+          if (botText) df.style.setProperty("--df-messenger-message-bot-font-color", botText);
+
+          var titleFont = normalizeHex6ForMessengerVar(
+            settings && typeof settings.headerTitleColor === "string" ? settings.headerTitleColor : ""
+          );
+          var subFont = normalizeHex6ForMessengerVar(
+            settings && typeof settings.headerSubtitleColor === "string" ? settings.headerSubtitleColor : ""
+          );
+          if (titleFont) df.style.setProperty("--df-messenger-titlebar-font-color", titleFont);
+          else df.style.removeProperty("--df-messenger-titlebar-font-color");
+          if (subFont) df.style.setProperty("--df-messenger-titlebar-subtitle-font-color", subFont);
+          else df.style.removeProperty("--df-messenger-titlebar-subtitle-font-color");
+
+          // Chips + button border.
+          var rgb = parseHexRgb(primary);
+          if (rgb) {
+            df.style.setProperty("--df-messenger-chips-background", "rgba(" + rgb.r + ", " + rgb.g + ", " + rgb.b + ", 0.92)");
+            df.style.setProperty("--df-messenger-chips-font-color", botText || "");
+            if (botText) df.style.setProperty("--df-messenger-chips-font-color", botText);
+            df.style.setProperty("--df-messenger-button-border", "1px solid rgba(" + rgb.r + ", " + rgb.g + ", " + rgb.b + ", 0.45)");
+          }
+        } catch (e) {
+          /* ignore */
+        }
+      }
+
+      function normalizeOrigin_(s) {
+        if (!s || typeof s !== "string") return "";
+        try {
+          return new URL(s).origin;
+        } catch (e) {
+          return s.trim().replace(/\/+$/, "");
+        }
+      }
+
+      function isAllowedAdminOrigin(origin) {
+        var o = normalizeOrigin_(origin);
+        if (o === normalizeOrigin_(window.location.origin)) return true;
+        var admin = window.COMPANY_ADMIN_PREVIEW_ORIGIN;
+        if (typeof admin !== "string") return false;
+        admin = normalizeOrigin_(admin.trim());
+        return !!admin && o === admin;
+      }
+
+      /** Dashboard loads iframe with ?previewBridge=… and echoes token on each postMessage. */
+      function isAllowedPreviewSender(ev, data) {
+        var bridge = typeof window.COMPANY_PREVIEW_BRIDGE === "string" ? window.COMPANY_PREVIEW_BRIDGE : "";
+        if (bridge && data && typeof data.previewBridge === "string" && data.previewBridge === bridge) {
+          return true;
+        }
+        return isAllowedAdminOrigin(ev.origin);
+      }
+
+      var __previewThemeInterval = null;
+      function applyPreviewSettingsLive(settings) {
+        var flat = settings || {};
+        if (typeof window.__dfchatApplyCompanyAdminFlatSettings === "function") {
+          window.__dfchatApplyCompanyAdminFlatSettings(flat);
+        }
+        applyThemeVarsLive(flat);
+        if (__previewThemeInterval) window.clearInterval(__previewThemeInterval);
+        var n = 0;
+        __previewThemeInterval = window.setInterval(function () {
+          n += 1;
+          applyThemeVarsLive(flat);
+          if (document.querySelector("df-messenger") || n > 70) {
+            window.clearInterval(__previewThemeInterval);
+            __previewThemeInterval = null;
+          }
+        }, 80);
+      }
+
+      window.addEventListener("message", function (ev) {
+        try {
+          if (!ev) return;
+          var data = ev.data;
+          if (!data || data.type !== "company_admin_settings") return;
+          if (!isAllowedPreviewSender(ev, data)) return;
+          applyPreviewSettingsLive(data.settings || {});
+        } catch (e) {
+          /* ignore */
+        }
+      });
+
+      // Fetch saved widget settings from the API and apply them on first paint.
+      // Lets the dashboard's "Make live" propagate to real visitor sessions.
+      // When opened inside the customization dashboard (?adminOrigin=...), the parent
+      // pushes draft updates via postMessage — skipping this fetch avoids the API
+      // response overwriting those instant preview edits.
+      (function fetchPublishedSettings() {
+        try {
+          if (
+            (typeof window.COMPANY_ADMIN_PREVIEW_ORIGIN === "string" && window.COMPANY_ADMIN_PREVIEW_ORIGIN) ||
+            (typeof window.COMPANY_PREVIEW_BRIDGE === "string" && window.COMPANY_PREVIEW_BRIDGE)
+          ) {
+            return;
+          }
+          /** Snapshot from API or mirrored `published-widget-settings.json` — reapplied after df-messenger paints. */
+          var publishedFlatCache = null;
+          function cachePayloadFromApi(data) {
+            var flat = (data && data.flat && typeof data.flat === "object") ? data.flat : {};
+            var out = {};
+            var k;
+            for (k in flat) {
+              if (Object.prototype.hasOwnProperty.call(flat, k)) out[k] = flat[k];
+            }
+            if (typeof data.advancedPatchJson === "string" && data.advancedPatchJson) {
+              out.advancedPatchJson = data.advancedPatchJson;
+            }
+            publishedFlatCache = out;
+          }
+          function applyCachedPublished() {
+            if (!publishedFlatCache) return;
+            if (
+              (typeof window.COMPANY_ADMIN_PREVIEW_ORIGIN === "string" && window.COMPANY_ADMIN_PREVIEW_ORIGIN) ||
+              (typeof window.COMPANY_PREVIEW_BRIDGE === "string" && window.COMPANY_PREVIEW_BRIDGE)
+            ) {
+              return;
+            }
+            if (typeof window.__dfchatApplyCompanyAdminFlatSettings === "function") {
+              window.__dfchatApplyCompanyAdminFlatSettings(publishedFlatCache);
+            }
+            applyThemeVarsLive(publishedFlatCache);
+          }
+          window.addEventListener("df-messenger-loaded", function () {
+            applyCachedPublished();
+            [120, 400, 1000, 2400].forEach(function (ms) {
+              window.setTimeout(function () { applyCachedPublished(); }, ms);
+            });
+          });
+          function applyPublishedWhenReady() {
+            if (!publishedFlatCache || Object.keys(publishedFlatCache).length === 0) return;
+            function apply() {
+              if (typeof window.__dfchatApplyCompanyAdminFlatSettings === "function") {
+                window.__dfchatApplyCompanyAdminFlatSettings(publishedFlatCache);
+                applyThemeVarsLive(publishedFlatCache);
+                return true;
+              }
+              return false;
+            }
+            if (apply()) return;
+            var tries = 0;
+            var t = window.setInterval(function () {
+              tries += 1;
+              if (apply() || tries > 40) window.clearInterval(t);
+            }, 120);
+          }
+          function resolvePublishedWidgetPath() {
+            var fromWin = "";
+            try {
+              if (typeof window.COMPANY_PUBLISHED_WIDGET_PATH === "string") {
+                fromWin = window.COMPANY_PUBLISHED_WIDGET_PATH.trim();
+              }
+            } catch (eW) { /* ignore */ }
+            if (fromWin) return fromWin;
+            try {
+              var mm = document.querySelector('meta[name="dfchat-published-widget-path"]');
+              var cc = mm && mm.content ? String(mm.content).trim() : "";
+              return cc || "";
+            } catch (eM) {
+              return "";
+            }
+          }
+          var apiBase = "";
+          try {
+            if (typeof window.COMPANY_API_BASE_URL === "string" && window.COMPANY_API_BASE_URL.trim()) {
+              apiBase = window.COMPANY_API_BASE_URL.replace(/\/+$/, "");
+            } else {
+              var mb = document.querySelector('meta[name="dfchat-api-base-url"]')
+                || document.querySelector('meta[name="company-api-base-url"]');
+              var cb = mb && mb.content ? String(mb.content).trim().replace(/\/+$/, "") : "";
+              apiBase = cb;
+            }
+          } catch (e2) { /* ignore */ }
+
+          var botid = (window.COMPANY_EMBED_BOT_ID || "").trim() || "default";
+          var staticPath = resolvePublishedWidgetPath();
+
+          function tryApplyMirroredBotsJson(json) {
+            if (!json || !json.bots || typeof json.bots !== "object") return false;
+            var row = json.bots[botid];
+            if (!row || typeof row.flat !== "object") return false;
+            cachePayloadFromApi({
+              flat: row.flat,
+              advancedPatchJson: typeof row.advancedPatchJson === "string" ? row.advancedPatchJson : ""
+            });
+            if (!publishedFlatCache || Object.keys(publishedFlatCache).length === 0) return false;
+            applyPublishedWhenReady();
+            return true;
+          }
+
+          function loadFromPublicApi() {
+            if (!apiBase) return;
+            var url = apiBase + "/api/public/widget-settings?botid=" + encodeURIComponent(botid);
+            fetch(url, { credentials: "omit", cache: "no-store" })
+              .then(function (r) { return r.ok ? r.json() : null; })
+              .then(function (data) {
+                if (!data || typeof data.flat !== "object") return;
+                if (typeof data.error === "string" && data.error.trim()) {
+                  try {
+                    console.warn("[chat-frame] widget-settings:", data.error);
+                  } catch (eWarn) { /* ignore */ }
+                  return;
+                }
+                cachePayloadFromApi(data);
+                applyPublishedWhenReady();
+              })
+              .catch(function () { /* network blip; keep defaults */ });
+          }
+
+          if (staticPath) {
+            fetch(new URL(staticPath, window.location.href).href, { credentials: "same-origin", cache: "no-store" })
+              .then(function (r) { return r.ok ? r.json() : null; })
+              .then(function (json) {
+                if (!tryApplyMirroredBotsJson(json)) loadFromPublicApi();
+              })
+              .catch(function () {
+                loadFromPublicApi();
+              });
+          } else {
+            loadFromPublicApi();
+          }
+        } catch (e) {
+          /* ignore */
+        }
+      })();
+
+      // Notify parent when chat opens/closes so admin can hide/show the left panel.
+      window.addEventListener("df-chat-open-changed", function (ev) {
+        try {
+          var open = !!(ev && ev.detail && ev.detail.isOpen);
+          window.parent && window.parent.postMessage({ type: "dfchat_open_changed", open: open }, window.location.origin);
+        } catch (e) {
+          /* ignore */
+        }
+      });
+    })();
+  </script>
+  <style>
+    html, body {
+      height: 100%;
+      margin: 0;
+      background: transparent;
+      overflow: visible;
+    }
+    df-messenger {
+      pointer-events: auto;
+      touch-action: manipulation;
+    }
+  </style>
+</head>
+<body></body>
+</html>

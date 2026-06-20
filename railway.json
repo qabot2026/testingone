@@ -8,6 +8,6 @@
   },
   "deploy": {
     "healthcheckPath": "/health",
-    "startCommand": "node index.mjs"
+    "startCommand": "node cx_private/index.mjs"
   }
 }
