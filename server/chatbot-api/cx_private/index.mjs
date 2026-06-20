@@ -7881,6 +7881,44 @@ function mountPortedEsRoutes(app) {
         etag: true,
     }));
 
+    function redirectSuperPage(targetBase, req, res) {
+        const bid = typeof req.query.bid === 'string' ? req.query.bid.trim() : '';
+        const q = bid ? `?bid=${encodeURIComponent(bid)}` : '';
+        res.redirect(301, targetBase + q);
+    }
+
+    app.get('/dashboard/supersetting.html', (req, res) => {
+        redirectSuperPage('/super/channels-integration.html', req, res);
+    });
+
+    app.get('/super/integration.html', (req, res) => {
+        redirectSuperPage('/super/channels-integration.html', req, res);
+    });
+
+    app.get('/dashboard/audits.html', (req, res) => {
+        redirectSuperPage('/super/audits.html', req, res);
+    });
+
+    app.get('/dashboard/actions.html', (req, res) => {
+        res.redirect(301, '/super/actions.html');
+    });
+
+    app.get('/super/emailintegration.html', (req, res) => {
+        const bid = typeof req.query.bid === 'string' ? req.query.bid.trim() : '';
+        const q = bid ? `?bid=${encodeURIComponent(bid)}` : '';
+        res.redirect(301, '/super/email-templates.html' + q + '#email-integration');
+    });
+
+    app.get('/super/email-integration.html', (req, res) => {
+        const bid = typeof req.query.bid === 'string' ? req.query.bid.trim() : '';
+        const q = bid ? `?bid=${encodeURIComponent(bid)}` : '';
+        res.redirect(301, '/super/email-templates.html' + q + '#email-integration');
+    });
+
+    app.get('/dashboard/email-templates.html', (req, res) => {
+        redirectSuperPage('/super/email-templates.html', req, res);
+    });
+
     // Serving company.config.js from root of server
     app.get('/company.config.js', (_req, res) => {
         res.setHeader('Cache-Control', 'no-cache, must-revalidate');
