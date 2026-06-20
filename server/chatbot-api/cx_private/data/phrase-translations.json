@@ -1,0 +1,273 @@
+{
+  "_help": "Key = EXACT English text from Dialogflow (reply, chip, dropdown, any intent). Works for whole bot — not per intent.",
+  "_help2": "Add one line once. Wherever that English appears, hi/mr will show after user selects language.",
+  "4 BHK • Pool • Garden": {
+    "hi": "4 BHK • पूल • बाग",
+    "mr": "4 BHK • पूल • बाग"
+  },
+  "Appointment": {
+    "hi": "अपॉइंटमेंट",
+    "mr": "भेटीची वेळ"
+  },
+  "Back to menu": {
+    "hi": "मेनू पर वापस",
+    "mr": "मेनूवर परत"
+  },
+  "Choose an option:": {
+    "hi": "एक विकल्प चुनें:",
+    "mr": "एक पर्याय निवडा:"
+  },
+  "Choose...": {
+    "hi": "चुनें",
+    "mr": "निवडा"
+  },
+  "Contact": {
+    "hi": "संपर्क",
+    "mr": "संपर्क"
+  },
+  "Contact us": {
+    "hi": "संपर्क करें",
+    "mr": "संपर्क करा"
+  },
+  "doctors": {
+    "hi": "डॉक्टर",
+    "mr": "डॉक्टर"
+  },
+  "Doctors": {
+    "hi": "डॉक्टर",
+    "mr": "डॉक्टर"
+  },
+  "Family House": {
+    "hi": "कौटुंबिक घर",
+    "mr": "कौटुंबिक घर"
+  },
+  "Feedback": {
+    "hi": "प्रतिक्रिया",
+    "mr": "okokokokok"
+  },
+  "Hello! How can I help you today?": {
+    "hi": "नमस्ते! आज मैं आपकी कैसे मदद कर सकता हूँ?",
+    "mr": "नमस्कार! आज मी तुम्हाला कशी मदत करू शकतो?"
+  },
+  "Image 1": {
+    "hi": "चित्र १",
+    "mr": "चित्र १"
+  },
+  "Image 2": {
+    "hi": "चित्र 2",
+    "mr": "चित्र 2"
+  },
+  "Please choose": {
+    "hi": "कृपया चुनें",
+    "mr": "कृपया निवडा"
+  },
+  "Please choose:": {
+    "hi": "चुनें",
+    "mr": "निवडा"
+  },
+  "Products": {
+    "hi": "उत्पाद",
+    "mr": "उत्पादने"
+  },
+  "Project is located in Gachibowli, Hyderabad.": {
+    "hi": "यह प्रोजैक्ट गच्चीबोवली, हैदराबाद में स्थित है।",
+    "mr": "प्रकल्प गच्चीबोवली, हैदराबादमध्ये स्थित आहे."
+  },
+  "Sorry, I did not understand. Please try again or pick an option.": {
+    "hi": "क्षमा करें, मैं समझ नहीं पाया। कृपया दोबारा लिखें या कोई विकल्प चुनें।",
+    "mr": "माफ करा, मला समजले नाही. कृपया पुन्हा लिहा किंवा पर्याय निवडा."
+  },
+  "Support": {
+    "hi": "सहायता",
+    "mr": "मदत"
+  },
+  "Thank you for chatting. Goodbye!": {
+    "hi": "चैटिंग के लिए धन्यवाद. अलविदा!",
+    "mr": "चॅटिंगसाठी धन्यवाद. पुन्हा भेटू!"
+  },
+  "Upload": {
+    "hi": "अपलोड",
+    "mr": "अपलोड"
+  },
+  "View on map": {
+    "hi": "मानचित्र पर देखें",
+    "mr": "नकाशावर पहा"
+  },
+  "Welcome back! What would you like to do?": {
+    "hi": "वापसी पर स्वागत है! आप क्या करना चाहेंगे?",
+    "mr": "पुन्हा स्वागत आहे! तुम्हाला काय करायचे आहे?"
+  },
+  "What would you like next?": {
+    "hi": "आगे क्या जानना चाहेंगे?",
+    "mr": "पुढे काय जाणून घ्यायचे?"
+  },
+  "What would you like next? Please choose": {
+    "hi": "आगे क्या जानना चाहेंगे? कृपया चुनें",
+    "mr": "पुढे काय जाणून घ्यायचे? कृपया निवडा"
+  },
+  "@i18n:filesSelected": {
+    "en": "{n} selected"
+  },
+  "@i18n:addMoreFiles": {
+    "en": "Add"
+  },
+  "@i18n:summaryAppointmentDateLabel": {
+    "en": "Appointment Date"
+  },
+  "@i18n:summaryAppointmentTimeLabel": {
+    "en": "Appointment Time"
+  },
+  "@i18n:summaryBirthDateLabel": {
+    "en": "Birth date"
+  },
+  "@i18n:changeMobile": {
+    "en": "Change mobile number"
+  },
+  "@i18n:invalidPastBirthDate": {
+    "en": "Choose a date before today."
+  },
+  "@i18n:invalidFutureDate": {
+    "en": "Choose today or a later date."
+  },
+  "@i18n:clearFileSelection": {
+    "en": "Clear selection"
+  },
+  "@i18n:closeForm": {
+    "en": "Close form"
+  },
+  "@i18n:summaryDialCodeLabel": {
+    "en": "Code"
+  },
+  "@i18n:calBookFailed": {
+    "en": "Could not book this slot. Try again."
+  },
+  "@i18n:dialCodePlaceholder": {
+    "en": "Country code"
+  },
+  "@i18n:summaryDateLabel": {
+    "en": "Date"
+  },
+  "@i18n:birthDatePlaceholder": {
+    "en": "Date of birth"
+  },
+  "@i18n:datePlaceholder": {
+    "en": "DD/MM/YYYY"
+  },
+  "@i18n:resendOtp": {
+    "en": "Didn't receive? Send OTP again"
+  },
+  "@i18n:summaryDoctorIdLabel": {
+    "en": "Doctor"
+  },
+  "@i18n:summaryDocumentLabel": {
+    "en": "Document"
+  },
+  "@i18n:summaryEmailLabel": {
+    "en": "Email"
+  },
+  "@i18n:emailPlaceholder": {
+    "en": "Email address"
+  },
+  "@i18n:invalidEmail": {
+    "en": "Enter a valid email."
+  },
+  "@i18n:invalidPhone": {
+    "en": "Enter a valid mobile number."
+  },
+  "@i18n:invalidOtp": {
+    "en": "Enter a valid OTP code."
+  },
+  "@i18n:otpEnterPlaceholder": {
+    "en": "Enter OTP"
+  },
+  "@i18n:otpResendNeedMobile": {
+    "en": "Enter your mobile number first."
+  },
+  "@i18n:calBookedLegend": {
+    "en": "Green - Available · Red - Full"
+  },
+  "@i18n:calLoading": {
+    "en": "Loading..."
+  },
+  "@i18n:summaryMessageLabel": {
+    "en": "Message"
+  },
+  "@i18n:summaryMobileLabel": {
+    "en": "Mobile"
+  },
+  "@i18n:mobilePlaceholder": {
+    "en": "Mobile number"
+  },
+  "@i18n:summaryNameLabel": {
+    "en": "Name"
+  },
+  "@i18n:calNetworkError": {
+    "en": "Network error. Please try again."
+  },
+  "@i18n:calNext": {
+    "en": "Next month"
+  },
+  "@i18n:calNoMoreSlotsToday": {
+    "en": "No more times left today. Try another date."
+  },
+  "@i18n:calClosedDay": {
+    "en": "Not available on this day."
+  },
+  "@i18n:summaryOtpLabel": {
+    "en": "OTP"
+  },
+  "@i18n:otpCodePlaceholder": {
+    "en": "OTP code"
+  },
+  "@i18n:calPickTime": {
+    "en": "Pick a time"
+  },
+  "@i18n:calPrev": {
+    "en": "Previous month"
+  },
+  "@i18n:summaryRatingLabel": {
+    "en": "Rating"
+  },
+  "@i18n:removeFile": {
+    "en": "Remove file"
+  },
+  "@i18n:otpResending": {
+    "en": "Sending a new code..."
+  },
+  "@i18n:submit": {
+    "en": "Submit"
+  },
+  "@i18n:formSubmitThanks": {
+    "en": "Thank you for sharing."
+  },
+  "@i18n:calSlotTaken": {
+    "en": "That time was just booked. Pick another slot."
+  },
+  "@i18n:required": {
+    "en": "This field is required."
+  },
+  "@i18n:calSlotInvalid": {
+    "en": "This time is not available anymore. Pick another slot."
+  },
+  "@i18n:summaryTimeLabel": {
+    "en": "Time"
+  },
+  "@i18n:calTodayHidden": {
+    "en": "Today is not available for booking. Pick a future date."
+  },
+  "@i18n:chooseFiles": {
+    "en": "Upload"
+  },
+  "@i18n:invalidDateFormat": {
+    "en": "Use DD/MM/YYYY."
+  },
+  "@i18n:calOutsideWindow": {
+    "en": "You can only book within the allowed number of days."
+  },
+  "@i18n:formSubmitThanksAppointment": {
+    "en": "Your appointment request has been submitted."
+  },
+  "@i18n:namePlaceholder": {
+    "en": "Your name"
+  }
+}

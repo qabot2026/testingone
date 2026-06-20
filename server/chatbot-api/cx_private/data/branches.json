@@ -1,0 +1,26 @@
+[
+  {
+    "id": "hyd-gachibowli",
+    "name": "City Hospital — Gachibowli",
+    "city": "Hyderabad",
+    "area": "Gachibowli",
+    "lat": 17.4401,
+    "lng": 78.3489
+  },
+  {
+    "id": "hyd-hitec",
+    "name": "City Hospital — HITEC City",
+    "city": "Hyderabad",
+    "area": "Madhapur",
+    "lat": 17.4435,
+    "lng": 78.3772
+  },
+  {
+    "id": "pune-kothrud",
+    "name": "City Hospital — Kothrud",
+    "city": "Pune",
+    "area": "Kothrud",
+    "lat": 18.5074,
+    "lng": 73.8077
+  }
+]

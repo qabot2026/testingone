@@ -1,0 +1,29 @@
+{
+  "bots": [
+    {
+      "id": "10001",
+      "sitePreset": "receptionist",
+      "name": "Receptionist",
+      "welcomeEventName": "",
+      "themeKey": "receptionist",
+      "sheetTab": "Recep. Chats"
+    },
+    {
+      "id": "10002",
+      "sitePreset": "greenValley",
+      "name": "Green Valley",
+      "welcomeEventName": "START_GREEN_VALLEY",
+      "themeKey": "greenValley",
+      "sheetTab": "Green Valley"
+    },
+    {
+      "id": "10003",
+      "sitePreset": "lakeView",
+      "name": "Lake View",
+      "welcomeEventName": "START_LAKE_VIEW",
+      "themeKey": "lakeView",
+      "sheetTab": "Lake View"
+    }
+  ],
+  "updatedAt": "2026-06-20T19:11:47.098Z"
+}

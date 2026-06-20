@@ -1,0 +1,61 @@
+{
+  "updatedAt": "2026-06-12T00:00:00.000Z",
+  "bots": {
+    "10002": {
+      "enabled": false,
+      "activeProvider": "meta",
+      "providers": {
+        "meta": {
+          "accessToken": "",
+          "phoneNumberId": "",
+          "appSecret": "",
+          "verifyToken": "",
+          "notes": ""
+        },
+        "aisensy": {
+          "apiKey": "",
+          "projectId": "",
+          "webhookSecret": "",
+          "notes": ""
+        },
+        "wati": {
+          "apiBaseUrl": "",
+          "accessToken": "",
+          "webhookSecret": "",
+          "notes": ""
+        },
+        "interakt": {
+          "apiKey": "",
+          "webhookSecret": "",
+          "notes": ""
+        },
+        "gupshup": {
+          "apiKey": "",
+          "appName": "",
+          "sourceNumber": "",
+          "webhookSecret": "",
+          "notes": ""
+        },
+        "dialog360": {
+          "apiKey": "",
+          "phoneNumberId": "",
+          "webhookSecret": "",
+          "notes": ""
+        },
+        "twilio": {
+          "accountSid": "",
+          "authToken": "",
+          "whatsappFrom": "",
+          "messagingServiceSid": "",
+          "notes": ""
+        }
+      },
+      "bot": {
+        "welcomeEventName": "START_GREEN_VALLEY",
+        "sitePreset": "greenValley",
+        "botId": "10002",
+        "idleTimeoutMs": 10000
+      }
+    }
+  }
+}

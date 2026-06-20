@@ -1,0 +1,15 @@
+{
+  "paths": [
+    "es_public/client-based/bot-configs/greenValley.config.js",
+    "es_public/client-based/bot-configs/lakeView.config.js",
+    "es_public/client-based/bot-configs/manifest.json",
+    "es_public/client-based/bot-configs/receptionist.config.js",
+    "es_public/client-based/bot-settings/10001.html",
+    "es_public/client-based/bot-settings/10002.html",
+    "es_public/client-based/bot-settings/10003.html",
+    "es_public/client-based/pages/green-valley-demo.html",
+    "es_public/client-based/pages/lake-viev-demo.html",
+    "es_public/client-based/pages/receputytt-demo.html"
+  ],
+  "updatedAt": "2026-06-20T16:14:52.952Z"
+}

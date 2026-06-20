@@ -1,0 +1,101 @@
+{
+  "path": "/app/data/appointment-schedule.json",
+  "forms": {
+    "appointment": {
+      "timezone": "Asia/Kolkata",
+      "allowToday": false,
+      "hidePastTimesToday": true,
+      "maxBookingDays": 7,
+      "slotMinutes": 30,
+      "slotCapacity": 1,
+      "default": {
+        "periods": [
+          {
+            "start": "9:00 AM",
+            "end": "6:00 PM"
+          }
+        ]
+      },
+      "weekdays": {
+        "monday": {
+          "periods": [
+            {
+              "start": "9:00 AM",
+              "end": "1:00 PM"
+            },
+            {
+              "start": "2:00 PM",
+              "end": "6:00 PM"
+            }
+          ],
+          "slotMinutes": 30,
+          "slotCapacity": 2
+        },
+        "tuesday": {
+          "periods": [
+            {
+              "start": "10:00 AM",
+              "end": "5:00 PM"
+            }
+          ],
+          "slotMinutes": 30,
+          "slotCapacity": 1
+        },
+        "wednesday": {
+          "periods": [
+            {
+              "start": "9:00 AM",
+              "end": "6:00 PM"
+            }
+          ],
+          "slotCapacity": 1
+        },
+        "thursday": {
+          "periods": [
+            {
+              "start": "9:00 AM",
+              "end": "6:00 PM"
+            }
+          ]
+        },
+        "friday": {
+          "periods": [
+            {
+              "start": "9:00 AM",
+              "end": "4:00 PM"
+            }
+          ],
+          "slotMinutes": 20,
+          "slotCapacity": 1
+        },
+        "saturday": {
+          "periods": [
+            {
+              "start": "10:00 AM",
+              "end": "2:00 PM"
+            }
+          ],
+          "slotMinutes": 15,
+          "slotCapacity": 1
+        },
+        "sunday": {
+          "closed": true
+        }
+      },
+      "dates": {
+        "2026-12-25": {
+          "closed": true
+        }
+      }
+    }
+  },
+  "weekdayNames": [
+    "sunday",
+    "monday",
+    "tuesday",
+    "wednesday",
+    "thursday",
+    "friday",
+    "saturday"
+  ]
+}

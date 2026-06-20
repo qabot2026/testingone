@@ -1,0 +1,193 @@
+{
+  "updatedAt": "2026-06-14T08:27:21.089Z",
+  "bots": {
+    "10002": {
+      "whatsapp": {
+        "enabled": true,
+        "activeProvider": "meta",
+        "providers": {
+          "meta": {
+            "notes": "",
+            "accessToken": "",
+            "phoneNumberId": "",
+            "appSecret": "",
+            "verifyToken": ""
+          },
+          "aisensy": {
+            "notes": "",
+            "apiKey": "",
+            "projectId": "",
+            "webhookSecret": ""
+          },
+          "wati": {
+            "notes": "",
+            "apiBaseUrl": "",
+            "accessToken": "",
+            "webhookSecret": ""
+          },
+          "interakt": {
+            "notes": "",
+            "apiKey": "",
+            "webhookSecret": ""
+          },
+          "gupshup": {
+            "notes": "",
+            "apiKey": "",
+            "appName": "",
+            "sourceNumber": "",
+            "webhookSecret": ""
+          },
+          "dialog360": {
+            "notes": "",
+            "apiKey": "",
+            "phoneNumberId": "",
+            "webhookSecret": ""
+          },
+          "twilio": {
+            "notes": "",
+            "accountSid": "",
+            "authToken": "",
+            "whatsappFrom": "",
+            "messagingServiceSid": ""
+          }
+        },
+        "bot": {
+          "welcomeEventName": "START_GREEN_VALLEY",
+          "sitePreset": "greenValley",
+          "botId": "10002",
+          "idleTimeoutMs": 10000
+        }
+      },
+      "instagram": {
+        "enabled": false,
+        "activeProvider": "meta",
+        "providers": {
+          "meta": {
+            "notes": "",
+            "pageAccessToken": "",
+            "appSecret": "",
+            "verifyToken": "",
+            "instagramAccountId": ""
+          }
+        },
+        "bot": {
+          "welcomeEventName": "START_GREEN_VALLEY",
+          "sitePreset": "greenValley",
+          "botId": "10002"
+        }
+      },
+      "facebook": {
+        "enabled": false,
+        "activeProvider": "meta",
+        "providers": {
+          "meta": {
+            "notes": "",
+            "pageAccessToken": "",
+            "appSecret": "",
+            "verifyToken": "",
+            "pageId": ""
+          }
+        },
+        "bot": {
+          "welcomeEventName": "",
+          "sitePreset": "receptionist",
+          "botId": "10002"
+        }
+      }
+    },
+    "10003": {
+      "whatsapp": {
+        "enabled": false,
+        "activeProvider": "meta",
+        "providers": {
+          "meta": {
+            "notes": "",
+            "accessToken": "",
+            "phoneNumberId": "",
+            "appSecret": "",
+            "verifyToken": ""
+          },
+          "aisensy": {
+            "notes": "",
+            "apiKey": "",
+            "projectId": "",
+            "webhookSecret": ""
+          },
+          "wati": {
+            "notes": "",
+            "apiBaseUrl": "",
+            "accessToken": "",
+            "webhookSecret": ""
+          },
+          "interakt": {
+            "notes": "",
+            "apiKey": "",
+            "webhookSecret": ""
+          },
+          "gupshup": {
+            "notes": "",
+            "apiKey": "",
+            "appName": "",
+            "sourceNumber": "",
+            "webhookSecret": ""
+          },
+          "dialog360": {
+            "notes": "",
+            "apiKey": "",
+            "phoneNumberId": "",
+            "webhookSecret": ""
+          },
+          "twilio": {
+            "notes": "",
+            "accountSid": "",
+            "authToken": "",
+            "whatsappFrom": "",
+            "messagingServiceSid": ""
+          }
+        },
+        "bot": {
+          "welcomeEventName": "START_LAKE_VIEW",
+          "sitePreset": "lakeView",
+          "botId": "10003",
+          "idleTimeoutMs": 10000
+        }
+      },
+      "instagram": {
+        "enabled": false,
+        "activeProvider": "meta",
+        "providers": {
+          "meta": {
+            "notes": "",
+            "pageAccessToken": "",
+            "appSecret": "",
+            "verifyToken": "",
+            "instagramAccountId": ""
+          }
+        },
+        "bot": {
+          "welcomeEventName": "START_LAKE_VIEW",
+          "sitePreset": "lakeView",
+          "botId": "10003"
+        }
+      },
+      "facebook": {
+        "enabled": false,
+        "activeProvider": "meta",
+        "providers": {
+          "meta": {
+            "notes": "",
+            "pageAccessToken": "",
+            "appSecret": "",
+            "verifyToken": "",
+            "pageId": ""
+          }
+        },
+        "bot": {
+          "welcomeEventName": "START_LAKE_VIEW",
+          "sitePreset": "lakeView",
+          "botId": "10003"
+        }
+      }
+    }
+  }
+}
