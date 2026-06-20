@@ -7838,6 +7838,7 @@ function mountPortedEsRoutes(app) {
     const faqStore = requireRefer("./faq-store.js");
     const auditLog = requireRefer("./audit-log.js");
     const formApi = requireRefer("./form-api.js");
+    const dashboardBots = requireRefer("./dashboard-bots.js");
 
     function auditChange(req, action, meta) {
         auditLog.recordAudit(
@@ -8143,6 +8144,18 @@ function mountPortedEsRoutes(app) {
 
     app.get('/api/bot-settings', (_req, res) => {
         res.json({ projects: sitePresetsStore.listProjects() });
+    });
+
+    app.get('/api/dashboard/bots', (_req, res) => {
+        res.json({
+            defaultBid: dashboardBots.defaultBid(),
+            bots: dashboardBots.listBots(),
+        });
+    });
+
+    app.get('/api/dashboard/nav', (req, res) => {
+        const bid = req.query.bid || dashboardBots.defaultBid();
+        res.json(dashboardBots.navSections(bid));
     });
 
     app.get('/api/bot-settings/:botId', (req, res) => {

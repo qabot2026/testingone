@@ -98,6 +98,7 @@
 
     textEl.addEventListener('blur', function () {
       normalizeApptDateInput(textEl);
+      load();
     });
     textEl.addEventListener('keydown', function (ev) {
       if (ev.key === 'Enter') {
@@ -118,8 +119,7 @@
     return String(raw || '').trim();
   }
 
-  function localTodayIso() {
-    var d = new Date();
+  function localIsoYmd(d) {
     return (
       d.getFullYear() +
       '-' +
@@ -129,18 +129,41 @@
     );
   }
 
+  function localTodayIso() {
+    return localIsoYmd(new Date());
+  }
+
   function todayDmy() {
     return formatDmy(localTodayIso());
   }
 
   function initDefaultDates() {
     var today = localTodayIso();
-    if ($('appt-from') && !getApptDateYmd($('appt-from'))) {
-      setApptDateYmd($('appt-from'), today);
-    }
-    if ($('appt-to') && !getApptDateYmd($('appt-to'))) {
-      setApptDateYmd($('appt-to'), today);
-    }
+    setApptDateYmd($('appt-from'), today);
+    setApptDateYmd($('appt-to'), today);
+  }
+
+  /** Next 5 calendar days after today (today excluded). */
+  function applyNext5DaysRange() {
+    var now = new Date();
+    var fromD = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate() + 1
+    );
+    var toD = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate() + 5
+    );
+    if ($('appt-from')) setApptDateYmd($('appt-from'), localIsoYmd(fromD));
+    if ($('appt-to')) setApptDateYmd($('appt-to'), localIsoYmd(toD));
+    load();
+  }
+
+  function applyClearDateRange() {
+    initDefaultDates();
+    load();
   }
 
   function statusLabel(status) {
@@ -198,7 +221,6 @@
 
   function renderRows(data) {
     var body = $('appt-body');
-    var meta = $('appt-meta');
     if (!body) return;
 
     var rows = (data && data.appointments) || [];
@@ -255,26 +277,6 @@
           );
         })
         .join('');
-    }
-
-    if (meta) {
-      var parts = [rows.length + ' appointment' + (rows.length === 1 ? '' : 's')];
-      var df = data && data.dateFilter;
-      if (df && df.from && df.to) {
-        parts.push(
-          df.from === df.to
-            ? 'App. date: ' + df.from
-            : 'App. dates: ' + df.from + ' – ' + df.to
-        );
-      }
-      if (data && data.statusFilter && data.statusFilter !== 'all') {
-        parts.push('status: ' + data.statusFilter);
-      }
-      if (data && data.source) parts.push('source: ' + data.source);
-      if (data && data.sheetsConfigured === false) {
-        parts.push('Google Sheet not configured — showing transcript data only');
-      }
-      meta.textContent = parts.join(' · ');
     }
   }
 
@@ -431,15 +433,12 @@
   }
 
   $('appt-refresh').addEventListener('click', load);
-  if ($('appt-today')) {
-    $('appt-today').addEventListener('click', function () {
-      var today = localTodayIso();
-      if ($('appt-from')) setApptDateYmd($('appt-from'), today);
-      if ($('appt-to')) setApptDateYmd($('appt-to'), today);
-      load();
-    });
+  if ($('appt-next5')) {
+    $('appt-next5').addEventListener('click', applyNext5DaysRange);
   }
-  $('appt-apply').addEventListener('click', load);
+  if ($('appt-clear')) {
+    $('appt-clear').addEventListener('click', applyClearDateRange);
+  }
   if ($('appt-status')) {
     $('appt-status').addEventListener('change', load);
   }

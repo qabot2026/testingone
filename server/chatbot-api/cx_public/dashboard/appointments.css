@@ -136,9 +136,10 @@
   border: 0;
 }
 
-.appt-meta {
-  flex: 1 1 100%;
-  margin: 0;
+.appt-date-preset {
+  padding: 8px 12px;
+  font-size: 0.8125rem;
+  white-space: nowrap;
 }
 
 .appt-panel {

@@ -8,20 +8,10 @@
     <link rel="stylesheet" href="appointments.css" />
   </head>
   <body>
-    <div class="dash-app appt-app">
-      <header class="dash-header">
-        <div>
-          <h1>Appointments</h1>
-          <p class="dash-muted">
-            Chatbot appointment requests — review and Accept or Decline. Defaults to today’s app. date.
-          </p>
-        </div>
-        <nav class="dash-nav">
-          <a href="index.html" class="dash-btn dash-btn--ghost">Dashboard</a>
-          <a href="/uc-conversations" class="dash-btn dash-btn--ghost">Conversation leads</a>
-          <button type="button" id="appt-refresh" class="dash-btn dash-btn--primary">Refresh</button>
-        </nav>
-      </header>
+    <div class="dash-app appt-app dash-page-content" style="display:none">
+      <div class="appt-toolbar-row" style="display:flex;justify-content:flex-end;margin-bottom:0.75rem">
+        <button type="button" id="appt-refresh" class="dash-btn dash-btn--primary">Refresh</button>
+      </div>
 
       <section id="appt-unlock" class="appt-unlock hidden" aria-label="Unlock appointments">
         <h2>Viewer secret required</h2>
@@ -88,9 +78,8 @@
             <option value="declined">Declined</option>
           </select>
         </label>
-        <button type="button" id="appt-today" class="dash-btn dash-btn--ghost">Today</button>
-        <button type="button" id="appt-apply" class="dash-btn dash-btn--ghost">Apply</button>
-        <p id="appt-meta" class="dash-muted appt-meta"></p>
+        <button type="button" id="appt-next5" class="dash-btn dash-btn--ghost appt-date-preset">Next 5 days</button>
+        <button type="button" id="appt-clear" class="dash-btn dash-btn--ghost appt-date-preset">Clear</button>
       </section>
 
       <section class="appt-panel">
@@ -118,7 +107,15 @@
       </section>
     </div>
     <script src="desk-auth.js"></script>
+    <script src="dashboard-nav.js?v=20260626a"></script>
     <script src="date-display.js"></script>
     <script src="appointments.js"></script>
+    <script>
+      DashboardNav.mountPage({
+        active: 'appointments',
+        title: 'Appointments',
+        subtitle: 'Chatbot appointment requests — all bots',
+      });
+    </script>
   </body>
 </html>

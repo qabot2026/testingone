@@ -2,13 +2,183 @@
   'use strict';
 
   var auth = window.DashboardDeskAuth;
+  var nav = window.DashboardNav;
   if (!auth) return;
 
   var pageState = {
     answeredPage: 1,
     unansweredPage: 1,
     pageSize: 50,
+    activeView: 'answered',
+    faqs: [],
+    lastAnalytics: null,
+    faqToastTimer: null,
   };
+
+  function normalizeFaqText(text) {
+    return String(text || '')
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, ' ')
+      .replace(/[^\w\s?]/g, '');
+  }
+
+  function faqTokens(text) {
+    return normalizeFaqText(text)
+      .split(/\s+/)
+      .filter(function (w) {
+        return w.length > 1;
+      });
+  }
+
+  function faqScoreMatch(userText, faq) {
+    var userNorm = normalizeFaqText(userText);
+    var qNorm = normalizeFaqText(faq && faq.question);
+    if (!userNorm || !qNorm) return 0;
+    if (userNorm === qNorm) return 100;
+    if (userNorm.length >= 8 && (userNorm.indexOf(qNorm) >= 0 || qNorm.indexOf(userNorm) >= 0)) {
+      return 90;
+    }
+    var userTokens = faqTokens(userText);
+    var qTokens = faqTokens(faq.question);
+    if (!userTokens.length || !qTokens.length) return 0;
+    var overlap = 0;
+    qTokens.forEach(function (t) {
+      if (userTokens.indexOf(t) >= 0) overlap += 1;
+    });
+    var ratio = overlap / Math.max(qTokens.length, 1);
+    if (ratio >= 0.75) return 70 + Math.round(ratio * 20);
+    if (ratio >= 0.5) return 50 + Math.round(ratio * 20);
+    return 0;
+  }
+
+  function queryHasFaq(query) {
+    var items = pageState.faqs || [];
+    for (var i = 0; i < items.length; i++) {
+      if (faqScoreMatch(query, items[i]) >= 90) return true;
+    }
+    return false;
+  }
+
+  function loadFaqs() {
+    return fetch(auth.apiBase() + '/api/faqs/' + encodeURIComponent(botId()), {
+      credentials: 'same-origin',
+      headers: auth.authHeaders(),
+    })
+      .then(function (res) {
+        return res.json().then(function (body) {
+          return { ok: res.ok, body: body };
+        });
+      })
+      .then(function (result) {
+        if (!result.ok || !result.body.ok) {
+          pageState.faqs = [];
+          return;
+        }
+        pageState.faqs = result.body.items || [];
+      })
+      .catch(function () {
+        pageState.faqs = [];
+      });
+  }
+
+  function refreshUnansweredTable() {
+    if (!pageState.lastAnalytics) return;
+    var unansweredBody = $('qa-unanswered-body');
+    if (!unansweredBody) return;
+    unansweredBody.innerHTML = renderUnansweredRows(
+      pageState.lastAnalytics.unansweredQueries || [],
+      'No unanswered queries in this period.'
+    );
+  }
+
+  function showToast(message, ms) {
+    var el = $('qa-toast');
+    if (!el) return;
+    el.textContent = message || '';
+    el.hidden = false;
+    if (pageState.faqToastTimer) {
+      window.clearTimeout(pageState.faqToastTimer);
+    }
+    pageState.faqToastTimer = window.setTimeout(function () {
+      el.hidden = true;
+      pageState.faqToastTimer = null;
+    }, ms || 2000);
+  }
+
+  function botId() {
+    return nav && typeof nav.getBid === 'function' ? nav.getBid() : '10001';
+  }
+
+  function faqPageUrl() {
+    if (nav && typeof nav.navHref === 'function') {
+      return nav.navHref('faqs', botId());
+    }
+    return '/dashboard/faqs.html?bid=' + encodeURIComponent(botId());
+  }
+
+  function setFaqStatus(msg, isError) {
+    var el = $('qa-faq-status');
+    if (!el) return;
+    el.textContent = msg || '';
+    el.hidden = !msg;
+    el.className = 'qa-faq-status' + (isError ? ' qa-faq-status--error' : ' qa-faq-status--ok');
+  }
+
+  function hideFaqPanel() {
+    var panel = $('qa-faq-panel');
+    if (panel) panel.hidden = true;
+    var q = $('qa-faq-question');
+    var a = $('qa-faq-answer');
+    if (q) q.value = '';
+    if (a) a.value = '';
+    setFaqStatus('');
+  }
+
+  function showFaqPanel(question) {
+    var panel = $('qa-faq-panel');
+    var q = $('qa-faq-question');
+    var a = $('qa-faq-answer');
+    if (!panel || !q || !a) return;
+    q.value = String(question || '');
+    a.value = '';
+    setFaqStatus('');
+    panel.hidden = false;
+    a.focus();
+    panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  function setActiveView(view) {
+    view = view === 'unanswered' ? 'unanswered' : 'answered';
+    pageState.activeView = view;
+
+    document.querySelectorAll('.qa-view-btn').forEach(function (btn) {
+      var on = btn.getAttribute('data-qa-view') === view;
+      btn.classList.toggle('is-active', on);
+      btn.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+
+    var answeredView = $('qa-view-answered');
+    var unansweredView = $('qa-view-unanswered');
+    var hintUnanswered = $('qa-hint-unanswered');
+    var queriesPanel = document.querySelector('.qa-queries-panel');
+    if (answeredView) answeredView.hidden = view !== 'answered';
+    if (unansweredView) unansweredView.hidden = view !== 'unanswered';
+    if (hintUnanswered) hintUnanswered.hidden = view !== 'unanswered';
+    if (queriesPanel) {
+      queriesPanel.classList.toggle('qa-queries-panel--answered', view === 'answered');
+      queriesPanel.classList.toggle('qa-queries-panel--unanswered', view === 'unanswered');
+    }
+    if (view === 'answered') hideFaqPanel();
+  }
+
+  function wireViewTabs() {
+    document.querySelectorAll('.qa-view-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        setActiveView(btn.getAttribute('data-qa-view'));
+      });
+    });
+  }
 
   function $(id) {
     return document.getElementById(id);
@@ -39,7 +209,7 @@
     return { full: full, display: full.slice(0, QUERY_DISPLAY_MAX) + '...' };
   }
 
-  function queryCellHtml(text) {
+  function queryCellHtml(text, suffixHtml) {
     var q = formatQueryForDisplay(text);
     var title =
       q.full.length > QUERY_DISPLAY_MAX
@@ -52,6 +222,7 @@
       title +
       '>' +
       escapeHtml(q.display) +
+      (suffixHtml || '') +
       '</td>'
     );
   }
@@ -98,24 +269,34 @@
     return y + '-' + m + '-' + day;
   }
 
-  function formatDmy(d) {
-    var dd = window.QADateDisplay;
-    if (dd && dd.isoYmdToDdMmYyyy) return dd.isoYmdToDdMmYyyy(isoDate(d));
-    var parts = isoDate(d).split('-');
-    return parts[2] + '/' + parts[1] + '/' + parts[0];
+  function todayIso() {
+    return isoDate(new Date());
   }
 
-  function parseInputDate(raw) {
-    var dd = window.QADateDisplay;
-    if (dd && dd.parseToIsoYmd) return dd.parseToIsoYmd(raw);
-    return String(raw || '').trim();
+  function syncCustomDateLimits() {
+    var today = todayIso();
+    var fromEl = $('qa-from');
+    var toEl = $('qa-to');
+    if (fromEl) {
+      fromEl.max = today;
+      if (fromEl.value && fromEl.value > today) fromEl.value = today;
+    }
+    if (toEl) {
+      toEl.max = today;
+      if (toEl.value && toEl.value > today) toEl.value = today;
+    }
+    if (fromEl && toEl && fromEl.value && toEl.value && fromEl.value > toEl.value) {
+      toEl.value = fromEl.value;
+    }
+    if (fromEl && toEl && fromEl.value) toEl.min = fromEl.value;
+    if (fromEl && toEl && toEl.value) fromEl.max = toEl.value < today ? toEl.value : today;
   }
 
   function defaultCustomDates() {
     var to = new Date();
     var from = new Date();
     from.setDate(from.getDate() - 29);
-    return { from: formatDmy(from), to: formatDmy(to) };
+    return { from: isoDate(from), to: isoDate(to) };
   }
 
   function toggleCustomRange() {
@@ -130,7 +311,19 @@
       var defaults = defaultCustomDates();
       if (fromEl && !fromEl.value) fromEl.value = defaults.from;
       if (toEl && !toEl.value) toEl.value = defaults.to;
+      syncCustomDateLimits();
     }
+  }
+
+  function onCustomDateChange() {
+    if (!$('qa-period') || $('qa-period').value !== 'custom') return;
+    syncCustomDateLimits();
+    var from = $('qa-from') ? parseInputDate($('qa-from').value) : '';
+    var to = $('qa-to') ? parseInputDate($('qa-to').value) : '';
+    if (!from || !to) return;
+    pageState.answeredPage = 1;
+    pageState.unansweredPage = 1;
+    load();
   }
 
   function getPageSize() {
@@ -141,9 +334,18 @@
     return n;
   }
 
+  function parseInputDate(raw) {
+    var dd = window.QADateDisplay;
+    if (dd && dd.parseToIsoYmd) return dd.parseToIsoYmd(raw);
+    return String(raw || '').trim();
+  }
+
   function buildQueryUrl() {
     var period = $('qa-period') ? $('qa-period').value : '30';
-    var base = auth.apiBase() + '/api/analytics/queries?';
+    var base =
+      auth.apiBase() +
+      '/api/analytics/queries?botId=' +
+      encodeURIComponent(botId());
     var pageQs =
       '&limit=' +
       encodeURIComponent(getPageSize()) +
@@ -160,21 +362,25 @@
       var from = parseInputDate(fromRaw);
       var to = parseInputDate(toRaw);
       if (!from || !to) {
-        return { error: 'Use DD/MM/YYYY for From and To dates.' };
+        return { error: 'Choose valid From and To dates.' };
       }
       if (from > to) {
         return { error: 'From date must be on or before To date.' };
       }
+      var today = todayIso();
+      if (from > today || to > today) {
+        return { error: 'Dates cannot be in the future.' };
+      }
       return (
         base +
-        'from=' +
+        '&from=' +
         encodeURIComponent(from) +
         '&to=' +
         encodeURIComponent(to) +
         pageQs
       );
     }
-    return base + 'days=' + encodeURIComponent(period) + pageQs;
+    return base + '&days=' + encodeURIComponent(period) + pageQs;
   }
 
   function syncPager(prefix, meta, rowLabel) {
@@ -247,19 +453,7 @@
     }
   }
 
-  function formatPeriodLabel(period) {
-    if (!period) return '';
-    var dd = window.QADateDisplay;
-    var fromRaw = period.from ? String(period.from).slice(0, 10) : '';
-    var toRaw = period.to ? String(period.to).slice(0, 10) : '';
-    if (!fromRaw || !toRaw) return '';
-    if (dd && dd.formatDateDisplay) {
-      return dd.formatDateDisplay(fromRaw) + ' → ' + dd.formatDateDisplay(toRaw);
-    }
-    return fromRaw + ' → ' + toRaw;
-  }
-
-  function renderQueryRows(list, emptyLabel) {
+  function renderAnsweredRows(list, emptyLabel) {
     if (!list.length) {
       return (
         '<tr><td colspan="4" class="qa-loading">' +
@@ -269,9 +463,16 @@
     }
     return list
       .map(function (q) {
+        var popular = q.isMostPopular === true;
+        var rowClass = popular ? ' class="qa-row--most-popular"' : '';
+        var badge = popular
+          ? ' <span class="qa-most-popular-badge">Most popular</span>'
+          : '';
         return (
-          '<tr>' +
-          queryCellHtml(q.query) +
+          '<tr' +
+          rowClass +
+          '>' +
+          queryCellHtml(q.query, badge) +
           '<td class="num qa-times-cell"><strong>' +
           (q.times || 0) +
           '</strong></td>' +
@@ -286,6 +487,126 @@
       .join('');
   }
 
+  function renderUnansweredRows(list, emptyLabel) {
+    if (!list.length) {
+      return (
+        '<tr><td colspan="5" class="qa-loading">' +
+        escapeHtml(emptyLabel) +
+        '</td></tr>'
+      );
+    }
+    return list
+      .map(function (q) {
+        var fullQuery = String(q.query || '');
+        var actionCell = queryHasFaq(fullQuery)
+          ? '<span class="dash-muted">—</span>'
+          : '<button type="button" class="dash-btn dash-btn--ghost qa-add-faq-btn" data-faq-query="' +
+            escapeAttr(fullQuery) +
+            '">Add to FAQs</button>';
+        return (
+          '<tr>' +
+          queryCellHtml(q.query) +
+          '<td class="num qa-times-cell"><strong>' +
+          (q.times || 0) +
+          '</strong></td>' +
+          '<td class="num qa-sessions-cell">' +
+          (q.sessions || 0) +
+          '</td>' +
+          '<td class="num qa-date-cell">' +
+          escapeHtml(formatWhen(q.lastAt)) +
+          '</td>' +
+          '<td class="qa-action-cell">' +
+          actionCell +
+          '</td></tr>'
+        );
+      })
+      .join('');
+  }
+
+  function wireUnansweredActions() {
+    var body = $('qa-unanswered-body');
+    if (!body || body.getAttribute('data-faq-bound') === '1') return;
+    body.setAttribute('data-faq-bound', '1');
+    body.addEventListener('click', function (ev) {
+      var btn = ev.target && ev.target.closest ? ev.target.closest('.qa-add-faq-btn') : null;
+      if (!btn) return;
+      ev.preventDefault();
+      var query = btn.getAttribute('data-faq-query') || '';
+      setActiveView('unanswered');
+      showFaqPanel(query);
+    });
+  }
+
+  function saveFaqFromPanel(ev) {
+    if (ev && ev.preventDefault) ev.preventDefault();
+    var questionEl = $('qa-faq-question');
+    var answerEl = $('qa-faq-answer');
+    var saveBtn = $('qa-faq-save-btn');
+    var question = questionEl ? questionEl.value.trim() : '';
+    var answer = answerEl ? answerEl.value.trim() : '';
+    if (!question || !answer) {
+      setFaqStatus('Question and answer are required.', true);
+      return;
+    }
+    if (saveBtn) saveBtn.disabled = true;
+    setFaqStatus('Saving FAQ…', false);
+    fetch(auth.apiBase() + '/api/faqs/' + encodeURIComponent(botId()), {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: auth.authHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({
+        question: question,
+        answer: answer,
+        published: true,
+      }),
+    })
+      .then(function (res) {
+        return res.json().then(function (body) {
+          return { ok: res.ok, body: body };
+        });
+      })
+      .then(function (result) {
+        if (!result.ok || !result.body.ok) {
+          throw new Error((result.body && result.body.error) || 'Could not save FAQ');
+        }
+        hideFaqPanel();
+        if (result.body.item) {
+          pageState.faqs = (pageState.faqs || []).filter(function (item) {
+            return item.id !== result.body.item.id;
+          });
+          pageState.faqs.push(result.body.item);
+        } else {
+          return loadFaqs();
+        }
+      })
+      .then(function () {
+        refreshUnansweredTable();
+        showToast('FAQ added.', 2000);
+      })
+      .catch(function (err) {
+        setFaqStatus((err && err.message) || 'Could not save FAQ', true);
+      })
+      .finally(function () {
+        if (saveBtn) saveBtn.disabled = false;
+      });
+  }
+
+  function setSummaryCard(id, value) {
+    var el = $(id);
+    if (el) el.textContent = value != null ? value : '—';
+  }
+
+  function showTableMessage(msg) {
+    var answeredBody = $('qa-answered-body');
+    var unansweredBody = $('qa-unanswered-body');
+    var safe = escapeHtml(msg || 'Could not load queries.');
+    if (answeredBody) {
+      answeredBody.innerHTML = '<tr><td colspan="4" class="qa-loading">' + safe + '</td></tr>';
+    }
+    if (unansweredBody) {
+      unansweredBody.innerHTML = '<tr><td colspan="5" class="qa-loading">' + safe + '</td></tr>';
+    }
+  }
   function renderTables(data) {
     var answered = (data && data.answeredQueries) || [];
     var unanswered = (data && data.unansweredQueries) || [];
@@ -293,13 +614,13 @@
     var answeredBody = $('qa-answered-body');
     var unansweredBody = $('qa-unanswered-body');
     if (answeredBody) {
-      answeredBody.innerHTML = renderQueryRows(
+      answeredBody.innerHTML = renderAnsweredRows(
         answered,
         'No answered queries in this period.'
       );
     }
     if (unansweredBody) {
-      unansweredBody.innerHTML = renderQueryRows(
+      unansweredBody.innerHTML = renderUnansweredRows(
         unanswered,
         'No unanswered queries in this period.'
       );
@@ -319,13 +640,13 @@
   }
 
   function render(data) {
+    pageState.lastAnalytics = data;
     var s = data.summary || {};
-    $('qa-total').textContent = s.totalQueries != null ? s.totalQueries : '—';
-    $('qa-bot').textContent = s.botAnswered != null ? s.botAnswered : '—';
-    $('qa-fallback').textContent = s.fallback != null ? s.fallback : '—';
-    $('qa-handoff').textContent = s.handoff != null ? s.handoff : '—';
-    $('qa-unique').textContent = s.uniqueQueries != null ? s.uniqueQueries : '—';
-    $('qa-period-label').textContent = formatPeriodLabel(data.period);
+    setSummaryCard('qa-total', s.totalQueries != null ? s.totalQueries : '—');
+    setSummaryCard('qa-bot', s.botAnswered != null ? s.botAnswered : '—');
+    setSummaryCard('qa-fallback', s.fallback != null ? s.fallback : '—');
+    setSummaryCard('qa-handoff', s.handoff != null ? s.handoff : '—');
+    setSummaryCard('qa-unique', s.uniqueQueries != null ? s.uniqueQueries : '—');
     renderTables(data);
   }
 
@@ -354,28 +675,26 @@
   }
 
   function load() {
-    if (!auth.hasAuth()) {
-      showUnlock('Enter your viewer secret to load query analytics.');
+    if (!$('qa-answered-body') || !$('qa-unanswered-body')) {
       return;
     }
 
-    var answeredBody = $('qa-answered-body');
-    var unansweredBody = $('qa-unanswered-body');
-    if (answeredBody) {
-      answeredBody.innerHTML = '<tr><td colspan="4" class="qa-loading">Loading…</td></tr>';
+    if (!auth.hasAuth()) {
+      showUnlock('Enter your viewer secret to load query analytics.');
+      showTableMessage('Unlock with your viewer secret to load queries.');
+      return;
     }
-    if (unansweredBody) {
-      unansweredBody.innerHTML = '<tr><td colspan="4" class="qa-loading">Loading…</td></tr>';
-    }
+
+    showTableMessage('Loading…');
 
     var built = buildQueryUrl();
     if (built && built.error) {
-      $('qa-period-label').textContent = built.error;
+      showTableMessage(built.error);
       return;
     }
     if (!built) {
       toggleCustomRange();
-      $('qa-period-label').textContent = 'Choose From and To dates, then Apply.';
+      showTableMessage('Choose From and To dates.');
       return;
     }
     var url = auth.withAuthQuery(built);
@@ -392,13 +711,17 @@
             (res.data && (res.data.message || res.data.error)) ||
             'Secret not accepted.';
           showUnlock(detail + ' Check CONVERSATIONS_SHEET_VIEW_SECRET on Railway.');
+          showTableMessage('Could not load queries. Enter your viewer secret above.');
           return;
         }
         hideUnlock();
-        render(res.data);
+        return loadFaqs().then(function () {
+          render(res.data);
+        });
       })
       .catch(function () {
         showUnlock('Network error — try again.');
+        showTableMessage('Network error — try again.');
       });
   }
 
@@ -427,46 +750,88 @@
     });
   }
 
-  $('qa-refresh').addEventListener('click', function () {
-    load();
-  });
-  $('qa-period').addEventListener('change', function () {
-    toggleCustomRange();
-    pageState.answeredPage = 1;
-    pageState.unansweredPage = 1;
-    if ($('qa-period').value !== 'custom') {
-      load();
+  function wirePage() {
+    if (wirePage._bound) return;
+    wirePage._bound = true;
+
+    if ($('qa-refresh')) {
+      $('qa-refresh').addEventListener('click', function () {
+        load();
+      });
     }
-  });
-  if ($('qa-page-size')) {
-    $('qa-page-size').addEventListener('change', function () {
-      pageState.answeredPage = 1;
-      pageState.unansweredPage = 1;
-      load();
+    if ($('qa-period')) {
+      $('qa-period').addEventListener('change', function () {
+        toggleCustomRange();
+        pageState.answeredPage = 1;
+        pageState.unansweredPage = 1;
+        load();
+      });
+    }
+    if ($('qa-from')) {
+      $('qa-from').addEventListener('change', onCustomDateChange);
+    }
+    if ($('qa-to')) {
+      $('qa-to').addEventListener('change', onCustomDateChange);
+    }
+    if ($('qa-page-size')) {
+      $('qa-page-size').addEventListener('change', function () {
+        pageState.answeredPage = 1;
+        pageState.unansweredPage = 1;
+        load();
+      });
+    }
+    wirePager('qa-answered', function (page) {
+      pageState.answeredPage = page;
     });
-  }
-  if ($('qa-apply-range')) {
-    $('qa-apply-range').addEventListener('click', function () {
-      pageState.answeredPage = 1;
-      pageState.unansweredPage = 1;
-      load();
+    wirePager('qa-unanswered', function (page) {
+      pageState.unansweredPage = page;
     });
+    toggleCustomRange();
+    syncCustomDateLimits();
+    bindQueryCopyHandler();
+    wireViewTabs();
+    wireUnansweredActions();
+    setActiveView('answered');
+    if ($('qa-faq-form')) {
+      $('qa-faq-form').addEventListener('submit', saveFaqFromPanel);
+    }
+    if ($('qa-faq-cancel-btn')) {
+      $('qa-faq-cancel-btn').addEventListener('click', hideFaqPanel);
+    }
+    if ($('qa-unlock-btn')) {
+      $('qa-unlock-btn').addEventListener('click', unlockAndLoad);
+    }
+    if ($('qa-secret')) {
+      $('qa-secret').addEventListener('keydown', function (ev) {
+        if (ev.key === 'Enter') unlockAndLoad();
+      });
+    }
+    load();
   }
-  wirePager('qa-answered', function (page) {
-    pageState.answeredPage = page;
-  });
-  wirePager('qa-unanswered', function (page) {
-    pageState.unansweredPage = page;
-  });
-  toggleCustomRange();
-  bindQueryCopyHandler();
-  if ($('qa-unlock-btn')) {
-    $('qa-unlock-btn').addEventListener('click', unlockAndLoad);
+
+  function init() {
+    if (!nav || typeof nav.mountPage !== 'function') return;
+    var bid = nav.getBid ? nav.getBid() : '10001';
+    var bot =
+      (nav.BOTS || []).find(function (b) {
+        return b.id === bid;
+      }) || (nav.BOTS && nav.BOTS[0]);
+    var subtitle = bot
+      ? bot.name + ' (Bot ID ' + bot.id + ')'
+      : 'Answered and unanswered queries for the selected bot';
+
+    nav
+      .mountPage({
+        active: 'queryanalytics',
+        title: 'Customer Questions',
+        subtitle: subtitle,
+      })
+      .then(function () {
+        wirePage();
+      });
   }
-  if ($('qa-secret')) {
-    $('qa-secret').addEventListener('keydown', function (ev) {
-      if (ev.key === 'Enter') unlockAndLoad();
-    });
+
+  if (nav && typeof nav.whenReady === 'function') {
+    nav.whenReady(init);
   }
-  load();
 })();

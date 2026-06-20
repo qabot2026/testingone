@@ -87,6 +87,10 @@
     '<path d="M3 6h18"/><path d="M8 6V4h8v2"/>' +
     '<path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/>' +
     '<path d="M10 11v6"/><path d="M14 11v6"/></svg>';
+  var ICON_COPY =
+    '<svg class="docs-action-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">' +
+    '<rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>' +
+    '<path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
 
   function escapeHtml(s) {
     return String(s)
@@ -118,6 +122,51 @@
     if (!btn) return;
     btn.classList.toggle('docs-icon-btn--busy', !!busy);
     btn.disabled = !!busy;
+  }
+
+  function copyTextToClipboard(text) {
+    var value = String(text || '').trim();
+    if (!value) return Promise.reject(new Error('Nothing to copy'));
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      return navigator.clipboard.writeText(value);
+    }
+    return new Promise(function (resolve, reject) {
+      try {
+        var ta = document.createElement('textarea');
+        ta.value = value;
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'fixed';
+        ta.style.left = '-9999px';
+        document.body.appendChild(ta);
+        ta.select();
+        var ok = document.execCommand('copy');
+        ta.remove();
+        if (ok) resolve();
+        else reject(new Error('Copy failed'));
+      } catch (err) {
+        reject(err);
+      }
+    });
+  }
+
+  function fetchDocumentLink(object, externalUrl) {
+    var ext = String(externalUrl || '').trim();
+    if (ext) return Promise.resolve(ext);
+    var obj = String(object || '').trim();
+    if (!obj) return Promise.reject(new Error('Missing file'));
+    return fetch(
+      apiBase() + '/api/documents/download-url?object=' + encodeURIComponent(obj),
+      { headers: headers() }
+    )
+      .then(function (r) {
+        return r.json();
+      })
+      .then(function (data) {
+        if (!data.ok || !data.url) {
+          throw new Error(data.message || 'Could not get file link.');
+        }
+        return data.url;
+      });
   }
 
   function showAlert(msg) {
@@ -160,9 +209,154 @@
     return '';
   }
 
-  function setDateInputDisplay(el, isoYmd) {
+  function getDocsDateYmd(el) {
+    if (!el) return '';
+    var stored = String(el.dataset.ymd || '').trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(stored)) return stored;
+    var parsed = parseIndianDateInput(el.value);
+    if (parsed) {
+      el.dataset.ymd = parsed;
+      return parsed;
+    }
+    var raw = String(el.value || '').trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+      el.dataset.ymd = raw;
+      return raw;
+    }
+    return '';
+  }
+
+  function setDocsDateYmd(el, isoYmd) {
     if (!el) return;
-    el.value = isoYmd ? formatIndianDate(isoYmd) : '';
+    var iso = String(isoYmd || '').trim();
+    var wrap = el.closest('.docs-date-field');
+    var native = wrap && wrap.querySelector('.docs-date-native');
+    if (iso && /^\d{4}-\d{2}-\d{2}$/.test(iso)) {
+      el.dataset.ymd = iso;
+      el.value = formatIndianDate(iso);
+      if (native) native.value = iso;
+    } else {
+      el.dataset.ymd = '';
+      el.value = '';
+      if (native) native.value = '';
+    }
+  }
+
+  function normalizeDocsDateInput(el) {
+    if (!el) return;
+    var raw = String(el.value || '').trim();
+    if (!raw) {
+      setDocsDateYmd(el, '');
+      return;
+    }
+    var ymd = parseIndianDateInput(raw);
+    if (!ymd && /^\d{4}-\d{2}-\d{2}$/.test(raw)) ymd = raw;
+    if (ymd) setDocsDateYmd(el, ymd);
+  }
+
+  function bindDocsDatePicker(textEl) {
+    if (!textEl || textEl._docsDatePickerBound) return;
+    textEl._docsDatePickerBound = true;
+    var wrap = textEl.closest('.docs-date-field');
+    if (!wrap) return;
+    var native = wrap.querySelector('.docs-date-native');
+    var icon = wrap.querySelector('.docs-date-cal-ic');
+    if (!native) return;
+
+    function openPicker() {
+      var ymd = getDocsDateYmd(textEl);
+      native.value = ymd || '';
+      if (typeof native.showPicker === 'function') native.showPicker();
+      else native.click();
+    }
+
+    if (icon) {
+      icon.setAttribute('role', 'button');
+      icon.setAttribute('tabindex', '0');
+      icon.setAttribute('aria-label', 'Open calendar');
+      icon.addEventListener('click', openPicker);
+      icon.addEventListener('keydown', function (ev) {
+        if (ev.key === 'Enter' || ev.key === ' ') {
+          ev.preventDefault();
+          openPicker();
+        }
+      });
+    }
+
+    textEl.addEventListener('blur', function () {
+      normalizeDocsDateInput(textEl);
+      onDateInputChange();
+    });
+    textEl.addEventListener('keydown', function (ev) {
+      if (ev.key === 'Enter') {
+        normalizeDocsDateInput(textEl);
+        onDateInputChange();
+      }
+    });
+
+    native.addEventListener('change', function () {
+      setDocsDateYmd(textEl, native.value || '');
+      onDateInputChange();
+    });
+  }
+
+  function setDateInputDisplay(el, isoYmd) {
+    setDocsDateYmd(el, isoYmd);
+  }
+
+  function getDateRangeFromInputs() {
+    var fromEl = document.getElementById('docs-date-from');
+    var toEl = document.getElementById('docs-date-to');
+    var fromIso = fromEl ? getDocsDateYmd(fromEl) : '';
+    var toIso = toEl ? getDocsDateYmd(toEl) : '';
+    if (fromIso && toIso && fromIso > toIso) {
+      var swap = fromIso;
+      fromIso = toIso;
+      toIso = swap;
+      setDocsDateYmd(fromEl, fromIso);
+      setDocsDateYmd(toEl, toIso);
+    }
+    return { fromIso: fromIso, toIso: toIso };
+  }
+
+  function initDefaultDateRange() {
+    var today = todayIsoYmd();
+    setDocsDateYmd(document.getElementById('docs-date-from'), today);
+    setDocsDateYmd(document.getElementById('docs-date-to'), today);
+    state.dateFilterActive = true;
+  }
+
+  /** Previous 5 calendar days before today (today excluded). */
+  function applyLast5DaysRange() {
+    var now = new Date();
+    var fromD = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate() - 5
+    );
+    var toD = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate() - 1
+    );
+    setDocsDateYmd(document.getElementById('docs-date-from'), localIsoYmd(fromD));
+    setDocsDateYmd(document.getElementById('docs-date-to'), localIsoYmd(toD));
+    state.dateFilterActive = true;
+    showAlert('');
+    applyFilter();
+  }
+
+  function applyClearDateRange() {
+    initDefaultDateRange();
+    showAlert('');
+    applyFilter();
+  }
+
+  function onDateInputChange() {
+    state.dateFilterActive = true;
+    normalizeDocsDateInput(document.getElementById('docs-date-from'));
+    normalizeDocsDateInput(document.getElementById('docs-date-to'));
+    applyFilter();
   }
 
   function rowDateIso(r) {
@@ -195,28 +389,6 @@
     return '';
   }
 
-  function getDateRangeFromInputs() {
-    var fromEl = document.getElementById('docs-date-from');
-    var toEl = document.getElementById('docs-date-to');
-    var fromIso = fromEl ? parseIndianDateInput(fromEl.value) : '';
-    var toIso = toEl ? parseIndianDateInput(toEl.value) : '';
-    if (fromIso && toIso && fromIso > toIso) {
-      var swap = fromIso;
-      fromIso = toIso;
-      toIso = swap;
-      setDateInputDisplay(fromEl, fromIso);
-      setDateInputDisplay(toEl, toIso);
-    }
-    return { fromIso: fromIso, toIso: toIso };
-  }
-
-  function initDefaultDateRange() {
-    var today = todayIsoYmd();
-    setDateInputDisplay(document.getElementById('docs-date-from'), today);
-    setDateInputDisplay(document.getElementById('docs-date-to'), today);
-    state.dateFilterActive = true;
-  }
-
   function dateRangeLabel(fromIso, toIso) {
     if (fromIso && toIso) {
       if (fromIso === toIso) return formatIndianDate(fromIso);
@@ -225,18 +397,6 @@
     if (fromIso) return 'from ' + formatIndianDate(fromIso);
     if (toIso) return 'until ' + formatIndianDate(toIso);
     return '';
-  }
-
-  function onDateInputChange() {
-    state.dateFilterActive = true;
-    var fromEl = document.getElementById('docs-date-from');
-    var toEl = document.getElementById('docs-date-to');
-    [fromEl, toEl].forEach(function (el) {
-      if (!el || !String(el.value || '').trim()) return;
-      var iso = parseIndianDateInput(el.value);
-      if (iso) setDateInputDisplay(el, iso);
-    });
-    applyFilter();
   }
 
   function foldersToRows(folders) {
@@ -262,6 +422,7 @@
           storage_folder: f.storage_folder || '',
           tag: file.tag || f.tag || '',
           channel: file.channel || f.channel || '',
+          assistant: file.assistant || f.assistant || '',
           external: !!file.external,
           storage_link: file.storage_link || '',
         });
@@ -298,6 +459,33 @@
     });
   }
 
+  function uploaderKey(r) {
+    var mob = String((r && r.mobile) || '').replace(/\D/g, '');
+    if (mob.length >= 10) {
+      var dial = String((r && r.dial_code) || '').replace(/\D/g, '');
+      if (!dial && mob.length === 10) dial = '91';
+      return 'm:' + (dial || '91') + ':' + mob.slice(-10);
+    }
+    var email = String((r && r.email) || '').trim().toLowerCase();
+    if (email) return 'e:' + email;
+    var sid = String((r && r.session_id) || '').trim();
+    if (sid) return 's:' + sid;
+    var folder = String((r && r.storage_folder) || '').trim();
+    if (folder) {
+      var m = folder.match(/^(.+)__(\d{2})_(\d{2})_(\d{4})_/);
+      return 'f:' + (m ? m[1] : folder);
+    }
+    return 'o:' + String((r && r.gcs_object) || '');
+  }
+
+  function countUniqueUploaders(rows) {
+    var seen = {};
+    (rows || []).forEach(function (r) {
+      seen[uploaderKey(r)] = true;
+    });
+    return Object.keys(seen).length;
+  }
+
   function updateSummary() {
     var folders = {};
     var totalBytes = 0;
@@ -305,6 +493,9 @@
       folders[r.storage_folder] = true;
       totalBytes += r.size_bytes || 0;
     });
+    document.getElementById('docs-count-users').textContent = String(
+      countUniqueUploaders(state.filtered)
+    );
     document.getElementById('docs-count-submissions').textContent = String(
       Object.keys(folders).length
     );
@@ -312,18 +503,6 @@
       state.filtered.length
     );
     document.getElementById('docs-count-size').textContent = formatBytes(totalBytes);
-    var range = getDateRangeFromInputs();
-    var rangeText = dateRangeLabel(range.fromIso, range.toIso);
-    var base =
-      state.filtered.length === state.rows.length
-        ? 'Showing all ' + state.rows.length + ' documents'
-        : 'Showing ' + state.filtered.length + ' of ' + state.rows.length;
-    if (state.dateFilterActive && rangeText) {
-      base += ' · ' + rangeText;
-    } else if (!state.dateFilterActive) {
-      base += ' · all dates';
-    }
-    document.getElementById('docs-showing').textContent = base;
   }
 
   function applyFilter() {
@@ -359,6 +538,8 @@
         ' ' +
         (r.channel || '') +
         ' ' +
+        (r.assistant || '') +
+        ' ' +
         (r.tag || '');
       return hay.toLowerCase().indexOf(q) >= 0;
     });
@@ -371,7 +552,7 @@
 
     if (!state.filtered.length) {
       tbody.innerHTML =
-        '<tr><td colspan="9" class="docs-table__empty">No documents found.</td></tr>';
+        '<tr><td colspan="10" class="docs-table__empty">No documents found.</td></tr>';
       return;
     }
 
@@ -384,6 +565,9 @@
           '<td><span class="docs-file-name">' +
           escapeHtml(r.file_name) +
           '</span></td>' +
+          '<td>' +
+          escapeHtml(r.assistant || '—') +
+          '</td>' +
           '<td>' +
           escapeHtml(r.channel || '—') +
           '</td>' +
@@ -427,6 +611,16 @@
               escapeHtml(r.file_name) +
               '"'
           ) +
+          actionIconBtn(
+            'docs-icon-btn--copy docs-copy',
+            ICON_COPY,
+            'Copy link',
+            'data-object="' +
+              escapeHtml(r.gcs_object) +
+              '" data-external-url="' +
+              escapeHtml(r.external ? r.storage_link || '' : '') +
+              '"'
+          ) +
           (r.external
             ? ''
             : actionIconBtn(
@@ -458,11 +652,40 @@
         downloadFile(btn);
       });
     });
+    tbody.querySelectorAll('.docs-copy').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        copyDocumentLink(btn);
+      });
+    });
     tbody.querySelectorAll('.docs-delete').forEach(function (btn) {
       btn.addEventListener('click', function () {
         deleteDocument(btn);
       });
     });
+  }
+
+  function copyDocumentLink(btn) {
+    var object = btn.getAttribute('data-object');
+    var externalUrl = btn.getAttribute('data-external-url') || '';
+    if (!object) return;
+    setActionBusy(btn, true);
+    fetchDocumentLink(object, externalUrl)
+      .then(function (url) {
+        return copyTextToClipboard(url);
+      })
+      .then(function () {
+        var prev = btn.getAttribute('title') || 'Copy link';
+        btn.setAttribute('title', 'Copied!');
+        setTimeout(function () {
+          btn.setAttribute('title', prev);
+        }, 1500);
+      })
+      .catch(function (err) {
+        alert((err && err.message) || 'Could not copy link.');
+      })
+      .finally(function () {
+        setActionBusy(btn, false);
+      });
   }
 
   function openView(btn) {
@@ -595,37 +818,10 @@
       });
   }
 
-  function updateStorageMeta(data) {
-    var el = document.getElementById('docs-storage-meta');
-    if (!el || !data || !data.ok) return;
-    var prefix = String(data.scan_prefix || 'uploads').trim() || 'uploads';
-    var bucket = String(data.bucket || '').trim();
-    var fetched = data.fetched_at
-      ? new Date(data.fetched_at).toLocaleString('en-GB', {
-          hour: '2-digit',
-          minute: '2-digit',
-          second: '2-digit',
-          hour12: true,
-        })
-      : '';
-    var extra =
-      data.total_folders_in_bucket > data.total_folders
-        ? ' · showing newest ' + data.total_folders + ' of ' + data.total_folders_in_bucket
-        : '';
-    el.textContent =
-      (bucket ? 'Bucket: ' + bucket + ' · ' : '') +
-      'Path: ' +
-      prefix +
-      '/…' +
-      (fetched ? ' · Refreshed ' + fetched : '') +
-      extra;
-    el.hidden = false;
-  }
-
   function load() {
     showAlert('');
     document.getElementById('docs-tbody').innerHTML =
-      '<tr><td colspan="9" class="docs-table__empty">Loading…</td></tr>';
+      '<tr><td colspan="10" class="docs-table__empty">Loading…</td></tr>';
     fetch(apiBase() + '/api/documents/catalog?limit=500', {
       headers: headers(),
       cache: 'no-store',
@@ -644,10 +840,9 @@
             showAlert(data.message || 'Could not load documents.');
           }
           document.getElementById('docs-tbody').innerHTML =
-            '<tr><td colspan="9" class="docs-table__empty">—</td></tr>';
+            '<tr><td colspan="10" class="docs-table__empty">—</td></tr>';
           return;
         }
-        updateStorageMeta(data);
         state.rows = foldersToRows(data.folders || []);
         if (data.gcs_list_error) {
           showAlert(
@@ -659,7 +854,7 @@
           );
         } else if (!state.rows.length) {
           showAlert(
-            'No documents yet. Upload from production chat (not /qa), wait for bot success, then Refresh.'
+            'No documents yet. Upload from production chat (not /es-test), wait for bot success, then Refresh.'
           );
         } else if (state.dateFilterActive) {
           var range = getDateRangeFromInputs();
@@ -674,7 +869,7 @@
             showAlert(
               'No documents for ' +
                 dateRangeLabel(range.fromIso, range.toIso) +
-                '. Change the date range or click All dates.'
+                '. Change the date range or use Last 5 days.'
             );
           }
         }
@@ -683,25 +878,16 @@
       .catch(function () {
         showAlert('Network error. Check desk token and server.');
         document.getElementById('docs-tbody').innerHTML =
-          '<tr><td colspan="8" class="docs-table__empty">—</td></tr>';
+          '<tr><td colspan="10" class="docs-table__empty">—</td></tr>';
       });
   }
 
   document.getElementById('docs-refresh').addEventListener('click', load);
   document.getElementById('docs-search').addEventListener('input', applyFilter);
-  document.getElementById('docs-date-from').addEventListener('change', onDateInputChange);
-  document.getElementById('docs-date-to').addEventListener('change', onDateInputChange);
-  document.getElementById('docs-date-from').addEventListener('blur', onDateInputChange);
-  document.getElementById('docs-date-to').addEventListener('blur', onDateInputChange);
-  document.getElementById('docs-date-all').addEventListener('click', function () {
-    var fromEl = document.getElementById('docs-date-from');
-    var toEl = document.getElementById('docs-date-to');
-    if (fromEl) fromEl.value = '';
-    if (toEl) toEl.value = '';
-    state.dateFilterActive = false;
-    showAlert('');
-    applyFilter();
-  });
+  document.getElementById('docs-date-last5').addEventListener('click', applyLast5DaysRange);
+  document.getElementById('docs-date-clear').addEventListener('click', applyClearDateRange);
+  bindDocsDatePicker(document.getElementById('docs-date-from'));
+  bindDocsDatePicker(document.getElementById('docs-date-to'));
   initDefaultDateRange();
   load();
 })();

@@ -5,26 +5,19 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Customer documents</title>
     <link rel="stylesheet" href="dashboard.css" />
-    <link rel="stylesheet" href="documents.css" />
+    <link rel="stylesheet" href="documents.css?v=20260615i" />
   </head>
   <body>
-    <div class="dash-app docs-app">
-      <header class="dash-header">
-        <div>
-          <h1>Customer documents</h1>
-          <p class="dash-muted">Files from chatbot forms and the 📎 attach button (saved in cloud storage)</p>
-          <p class="dash-muted docs-storage-meta" id="docs-storage-meta" hidden></p>
-        </div>
-        <nav class="dash-nav">
-          <a href="index.html" class="dash-btn dash-btn--ghost">Dashboard</a>
-          <a href="/uc-conversations" class="dash-btn dash-btn--ghost">Conversation leads</a>
-          <a href="query-analytics.html" class="dash-btn dash-btn--ghost">Query analytics</a>
-          <a href="../live-agent/" class="dash-btn dash-btn--ghost">Service desk</a>
-          <button type="button" id="docs-refresh" class="dash-btn dash-btn--primary">Refresh</button>
-        </nav>
-      </header>
+    <div class="dash-app docs-app dash-page-content" style="display:none">
+      <div class="docs-toolbar-row" style="display:flex;justify-content:flex-end;margin-bottom:0.75rem">
+        <button type="button" id="docs-refresh" class="dash-btn dash-btn--primary">Refresh</button>
+      </div>
 
       <section class="dash-grid docs-summary" aria-label="Summary">
+        <div class="dash-card">
+          <div class="dash-card__value" id="docs-count-users">—</div>
+          <div class="dash-card__label">Unique uploaders</div>
+        </div>
         <div class="dash-card">
           <div class="dash-card__value" id="docs-count-submissions">—</div>
           <div class="dash-card__label">Submissions</div>
@@ -54,33 +47,49 @@
           <div class="docs-date-range" aria-label="Date range">
             <label class="docs-date-range__field">
               <span class="docs-date-range__label">From</span>
-              <input
-                type="text"
-                id="docs-date-from"
-                class="docs-date-input"
-                placeholder="DD/MM/YYYY"
-                inputmode="numeric"
-                autocomplete="off"
-                title="Indian date format: DD/MM/YYYY"
-              />
+              <div class="docs-date-field">
+                <svg class="docs-date-cal-ic" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+                  <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                  <path d="M16 2v4M8 2v4M3 10h18" />
+                </svg>
+                <input
+                  type="text"
+                  id="docs-date-from"
+                  class="docs-date-text"
+                  placeholder="DD/MM/YYYY"
+                  inputmode="numeric"
+                  autocomplete="off"
+                  title="Pick a date or type DD/MM/YYYY"
+                />
+                <input type="date" class="docs-date-native" tabindex="-1" aria-hidden="true" />
+              </div>
             </label>
             <label class="docs-date-range__field">
               <span class="docs-date-range__label">To</span>
-              <input
-                type="text"
-                id="docs-date-to"
-                class="docs-date-input"
-                placeholder="DD/MM/YYYY"
-                inputmode="numeric"
-                autocomplete="off"
-                title="Indian date format: DD/MM/YYYY"
-              />
+              <div class="docs-date-field">
+                <svg class="docs-date-cal-ic" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+                  <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                  <path d="M16 2v4M8 2v4M3 10h18" />
+                </svg>
+                <input
+                  type="text"
+                  id="docs-date-to"
+                  class="docs-date-text"
+                  placeholder="DD/MM/YYYY"
+                  inputmode="numeric"
+                  autocomplete="off"
+                  title="Pick a date or type DD/MM/YYYY"
+                />
+                <input type="date" class="docs-date-native" tabindex="-1" aria-hidden="true" />
+              </div>
             </label>
-            <button type="button" id="docs-date-all" class="dash-btn dash-btn--ghost docs-date-all">
-              All dates
+            <button type="button" id="docs-date-last5" class="dash-btn dash-btn--ghost docs-date-preset">
+              Last 5 days
+            </button>
+            <button type="button" id="docs-date-clear" class="dash-btn dash-btn--ghost docs-date-preset">
+              Clear
             </button>
           </div>
-          <span class="docs-showing" id="docs-showing"></span>
         </div>
 
         <div id="docs-alert" class="docs-alert" hidden></div>
@@ -90,6 +99,7 @@
             <thead>
               <tr>
                 <th scope="col">Document</th>
+                <th scope="col">Assistant</th>
                 <th scope="col">Channel</th>
                 <th scope="col">Tag</th>
                 <th scope="col">Name</th>
@@ -102,7 +112,7 @@
             </thead>
             <tbody id="docs-tbody">
               <tr>
-                <td colspan="9" class="docs-table__empty">Loading…</td>
+                <td colspan="10" class="docs-table__empty">Loading…</td>
               </tr>
             </tbody>
           </table>
@@ -110,7 +120,15 @@
       </section>
     </div>
     <script src="desk-auth.js"></script>
+    <script src="dashboard-nav.js?v=20260626a"></script>
     <script src="date-display.js"></script>
     <script src="documents.js"></script>
+    <script>
+      DashboardNav.mountPage({
+        active: 'documents',
+        title: 'Customer uploads',
+        subtitle: 'Files sent via chat or forms · all bots',
+      });
+    </script>
   </body>
 </html>

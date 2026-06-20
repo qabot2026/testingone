@@ -3,24 +3,17 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Query analytics</title>
+    <title>Customer questions</title>
     <link rel="stylesheet" href="dashboard.css" />
-    <link rel="stylesheet" href="query-analytics.css" />
+    <link rel="stylesheet" href="dashboard-nav.css?v=20260626a" />
+    <link rel="stylesheet" href="query-analytics.css?v=20260620f" />
   </head>
   <body>
+    <div class="dash-page-content" style="display:none">
     <div class="dash-app qa-app">
-      <header class="dash-header">
-        <div>
-          <h1>Query analytics</h1>
-          <p class="dash-muted">What visitors asked, how often, and whether the bot answered or fell back</p>
-        </div>
-        <nav class="dash-nav">
-          <a href="index.html" class="dash-btn dash-btn--ghost">Dashboard</a>
-          <a href="/uc-conversations" class="dash-btn dash-btn--ghost">Conversation leads</a>
-          <a href="documents.html" class="dash-btn dash-btn--ghost">Documents</a>
-          <button type="button" id="qa-refresh" class="dash-btn dash-btn--primary">Refresh</button>
-        </nav>
-      </header>
+      <div class="qa-toolbar-row" style="display:flex;justify-content:flex-end;margin-bottom:0.75rem">
+        <button type="button" id="qa-refresh" class="dash-btn dash-btn--primary">Refresh</button>
+      </div>
 
       <section id="qa-unlock" class="qa-unlock hidden" aria-label="Unlock query analytics">
         <h2>Viewer secret required</h2>
@@ -45,7 +38,7 @@
         <label>
           Time period
           <select id="qa-period">
-            <option value="1">Today (24h)</option>
+            <option value="1">Today</option>
             <option value="7">Last 7 days</option>
             <option value="30" selected>Last 30 days</option>
             <option value="90">Last 90 days</option>
@@ -56,13 +49,12 @@
         <div id="qa-custom-range" class="qa-custom-range hidden" aria-label="Custom date range">
           <label>
             From
-            <input type="text" id="qa-from" placeholder="DD/MM/YYYY" inputmode="numeric" autocomplete="off" />
+            <input type="date" id="qa-from" max="" />
           </label>
           <label>
             To
-            <input type="text" id="qa-to" placeholder="DD/MM/YYYY" inputmode="numeric" autocomplete="off" />
+            <input type="date" id="qa-to" max="" />
           </label>
-          <button type="button" id="qa-apply-range" class="dash-btn dash-btn--ghost">Apply</button>
         </div>
         <label>
           Rows per table
@@ -73,37 +65,70 @@
             <option value="300">300</option>
           </select>
         </label>
-        <p id="qa-period-label" class="dash-muted qa-period-label"></p>
       </section>
 
       <section class="dash-grid qa-summary" aria-label="Summary">
-        <div class="dash-card">
+        <div class="dash-card qa-card--total">
+          <div class="qa-card__emoji" aria-hidden="true">🔍</div>
           <div class="dash-card__value" id="qa-total">—</div>
           <div class="dash-card__label">Total queries</div>
         </div>
         <div class="dash-card qa-card--bot">
+          <div class="qa-card__emoji" aria-hidden="true">✅</div>
           <div class="dash-card__value" id="qa-bot">—</div>
           <div class="dash-card__label">Bot answered</div>
         </div>
         <div class="dash-card qa-card--fallback">
+          <div class="qa-card__emoji" aria-hidden="true">⚠️</div>
           <div class="dash-card__value" id="qa-fallback">—</div>
           <div class="dash-card__label">Fallback</div>
         </div>
         <div class="dash-card qa-card--handoff">
+          <div class="qa-card__emoji" aria-hidden="true">👨‍💼</div>
           <div class="dash-card__value" id="qa-handoff">—</div>
           <div class="dash-card__label">Human agent</div>
         </div>
-        <div class="dash-card">
+        <div class="dash-card qa-card--unique">
+          <div class="qa-card__emoji" aria-hidden="true">❓</div>
           <div class="dash-card__value" id="qa-unique">—</div>
           <div class="dash-card__label">Unique questions</div>
         </div>
       </section>
 
       <section class="qa-panel qa-queries-panel">
-        <div class="qa-tables-row">
+        <p class="qa-toast" id="qa-toast" hidden role="status" aria-live="polite"></p>
+        <div class="qa-queries-head">
+          <div class="qa-view-toggle" role="tablist" aria-label="Query tables">
+            <button
+              type="button"
+              class="qa-view-btn is-active"
+              data-qa-view="answered"
+              role="tab"
+              aria-selected="true"
+              aria-controls="qa-view-answered"
+              id="qa-tab-answered"
+            >
+              Answered queries
+            </button>
+            <button
+              type="button"
+              class="qa-view-btn"
+              data-qa-view="unanswered"
+              role="tab"
+              aria-selected="false"
+              aria-controls="qa-view-unanswered"
+              id="qa-tab-unanswered"
+            >
+              Unanswered queries
+            </button>
+          </div>
+          <p class="dash-muted qa-hint qa-hint--unanswered" id="qa-hint-unanswered" hidden>
+            Fallback only — bot did not understand. Add answers to FAQs for next time.
+          </p>
+        </div>
+
+        <div id="qa-view-answered" class="qa-table-view" role="tabpanel" aria-labelledby="qa-tab-answered">
           <div class="qa-table-panel qa-table-panel--answered">
-            <h2>Answered queries</h2>
-            <p class="dash-muted qa-hint">Live chats where Dialogflow understood (not fallback)</p>
             <div class="qa-table-wrap">
               <table class="qa-table">
                 <colgroup>
@@ -136,9 +161,29 @@
               <span class="qa-pager-hint" id="qa-answered-hint"></span>
             </footer>
           </div>
+        </div>
+
+        <div id="qa-view-unanswered" class="qa-table-view" role="tabpanel" aria-labelledby="qa-tab-unanswered" hidden>
+          <section id="qa-faq-panel" class="qa-faq-panel" hidden aria-label="Add FAQ from query">
+            <h3>Add to FAQs</h3>
+            <form id="qa-faq-form" class="qa-faq-form">
+              <label>
+                Question
+                <textarea id="qa-faq-question" rows="2" readonly></textarea>
+              </label>
+              <label>
+                Answer
+                <textarea id="qa-faq-answer" rows="4" required placeholder="Type the answer customers should see in chat…"></textarea>
+              </label>
+              <div class="qa-faq-form__actions">
+                <button type="submit" class="dash-btn dash-btn--primary" id="qa-faq-save-btn">Add FAQ</button>
+                <button type="button" class="dash-btn dash-btn--ghost" id="qa-faq-cancel-btn">Cancel</button>
+              </div>
+              <p class="qa-faq-status" id="qa-faq-status" hidden></p>
+            </form>
+          </section>
+
           <div class="qa-table-panel qa-table-panel--unanswered">
-            <h2>Unanswered queries</h2>
-            <p class="dash-muted qa-hint">Fallback only — bot did not understand</p>
             <div class="qa-table-wrap">
               <table class="qa-table">
                 <colgroup>
@@ -146,6 +191,7 @@
                   <col class="qa-col-times" />
                   <col class="qa-col-sessions" />
                   <col class="qa-col-date" />
+                  <col class="qa-col-action" />
                 </colgroup>
                 <thead>
                   <tr>
@@ -153,10 +199,11 @@
                     <th class="qa-col-times">Times</th>
                     <th class="qa-col-sessions">Sessions</th>
                     <th class="qa-col-date">Last asked</th>
+                    <th class="qa-col-action">Action</th>
                   </tr>
                 </thead>
                 <tbody id="qa-unanswered-body">
-                  <tr><td colspan="4" class="qa-loading">Loading…</td></tr>
+                  <tr><td colspan="5" class="qa-loading">Loading…</td></tr>
                 </tbody>
               </table>
             </div>
@@ -174,8 +221,10 @@
         </div>
       </section>
     </div>
+    </div>
     <script src="desk-auth.js"></script>
+    <script src="dashboard-nav.js?v=20260626a"></script>
     <script src="date-display.js"></script>
-    <script src="query-analytics.js"></script>
+    <script src="query-analytics.js?v=20260625h"></script>
   </body>
 </html>
