@@ -54,7 +54,7 @@ export function readLiveAgentSessionFromReq_(req) {
         trim_(req.headers["x-live-agent-email"]) ||
         trim_(req.headers["x-live-agent-name"]) ||
         trim_(process.env.LIVE_AGENT_DEFAULT_AGENT_NAME) ||
-        "agent@example.com"
+        "agent"
     ).toLowerCase();
     return { agentId };
 }
