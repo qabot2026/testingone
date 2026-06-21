@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>Bot settings — 10001 Receptionist</title>
+  <link rel="stylesheet" href="/bot-settings/bot-settings.css" />
+</head>
+<body data-page="project">
+  <div id="app"></div>
+  <script>window.BOT_ID = '10001';</script>
+  <script src="/bot-configs/bootstrap.js"></script>
+  <script src="/bot-configs/load-chain.js"></script>
+  <script>
+    ESLoadScriptChain([
+      '/company.config.js',
+      '/dashboard/desk-auth.js',
+      '/dashboard/dashboard-nav.js?v=20260613b',
+      '/shared/timezone-options.js?v=20260621b',
+      '/bot-settings/bot-settings.js'
+    ]);
+  </script>
+</body>
+</html>

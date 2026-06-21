@@ -198,14 +198,14 @@ function resolvePageTarget(slug, bid) {
   if (pageKey === 'uc-conversations') {
     return {
       pageKey,
-      redirect: bot ? '/uc-conversations?bid=' + bot.id : '/uc-conversations',
+      redirect: bot ? '/dashboard/uc-conversations?bid=' + bot.id : '/dashboard/uc-conversations',
     };
   }
 
   if (pageKey === 'ua-conversations') {
     return {
       pageKey,
-      redirect: '/ua-conversations',
+      redirect: bot ? '/dashboard/ua-conversations?bid=' + bot.id : '/dashboard/ua-conversations',
     };
   }
 

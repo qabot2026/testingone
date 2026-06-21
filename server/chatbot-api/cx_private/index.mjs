@@ -7839,6 +7839,8 @@ function mountPortedEsRoutes(app) {
     const auditLog = requireRefer("./audit-log.js");
     const formApi = requireRefer("./form-api.js");
     const dashboardBots = requireRefer("./dashboard-bots.js");
+    const botProjectFiles = requireRefer("./bot-project-files.js");
+    const clientPaths = requireRefer("./client-paths.js");
 
     function auditChange(req, action, meta) {
         auditLog.recordAudit(
@@ -7880,6 +7882,7 @@ function mountPortedEsRoutes(app) {
     app.use("/super", express.static(path.resolve(__dirname_api, "..", "cx_public", "super"), {
         maxAge: process.env.NODE_ENV === 'production' ? '1d' : 0,
         etag: true,
+        extensions: ["html"],
     }));
 
     function redirectSuperPage(targetBase, req, res) {
@@ -8430,6 +8433,67 @@ function mountPortedEsRoutes(app) {
             res.status(500).json({ ok: false, error: err.message });
         }
     });
+
+    // --- Bot configs static files & settings/redirect routes ---
+    app.use(
+        '/bot-configs',
+        express.static(clientPaths.botConfigsDir(), {
+            maxAge: process.env.NODE_ENV === 'production' ? '1d' : 0,
+            etag: true,
+        })
+    );
+
+    app.get('/bot-settings/:botId.html', (req, res, next) => {
+        const botId = String(req.params.botId || '').trim();
+        if (!/^\d{5}$/.test(botId)) return next();
+        const project = sitePresetsStore.resolveProject(botId);
+        if (!project) {
+            return res.status(404).type('text/plain').send('Unknown bot ID');
+        }
+        res.type('html').send(botProjectFiles.renderBotSettingsHtml(botId, project.name));
+    });
+
+    /** Dashboard bot-scoped URLs: /bid=10001/uc-conversations or /bid/10001/uc-conversations */
+    function handleDashboardBidRoute(req, res) {
+        const m = req.path.match(/^\/bid[=/](\d{5})\/(.+)$/);
+        if (!m) {
+            return res.status(404).send('Not found');
+        }
+        const bid = m[1];
+        const slug = decodeURIComponent(m[2]).replace(/\/$/, '');
+        if (!dashboardBots.resolveBid(bid)) {
+            return res.status(404).send('Unknown bot ID');
+        }
+        const target = dashboardBots.resolvePageTarget(slug, bid);
+        if (!target || !target.redirect) {
+            return res.status(404).send('Unknown dashboard page');
+        }
+        res.redirect(302, target.redirect);
+    }
+
+    app.get(/^\/bid=(\d{5})\/.+$/, handleDashboardBidRoute);
+    app.get(/^\/bid\/(\d{5})\/.+$/, handleDashboardBidRoute);
+
+    // Fallback static HTML page handler
+    app.use((req, res, next) => {
+        if (req.method !== 'GET' && req.method !== 'HEAD') return next();
+        const page = path.basename(req.path);
+        if (!/\.html$/i.test(page)) return next();
+        const pagePath = path.join(clientPaths.pagesDir(), page);
+        if (fs.existsSync(pagePath)) {
+            return res.sendFile(pagePath);
+        }
+        next();
+    });
+
+    try {
+        const synced = sitePresetsStore.syncAllBotsFromRegistry();
+        if (synced && synced.count) {
+            console.log('[bot-registry] synced display names to', synced.count, 'bot file(s)');
+        }
+    } catch (err) {
+        console.warn('[bot-registry] startup sync failed:', err.message);
+    }
 
     // Start Scheduler
     leadNotificationsRunner.startScheduler();

@@ -6117,5 +6117,17 @@
       }
     })();
   </script>
+  <link rel="stylesheet" href="/dashboard/dashboard-nav.css?v=20260626c" />
+  <script src="/dashboard/dashboard-nav.js?v=20260626c"></script>
+  <script>
+    (function () {
+      var isUa = location.pathname.indexOf('/ua-conversations') >= 0;
+      DashboardNav.mountPage({
+        active: isUa ? 'ua-conversations' : 'uc-conversations',
+        title: isUa ? 'Agent conversations' : 'Insights',
+        subtitle: isUa ? 'Organization-wide · all agents' : 'Bot ID ' + DashboardNav.getBid(),
+      });
+    })();
+  </script>
 </body>
 </html>

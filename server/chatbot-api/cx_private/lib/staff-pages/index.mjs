@@ -172,12 +172,27 @@ export function mountStaffPageRoutes(app, opts) {
     app.get("/uc-conversations", (_req, res) => sendConversationsDashboardPage_(res));
     app.get("/ua-conversations", (_req, res) => sendConversationsDashboardPage_(res));
 
-    app.get("/conversations-sheet", (_req, res) => {
-        res.redirect(301, "/uc-conversations");
+    app.get("/dashboard/uc-conversations", (_req, res) => sendConversationsDashboardPage_(res));
+    app.get("/dashboard/ua-conversations", (_req, res) => sendConversationsDashboardPage_(res));
+
+    app.get("/dashboard/uc-conversation", (req, res) => {
+        const bid = req.query.bid;
+        res.redirect(302, "/dashboard/uc-conversations" + (bid ? "?bid=" + bid : ""));
     });
 
-    app.get("/conversations.html", (_req, res) => {
-        res.redirect(301, "/uc-conversations");
+    app.get("/dashboard/ua-conversation", (req, res) => {
+        const bid = req.query.bid;
+        res.redirect(302, "/dashboard/ua-conversations" + (bid ? "?bid=" + bid : ""));
+    });
+
+    app.get("/conversations-sheet", (req, res) => {
+        const bid = req.query.bid;
+        res.redirect(301, "/dashboard/uc-conversations" + (bid ? "?bid=" + bid : ""));
+    });
+
+    app.get("/conversations.html", (req, res) => {
+        const bid = req.query.bid;
+        res.redirect(301, "/dashboard/uc-conversations" + (bid ? "?bid=" + bid : ""));
     });
 
     app.get("/qa", (_req, res) => {
