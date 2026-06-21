@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "hooks": {
+    "sessionStart": [
+      {
+        "command": "node .cursor/hooks/sync-data-from-cloud.js sessionStart",
+        "timeout": 60
+      }
+    ],
+    "beforeSubmitPrompt": [
+      {
+        "command": "node .cursor/hooks/sync-data-from-cloud.js beforeSubmitPrompt",
+        "timeout": 30
+      }
+    ]
+  }
+}

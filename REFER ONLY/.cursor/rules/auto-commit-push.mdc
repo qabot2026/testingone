@@ -1,0 +1,11 @@
+---
+description: Auto commit and push after code changes in this project
+alwaysApply: true
+---
+
+After making code changes in ES_01, commit and push to GitHub immediately without waiting for the user to ask.
+
+- Stage relevant files only (never credentials.json or secrets)
+- Use clear commit messages
+- Push to origin main
+- Do not ask "should I commit?" — just do it

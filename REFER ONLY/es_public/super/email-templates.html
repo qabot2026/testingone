@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Email Templates</title>
+    <link rel="stylesheet" href="../dashboard/dashboard.css" />
+    <link rel="stylesheet" href="../dashboard/dashboard-nav.css?v=20260621c" />
+    <link rel="stylesheet" href="email-templates.css?v=20260621c" />
+  </head>
+  <body>
+    <div class="dash-page-content email-templates-app" style="display:none">
+      <section class="email-integration" id="email-integration">
+        <p class="email-integration-intro">
+          Outbound email for lead notifications. On <strong>Railway Hobby/Trial/Free</strong>,
+          Gmail SMTP is blocked — use <strong>Resend API</strong> below (HTTPS, works on all plans).
+        </p>
+        <p class="email-integration-status" id="email-integration-status" hidden></p>
+
+        <section class="email-card" id="emailIntegrationCard">
+          <div class="email-card__head">
+            <div>
+              <h3>Email delivery</h3>
+              <p class="email-card__sub">Organization-wide outbound mail</p>
+            </div>
+            <span class="email-badge" id="email-source-badge">—</span>
+          </div>
+
+          <form class="email-form" id="emailIntegrationForm">
+            <label class="email-check">
+              <input type="checkbox" id="email-enabled" />
+              <span>Enable outbound email</span>
+            </label>
+
+            <div class="email-section">
+              <h4>Provider</h4>
+              <div class="email-provider">
+                <label class="email-check email-check--inline">
+                  <input type="radio" name="email-provider" id="email-provider-resend" value="resend" />
+                  <span>Resend API (recommended on Railway)</span>
+                </label>
+                <label class="email-check email-check--inline">
+                  <input type="radio" name="email-provider" id="email-provider-smtp" value="smtp" />
+                  <span>SMTP (Gmail — local dev or Railway Pro)</span>
+                </label>
+              </div>
+            </div>
+
+            <div class="email-section" id="email-resend-section">
+              <h4>Resend</h4>
+              <p class="email-test-hint">
+                Get a free API key at resend.com. From email must be a verified domain in Resend
+                (or use their test sender while testing).
+              </p>
+              <label class="email-field">
+                API key
+                <input id="email-resend-key" type="password" placeholder="re_…" autocomplete="off" />
+                <small id="email-resend-key-hint"></small>
+              </label>
+              <label class="email-field">
+                From name
+                <input id="email-resend-from-name" placeholder="Chatbot Leads" />
+              </label>
+              <label class="email-field">
+                From email
+                <input id="email-resend-from-email" type="email" placeholder="noreply@yourdomain.com" />
+              </label>
+            </div>
+
+            <div class="email-section" id="email-smtp-section">
+              <h4>SMTP server</h4>
+              <div class="email-row email-row--host">
+                <label class="email-field email-field--grow">
+                  Host
+                  <input id="email-host" placeholder="smtp.gmail.com" autocomplete="off" />
+                </label>
+                <label class="email-field email-field--port">
+                  Port
+                  <input id="email-port" type="number" placeholder="587" />
+                </label>
+              </div>
+              <label class="email-field">
+                Username
+                <input id="email-user" placeholder="noreply@example.com" autocomplete="off" />
+              </label>
+              <label class="email-field">
+                Password
+                <input id="email-password" type="password" placeholder="Gmail App Password" autocomplete="new-password" />
+                <small id="email-password-hint"></small>
+              </label>
+              <label class="email-check email-check--inline">
+                <input type="checkbox" id="email-secure" />
+                <span>SSL/TLS — port 465 only (Gmail: 587, leave unchecked)</span>
+              </label>
+              <label class="email-field">
+                From name
+                <input id="email-from-name" placeholder="Chatbot Leads" />
+              </label>
+              <label class="email-field">
+                From email
+                <input id="email-from-email" type="email" placeholder="noreply@example.com" />
+              </label>
+            </div>
+
+            <div class="email-section">
+              <h4>Common</h4>
+              <label class="email-field">
+                Reply-to <span class="email-optional">optional</span>
+                <input id="email-reply-to" type="email" placeholder="support@example.com" />
+              </label>
+            </div>
+
+            <div class="email-section email-section--test">
+              <h4>Test</h4>
+              <p class="email-test-hint" id="email-test-bot-hint">Uses the bot selected in the sidebar.</p>
+              <label class="email-field">
+                Test recipient
+                <input id="email-test-recipient" type="email" placeholder="you@example.com" />
+              </label>
+            </div>
+
+            <div class="email-actions">
+              <button type="submit" class="dash-btn dash-btn--primary" id="email-save-btn">Save</button>
+              <button type="button" class="dash-btn dash-btn--ghost" id="email-test-btn">Send test</button>
+            </div>
+          </form>
+        </section>
+      </section>
+
+      <p class="email-templates-intro">
+        Plain-text templates only — HTML is generated automatically when emails send.
+        Client emails use
+        <a href="/dashboard/notifications.html" id="email-templates-recipients-link">Email Notifications (recipients)</a>.
+        User emails go to the visitor&apos;s <code>$session.params.email</code> — enable or disable each template below.
+        Delivery: <a href="#email-integration">Email integration</a>.
+      </p>
+
+      <details class="email-templates-dev">
+        <summary>How to add a new template (developer)</summary>
+        <ol class="email-templates-dev-list">
+          <li>
+            Add key in <code>es_private/lib/email-template-engine.js</code> —
+            <code>TEMPLATE_KEYS</code>, <code>TEMPLATE_META</code>, default body in
+            <code>defaultTemplates()</code>, and <code>TEMPLATE_TRIGGERS</code>.
+          </li>
+          <li>
+            Wire send in <code>es_private/lib/email-notifications-mail.js</code> and call it from the
+            right hook (e.g. <code>lead-notifications-runner.js</code> or <code>server.js</code>).
+          </li>
+          <li>Reload this page — new template cards appear automatically from the API catalog.</li>
+        </ol>
+      </details>
+
+      <p class="email-templates-status" id="email-templates-status" hidden></p>
+
+      <details class="email-templates-vars" open>
+        <summary>Available variables</summary>
+        <ul id="email-templates-var-list" class="email-templates-var-list"></ul>
+      </details>
+
+      <div id="email-templates-list"></div>
+
+      <div class="email-templates-actions">
+        <button type="button" class="dash-btn dash-btn--primary" id="email-templates-save">Save templates</button>
+      </div>
+    </div>
+    <script src="../dashboard/desk-auth.js"></script>
+    <script src="../dashboard/dashboard-nav.js?v=20260621c"></script>
+    <script src="email-templates.js?v=20260621c"></script>
+  </body>
+</html>

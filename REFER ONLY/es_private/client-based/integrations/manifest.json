@@ -1,0 +1,17 @@
+{
+  "description": "Social channel integrations — har channel ki alag .integration.js file edit karo",
+  "sessionPrefixes": {
+    "web": "web-",
+    "whatsapp": "wa-",
+    "instagram": "ig-",
+    "facebook": "fb-"
+  },
+  "files": {
+    "whatsapp": "whatsapp.integration.js",
+    "instagram": "instagram.integration.js",
+    "facebook": "facebook.integration.js"
+  },
+  "settingsFile": "data/social-integrations.json",
+  "settingsApi": "/api/social-integration/:botId/:channel",
+  "webhookUrl": "/webhooks/meta"
+}

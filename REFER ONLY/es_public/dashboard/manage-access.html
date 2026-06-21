@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Access permissions</title>
+    <link rel="stylesheet" href="dashboard.css" />
+    <link rel="stylesheet" href="dashboard-nav.css?v=20260626a" />
+  </head>
+  <body>
+    <div class="dash-page-content" style="display:none">
+      <section class="dash-recent" style="margin-top:0">
+        <p class="dash-muted">Add email addresses that may log in to the dashboard and choose which pages they can open.</p>
+        <form id="accessForm" class="settings-form" style="max-width:520px;margin-top:1rem" onsubmit="return false">
+          <label class="field" style="display:block;margin-bottom:0.75rem">
+            Email
+            <input type="email" id="accessEmail" placeholder="agent@company.com" style="width:100%;padding:0.5rem;margin-top:0.25rem" />
+          </label>
+          <fieldset style="border:1px solid var(--dash-border);border-radius:10px;padding:0.75rem 1rem">
+            <legend style="font-size:0.85rem;font-weight:600">Page access</legend>
+            <label style="display:block;margin:0.35rem 0"><input type="checkbox" checked disabled /> Home</label>
+            <label style="display:block;margin:0.35rem 0"><input type="checkbox" name="pages" value="bot" checked /> Bot pages (per selected project)</label>
+            <label style="display:block;margin:0.35rem 0"><input type="checkbox" name="pages" value="agent" checked /> Agent conversations</label>
+            <label style="display:block;margin:0.35rem 0"><input type="checkbox" name="pages" value="desk" checked /> Live chat inbox</label>
+            <label style="display:block;margin:0.35rem 0"><input type="checkbox" name="pages" value="docs" /> Customer uploads</label>
+          </fieldset>
+          <button type="button" class="dash-btn dash-btn--primary" style="margin-top:1rem" id="accessSaveBtn">Add user (coming soon)</button>
+          <p class="dash-muted" id="accessStatus" style="margin-top:0.75rem"></p>
+        </form>
+        <p class="dash-muted" style="margin-top:1.5rem;font-size:0.8rem">
+          Today, access uses the shared <strong>viewer secret</strong> on Live chat setup.
+          Per-email page rules will be stored here in a future update.
+        </p>
+      </section>
+    </div>
+    <script src="desk-auth.js"></script>
+    <script src="dashboard-nav.js?v=20260626a"></script>
+    <script>
+      DashboardNav.mount({
+        active: 'manage-access',
+        title: 'Access permissions',
+        subtitle: 'Common page — control who can open dashboard sections',
+      });
+      document.getElementById('accessSaveBtn').addEventListener('click', function () {
+        document.getElementById('accessStatus').textContent =
+          'Per-email access is not saved yet — use Live chat setup viewer secret for now.';
+      });
+    </script>
+  </body>
+</html>

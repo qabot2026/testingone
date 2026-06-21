@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Assets</title>
+    <link rel="stylesheet" href="../dashboard/dashboard.css" />
+    <link rel="stylesheet" href="../dashboard/dashboard-nav.css?v=20260626a" />
+    <link rel="stylesheet" href="assets.css?v=20260619a" />
+  </head>
+  <body>
+    <div class="dash-page-content assets-app" style="display:none">
+      <section class="qap-assets" id="qap-assets">
+        <div class="qap-assets-head">
+          <div class="qap-assets-actions">
+            <button type="button" id="qap-assets-upload-btn" class="dash-btn dash-btn--primary">
+              Upload Assets
+            </button>
+            <input type="file" id="qap-assets-file" multiple accept="image/*,application/pdf" hidden />
+          </div>
+        </div>
+        <p class="qap-status" id="qap-assets-status" hidden></p>
+        <div class="qap-assets-list" id="qap-assets-list"></div>
+      </section>
+    </div>
+    <script src="../dashboard/desk-auth.js"></script>
+    <script src="../dashboard/dashboard-nav.js?v=20260626a"></script>
+    <script src="chat-assets.js?v=20260619a"></script>
+  </body>
+</html>

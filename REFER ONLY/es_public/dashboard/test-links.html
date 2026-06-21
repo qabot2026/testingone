@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Test links</title>
+    <link rel="stylesheet" href="dashboard.css" />
+    <link rel="stylesheet" href="dashboard-nav.css?v=20260626a" />
+    <link rel="stylesheet" href="test-links.css?v=20260620b" />
+  </head>
+  <body>
+    <div class="dash-page-content test-links-app" style="display:none">
+      <p class="dash-muted test-links-intro">
+        Open a demo page to try each bot, or copy the embed snippet to add the chatbot to your website.
+      </p>
+      <div class="test-links-list" id="test-links-root"></div>
+      <p class="test-links-status" id="test-links-status" hidden></p>
+      <div class="test-links-modal" id="test-links-modal" hidden role="dialog" aria-modal="true" aria-labelledby="test-links-modal-title">
+        <div class="test-links-modal__panel">
+          <h3 id="test-links-modal-title">Open in Incognito</h3>
+          <p id="test-links-modal-text"></p>
+          <code class="test-links-modal__url" id="test-links-modal-url"></code>
+          <div class="test-links-modal__actions">
+            <button type="button" class="dash-btn dash-btn--primary" id="test-links-modal-close">Got it</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <script src="desk-auth.js"></script>
+    <script src="dashboard-nav.js?v=20260626b"></script>
+    <script src="test-links.js?v=20260620b"></script>
+  </body>
+</html>

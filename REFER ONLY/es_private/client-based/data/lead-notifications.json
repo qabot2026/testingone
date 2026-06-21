@@ -1,0 +1,75 @@
+{
+  "updatedAt": "2026-06-20T14:41:47.899Z",
+  "bots": {
+    "10001": {
+      "instantLead": {
+        "enabled": false,
+        "delayMinutes": 0,
+        "conditions": {
+          "requireContact": "mobile_or_email",
+          "visitorType": "any",
+          "requireAppointmentBooked": "any",
+          "intentsAllow": "",
+          "intentsBlock": "",
+          "minUserTurns": 0,
+          "blockIfFallback": false
+        },
+        "chatAcknowledgment": {
+          "enabled": false,
+          "message": "Thank you! Our team has been notified and will contact you shortly."
+        },
+        "recipients": []
+      },
+      "templateDelivery": {
+        "leadCapture": {
+          "enabled": true,
+          "to": [],
+          "cc": [
+            "anaraseg@gmail.com"
+          ],
+          "bcc": []
+        },
+        "hotLead": {
+          "enabled": true,
+          "to": [],
+          "cc": [],
+          "bcc": []
+        },
+        "appointmentClient": {
+          "enabled": true,
+          "to": [],
+          "cc": [],
+          "bcc": []
+        },
+        "appointmentUserReceived": {
+          "enabled": true
+        },
+        "appointmentUserConfirmed": {
+          "enabled": true
+        }
+      },
+      "dailyReport": {
+        "enabled": false,
+        "time": "10:00",
+        "timezone": "Asia/Kolkata",
+        "to": [],
+        "cc": [],
+        "bcc": [],
+        "lastSentAt": null,
+        "lastSentForDate": null
+      },
+      "weeklyReport": {
+        "enabled": false,
+        "dayOfWeek": 1,
+        "time": "10:00",
+        "timezone": "Asia/Kolkata",
+        "to": [],
+        "cc": [],
+        "bcc": [],
+        "lastSentAt": null,
+        "lastSentWeekKey": null
+      },
+      "sentInstantSessions": {}
+    }
+  }
+}

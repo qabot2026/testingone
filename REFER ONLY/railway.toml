@@ -1,0 +1,20 @@
+# Redeploy only when app code changes — NOT on Supersetting data sync commits.
+# Patterns are gitignore-style, relative to repo root (leading / recommended by Railway).
+[build]
+watchPatterns = [
+  "/es_private/lib/**",
+  "/es_private/server.js",
+  "/es_private/integrations/**",
+  "/es_public/widget/**",
+  "/es_public/forms/**",
+  "/es_public/embed.js",
+  "/es_public/dashboard/**",
+  "/es_public/super/**",
+  "/es_public/bot-settings/*.js",
+  "/es_public/bot-settings/*.css",
+  "/es_public/client-based/company.config.js",
+  "/es_public/index.html",
+  "/package.json",
+  "/package-lock.json",
+  "/railway.toml"
+]

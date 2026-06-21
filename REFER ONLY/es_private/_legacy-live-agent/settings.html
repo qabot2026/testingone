@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Desk login</title>
+    <link rel="stylesheet" href="settings.css" />
+  </head>
+  <body>
+    <div class="la-settings-page">
+      <header class="la-settings-header">
+        <img
+          src="https://storage.googleapis.com/companybucket/Images/cat-icon.png"
+          alt=""
+          width="48"
+          height="48"
+        />
+        <h1>Live Agent Desk</h1>
+        <p>Enter your team details to open the desk</p>
+      </header>
+
+      <main class="la-settings-card">
+        <label class="la-field">
+          <span>Your Name</span>
+          <input type="text" id="la-set-name" placeholder="" autocomplete="name" required />
+        </label>
+        <label class="la-field">
+          <span>Desk token</span>
+          <input
+            type="password"
+            id="la-set-token"
+            placeholder="LIVE_AGENT_DESK_TOKEN from Railway"
+            autocomplete="off"
+            required
+          />
+        </label>
+        <div class="la-settings__actions">
+          <button type="button" id="la-set-save" class="la-btn la-btn--primary">Open desk</button>
+        </div>
+      </main>
+    </div>
+    <script src="settings.js"></script>
+  </body>
+</html>

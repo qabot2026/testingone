@@ -1,0 +1,29 @@
+{
+  "bots": [
+    {
+      "id": "10001",
+      "name": "Receputytt",
+      "sitePreset": "receptionist",
+      "welcomeEventName": "",
+      "themeKey": "receptionist",
+      "sheetTab": "Recept"
+    },
+    {
+      "id": "10002",
+      "name": "Green Valley",
+      "sitePreset": "greenValley",
+      "welcomeEventName": "START_GREEN_VALLEY",
+      "themeKey": "greenValley",
+      "sheetTab": "Green Tree"
+    },
+    {
+      "id": "10003",
+      "name": "Lake Viev",
+      "sitePreset": "lakeView",
+      "welcomeEventName": "START_LAKE_VIEV",
+      "themeKey": "lakeView",
+      "sheetTab": "Lake Viev"
+    }
+  ],
+  "updatedAt": "2026-06-20T08:10:15.401Z"
+}

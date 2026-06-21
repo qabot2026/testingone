@@ -1,0 +1,17 @@
+{
+  "general": {
+    "showAgentNameToVisitor": true,
+    "agentProfiles": []
+  },
+  "routing": {
+    "mode": "parallel",
+    "maxConcurrentChatsPerAgent": 5
+  },
+  "departments": [
+    {
+      "id": "general",
+      "name": "General",
+      "agentEmails": []
+    }
+  ]
+}

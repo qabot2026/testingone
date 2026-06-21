@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Appointments</title>
+    <link rel="stylesheet" href="dashboard.css" />
+    <link rel="stylesheet" href="appointments.css" />
+  </head>
+  <body>
+    <div class="dash-app appt-app dash-page-content" style="display:none">
+      <div class="appt-toolbar-row" style="display:flex;justify-content:flex-end;margin-bottom:0.75rem">
+        <button type="button" id="appt-refresh" class="dash-btn dash-btn--primary">Refresh</button>
+      </div>
+
+      <section id="appt-unlock" class="appt-unlock hidden" aria-label="Unlock appointments">
+        <h2>Viewer secret required</h2>
+        <p class="dash-muted">
+          Same secret as
+          <a href="/uc-conversations">Conversation leads</a>
+          (<code>CONVERSATIONS_SHEET_VIEW_SECRET</code> on Railway).
+        </p>
+        <div class="appt-unlock-row">
+          <label>
+            Viewer secret
+            <input id="appt-secret" type="password" autocomplete="current-password" />
+          </label>
+          <button type="button" id="appt-unlock-btn" class="dash-btn dash-btn--primary">Unlock</button>
+        </div>
+        <p id="appt-unlock-msg" class="appt-unlock-msg" role="status"></p>
+      </section>
+
+      <section class="appt-toolbar">
+        <div class="appt-date-field-wrap">
+          <label class="appt-date-label" for="appt-from">From</label>
+          <div class="appt-date-field">
+            <svg class="appt-date-cal-ic" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+              <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+              <path d="M16 2v4M8 2v4M3 10h18" />
+            </svg>
+            <input
+              type="text"
+              id="appt-from"
+              class="appt-date-text"
+              placeholder="DD/MM/YYYY"
+              inputmode="numeric"
+              autocomplete="off"
+              title="Pick a date or type DD/MM/YYYY"
+            />
+            <input type="date" class="appt-date-native" tabindex="-1" aria-hidden="true" />
+          </div>
+        </div>
+        <div class="appt-date-field-wrap">
+          <label class="appt-date-label" for="appt-to">To</label>
+          <div class="appt-date-field">
+            <svg class="appt-date-cal-ic" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+              <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+              <path d="M16 2v4M8 2v4M3 10h18" />
+            </svg>
+            <input
+              type="text"
+              id="appt-to"
+              class="appt-date-text"
+              placeholder="DD/MM/YYYY"
+              inputmode="numeric"
+              autocomplete="off"
+              title="Pick a date or type DD/MM/YYYY"
+            />
+            <input type="date" class="appt-date-native" tabindex="-1" aria-hidden="true" />
+          </div>
+        </div>
+        <label>
+          Status
+          <select id="appt-status">
+            <option value="all">All</option>
+            <option value="pending" selected>Pending</option>
+            <option value="accepted">Accepted</option>
+            <option value="declined">Declined</option>
+          </select>
+        </label>
+        <button type="button" id="appt-next5" class="dash-btn dash-btn--ghost appt-date-preset">Next 5 days</button>
+        <button type="button" id="appt-clear" class="dash-btn dash-btn--ghost appt-date-preset">Clear</button>
+      </section>
+
+      <section class="appt-panel">
+        <div class="appt-table-wrap">
+          <table class="appt-table">
+            <thead>
+              <tr>
+                <th>App. date</th>
+                <th>App. time</th>
+                <th>Name</th>
+                <th>Mobile</th>
+                <th>Email</th>
+                <th>Conv. date</th>
+                <th>Channel</th>
+                <th>Status</th>
+                <th>Actions</th>
+                <th>Chatscript</th>
+              </tr>
+            </thead>
+            <tbody id="appt-body">
+              <tr><td colspan="10" class="appt-loading">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+    <script src="desk-auth.js"></script>
+    <script src="dashboard-nav.js?v=20260626a"></script>
+    <script src="date-display.js"></script>
+    <script src="appointments.js"></script>
+    <script>
+      DashboardNav.mountPage({
+        active: 'appointments',
+        title: 'Appointments',
+        subtitle: 'Chatbot appointment requests — all bots',
+      });
+    </script>
+  </body>
+</html>

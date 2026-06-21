@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="dashboard.css" />
+    <link rel="stylesheet" href="dashboard-nav.css?v=20260626a" />
+  </head>
+  <body>
+    <div class="dash-page-content" style="display:none">
+      <p class="dash-home-intro" id="dash-home-intro">
+        Welcome back. Pick a section below or open the sidebar — bot-specific pages follow the project you select.
+      </p>
+      <div class="dash-home-grid" id="dash-home-grid"></div>
+    </div>
+    <script src="desk-auth.js"></script>
+    <script src="dashboard-nav.js?v=20260626a"></script>
+    <script>
+      (function () {
+        var bid = DashboardNav.getBid();
+        var bot = DashboardNav.BOTS.find(function (b) { return b.id === bid; }) || DashboardNav.BOTS[0];
+
+        DashboardNav.mount({
+          active: 'home',
+          title: 'Home',
+          subtitle: bot.name + ' · Bot ID ' + bot.id,
+        });
+
+        var grid = document.getElementById('dash-home-grid');
+        if (!grid) return;
+
+        var homeCards = [
+          { key: 'uc-conversations', label: 'Insights', desc: 'Leads, transcripts & chat stats' },
+          { key: 'queryanalytics', label: 'Customer questions', desc: 'Answered vs unanswered queries' },
+          { key: 'notifications', label: 'Email notifications', desc: 'Recipients, schedules & auto-send rules' },
+          { key: 'email-templates', label: 'Email templates', desc: 'Delivery settings & message templates' },
+          { key: 'faqs', label: 'FAQs', desc: 'Client Q&A answered in chat before Dialogflow' },
+          { key: 'appointments', label: 'Appointments', desc: 'Review and approve bookings' },
+          { key: 'documents', label: 'Customer uploads', desc: 'Files sent via chat or forms' },
+          { key: 'uiux-setting', label: 'Appearance', desc: 'Colors, text, launcher & welcome screen' },
+          { key: 'uiux', label: 'Additional features', desc: 'Footer, restart, microphone, language & powered-by' },
+          { key: 'power', label: 'Power', desc: 'Advanced power settings (coming soon)' },
+          { key: 'assets', label: 'Assets', desc: 'Images and PDFs for chat responses' },
+          { key: 'channels-integration', label: 'Channels integration', desc: 'Web, WhatsApp, Instagram & Facebook' },
+          { key: 'crm-integration', label: 'CRM integration', desc: 'Connect Zoho, Salesforce, HubSpot & map lead fields' },
+          { key: 'live-agent', label: 'Live chat inbox', desc: 'Reply to visitors in real time' },
+          { key: 'ua-conversations', label: 'Agent conversations', desc: 'Chats handled by your team' },
+          { key: 'live-agent/settings', label: 'Live chat setup', desc: 'Agents, departments & viewer secret' },
+          { key: 'actions', label: 'Actions', desc: 'API calls with request and response logs' },
+          { key: 'audits', label: 'Audits', desc: 'Who changed what, when, on which page' },
+          { key: 'manage-access', label: 'Access permissions', desc: 'Who can open which pages' },
+        ];
+
+        function card(item) {
+          var href = DashboardNav.navHref(item.key, bid);
+          var icon = DashboardNav.getIconForKey(item.key);
+          return (
+            '<a class="dash-home-card" href="' + href + '">' +
+            DashboardNav.iconBadge(icon, 'dash-icon-badge--lg') +
+            '<div class="dash-home-card__body">' +
+            '<strong>' + item.label + '</strong>' +
+            '<span>' + item.desc + '</span>' +
+            '</div>' +
+            '<span class="dash-home-card__arrow" aria-hidden="true">→</span>' +
+            '</a>'
+          );
+        }
+
+        grid.innerHTML = homeCards.map(card).join('');
+      })();
+    </script>
+  </body>
+</html>

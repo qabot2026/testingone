@@ -1,0 +1,22 @@
+{
+  "updatedAt": "2026-06-20T12:32:27.978Z",
+  "enabled": true,
+  "provider": "smtp",
+  "smtp": {
+    "host": "smtp.gmail.com",
+    "port": 587,
+    "secure": false,
+    "user": "qabot2026@gmail.com",
+    "password": "wwbqivifjgcianuj",
+    "fromName": "Genie Chatbot",
+    "fromEmail": "qabot2026@gmail.com"
+  },
+  "resend": {
+    "enabled": false,
+    "apiKey": "",
+    "fromName": "Chatbot Leads",
+    "fromEmail": ""
+  },
+  "replyTo": "",
+  "testRecipient": "anaraseg@gmail.com"
+}

@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<!--
+  Shortcut: conversations.html?apiBase=https://YOUR-API.up.railway.app
+  Redirects to the full inbox UI at /uc-conversations
+-->
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Conversations — Sheet inbox</title>
+  <script>
+    (function () {
+      var p = new URLSearchParams(window.location.search);
+      var q = (p.get("apiBase") || "").trim().replace(/\/+$/, "");
+      var base = q || window.location.origin;
+      window.location.replace(base + "/uc-conversations");
+    })();
+  </script>
+</head>
+<body></body>
+</html>

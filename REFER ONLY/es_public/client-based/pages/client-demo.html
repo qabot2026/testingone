@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Client embed demo — Production</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 42rem; margin: 2rem auto; padding: 0 1rem; color: #333; }
+    code { display: block; background: #f4f4f4; padding: 1rem; border-radius: 8px; font-size: 0.8rem; word-break: break-all; }
+  </style>
+</head>
+<body>
+  <h1>Client website (production embed)</h1>
+  <p>Give your client this block (before <code>&lt;/body&gt;</code>):</p>
+  <code id="snippet"></code>
+  <script src="/company.config.js"></script>
+  <script>
+    document.getElementById('snippet').textContent =
+      '<script>\n  window.ES_CONFIG = { sitePreset: \'receptionist\' };\n<\/script>\n' +
+      '<script src="' + window.ES_CONFIG.embedScript + '" async><\/script>';
+    window.ES_CONFIG = Object.assign(window.ES_CONFIG || {}, {
+      sitePreset: 'receptionist',
+    });
+  </script>
+  <script src="https://es-based-chatbot-production.up.railway.app/embed.js" async></script>
+</body>
+</html>

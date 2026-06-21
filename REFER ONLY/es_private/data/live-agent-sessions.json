@@ -1,0 +1,275 @@
+{
+  "sessions": {
+    "test-sess": {
+      "sessionId": "test-sess",
+      "status": "waiting",
+      "createdAt": "2026-06-02T12:02:50.020Z",
+      "updatedAt": "2026-06-02T12:02:50.035Z",
+      "agentId": "",
+      "agentName": "",
+      "userLanguage": "en",
+      "messages": [
+        {
+          "id": "63b57a72-2c34-42ab-8a0c-2ca2c0db1d10",
+          "from": "user",
+          "text": "hi",
+          "at": "2026-06-02T12:02:50.035Z",
+          "meta": {
+            "handoff": true
+          }
+        }
+      ]
+    },
+    "qa-test-1780507979469": {
+      "sessionId": "qa-test-1780507979469",
+      "status": "active",
+      "humanMode": "human",
+      "aiEnabled": false,
+      "botid": "default",
+      "visitorName": "",
+      "assignedAgentEmail": "samira@test.com",
+      "departmentId": "general",
+      "departmentName": "General",
+      "messages": [
+        {
+          "id": "c8eef8ed-0a36-416a-a734-af817fcd3451",
+          "role": "visitor",
+          "text": "hello",
+          "senderEmail": "",
+          "senderDisplayName": "",
+          "createdAt": "2026-06-03T17:32:59.492Z"
+        },
+        {
+          "id": "ffc7fdd5-acdd-448a-9d94-02c10328062f",
+          "role": "system",
+          "text": "live_agent_human_connected",
+          "senderEmail": "samira@test.com",
+          "senderDisplayName": "Samira",
+          "createdAt": "2026-06-03T17:32:59.527Z"
+        },
+        {
+          "id": "40bc5696-3f02-4dbb-98e2-ce3310ed323c",
+          "role": "agent",
+          "text": "hi from agent",
+          "senderEmail": "samira@test.com",
+          "senderDisplayName": "Samira",
+          "createdAt": "2026-06-03T17:32:59.533Z"
+        },
+        {
+          "id": "a7001451-d146-4313-9aa8-4051af680c58",
+          "role": "visitor",
+          "text": "hi from visitor",
+          "senderEmail": "",
+          "senderDisplayName": "",
+          "createdAt": "2026-06-03T17:32:59.560Z"
+        }
+      ],
+      "unreadForAgent": 1,
+      "unreadForVisitor": 2,
+      "createdAt": "2026-06-03T17:32:59.472Z",
+      "updatedAt": "2026-06-03T17:32:59.560Z",
+      "requestedAt": "2026-06-03T17:32:59.472Z",
+      "lastMessageAt": "2026-06-03T17:32:59.560Z",
+      "lastMessagePreview": "hi from visitor",
+      "acceptedByEmail": "samira@test.com",
+      "acceptedAt": "2026-06-03T17:32:59.503Z",
+      "claimedAt": "2026-06-03T17:32:59.503Z"
+    },
+    "qa-fix-1": {
+      "sessionId": "qa-fix-1",
+      "status": "active",
+      "humanMode": "human",
+      "aiEnabled": false,
+      "botid": "default",
+      "visitorName": "",
+      "assignedAgentEmail": "a@t.com",
+      "departmentId": "general",
+      "departmentName": "General",
+      "messages": [
+        {
+          "id": "ab417c5f-8ef6-4036-8bc2-558653e69434",
+          "role": "visitor",
+          "text": "hi",
+          "senderEmail": "",
+          "senderDisplayName": "",
+          "createdAt": "2026-06-03T17:34:02.899Z"
+        },
+        {
+          "id": "b39a82d5-bf86-4b72-bd8b-58c127820c2b",
+          "role": "system",
+          "text": "live_agent_human_connected",
+          "senderEmail": "a@t.com",
+          "senderDisplayName": "A",
+          "createdAt": "2026-06-03T17:34:02.940Z"
+        },
+        {
+          "id": "ac10cf21-b496-410d-a42f-1050c625e1bd",
+          "role": "agent",
+          "text": "agent",
+          "senderEmail": "a@t.com",
+          "senderDisplayName": "A",
+          "createdAt": "2026-06-03T17:34:02.943Z"
+        }
+      ],
+      "unreadForAgent": 0,
+      "unreadForVisitor": 2,
+      "createdAt": "2026-06-03T17:34:02.894Z",
+      "updatedAt": "2026-06-03T17:34:02.943Z",
+      "requestedAt": "2026-06-03T17:34:02.894Z",
+      "lastMessageAt": "2026-06-03T17:34:02.943Z",
+      "lastMessagePreview": "agent",
+      "acceptedByEmail": "a@t.com",
+      "acceptedAt": "2026-06-03T17:34:02.908Z",
+      "claimedAt": "2026-06-03T17:34:02.908Z"
+    },
+    "qa-agent-vis-1": {
+      "sessionId": "qa-agent-vis-1",
+      "status": "active",
+      "humanMode": "human",
+      "aiEnabled": false,
+      "botid": "default",
+      "visitorName": "",
+      "assignedAgentEmail": "a@co.com",
+      "departmentId": "general",
+      "departmentName": "General",
+      "messages": [
+        {
+          "id": "bbb02145-0be9-4509-afb6-0c3c95f631f4",
+          "role": "visitor",
+          "text": "hi",
+          "senderEmail": "",
+          "senderDisplayName": "",
+          "createdAt": "2026-06-03T17:50:55.342Z"
+        },
+        {
+          "id": "d7d40d04-893b-42e2-8203-00597e14738e",
+          "role": "system",
+          "text": "live_agent_human_connected",
+          "senderEmail": "a@co.com",
+          "senderDisplayName": "A",
+          "createdAt": "2026-06-03T17:50:55.381Z"
+        },
+        {
+          "id": "3b2d8361-98d5-4531-9bac-9ac89f4638e4",
+          "role": "agent",
+          "text": "from agent",
+          "senderEmail": "a@co.com",
+          "senderDisplayName": "A",
+          "createdAt": "2026-06-03T17:50:55.404Z"
+        },
+        {
+          "id": "9f5a7536-22be-4138-8ec3-a722b30a937c",
+          "role": "visitor",
+          "text": "from user",
+          "senderEmail": "",
+          "senderDisplayName": "",
+          "createdAt": "2026-06-03T17:50:55.434Z"
+        }
+      ],
+      "unreadForAgent": 1,
+      "unreadForVisitor": 2,
+      "createdAt": "2026-06-03T17:50:55.339Z",
+      "updatedAt": "2026-06-03T17:50:55.434Z",
+      "requestedAt": "2026-06-03T17:50:55.339Z",
+      "lastMessageAt": "2026-06-03T17:50:55.434Z",
+      "lastMessagePreview": "from user",
+      "acceptedByEmail": "a@co.com",
+      "acceptedAt": "2026-06-03T17:50:55.377Z",
+      "claimedAt": "2026-06-03T17:50:55.377Z"
+    },
+    "qa-tail-test": {
+      "sessionId": "qa-tail-test",
+      "status": "active",
+      "humanMode": "human",
+      "aiEnabled": false,
+      "botid": "default",
+      "visitorName": "",
+      "assignedAgentEmail": "a@co.com",
+      "departmentId": "general",
+      "departmentName": "General",
+      "messages": [
+        {
+          "id": "c60d9ec2-5f71-4ec2-81d4-6c3513136072",
+          "role": "visitor",
+          "text": "hi",
+          "senderEmail": "",
+          "senderDisplayName": "",
+          "createdAt": "2026-06-03T17:57:33.445Z"
+        },
+        {
+          "id": "521a461d-3134-41c7-8b22-4e26842814ea",
+          "role": "system",
+          "text": "live_agent_human_connected",
+          "senderEmail": "a@co.com",
+          "senderDisplayName": "A",
+          "createdAt": "2026-06-03T17:57:33.493Z"
+        },
+        {
+          "id": "0f71bfb6-dcdf-4dd2-9779-c4d129962c28",
+          "role": "agent",
+          "text": "agent reply 1",
+          "senderEmail": "a@co.com",
+          "senderDisplayName": "A",
+          "createdAt": "2026-06-03T17:57:33.517Z"
+        }
+      ],
+      "unreadForAgent": 0,
+      "unreadForVisitor": 2,
+      "createdAt": "2026-06-03T17:57:33.423Z",
+      "updatedAt": "2026-06-03T17:57:33.517Z",
+      "requestedAt": "2026-06-03T17:57:33.423Z",
+      "lastMessageAt": "2026-06-03T17:57:33.517Z",
+      "lastMessagePreview": "agent reply 1",
+      "acceptedByEmail": "a@co.com",
+      "acceptedAt": "2026-06-03T17:57:33.490Z",
+      "claimedAt": "2026-06-03T17:57:33.490Z"
+    },
+    "test-sync-1780509925120": {
+      "sessionId": "test-sync-1780509925120",
+      "status": "active",
+      "humanMode": "human",
+      "aiEnabled": false,
+      "botid": "default",
+      "visitorName": "",
+      "assignedAgentEmail": "agent@co.com",
+      "departmentId": "general",
+      "departmentName": "General",
+      "messages": [
+        {
+          "id": "d6de2e2c-785d-4f10-abee-47824415c5ac",
+          "role": "visitor",
+          "text": "hi",
+          "senderEmail": "",
+          "senderDisplayName": "",
+          "createdAt": "2026-06-03T18:05:25.144Z"
+        },
+        {
+          "id": "2d0ba0c3-f198-434d-8a6b-d2ab6c7821a3",
+          "role": "system",
+          "text": "live_agent_human_connected",
+          "senderEmail": "agent@co.com",
+          "senderDisplayName": "Agent",
+          "createdAt": "2026-06-03T18:05:31.486Z"
+        },
+        {
+          "id": "b72f32e0-7747-4883-89ce-9d8a4588a1cb",
+          "role": "agent",
+          "text": "hello from agent",
+          "senderEmail": "agent@co.com",
+          "senderDisplayName": "Agent",
+          "createdAt": "2026-06-03T18:05:31.514Z"
+        }
+      ],
+      "unreadForAgent": 0,
+      "unreadForVisitor": 2,
+      "createdAt": "2026-06-03T18:05:25.122Z",
+      "updatedAt": "2026-06-03T18:05:31.514Z",
+      "requestedAt": "2026-06-03T18:05:25.122Z",
+      "lastMessageAt": "2026-06-03T18:05:31.514Z",
+      "lastMessagePreview": "hello from agent",
+      "acceptedByEmail": "agent@co.com",
+      "acceptedAt": "2026-06-03T18:05:31.485Z",
+      "claimedAt": "2026-06-03T18:05:31.485Z"
+    }
+  }
+}

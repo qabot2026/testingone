@@ -1,0 +1,737 @@
+{
+  "sitePresets": {
+    "greenValley": {
+      "common": {
+        "header": {
+          "title": "Green Valley",
+          "subtitle": "Explore your dream home",
+          "chatIconUrl": "https://storage.googleapis.com/companybucket/Images/cat-icon.png",
+          "headerIconUrl": "https://storage.googleapis.com/companybucket/Images/cat-icon.png",
+          "chatTitleIconUrl": "https://storage.googleapis.com/companybucket/Images/cat-icon.png",
+          "showHeaderIcon": true,
+          "botWritingText": "Typing",
+          "header3dGradient": true,
+          "iconShape": "square",
+          "botWritingDotsIntervalMs": 480
+        },
+        "botPersona": {
+          "label": "Green Valley",
+          "imageUrl": "",
+          "showTime": true,
+          "avatarSizePx": 32,
+          "timeZone": "Asia/Kolkata",
+          "showSeconds": true,
+          "messageTimeIncludesDate": false
+        },
+        "welcome": {
+          "enabled": false,
+          "suggestionChips": {
+            "enabled": false
+          }
+        },
+        "userPersona": {
+          "showTime": true,
+          "label": "You",
+          "avatarSizePx": 18,
+          "showSeconds": true,
+          "messageTimeIncludesDate": false
+        },
+        "dialogflow": {
+          "liveAgent": {
+            "enabled": false
+          },
+          "forms": {
+            "enabled": true
+          }
+        },
+        "theme": {
+          "--es-header-color": "#0284c7",
+          "--es-composer-bg": "#f7fbff",
+          "--es-composer-border": "#dbe5ec",
+          "--es-bg": "#e8f4fc",
+          "--es-primary": "#0284c7",
+          "--es-muted": "#475569",
+          "--es-user-text": "#f0f9ff",
+          "--es-bot-text": "#0c4a6e",
+          "--es-user-bg": "linear-gradient(145deg, #0284c7 0%, #0ea5e9 100%)",
+          "--es-bot-bg": "linear-gradient(168deg, #e8f6ff 0%, #bae6fd 100%)",
+          "--es-user-msg-radius": "",
+          "--es-bot-msg-radius": ""
+        },
+        "features": {
+          "inputPlaceholderByLanguage": {
+            "en": "Type your message here…",
+            "hi": "अपना संदेश लिखें…",
+            "mr": "तुमचा संदेश लिहा…"
+          }
+        },
+        "typography": {
+          "fontFamily": "\"Segoe UI\", system-ui, -apple-system, sans-serif"
+        },
+        "personaDisplay": {
+          "nameFontSizePx": 11,
+          "timeFontSizePx": 10
+        },
+        "chatPanel": {
+          "backgroundImageUrl": "",
+          "backgroundImageFit": "cover",
+          "borderRadius": {
+            "topLeft": "22px",
+            "topRight": "22px",
+            "bottomLeft": "20px",
+            "bottomRight": "20px"
+          }
+        }
+      },
+      "desk": {
+        "showChatbot": true,
+        "chatLayout": {
+          "side": "right"
+        },
+        "launcher": {
+          "sizePx": 64,
+          "iconUrl": "https://storage.googleapis.com/companybucket/Images/cat.png",
+          "storyRing": {
+            "enabled": true,
+            "instagramStyle": true,
+            "colorRingMotionEnabled": true,
+            "widthPx": 2,
+            "rotateSeconds": 3
+          },
+          "closeBubbleWhenOpen": {
+            "enabled": true,
+            "panelBottomPx": 8
+          },
+          "iconZoomPercent": 100,
+          "cornerRoundness": "50%"
+        },
+        "chatWindow": {
+          "widthPx": 400,
+          "heightPx": 520,
+          "minHeightPx": 360,
+          "topInsetPx": 16,
+          "position": {
+            "rightPx": 10,
+            "bottomPx": 20
+          }
+        },
+        "header": {
+          "titleFontSizePx": 18,
+          "iconSizePx": 44,
+          "subtitleFontSizePx": 13,
+          "expandPanel": {
+            "enabled": true,
+            "heightIncreasePercent": 30,
+            "widthIncreasePercent": 100
+          }
+        },
+        "launcherStrip": {
+          "enabled": false,
+          "wavePopup": {
+            "enabled": true,
+            "delayMs": 3000,
+            "durationMs": 3000,
+            "scale": 3
+          },
+          "text": "👋Hey, how are you?😊",
+          "style": {
+            "fontSizePx": 13,
+            "maxWidthPx": 260,
+            "paddingYpx": 10,
+            "paddingXpx": 14
+          },
+          "position": {
+            "rightPx": 5,
+            "bottomPx": 66
+          }
+        },
+        "autoOpenChat": {
+          "enabled": true,
+          "delayMs": 5000
+        },
+        "restartButton": {
+          "enabled": true
+        },
+        "features": {
+          "restartChat": {
+            "enabled": false
+          }
+        }
+      },
+      "mob": {
+        "showChatbot": true,
+        "chatLayout": {
+          "side": "right"
+        },
+        "launcher": {
+          "sizePx": 58,
+          "iconUrl": "https://storage.googleapis.com/companybucket/Images/cat.png",
+          "storyRing": {
+            "enabled": true,
+            "instagramStyle": true,
+            "colorRingMotionEnabled": true,
+            "widthPx": 2,
+            "rotateSeconds": 3
+          },
+          "closeBubbleWhenOpen": {
+            "enabled": true,
+            "panelBottomPx": 10,
+            "panelHeightExtraPx": 35
+          },
+          "iconZoomPercent": 100,
+          "cornerRoundness": "50%"
+        },
+        "chatWindow": {
+          "minHeightPx": 480,
+          "topInsetPx": 26,
+          "horizontalInsetPx": 12,
+          "bottomInsetPx": 10,
+          "position": {
+            "rightPx": 12,
+            "bottomPx": 10
+          }
+        },
+        "header": {
+          "titleFontSizePx": 15,
+          "iconSizePx": 32,
+          "subtitleFontSizePx": 11,
+          "expandPanel": {
+            "enabled": true,
+            "heightIncreasePercent": 30,
+            "widthIncreasePercent": 100
+          }
+        },
+        "launcherStrip": {
+          "enabled": false,
+          "wavePopup": {
+            "enabled": true,
+            "delayMs": 3000,
+            "durationMs": 3000,
+            "scale": 3
+          },
+          "text": "👋Hey, how are you?😊",
+          "style": {
+            "fontSizePx": 12,
+            "maxWidthPx": 220,
+            "paddingYpx": 8,
+            "paddingXpx": 12
+          },
+          "position": {
+            "rightPx": 10,
+            "bottomPx": 60
+          }
+        },
+        "autoOpenChat": {
+          "enabled": true,
+          "delayMs": 4000
+        },
+        "restartButton": {
+          "enabled": true
+        },
+        "features": {
+          "restartChat": {
+            "enabled": true
+          }
+        }
+      }
+    },
+    "receptionist": {
+      "common": {
+        "header": {
+          "title": "Receputytt",
+          "subtitle": "We are online to assist you",
+          "botWritingText": "Typing",
+          "botWritingDotsIntervalMs": 480,
+          "chatIconUrl": "https://es-based-chatbot-production.up.railway.app/media/bot-assets/1781685048972_3070048d_hanuman.png",
+          "headerIconUrl": "https://es-based-chatbot-production.up.railway.app/media/bot-assets/1781685048972_3070048d_hanuman.png",
+          "chatTitleIconUrl": "https://es-based-chatbot-production.up.railway.app/media/bot-assets/1781685048972_3070048d_hanuman.png",
+          "showHeaderIcon": true,
+          "header3dGradient": true,
+          "iconShape": "square"
+        },
+        "botPersona": {
+          "label": "Receputytt",
+          "imageUrl": "https://es-based-chatbot-production.up.railway.app/media/bot-assets/1781685048972_3070048d_hanuman.png",
+          "avatarSizePx": 32,
+          "timeZone": "Asia/Kolkata",
+          "showTime": true,
+          "showSeconds": true,
+          "messageTimeIncludesDate": false
+        },
+        "typography": {
+          "fontFamily": "\"Segoe UI\", system-ui, -apple-system, sans-serif"
+        },
+        "userPersona": {
+          "label": "You",
+          "avatarSizePx": 18,
+          "showTime": true,
+          "showSeconds": true,
+          "messageTimeIncludesDate": false
+        },
+        "personaDisplay": {
+          "nameFontSizePx": 11,
+          "timeFontSizePx": 10
+        },
+        "features": {
+          "multiLanguage": {
+            "enabled": true,
+            "defaultLanguage": "en",
+            "languages": [
+              {
+                "code": "en",
+                "label": "English",
+                "nativeLabel": "English",
+                "speech": "en-IN",
+                "dialogflow": "en"
+              },
+              {
+                "code": "hi",
+                "label": "Hindi",
+                "nativeLabel": "हिन्दी",
+                "speech": "hi-IN",
+                "dialogflow": "en"
+              },
+              {
+                "code": "mr",
+                "label": "Marathi",
+                "nativeLabel": "मराठी",
+                "speech": "mr-IN",
+                "dialogflow": "en"
+              }
+            ]
+          },
+          "speechToText": {
+            "enabled": true
+          },
+          "inputPlaceholderByLanguage": {
+            "en": "Type your message here…",
+            "hi": "अपना संदेश लिखें…",
+            "mr": "तुमचा संदेश लिहा…"
+          }
+        },
+        "dialogflow": {
+          "liveAgent": {
+            "enabled": true
+          },
+          "forms": {
+            "enabled": true
+          }
+        },
+        "restartButton": {
+          "gapAfterLanguagePx": 10,
+          "enabled": true,
+          "label": "Restart"
+        },
+        "theme": {
+          "--es-user-text": "#f0f9ff",
+          "--es-bot-text": "#0c4a6e",
+          "--es-user-bg": "linear-gradient(145deg, #0284c7 0%, #0ea5e9 100%)",
+          "--es-bot-bg": "linear-gradient(168deg, #e8f6ff 0%, #bae6fd 100%)",
+          "--es-surface": "#ffffff",
+          "--es-muted": "#475569",
+          "--es-primary": "#766619",
+          "--es-header-bg": "linear-gradient(180deg, rgba(255,255,255,0.38) 0%, rgba(255,255,255,0.1) 24%, transparent 46%), linear-gradient(168deg, #38bdf8 0%, #0284c7 42%, #075985 100%)",
+          "--es-user-msg-radius": "",
+          "--es-bot-msg-radius": "",
+          "--es-header-color": "#e10eda",
+          "--es-header-title-color": "#9a1818",
+          "--es-header-subtitle-color": "#c6c77f",
+          "--es-composer-bg": "#f7fbff",
+          "--es-composer-border": "#dbe5ec",
+          "--es-bg": "#12527d"
+        },
+        "chatPanel": {
+          "borderRadius": {
+            "topLeft": "22px",
+            "topRight": "22px",
+            "bottomLeft": "20px",
+            "bottomRight": "20px"
+          },
+          "backgroundImageUrl": "",
+          "backgroundImageFit": "cover"
+        },
+        "deviceLink": {
+          "bubble": true,
+          "header": true,
+          "chatPanel": true,
+          "openRestart": true,
+          "poweredBy": true
+        },
+        "poweredBy": {
+          "enabled": true,
+          "prefix": "⚡by",
+          "brandName": "ES sdfdsf",
+          "color": "#0369a1",
+          "logoUrl": "https://www.vhv.rs/dpng/d/6-68550_hanuman-ji-png-transparent-png.png",
+          "linkUrl": "www.google.com",
+          "fontSizePx": 9,
+          "logoHeightPx": 12,
+          "offsetDownPx": 15
+        }
+      },
+      "desk": {
+        "showChatbot": true,
+        "chatLayout": {
+          "side": "right"
+        },
+        "launcher": {
+          "sizePx": 64,
+          "cornerRoundness": "50%",
+          "storyRing": {
+            "enabled": true,
+            "instagramStyle": true,
+            "colorRingMotionEnabled": true,
+            "widthPx": 2,
+            "rotateSeconds": 3
+          },
+          "closeBubbleWhenOpen": {
+            "enabled": true,
+            "panelBottomPx": 8
+          },
+          "iconUrl": "https://es-based-chatbot-production.up.railway.app/media/bot-assets/1781685048972_3070048d_hanuman.png",
+          "iconZoomPercent": 100
+        },
+        "launcherStrip": {
+          "enabled": true,
+          "wavePopup": {
+            "enabled": true,
+            "delayMs": 3000,
+            "durationMs": 3000,
+            "scale": 3
+          },
+          "text": "👋 Welcome! How can we help?",
+          "position": {
+            "rightPx": 5,
+            "bottomPx": 62
+          },
+          "style": {
+            "fontSizePx": 13,
+            "paddingYpx": 10,
+            "paddingXpx": 14,
+            "maxWidthPx": 260
+          }
+        },
+        "chatWindow": {
+          "widthPx": 400,
+          "heightPx": 520,
+          "minHeightPx": 360,
+          "topInsetPx": 16,
+          "position": {
+            "rightPx": 10,
+            "bottomPx": 20
+          }
+        },
+        "header": {
+          "titleFontSizePx": 18,
+          "subtitleFontSizePx": 13,
+          "iconSizePx": 44,
+          "titlebarIconSizePx": 40,
+          "header3dGradient": true,
+          "expandPanel": {
+            "enabled": true,
+            "heightIncreasePercent": 30,
+            "widthIncreasePercent": 100
+          }
+        },
+        "autoOpenChat": {
+          "enabled": true,
+          "delayMs": 10000
+        },
+        "restartButton": {
+          "enabled": true,
+          "label": "Restart"
+        },
+        "features": {
+          "restartChat": {
+            "enabled": false,
+            "label": "Restart"
+          },
+          "speechToText": {
+            "enabled": true
+          }
+        },
+        "poweredBy": {
+          "enabled": true,
+          "prefix": "⚡by",
+          "brandName": "ES sdfdsf",
+          "logoUrl": "https://www.vhv.rs/dpng/d/6-68550_hanuman-ji-png-transparent-png.png",
+          "linkUrl": "www.google.com",
+          "color": "#0369a1",
+          "fontSizePx": 9,
+          "logoHeightPx": 12,
+          "offsetDownPx": 15,
+          "align": "right",
+          "offsetUpPx": 0,
+          "offsetLeftPx": 0,
+          "offsetRightPx": 0
+        },
+        "theme": {
+          "--es-header-color": "#d9a6cb",
+          "--es-header-title-color": "#9a1818",
+          "--es-header-subtitle-color": "#c6c77f"
+        },
+        "common": {
+          "theme": {
+            "--es-header-color": "#e10eda",
+            "--es-header-title-color": "#9a1818",
+            "--es-header-subtitle-color": "#c6c77f",
+            "--es-composer-bg": "#f7fbff",
+            "--es-composer-border": "#dbe5ec",
+            "--es-bg": "#12527d",
+            "--es-primary": "#766619",
+            "--es-muted": "#475569",
+            "--es-user-text": "#f0f9ff",
+            "--es-bot-text": "#0c4a6e",
+            "--es-user-bg": "linear-gradient(145deg, #0284c7 0%, #0ea5e9 100%)",
+            "--es-bot-bg": "linear-gradient(168deg, #e8f6ff 0%, #bae6fd 100%)",
+            "--es-user-msg-radius": "",
+            "--es-bot-msg-radius": ""
+          },
+          "header": {
+            "header3dGradient": true,
+            "headerIconUrl": "https://es-based-chatbot-production.up.railway.app/media/bot-assets/1781685048972_3070048d_hanuman.png",
+            "iconShape": "square",
+            "showHeaderIcon": true,
+            "title": "Receputy",
+            "subtitle": "We are online to assist you",
+            "botWritingText": "Typing",
+            "botWritingDotsIntervalMs": 480
+          },
+          "features": {
+            "inputPlaceholderByLanguage": {
+              "en": "Type your message here…",
+              "hi": "अपना संदेश लिखें…",
+              "mr": "तुमचा संदेश लिहा…"
+            }
+          },
+          "typography": {
+            "fontFamily": "\"Segoe UI\", system-ui, -apple-system, sans-serif"
+          },
+          "botPersona": {
+            "imageUrl": "https://es-based-chatbot-production.up.railway.app/media/bot-assets/1781685048972_3070048d_hanuman.png",
+            "label": "Recepu",
+            "avatarSizePx": 32,
+            "avatarShape": "circle",
+            "timeZone": "Asia/Kolkata",
+            "showTime": true,
+            "showSeconds": true,
+            "messageTimeIncludesDate": false
+          },
+          "userPersona": {
+            "label": "You",
+            "avatarSizePx": 18,
+            "timeZone": "Asia/Kolkata",
+            "showTime": true,
+            "showSeconds": true,
+            "messageTimeIncludesDate": false
+          },
+          "personaDisplay": {
+            "nameFontSizePx": 11,
+            "timeFontSizePx": 10
+          },
+          "chatPanel": {
+            "backgroundImageUrl": "",
+            "backgroundImageFit": "cover",
+            "borderRadius": {
+              "topLeft": "22px",
+              "topRight": "22px",
+              "bottomLeft": "20px",
+              "bottomRight": "20px"
+            }
+          }
+        },
+        "sectionSyncToMob": {
+          "bubble": false,
+          "header": false,
+          "chatPanel": false
+        }
+      },
+      "mob": {
+        "showChatbot": true,
+        "chatLayout": {
+          "side": "right"
+        },
+        "launcher": {
+          "sizePx": 64,
+          "cornerRoundness": "50%",
+          "storyRing": {
+            "enabled": true,
+            "instagramStyle": true,
+            "colorRingMotionEnabled": true,
+            "widthPx": 2,
+            "rotateSeconds": 3
+          },
+          "closeBubbleWhenOpen": {
+            "enabled": false,
+            "panelBottomPx": 8,
+            "panelHeightExtraPx": 35
+          },
+          "iconUrl": "https://es-based-chatbot-production.up.railway.app/media/bot-assets/1781685048972_3070048d_hanuman.png",
+          "iconZoomPercent": 100
+        },
+        "launcherStrip": {
+          "enabled": true,
+          "wavePopup": {
+            "enabled": true,
+            "delayMs": 3000,
+            "durationMs": 3000,
+            "scale": 3
+          },
+          "text": "👋 Welcome! How can we help?",
+          "position": {
+            "rightPx": 5,
+            "bottomPx": 62
+          },
+          "style": {
+            "fontSizePx": 13,
+            "paddingYpx": 10,
+            "paddingXpx": 14,
+            "maxWidthPx": 260
+          }
+        },
+        "chatWindow": {
+          "minHeightPx": 360,
+          "topInsetPx": 16,
+          "horizontalInsetPx": 44,
+          "bottomInsetPx": 44,
+          "position": {
+            "rightPx": 10,
+            "bottomPx": 20
+          },
+          "widthPx": 300,
+          "heightPx": 520
+        },
+        "header": {
+          "titleFontSizePx": 18,
+          "subtitleFontSizePx": 13,
+          "iconSizePx": 44,
+          "titlebarIconSizePx": 36,
+          "header3dGradient": true,
+          "expandPanel": {
+            "enabled": true,
+            "heightIncreasePercent": 30,
+            "widthIncreasePercent": 100
+          }
+        },
+        "autoOpenChat": {
+          "enabled": true,
+          "delayMs": 10000
+        },
+        "restartButton": {
+          "enabled": true,
+          "label": "Restart"
+        },
+        "features": {
+          "restartChat": {
+            "enabled": false,
+            "label": "Restart"
+          },
+          "speechToText": {
+            "enabled": true
+          }
+        },
+        "poweredBy": {
+          "enabled": true,
+          "prefix": "⚡by",
+          "brandName": "ES sdfdsf",
+          "logoUrl": "https://www.vhv.rs/dpng/d/6-68550_hanuman-ji-png-transparent-png.png",
+          "linkUrl": "www.google.com",
+          "color": "#0369a1",
+          "fontSizePx": 9,
+          "logoHeightPx": 12,
+          "offsetDownPx": 15,
+          "align": "right",
+          "offsetUpPx": 0,
+          "offsetLeftPx": 0,
+          "offsetRightPx": 0
+        },
+        "theme": {
+          "--es-header-color": "#d9cea6",
+          "--es-header-title-color": "#9a1818",
+          "--es-header-subtitle-color": "#c6c77f"
+        },
+        "common": {
+          "theme": {
+            "--es-header-color": "#e10eda",
+            "--es-header-title-color": "#9a1818",
+            "--es-header-subtitle-color": "#c6c77f",
+            "--es-composer-bg": "#f7fbff",
+            "--es-composer-border": "#dbe5ec",
+            "--es-bg": "#12527d",
+            "--es-primary": "#766619",
+            "--es-muted": "#475569",
+            "--es-user-text": "#f0f9ff",
+            "--es-bot-text": "#0c4a6e",
+            "--es-user-bg": "linear-gradient(145deg, #0284c7 0%, #0ea5e9 100%)",
+            "--es-bot-bg": "linear-gradient(168deg, #e8f6ff 0%, #bae6fd 100%)",
+            "--es-user-msg-radius": "",
+            "--es-bot-msg-radius": ""
+          },
+          "header": {
+            "header3dGradient": true,
+            "headerIconUrl": "https://es-based-chatbot-production.up.railway.app/media/bot-assets/1781685048972_3070048d_hanuman.png",
+            "iconShape": "square",
+            "showHeaderIcon": true,
+            "title": "Recepu",
+            "subtitle": "We are online to assist you",
+            "botWritingText": "Typing",
+            "botWritingDotsIntervalMs": 480
+          },
+          "features": {
+            "inputPlaceholderByLanguage": {
+              "en": "Type your message here…",
+              "hi": "अपना संदेश लिखें…",
+              "mr": "तुमचा संदेश लिहा…"
+            }
+          },
+          "typography": {
+            "fontFamily": "\"Segoe UI\", system-ui, -apple-system, sans-serif"
+          },
+          "botPersona": {
+            "imageUrl": "https://es-based-chatbot-production.up.railway.app/media/bot-assets/1781685048972_3070048d_hanuman.png",
+            "label": "Recepu",
+            "avatarSizePx": 32,
+            "avatarShape": "circle",
+            "timeZone": "Asia/Kolkata",
+            "showTime": true,
+            "showSeconds": true,
+            "messageTimeIncludesDate": false
+          },
+          "userPersona": {
+            "label": "You",
+            "avatarSizePx": 18,
+            "timeZone": "Asia/Kolkata",
+            "showTime": true,
+            "showSeconds": true,
+            "messageTimeIncludesDate": false
+          },
+          "personaDisplay": {
+            "nameFontSizePx": 11,
+            "timeFontSizePx": 10
+          },
+          "chatPanel": {
+            "backgroundImageUrl": "",
+            "backgroundImageFit": "cover",
+            "borderRadius": {
+              "topLeft": "22px",
+              "topRight": "22px",
+              "bottomLeft": "20px",
+              "bottomRight": "20px"
+            }
+          }
+        }
+      }
+    },
+    "lakeView": {
+      "common": {
+        "header": {
+          "title": "Lake Viev"
+        },
+        "botPersona": {
+          "label": "Lake Viev"
+        }
+      }
+    }
+  },
+  "updatedAt": "2026-06-20T08:10:15.405Z"
+}

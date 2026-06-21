@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Email Notifications</title>
+    <link rel="stylesheet" href="dashboard.css" />
+    <link rel="stylesheet" href="dashboard-nav.css?v=20260621a" />
+    <link rel="stylesheet" href="notifications.css?v=20260621a" />
+  </head>
+  <body>
+    <div class="dash-page-content notifications-app" style="display:none">
+      <p class="dash-muted notifications-intro">
+        When emails send and who receives them. Message copy:
+        <a href="/super/email-templates.html" id="notifications-templates-link">Email Templates</a>.
+        Delivery:
+        <a href="/super/email-templates.html#email-integration" id="notifications-integration-link"
+          >Email integration</a
+        >.
+      </p>
+      <p class="notifications-status" id="notifications-status" hidden></p>
+
+      <div class="notifications-layout">
+        <section class="notifications-card">
+          <div class="notifications-card__head">
+            <h2>New lead</h2>
+            <label class="notifications-toggle">
+              <input type="checkbox" id="instant-enabled" />
+              <span>Enabled</span>
+            </label>
+          </div>
+          <div class="notifications-inline-row">
+            <label class="notifications-field notifications-field--compact">
+              Send after (minutes)
+              <input type="number" id="instant-delay" class="notifications-input-compact" min="0" max="1440" step="1" value="0" />
+            </label>
+          </div>
+
+          <details class="notifications-details" open>
+            <summary>Set conditions (all must pass)</summary>
+            <div class="notifications-conditions-grid">
+              <label class="notifications-field">
+                Contact required
+                <select id="cond-require-contact" class="notifications-select-compact">
+                  <option value="mobile_or_email">Mobile OR email</option>
+                  <option value="mobile">Mobile only</option>
+                  <option value="email">Email only</option>
+                  <option value="mobile_and_email">Mobile AND email</option>
+                </select>
+              </label>
+              <label class="notifications-field">
+                Visitor type
+                <select id="cond-visitor-type" class="notifications-select-compact">
+                  <option value="any">Any visitor</option>
+                  <option value="first_time">First time only</option>
+                  <option value="repeated">Repeated only</option>
+                </select>
+              </label>
+              <label class="notifications-field">
+                Appointment booked
+                <select id="cond-appointment" class="notifications-select-compact">
+                  <option value="any">Any</option>
+                  <option value="yes">Must be booked</option>
+                  <option value="no">Must NOT be booked</option>
+                </select>
+              </label>
+              <label class="notifications-field notifications-field--compact">
+                Min user messages
+                <input type="number" id="cond-min-turns" class="notifications-input-compact" min="0" max="100" step="1" value="0" />
+              </label>
+            </div>
+          </details>
+
+          <button type="button" class="dash-btn dash-btn--ghost" data-test="instant">Send test</button>
+        </section>
+
+        <section class="notifications-card notifications-card--recipients">
+          <h2 class="notifications-section-title">Recipients</h2>
+          <div class="notifications-recipients-grid">
+            <article class="notifications-recipient-block" data-mail-prefix="td-leadCapture">
+              <h3>Lead capture (first-time)</h3>
+              <label class="notifications-field">
+                To
+                <textarea id="td-leadCapture-to" rows="2" placeholder="sales@example.com"></textarea>
+              </label>
+              <div class="notifications-mail-extra">
+                <button type="button" class="dash-btn dash-btn--ghost notifications-add-cc" data-prefix="td-leadCapture">Add Cc:</button>
+                <button type="button" class="dash-btn dash-btn--ghost notifications-add-bcc" data-prefix="td-leadCapture">Add Bcc:</button>
+              </div>
+              <div class="notifications-mail-extra-field" id="td-leadCapture-cc-wrap">
+                <label class="notifications-field">
+                  Cc
+                  <textarea id="td-leadCapture-cc" rows="2"></textarea>
+                </label>
+              </div>
+              <div class="notifications-mail-extra-field" id="td-leadCapture-bcc-wrap">
+                <label class="notifications-field">
+                  Bcc
+                  <textarea id="td-leadCapture-bcc" rows="2"></textarea>
+                </label>
+              </div>
+            </article>
+
+            <article class="notifications-recipient-block" data-mail-prefix="td-hotLead">
+              <h3>Hot lead (returning)</h3>
+              <label class="notifications-field">
+                To
+                <textarea id="td-hotLead-to" rows="2" placeholder="sales@example.com"></textarea>
+              </label>
+              <div class="notifications-mail-extra">
+                <button type="button" class="dash-btn dash-btn--ghost notifications-add-cc" data-prefix="td-hotLead">Add Cc:</button>
+                <button type="button" class="dash-btn dash-btn--ghost notifications-add-bcc" data-prefix="td-hotLead">Add Bcc:</button>
+              </div>
+              <div class="notifications-mail-extra-field" id="td-hotLead-cc-wrap">
+                <label class="notifications-field">
+                  Cc
+                  <textarea id="td-hotLead-cc" rows="2"></textarea>
+                </label>
+              </div>
+              <div class="notifications-mail-extra-field" id="td-hotLead-bcc-wrap">
+                <label class="notifications-field">
+                  Bcc
+                  <textarea id="td-hotLead-bcc" rows="2"></textarea>
+                </label>
+              </div>
+            </article>
+
+            <article class="notifications-recipient-block" data-mail-prefix="td-appointmentClient">
+              <h3>Appointment request</h3>
+              <label class="notifications-field">
+                To
+                <textarea id="td-appointmentClient-to" rows="2" placeholder="bookings@example.com"></textarea>
+              </label>
+              <div class="notifications-mail-extra">
+                <button type="button" class="dash-btn dash-btn--ghost notifications-add-cc" data-prefix="td-appointmentClient">Add Cc:</button>
+                <button type="button" class="dash-btn dash-btn--ghost notifications-add-bcc" data-prefix="td-appointmentClient">Add Bcc:</button>
+              </div>
+              <div class="notifications-mail-extra-field" id="td-appointmentClient-cc-wrap">
+                <label class="notifications-field">
+                  Cc
+                  <textarea id="td-appointmentClient-cc" rows="2"></textarea>
+                </label>
+              </div>
+              <div class="notifications-mail-extra-field" id="td-appointmentClient-bcc-wrap">
+                <label class="notifications-field">
+                  Bcc
+                  <textarea id="td-appointmentClient-bcc" rows="2"></textarea>
+                </label>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <section class="notifications-card">
+          <div class="notifications-card__head">
+            <h2>Daily lead report</h2>
+            <label class="notifications-toggle">
+              <input type="checkbox" id="daily-enabled" />
+              <span>Enabled</span>
+            </label>
+          </div>
+          <div class="notifications-inline-row">
+            <label class="notifications-field notifications-field--compact">
+              Send time
+              <select id="daily-time" class="notifications-select-time"></select>
+            </label>
+            <label class="notifications-field">
+              Timezone
+              <select id="daily-timezone" class="notifications-select-compact" data-timezone-select></select>
+            </label>
+          </div>
+          <div class="notifications-recipients" data-mail-prefix="daily">
+            <label class="notifications-field">
+              To
+              <textarea id="daily-to" rows="2" placeholder="daily@example.com"></textarea>
+            </label>
+            <div class="notifications-mail-extra">
+              <button type="button" class="dash-btn dash-btn--ghost notifications-add-cc" data-prefix="daily">Add Cc:</button>
+              <button type="button" class="dash-btn dash-btn--ghost notifications-add-bcc" data-prefix="daily">Add Bcc:</button>
+            </div>
+            <div class="notifications-mail-extra-field" id="daily-cc-wrap">
+              <label class="notifications-field">
+                Cc
+                <textarea id="daily-cc" rows="2"></textarea>
+              </label>
+            </div>
+            <div class="notifications-mail-extra-field" id="daily-bcc-wrap">
+              <label class="notifications-field">
+                Bcc
+                <textarea id="daily-bcc" rows="2"></textarea>
+              </label>
+            </div>
+          </div>
+          <button type="button" class="dash-btn dash-btn--ghost" data-test="daily">Send test</button>
+        </section>
+
+        <section class="notifications-card">
+          <div class="notifications-card__head">
+            <h2>Weekly lead report</h2>
+            <label class="notifications-toggle">
+              <input type="checkbox" id="weekly-enabled" />
+              <span>Enabled</span>
+            </label>
+          </div>
+          <div class="notifications-inline-row">
+            <label class="notifications-field notifications-field--compact">
+              Send on
+              <select id="weekly-day" class="notifications-select-compact">
+                <option value="1">Mon</option>
+                <option value="2">Tue</option>
+                <option value="3">Wed</option>
+                <option value="4">Thu</option>
+                <option value="5">Fri</option>
+                <option value="6">Sat</option>
+                <option value="0">Sun</option>
+              </select>
+            </label>
+            <label class="notifications-field notifications-field--compact">
+              Send time
+              <select id="weekly-time" class="notifications-select-time"></select>
+            </label>
+            <label class="notifications-field">
+              Timezone
+              <select id="weekly-timezone" class="notifications-select-compact" data-timezone-select></select>
+            </label>
+          </div>
+          <div class="notifications-recipients" data-mail-prefix="weekly">
+            <label class="notifications-field">
+              To
+              <textarea id="weekly-to" rows="2" placeholder="weekly@example.com"></textarea>
+            </label>
+            <div class="notifications-mail-extra">
+              <button type="button" class="dash-btn dash-btn--ghost notifications-add-cc" data-prefix="weekly">Add Cc:</button>
+              <button type="button" class="dash-btn dash-btn--ghost notifications-add-bcc" data-prefix="weekly">Add Bcc:</button>
+            </div>
+            <div class="notifications-mail-extra-field" id="weekly-cc-wrap">
+              <label class="notifications-field">
+                Cc
+                <textarea id="weekly-cc" rows="2"></textarea>
+              </label>
+            </div>
+            <div class="notifications-mail-extra-field" id="weekly-bcc-wrap">
+              <label class="notifications-field">
+                Bcc
+                <textarea id="weekly-bcc" rows="2"></textarea>
+              </label>
+            </div>
+          </div>
+          <button type="button" class="dash-btn dash-btn--ghost" data-test="weekly">Send test</button>
+        </section>
+      </div>
+
+      <div class="notifications-actions">
+        <button type="button" class="dash-btn dash-btn--primary" id="notifications-save">Save settings</button>
+      </div>
+    </div>
+    <script src="desk-auth.js"></script>
+    <script src="dashboard-nav.js?v=20260621a"></script>
+    <script src="/shared/timezone-options.js?v=20260621a"></script>
+    <script src="notifications.js?v=20260621a"></script>
+  </body>
+</html>

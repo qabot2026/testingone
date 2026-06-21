@@ -1,0 +1,2714 @@
+{
+  "updatedAt": "2026-06-20T11:37:35.247Z",
+  "_sharedProvision": true,
+  "bots": {
+    "10001": {
+      "items": [
+        {
+          "id": "628e3ebc-cf5b-4e95-90d5-5ae6d0095eaf",
+          "intent": "LV3.5BHK",
+          "synonyms": [
+            "3 BHK",
+            "3.5 bhk",
+            "3.5BHK"
+          ],
+          "response": "Customer, Step into luxury with the spacious 3.5 BHK apartments now available at Lake View! 🏡",
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [
+            "lakeview"
+          ],
+          "outputContexts": "",
+          "payloadBlocks": [],
+          "published": true,
+          "order": 1,
+          "updatedAt": "2026-06-16T15:00:09.866Z"
+        },
+        {
+          "id": "7a122faf-eec1-41a4-a0d7-45f4219baa24",
+          "intent": "GV Floor plans",
+          "synonyms": [
+            "plans",
+            "layout",
+            "floor plans"
+          ],
+          "response": "(No text response in Dialogflow)",
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [
+            "green_valley"
+          ],
+          "outputContexts": "",
+          "payloadBlocks": [],
+          "published": true,
+          "order": 2,
+          "updatedAt": "2026-06-16T15:00:10.459Z"
+        },
+        {
+          "id": "c0438e9e-8dd9-4c03-9719-a706f563940d",
+          "intent": "Price-7Garden",
+          "synonyms": [
+            "cost",
+            "price"
+          ],
+          "response": "Price for 2 BHK at 7 Gardens is INR 20 lakhs.",
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [
+            "7garden"
+          ],
+          "outputContexts": "",
+          "payloadBlocks": [],
+          "published": true,
+          "order": 3,
+          "updatedAt": "2026-06-16T15:00:11.026Z"
+        },
+        {
+          "id": "60c6665c-6926-43d5-b0b2-b42132e43ddd",
+          "intent": "ENDCHAT",
+          "synonyms": [],
+          "response": "Thank you for chatting. Goodbye!",
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [
+            "ENDCHAT"
+          ],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [],
+          "outputContexts": "",
+          "payloadBlocks": [],
+          "published": true,
+          "order": 4,
+          "updatedAt": "2026-06-16T15:00:11.651Z"
+        },
+        {
+          "id": "36ae4b5c-f6f9-4d95-a274-041b67a7eba5",
+          "intent": "Landing GreenValley",
+          "synonyms": [],
+          "response": "$greeting , Welcome to Green Valley Assistant helpdesk.\n\n$date - $time",
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [
+            "START_GREEN_VALLEY"
+          ],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [],
+          "outputContexts": "[{\"name\":\"green_valley\",\"lifespanCount\":10},{\"name\":\"standalone_page\",\"lifespanCount\":10}]",
+          "payloadBlocks": [],
+          "published": true,
+          "order": 5,
+          "updatedAt": "2026-06-16T15:00:12.251Z"
+        },
+        {
+          "id": "a68ed5cc-e5b7-4b47-be98-84287434fd43",
+          "intent": "LV Back to Main Menu",
+          "synonyms": [
+            "back",
+            "home",
+            "back to main menu",
+            "main menu",
+            "menu"
+          ],
+          "response": "Welcome to Lake View Assistant Help Desk.",
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [
+            "lakeview",
+            "standalone_page"
+          ],
+          "outputContexts": "[{\"name\":\"lakeview\",\"lifespanCount\":10}]",
+          "payloadBlocks": [],
+          "published": true,
+          "order": 6,
+          "updatedAt": "2026-06-16T15:00:12.842Z"
+        },
+        {
+          "id": "6086c158-79b0-4e85-af38-f4fd638db421",
+          "intent": "Landing Lake View",
+          "synonyms": [],
+          "response": "Good $session.params.greeting, Welcome to Lake View Assistant Help Desk.",
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [
+            "START_LAKE_VIEW"
+          ],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [],
+          "outputContexts": "[{\"name\":\"lakeview\",\"lifespanCount\":10},{\"name\":\"standalone_page\",\"lifespanCount\":10}]",
+          "payloadBlocks": [],
+          "published": true,
+          "order": 7,
+          "updatedAt": "2026-06-16T15:00:13.463Z"
+        },
+        {
+          "id": "319d8015-8e30-48d0-98ee-a433d2efd8d0",
+          "intent": "LV Project Details",
+          "synonyms": [
+            "details",
+            "about",
+            "project",
+            "project details"
+          ],
+          "response": "Lake View is an exceptional residential project by Pristine Properties, which boasts over 40 years of trust and excellence in Pune’s real estate market. Located in Viman Nagar, it features luxurious 3.5 and 4.5 BHK apartments designed for those seeking a prestigious lifestyle.",
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [],
+          "outputContexts": "",
+          "payloadBlocks": [],
+          "published": true,
+          "order": 8,
+          "updatedAt": "2026-06-16T15:00:14.074Z"
+        },
+        {
+          "id": "5486cde4-4efc-46e7-af9b-42cc8c310abf",
+          "intent": "LV Floor Plans",
+          "synonyms": [
+            "floor plan",
+            "layour",
+            "plans",
+            "floor plans"
+          ],
+          "response": "(No text response in Dialogflow)",
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [
+            "lakeview"
+          ],
+          "outputContexts": "",
+          "payloadBlocks": [],
+          "published": true,
+          "order": 9,
+          "updatedAt": "2026-06-16T15:00:14.654Z"
+        },
+        {
+          "id": "95350563-740d-4db5-bba4-07c2a18594d4",
+          "intent": "LV Pricing",
+          "synonyms": [
+            "how much",
+            "charges",
+            "cost",
+            "price"
+          ],
+          "response": "Lake View offers grand residences, designed for the discerning homebuyer:\n          \n \n Pricing: Starting from Rs. 4.62 Cr* Onwards\n            \n * 3.5 BHK (2025 Sqft)\n            \n * 4.5 BHK (2644 Sqft)",
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [
+            "lakeview"
+          ],
+          "outputContexts": "",
+          "payloadBlocks": [],
+          "published": true,
+          "order": 10,
+          "updatedAt": "2026-06-16T15:00:15.243Z"
+        },
+        {
+          "id": "048d3aa7-7920-45b4-a792-d1c0939ca75a",
+          "intent": "Brochure-7 Garden",
+          "synonyms": [
+            "brochure"
+          ],
+          "response": "This is a 7 Graden's brochure link.",
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [
+            "7garden"
+          ],
+          "outputContexts": "",
+          "payloadBlocks": [],
+          "published": true,
+          "order": 11,
+          "updatedAt": "2026-06-16T15:00:15.825Z"
+        },
+        {
+          "id": "3d4cae20-89c7-4843-9266-e24fa2109d74",
+          "intent": "Citadel",
+          "synonyms": [
+            "citadel"
+          ],
+          "response": "This is CITADEL project Details.",
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [
+            "receptionist"
+          ],
+          "outputContexts": "[{\"name\":\"receptionist\",\"lifespanCount\":5},{\"name\":\"citadel\",\"lifespanCount\":5},{\"name\":\"from_home\",\"lifespanCount\":5}]",
+          "payloadBlocks": [],
+          "published": true,
+          "order": 12,
+          "updatedAt": "2026-06-16T15:00:16.368Z"
+        },
+        {
+          "id": "22daaa1b-ef89-4c65-ac56-268bc0a427f1",
+          "intent": "Recep Greeting",
+          "synonyms": [
+            "hey",
+            "hello",
+            "hi"
+          ],
+          "response": "Good $session.params.greeting !, Welcome to Hirananda Help desk.",
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [
+            "receptionist"
+          ],
+          "outputContexts": "[{\"name\":\"receptionist\",\"lifespanCount\":5}]",
+          "payloadBlocks": [],
+          "published": true,
+          "order": 13,
+          "updatedAt": "2026-06-16T15:00:16.914Z"
+        },
+        {
+          "id": "1c6c0ad2-9b70-44b2-844b-e5f8f7e71b9d",
+          "intent": "Recep Start",
+          "synonyms": [],
+          "response": "Good $session.params.greeting !, Welcome to Hirananda Help desk here.",
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [
+            "FRESH"
+          ],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [],
+          "outputContexts": "[{\"name\":\"receptionist\",\"lifespanCount\":5}]",
+          "payloadBlocks": [],
+          "published": true,
+          "order": 14,
+          "updatedAt": "2026-06-16T15:00:17.444Z"
+        },
+        {
+          "id": "1df650e1-096c-4394-8c45-4fc93df66649",
+          "intent": "GV pricing",
+          "synonyms": [
+            "charges",
+            "cost",
+            "pricing"
+          ],
+          "response": "(No text response in Dialogflow)",
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [
+            "green_valley"
+          ],
+          "outputContexts": "",
+          "payloadBlocks": [],
+          "published": true,
+          "order": 15,
+          "updatedAt": "2026-06-16T15:00:17.995Z"
+        },
+        {
+          "id": "e9c0ca2c-d155-4386-a517-f92947b62364",
+          "intent": "LV location",
+          "synonyms": [
+            "located",
+            "where",
+            "address",
+            "location"
+          ],
+          "response": "Lake View is located in the upscale locality of Viman Nagar, Pune, known for its proximity to Pune International Airport, top IT park &amp; shopping centers.",
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [
+            "lakeview"
+          ],
+          "outputContexts": "",
+          "payloadBlocks": [],
+          "published": true,
+          "order": 16,
+          "updatedAt": "2026-06-16T15:00:18.553Z"
+        },
+        {
+          "id": "8b4aae73-bf01-442c-bc5b-01e3277b9919",
+          "intent": "GVProjectdetails",
+          "synonyms": [
+            "about green valley",
+            "details",
+            "project",
+            "project details"
+          ],
+          "response": "Discover exclusive residential plots at Green Valley, situated in Avadi, Chennai 🏡, promising a premium living experience.",
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [
+            "green_valley"
+          ],
+          "outputContexts": "",
+          "payloadBlocks": [],
+          "published": true,
+          "order": 17,
+          "updatedAt": "2026-06-16T15:00:19.111Z"
+        },
+        {
+          "id": "8efc5f2b-6280-4d8a-8571-5459c0d155bd",
+          "intent": "GVupload",
+          "synonyms": [
+            "file load",
+            "upload"
+          ],
+          "response": "(No text response in Dialogflow)",
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [
+            "green_valley"
+          ],
+          "outputContexts": "",
+          "payloadBlocks": [],
+          "published": true,
+          "order": 18,
+          "updatedAt": "2026-06-16T15:00:19.654Z"
+        },
+        {
+          "id": "6d314140-f5f0-4679-93b6-5ea128996487",
+          "intent": "GV2BHK",
+          "synonyms": [
+            "green valley 2 bhk",
+            "2 bhk"
+          ],
+          "response": "**At Green Vallye 2 BHKs are available from 500 sft to 900 sft.**",
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [
+            "green_valley"
+          ],
+          "outputContexts": "",
+          "payloadBlocks": [],
+          "published": true,
+          "order": 19,
+          "updatedAt": "2026-06-16T15:00:20.211Z"
+        },
+        {
+          "id": "e1676d96-da90-479d-8f21-7b9dbc1b9498",
+          "intent": "LV 4.5BHK",
+          "synonyms": [
+            "4.5 bhk",
+            "4.5bhk"
+          ],
+          "response": "Step into luxury with the spacious 4.5 BHK apartments now available at Lake Wiew! 🏡",
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [
+            "lakeview"
+          ],
+          "outputContexts": "",
+          "payloadBlocks": [],
+          "published": true,
+          "order": 20,
+          "updatedAt": "2026-06-16T15:00:20.762Z"
+        },
+        {
+          "id": "58d9da1c-2c34-43d1-b588-bbdc8a85d797",
+          "intent": "GV Greeting",
+          "synonyms": [
+            "hey",
+            "hello",
+            "hi"
+          ],
+          "response": "Welcome to Green Valley Assistant helpdesk.",
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [
+            "green_valley"
+          ],
+          "outputContexts": "[{\"name\":\"green_valley\",\"lifespanCount\":10}]",
+          "payloadBlocks": [],
+          "published": true,
+          "order": 21,
+          "updatedAt": "2026-06-16T15:00:21.288Z"
+        },
+        {
+          "id": "0bfdcc1e-4f53-40a5-81b0-71c79c397465",
+          "intent": "Citadel-Price",
+          "synonyms": [
+            "cost",
+            "price"
+          ],
+          "response": "At CItadel 4 BHK starts at INR 40 Lakhs.",
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [
+            "citadel"
+          ],
+          "outputContexts": "",
+          "payloadBlocks": [],
+          "published": true,
+          "order": 22,
+          "updatedAt": "2026-06-16T15:00:21.890Z"
+        },
+        {
+          "id": "9f4458a7-fb58-4815-89a3-f80bd57882ce",
+          "intent": "GVLocation",
+          "synonyms": [
+            "located",
+            "where",
+            "address",
+            "location"
+          ],
+          "response": "Green valley is located in Gachibowli, Hyderabad.",
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [
+            "green_valley"
+          ],
+          "outputContexts": "",
+          "payloadBlocks": [],
+          "published": true,
+          "order": 23,
+          "updatedAt": "2026-06-16T15:00:22.436Z"
+        },
+        {
+          "id": "434abbdc-ab2a-4e49-a7e3-4faad18d7e26",
+          "intent": "Rec Green Valley",
+          "synonyms": [
+            "valli",
+            "green valli",
+            "Green Valley"
+          ],
+          "response": "Good $session.params.greeting !, Welcome to Green Valley Assistant.",
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [
+            "receptionist"
+          ],
+          "outputContexts": "[{\"name\":\"green_valley\",\"lifespanCount\":10},{\"name\":\"receptionist\",\"lifespanCount\":5},{\"name\":\"from_home\",\"lifespanCount\":10}]",
+          "payloadBlocks": [],
+          "published": true,
+          "order": 24,
+          "updatedAt": "2026-06-16T15:00:23.009Z"
+        },
+        {
+          "id": "b5ebbf7a-aac0-4cda-a8da-6b361fad8eba",
+          "intent": "7 Garden",
+          "synonyms": [
+            "hi",
+            "7 garden"
+          ],
+          "response": "This is 7 Garden project Details.",
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [
+            "receptionist"
+          ],
+          "outputContexts": "[{\"name\":\"receptionist\",\"lifespanCount\":5},{\"name\":\"7garden\",\"lifespanCount\":5},{\"name\":\"from_home\",\"lifespanCount\":5}]",
+          "payloadBlocks": [],
+          "published": true,
+          "order": 25,
+          "updatedAt": "2026-06-16T15:00:23.550Z"
+        },
+        {
+          "id": "287752d4-ca30-4809-b29c-f0ff61ff23a6",
+          "intent": "Back to Receptionist",
+          "synonyms": [
+            "hi",
+            "home",
+            "main menu",
+            "menu",
+            "back"
+          ],
+          "response": "$session.params.greeting, Welcome to Hirananda Help desk.",
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [
+            "from_home"
+          ],
+          "outputContexts": "[{\"name\":\"green_valley\",\"lifespanCount\":5},{\"name\":\"lakeview\",\"lifespanCount\":5},{\"name\":\"from_home\",\"lifespanCount\":5},{\"name\":\"receptionist\",\"lifespanCount\":5}]",
+          "payloadBlocks": [],
+          "published": true,
+          "order": 26,
+          "updatedAt": "2026-06-16T15:00:24.124Z"
+        },
+        {
+          "id": "f0f3e50a-3b8d-441d-bc5d-c127aee49bfa",
+          "intent": "GV3BHK",
+          "synonyms": [
+            "3 bhk floor plans",
+            "green valley 3 bhk",
+            "3 bhk"
+          ],
+          "response": "At Green Valley, 3 BHKs available with 1300 sft to 1500 sft.",
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [
+            "green_valley"
+          ],
+          "outputContexts": "",
+          "payloadBlocks": [],
+          "published": true,
+          "order": 27,
+          "updatedAt": "2026-06-16T15:00:24.733Z"
+        },
+        {
+          "id": "da1ed2a1-bbe0-4cd4-8b26-5508d20d1d32",
+          "intent": "Rec Lake View",
+          "synonyms": [
+            "lakeview",
+            "lake",
+            "lake view"
+          ],
+          "response": "Good $session.params.greeting !, Welcome to Lake View Assistant.",
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [
+            "receptionist"
+          ],
+          "outputContexts": "[{\"name\":\"lakeview\",\"lifespanCount\":10},{\"name\":\"receptionist\",\"lifespanCount\":5},{\"name\":\"from_home\",\"lifespanCount\":10}]",
+          "payloadBlocks": [],
+          "published": true,
+          "order": 28,
+          "updatedAt": "2026-06-16T15:00:25.278Z"
+        },
+        {
+          "id": "8055a268-38c5-4755-a171-ab3e70a2c9b3",
+          "intent": "Brochure-citadel",
+          "synonyms": [
+            "brochure"
+          ],
+          "response": "This is Citadels brochure.",
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [
+            "citadel"
+          ],
+          "outputContexts": "",
+          "payloadBlocks": [],
+          "published": true,
+          "order": 29,
+          "updatedAt": "2026-06-16T15:00:25.825Z"
+        },
+        {
+          "id": "d59ceded-2ef3-47c4-baf9-22510256cf93",
+          "intent": "GV Back to Main Menu",
+          "synonyms": [
+            "receptionist",
+            "home",
+            "go back to main menu",
+            "go back",
+            "back",
+            "menu",
+            "main menu"
+          ],
+          "response": "Welcome to Green Valley Assistant helpdesk.",
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [
+            "green_valley",
+            "standalone_page"
+          ],
+          "outputContexts": "[{\"name\":\"green_valley\",\"lifespanCount\":10}]",
+          "payloadBlocks": [],
+          "published": true,
+          "order": 30,
+          "updatedAt": "2026-06-16T15:00:26.376Z"
+        },
+        {
+          "id": "c414b5c0-8021-4677-b50b-2a1cba247b4c",
+          "intent": "LV Greeting",
+          "synonyms": [
+            "hey",
+            "hello",
+            "hi"
+          ],
+          "response": "Welcome to Lake View Assistant Help Desk.",
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [
+            "lakeview"
+          ],
+          "outputContexts": "[{\"name\":\"lakeview\",\"lifespanCount\":10}]",
+          "payloadBlocks": [],
+          "published": true,
+          "order": 31,
+          "updatedAt": "2026-06-16T15:00:26.924Z"
+        }
+      ]
+    },
+    "10002": {
+      "items": [
+        {
+          "id": "b4a07c35-32d8-46ea-8c19-f859f843d5b3",
+          "intent": "LV3.5BHK",
+          "synonyms": [
+            "3 BHK",
+            "3.5 bhk",
+            "3.5BHK"
+          ],
+          "response": "Step into luxury with the spacious 3.5 BHK apartments now available at Lake View! 🏡",
+          "priority": 0,
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [
+            "lakeview"
+          ],
+          "outputContexts": "",
+          "published": true,
+          "order": 1,
+          "updatedAt": "2026-06-16T09:35:41.579Z"
+        },
+        {
+          "id": "68980d69-96bc-437e-bead-4cb79b4f0e73",
+          "intent": "GV Floor plans",
+          "synonyms": [
+            "plans",
+            "layout",
+            "floor plans"
+          ],
+          "response": "(No text response in Dialogflow)",
+          "priority": 0,
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [
+            "green_valley"
+          ],
+          "outputContexts": "",
+          "published": true,
+          "order": 2,
+          "updatedAt": "2026-06-16T09:35:41.579Z"
+        },
+        {
+          "id": "cac6069e-4aef-4849-8fac-3ab685dc3f39",
+          "intent": "Price-7Garden",
+          "synonyms": [
+            "cost",
+            "price"
+          ],
+          "response": "Price for 2 BHK at 7 Gardens is INR 20 lakhs.",
+          "priority": 0,
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [
+            "7garden"
+          ],
+          "outputContexts": "",
+          "published": true,
+          "order": 3,
+          "updatedAt": "2026-06-16T09:35:41.579Z"
+        },
+        {
+          "id": "3b9c5c9d-cbde-42b1-bf7f-1c85388d1024",
+          "intent": "ENDCHAT",
+          "synonyms": [],
+          "response": "Thank you for chatting. Goodbye!",
+          "priority": 0,
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [
+            "ENDCHAT"
+          ],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [],
+          "outputContexts": "",
+          "published": true,
+          "order": 4,
+          "updatedAt": "2026-06-16T09:35:41.579Z"
+        },
+        {
+          "id": "f877dbc7-bf22-4566-8fcc-416f4f705cb9",
+          "intent": "Landing GreenValley",
+          "synonyms": [],
+          "response": "$greeting , Welcome to Green Valley Assistant helpdesk.\r\n\r\n$date - $time",
+          "priority": 0,
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [
+            "START_GREEN_VALLEY"
+          ],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [],
+          "outputContexts": "[{\"name\":\"green_valley\",\"lifespanCount\":10},{\"name\":\"standalone_page\",\"lifespanCount\":10}]",
+          "published": true,
+          "order": 5,
+          "updatedAt": "2026-06-16T09:35:41.579Z"
+        },
+        {
+          "id": "fa7395a9-d164-4d93-9434-8c61737bc535",
+          "intent": "LV Back to Main Menu",
+          "synonyms": [
+            "back",
+            "home",
+            "back to main menu",
+            "main menu",
+            "menu"
+          ],
+          "response": "Welcome to Lake View Assistant Help Desk.",
+          "priority": 0,
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [
+            "lakeview",
+            "standalone_page"
+          ],
+          "outputContexts": "[{\"name\":\"lakeview\",\"lifespanCount\":10}]",
+          "published": true,
+          "order": 6,
+          "updatedAt": "2026-06-16T09:35:41.579Z"
+        },
+        {
+          "id": "68a33991-c438-400d-aaa2-4c79bd877ded",
+          "intent": "Landing Lake View",
+          "synonyms": [],
+          "response": "Good $session.params.greeting, Welcome to Lake View Assistant Help Desk.",
+          "priority": 0,
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [
+            "START_LAKE_VIEW"
+          ],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [],
+          "outputContexts": "[{\"name\":\"lakeview\",\"lifespanCount\":10},{\"name\":\"standalone_page\",\"lifespanCount\":10}]",
+          "published": true,
+          "order": 7,
+          "updatedAt": "2026-06-16T09:35:41.579Z"
+        },
+        {
+          "id": "d890fcb8-31f4-4345-9bac-7356196679b2",
+          "intent": "LV Project Details",
+          "synonyms": [
+            "details",
+            "about",
+            "project",
+            "project details"
+          ],
+          "response": "Lake View is an exceptional residential project by Pristine Properties, which boasts over 40 years of trust and excellence in Pune’s real estate market. Located in Viman Nagar, it features luxurious 3.5 and 4.5 BHK apartments designed for those seeking a prestigious lifestyle.",
+          "priority": 0,
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [],
+          "outputContexts": "",
+          "published": true,
+          "order": 8,
+          "updatedAt": "2026-06-16T09:35:41.579Z"
+        },
+        {
+          "id": "a1e95e23-9f16-47b7-8890-8df0a2407862",
+          "intent": "LV Floor Plans",
+          "synonyms": [
+            "floor plan",
+            "layour",
+            "plans",
+            "floor plans"
+          ],
+          "response": "(No text response in Dialogflow)",
+          "priority": 0,
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [
+            "lakeview"
+          ],
+          "outputContexts": "",
+          "published": true,
+          "order": 9,
+          "updatedAt": "2026-06-16T09:35:41.579Z"
+        },
+        {
+          "id": "cb0ef02a-c2b2-42b8-94fb-3b2b7856034b",
+          "intent": "LV Pricing",
+          "synonyms": [
+            "how much",
+            "charges",
+            "cost",
+            "price"
+          ],
+          "response": "Lake View offers grand residences, designed for the discerning homebuyer:\r\n          \r\n \r\n Pricing: Starting from Rs. 4.62 Cr* Onwards\r\n            \r\n * 3.5 BHK (2025 Sqft)\r\n            \r\n * 4.5 BHK (2644 Sqft)",
+          "priority": 0,
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [
+            "lakeview"
+          ],
+          "outputContexts": "",
+          "published": true,
+          "order": 10,
+          "updatedAt": "2026-06-16T09:35:41.579Z"
+        },
+        {
+          "id": "4941d4e7-0f34-4ece-8446-74ca85b5fc15",
+          "intent": "Brochure-7 Garden",
+          "synonyms": [
+            "brochure"
+          ],
+          "response": "This is a 7 Graden's brochure link.",
+          "priority": 0,
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [
+            "7garden"
+          ],
+          "outputContexts": "",
+          "published": true,
+          "order": 11,
+          "updatedAt": "2026-06-16T09:35:41.579Z"
+        },
+        {
+          "id": "14c94924-9303-4db0-842c-9c57202b517b",
+          "intent": "Citadel",
+          "synonyms": [
+            "citadel"
+          ],
+          "response": "This is CITADEL project Details.",
+          "priority": 0,
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [
+            "receptionist"
+          ],
+          "outputContexts": "[{\"name\":\"receptionist\",\"lifespanCount\":0},{\"name\":\"citadel\",\"lifespanCount\":5},{\"name\":\"from_home\",\"lifespanCount\":5}]",
+          "published": true,
+          "order": 12,
+          "updatedAt": "2026-06-16T09:35:41.579Z"
+        },
+        {
+          "id": "51106375-7778-474e-9682-3eb9cd74c8b4",
+          "intent": "Recep Greeting",
+          "synonyms": [
+            "hey",
+            "hello",
+            "hi"
+          ],
+          "response": "Good $session.params.greeting !, Welcome to Hirananda Help desk.",
+          "priority": 0,
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [
+            "receptionist"
+          ],
+          "outputContexts": "[{\"name\":\"receptionist\",\"lifespanCount\":5}]",
+          "published": true,
+          "order": 13,
+          "updatedAt": "2026-06-16T09:35:41.579Z"
+        },
+        {
+          "id": "7998aeb9-e8dd-4054-9afe-cc40fa38223c",
+          "intent": "Recep Start",
+          "synonyms": [],
+          "response": "Good $session.params.greeting !, Welcome to Hirananda Help desk here.",
+          "priority": 0,
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [
+            "FRESH"
+          ],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [],
+          "outputContexts": "[{\"name\":\"receptionist\",\"lifespanCount\":5}]",
+          "published": true,
+          "order": 14,
+          "updatedAt": "2026-06-16T09:35:41.579Z"
+        },
+        {
+          "id": "010703ed-6fe5-4103-af89-a2c2a287e5aa",
+          "intent": "GV pricing",
+          "synonyms": [
+            "charges",
+            "cost",
+            "pricing"
+          ],
+          "response": "2 BHK & 3 BHK starts at INR 40 Lakhs.",
+          "priority": 0,
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [
+            "green_valley"
+          ],
+          "outputContexts": "",
+          "published": true,
+          "order": 15,
+          "updatedAt": "2026-06-16T09:35:41.579Z"
+        },
+        {
+          "id": "5b15ee6d-9ac4-4c8e-b619-fbc8f46bd51a",
+          "intent": "LV location",
+          "synonyms": [
+            "located",
+            "where",
+            "address",
+            "location"
+          ],
+          "response": "Lake View is located in the upscale locality of Viman Nagar, Pune, known for its proximity to Pune International Airport, top IT park &amp; shopping centers.",
+          "priority": 0,
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [
+            "lakeview"
+          ],
+          "outputContexts": "",
+          "published": true,
+          "order": 16,
+          "updatedAt": "2026-06-16T09:35:41.579Z"
+        },
+        {
+          "id": "a8c91b92-bfc1-47a7-a96e-46c99fa263c6",
+          "intent": "GVProjectdetails",
+          "synonyms": [
+            "about green valley",
+            "details",
+            "project",
+            "project details"
+          ],
+          "response": "Discover exclusive residential plots at Green Valley, situated in Avadi, Chennai 🏡, promising a premium living experience.",
+          "priority": 0,
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [
+            "green_valley"
+          ],
+          "outputContexts": "",
+          "published": true,
+          "order": 17,
+          "updatedAt": "2026-06-16T09:35:41.579Z"
+        },
+        {
+          "id": "68f79e54-8507-4865-8ccd-3c17671e1304",
+          "intent": "GVupload",
+          "synonyms": [
+            "file load",
+            "upload"
+          ],
+          "response": "(No text response in Dialogflow)",
+          "priority": 0,
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [
+            "green_valley"
+          ],
+          "outputContexts": "",
+          "published": true,
+          "order": 18,
+          "updatedAt": "2026-06-16T09:35:41.579Z"
+        },
+        {
+          "id": "620eeb01-92b4-4564-9aca-2056ac48ec98",
+          "intent": "GV2BHK",
+          "synonyms": [
+            "green valley 2 bhk",
+            "2 bhk"
+          ],
+          "response": "**At Green Vallye 2 BHKs are available from 900 sft to 1000 sft.**",
+          "priority": 0,
+          "nextIntent": "Main Menu",
+          "nextIntentPhrases": [],
+          "events": [],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [
+            "green_valley"
+          ],
+          "outputContexts": "",
+          "published": true,
+          "order": 19,
+          "updatedAt": "2026-06-16T13:23:50.548Z"
+        },
+        {
+          "id": "17d824fd-0eab-4375-8e99-42c85f25fec5",
+          "intent": "LV 4.5BHK",
+          "synonyms": [
+            "4.5 bhk",
+            "4.5bhk"
+          ],
+          "response": "Step into luxury with the spacious 4.5 BHK apartments now available at Lake Wiew! 🏡",
+          "priority": 0,
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [
+            "lakeview"
+          ],
+          "outputContexts": "",
+          "published": true,
+          "order": 20,
+          "updatedAt": "2026-06-16T09:35:41.579Z"
+        },
+        {
+          "id": "c16f634b-903a-438b-8038-83ddb6fc9b16",
+          "intent": "GV Greeting",
+          "synonyms": [
+            "hey",
+            "hello",
+            "hi"
+          ],
+          "response": "Welcome to Green Valley Assistant helpdesk.",
+          "priority": 0,
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [
+            "green_valley"
+          ],
+          "outputContexts": "[{\"name\":\"green_valley\",\"lifespanCount\":10}]",
+          "published": true,
+          "order": 21,
+          "updatedAt": "2026-06-16T09:35:41.579Z"
+        },
+        {
+          "id": "a207ff7b-5a82-4d21-8e27-70e730c7b9ee",
+          "intent": "Citadel-Price",
+          "synonyms": [
+            "cost",
+            "price"
+          ],
+          "response": "At CItadel 4 BHK starts at INR 40 Lakhs.",
+          "priority": 0,
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [
+            "citadel"
+          ],
+          "outputContexts": "",
+          "published": true,
+          "order": 22,
+          "updatedAt": "2026-06-16T09:35:41.579Z"
+        },
+        {
+          "id": "b94eb2e3-5884-4450-893c-0c3a43945853",
+          "intent": "GVLocation",
+          "synonyms": [
+            "located",
+            "where",
+            "address",
+            "location"
+          ],
+          "response": "Green valley is located in Gachibowli, Hyderabad.",
+          "priority": 0,
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [
+            "green_valley"
+          ],
+          "outputContexts": "",
+          "published": true,
+          "order": 23,
+          "updatedAt": "2026-06-16T09:35:41.579Z"
+        },
+        {
+          "id": "a97c8e47-93f3-4d91-a866-038cadf1c04c",
+          "intent": "Rec Green Valley",
+          "synonyms": [
+            "valli",
+            "green valli",
+            "Green Valley"
+          ],
+          "response": "Good $session.params.greeting !, Welcome to Green Valley Assistant.",
+          "priority": 0,
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [
+            "receptionist"
+          ],
+          "outputContexts": "[{\"name\":\"green_valley\",\"lifespanCount\":10},{\"name\":\"receptionist\",\"lifespanCount\":0},{\"name\":\"from_home\",\"lifespanCount\":10}]",
+          "published": true,
+          "order": 24,
+          "updatedAt": "2026-06-16T09:35:41.579Z"
+        },
+        {
+          "id": "66a16313-3f30-4662-8fd5-c58b7759dbe2",
+          "intent": "7 Garden",
+          "synonyms": [
+            "hi",
+            "7 garden"
+          ],
+          "response": "This is 7 Garden project Details.",
+          "priority": 0,
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [
+            "receptionist"
+          ],
+          "outputContexts": "[{\"name\":\"receptionist\",\"lifespanCount\":0},{\"name\":\"7garden\",\"lifespanCount\":5},{\"name\":\"from_home\",\"lifespanCount\":5}]",
+          "published": true,
+          "order": 25,
+          "updatedAt": "2026-06-16T09:35:41.579Z"
+        },
+        {
+          "id": "0e058446-267f-4d78-af0f-063446b41d2c",
+          "intent": "Back to Receptionist",
+          "synonyms": [
+            "hi",
+            "home",
+            "main menu",
+            "menu",
+            "back"
+          ],
+          "response": "$session.params.greeting, Welcome to Hirananda Help desk.",
+          "priority": 0,
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [
+            "from_home"
+          ],
+          "outputContexts": "[{\"name\":\"green_valley\",\"lifespanCount\":0},{\"name\":\"lakeview\",\"lifespanCount\":0},{\"name\":\"from_home\",\"lifespanCount\":0},{\"name\":\"receptionist\",\"lifespanCount\":5}]",
+          "published": true,
+          "order": 26,
+          "updatedAt": "2026-06-16T09:35:41.579Z"
+        },
+        {
+          "id": "8737ba71-8752-45bd-aba1-7f86e157b451",
+          "intent": "GV3BHK",
+          "synonyms": [
+            "3 bhk floor plans",
+            "green valley 3 bhk",
+            "3 bhk"
+          ],
+          "response": "At Green Valley, 3 BHKs available with 1300 sft to 1500 sft.",
+          "priority": 0,
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [
+            "green_valley"
+          ],
+          "outputContexts": "",
+          "published": true,
+          "order": 27,
+          "updatedAt": "2026-06-16T09:35:41.579Z"
+        },
+        {
+          "id": "ad7abc35-0a4a-45e4-b950-f9d811cead48",
+          "intent": "Rec Lake View",
+          "synonyms": [
+            "lakeview",
+            "lake",
+            "lake view"
+          ],
+          "response": "Good $session.params.greeting !, Welcome to Lake View Assistant.",
+          "priority": 0,
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [
+            "receptionist"
+          ],
+          "outputContexts": "[{\"name\":\"lakeview\",\"lifespanCount\":10},{\"name\":\"receptionist\",\"lifespanCount\":0},{\"name\":\"from_home\",\"lifespanCount\":10}]",
+          "published": true,
+          "order": 28,
+          "updatedAt": "2026-06-16T09:35:41.579Z"
+        },
+        {
+          "id": "e8716e03-99b4-488e-bebd-eea44fb2aa27",
+          "intent": "Brochure-citadel",
+          "synonyms": [
+            "brochure"
+          ],
+          "response": "This is Citadels brochure.",
+          "priority": 0,
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [
+            "citadel"
+          ],
+          "outputContexts": "",
+          "published": true,
+          "order": 29,
+          "updatedAt": "2026-06-16T09:35:41.579Z"
+        },
+        {
+          "id": "90d3a625-84c9-40f7-9d4b-9c78ee1bb71b",
+          "intent": "GV Back to Main Menu",
+          "synonyms": [
+            "receptionist",
+            "home",
+            "go back to main menu",
+            "go back",
+            "back",
+            "menu",
+            "main menu"
+          ],
+          "response": "Welcome to Green Valley Assistant helpdesk.",
+          "priority": 0,
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [
+            "green_valley",
+            "standalone_page"
+          ],
+          "outputContexts": "[{\"name\":\"green_valley\",\"lifespanCount\":10}]",
+          "published": true,
+          "order": 30,
+          "updatedAt": "2026-06-16T09:35:41.579Z"
+        },
+        {
+          "id": "51f77809-9b4a-4b12-900e-9531a3890727",
+          "intent": "LV Greeting",
+          "synonyms": [
+            "hey",
+            "hello",
+            "hi"
+          ],
+          "response": "Welcome to Lake View Assistant Help Desk.",
+          "priority": 0,
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [
+            "lakeview"
+          ],
+          "outputContexts": "[{\"name\":\"lakeview\",\"lifespanCount\":10}]",
+          "published": true,
+          "order": 31,
+          "updatedAt": "2026-06-16T09:35:41.579Z"
+        }
+      ]
+    },
+    "shared": {
+      "items": [
+        {
+          "id": "9d8621fb-ac2a-4455-b4a3-034c8145767f",
+          "intent": "LV3.5BHK",
+          "synonyms": [],
+          "response": "Hey , Step into luxury with the spacious 3.5 BHK apartments now available at Lake View! 🏡",
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [],
+          "outputContexts": "",
+          "payloadBlocks": [
+            {
+              "type": "dropdown",
+              "message": "Please choose:",
+              "placeholder": "Please choose:",
+              "options": [
+                {
+                  "value": "Upload",
+                  "label": "Upload"
+                }
+              ],
+              "dfPayloadName": "open_gallery"
+            },
+            {
+              "type": "gallery",
+              "message": "Please choose:",
+              "images": [
+                {
+                  "url": "https://storage.googleapis.com/recep-bucket/chat-assets/1781672698081_06c4ff93_hanuman.png",
+                  "name": "Image 1"
+                }
+              ],
+              "dfPayloadName": "open_gallery"
+            }
+          ],
+          "published": true,
+          "order": 1,
+          "updatedAt": "2026-06-20T11:37:35.246Z",
+          "liveAt": "2026-06-18T11:44:19.829Z"
+        },
+        {
+          "id": "b42fb7d7-f2e8-4f27-ba43-d33922fc2a9e",
+          "intent": "GV Floor plans",
+          "synonyms": [],
+          "response": "",
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [],
+          "outputContexts": "",
+          "payloadBlocks": [
+            {
+              "type": "chips",
+              "heading": "Which configuration are you looking for?",
+              "items": [
+                {
+                  "label": "2 BHK",
+                  "message": "2 BHK",
+                  "href": ""
+                },
+                {
+                  "label": "3 BHK",
+                  "message": "3 BHK",
+                  "href": ""
+                }
+              ]
+            }
+          ],
+          "published": true,
+          "order": 2,
+          "updatedAt": "2026-06-20T11:37:35.246Z"
+        },
+        {
+          "id": "7206384c-f9da-45b3-a9f9-4140bf1f415a",
+          "intent": "Price-7Garden",
+          "synonyms": [
+            "price",
+            "7 garden price"
+          ],
+          "response": "Lake View offers grand residences, designed for the discerning homebuyer:\n          \n** Pricing: Starts from Rs. 6 Cr* Onwards**\n * 3.5 BHK (2025 Sqft)    \n * 4.5 BHK (2644 Sqft)",
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [],
+          "outputContexts": "",
+          "payloadBlocks": [
+            {
+              "type": "form",
+              "formId": "upload",
+              "message": "",
+              "onSubmit": "",
+              "onCancel": "",
+              "onResend": "",
+              "tag": "",
+              "nextFormId": "uploadDocument",
+              "dfPayloadName": "$session.params.name"
+            }
+          ],
+          "published": true,
+          "order": 3,
+          "updatedAt": "2026-06-20T11:37:35.246Z",
+          "liveAt": "2026-06-17T09:50:07.662Z"
+        },
+        {
+          "id": "7294101d-6107-4979-9ea0-5695ad3c69de",
+          "intent": "ENDCHAT",
+          "synonyms": [],
+          "response": "Thank you for chatting. Goodbye!",
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [],
+          "outputContexts": "",
+          "payloadBlocks": [],
+          "published": true,
+          "order": 4,
+          "updatedAt": "2026-06-20T11:37:35.246Z"
+        },
+        {
+          "id": "e2412a0a-8a8c-45e2-98ba-b5bb79099700",
+          "intent": "Landing GreenValley",
+          "synonyms": [],
+          "response": "$greeting , Welcome to Green Valley Assistant helpdesk.\n\n$date - $time",
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [],
+          "outputContexts": "",
+          "payloadBlocks": [
+            {
+              "type": "chips",
+              "heading": "Please select an option",
+              "items": [
+                {
+                  "label": "Project Details",
+                  "message": "Project Details",
+                  "href": ""
+                },
+                {
+                  "label": "Location",
+                  "message": "Location",
+                  "href": ""
+                },
+                {
+                  "label": "Floor Plans",
+                  "message": "Floor Plans",
+                  "href": ""
+                },
+                {
+                  "label": "Pricing",
+                  "message": "Pricing",
+                  "href": ""
+                },
+                {
+                  "label": "Main Menu",
+                  "message": "Main Menu",
+                  "href": ""
+                }
+              ]
+            }
+          ],
+          "published": true,
+          "order": 5,
+          "updatedAt": "2026-06-20T11:37:35.246Z"
+        },
+        {
+          "id": "14fa71b0-67ed-4c6a-930c-f00f0ef998cf",
+          "intent": "LV Back to Main Menu",
+          "synonyms": [],
+          "response": "Welcome to Lake View Assistant Help desk.",
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [],
+          "outputContexts": "",
+          "payloadBlocks": [
+            {
+              "type": "chips",
+              "heading": "Please select an option",
+              "items": [
+                {
+                  "label": "Project Details",
+                  "message": "Project Details",
+                  "href": ""
+                },
+                {
+                  "label": "Location",
+                  "message": "Location",
+                  "href": ""
+                },
+                {
+                  "label": "Floor Plans",
+                  "message": "Floor Plans",
+                  "href": ""
+                },
+                {
+                  "label": "Pricing",
+                  "message": "Pricing",
+                  "href": ""
+                },
+                {
+                  "label": "Main Menu",
+                  "message": "Main Menu",
+                  "href": ""
+                }
+              ]
+            }
+          ],
+          "published": true,
+          "order": 6,
+          "updatedAt": "2026-06-20T11:37:35.246Z",
+          "liveAt": "2026-06-17T09:33:42.693Z"
+        },
+        {
+          "id": "fc83aecc-1a0f-4c14-9ad7-823db6cddf8b",
+          "intent": "Landing Lake View",
+          "synonyms": [],
+          "response": "Good $session.params.greeting, Welcome to Lake View Assistant Help Desk.",
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [],
+          "outputContexts": "",
+          "payloadBlocks": [
+            {
+              "type": "chips",
+              "heading": "Please select an option",
+              "items": [
+                {
+                  "label": "Project Details",
+                  "message": "Project Details",
+                  "href": ""
+                },
+                {
+                  "label": "Location",
+                  "message": "Location",
+                  "href": ""
+                },
+                {
+                  "label": "Floor Plans",
+                  "message": "Floor Plans",
+                  "href": ""
+                },
+                {
+                  "label": "Pricing",
+                  "message": "Pricing",
+                  "href": ""
+                },
+                {
+                  "label": "Main Menu",
+                  "message": "Main Menu",
+                  "href": ""
+                }
+              ]
+            }
+          ],
+          "published": true,
+          "order": 7,
+          "updatedAt": "2026-06-20T11:37:35.246Z"
+        },
+        {
+          "id": "9dad4f5e-bdd0-497f-a657-30ae7d72253e",
+          "intent": "LV Project Details",
+          "synonyms": [],
+          "response": "Lake View is an exceptional residential project by Pristine Properties, which boasts over 40 years of trust and excellence in Pune’s real estate market. Located in Viman Nagar, it features luxurious 3.5 and 4.5 BHK apartments designed for those seeking a prestigious lifestyle.",
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [],
+          "outputContexts": "",
+          "payloadBlocks": [
+            {
+              "type": "chips",
+              "heading": "Please select an option",
+              "items": [
+                {
+                  "label": "Location",
+                  "message": "Location",
+                  "href": ""
+                },
+                {
+                  "label": "Floor Plans",
+                  "message": "Floor Plans",
+                  "href": ""
+                },
+                {
+                  "label": "Pricing",
+                  "message": "Pricing",
+                  "href": ""
+                },
+                {
+                  "label": "Main Menu",
+                  "message": "Main Menu",
+                  "href": ""
+                }
+              ]
+            }
+          ],
+          "published": true,
+          "order": 8,
+          "updatedAt": "2026-06-20T11:37:35.246Z"
+        },
+        {
+          "id": "23e2d720-449a-44da-aaf6-baa17f5dd89a",
+          "intent": "LV Floor Plans",
+          "synonyms": [],
+          "response": "",
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [],
+          "outputContexts": "",
+          "payloadBlocks": [
+            {
+              "type": "chips",
+              "heading": "Which configuration are you looking for?",
+              "items": [
+                {
+                  "label": "3.5 BHK",
+                  "message": "3.5 BHK",
+                  "href": ""
+                },
+                {
+                  "label": "4.5 BHK",
+                  "message": "4.5 BHK",
+                  "href": ""
+                }
+              ]
+            }
+          ],
+          "published": true,
+          "order": 9,
+          "updatedAt": "2026-06-20T11:37:35.246Z"
+        },
+        {
+          "id": "8849ab37-aaae-4b19-a041-c20cf20dc48d",
+          "intent": "LV Pricing",
+          "synonyms": [],
+          "response": "Lake View offers grand residences, designed for the discerning homebuyer:\n          \n \n Pricing: Starting from Rs. 4.62 Cr* Onwards\n            \n * 3.5 BHK (2025 Sqft)\n            \n * 4.5 BHK (2644 Sqft)",
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [],
+          "outputContexts": "",
+          "payloadBlocks": [
+            {
+              "type": "chips",
+              "heading": "Please select an option",
+              "items": [
+                {
+                  "label": "Project Details",
+                  "message": "Project Details",
+                  "href": ""
+                },
+                {
+                  "label": "Location",
+                  "message": "Location",
+                  "href": ""
+                },
+                {
+                  "label": "Floor Plans",
+                  "message": "Floor Plans",
+                  "href": ""
+                },
+                {
+                  "label": "Main Menu",
+                  "message": "Main Menu",
+                  "href": ""
+                }
+              ]
+            }
+          ],
+          "published": true,
+          "order": 10,
+          "updatedAt": "2026-06-20T11:37:35.246Z"
+        },
+        {
+          "id": "7bbf7aa8-0439-435c-a0c8-939cf3ce63d4",
+          "intent": "Brochure-7 Garden",
+          "synonyms": [],
+          "response": "This is a 7 Graden's brochure link.",
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [],
+          "outputContexts": "",
+          "payloadBlocks": [
+            {
+              "type": "chips",
+              "heading": "Please select an option",
+              "items": [
+                {
+                  "label": "Price",
+                  "message": "Price",
+                  "href": ""
+                },
+                {
+                  "label": "Main Menu",
+                  "message": "Main Menu",
+                  "href": ""
+                }
+              ]
+            }
+          ],
+          "published": true,
+          "order": 11,
+          "updatedAt": "2026-06-20T11:37:35.246Z"
+        },
+        {
+          "id": "63887c37-641c-4514-ac1f-60606e9a8de3",
+          "intent": "Citadel",
+          "synonyms": [],
+          "response": "This is CITADEL project.",
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [],
+          "outputContexts": "",
+          "payloadBlocks": [
+            {
+              "type": "chips",
+              "heading": "Please select an option",
+              "items": [
+                {
+                  "label": "Brochure",
+                  "message": "Brochure",
+                  "href": ""
+                },
+                {
+                  "label": "Price",
+                  "message": "Price",
+                  "href": ""
+                }
+              ]
+            }
+          ],
+          "published": true,
+          "order": 12,
+          "updatedAt": "2026-06-20T11:37:35.246Z"
+        },
+        {
+          "id": "62794235-5310-4690-884d-6b6101064b05",
+          "intent": "Recep Greeting",
+          "synonyms": [],
+          "response": "Good $session.params.greeting !, Welcome to Hirananda Help desk.",
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [],
+          "outputContexts": "",
+          "payloadBlocks": [
+            {
+              "type": "chips",
+              "heading": "Please select an option",
+              "items": [
+                {
+                  "label": "Green Valley",
+                  "message": "Green Valley",
+                  "href": ""
+                },
+                {
+                  "label": "Lake view",
+                  "message": "Lake view",
+                  "href": ""
+                },
+                {
+                  "label": "7 Garden",
+                  "message": "7 Garden",
+                  "href": ""
+                },
+                {
+                  "label": "Citadel",
+                  "message": "Citadel",
+                  "href": ""
+                }
+              ]
+            }
+          ],
+          "published": true,
+          "order": 13,
+          "updatedAt": "2026-06-20T11:37:35.246Z"
+        },
+        {
+          "id": "803e1fef-bc28-494b-822e-84e146d173bf",
+          "intent": "Recep Start",
+          "synonyms": [],
+          "response": "Good $session.params.greeting !, Welcome to Hirananda Help desk here.",
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [],
+          "outputContexts": "",
+          "payloadBlocks": [
+            {
+              "type": "chips",
+              "heading": "Please select an option",
+              "items": [
+                {
+                  "label": "Green Valley",
+                  "message": "Green Valley",
+                  "href": ""
+                },
+                {
+                  "label": "Lake view",
+                  "message": "Lake view",
+                  "href": ""
+                },
+                {
+                  "label": "7 Garden",
+                  "message": "7 Garden",
+                  "href": ""
+                },
+                {
+                  "label": "Citadel",
+                  "message": "Citadel",
+                  "href": ""
+                }
+              ]
+            }
+          ],
+          "published": true,
+          "order": 14,
+          "updatedAt": "2026-06-20T11:37:35.246Z"
+        },
+        {
+          "id": "70b0faff-3cd4-48ad-ab4f-6efa74440777",
+          "intent": "GV pricing",
+          "synonyms": [],
+          "response": "",
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [],
+          "outputContexts": "",
+          "payloadBlocks": [
+            {
+              "type": "chips",
+              "heading": "Please select an option",
+              "items": [
+                {
+                  "label": "Project Details",
+                  "message": "Project Details",
+                  "href": ""
+                },
+                {
+                  "label": "Location",
+                  "message": "Location",
+                  "href": ""
+                },
+                {
+                  "label": "Floor Plans",
+                  "message": "Floor Plans",
+                  "href": ""
+                },
+                {
+                  "label": "Main Menu",
+                  "message": "Main Menu",
+                  "href": ""
+                }
+              ]
+            }
+          ],
+          "published": true,
+          "order": 15,
+          "updatedAt": "2026-06-20T11:37:35.247Z"
+        },
+        {
+          "id": "b5beec09-98bd-4d42-9ec4-83f010542e7e",
+          "intent": "LV location",
+          "synonyms": [
+            "location",
+            "lake view location"
+          ],
+          "response": "**Lake View is located in the upscale locality of Viman Nagar, Pune, known for its proximity to Pune International Airport, top IT park &amp; shopping centers.**\n# Very close to Airport\n\n- Schools in close proximity\n\n* Nice Environment",
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [
+            "STARTED"
+          ],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [
+            "lakeview"
+          ],
+          "outputContexts": "",
+          "payloadBlocks": [
+            {
+              "type": "form",
+              "formId": "contact",
+              "message": "",
+              "onSubmit": "query:__GO_ __",
+              "onCancel": "query:__GO_hi__",
+              "onResend": "",
+              "tag": "",
+              "nextFormId": "",
+              "dfPayloadName": "$session.params.name"
+            },
+            {
+              "type": "chips",
+              "heading": "Please select an option",
+              "items": [
+                {
+                  "label": "Project Details",
+                  "message": "Project Details",
+                  "href": ""
+                },
+                {
+                  "label": "Floor Plans",
+                  "message": "Floor Plans",
+                  "href": ""
+                },
+                {
+                  "label": "Pricing",
+                  "message": "Pricing",
+                  "href": ""
+                },
+                {
+                  "label": "Main Menu",
+                  "message": "Main Menu",
+                  "href": ""
+                }
+              ]
+            }
+          ],
+          "published": true,
+          "order": 16,
+          "updatedAt": "2026-06-20T11:37:35.247Z"
+        },
+        {
+          "id": "1d292c57-376c-4264-9c8e-397e34b8a312",
+          "intent": "GVProjectdetails",
+          "synonyms": [],
+          "response": "Discover exclusive residential plots at Green Valley, situated in Avadi, Chennai 🏡, promising a premium living experience.",
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [],
+          "outputContexts": "",
+          "payloadBlocks": [
+            {
+              "type": "chips",
+              "heading": "Please select an option",
+              "items": [
+                {
+                  "label": "Location",
+                  "message": "Location",
+                  "href": ""
+                },
+                {
+                  "label": "Floor Plans",
+                  "message": "Floor Plans",
+                  "href": ""
+                },
+                {
+                  "label": "Pricing",
+                  "message": "Pricing",
+                  "href": ""
+                },
+                {
+                  "label": "Main Menu",
+                  "message": "Main Menu",
+                  "href": ""
+                }
+              ]
+            }
+          ],
+          "published": true,
+          "order": 17,
+          "updatedAt": "2026-06-20T11:37:35.247Z"
+        },
+        {
+          "id": "2c6f40ed-45c3-46bf-b28d-40e64d4186a8",
+          "intent": "GVupload",
+          "synonyms": [],
+          "response": "",
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [],
+          "outputContexts": "",
+          "payloadBlocks": [
+            {
+              "type": "form",
+              "formId": "upload",
+              "message": "",
+              "onSubmit": "query:__GO_hi__",
+              "onCancel": "query:__GO_hi__",
+              "onResend": "",
+              "tag": "",
+              "nextFormId": "",
+              "dfPayloadName": "$session.params.name"
+            }
+          ],
+          "published": true,
+          "order": 18,
+          "updatedAt": "2026-06-20T11:37:35.247Z"
+        },
+        {
+          "id": "a7a7854e-91ca-43dc-8e2e-cf31d8edcd7f",
+          "intent": "GV2BHK",
+          "synonyms": [],
+          "response": "**At Green Vallye 2 BHKs are available from 500 sft to 900 sft.**",
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [],
+          "outputContexts": "",
+          "payloadBlocks": [
+            {
+              "type": "form",
+              "formId": "contact",
+              "message": "",
+              "onSubmit": "query:__GO_upload__",
+              "onCancel": "query:__GO_hi__",
+              "onResend": "",
+              "tag": "",
+              "nextFormId": "",
+              "dfPayloadName": "$session.params.name"
+            },
+            {
+              "type": "chips",
+              "heading": "Please select an option",
+              "items": [
+                {
+                  "label": "3 BHK",
+                  "message": "3 BHK",
+                  "href": ""
+                },
+                {
+                  "label": "Location",
+                  "message": "Location",
+                  "href": ""
+                },
+                {
+                  "label": "Project Details",
+                  "message": "Project Details",
+                  "href": ""
+                },
+                {
+                  "label": "Pricing",
+                  "message": "Pricing",
+                  "href": ""
+                },
+                {
+                  "label": "Main Menu",
+                  "message": "Main Menu",
+                  "href": ""
+                }
+              ]
+            }
+          ],
+          "published": true,
+          "order": 19,
+          "updatedAt": "2026-06-20T11:37:35.247Z"
+        },
+        {
+          "id": "0a051662-3b9f-4dd1-80d9-926fd7ff7ad8",
+          "intent": "LV 4.5BHK",
+          "synonyms": [],
+          "response": "Step into luxury with the spacious 4.5 BHK apartments now available at Lake Wiew! 🏡",
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [],
+          "outputContexts": "",
+          "payloadBlocks": [
+            {
+              "type": "chips",
+              "heading": "Please select an option",
+              "items": [
+                {
+                  "label": "3.5 BHK",
+                  "message": "3.5 BHK",
+                  "href": ""
+                },
+                {
+                  "label": "Location",
+                  "message": "Location",
+                  "href": ""
+                },
+                {
+                  "label": "Project Details",
+                  "message": "Project Details",
+                  "href": ""
+                },
+                {
+                  "label": "Pricing",
+                  "message": "Pricing",
+                  "href": ""
+                },
+                {
+                  "label": "Main Menu",
+                  "message": "Main Menu",
+                  "href": ""
+                }
+              ]
+            }
+          ],
+          "published": true,
+          "order": 20,
+          "updatedAt": "2026-06-20T11:37:35.247Z"
+        },
+        {
+          "id": "4f8b4ffd-ef27-4909-ac1a-b4dce77c11c8",
+          "intent": "GV Greeting",
+          "synonyms": [],
+          "response": "Welcome to Green Valley Assistant helpdesk.",
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [],
+          "outputContexts": "",
+          "payloadBlocks": [
+            {
+              "type": "chips",
+              "heading": "Please select an option",
+              "items": [
+                {
+                  "label": "Project Details",
+                  "message": "Project Details",
+                  "href": ""
+                },
+                {
+                  "label": "Location",
+                  "message": "Location",
+                  "href": ""
+                },
+                {
+                  "label": "Floor Plans",
+                  "message": "Floor Plans",
+                  "href": ""
+                },
+                {
+                  "label": "Pricing",
+                  "message": "Pricing",
+                  "href": ""
+                },
+                {
+                  "label": "Main Menu",
+                  "message": "Main Menu",
+                  "href": ""
+                }
+              ]
+            }
+          ],
+          "published": true,
+          "order": 21,
+          "updatedAt": "2026-06-20T11:37:35.247Z"
+        },
+        {
+          "id": "0d1663c3-a174-46dd-9a53-6430b710ff19",
+          "intent": "Citadel-Price",
+          "synonyms": [],
+          "response": "At CItadel 4 BHK starts at INR 40 Lakhs.",
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [],
+          "outputContexts": "",
+          "payloadBlocks": [
+            {
+              "type": "chips",
+              "heading": "Please select an option",
+              "items": [
+                {
+                  "label": "Brochure",
+                  "message": "Brochure",
+                  "href": ""
+                },
+                {
+                  "label": "Main Menu",
+                  "message": "Main Menu",
+                  "href": ""
+                }
+              ]
+            }
+          ],
+          "published": true,
+          "order": 22,
+          "updatedAt": "2026-06-20T11:37:35.247Z"
+        },
+        {
+          "id": "28d90814-326e-47b1-bb3c-596f501643cd",
+          "intent": "GVLocation",
+          "synonyms": [
+            "green valley location"
+          ],
+          "response": "Green valley is located in Gachibowli, Hyderabad.",
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [
+            "green_valley"
+          ],
+          "outputContexts": "[{\"name\":\"green_valley\",\"lifespanCount\":5}]",
+          "payloadBlocks": [
+            {
+              "type": "chips",
+              "heading": "Please select an option",
+              "items": [
+                {
+                  "label": "Project Details",
+                  "message": "Project Details",
+                  "href": ""
+                },
+                {
+                  "label": "Floor Plans",
+                  "message": "Floor Plans",
+                  "href": ""
+                },
+                {
+                  "label": "Pricing",
+                  "message": "Pricing",
+                  "href": ""
+                },
+                {
+                  "label": "Main Menu",
+                  "message": "Main Menu",
+                  "href": ""
+                }
+              ]
+            }
+          ],
+          "published": true,
+          "order": 23,
+          "updatedAt": "2026-06-20T11:37:35.247Z"
+        },
+        {
+          "id": "5cb15907-4fca-477f-a09f-f57ecb89ecb0",
+          "intent": "Rec Green Valley",
+          "synonyms": [],
+          "response": "Good $session.params.greeting !, Welcome to Green Valley Assistant.",
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [],
+          "outputContexts": "",
+          "payloadBlocks": [
+            {
+              "type": "chips",
+              "heading": "Please select an option",
+              "items": [
+                {
+                  "label": "Project Details",
+                  "message": "Project Details",
+                  "href": ""
+                },
+                {
+                  "label": "Location",
+                  "message": "Location",
+                  "href": ""
+                },
+                {
+                  "label": "Floor Plans",
+                  "message": "Floor Plans",
+                  "href": ""
+                },
+                {
+                  "label": "Pricing",
+                  "message": "Pricing",
+                  "href": ""
+                },
+                {
+                  "label": "Main Menu",
+                  "message": "Main Menu",
+                  "href": ""
+                }
+              ]
+            }
+          ],
+          "published": true,
+          "order": 24,
+          "updatedAt": "2026-06-20T11:37:35.247Z"
+        },
+        {
+          "id": "03d0dd9f-8d84-4d9a-8bac-5802fd0b21ef",
+          "intent": "7 Garden",
+          "synonyms": [],
+          "response": "This is 7 Garden project Details.",
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [],
+          "outputContexts": "",
+          "payloadBlocks": [
+            {
+              "type": "chips",
+              "heading": "Please select an option",
+              "items": [
+                {
+                  "label": "Brochure",
+                  "message": "Brochure",
+                  "href": ""
+                },
+                {
+                  "label": "Price",
+                  "message": "Price",
+                  "href": ""
+                }
+              ]
+            }
+          ],
+          "published": true,
+          "order": 25,
+          "updatedAt": "2026-06-20T11:37:35.247Z"
+        },
+        {
+          "id": "22bb2684-eca6-4d74-b7cb-6456d700f086",
+          "intent": "Back to Receptionist",
+          "synonyms": [],
+          "response": "$session.params.greeting, Welcome to Hirananda Help desk.",
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [],
+          "outputContexts": "",
+          "payloadBlocks": [
+            {
+              "type": "chips",
+              "heading": "Please select an option",
+              "items": [
+                {
+                  "label": "Green Valley",
+                  "message": "Green Valley",
+                  "href": ""
+                },
+                {
+                  "label": "Lake view",
+                  "message": "Lake view",
+                  "href": ""
+                },
+                {
+                  "label": "7 Garden",
+                  "message": "7 Garden",
+                  "href": ""
+                },
+                {
+                  "label": "Citadel",
+                  "message": "Citadel",
+                  "href": ""
+                }
+              ]
+            }
+          ],
+          "published": true,
+          "order": 26,
+          "updatedAt": "2026-06-20T11:37:35.247Z"
+        },
+        {
+          "id": "d6be58ea-b5c9-4ab8-9048-75bdefd5fd24",
+          "intent": "GV3BHK",
+          "synonyms": [],
+          "response": "hello Guys, At Green Valley, 3 BHKs available with 1300 sft to 1500 sft.",
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [
+            "green_valley"
+          ],
+          "outputContexts": "",
+          "payloadBlocks": [],
+          "published": true,
+          "order": 27,
+          "updatedAt": "2026-06-20T11:37:35.247Z"
+        },
+        {
+          "id": "2d098a9a-e84e-41f3-8169-4bb4a7961c98",
+          "intent": "Rec Lake View",
+          "synonyms": [],
+          "response": "Good $session.params.greeting !, Welcome to Lake View Assistant.",
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [],
+          "outputContexts": "",
+          "payloadBlocks": [
+            {
+              "type": "chips",
+              "heading": "Please select an option",
+              "items": [
+                {
+                  "label": "Project Details",
+                  "message": "Project Details",
+                  "href": ""
+                },
+                {
+                  "label": "Location",
+                  "message": "Location",
+                  "href": ""
+                },
+                {
+                  "label": "Floor Plans",
+                  "message": "Floor Plans",
+                  "href": ""
+                },
+                {
+                  "label": "Pricing",
+                  "message": "Pricing",
+                  "href": ""
+                },
+                {
+                  "label": "Main Menu",
+                  "message": "Main Menu",
+                  "href": ""
+                }
+              ]
+            }
+          ],
+          "published": true,
+          "order": 28,
+          "updatedAt": "2026-06-20T11:37:35.247Z"
+        },
+        {
+          "id": "567cf286-3df3-4426-9e7b-326c2ec96eea",
+          "intent": "Brochure-citadel",
+          "synonyms": [],
+          "response": "This is Citadels brochure.",
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [],
+          "outputContexts": "",
+          "payloadBlocks": [
+            {
+              "type": "chips",
+              "heading": "Please select an option",
+              "items": [
+                {
+                  "label": "Price",
+                  "message": "Price",
+                  "href": ""
+                },
+                {
+                  "label": "Main Menu",
+                  "message": "Main Menu",
+                  "href": ""
+                }
+              ]
+            }
+          ],
+          "published": true,
+          "order": 29,
+          "updatedAt": "2026-06-20T11:37:35.247Z"
+        },
+        {
+          "id": "902e123c-84c0-42ec-b706-3a256cc63cbd",
+          "intent": "GV Back to Main Menu",
+          "synonyms": [],
+          "response": "Welcome to Green Valley Assistant helpdesk.",
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [],
+          "outputContexts": "",
+          "payloadBlocks": [
+            {
+              "type": "chips",
+              "heading": "Please select an option",
+              "items": [
+                {
+                  "label": "Project Details",
+                  "message": "Project Details",
+                  "href": ""
+                },
+                {
+                  "label": "Location",
+                  "message": "Location",
+                  "href": ""
+                },
+                {
+                  "label": "Floor Plans",
+                  "message": "Floor Plans",
+                  "href": ""
+                },
+                {
+                  "label": "Pricing",
+                  "message": "Pricing",
+                  "href": ""
+                },
+                {
+                  "label": "Main Menu",
+                  "message": "Main Menu",
+                  "href": ""
+                }
+              ]
+            }
+          ],
+          "published": true,
+          "order": 30,
+          "updatedAt": "2026-06-20T11:37:35.247Z"
+        },
+        {
+          "id": "86406035-0c4a-4c57-bc45-b3c0165bee03",
+          "intent": "LV Greeting",
+          "synonyms": [],
+          "response": "Welcome to Lake View Assistant Help Desk.",
+          "nextIntent": "",
+          "nextIntentPhrases": [],
+          "events": [],
+          "action": "",
+          "parameters": "",
+          "inputContexts": [],
+          "outputContexts": "",
+          "payloadBlocks": [
+            {
+              "type": "chips",
+              "heading": "Please select an option",
+              "items": [
+                {
+                  "label": "Project Details",
+                  "message": "Project Details",
+                  "href": ""
+                },
+                {
+                  "label": "Location",
+                  "message": "Location",
+                  "href": ""
+                },
+                {
+                  "label": "Floor Plans",
+                  "message": "Floor Plans",
+                  "href": ""
+                },
+                {
+                  "label": "Pricing",
+                  "message": "Pricing",
+                  "href": ""
+                },
+                {
+                  "label": "Main Menu",
+                  "message": "Main Menu",
+                  "href": ""
+                }
+              ]
+            }
+          ],
+          "published": true,
+          "order": 31,
+          "updatedAt": "2026-06-20T11:37:35.247Z"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,13 @@
+node_modules/
+.env
+credentials.json
+.DS_Store
+*.log
+
+# Friend's CX reference — study only, do not publish
+Only to refer company.config.js
+Only to refer*
+Only Refer/
+refer-forms/
+es_private/data/transcripts/*.json
+!es_private/data/transcripts/.gitkeep

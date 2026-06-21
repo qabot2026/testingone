@@ -41,7 +41,7 @@ window.COMPANY_CHAT_UI_CONFIG = {
     dialogflow: {
       projectId: "qabot01",
       location: "us-central1",
-      agentId: "9dbd4886-3cbe-43fc-8eb5-54ee5097f25c"
+      agentId: "e3fbf52c-3350-48b2-b2d1-4cd9f1f21726"
     },
 
     // -------------------------------------------------------------------------

@@ -1,0 +1,7 @@
+Jo bhi naya kaam kroge..uska... abhi ke structure me hi rakhana..
+
+private files es_private me and public files es_public folder me.
+
+
+
+

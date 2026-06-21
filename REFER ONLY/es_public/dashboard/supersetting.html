@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Advanced configuration</title>
+    <link rel="stylesheet" href="dashboard.css" />
+    <link rel="stylesheet" href="dashboard-nav.css?v=20260626a" />
+    <link rel="stylesheet" href="supersetting-social.css?v=20260613c" />
+    <style>
+      .super-grid {
+        display: grid;
+        gap: 1.25rem;
+        max-width: 920px;
+      }
+      .super-card {
+        background: var(--dash-surface);
+        border: 1px solid var(--dash-border);
+        border-radius: var(--dash-radius);
+        padding: 1.25rem 1.35rem;
+        box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+      }
+      .super-card h3 {
+        margin: 0 0 0.35rem;
+        font-size: 1rem;
+        font-weight: 700;
+      }
+      .super-form {
+        display: grid;
+        gap: 0.85rem;
+        margin-top: 1rem;
+        max-width: 420px;
+      }
+      .super-form label {
+        display: grid;
+        gap: 0.35rem;
+        font-size: 0.8125rem;
+        font-weight: 600;
+        color: var(--dash-text);
+      }
+      .super-form input {
+        font: inherit;
+        padding: 0.55rem 0.65rem;
+        border: 1px solid var(--dash-border);
+        border-radius: 10px;
+      }
+      .super-form input:not([readonly]) {
+        background: #fff;
+        cursor: text;
+      }
+      .super-form input[readonly] {
+        background: #f1f5f9;
+        color: #64748b;
+        cursor: default;
+      }
+      .super-auth-unlock {
+        margin-bottom: 0;
+        padding: 1rem 1.1rem;
+        border-radius: var(--dash-radius);
+        border: 1px solid #fde68a;
+        background: #fffbeb;
+      }
+      .super-auth-unlock.hidden {
+        display: none;
+      }
+      .super-auth-unlock h3 {
+        margin: 0 0 0.35rem;
+        font-size: 0.95rem;
+        font-weight: 700;
+        color: #92400e;
+      }
+      .super-auth-unlock-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.65rem 0.75rem;
+        align-items: flex-end;
+        margin-top: 0.75rem;
+      }
+      .super-auth-unlock-row label {
+        display: grid;
+        gap: 0.35rem;
+        font-size: 0.8125rem;
+        font-weight: 600;
+        flex: 1 1 220px;
+      }
+      .super-auth-unlock-row input {
+        font: inherit;
+        padding: 0.55rem 0.65rem;
+        border: 1px solid var(--dash-border);
+        border-radius: 10px;
+        background: #fff;
+      }
+      .super-auth-unlock-msg {
+        margin: 0.65rem 0 0;
+        font-size: 0.8125rem;
+        color: #b91c1c;
+      }
+      .super-auth-unlock-msg.ok {
+        color: #047857;
+      }
+      .super-bot-table tbody tr.is-editing {
+        background: #eff6ff;
+      }
+      .super-bot-table tbody tr[data-bot-row] {
+        cursor: pointer;
+      }
+      .super-form small {
+        font-weight: 400;
+        color: var(--dash-muted);
+      }
+      .super-form-status {
+        margin: 0.5rem 0 0;
+        font-size: 0.875rem;
+      }
+      .super-form-status--error {
+        color: #dc2626;
+      }
+      .super-form-status--ok {
+        color: #059669;
+      }
+      .super-bot-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.875rem;
+        margin-top: 0.75rem;
+      }
+      .super-bot-table th,
+      .super-bot-table td {
+        text-align: left;
+        padding: 0.55rem 0.35rem;
+        border-bottom: 1px solid var(--dash-border);
+        vertical-align: top;
+      }
+      .super-bot-table th {
+        color: var(--dash-muted);
+        font-weight: 600;
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+      .super-bot-links a {
+        color: var(--dash-primary);
+        text-decoration: none;
+        font-weight: 600;
+      }
+      .super-bot-links a:hover {
+        text-decoration: underline;
+      }
+      .super-sheet-tab-input,
+      .super-welcome-input {
+        font: inherit;
+        width: 100%;
+        min-width: 8rem;
+        max-width: 14rem;
+        padding: 0.35rem 0.5rem;
+        border: 1px solid var(--dash-border);
+        border-radius: 8px;
+      }
+      .super-save-btn {
+        font: inherit;
+        font-size: 0.8125rem;
+        font-weight: 600;
+        padding: 0.35rem 0.7rem;
+        border-radius: 8px;
+        border: 1px solid var(--dash-border);
+        background: var(--dash-surface);
+        color: var(--dash-primary);
+        cursor: pointer;
+        white-space: nowrap;
+      }
+      .super-save-btn:hover {
+        background: #f0f9ff;
+        border-color: #bae6fd;
+      }
+      .super-save-btn:disabled {
+        opacity: 0.55;
+        cursor: wait;
+      }
+      .super-list-status {
+        margin: 0.75rem 0 0;
+        font-size: 0.875rem;
+      }
+      .super-list-status--error {
+        color: #dc2626;
+      }
+      .super-list-status--ok {
+        color: #059669;
+      }
+      .super-bot-actions {
+        text-align: right;
+        white-space: nowrap;
+      }
+      .super-delete-btn {
+        font: inherit;
+        font-size: 0.8125rem;
+        font-weight: 600;
+        padding: 0.35rem 0.65rem;
+        border-radius: 8px;
+        border: 1px solid #fecaca;
+        background: #fff;
+        color: #dc2626;
+        cursor: pointer;
+      }
+      .super-delete-btn:hover {
+        background: #fef2f2;
+      }
+      .super-dev-list {
+        margin: 0.75rem 0 0;
+        padding-left: 1.1rem;
+        color: var(--dash-muted);
+        font-size: 0.875rem;
+        line-height: 1.55;
+      }
+      .super-logo-row {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 1rem;
+        margin-top: 1rem;
+      }
+      .super-logo-preview {
+        width: 72px;
+        height: 72px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid var(--dash-border);
+        border-radius: 12px;
+        background: #f8fafc;
+        overflow: hidden;
+      }
+      .super-logo-preview img {
+        max-width: 100%;
+        max-height: 100%;
+        object-fit: contain;
+      }
+      .super-logo-actions {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.6rem;
+      }
+      .super-logo-name {
+        font-size: 0.8125rem;
+        color: var(--dash-muted);
+        word-break: break-all;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="dash-page-content" style="display:none">
+      <div class="super-grid">
+        <section class="super-card super-auth-unlock hidden" id="superAuthUnlock" aria-label="Unlock bot registry editing">
+          <h3>Viewer secret required to save</h3>
+          <p class="dash-muted">
+            You can review settings below, but saving needs the same secret as
+            <a href="/uc-conversations">Insights</a>
+            or
+            <a href="/live-agent/settings">Live chat setup</a>
+            (<code>CONVERSATIONS_SHEET_VIEW_SECRET</code> on Railway).
+          </p>
+          <div class="super-auth-unlock-row">
+            <label>
+              Viewer secret
+              <input id="superAuthSecret" type="password" autocomplete="current-password" />
+            </label>
+            <button type="button" class="dash-btn dash-btn--primary" id="superAuthUnlockBtn">Unlock saving</button>
+          </div>
+          <p class="super-auth-unlock-msg" id="superAuthUnlockMsg" role="status"></p>
+        </section>
+
+        <section class="super-card" id="superCurrentBotCard">
+          <h3>Bot registry — master settings</h3>
+          <p class="dash-muted super-registry-note">
+            Change the bot name or core settings here only. One Save updates
+            <strong>bot-registry.json</strong>, bot-config, bot-settings page, demo page, and site-presets together.
+            Bot ID and site preset key are fixed; edit display name, sheet tab, and welcome event below.
+          </p>
+          <p class="dash-muted" id="superCurrentBotLine">Loading…</p>
+          <form class="super-form" id="superEditBotForm">
+            <input type="hidden" id="superEditBotId" />
+            <label>
+              Bot ID
+              <input id="superEditBotIdDisplay" readonly />
+              <small>Fixed — used in dashboard URLs and embed.</small>
+            </label>
+            <label>
+              Site preset key (internal)
+              <input id="superEditSitePreset" readonly />
+              <small>Internal code key — file names use this (e.g. greenValley.config.js). Do not change unless creating a new bot.</small>
+            </label>
+            <label>
+              Display name
+              <input id="superEditBotName" name="name" placeholder="Green Valley" required />
+              <small>Chat header, bot-settings title, and demo page URL.</small>
+            </label>
+            <p class="dash-muted" id="superEditDemoPath">Demo page: …</p>
+            <label>
+              Conversation sheet tab
+              <input id="superEditSheetTab" name="sheetTab" placeholder="Green Valley Conv." required />
+              <small>Google Sheet tab for this bot’s conversations. Tab is created automatically when you save.</small>
+            </label>
+            <label>
+              Welcome event name
+              <input id="superEditWelcomeEvent" name="welcomeEventName" placeholder="START_GREEN_VALLEY" />
+              <small>Dialogflow event for this site’s landing page. Leave empty for the main/home bot.</small>
+            </label>
+            <div>
+              <button type="submit" class="dash-btn dash-btn--primary" id="superSaveSettingsBtn">Save settings</button>
+              <p class="super-form-status" id="superEditStatus" hidden></p>
+            </div>
+          </form>
+        </section>
+
+        <section class="super-card">
+          <h3>Add chatbot project</h3>
+          <p class="dash-muted" id="superBotLine">Loading…</p>
+          <form class="super-form" id="superAddBotForm">
+            <label>
+              Bot ID
+              <input id="superBotId" name="id" inputmode="numeric" pattern="[0-9]{5}" maxlength="5" placeholder="10004" required />
+              <small>Exactly 5 digits. Used in dashboard URLs and embed.</small>
+            </label>
+            <label>
+              Display name
+              <input id="superBotName" name="name" placeholder="Sunset Villas" required />
+              <small>Shown in the project switcher and chat header.</small>
+            </label>
+            <label>
+              Welcome event name
+              <input id="superWelcomeEvent" name="welcomeEventName" placeholder="START_SUNSET_VILLAS" />
+              <small>Dialogflow event for this site’s landing page. Leave empty for the main/home bot.</small>
+            </label>
+            <label>
+              Conversation sheet tab
+              <input id="superSheetTab" name="sheetTab" placeholder="Sunset Villas Conv." />
+              <small>Google Sheet tab for this bot’s conversations. Created automatically if missing.</small>
+            </label>
+            <div>
+              <button type="submit" class="dash-btn dash-btn--primary">Create bot &amp; pages</button>
+              <p class="super-form-status" id="superFormStatus" hidden></p>
+            </div>
+          </form>
+        </section>
+
+        <section class="super-card">
+          <h3>Registered bots</h3>
+          <p class="dash-muted">Overview of all bots. Use <strong>Current bot settings</strong> above to edit the selected project. Agent chats use <code>SHEETS_AGENT_TAB</code> on Railway.</p>
+          <div id="superBotList"></div>
+          <p class="super-list-status" id="superListStatus" hidden></p>
+        </section>
+
+        <section class="super-card" id="superBrandLogoCard">
+          <h3>Brand logo (dashboard menu icon)</h3>
+          <p class="dash-muted">
+            Upload the logo shown in the dashboard menu. Stored in cloud storage as
+            <code>brand-data/appearence-logo.png</code>. PNG with transparent background works best.
+          </p>
+          <div class="super-logo-row">
+            <div class="super-logo-preview" id="superLogoPreview" aria-label="Current logo preview">
+              <img src="/dashboard/icons/appearance-menu-icon.png" alt="Current brand logo"
+                   onerror="this.style.display='none'" />
+            </div>
+            <div class="super-logo-actions">
+              <button type="button" class="dash-btn dash-btn--primary" id="superLogoChooseBtn">Choose logo image</button>
+              <span class="super-logo-name" id="superLogoName">No file chosen</span>
+              <input type="file" id="superLogoFile" accept="image/*" hidden />
+            </div>
+          </div>
+          <p class="super-form-status" id="superLogoStatus" hidden></p>
+        </section>
+
+        <section class="super-card super-social-hub" id="superSocialCard">
+          <h3>Social integrations</h3>
+          <p class="super-social-intro" id="superSocialBotLine">Loading…</p>
+          <div class="social-channel-list" id="superSocialChannels" aria-label="Social channels"></div>
+        </section>
+
+        <section class="super-card">
+          <h3>Developer reference</h3>
+          <ul class="super-dev-list">
+            <li>Social config per bot — <code>social-integrations.json</code> → <code>bots["10002"].whatsapp</code> etc.</li>
+            <li>Integration code — <code>es_private/client-based/integrations/*.integration.js</code></li>
+            <li>Languages, speech-to-text, uploads — <code>company.config.js</code> or Chatbot appearance</li>
+            <li>Agent orchestration — <code>company.config.js</code> → <code>agentOrchestration</code></li>
+            <li>On landing pages set <code>window.ES_CONFIG = { welcomeEventName: '…' }</code> before embed loads</li>
+          </ul>
+        </section>
+      </div>
+    </div>
+    <script src="desk-auth.js"></script>
+    <script src="dashboard-nav.js?v=20260626a"></script>
+    <script src="supersetting.js?v=20260615a"></script>
+    <script src="supersetting-social.js?v=20260613d"></script>
+    <script src="appearance-logo.js?v=20260619a"></script>
+  </body>
+</html>

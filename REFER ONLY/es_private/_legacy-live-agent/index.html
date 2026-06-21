@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Live Agent Desk</title>
+    <link rel="stylesheet" href="live-agent.css" />
+  </head>
+  <body>
+    <div class="la-app">
+      <header class="la-header">
+        <div class="la-header__brand">
+          <img
+            class="la-header__logo"
+            src="https://storage.googleapis.com/companybucket/Images/cat-icon.png"
+            alt=""
+            width="36"
+            height="36"
+          />
+          <div>
+            <h1 class="la-header__title">Live Agent Desk</h1>
+            <p class="la-header__sub">Chat with website visitors</p>
+          </div>
+        </div>
+        <div class="la-header__actions">
+          <span id="la-status" class="la-status la-status--ok" title="API connection">Online</span>
+          <span id="la-agent-name" class="la-agent-badge"></span>
+          <a href="settings.html" class="la-btn la-btn--outline la-btn--sm">Change token</a>
+          <button type="button" id="la-refresh" class="la-btn la-btn--outline la-btn--sm">
+            Refresh
+          </button>
+        </div>
+      </header>
+
+      <main class="la-layout">
+        <aside class="la-sidebar">
+          <div class="la-sidebar__tabs">
+            <button type="button" class="la-tab la-tab--active" data-tab="waiting">
+              Waiting <span id="la-wait-count" class="la-badge">0</span>
+            </button>
+            <button type="button" class="la-tab" data-tab="active">
+              Active <span id="la-active-count" class="la-badge">0</span>
+            </button>
+          </div>
+          <div id="la-panel-waiting" class="la-sidebar__panel">
+            <ul id="la-waiting" class="la-list"></ul>
+          </div>
+          <div id="la-panel-active" class="la-sidebar__panel" hidden>
+            <ul id="la-active" class="la-list"></ul>
+          </div>
+        </aside>
+
+        <section class="la-chat">
+          <div id="la-chat-empty" class="la-chat__empty">
+            <div class="la-chat__empty-icon" aria-hidden="true">💬</div>
+            <h2>No chat selected</h2>
+            <p>Pick a visitor from <strong>Waiting</strong> or <strong>Active</strong>, then click <strong>Take chat</strong>.</p>
+          </div>
+
+          <div id="la-chat-panel" class="la-chat__panel" hidden>
+            <div class="la-chat__toolbar">
+              <div class="la-chat__toolbar-info">
+                <span id="la-chat-status" class="la-chat-status">waiting</span>
+                <strong id="la-chat-title">Visitor</strong>
+              </div>
+              <div class="la-chat__toolbar-btns">
+                <button type="button" id="la-claim" class="la-btn la-btn--primary la-btn--sm">
+                  Take chat
+                </button>
+                <button type="button" id="la-end" class="la-btn la-btn--danger la-btn--sm" hidden>
+                  End chat
+                </button>
+              </div>
+            </div>
+            <div id="la-messages" class="la-messages"></div>
+            <form id="la-reply-form" class="la-reply">
+              <textarea
+                id="la-reply-input"
+                rows="2"
+                placeholder="Write your reply to the visitor…"
+                required
+              ></textarea>
+              <button type="submit" class="la-btn la-btn--primary">Send</button>
+            </form>
+          </div>
+        </section>
+      </main>
+    </div>
+    <script src="live-agent.js"></script>
+  </body>
+</html>

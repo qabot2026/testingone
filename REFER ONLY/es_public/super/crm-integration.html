@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CRM Integration</title>
+    <link rel="stylesheet" href="../dashboard/dashboard.css" />
+    <link rel="stylesheet" href="../dashboard/dashboard-nav.css?v=20260626a" />
+    <link rel="stylesheet" href="crm-integration.css?v=20260621c" />
+  </head>
+  <body>
+    <div class="dash-page-content crm-app" style="display:none">
+      <p class="crm-intro">
+        Connect your CRM so new leads from chat are pushed automatically. Pick a CRM, add API details, choose when to
+        send, and map chatbot fields to CRM fields.
+      </p>
+      <p class="crm-status" id="crm-status" hidden></p>
+
+      <div class="crm-layout">
+        <section class="crm-card">
+          <div class="crm-card__head">
+            <div>
+              <h2>CRM connection</h2>
+              <p class="crm-muted">Per bot — uses the project selected in the sidebar.</p>
+            </div>
+            <div class="crm-card__head-right">
+              <span class="crm-badge" id="crm-badge">—</span>
+              <label class="crm-toggle">
+                <input type="checkbox" id="crm-enabled" />
+                <span>Enabled</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="crm-section">
+            <h3>1 — Choose CRM</h3>
+            <div class="crm-providers" id="crm-providers"></div>
+          </div>
+
+          <div class="crm-section">
+            <h3>2 — API connection</h3>
+            <div class="crm-grid">
+              <label class="crm-field crm-field--full">
+                API base URL
+                <input id="crm-baseUrl" placeholder="https://www.zohoapis.in/crm/v2" />
+              </label>
+              <label class="crm-field">
+                Auth type
+                <select id="crm-authType">
+                  <option value="api_key">API key</option>
+                  <option value="bearer">Bearer token</option>
+                  <option value="oauth">OAuth (refresh token)</option>
+                </select>
+              </label>
+              <label class="crm-field" id="crm-apiKey-wrap">
+                API key
+                <input id="crm-apiKey" type="password" autocomplete="off" placeholder="Paste API key" />
+                <small id="crm-apiKey-hint"></small>
+              </label>
+              <label class="crm-field" id="crm-bearer-wrap" hidden>
+                Bearer token
+                <input id="crm-bearerToken" type="password" autocomplete="off" />
+                <small id="crm-bearer-hint"></small>
+              </label>
+              <label class="crm-field" id="crm-clientId-wrap" hidden>
+                Client ID
+                <input id="crm-clientId" autocomplete="off" />
+              </label>
+              <label class="crm-field" id="crm-clientSecret-wrap" hidden>
+                Client secret
+                <input id="crm-clientSecret" type="password" autocomplete="off" />
+                <small id="crm-clientSecret-hint"></small>
+              </label>
+              <label class="crm-field" id="crm-refreshToken-wrap" hidden>
+                Refresh token
+                <input id="crm-refreshToken" type="password" autocomplete="off" />
+                <small id="crm-refreshToken-hint"></small>
+              </label>
+            </div>
+          </div>
+
+          <div class="crm-section">
+            <h3>3 — When to push</h3>
+            <div class="crm-triggers">
+              <label class="crm-check">
+                <input type="checkbox" id="crm-trigger-leadCapture" />
+                <span><strong>New lead</strong> — first-time visitor with contact details</span>
+              </label>
+              <label class="crm-check">
+                <input type="checkbox" id="crm-trigger-hotLead" />
+                <span><strong>Hot lead</strong> — returning visitor with contact details</span>
+              </label>
+              <label class="crm-check">
+                <input type="checkbox" id="crm-trigger-appointmentBooked" />
+                <span><strong>Appointment booked</strong> — after visitor books a slot</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="crm-section">
+            <h3>4 — Field mapping</h3>
+            <p class="crm-hint">Map chatbot data → CRM field names (as in your CRM API).</p>
+            <div class="crm-map-head">
+              <span>Chatbot field</span>
+              <span></span>
+              <span>CRM field</span>
+              <span></span>
+            </div>
+            <div id="crm-field-map"></div>
+            <button type="button" class="dash-btn dash-btn--ghost" id="crm-add-map">+ Add field</button>
+          </div>
+
+          <div class="crm-section">
+            <h3>5 — API endpoint</h3>
+            <div class="crm-grid crm-grid--3">
+              <label class="crm-field">
+                HTTP method
+                <select id="crm-method">
+                  <option value="POST">POST</option>
+                  <option value="PUT">PUT</option>
+                  <option value="PATCH">PATCH</option>
+                </select>
+              </label>
+              <label class="crm-field">
+                Module / object
+                <input id="crm-module" placeholder="Leads" />
+              </label>
+              <label class="crm-field">
+                Path
+                <input id="crm-path" placeholder="/Leads" />
+              </label>
+            </div>
+          </div>
+
+          <div class="crm-actions">
+            <button type="button" class="dash-btn dash-btn--primary" id="crm-save">Save</button>
+            <button type="button" class="dash-btn dash-btn--ghost" id="crm-test">Test connection</button>
+          </div>
+        </section>
+      </div>
+    </div>
+    <script src="../dashboard/desk-auth.js"></script>
+    <script src="../dashboard/dashboard-nav.js?v=20260626a"></script>
+    <script src="crm-integration.js?v=20260621c"></script>
+  </body>
+</html>

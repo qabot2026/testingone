@@ -1,0 +1,419 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>Live Agent Settings</title>
+  <link rel="stylesheet" href="live-agent.css" />
+  <link rel="stylesheet" href="settings.css" />
+</head>
+<body>
+  <div id="la-settings-shell-root" class="dash-page-content" style="display:none">
+
+  <section id="loginView" class="login-view hidden" aria-label="Unlock settings">
+    <div class="login-card">
+      <h1>Live Agent Settings</h1>
+      <p class="muted">Same viewer secret as the service desk.</p>
+      <form id="loginForm">
+        <label>
+          Viewer secret
+          <input id="loginSecret" type="password" autocomplete="current-password" required />
+        </label>
+        <div class="login-actions">
+          <button type="button" class="btn ghost" id="toggleSecretBtn">Show</button>
+          <button type="submit" class="btn primary">Open settings</button>
+        </div>
+        <p id="loginMessage" class="login-message muted" role="status"></p>
+      </form>
+    </div>
+  </section>
+
+  <section id="appView" class="settings-app hidden" aria-label="Live agent settings">
+    <header class="top-bar">
+      <div class="top-bar-inner">
+        <div class="brand">
+          <h1>Live Agent Settings</h1>
+          <p class="muted">Pick a topic on the left — one section opens at a time</p>
+        </div>
+        <div class="top-actions">
+          <a class="btn ghost nav-link" href="/live-agent">Live chat inbox</a>
+          <a class="btn ghost nav-link" href="/ua-conversations">Agent conversations</a>
+        </div>
+      </div>
+    </header>
+
+    <main class="settings-layout">
+      <nav class="settings-nav" aria-label="Settings menu">
+        <p class="settings-nav-label muted small">Settings menu</p>
+        <button type="button" class="settings-nav-btn active" data-settings-panel="general">General</button>
+        <button type="button" class="settings-nav-btn" data-settings-panel="alerts">Alerts</button>
+        <button type="button" class="settings-nav-btn" data-settings-panel="routing">Routing &amp; queue</button>
+        <button type="button" class="settings-nav-btn" data-settings-panel="hours">Working hours</button>
+        <button type="button" class="settings-nav-btn" data-settings-panel="access">Desk access</button>
+        <button type="button" class="settings-nav-btn" data-settings-panel="names">Agent names</button>
+        <button type="button" class="settings-nav-btn" data-settings-panel="knowledge">Knowledge base</button>
+        <button type="button" class="settings-nav-btn" data-settings-panel="reports">Reports</button>
+        <button type="button" class="settings-nav-btn" data-settings-panel="departments">Departments</button>
+        <button type="button" class="settings-nav-btn" data-settings-panel="activity">Agent activity</button>
+        <div class="settings-nav-footer">
+          <button type="submit" class="btn primary small" form="deskConfigForm">Save all settings</button>
+          <p id="deskConfigStatus" class="muted small" role="status"></p>
+        </div>
+      </nav>
+
+      <div class="settings-content">
+        <h2 id="settingsPanelTitle" class="settings-panel-title">General</h2>
+
+        <form id="deskConfigForm" class="settings-form">
+          <div id="settingsPanel-general" class="settings-panel active" data-panel-title="General">
+            <section class="settings-card">
+              <p class="muted small">Basic options for the service desk and chat behaviour.</p>
+              <div class="toggle-grid">
+                <label class="toggle-row">
+                  <input type="checkbox" id="muteServiceDesk" />
+                  <span>Mute service desk</span>
+                </label>
+                <label class="toggle-row">
+                  <input type="checkbox" id="showAgentNameInChat" checked />
+                  <span>Show agent display name in service desk chat</span>
+                </label>
+                <label class="toggle-row">
+                  <input type="checkbox" id="enableAgentChatFeedback" />
+                  <span>Enable agent chat feedback</span>
+                </label>
+                <label class="toggle-row">
+                  <input type="checkbox" id="disableUserTextTranslation" />
+                  <span>Disable user text translation</span>
+                </label>
+                <label class="toggle-row">
+                  <input type="checkbox" id="sortChatsByLastMessage" checked />
+                  <span>Sort chats by last message</span>
+                </label>
+              </div>
+              <label>
+                Notification sound
+                <select id="notificationSound">
+                  <option value="default" selected>Default</option>
+                  <option value="chime">Chime</option>
+                  <option value="none">None</option>
+                </select>
+              </label>
+              <div class="section-save-bar">
+                <button type="button" class="btn primary small section-save-btn" data-section-label="General">Save</button>
+                <p class="section-save-status muted small" role="status"></p>
+              </div>
+            </section>
+          </div>
+
+          <div id="settingsPanel-alerts" class="settings-panel" data-panel-title="Alerts">
+            <section class="settings-card">
+              <h3 class="settings-subhead">Desk alert panel (🔔)</h3>
+              <p class="muted small">
+                New human-agent requests in the top-bar <strong>Alerts 🔔</strong> panel on the service desk.
+              </p>
+              <div class="toggle-grid">
+                <label class="toggle-row">
+                  <input type="checkbox" id="notifyDeskPanel" checked />
+                  <span>Show new requests in the desk 🔔 panel</span>
+                </label>
+              </div>
+            </section>
+            <section class="settings-card settings-card--optional">
+              <h3 class="settings-subhead">Phone / browser pop-ups (optional)</h3>
+              <p class="muted small">
+                Alerts in the phone notification drawer when Chrome is in the background.
+              </p>
+              <div class="toggle-grid">
+                <label class="toggle-row">
+                  <input type="checkbox" id="notifyDesktopPopup" checked />
+                  <span>Desktop browser pop-ups</span>
+                </label>
+                <label class="toggle-row">
+                  <input type="checkbox" id="notifyMobilePopup" checked />
+                  <span>Mobile browser pop-ups</span>
+                </label>
+              </div>
+              <div class="notify-permission-row">
+                <button type="button" class="btn ghost small" id="allowNotifyThisDeviceBtn">
+                  Allow pop-ups on this device
+                </button>
+                <p id="notifyPermissionStatus" class="muted small" role="status">Checking…</p>
+              </div>
+              <div class="section-save-bar">
+                <button type="button" class="btn primary small section-save-btn" data-section-label="Alerts">Save</button>
+                <p class="section-save-status muted small" role="status"></p>
+              </div>
+            </section>
+          </div>
+
+          <div id="settingsPanel-routing" class="settings-panel" data-panel-title="Routing &amp; queue">
+            <section class="settings-card">
+              <p class="muted small">Who sees waiting chats and how long visitors wait.</p>
+              <label>
+                How to offer chats to agents
+                <select id="routingAlgorithm">
+                  <option value="online_parallel" selected>Everyone at once (parallel)</option>
+                  <option value="round_robin">One by one (round robin)</option>
+                </select>
+              </label>
+              <p class="muted small">
+                <strong>Round robin</strong>: one department agent at a time; after the wait below, the next agent gets the chat.
+                <strong>Parallel</strong>: all agents in that department see it until someone accepts.
+              </p>
+              <div class="settings-row-2">
+                <label>
+                  Max chats per agent
+                  <input id="maxConcurrentChats" type="number" min="1" max="20" step="1" value="2" />
+                </label>
+                <label>
+                  Agent idle time (minutes)
+                  <input id="agentInactivityMinutes" type="number" min="1" max="480" step="1" value="15" />
+                </label>
+              </div>
+              <label class="toggle-row">
+                <input type="checkbox" id="exitAgentOnInactive" />
+                <span>Log agent out when idle</span>
+              </label>
+              <div class="settings-row-2">
+                <label>
+                  Time per agent to accept (seconds)
+                  <input id="claimWaitSeconds" type="number" min="5" max="300" step="1" value="30" />
+                </label>
+                <label>
+                  End idle chat after (minutes)
+                  <input id="endConvWaitMinutes" type="number" min="1" max="120" step="1" value="3" />
+                </label>
+              </div>
+              <p class="muted small">End idle chat is saved for later — not active yet.</p>
+              <h3 class="settings-subhead">If nobody accepts</h3>
+              <label class="toggle-row">
+                <input type="checkbox" id="queueMaxWaitEnabled" checked />
+                <span>Stop waiting after max time</span>
+              </label>
+              <label>
+                Max wait (minutes)
+                <input id="queueMaxWaitMinutes" type="number" min="1" max="180" step="1" value="10" />
+              </label>
+              <label>
+                Message to visitor when time is up
+                <textarea id="queueTimeoutReply" rows="3" placeholder="All our agents are busy…"></textarea>
+              </label>
+              <div class="section-save-bar">
+                <button type="button" class="btn primary small section-save-btn" data-section-label="Routing">Save</button>
+                <p class="section-save-status muted small" role="status"></p>
+              </div>
+            </section>
+          </div>
+
+          <div id="settingsPanel-hours" class="settings-panel" data-panel-title="Working hours">
+            <section class="settings-card" id="businessHoursSection">
+              <p class="muted small">
+                Outside these hours visitors see your message — they are not added to the waiting queue.
+              </p>
+              <label class="toggle-row">
+                <input type="checkbox" id="bhEnabled" />
+                <span>Only allow human agent requests during working hours</span>
+              </label>
+              <label>
+                Timezone
+                <select id="bhTimezone" data-timezone-select></select>
+              </label>
+              <fieldset class="bh-days-fieldset">
+                <legend class="muted small">Working days</legend>
+                <div class="bh-days-grid">
+                  <label class="toggle-row"><input type="checkbox" id="bhMon" checked /><span>Mon</span></label>
+                  <label class="toggle-row"><input type="checkbox" id="bhTue" checked /><span>Tue</span></label>
+                  <label class="toggle-row"><input type="checkbox" id="bhWed" checked /><span>Wed</span></label>
+                  <label class="toggle-row"><input type="checkbox" id="bhThu" checked /><span>Thu</span></label>
+                  <label class="toggle-row"><input type="checkbox" id="bhFri" checked /><span>Fri</span></label>
+                  <label class="toggle-row"><input type="checkbox" id="bhSat" /><span>Sat</span></label>
+                  <label class="toggle-row"><input type="checkbox" id="bhSun" /><span>Sun</span></label>
+                </div>
+              </fieldset>
+              <div class="settings-row-2">
+                <label>
+                  Start time
+                  <input id="bhStart" type="text" value="9:00 AM" placeholder="9:00 AM" autocomplete="off" />
+                </label>
+                <label>
+                  End time
+                  <input id="bhEnd" type="text" value="5:00 PM" placeholder="5:00 PM" autocomplete="off" />
+                </label>
+              </div>
+              <label>
+                Message when agents are off duty
+                <textarea id="bhMessage" rows="4" placeholder="Our live support team is currently unavailable…"></textarea>
+              </label>
+              <div class="section-save-bar">
+                <button type="button" class="btn primary small section-save-btn" data-section-label="Working hours">Save</button>
+                <p class="section-save-status muted small" role="status"></p>
+              </div>
+            </section>
+          </div>
+
+          <div id="settingsPanel-access" class="settings-panel" data-panel-title="Desk access">
+            <section class="settings-card">
+              <p class="muted small">Which tabs and actions agents see on the service desk.</p>
+              <div class="toggle-grid">
+                <label class="toggle-row"><input type="checkbox" id="tabAllChats" checked /><span>All chats tab</span></label>
+                <label class="toggle-row"><input type="checkbox" id="tabAllAssigned" checked /><span>All assigned tab</span></label>
+                <label class="toggle-row"><input type="checkbox" id="tabUnassigned" checked /><span>Unassigned tab</span></label>
+                <label class="toggle-row"><input type="checkbox" id="tabAiChats" /><span>AI chats tab</span></label>
+                <label class="toggle-row"><input type="checkbox" id="tabAgentChats" checked /><span>Agent chats tab</span></label>
+                <label class="toggle-row"><input type="checkbox" id="tabCompleted" checked /><span>Completed chats tab</span></label>
+                <label class="toggle-row"><input type="checkbox" id="uploadFile" checked /><span>Upload files</span></label>
+              </div>
+              <label>
+                View visitor contact details
+                <select id="viewContact">
+                  <option value="all" selected>All chats</option>
+                  <option value="assigned">Assigned chats only</option>
+                  <option value="none">None</option>
+                </select>
+              </label>
+              <div class="section-save-bar">
+                <button type="button" class="btn primary small section-save-btn" data-section-label="Desk access">Save</button>
+                <p class="section-save-status muted small" role="status"></p>
+              </div>
+            </section>
+          </div>
+
+          <div id="settingsPanel-names" class="settings-panel" data-panel-title="Agent names">
+            <section class="settings-card">
+              <p class="muted small">Work email → name visitors see in the website chat (email is never shown to visitors).</p>
+              <div class="agent-profiles-table-wrap">
+                <table class="agents-table agent-profiles-table">
+                  <thead>
+                    <tr>
+                      <th>Work email</th>
+                      <th>Display name</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody id="agentProfilesBody"></tbody>
+                </table>
+              </div>
+              <button type="button" class="btn ghost small" id="addAgentProfileBtn">Add agent</button>
+              <div class="section-save-bar">
+                <button type="button" class="btn primary small section-save-btn" data-section-label="Agent names">Save</button>
+                <p class="section-save-status muted small" role="status"></p>
+              </div>
+            </section>
+          </div>
+
+          <div id="settingsPanel-knowledge" class="settings-panel" data-panel-title="Knowledge base">
+            <section class="settings-card" id="knowledgeBaseSection">
+              <p class="muted small">Ready-made answers agents search on the desk and paste into replies.</p>
+              <label class="toggle-row">
+                <input type="checkbox" id="kbEnabled" checked />
+                <span>Show knowledge base on service desk</span>
+              </label>
+              <div class="kb-articles-wrap">
+                <table class="agents-table kb-articles-table">
+                  <thead>
+                    <tr>
+                      <th>Title</th>
+                      <th>Keywords</th>
+                      <th>Department</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody id="kbArticlesBody"></tbody>
+                </table>
+              </div>
+              <button type="button" class="btn ghost small" id="addKbArticleBtn">Add article</button>
+              <p id="kbValidationBanner" class="kb-validation-banner hidden" role="alert"></p>
+              <p class="muted small">Each article needs a <strong>title</strong> and <strong>reply text</strong>.</p>
+              <div class="section-save-bar">
+                <button type="button" class="btn primary small section-save-btn" data-section-label="Knowledge base">Save</button>
+                <p class="section-save-status muted small" role="status"></p>
+              </div>
+            </section>
+          </div>
+
+          <div id="settingsPanel-reports" class="settings-panel" data-panel-title="Reports">
+            <section class="settings-card">
+              <p class="muted small">Email addresses for scheduled agent reports (needs server cron to send).</p>
+              <label>
+                Daily report recipients
+                <input id="dailyRecipients" type="text" placeholder="Emails separated by commas…" autocomplete="off" />
+              </label>
+              <label class="toggle-row">
+                <input type="checkbox" id="weeklyMonthlyEnabled" />
+                <span>Weekly / monthly reports</span>
+              </label>
+              <div class="section-save-bar">
+                <button type="button" class="btn primary small section-save-btn" data-section-label="Reports">Save</button>
+                <p class="section-save-status muted small" role="status"></p>
+              </div>
+            </section>
+          </div>
+        </form>
+
+        <div id="settingsPanel-departments" class="settings-panel" data-panel-title="Departments">
+          <section class="settings-card">
+            <p class="muted small"><strong>General</strong> is the default department. Add agent emails for round robin order.</p>
+            <p class="dept-section-note muted small">
+              Departments save on their own — use <strong>Create department</strong> or <strong>Save department</strong> on each card.
+            </p>
+            <form id="deptForm" class="settings-form dept-form">
+              <label>
+                New department name
+                <input id="deptName" type="text" placeholder="e.g. Sales" />
+              </label>
+              <label>
+                Agent emails (one per line)
+                <textarea id="deptEmails" rows="4" placeholder="agent1@company.com&#10;agent2@company.com"></textarea>
+              </label>
+              <button type="submit" class="btn primary">Create department</button>
+              <p id="deptFormStatus" class="muted small" role="status"></p>
+            </form>
+            <div id="deptList" class="dept-list"></div>
+          </section>
+        </div>
+
+        <div id="settingsPanel-activity" class="settings-panel" data-panel-title="Agent activity">
+          <section class="settings-card" id="agentsSection">
+            <div class="agents-panel-head">
+              <p class="muted small">Live data — refreshes when you open this section.</p>
+              <button type="button" class="btn ghost small" id="refreshAgentsOverviewBtn">Refresh</button>
+            </div>
+            <p id="agentsOverviewStatus" class="muted small" role="status"></p>
+            <div class="agents-table-wrap">
+              <table class="agents-table" id="agentsOverviewTable">
+                <thead>
+                  <tr>
+                    <th>Agent</th>
+                    <th>Status</th>
+                    <th>Active</th>
+                    <th>Accepted</th>
+                    <th>Closed</th>
+                    <th>Last accept</th>
+                  </tr>
+                </thead>
+                <tbody id="agentsOverviewBody"></tbody>
+              </table>
+            </div>
+            <h3 class="settings-subhead">Recent activity</h3>
+            <ul id="agentsActivityList" class="agents-activity-list"></ul>
+          </section>
+        </div>
+      </div>
+    </main>
+  </section>
+
+  </div>
+
+  <script src="/dashboard/dashboard-nav.js?v=20260626a"></script>
+  <script>
+    DashboardNav.mountPage({
+      active: 'live-agent/settings',
+      title: 'Live chat setup',
+      subtitle: 'Agents, departments & viewer secret',
+    });
+  </script>
+  <script src="/shared/timezone-options.js?v=20260621a"></script>
+  <script src="settings.js" defer></script>
+</body>
+</html>

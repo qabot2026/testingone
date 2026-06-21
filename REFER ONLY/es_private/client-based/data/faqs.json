@@ -1,0 +1,129 @@
+{
+  "updatedAt": "2026-06-18T05:42:54.567Z",
+  "bots": {
+    "10001": {
+      "items": [
+        {
+          "id": "fce0a98c-537a-49ea-9603-54170518c49d",
+          "question": "What all services do you provide?",
+          "answer": "Weight loss, Skin Care, and Hair fall.",
+          "published": true,
+          "nextIntent": "Price-7Garden",
+          "order": 1,
+          "updatedAt": "2026-06-17T17:21:07.144Z"
+        },
+        {
+          "id": "ca3777bd-e553-450e-801e-3cb32edf0c4f",
+          "question": "What is you location?",
+          "answer": "Hyderabad",
+          "published": true,
+          "nextIntentPhrase": "Price-7Garden",
+          "nextIntent": "",
+          "order": 2,
+          "updatedAt": "2026-06-17T17:48:50.281Z"
+        },
+        {
+          "id": "9df105dd-afd5-4bf0-8ae1-f55d909ea4e5",
+          "question": "What is the charges?",
+          "answer": "INR 100 Rs.",
+          "published": true,
+          "nextIntent": "LV Pricing",
+          "order": 3,
+          "updatedAt": "2026-06-17T17:21:20.896Z"
+        },
+        {
+          "id": "4761656f-b395-4ecb-bb42-575634e1c146",
+          "question": "Any discount?",
+          "answer": "yes, INR 500 discount for 1st 10 customers.",
+          "published": true,
+          "nextIntentPhrase": "Price-7Garden",
+          "nextIntent": "",
+          "order": 4,
+          "updatedAt": "2026-06-17T17:48:54.926Z"
+        },
+        {
+          "id": "dc82b6fe-2bdd-4fcf-be61-3488599eb68c",
+          "question": "Any discount?",
+          "answer": "yes, INR 500 discount for 1st 10 customers.",
+          "published": true,
+          "order": 5,
+          "updatedAt": "2026-06-17T14:20:56.776Z"
+        },
+        {
+          "id": "0080835a-2c1d-4a90-8a55-1c24a83ffa78",
+          "question": "dtretert",
+          "answer": "No we don't have that.",
+          "published": true,
+          "order": 6,
+          "updatedAt": "2026-06-17T16:31:44.204Z"
+        },
+        {
+          "id": "fd022b17-ddcb-41f7-877f-2934c1f43855",
+          "question": "dtretert",
+          "answer": "Nice, very good.",
+          "published": true,
+          "order": 7,
+          "updatedAt": "2026-06-17T16:33:18.743Z"
+        },
+        {
+          "id": "a5b7043a-aede-48e3-b269-977d1b3f9b47",
+          "question": "vvvvvvvvvv",
+          "answer": "Very nice",
+          "published": true,
+          "order": 8,
+          "updatedAt": "2026-06-17T16:52:26.714Z"
+        },
+        {
+          "id": "ac53f5b9-4bf4-43c5-a5ce-48daf37249c5",
+          "question": "dfsdfsdfds",
+          "answer": "Very Good",
+          "published": true,
+          "order": 9,
+          "updatedAt": "2026-06-17T17:10:11.976Z"
+        },
+        {
+          "id": "744e95da-1dd4-4d30-b5ff-96aaf35e7605",
+          "question": "ggggggg",
+          "answer": "Very good ggggggg",
+          "published": true,
+          "nextIntentPhrase": "",
+          "nextIntent": "",
+          "order": 10,
+          "updatedAt": "2026-06-18T05:27:17.621Z"
+        },
+        {
+          "id": "0f56a4d9-8fae-4c5f-a1ec-e74d6b34783f",
+          "question": "dsfsdfs",
+          "answer": "fgdgggggggggg",
+          "published": true,
+          "nextIntentPhrase": "",
+          "nextIntent": "",
+          "order": 11,
+          "updatedAt": "2026-06-18T05:42:54.567Z"
+        }
+      ]
+    },
+    "10002": {
+      "items": [
+        {
+          "id": "96927916-a64c-4da3-b752-62961d636a61",
+          "question": "What is you name?",
+          "answer": "I am Genie Chatbot.",
+          "published": true,
+          "order": 1,
+          "updatedAt": "2026-06-17T14:35:51.115Z"
+        },
+        {
+          "id": "8f3d8b6c-f311-48fb-8c74-819f10d93873",
+          "question": "2 bhk",
+          "answer": "Yes, we have 2 bhk",
+          "published": true,
+          "nextIntentPhrase": "",
+          "nextIntent": "",
+          "order": 2,
+          "updatedAt": "2026-06-18T05:29:15.847Z"
+        }
+      ]
+    }
+  }
+}

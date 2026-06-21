@@ -1,0 +1,1399 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Chat script</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: linear-gradient(180deg, #f1f5f9 0%, #e2e8f0 100%);
+      --surface: #ffffff;
+      --text: #0f172a;
+      --muted: #64748b;
+      --border: rgba(148, 163, 184, 0.4);
+      --user: #0d9488;
+      --user-soft: #ccfbf1;
+      --bot: #334155;
+      --bot-soft: #e9eef5;
+      --radius: 16px;
+      --radius-sm: 12px;
+      font-family: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+      font-size: 14px;
+      line-height: 1.45;
+      color: var(--text);
+      background: var(--bg);
+      min-height: 100dvh;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 0;
+      min-height: 100dvh;
+      display: flex;
+      flex-direction: column;
+    }
+    .top {
+      flex-shrink: 0;
+      padding: 16px clamp(16px, 4vw, 28px) 12px;
+      max-width: 1180px;
+      width: 100%;
+      margin: 0 auto;
+    }
+    h1 {
+      margin: 0 0 4px;
+      font-size: 1.35rem;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+    }
+    .session-meta {
+      margin: 0 0 10px;
+      font-size: 0.8125rem;
+      color: var(--muted);
+      line-height: 1.5;
+      word-break: break-word;
+    }
+    .session-meta strong {
+      color: var(--text);
+      font-weight: 600;
+    }
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 12px 14px;
+      margin-bottom: 10px;
+      box-shadow: 0 2px 12px rgba(15, 23, 42, 0.05);
+    }
+    label.mini {
+      display: block;
+      font-size: 0.65rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+    input[type="password"] {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      font: inherit;
+    }
+    button.primary {
+      margin-top: 10px;
+      width: 100%;
+      padding: 10px 16px;
+      border: none;
+      border-radius: 10px;
+      font: inherit;
+      font-weight: 600;
+      cursor: pointer;
+      background: linear-gradient(135deg, #14b8a6, #0d9488);
+      color: #f0fdfa;
+    }
+    button.ghost {
+      margin-top: 8px;
+      width: 100%;
+      padding: 6px;
+      border: none;
+      background: transparent;
+      color: var(--muted);
+      font-size: 0.75rem;
+      cursor: pointer;
+      text-decoration: underline;
+    }
+    button.primary:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+    .err {
+      color: #b91c1c;
+      font-size: 0.8rem;
+      margin-top: 8px;
+    }
+    .main-grid {
+      flex: 1;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: clamp(16px, 2.5vw, 24px);
+      width: 100%;
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 0 clamp(16px, 4vw, 28px) 24px;
+      min-height: 0;
+      align-items: stretch;
+    }
+    @media (min-width: 900px) {
+      .main-grid.main-grid--split {
+        grid-template-columns: minmax(0, 1fr) minmax(260px, 380px);
+        align-items: start;
+      }
+    }
+    .chat-column {
+      min-width: 0;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      max-height: calc(100dvh - clamp(132px, 22vh, 280px));
+    }
+    .main-grid.main-grid--split .chat-column {
+      max-height: calc(100dvh - clamp(100px, 16vh, 200px));
+    }
+    .summary-rail {
+      min-width: 0;
+      display: none;
+    }
+    .main-grid.main-grid--split .summary-rail {
+      display: block;
+    }
+    .summary-rail-inner {
+      position: sticky;
+      top: 12px;
+      max-height: calc(100dvh - 24px);
+      overflow-y: auto;
+      scrollbar-gutter: stable;
+      padding-bottom: 8px;
+    }
+    .details-wrap {
+      max-width: none;
+      width: 100%;
+      margin: 0;
+      padding: 0;
+    }
+    .details-wrap h2 {
+      margin: 0 0 8px;
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--muted);
+      font-weight: 700;
+    }
+    .dl-grid {
+      display: grid;
+      gap: 8px 14px;
+      grid-template-columns: minmax(100px, 34%) 1fr;
+      font-size: 0.82rem;
+    }
+    .dl-grid dt {
+      margin: 0;
+      color: var(--muted);
+      font-weight: 600;
+    }
+    .dl-grid dd {
+      margin: 0;
+      word-break: break-word;
+      white-space: pre-wrap;
+    }
+    .chat-wrap {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      width: 100%;
+      margin: 0;
+      padding: 0;
+    }
+    .chat-stream {
+      flex: 1;
+      min-height: 220px;
+      overflow-y: auto;
+      padding: 12px 4px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      scrollbar-gutter: stable;
+      background: rgba(255, 255, 255, 0.35);
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+    }
+    .day-line {
+      text-align: center;
+      font-size: 0.68rem;
+      color: var(--muted);
+      padding: 6px 0;
+    }
+    .msg {
+      max-width: 92%;
+      padding: 10px 14px;
+      border-radius: var(--radius);
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-size: 0.92rem;
+    }
+    .msg--user {
+      align-self: flex-end;
+      background: var(--user-soft);
+      border-bottom-right-radius: 4px;
+      margin-left: 18%;
+      border: 1px solid rgba(13, 148, 136, 0.2);
+    }
+    .msg--assistant {
+      align-self: flex-start;
+      background: var(--bot-soft);
+      border-bottom-left-radius: 4px;
+      margin-right: 10%;
+      border: 1px solid rgba(51, 65, 85, 0.12);
+    }
+    .msg--agent {
+      align-self: flex-start;
+      background: #ede9fe;
+      border-bottom-left-radius: 4px;
+      margin-right: 10%;
+      border: 1px solid rgba(109, 40, 217, 0.18);
+    }
+    .msg .who {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 8px 12px;
+      font-size: 0.62rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      margin-bottom: 4px;
+      color: var(--user);
+    }
+    .msg--assistant .who {
+      color: var(--bot);
+    }
+    .msg--agent .who {
+      color: #6d28d9;
+    }
+    .msg .who-label {
+      min-width: 0;
+      flex-shrink: 0;
+    }
+    .msg .msg-time {
+      font-weight: 600;
+      text-transform: none;
+      letter-spacing: 0.02em;
+      color: var(--muted);
+      font-size: 0.68rem;
+      white-space: nowrap;
+      margin-left: auto;
+    }
+    .empty-hint {
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.88rem;
+      padding: 24px 12px;
+    }
+    .msg-body--rich {
+      white-space: normal;
+    }
+    .rc-block { margin-top: 8px; }
+    .rc-block:first-child { margin-top: 0; }
+    .rc-text { white-space: pre-wrap; margin: 0 0 6px; }
+    .rc-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 4px;
+    }
+    .rc-chip {
+      display: inline-block;
+      padding: 7px 14px;
+      border-radius: 999px;
+      border: 1px solid rgba(148, 163, 184, 0.55);
+      background: #fff;
+      font-size: 0.84rem;
+      line-height: 1.2;
+      color: var(--text);
+    }
+    .rc-img {
+      display: block;
+      max-width: 100%;
+      width: auto;
+      max-height: 200px;
+      border-radius: 10px;
+      margin: 4px 0;
+      object-fit: cover;
+      border: 1px solid var(--border);
+    }
+    .rc-gallery {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      padding: 2px 0 8px;
+      margin: 4px 0;
+      scroll-snap-type: x mandatory;
+    }
+    .rc-gallery .rc-img {
+      flex: 0 0 auto;
+      width: min(76vw, 200px);
+      max-height: 126px;
+      scroll-snap-align: start;
+    }
+    .rc-info {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 10px 12px;
+      background: #fff;
+      margin: 6px 0;
+      max-width: 300px;
+    }
+    .rc-info-title { font-weight: 700; font-size: 0.9rem; margin: 0 0 2px; }
+    .rc-info-sub { font-size: 0.78rem; color: var(--muted); margin: 0 0 6px; }
+    .rc-info-text { font-size: 0.82rem; margin: 6px 0 0; white-space: pre-wrap; }
+    .rc-btn-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+    .rc-btn {
+      display: inline-block;
+      padding: 6px 10px;
+      border-radius: 8px;
+      border: 1px solid rgba(13, 148, 136, 0.35);
+      background: rgba(204, 251, 241, 0.5);
+      font-size: 0.78rem;
+      color: #0f766e;
+      text-decoration: none;
+    }
+    .rc-btn--ghost {
+      background: #fff;
+      border-color: rgba(148, 163, 184, 0.5);
+      color: var(--text);
+    }
+    .rc-card {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      background: #fff;
+      margin: 6px 0;
+      max-width: 260px;
+    }
+    .rc-card img { width: 100%; height: 120px; object-fit: cover; display: block; }
+    .rc-card-body { padding: 8px 10px; }
+    .rc-cards-row {
+      display: flex;
+      gap: 10px;
+      overflow-x: auto;
+      padding: 2px 0 8px;
+    }
+    .rc-select-hint { font-size: 0.8rem; color: var(--muted); margin: 4px 0 6px; }
+    .rc-file a { color: #0d9488; font-weight: 600; }
+    .rc-video {
+      position: relative;
+      width: 100%;
+      max-width: 360px;
+      aspect-ratio: 16 / 9;
+      margin: 6px 0;
+      border-radius: 10px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+    }
+    .rc-video iframe { width: 100%; height: 100%; border: 0; }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <h1>Chat script</h1>
+    <p id="sessionMeta" class="session-meta" hidden></p>
+    <p style="margin:0 0 10px;font-size:0.8125rem;color:var(--muted)">
+      <a href="dashboard/documents.html" style="color:#0d9488;font-weight:600;text-decoration:none">← Customer documents</a>
+    </p>
+    <div class="panel" id="authPanel">
+      <label class="mini" for="secret">Desk token (if not signed in)</label>
+      <input id="secret" type="password" autocomplete="current-password" placeholder="LIVE_AGENT_DESK_TOKEN" />
+      <button type="button" class="primary" id="loadBtn">Load chat script</button>
+      <button type="button" class="ghost" id="toggleAuth" hidden>Show secret field</button>
+      <p class="err" id="errBox" hidden></p>
+    </div>
+  </header>
+
+  <div class="main-grid" id="mainGrid">
+    <div class="chat-column">
+      <div class="chat-wrap">
+        <div class="chat-stream" id="thread" aria-live="polite"></div>
+      </div>
+    </div>
+    <aside class="summary-rail" id="summaryRail" hidden>
+      <div class="summary-rail-inner">
+        <div class="details-wrap" id="detailsWrap" hidden>
+          <h2>Summary</h2>
+          <div class="panel">
+            <dl class="dl-grid" id="detailsDl"></dl>
+          </div>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <script>
+    (function () {
+      var LS_KEY = "conversations_sheet_secret_v1";
+      var DESK_KEY = "qa_live_agent_desk";
+      var secretEl = document.getElementById("secret");
+      var loadBtn = document.getElementById("loadBtn");
+      var errBox = document.getElementById("errBox");
+      var thread = document.getElementById("thread");
+      var detailsWrap = document.getElementById("detailsWrap");
+      var detailsDl = document.getElementById("detailsDl");
+      var authPanel = document.getElementById("authPanel");
+      var toggleAuth = document.getElementById("toggleAuth");
+      var mainGrid = document.getElementById("mainGrid");
+      var summaryRail = document.getElementById("summaryRail");
+
+      /** Staff label for open_form / Sheets (matches `forms/*.js` `staffFormLabel` + API `form-staff-labels.mjs`). */
+      var FORM_STAFF_LABELS = {
+        contact: "contact",
+        upload: "upload",
+        uploadDocument: "upload",
+        otp: "otp",
+        feedback: "feedback",
+        birth: "birth",
+        birthform: "birth",
+        nearestBranch: "nearest-branch",
+        "nearest-branch": "nearest-branch",
+        appointment: "appointment",
+        appintmentformgeneral: "general-appointment",
+        "general-appointment": "general-appointment",
+        appintmentformdoctor: "doctor-appointment",
+        "doctor-appointment": "doctor-appointment"
+      };
+
+      function staffFormDisplayLabel(rawId) {
+        var t = typeof rawId === "string" ? rawId.trim() : "";
+        if (!t) return "";
+        if (FORM_STAFF_LABELS[t]) return FORM_STAFF_LABELS[t];
+        var compact = t.toLowerCase().replace(/[\s_-]+/g, "");
+        if (compact === "upload" || compact === "uploaddocument") return "upload";
+        return t;
+      }
+
+      function readDeskAuth() {
+        try {
+          var raw = localStorage.getItem(DESK_KEY) || "{}";
+          var d = JSON.parse(raw);
+          return {
+            token: d && d.token ? String(d.token).trim() : "",
+            apiBase: d && d.apiBase ? String(d.apiBase).trim().replace(/\/$/, "") : ""
+          };
+        } catch (ignore) {
+          return { token: "", apiBase: "" };
+        }
+      }
+
+      function readSavedViewerSecret() {
+        var desk = readDeskAuth();
+        if (desk.token) return desk.token;
+        try {
+          var s = sessionStorage.getItem(LS_KEY) || localStorage.getItem(LS_KEY) || "";
+          return typeof s === "string" ? s.trim() : "";
+        } catch (ignore) {
+          return "";
+        }
+      }
+
+      function authHeaders(secret) {
+        var h = { "Cache-Control": "no-store" };
+        var desk = readDeskAuth();
+        if (desk.token) {
+          h["X-Agent-Token"] = desk.token;
+        } else if (secret) {
+          h["X-Conversations-Sheet-Secret"] = secret;
+        }
+        return h;
+      }
+
+      function apiRoot() {
+        var desk = readDeskAuth();
+        if (desk.apiBase) return desk.apiBase;
+        return window.location.origin.replace(/\/$/, "");
+      }
+
+      function persistViewerSecret(secret) {
+        var s = typeof secret === "string" ? secret.trim() : "";
+        if (!s) return;
+        try {
+          sessionStorage.setItem(LS_KEY, s);
+        } catch (ignore) {}
+        try {
+          localStorage.setItem(LS_KEY, s);
+        } catch (ignore) {}
+      }
+
+      var savedSecret = readSavedViewerSecret();
+      if (savedSecret) {
+        secretEl.value = savedSecret;
+      }
+
+      function scrollTranscriptPageToTop_() {
+        try {
+          window.scrollTo(0, 0);
+        } catch (ignore) {}
+        if (document.documentElement) {
+          document.documentElement.scrollTop = 0;
+        }
+        if (document.body) {
+          document.body.scrollTop = 0;
+        }
+        if (thread) {
+          thread.scrollTop = 0;
+        }
+      }
+
+      try {
+        if (history.scrollRestoration) {
+          history.scrollRestoration = "manual";
+        }
+      } catch (ignore) {}
+      scrollTranscriptPageToTop_();
+
+      function escapeHtml(s) {
+        return String(s || "")
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;");
+      }
+
+      var TRANSCRIPT_NOISE = {
+        HANDLER_PROMPT: 1,
+        "Virtual Agent": 1,
+        VIRTUAL_AGENT: 1,
+        Chips: 1,
+        chips: 1,
+        chip: 1
+      };
+
+      function unwrapStr(v) {
+        if (typeof v === "string") return v.trim();
+        if (v && typeof v === "object" && typeof v.stringValue === "string") return v.stringValue.trim();
+        return "";
+      }
+
+      function imgUrl(node) {
+        if (!node || typeof node !== "object") return "";
+        if (typeof node.rawUrl === "string" && node.rawUrl.trim()) return node.rawUrl.trim();
+        var img = node.image;
+        if (!img || typeof img !== "object") return "";
+        if (typeof img.rawUrl === "string" && img.rawUrl.trim()) return img.rawUrl.trim();
+        if (img.src && typeof img.src.rawUrl === "string") return img.src.rawUrl.trim();
+        return "";
+      }
+
+      function linkUrl(node) {
+        if (!node || typeof node !== "object") return "";
+        if (typeof node.actionLink === "string" && node.actionLink.trim()) return node.actionLink.trim();
+        if (node.anchor && typeof node.anchor.href === "string") return node.anchor.href.trim();
+        return "";
+      }
+
+      function chipsHtml(options) {
+        if (!Array.isArray(options) || !options.length) return "";
+        var h = '<div class="rc-chips">';
+        for (var i = 0; i < options.length; i++) {
+          var o = options[i];
+          var label = typeof o === "string" ? o.trim() : unwrapStr(o && o.text) || unwrapStr(o && o.label);
+          if (!label || TRANSCRIPT_NOISE[label]) continue;
+          h += '<span class="rc-chip">' + escapeHtml(label) + "</span>";
+        }
+        return h + "</div>";
+      }
+
+      function richItemHtml(item) {
+        if (!item || typeof item !== "object") return "";
+        var type = String(item.type || "").toLowerCase();
+        if (type === "chips") return '<div class="rc-block">' + chipsHtml(item.options) + "</div>";
+        if (type === "image") {
+          var u = imgUrl(item);
+          if (!u) return "";
+          return '<div class="rc-block"><img class="rc-img" src="' + escapeHtml(u) + '" alt="' + escapeHtml(unwrapStr(item.accessibilityText)) + '" loading="lazy" /></div>';
+        }
+        if (type === "info" || type === "accordion") {
+          var title = unwrapStr(item.title);
+          var sub = unwrapStr(item.subtitle);
+          var body = unwrapStr(item.text);
+          var iu = imgUrl(item);
+          var href = linkUrl(item);
+          var html = '<div class="rc-block"><div class="rc-info">';
+          if (iu) {
+            html += href
+              ? '<a href="' + escapeHtml(href) + '" target="_blank" rel="noopener"><img class="rc-img" src="' + escapeHtml(iu) + '" alt="" loading="lazy" /></a>'
+              : '<img class="rc-img" src="' + escapeHtml(iu) + '" alt="" loading="lazy" />';
+          }
+          if (title) html += '<div class="rc-info-title">' + escapeHtml(title) + "</div>";
+          if (sub) html += '<div class="rc-info-sub">' + escapeHtml(sub) + "</div>";
+          if (body) html += '<div class="rc-info-text">' + escapeHtml(body) + "</div>";
+          var btns = Array.isArray(item.buttons) ? item.buttons : [];
+          if (btns.length) {
+            html += '<div class="rc-btn-row">';
+            for (var b = 0; b < btns.length; b++) {
+              var bt = btns[b];
+              var bl = unwrapStr(bt && bt.text) || unwrapStr(bt && bt.label);
+              var bh = href || (bt && bt.link && bt.link.uri ? String(bt.link.uri) : "");
+              if (!bl) continue;
+              html += bh
+                ? '<a class="rc-btn" href="' + escapeHtml(bh) + '" target="_blank" rel="noopener">' + escapeHtml(bl) + "</a>"
+                : '<span class="rc-btn rc-btn--ghost">' + escapeHtml(bl) + "</span>";
+            }
+            html += "</div>";
+          } else if (href && title) {
+            html += '<div class="rc-btn-row"><a class="rc-btn" href="' + escapeHtml(href) + '" target="_blank" rel="noopener">Open link</a></div>';
+          }
+          return html + "</div></div>";
+        }
+        if (type === "files" && Array.isArray(item.files)) {
+          var fh = '<div class="rc-block rc-file">';
+          for (var f = 0; f < item.files.length; f++) {
+            var file = item.files[f];
+            var fn = unwrapStr(file && file.name) || "Download";
+            var fhref = file && file.anchor && file.anchor.href ? String(file.anchor.href) : "";
+            fh += fhref
+              ? '<div><a href="' + escapeHtml(fhref) + '" target="_blank" rel="noopener">' + escapeHtml(fn) + "</a></div>"
+              : "<div>" + escapeHtml(fn) + "</div>";
+          }
+          return fh + "</div>";
+        }
+        return "";
+      }
+
+      function richRowsHtml(richContent) {
+        if (!Array.isArray(richContent)) return "";
+        var out = "";
+        for (var r = 0; r < richContent.length; r++) {
+          var row = richContent[r];
+          if (!Array.isArray(row)) continue;
+          var imgs = [];
+          var rest = "";
+          for (var c = 0; c < row.length; c++) {
+            var piece = richItemHtml(row[c]);
+            if (!piece) continue;
+            if (row[c] && String(row[c].type || "").toLowerCase() === "image") imgs.push(piece);
+            else rest += piece;
+          }
+          if (imgs.length > 1) out += '<div class="rc-gallery">' + imgs.join("") + "</div>";
+          else if (imgs.length === 1) out += imgs[0];
+          out += rest;
+        }
+        return out;
+      }
+
+      function ytEmbed(url) {
+        var m = String(url || "").match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([A-Za-z0-9_-]{6,})/i);
+        return m ? "https://www.youtube.com/embed/" + m[1] : "";
+      }
+
+      function actionHtml(pl) {
+        if (!pl || typeof pl !== "object") return "";
+        var action = String(pl.action || "").toLowerCase();
+        var html = "";
+        var msg = unwrapStr(pl.message);
+        if (msg) html += '<p class="rc-text">' + escapeHtml(msg) + "</p>";
+        if (action === "open_gallery" && Array.isArray(pl.urls)) {
+          html += '<div class="rc-gallery">';
+          for (var g = 0; g < pl.urls.length; g++) {
+            var gu = typeof pl.urls[g] === "string" ? pl.urls[g].trim() : "";
+            if (gu) html += '<img class="rc-img" src="' + escapeHtml(gu) + '" alt="" loading="lazy" />';
+          }
+          html += "</div>" + chipsHtml(pl.options);
+        } else if (action === "open_video") {
+          var videoUrl =
+            unwrapStr(pl.url) || unwrapStr(pl.videoUrl) || unwrapStr(pl.video_url);
+          var emb = videoUrl ? ytEmbed(videoUrl) : "";
+          if (emb) {
+            html += '<div class="rc-video"><iframe src="' + escapeHtml(emb) + '" title="Video" allowfullscreen loading="lazy"></iframe></div>';
+          } else if (videoUrl) {
+            html +=
+              '<p class="rc-text"><a href="' +
+              escapeHtml(videoUrl) +
+              '" target="_blank" rel="noopener">Open video</a></p>';
+          }
+          html += chipsHtml(pl.options);
+        } else if (action === "open_card_carousel" && Array.isArray(pl.cards)) {
+          html += '<div class="rc-cards-row">';
+          for (var k = 0; k < pl.cards.length; k++) {
+            var card = pl.cards[k];
+            if (!card || typeof card !== "object") continue;
+            var ct = unwrapStr(card.title);
+            var cs = unwrapStr(card.subtitle);
+            var ci = typeof card.imageUrl === "string" ? card.imageUrl.trim() : "";
+            html += '<div class="rc-card">';
+            if (ci) html += '<img src="' + escapeHtml(ci) + '" alt="" loading="lazy" />';
+            html += '<div class="rc-card-body">';
+            if (ct) html += '<div class="rc-info-title">' + escapeHtml(ct) + "</div>";
+            if (cs) html += '<div class="rc-info-sub">' + escapeHtml(cs) + "</div>";
+            html += '<span class="rc-btn rc-btn--ghost">' + escapeHtml(unwrapStr(card.ctaLabel) || "View") + "</span></div></div>";
+          }
+          html += "</div>";
+        } else if (action === "dfchat_inline_select" && Array.isArray(pl.options)) {
+          html += '<div class="rc-select-hint">' + escapeHtml(unwrapStr(pl.placeholder) || "Choose…") + "</div>";
+          html += chipsHtml(
+            pl.options.map(function (o) {
+              return { text: unwrapStr(o && o.label) || unwrapStr(o && o.value) };
+            })
+          );
+        } else if (action === "open_form") {
+          var rawFormId =
+            unwrapStr(pl.form_id) ||
+            unwrapStr(pl.formId) ||
+            unwrapStr(pl.form_key) ||
+            "";
+          var formLabel = staffFormDisplayLabel(rawFormId);
+          if (formLabel) {
+            html += '<p class="rc-text">Form: <strong>' + escapeHtml(formLabel) + "</strong></p>";
+          }
+        }
+        return html;
+      }
+
+      function richHasActionUi(rich) {
+        if (!rich || typeof rich !== "object") return false;
+        var a = String(rich.action || "").toLowerCase();
+        return (
+          a === "open_card_carousel" ||
+          a === "open_video" ||
+          a === "open_gallery" ||
+          a === "dfchat_inline_select" ||
+          a === "open_form"
+        );
+      }
+
+      function resolveRich(turn) {
+        if (!turn || typeof turn !== "object") return null;
+        if (typeof turn.rich_json === "string" && turn.rich_json.trim()) {
+          try {
+            var parsedRich = JSON.parse(turn.rich_json);
+            if (parsedRich && typeof parsedRich === "object") return parsedRich;
+          } catch (ignoreRich) {}
+        }
+        if (turn.rich && typeof turn.rich === "object") return turn.rich;
+        var raw = typeof turn.text === "string" ? turn.text.trim() : "";
+        if (raw.charAt(0) === "{" && (raw.indexOf("richContent") >= 0 || raw.indexOf('"action"') >= 0)) {
+          try {
+            var p = JSON.parse(raw);
+            if (p && typeof p === "object") return p;
+          } catch (ignore) {}
+        }
+        return null;
+      }
+
+      function chipLabelsFromRich(rich) {
+        var labels = [];
+        if (!rich || typeof rich !== "object") return labels;
+        if (Array.isArray(rich.options)) {
+          for (var oi = 0; oi < rich.options.length; oi++) {
+            var opt = rich.options[oi];
+            var ol =
+              typeof opt === "string"
+                ? opt
+                : opt && typeof opt.label === "string"
+                  ? opt.label
+                  : opt && typeof opt.text === "string"
+                    ? opt.text
+                    : "";
+            ol = String(ol || "").trim().toLowerCase();
+            if (ol) labels.push(ol);
+          }
+        }
+        if (Array.isArray(rich.cards)) {
+          for (var ci = 0; ci < rich.cards.length; ci++) {
+            var card = rich.cards[ci];
+            if (!card || typeof card !== "object") continue;
+            ["title", "subtitle", "ctaLabel", "ctaValue", "id", "imageUrl"].forEach(function (k) {
+              var v = card[k];
+              if (typeof v === "string" && v.trim()) labels.push(v.trim().toLowerCase());
+            });
+          }
+        }
+        if (!Array.isArray(rich.richContent)) return labels;
+        for (var r = 0; r < rich.richContent.length; r++) {
+          var row = rich.richContent[r];
+          if (!Array.isArray(row)) continue;
+          for (var c = 0; c < row.length; c++) {
+            var item = row[c];
+            if (!item || typeof item !== "object") continue;
+            if (String(item.type || "").toLowerCase() !== "chips" || !Array.isArray(item.options)) continue;
+            for (var o = 0; o < item.options.length; o++) {
+              var opt = item.options[o];
+              var tx =
+                typeof opt === "string"
+                  ? opt
+                  : opt && typeof opt.text === "string"
+                    ? opt.text
+                    : "";
+              tx = String(tx || "").trim().toLowerCase();
+              if (tx) labels.push(tx);
+            }
+          }
+        }
+        return labels;
+      }
+
+      function cleanText(text, rich) {
+        var t = typeof text === "string" ? text.trim() : "";
+        if (!t) return t;
+        var chipLabels = rich ? chipLabelsFromRich(rich) : [];
+        var seenLine = {};
+        return t
+          .split(/\r?\n/)
+          .map(function (ln) {
+            return ln.trim();
+          })
+          .filter(function (ln) {
+            if (!ln || TRANSCRIPT_NOISE[ln]) return false;
+            if (rich && ln === "Chips" && rich.richContent) return false;
+            if (chipLabels.length && chipLabels.indexOf(ln.toLowerCase()) >= 0) return false;
+            if (rich && richHasActionUi(rich)) {
+              if (/^https?:\/\//i.test(ln)) return false;
+              if (/^card_\d+$/i.test(ln)) return false;
+            }
+            var norm = ln.toLowerCase().replace(/\s+/g, " ");
+            if (seenLine[norm]) return false;
+            seenLine[norm] = 1;
+            return true;
+          })
+          .join("\n")
+          .trim();
+      }
+
+      function isAssistantRole(role) {
+        var r = String(role || "").toLowerCase();
+        return r === "assistant" || r === "bot" || r === "model" || r === "ai";
+      }
+
+      function displayRoleForTurn(turn) {
+        if (!turn) return "user";
+        if (isAssistantRole(turn.role)) return "assistant";
+        if (turn.role === "agent") return "agent";
+        return "user";
+      }
+
+      function renderAssistantBody(turn) {
+        if (!turn || !isAssistantRole(turn.role)) {
+          return '<p class="rc-text">' + escapeHtml((turn && turn.text) || "") + "</p>";
+        }
+        var rich = resolveRich(turn);
+        var actionUi = rich && richHasActionUi(rich);
+        var html = "";
+        if (rich) {
+          if (actionUi) {
+            html += actionHtml(rich);
+          } else if (Array.isArray(rich.richContent)) {
+            var text = cleanText(turn.text, rich);
+            if (text) html += '<p class="rc-text">' + escapeHtml(text) + "</p>";
+            html += richRowsHtml(rich.richContent);
+          } else if (rich.action || Array.isArray(rich.urls) || Array.isArray(rich.cards)) {
+            html += actionHtml(rich);
+          }
+        }
+        if (!html) {
+          var plain = cleanText(turn.text, rich);
+          if (plain) html += '<p class="rc-text">' + escapeHtml(plain) + "</p>";
+        }
+        return html || '<p class="rc-text">(No message stored for this line.)</p>';
+      }
+
+      /** Match `company.js` getBotPersonaMessageTimeLabel (`en-IN`, optional short date). */
+      function formatPersonaClockLabel(tzRaw, ms, includeDate) {
+        var tz =
+          tzRaw && String(tzRaw).trim()
+            ? String(tzRaw).trim()
+            : "Asia/Kolkata";
+        var d = new Date(ms);
+        if (Number.isNaN(d.getTime())) {
+          return "";
+        }
+        try {
+          if (includeDate) {
+            return new Intl.DateTimeFormat("en-IN", {
+              timeZone: tz,
+              month: "short",
+              day: "numeric",
+              hour: "2-digit",
+              minute: "2-digit",
+              second: "2-digit",
+              hour12: true
+            }).format(d);
+          }
+          return new Intl.DateTimeFormat("en-IN", {
+            timeZone: tz,
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+            hour12: true
+          }).format(d);
+        } catch {
+          return "";
+        }
+      }
+
+      function sessionFromUrl() {
+        try {
+          var q = new URLSearchParams(window.location.search).get("session");
+          return q && q.trim() ? q.trim() : "";
+        } catch {
+          return "";
+        }
+      }
+
+      function showErr(msg) {
+        if (!msg) {
+          errBox.hidden = true;
+          errBox.textContent = "";
+          return;
+        }
+        errBox.hidden = false;
+        errBox.textContent = msg;
+      }
+
+      function prettyLabel(k) {
+        var s = String(k || "");
+        if (s.length > 64) return s.slice(0, 61) + "…";
+        return s;
+      }
+
+      function formatDocumentSummaryDisplay(val) {
+        var s = String(val || "").trim();
+        if (!s) return "";
+        if (/^https?:\/\//i.test(s)) {
+          try {
+            var u = new URL(s);
+            var seg = decodeURIComponent(u.pathname.split("/").filter(Boolean).pop() || "");
+            var parts = seg.split("_");
+            if (parts.length >= 3 && /^\d{13,}$/.test(parts[0])) {
+              return parts.slice(2).join("_") || seg;
+            }
+            return seg;
+          } catch (ignore) {
+            return s;
+          }
+        }
+        if (/^\d{10,}_\d{2}_\d{2}_\d{4}_/.test(s)) return "";
+        return s;
+      }
+
+      function normalizeDetailValue(v) {
+        var s =
+          typeof v === "number" || typeof v === "boolean"
+            ? String(v)
+            : v != null
+              ? String(v)
+              : "";
+        return s.trim();
+      }
+
+      /** Match `formatDeviceTypeForSheetDisplay` in sheets.mjs (e.g. Desktop/Mobile). */
+      function formatDeviceTypeForSummary(raw) {
+        var s = normalizeDetailValue(raw);
+        if (!s) return "";
+        return s
+          .split(/\s*[/,|]\s*/)
+          .map(function (part) {
+            var p = part.trim();
+            if (!p) return "";
+            var low = p.toLowerCase();
+            if (low === "desktop") return "Desktop";
+            if (low === "mobile") return "Mobile";
+            if (low === "tablet") return "Tablet";
+            return p.charAt(0).toUpperCase() + p.slice(1).toLowerCase();
+          })
+          .filter(Boolean)
+          .join("/");
+      }
+
+      /** Match `formatChannelForSheetDisplay` in sheets.mjs (e.g. Web/WhatsApp/…). */
+      function formatChannelForSummary(raw) {
+        var s = normalizeDetailValue(raw);
+        if (!s) return "";
+        return s
+          .split(/\s*[/,|]\s*/)
+          .map(function (part) {
+            var p = part.trim();
+            if (!p) return "";
+            var low = p.toLowerCase();
+            if (low === "web") return "Web";
+            if (low === "whatsapp") return "WhatsApp";
+            if (low === "instagram") return "Instagram";
+            if (low === "facebook") return "Facebook";
+            if (low === "twitter") return "Twitter";
+            if (low === "x") return "X";
+            return p.charAt(0).toUpperCase() + p.slice(1).toLowerCase();
+          })
+          .filter(Boolean)
+          .join("/");
+      }
+
+      /** Sheet / submission field key → stable semantic id (case- and space-insensitive). */
+      function canonicalLeadFieldKey(rawKey) {
+        var k = String(rawKey || "")
+          .trim()
+          .toLowerCase()
+          .replace(/\s+/g, " ");
+        var kn = k.replace(/\s/g, "");
+        if (k === "name") return "name";
+        if (k === "email") return "email";
+        if (k === "mobile" || k === "phone") return "mobile";
+        if (k === "session id" || kn === "sessionid") return "session_id";
+        if (k === "user queries" || k === "userqueries") return "user_queries";
+        if (k === "device" || k === "device type" || kn === "devicetype") return "device";
+        if (k === "channel") return "channel";
+        if (
+          k === "browser"
+          || k === "browser name"
+          || kn === "browsername"
+        )
+          return "browser";
+        if (k === "conv. date" || k === "conv date") return "conv_date";
+        if (k === "conv. time" || k === "conv time") return "conv_time";
+        if (
+          k === "conversation date"
+          || kn === "conversationdate"
+        )
+          return "conv_date";
+        if (
+          k === "conversation time"
+          || kn === "conversationtime"
+        )
+          return "conv_time";
+        return null;
+      }
+
+      function shouldDropSummaryFieldKey(rawKey) {
+        var k = String(rawKey || "")
+          .trim()
+          .toLowerCase()
+          .replace(/\s+/g, " ");
+        var kn = k.replace(/\s/g, "");
+        if (k === "form id" || k === "form_id" || kn === "formid") return true;
+        if (k === "app. booked" || k === "app booked" || kn === "app.booked") return true;
+        if (k === "scheduled") return true;
+        if (k === "conv. link" || k === "conv link" || kn === "conv.link") return true;
+        if (
+          k === "chat link"
+          || k === "chat script"
+          || kn === "chatlink"
+          || kn === "chatscript"
+        )
+          return true;
+        if (k === "ip address" || kn === "ipaddress" || k === "ip") return true;
+        if (
+          k === "submitted at"
+          || kn === "submittedat"
+          || kn === "sheetrow"
+          || k === "sheet row"
+        )
+          return true;
+        return false;
+      }
+
+      /** @typedef {{ key: string, val: string } | null} ColHit */
+
+      /** @returns {ColHit} */
+      function findColumnEntryBySemantic(cols, semantic, consumedCol) {
+        var keys = Object.keys(cols).sort(function (a, b) {
+          return a.localeCompare(b);
+        });
+        for (var i = 0; i < keys.length; i++) {
+          var key = keys[i];
+          if (consumedCol && consumedCol[key]) continue;
+          if (canonicalLeadFieldKey(key) === semantic) {
+            return {
+              key: key,
+              val: normalizeDetailValue(cols[key])
+            };
+          }
+        }
+        return null;
+      }
+
+      function updateSessionMeta(json) {
+        var metaEl = document.getElementById("sessionMeta");
+        var titleEl = document.querySelector("h1");
+        var meta = json.meta && typeof json.meta === "object" ? json.meta : {};
+        var sheet = json.sheet && typeof json.sheet === "object" ? json.sheet : null;
+        var cols = sheet && sheet.columns && typeof sheet.columns === "object" ? sheet.columns : null;
+        var nameVal = String(meta.name || "").trim();
+        if (!nameVal && cols) {
+          nameVal = String(cols.Name || cols.name || "").trim();
+        }
+        var title = nameVal ? "Chat script — " + nameVal : "Chat script";
+        if (titleEl) titleEl.textContent = title;
+        document.title = title;
+        if (metaEl) {
+          metaEl.hidden = true;
+          metaEl.innerHTML = "";
+        }
+      }
+
+      function buildDetails(json) {
+        /** @type {Array<[string, string]>} */
+        var pairs = [];
+        var meta = json.meta && typeof json.meta === "object" ? json.meta : {};
+        var sheet = json.sheet && typeof json.sheet === "object" ? json.sheet : null;
+        var cols = sheet && sheet.columns && typeof sheet.columns === "object" ? sheet.columns : null;
+        var sessionVal = String(json.session || sessionFromUrl() || "").trim();
+
+        /** @type {Record<string, true>} */
+        var consumedCol = {};
+
+        function pickSemantic(semantic, metaRaw) {
+          var fromMeta = normalizeDetailValue(metaRaw);
+          if (!cols) {
+            return fromMeta;
+          }
+          var hit = findColumnEntryBySemantic(cols, semantic, consumedCol);
+          if (hit) {
+            consumedCol[hit.key] = true;
+            return fromMeta || hit.val;
+          }
+          return fromMeta;
+        }
+
+        /** Sheet-only semantic (consume column). */
+        function takeSemanticCol(semantic) {
+          if (!cols) return "";
+          var hit = findColumnEntryBySemantic(cols, semantic, consumedCol);
+          if (!hit) return "";
+          consumedCol[hit.key] = true;
+          return hit.val;
+        }
+
+        var nameVal = pickSemantic("name", meta.name);
+        var emailVal = pickSemantic("email", meta.email);
+        var mobileVal = pickSemantic("mobile", meta.mobile);
+
+        var userQueriesVal = "";
+        if (cols) {
+          var uqHit = findColumnEntryBySemantic(cols, "user_queries", consumedCol);
+          if (uqHit) {
+            consumedCol[uqHit.key] = true;
+            userQueriesVal = uqHit.val;
+          }
+        }
+
+        if (nameVal) pairs.push(["Name", String(nameVal)]);
+        if (emailVal) pairs.push(["Email", String(emailVal)]);
+        if (mobileVal) pairs.push(["Phone", String(mobileVal)]);
+        if (sessionVal) pairs.push(["Session", sessionVal]);
+
+        var deviceVal = takeSemanticCol("device");
+        var channelVal = takeSemanticCol("channel");
+        var browserVal = takeSemanticCol("browser");
+        var convDateVal = takeSemanticCol("conv_date");
+        var convTimeVal = takeSemanticCol("conv_time");
+
+        if (deviceVal) pairs.push(["Device", formatDeviceTypeForSummary(deviceVal)]);
+        if (channelVal) pairs.push(["Channel", formatChannelForSummary(channelVal)]);
+        if (browserVal) pairs.push(["Browser", String(browserVal)]);
+        if (convDateVal) pairs.push(["Conv. Date", String(convDateVal)]);
+        if (convTimeVal) pairs.push(["Conv. time", String(convTimeVal)]);
+
+        if (cols) {
+          var restKeys = Object.keys(cols).sort(function (a, b) {
+            return a.localeCompare(b);
+          });
+          for (var r = 0; r < restKeys.length; r++) {
+            var colKey = restKeys[r];
+            if (consumedCol[colKey]) continue;
+            if (shouldDropSummaryFieldKey(colKey)) continue;
+            var sem = canonicalLeadFieldKey(colKey);
+            if (
+              sem === "name"
+              || sem === "email"
+              || sem === "mobile"
+              || sem === "session_id"
+              || sem === "user_queries"
+              || sem === "device"
+              || sem === "channel"
+              || sem === "browser"
+              || sem === "conv_date"
+              || sem === "conv_time"
+            ) {
+              continue;
+            }
+            var cellVal = normalizeDetailValue(cols[colKey]);
+            if (!cellVal) continue;
+            if (colKey === "Document") {
+              cellVal = formatDocumentSummaryDisplay(cellVal);
+            }
+            pairs.push([colKey, cellVal]);
+          }
+        }
+
+        if (userQueriesVal) pairs.push(["User queries", String(userQueriesVal)]);
+
+        if (!pairs.length) {
+          detailsWrap.hidden = true;
+          summaryRail.hidden = true;
+          mainGrid.classList.remove("main-grid--split");
+          return;
+        }
+        detailsWrap.hidden = false;
+        summaryRail.hidden = false;
+        mainGrid.classList.add("main-grid--split");
+        var chunks = [];
+        for (var j = 0; j < pairs.length; j++) {
+          chunks.push(
+            "<dt>" + escapeHtml(prettyLabel(pairs[j][0])) + "</dt><dd>" + escapeHtml(pairs[j][1]) + "</dd>"
+          );
+        }
+        detailsDl.innerHTML = chunks.join("");
+      }
+
+      async function loadTranscript() {
+        showErr("");
+        scrollTranscriptPageToTop_();
+        var sessionMetaEl = document.getElementById("sessionMeta");
+        if (sessionMetaEl) {
+          sessionMetaEl.hidden = true;
+          sessionMetaEl.textContent = "";
+        }
+        thread.innerHTML = "";
+        detailsDl.innerHTML = "";
+        detailsWrap.hidden = true;
+        summaryRail.hidden = true;
+        mainGrid.classList.remove("main-grid--split");
+        var session = sessionFromUrl();
+        if (!session) {
+          showErr("Missing ?session= in the URL. Use the link from your Google Sheet “Chat transcript” column.");
+          return;
+        }
+
+        var secret = secretEl.value.trim() || readSavedViewerSecret();
+        if (!secret) {
+          showErr("Sign in at Live Agent settings, or enter your desk token here.");
+          window.location.href = "live-agent/settings.html?next=" +
+            encodeURIComponent("conversation-transcript?session=" + encodeURIComponent(session));
+          return;
+        }
+        persistViewerSecret(secret);
+
+        loadBtn.disabled = true;
+        try {
+          var url =
+            apiRoot() +
+            "/api/conversation-transcript?session=" +
+            encodeURIComponent(session);
+          var res = await fetch(url, {
+            method: "GET",
+            headers: authHeaders(secret),
+            cache: "no-store",
+            credentials: "same-origin"
+          });
+          var json = await res.json().catch(function () {
+            return null;
+          });
+          if (!res.ok || !json || !json.ok) {
+            showErr((json && json.error) || "HTTP " + res.status);
+            return;
+          }
+
+          authPanel.style.display = "none";
+          toggleAuth.hidden = false;
+
+          updateSessionMeta(json);
+          buildDetails(json);
+
+          var transcriptTz =
+            json.transcript_time_zone && String(json.transcript_time_zone).trim()
+              ? String(json.transcript_time_zone).trim()
+              : "";
+          var transcriptIncDate =
+            json.transcript_time_includes_date === true ? true : false;
+
+          var turns = Array.isArray(json.turns) ? json.turns : [];
+          if (!turns.length) {
+            thread.innerHTML =
+              '<div class="empty-hint">No chat lines stored for this session yet. After visitors message the bot and submit a lead, the full script appears here. User-only lines may still show from the Sheet if live sync ran.</div>';
+            scrollTranscriptPageToTop_();
+            return;
+          }
+
+          var stats = json.transcript_stats && typeof json.transcript_stats === "object" ? json.transcript_stats : null;
+          var assistantN = 0;
+          for (var ai = 0; ai < turns.length; ai += 1) {
+            if (turns[ai] && isAssistantRole(turns[ai].role)) assistantN += 1;
+          }
+
+          thread.innerHTML = "";
+          if (assistantN === 0 && stats) {
+            var diag =
+              '<div class="empty-hint" style="margin-bottom:12px">User lines are present but no bot lines are in this transcript. ';
+            if ((stats.stored_lead_assistant_rows || 0) > 0 || (stats.stored_session_assistant_rows || 0) > 0) {
+              diag +=
+                "The server has stored assistant data — redeploy the API to the latest build and reload. ";
+            } else {
+              diag += "Publish latest company.js (loader v98+) and start a new chat so bot lines sync. ";
+            }
+            if (stats.lead_chat_transcript) {
+              diag +=
+                " Lead storage: " + escapeHtml(JSON.stringify(stats.lead_chat_transcript)) + ".";
+            }
+            if (stats.session_chat_transcript) {
+              diag +=
+                " Session storage: " + escapeHtml(JSON.stringify(stats.session_chat_transcript)) + ".";
+            }
+            diag += " Source: " + escapeHtml(String(json.source || "")) + ".</div>";
+            thread.innerHTML = diag;
+          }
+          var dayLine = document.createElement("div");
+          dayLine.className = "day-line";
+          dayLine.textContent = "Messages";
+          thread.appendChild(dayLine);
+          for (var i = 0; i < turns.length; i++) {
+            var t = turns[i];
+            var role = displayRoleForTurn(t);
+            var who =
+              role === "assistant"
+                ? "Assistant"
+                : role === "agent"
+                  ? "Agent"
+                  : "User";
+            var atMs =
+              t && typeof t.at === "number" && Number.isFinite(t.at) ? t.at : null;
+            var timeLbl =
+              atMs !== null && formatPersonaClockLabel(transcriptTz, atMs, transcriptIncDate).trim()
+                ? formatPersonaClockLabel(transcriptTz, atMs, transcriptIncDate)
+                : "";
+            var timeHtml = timeLbl
+              ? '<span class="msg-time">' + escapeHtml(timeLbl) + "</span>"
+              : "";
+            var bodyHtml = isAssistantRole(t && t.role)
+                ? renderAssistantBody(t)
+                : '<p class="rc-text">' + escapeHtml((t && t.text) || "") + "</p>";
+            var row = document.createElement("div");
+            row.className = "msg msg--" + role;
+            row.innerHTML =
+              '<div class="who"><span class="who-label">' +
+              escapeHtml(who) +
+              "</span>" +
+              timeHtml +
+              '</div><div class="msg-body' +
+              (role === "assistant" ? " msg-body--rich" : "") +
+              '">' +
+              bodyHtml +
+              "</div>";
+            thread.appendChild(row);
+          }
+          scrollTranscriptPageToTop_();
+          requestAnimationFrame(function () {
+            scrollTranscriptPageToTop_();
+          });
+        } catch (e) {
+          showErr(String(e && e.message ? e.message : e));
+        } finally {
+          loadBtn.disabled = false;
+        }
+      }
+
+      loadBtn.addEventListener("click", function () {
+        void loadTranscript();
+      });
+      toggleAuth.addEventListener("click", function () {
+        authPanel.style.display = "block";
+        toggleAuth.hidden = true;
+      });
+
+      if (savedSecret && sessionFromUrl()) {
+        authPanel.style.display = "none";
+        toggleAuth.hidden = false;
+        void loadTranscript();
+      }
+    })();
+  </script>
+</body>
+</html>
