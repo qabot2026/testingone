@@ -7941,6 +7941,24 @@ function mountPortedEsRoutes(app) {
         res.sendFile(path.resolve(__dirname_api, '..', 'cx_public', 'company.js'));
     });
 
+    // Serving embed.js
+    app.get('/embed.js', (_req, res) => {
+        res.setHeader('Cache-Control', 'no-cache, must-revalidate');
+        res.sendFile(path.resolve(__dirname_api, '..', 'cx_public', 'embed.js'));
+    });
+
+    // Serving company-loader.js
+    app.get('/company-loader.js', (_req, res) => {
+        res.setHeader('Cache-Control', 'no-cache, must-revalidate');
+        res.sendFile(path.resolve(__dirname_api, '..', 'cx_public', 'company-loader.js'));
+    });
+
+    // Serving widget static folder
+    app.use('/widget', express.static(path.resolve(__dirname_api, '..', 'cx_public', 'widget'), {
+        maxAge: process.env.NODE_ENV === 'production' ? '1d' : 0,
+        etag: true,
+    }));
+
     // Serving chat-frame.html
     app.get('/chat-frame.html', (_req, res) => {
         res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
