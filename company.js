@@ -3824,10 +3824,11 @@ function createAndMountMessenger() {
     stopCloseXWhileChatOpenMonitor();
     const df = document.createElement("df-messenger");
     activeDfMessenger = df;
+    df.setAttribute("df-cx", "true");
     const dialogflowConfig = COMMON_CONFIG.dialogflow || {};
     df.setAttribute("project-id", dialogflowConfig.projectId || "qabot01");
     df.setAttribute("location", dialogflowConfig.location || "us-central1");
-    df.setAttribute("agent-id", dialogflowConfig.agentId || "05ce7add-9025-4534-990c-fd7a25dadde1");
+    df.setAttribute("agent-id", dialogflowConfig.agentId || "e3fbf52c-3350-48b2-b2d1-4cd9f1f21726");
     if (typeof dialogflowConfig.oauthClientId === "string" && dialogflowConfig.oauthClientId.trim()) {
         df.setAttribute("oauth-client-id", dialogflowConfig.oauthClientId.trim());
     }
